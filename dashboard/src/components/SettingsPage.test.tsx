@@ -2093,6 +2093,7 @@ describe('SettingsPage', () => {
       updated_at: '2026-05-14T00:00:00Z',
       updated_by: 'security-admin',
       validity_gate: 'suspect',
+      allow_telemetry_policy_selection: true,
     }
     const storedGitHubPolicy: Required<GitHubProjectPolicy> = {
       enabled: true,

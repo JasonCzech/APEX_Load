@@ -117,27 +117,13 @@ func buildCatalog() MetricCatalog {
 		metrics[i].ResetRule = ResetNotApplicable
 		metrics[i].Baseline, metrics[i].Correlation, metrics[i].SLA = true, true, true
 	}
-	// Message and byte metrics where the engine records evidence: received
-	// messages from messaging v2 evidence, and bytes from interval totals.
-	for _, extra := range []MetricDefinition{
-		{Name: "message_count", Unit: "count", NativeWireUnit: "count", Aggregations: []string{"count"}, Populations: []string{PopulationMessage}, RequiredEvidence: []string{"messaging_evidence.v2_received_messages"}},
-		{Name: "bytes_sent", Unit: "bytes", NativeWireUnit: "bytes", Aggregations: []string{"sum"}, Populations: []string{PopulationByte}, RequiredEvidence: []string{"interval_byte_totals"}},
-		{Name: "bytes_received", Unit: "bytes", NativeWireUnit: "bytes", Aggregations: []string{"sum"}, Populations: []string{PopulationByte}, RequiredEvidence: []string{"interval_byte_totals"}},
-	} {
-		extra.Version = CatalogVersion
-		extra.InputKinds = []string{KindObservation}
-		// No native query profile executes them yet. Only what runs is
-		// declared: message counts take moving statistics on archive message
-		// panels (which take no comparison run); byte totals have no query.
-		extra.QueryProfiles = []string{}
-		extra.Derivations = []string{}
-		if extra.Name == "message_count" {
-			extra.Derivations = []string{"moving_mean", "moving_stddev"}
-		}
-		extra.MissingRule, extra.ResetRule = MissingUnscored, ResetNotApplicable
-		extra.Baseline, extra.Correlation = false, true
-		metrics = append(metrics, extra)
-	}
+	// Message metrics from messaging v2 evidence: received messages take
+	// moving statistics on archive message panels (which take no comparison
+	// run) and declare no native query profile.
+	message := MetricDefinition{Name: "message_count", Version: CatalogVersion, InputKinds: []string{KindObservation}, Unit: "count", NativeWireUnit: "count", Aggregations: []string{"count"}, Populations: []string{PopulationMessage},
+		RequiredEvidence: []string{"messaging_evidence.v2_received_messages"}, QueryProfiles: []string{}, Derivations: []string{"moving_mean", "moving_stddev"}, MissingRule: MissingUnscored, ResetRule: ResetNotApplicable, Correlation: true}
+	metrics = append(metrics, message)
+	metrics = append(metrics, byteMetricDefinitions(profiles)...)
 	// Browser document metrics read the final eligible document measurements
 	// of one measurement tuple (algorithm, unit, lifecycle phase, frame scope,
 	// engine, device profile and runtime cohort) as merged 192-bucket

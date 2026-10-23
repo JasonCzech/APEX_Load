@@ -74,6 +74,8 @@ func nativeMetricUnit(q storage.AnalyticsQuery) string {
 		return "count"
 	case "bytes_sent", "bytes_received":
 		return "bytes"
+	case "bytes_sent_rate", "bytes_received_rate":
+		return "bytes/s"
 	case "document_fcp", "document_lcp", "document_inp":
 		return "ms"
 	case "document_cls":

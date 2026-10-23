@@ -11,9 +11,8 @@ import (
 
 func TestNativeQueryUsesCanonicalMetricCatalog(t *testing.T) {
 	for _, metric := range analysis.Catalog().Metrics {
-		// Message and byte metrics have no native query profile: received
-		// messages are read by the archive message query, bytes by no native
-		// query yet.
+		// Message metrics have no native query profile: received messages
+		// are read by the archive message query.
 		if len(metric.QueryProfiles) == 0 {
 			q := AnalyticsQuery{Population: metric.Populations[0], Metric: metric.Name, Aggregation: metric.Aggregations[0], EndSeconds: 60, BucketSeconds: 1, MaxSeries: 1}
 			if err := ValidateNativeArchiveQuery(q); (metric.Name == "message_count") != (err == nil) {

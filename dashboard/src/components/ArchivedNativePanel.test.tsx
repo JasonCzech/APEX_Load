@@ -107,3 +107,27 @@ it('exports each Java comparison population and missing reason independently', a
   expect(container.textContent).toContain('Missing (incomplete representation evidence)')
   expect([...container.querySelectorAll('tbody tr:first-child td')].map(n => n.textContent)).toEqual(['0', '30', '0', '3', '7'])
 })
+
+it('states HTTP body bytes with their unit and unscored reasons, without a latency inspector (NA-C)', async () => {
+  const bytePanel: DashboardDefinitionPanel = { ...panel, query: { metric: 'bytes_sent', aggregation: 'sum', population: 'byte', filters: { action: 'login' }, end_seconds: 20, bucket_seconds: 10 } }
+  request.mockResolvedValue({ ...response, current: { ...response.current, unit: 'bytes', buckets: [{ ...response.current.buckets[0], value: 0 }, { ...response.current.buckets[1], count: 1, reason: 'byte_evidence_unavailable' }] } })
+  await act(async () => root.render(<ArchivedNativePanel panel={bytePanel} testId="run" />))
+  expect(container.textContent).toContain('HTTP requests · bytes_sent · sum (bytes)')
+  expect(container.textContent).toContain('a response served from the cache receives nothing')
+  expect(container.textContent).toContain('Missing (byte evidence unavailable)')
+  expect(container.textContent).toContain('Measured observations')
+  expect(container.textContent).not.toContain('Latency percentiles')
+  const cells = [...container.querySelectorAll('tbody tr:first-child td')].map(n => n.textContent)
+  expect(cells).toEqual(['0', '0', '3'])
+  expect([...container.querySelectorAll('button')].some(node => node.textContent?.startsWith('Inspect current bucket'))).toBe(false)
+})
+
+it('says why a byte comparison bucket is unscored, in the table and the export (NA-C)', async () => {
+  const bytePanel: DashboardDefinitionPanel = { ...panel, query: { metric: 'bytes_sent', aggregation: 'sum', population: 'byte', comparison_run_id: 'baseline', end_seconds: 20, bucket_seconds: 10 } }
+  request.mockResolvedValue({ ...response, current: { ...response.current, unit: 'bytes' }, baseline: { ...response.current, run_id: 'baseline', buckets: [{ ...response.current.buckets[0], count: 2, value: 40 }, { ...response.current.buckets[1], count: 1, reason: 'byte_evidence_unavailable' }] } })
+  exportProps.mockReset()
+  await act(async () => root.render(<ArchivedNativePanel panel={bytePanel} testId="run" />))
+  expect(container.textContent).toContain('Missing (byte evidence unavailable)')
+  const columns = exportProps.mock.calls[exportProps.mock.calls.length - 1][0].columns.map((column: { key: string }) => column.key)
+  expect(columns).toEqual(['offset', 'value', 'baseline', 'count', 'reason', 'baselineCount', 'baselineReason'])
+})

@@ -108,6 +108,8 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusBadRequest
 		if errors.Is(err, errServiceAccountLibraryBundleScope) {
 			status = http.StatusForbidden
+		} else if errors.Is(err, errRemoteRunScenarioPolicy) {
+			status = http.StatusConflict
 		}
 		writeError(w, status, err.Error())
 		return
@@ -159,6 +161,26 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 			s.startRemoteRunCleanupRetry()
 		}
 		writeError(w, http.StatusBadGateway, "remote library did not honor the requested recoverable test identity")
+		return
+	}
+	// A remote controller that predates policy selection ignores the choice
+	// and would judge the run by its project's default: never start that.
+	if chosen := strings.TrimSpace(prepared.TelemetryAcceptancePolicyID); chosen != "" && chosen != runPolicyProjectDefault && remoteTest.TelemetryAcceptancePolicyID != chosen {
+		if cleanupErr := s.attemptRemoteRunCleanup(cleanup); cleanupErr != nil {
+			slog.Warn("unconfirmed remote telemetry policy cleanup remains pending", "remote_id", remote.ID, "remote_test_id", requestedRemoteTestID, "err", cleanupErr)
+			s.startRemoteRunCleanupRetry()
+		}
+		writeError(w, http.StatusConflict, fmt.Sprintf("the remote controller did not confirm telemetry acceptance policy %.128q, so it would judge the run by its project's default; upgrade it, or create the run without the choice", chosen))
+		return
+	}
+	// Likewise a controller that predates the budget choice would classify the
+	// run by its system threshold settings.
+	if chosen := normalizeTelemetryPolicyChoice(prepared.TelemetryBudgetPolicyID); chosen != "" && remoteTest.TelemetryBudgetPolicyID != chosen {
+		if cleanupErr := s.attemptRemoteRunCleanup(cleanup); cleanupErr != nil {
+			slog.Warn("unconfirmed remote telemetry budget policy cleanup remains pending", "remote_id", remote.ID, "remote_test_id", requestedRemoteTestID, "err", cleanupErr)
+			s.startRemoteRunCleanupRetry()
+		}
+		writeError(w, http.StatusConflict, fmt.Sprintf("the remote controller did not confirm telemetry budget policy %.128q, so it would classify the run by its system threshold settings; upgrade it, or create the run without the choice", chosen))
 		return
 	}
 	link, err := s.upsertRemoteRunLink(RemoteRunLink{
@@ -430,12 +452,32 @@ func maskRemoteRunAction(action map[string]any) map[string]any {
 	return masked
 }
 
+// errRemoteRunScenarioPolicy refuses a remote run whose scenario chose a
+// telemetry acceptance or budget policy the request does not translate.
+var errRemoteRunScenarioPolicy = errors.New("the scenario's telemetry policy choice is local to this controller")
+
 func (s *Server) prepareRemoteRunCreateRequest(ctx context.Context, remote LibraryRemote, req CreateTestRequest, explicitRemoteProjectID string) (CreateTestRequest, []LibraryImportResultItem, string, string, string, error) {
 	localProjectID, err := s.remoteRunCreateLocalProject(req)
 	if err != nil {
 		return req, nil, "", "", "", err
 	}
 	localScenarioID := strings.TrimSpace(req.ScenarioID)
+	// A scenario's telemetry acceptance policy names a local policy, which the
+	// pushed library bundle does not carry: the remote would judge the run by
+	// its own copy's choice or its project's default, never the local choice.
+	// The caller names the remote policy (or project_default) explicitly.
+	if localScenarioID != "" && strings.TrimSpace(req.TelemetryAcceptancePolicyID) == "" {
+		if scenario, ok := s.runner.GetScenario(localScenarioID); ok && scenario != nil && scenario.TelemetryAcceptancePolicyID != "" {
+			return req, nil, "", "", "", fmt.Errorf("%w: scenario %s chooses telemetry acceptance policy %q, which does not travel to the remote controller; name a remote policy with telemetry_acceptance_policy_id, or %s", errRemoteRunScenarioPolicy, localScenarioID, scenario.TelemetryAcceptancePolicyID, runPolicyProjectDefault)
+		}
+	}
+	// Likewise its telemetry budget policy: the remote would classify the run
+	// by its copy's own choice or its system threshold settings.
+	if localScenarioID != "" && strings.TrimSpace(req.TelemetryBudgetPolicyID) == "" {
+		if scenario, ok := s.runner.GetScenario(localScenarioID); ok && scenario != nil && scenario.TelemetryBudgetPolicyID != "" {
+			return req, nil, "", "", "", fmt.Errorf("%w: scenario %s chooses telemetry budget policy %q, which does not travel to the remote controller; name a remote policy with telemetry_budget_policy_id, or %s for the remote's system threshold settings", errRemoteRunScenarioPolicy, localScenarioID, scenario.TelemetryBudgetPolicyID, runPolicyProjectDefault)
+		}
+	}
 	// The destination is an administrator-configured trust mapping. A project
 	// editor may select local assets, but must not be able to redirect the
 	// controller's broader remote credential into an arbitrary remote project.

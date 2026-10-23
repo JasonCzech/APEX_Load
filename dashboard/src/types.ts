@@ -456,6 +456,8 @@ export interface GitHubActionsPolicy {
   updated_by?: string
   /** Fails CI runs whose validity is "invalid", or with "suspect" also suspect runs; empty is advisory. */
   validity_gate?: '' | 'invalid' | 'suspect'
+  /** Lets a CI run choose which of the project's telemetry acceptance policies judges it and which telemetry budget policy sets its live budgets; off, CI runs are judged by the project's default acceptance policy and classified by the system threshold settings. */
+  allow_telemetry_policy_selection?: boolean
 }
 
 export interface Application {
@@ -859,6 +861,10 @@ export interface TestSummary {
   traffic_profile?: import('./types/trafficProfiles').TrafficProfile
   /** The joint evidence projection the run captures. */
   joint_evidence?: import('./types/jointEvidence').JointEvidenceProjection
+  /** The project telemetry acceptance policy the run chose instead of the default (TEL-B). */
+  telemetry_acceptance_policy_id?: string
+  /** The project telemetry budget policy that set the run's live budgets instead of the system threshold settings (TEL-B). */
+  telemetry_budget_policy_id?: string
   /** The execution-plan run that started this run. */
   execution_plan?: TestExecutionPlanLink
   archive?: RunArchiveRecord
@@ -2360,6 +2366,10 @@ export interface ScenarioDraftRevisionContext {
   sourceTestId: string
   /** The source run's joint evidence, shown read-only; a revised copy keeps it. */
   jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
+  /** The source run's chosen telemetry acceptance policy; a revised copy keeps it unless it names another. */
+  telemetryAcceptancePolicyId?: string
+  /** The source run's chosen telemetry budget policy; a revised copy keeps it unless it names another. */
+  telemetryBudgetPolicyId?: string
   applicationId?: string
   releaseId?: string
   scenarioId?: string
@@ -2384,6 +2394,10 @@ export interface ScenarioDraft {
   trafficProfile?: TrafficProfile
   /** The joint evidence the scenario's runs capture (absent: none). */
   jointEvidence?: import('./types/jointEvidence').JointEvidenceProjection
+  /** The telemetry acceptance policy chosen for the scenario's (or this) run; absent: the default, or a revised copy's inherited choice. */
+  telemetryAcceptancePolicyId?: string
+  /** The telemetry budget policy that sets the live budgets of the scenario's (or this) run; absent: the system threshold settings, or a revised copy's inherited choice. */
+  telemetryBudgetPolicyId?: string
   /** Authored data-pool bindings of a saved scenario (a revision keeps its source's in revisionContext). */
   dataPools?: ScenarioDataPoolBinding[]
   /** Immutable source-run context carried only when a queued run is revised. */

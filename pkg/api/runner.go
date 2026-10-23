@@ -371,6 +371,10 @@ type TestRunner struct {
 	// test default), so behavior is unchanged unless election is wired in.
 	leadership            *executionLeadership
 	durableExecutionFence bool
+	// evacuationRollbackRecovery writes version 4 evacuation journals and lets
+	// a successor roll a prepared or staged evacuation back to its prior
+	// topology. Off until that recovery is qualified for a deployment.
+	evacuationRollbackRecovery bool
 	// runAdoptionDoneGeneration is the durable execution generation whose
 	// acquire-time run adoption (Phase A) has finished. The generator epoch
 	// keeper waits for it instead of for the whole reconcile.
@@ -637,6 +641,16 @@ type ManagedTest struct {
 	Archive               *storage.RunArchiveRecord                `json:"archive,omitempty"`
 	TelemetryHealth       *TelemetryRunHealth                      `json:"telemetry_health,omitempty"`
 	Error                 string                                   `json:"error,omitempty"`
+
+	// TelemetryAcceptancePolicyID names the project telemetry acceptance
+	// policy the run asked for instead of the project's default (TEL-B); its
+	// revision is pinned at Start.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the project telemetry budget policy
+	// (telemetry_policy) the run asked for instead of the system threshold
+	// settings (TEL-B); its revision is pinned at Start and sets the run's
+	// budget receipt.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -1640,18 +1654,27 @@ type StoredScenario struct {
 	RuntimeSettings   *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
 	// JointEvidence is the joint evidence v4 projection every run created
 	// from this scenario captures, unless the run's request names another.
-	JointEvidence      *engine.JointProjection           `json:"joint_evidence,omitempty"`
-	Scripts            []ScenarioScriptRef               `json:"scripts"`
-	Schedules          []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
-	DataPools          []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
-	CreatedAt          time.Time                         `json:"created_at"`
-	UpdatedAt          time.Time                         `json:"updated_at"`
-	ScriptCount        int                               `json:"script_count"`
-	ResultCount        int                               `json:"result_count,omitempty"`
-	AssociatedReleases []ReleaseRef                      `json:"associated_releases,omitempty"`
-	LastRunTestID      string                            `json:"last_run_test_id,omitempty"`
-	LastRunAt          *time.Time                        `json:"last_run_at,omitempty"`
-	LastRunEndedAt     *time.Time                        `json:"last_run_ended_at,omitempty"`
+	JointEvidence *engine.JointProjection `json:"joint_evidence,omitempty"`
+	// TelemetryAcceptancePolicyID names the project telemetry acceptance
+	// policy every run created from this scenario is judged by, unless the
+	// run's request names another; empty uses the project's default.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the project telemetry budget policy that
+	// sets the live budgets of every run created from this scenario, unless
+	// the run's request names another; empty uses the system threshold
+	// settings.
+	TelemetryBudgetPolicyID string                            `json:"telemetry_budget_policy_id,omitempty"`
+	Scripts                 []ScenarioScriptRef               `json:"scripts"`
+	Schedules               []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
+	DataPools               []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	CreatedAt               time.Time                         `json:"created_at"`
+	UpdatedAt               time.Time                         `json:"updated_at"`
+	ScriptCount             int                               `json:"script_count"`
+	ResultCount             int                               `json:"result_count,omitempty"`
+	AssociatedReleases      []ReleaseRef                      `json:"associated_releases,omitempty"`
+	LastRunTestID           string                            `json:"last_run_test_id,omitempty"`
+	LastRunAt               *time.Time                        `json:"last_run_at,omitempty"`
+	LastRunEndedAt          *time.Time                        `json:"last_run_ended_at,omitempty"`
 	// ContentRevision and AuthoringProjection are set on create and save
 	// responses from the snapshot read in the write transaction, and on an
 	// idempotent create replay only when the durable snapshot is the state in
@@ -2316,6 +2339,33 @@ type CreateTestRequest struct {
 	ELKCapture       *ELKCaptureConfig        `json:"elk_capture,omitempty"`
 	DynatraceCapture *DynatraceCaptureConfig  `json:"dynatrace_capture,omitempty"`
 
+	// TelemetryAcceptancePolicyID chooses one of the project's telemetry
+	// acceptance policies instead of its default; a revised copy keeps its
+	// source's choice unless it names another, or project_default.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID chooses one of the project's telemetry budget
+	// policies (telemetry_policy) to set the run's live budgets instead of
+	// the system threshold settings; a revised copy keeps its source's
+	// choice unless it names another, or project_default.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
+	// telemetryPolicyInherited says the choice came from the revision
+	// source, for an error that names where it came from.
+	telemetryPolicyInherited bool
+	// telemetryBudgetPolicyInherited is telemetryPolicyInherited for the
+	// budget policy choice.
+	telemetryBudgetPolicyInherited bool
+	// telemetryPolicyFromScenario says the choice came from the run's
+	// scenario (a direct start, a schedule or a plan entry).
+	telemetryPolicyFromScenario bool
+	// telemetryBudgetPolicyFromScenario is telemetryPolicyFromScenario for
+	// the budget policy choice.
+	telemetryBudgetPolicyFromScenario bool
+	// skipTelemetryPolicyCheck builds a capacity estimate or preview (an
+	// editor's estimate or load-model check, a schedule's capacity preview, a
+	// plan entry's secret preflight), which does not depend on the run's
+	// telemetry policy. Launch preflight and real creates judge it.
+	skipTelemetryPolicyCheck bool
+
 	scriptShakeoutProvided   bool
 	resourceBaselineProvided bool
 	creationActor            testCreationActor
@@ -2349,9 +2399,20 @@ type CreateScenarioRequest struct {
 	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
 	// JointEvidence chooses the joint evidence v4 projection of every run
 	// created from the scenario (by a direct run, a schedule or a plan).
-	JointEvidence *engine.JointProjection           `json:"joint_evidence,omitempty"`
-	Groups        []CreateGroupEntry                `json:"groups"`
-	DataPools     []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	JointEvidence *engine.JointProjection `json:"joint_evidence,omitempty"`
+	// TelemetryAcceptancePolicyID chooses one of the project's telemetry
+	// acceptance policies for every run created from the scenario, unless
+	// the run's request names another; empty or project_default uses the
+	// project's default. It is validated when the scenario is saved.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID chooses one of the project's telemetry budget
+	// policies (telemetry_policy) to set the live budgets of every run
+	// created from the scenario, unless the run's request names another;
+	// empty or project_default uses the system threshold settings. It is
+	// validated when the scenario is saved.
+	TelemetryBudgetPolicyID string                            `json:"telemetry_budget_policy_id,omitempty"`
+	Groups                  []CreateGroupEntry                `json:"groups"`
+	DataPools               []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 
 	creationActor testCreationActor
 }

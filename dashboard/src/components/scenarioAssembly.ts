@@ -85,6 +85,8 @@ export function scenarioDraftFromForm(form: ScenarioFormState): ScenarioDraft {
     groups: form.groups.map(scenarioDraftGroupFromForm),
     ...(form.traffic_profile ? { trafficProfile: form.traffic_profile } : {}),
     ...(form.joint_evidence ? { jointEvidence: structuredClone(form.joint_evidence) } : {}),
+    ...(form.telemetry_acceptance_policy_id ? { telemetryAcceptancePolicyId: form.telemetry_acceptance_policy_id } : {}),
+    ...(form.telemetry_budget_policy_id ? { telemetryBudgetPolicyId: form.telemetry_budget_policy_id } : {}),
     dataPools: (form.data_pools || []).map(binding => ({ ...binding, access_mode: binding.access_mode === 'live' ? 'live' as const : 'read_only' as const, ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}) })),
   }
 }
@@ -133,6 +135,8 @@ export function scenarioUpsertPayload(draft: ScenarioDraft, context: ScenarioUps
     runtimeSettings: draft.runtimeSettings,
     trafficProfile: draft.trafficProfile,
     jointEvidence: draft.jointEvidence,
+    telemetryAcceptancePolicyId: draft.telemetryAcceptancePolicyId,
+    telemetryBudgetPolicyId: draft.telemetryBudgetPolicyId,
     dataPools: draft.dataPools,
   })
 }
@@ -168,6 +172,8 @@ export function scenarioCreatePayload(draft: ScenarioDraft, context: ScenarioCre
     runtimeSettings: draft.runtimeSettings,
     trafficProfile: draft.trafficProfile,
     jointEvidence: draft.jointEvidence,
+    telemetryAcceptancePolicyId: draft.telemetryAcceptancePolicyId,
+    telemetryBudgetPolicyId: draft.telemetryBudgetPolicyId,
     applicationId: revision?.applicationId,
     releaseId: revision?.releaseId,
     scenarioId: revision?.scenarioId,
@@ -197,6 +203,9 @@ export function scenarioEstimateRequest(draft: ScenarioDraft, context: ScenarioC
   const pending = draft.assignment.mode === 'specific_hosts' && (draft.assignment.selected_targets || []).length === 0
   const payload = scenarioCreatePayload(pending ? { ...draft, assignment: { ...draft.assignment, mode: 'auto', selected_targets: [] } } : draft, context)
   if (!draft.revisionContext) delete payload.data_pools
+  // A capacity estimate does not depend on the telemetry policies.
+  delete payload.telemetry_acceptance_policy_id
+  delete payload.telemetry_budget_policy_id
   return payload
 }
 

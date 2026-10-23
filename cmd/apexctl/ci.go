@@ -139,6 +139,8 @@ type ciArgs struct {
 	githubSummary            string
 	idempotencyKey           string
 	telemetryInconclusive    string
+	telemetryPolicy          string
+	telemetryBudgetPolicy    string
 }
 
 type optionalFloat struct{ value **float64 }
@@ -242,6 +244,8 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	fs.StringVar(&args.githubSummary, "github-summary", "", "GitHub job summary file")
 	fs.StringVar(&args.idempotencyKey, "idempotency-key", "", "explicit idempotency key")
 	fs.StringVar(&args.telemetryInconclusive, "telemetry-inconclusive", "", "map an inconclusive fail_ci telemetry verdict: pass or fail (no default)")
+	fs.StringVar(&args.telemetryPolicy, "telemetry-policy", "", "judge the run by this project telemetry acceptance policy (its ID) instead of the project's default")
+	fs.StringVar(&args.telemetryBudgetPolicy, "telemetry-budget-policy", "", "set the run's live telemetry budgets from this project telemetry budget policy (its ID) instead of the system threshold settings")
 	if err := fs.Parse(arguments); err != nil {
 		return args, err
 	}
@@ -255,6 +259,14 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	args.scriptPath = strings.TrimSpace(args.scriptPath)
 	args.scriptID = strings.TrimSpace(args.scriptID)
 	args.telemetryInconclusive = strings.ToLower(strings.TrimSpace(args.telemetryInconclusive))
+	// project_default is the project's default, which omitting the flag
+	// already selects.
+	if args.telemetryPolicy = strings.TrimSpace(args.telemetryPolicy); args.telemetryPolicy == "project_default" {
+		args.telemetryPolicy = ""
+	}
+	if args.telemetryBudgetPolicy = strings.TrimSpace(args.telemetryBudgetPolicy); args.telemetryBudgetPolicy == "project_default" {
+		args.telemetryBudgetPolicy = ""
+	}
 	return args, validateCIArgs(args)
 }
 
@@ -291,6 +303,12 @@ func validateCIArgs(args ciArgs) error {
 	if args.executionMode == "local" {
 		if args.telemetryInconclusive != "" {
 			return fmt.Errorf("--telemetry-inconclusive requires controller mode")
+		}
+		if args.telemetryPolicy != "" {
+			return fmt.Errorf("--telemetry-policy requires controller mode")
+		}
+		if args.telemetryBudgetPolicy != "" {
+			return fmt.Errorf("--telemetry-budget-policy requires controller mode")
 		}
 		if args.monitorBindingsFile != "" || args.monitorRulesFile != "" {
 			return fmt.Errorf("monitoring configuration requires controller mode")
@@ -470,6 +488,9 @@ type CIResult struct {
 	// TelemetryVerdict is the controller's telemetry acceptance verdict,
 	// separate from the application outcome.
 	TelemetryVerdict *CITelemetryVerdict `json:"telemetry_verdict,omitempty"`
+	// TelemetryBudgetPolicyID is the telemetry budget policy the run chose to
+	// set its live budgets; empty for the system threshold settings.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 }
 
 func ciCmd() {
@@ -666,6 +687,8 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 			RequireSLA: args.requireSLA, RequireResults: args.requireResults,
 		},
 		Source: sourceFromEnvironment(), PublishCheck: args.publishCheck, TelemetryInconclusive: args.telemetryInconclusive,
+		TelemetryAcceptancePolicyID: args.telemetryPolicy,
+		TelemetryBudgetPolicyID:     args.telemetryBudgetPolicy,
 	}
 	if len(rawScript) > 0 {
 		request.Script = json.RawMessage(rawScript)
@@ -688,8 +711,33 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	client := NewApiClientWithAuth(args.controllerURL, clientAPIKey, "")
 	auth := &ciAuthSession{mode: strings.ToLower(args.authMode), projectID: args.projectID}
 	coordinator := newCIRequestCoordinator(auth, client)
+	// A controller that predates policy selection ignores the choice and
+	// judges the run by the project's default: never report that as a pass.
+	// The accepted run is stopped as soon as its create response shows it,
+	// instead of spending the whole load first.
+	unconfirmed := func(response *CIRunResponse) error {
+		var echoedAcceptance, echoedBudget string
+		if response != nil {
+			echoedAcceptance, echoedBudget = response.TelemetryAcceptancePolicyID, response.TelemetryBudgetPolicyID
+		}
+		if chosen := request.TelemetryAcceptancePolicyID; chosen != "" && echoedAcceptance != chosen {
+			return ciConfigurationErrorf("the controller did not confirm --telemetry-policy %q, so the run would be judged by the project's default telemetry policy; upgrade the controller", chosen)
+		}
+		if chosen := request.TelemetryBudgetPolicyID; chosen != "" && echoedBudget != chosen {
+			return ciConfigurationErrorf("the controller did not confirm --telemetry-budget-policy %q, so the run would be classified by the system threshold settings; upgrade the controller", chosen)
+		}
+		return nil
+	}
+	unconfirmedTestID := ""
 	coordinator.Transport.Create = func(ctx context.Context) (*CIRunResponse, error) {
-		return client.CreateCIRun(ctx, request, idempotencyKey)
+		response, err := client.CreateCIRun(ctx, request, idempotencyKey)
+		if err == nil && unconfirmed(response) != nil {
+			if response != nil {
+				unconfirmedTestID = response.TestID
+			}
+			return nil, unconfirmed(response)
+		}
+		return response, err
 	}
 	persistEvidence := func(state ciclient.State[*CIRunResponse], err error) {
 		persistCICoreEvidenceBeforeAbort(args, controllerCIResult(state, err))
@@ -698,8 +746,18 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	coordinator.OnObservationFailure = persistEvidence
 	state, err := coordinator.Run(ctx, deterministicCITestID(args.projectID, idempotencyKey), args.abortOnCancel)
 	result := controllerCIResult(state, err)
+	if unconfirmedTestID != "" {
+		result.TestID = unconfirmedTestID
+		if abortErr := abortControllerCIRun(context.WithoutCancel(ctx), auth, client, unconfirmedTestID, ""); abortErr != nil {
+			err = errors.Join(err, fmt.Errorf("controller may still be running the unconfirmed CI load: %w", abortErr))
+		}
+	}
 	if err != nil {
 		return result, err
+	}
+	if unconfirmedErr := unconfirmed(state.Response); unconfirmedErr != nil {
+		result.Outcome = ciOutcomeConfigurationError
+		return result, unconfirmedErr
 	}
 	classifyCIResult(&result)
 	if checkErr := enforceRequiredCICheck(args, state.Response, &result); checkErr != nil {
@@ -1460,8 +1518,13 @@ func deriveCIIdempotencyKey(request CIRunRequest) string {
 		Execution       CIExecution               `json:"execution"`
 		Goals           CIGoals                   `json:"goals"`
 		MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
+		// Omitted when unset, so existing derived keys are unchanged.
+		TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+		TelemetryBudgetPolicyID     string `json:"telemetry_budget_policy_id,omitempty"`
 	}{
 		Name: request.Name, ReleaseID: request.ReleaseID, Execution: request.Execution, Goals: request.Goals, MonitorBindings: request.MonitorBindings,
+		TelemetryAcceptancePolicyID: request.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:     request.TelemetryBudgetPolicyID,
 	})
 	raw := strings.Join([]string{
 		request.Source.ServerURL, request.Source.RepositoryID, request.Source.Repository,
@@ -1516,6 +1579,7 @@ func ciResultFromResponse(response *CIRunResponse) CIResult {
 		Transactions: transactions, Errors: errorsCount, TPS: tps,
 		DurationMS: durationMS, ReportURL: response.ReportURL, CheckURL: response.CheckURL, Message: response.Error,
 		Validity: response.Validity.clone(), TelemetryVerdict: response.TelemetryVerdict.clone(), RootCause: response.RootCause.clone(),
+		TelemetryBudgetPolicyID: response.TelemetryBudgetPolicyID,
 	}
 }
 
@@ -1736,6 +1800,9 @@ func writeCISummary(path string, result CIResult) error {
 	if telemetry := result.TelemetryVerdict; telemetry != nil {
 		text += fmt.Sprintf("| Telemetry verdict | %s |\n| Telemetry policy mode | %s |\n", markdownCell(telemetry.Outcome), markdownCell(telemetryVerdictModeLabel(telemetry)))
 	}
+	if result.TelemetryBudgetPolicyID != "" {
+		text += fmt.Sprintf("| Telemetry budgets | chosen by the run (%s) |\n", markdownCell(result.TelemetryBudgetPolicyID))
+	}
 	if rootCause := result.RootCause.text(); rootCause != "" {
 		text += fmt.Sprintf("| Root cause | %s |\n", markdownCell(rootCause))
 	}
@@ -1852,11 +1919,21 @@ Authentication:
   Use --auth-mode=api-key with APEXLOAD_API_KEY for the scoped fallback.
 
 Telemetry acceptance:
+  --telemetry-policy ID  Judge the run by this project telemetry acceptance
+                         policy instead of the project's default, where the
+                         project's CI policy allows it. The controller must
+                         confirm the choice, or the run is a configuration
+                         error.
+  --telemetry-budget-policy ID
+                         Set the run's live telemetry budgets from this
+                         project telemetry budget policy instead of the
+                         system threshold settings. It needs the same CI
+                         permission, and the controller must confirm it.
   --telemetry-inconclusive pass|fail
                          How an inconclusive telemetry verdict maps when the
-                         project's acceptance policy is fail_ci. No default:
-                         the controller refuses a fail_ci run without it.
-                         An advisory policy never changes the exit code.
+                         run's acceptance policy is fail_ci. No default: the
+                         controller refuses a fail_ci run without it. An
+                         advisory policy never changes the exit code.
 
 Evidence:
   --json PATH            JSON result path (default apexload-result.json)
@@ -1882,6 +1959,9 @@ func telemetryVerdictModeLabel(verdict *CITelemetryVerdict) string {
 	}
 	if verdict.InconclusivePolicy != "" {
 		label += "; inconclusive maps to " + verdict.InconclusivePolicy
+	}
+	if verdict.Policy != nil && verdict.Policy.Source == "run_selection" {
+		label += "; policy chosen by the run"
 	}
 	return label
 }

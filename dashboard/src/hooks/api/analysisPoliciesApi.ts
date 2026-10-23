@@ -8,6 +8,9 @@ import { request } from '../apiClient'
 
 export type EditableAnalysisPolicyKind = 'browser_policy' | 'journey_policy'
 
+/** Every kind the policy list serves; telemetry acceptance and budget policies are read-only here. */
+export type AnalysisPolicyKind = EditableAnalysisPolicyKind | 'telemetry_acceptance_policy' | 'telemetry_policy'
+
 export interface AnalysisPolicyRecord {
   id: string
   project_id: string
@@ -33,7 +36,7 @@ const scoped = (projectId: string, extra: Record<string, string> = {}) => new UR
 export const analysisPoliciesApi = {
   // list reads every page: the controller serves at most 100 at a time, and
   // a project keeps up to 1,000 policies of each kind.
-  async list(projectId: string, kind: EditableAnalysisPolicyKind, signal?: AbortSignal) {
+  async list(projectId: string, kind: AnalysisPolicyKind, signal?: AbortSignal) {
     const policies: AnalysisPolicyRecord[] = []
     for (let offset = 0; offset < POLICIES_PER_KIND; offset += POLICY_PAGE) {
       const page = await request<AnalysisPolicyRecord[]>(`/analysis/policies?${scoped(projectId, { kind, limit: String(POLICY_PAGE), offset: String(offset) })}`, { signal })

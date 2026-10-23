@@ -184,12 +184,12 @@ func saveScenarioTx(tx *storeTx, scenario *Scenario, scripts []ScenarioScript, a
 	if err := validateScenarioProjectRewriteTx(tx, scenario.ID, scripts); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO scenarios (id, ref_key, name, workload_shape_id, duration, start_delay, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, traffic_profile_json, joint_evidence_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	if _, err := tx.Exec(`INSERT INTO scenarios (id, ref_key, name, workload_shape_id, duration, start_delay, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, traffic_profile_json, joint_evidence_json, telemetry_acceptance_policy_id, telemetry_budget_policy_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET ref_key=CASE WHEN TRIM(COALESCE(excluded.ref_key, '')) = '' THEN scenarios.ref_key ELSE excluded.ref_key END, name=excluded.name, duration=excluded.duration, start_delay=excluded.start_delay, scenario_mode=excluded.scenario_mode, termination_mode=excluded.termination_mode,
 		shakeout_enabled=excluded.shakeout_enabled, resource_baseline_enabled=excluded.resource_baseline_enabled,
-		workload_shape_id=excluded.workload_shape_id, assignment_json=excluded.assignment_json, goal_config_json=excluded.goal_config_json, runtime_settings_json=excluded.runtime_settings_json, traffic_profile_json=excluded.traffic_profile_json, joint_evidence_json=excluded.joint_evidence_json, updated_at=excluded.updated_at`,
-		scenario.ID, scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), string(trafficJSON), string(jointJSON), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
+		workload_shape_id=excluded.workload_shape_id, assignment_json=excluded.assignment_json, goal_config_json=excluded.goal_config_json, runtime_settings_json=excluded.runtime_settings_json, traffic_profile_json=excluded.traffic_profile_json, joint_evidence_json=excluded.joint_evidence_json, telemetry_acceptance_policy_id=excluded.telemetry_acceptance_policy_id, telemetry_budget_policy_id=excluded.telemetry_budget_policy_id, updated_at=excluded.updated_at`,
+		scenario.ID, scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), string(trafficJSON), string(jointJSON), scenarioTelemetryPolicyValue(scenario), scenarioTelemetryBudgetPolicyValue(scenario), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
 		return err
 	}
 	return replaceScenarioScriptsTx(tx, scenario.ID, scripts)
@@ -259,10 +259,10 @@ func createScenarioWithBindingsTx(tx *storeTx, scenario *Scenario, scripts []Sce
 	if _, err := projectIDForScenarioScriptsTx(tx, scripts); err != nil {
 		return false, err
 	}
-	result, err := tx.Exec(`INSERT INTO scenarios (id, ref_key, name, workload_shape_id, duration, start_delay, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, traffic_profile_json, joint_evidence_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := tx.Exec(`INSERT INTO scenarios (id, ref_key, name, workload_shape_id, duration, start_delay, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, traffic_profile_json, joint_evidence_json, telemetry_acceptance_policy_id, telemetry_budget_policy_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
-		scenario.ID, scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), string(trafficJSON), string(jointJSON), scenario.CreatedAt, scenario.UpdatedAt)
+		scenario.ID, scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), string(trafficJSON), string(jointJSON), scenarioTelemetryPolicyValue(scenario), scenarioTelemetryBudgetPolicyValue(scenario), scenario.CreatedAt, scenario.UpdatedAt)
 	if err != nil {
 		return false, err
 	}
@@ -325,9 +325,9 @@ func (s *SQLiteStore) updateScenarioWithDataPoolBindings(scenario *Scenario, scr
 	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
 		return false, "", nil
 	}
-	result, err := tx.Exec(`UPDATE scenarios SET ref_key = ?, name = ?, workload_shape_id = ?, duration = ?, start_delay = ?, scenario_mode = ?, termination_mode = ?, shakeout_enabled = ?, resource_baseline_enabled = ?, assignment_json = ?, goal_config_json = ?, runtime_settings_json = ?, traffic_profile_json = ?, joint_evidence_json = ?, updated_at = ?
+	result, err := tx.Exec(`UPDATE scenarios SET ref_key = ?, name = ?, workload_shape_id = ?, duration = ?, start_delay = ?, scenario_mode = ?, termination_mode = ?, shakeout_enabled = ?, resource_baseline_enabled = ?, assignment_json = ?, goal_config_json = ?, runtime_settings_json = ?, traffic_profile_json = ?, joint_evidence_json = ?, telemetry_acceptance_policy_id = ?, telemetry_budget_policy_id = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`,
-		scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), string(trafficJSON), string(jointJSON), scenario.UpdatedAt, scenario.ID, currentUpdatedRaw)
+		scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), string(trafficJSON), string(jointJSON), scenarioTelemetryPolicyValue(scenario), scenarioTelemetryBudgetPolicyValue(scenario), scenario.UpdatedAt, scenario.ID, currentUpdatedRaw)
 	if err != nil {
 		return false, "", err
 	}
@@ -379,8 +379,8 @@ func (s *SQLiteStore) SaveScenarioWithDataPoolBindings(scenario *Scenario, scrip
 func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error) {
 	var scenario Scenario
 	var assignmentJSON, goalJSON, runtimeJSON, trafficJSON, jointJSON string
-	err := s.db.QueryRow(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(joint_evidence_json, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND `+archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scenarios.created_at")+`) FROM scenarios WHERE id = ?`, id).Scan(
-		&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &jointJSON, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt)
+	err := s.db.QueryRow(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(joint_evidence_json, ''), COALESCE(telemetry_acceptance_policy_id, ''), COALESCE(telemetry_budget_policy_id, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND `+archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scenarios.created_at")+`) FROM scenarios WHERE id = ?`, id).Scan(
+		&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &jointJSON, &scenario.TelemetryAcceptancePolicyID, &scenario.TelemetryBudgetPolicyID, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -395,7 +395,7 @@ func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error
 }
 
 func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
-	rows, err := s.db.Query(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(joint_evidence_json, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scenarios.created_at") + `) FROM scenarios ORDER BY updated_at DESC`)
+	rows, err := s.db.Query(`SELECT id, COALESCE(ref_key, ''), name, COALESCE(workload_shape_id, ''), duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(joint_evidence_json, ''), COALESCE(telemetry_acceptance_policy_id, ''), COALESCE(telemetry_budget_policy_id, ''), created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='scenario' AND a.resource_id=scenarios.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scenarios.created_at") + `) FROM scenarios ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 	for rows.Next() {
 		var scenario Scenario
 		var assignmentJSON, goalJSON, runtimeJSON, trafficJSON, jointJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &jointJSON, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.RefKey, &scenario.Name, &scenario.WorkloadShapeID, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.TerminationMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &trafficJSON, &jointJSON, &scenario.TelemetryAcceptancePolicyID, &scenario.TelemetryBudgetPolicyID, &scenario.CreatedAt, &scenario.UpdatedAt, &scenario.ArchivedAt); err != nil {
 			return nil, err
 		}
 		if err := decodeScenarioJSON(&scenario, assignmentJSON, goalJSON, runtimeJSON, trafficJSON, jointJSON); err != nil {
@@ -413,6 +413,19 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 		scenarios = append(scenarios, &scenario)
 	}
 	return scenarios, rows.Err()
+}
+
+// scenarioTelemetryPolicyValue is the scenario's chosen telemetry acceptance
+// policy column value: NULL when it uses its project's default.
+func scenarioTelemetryPolicyValue(scenario *Scenario) any {
+	return nullableString(strings.TrimSpace(scenario.TelemetryAcceptancePolicyID))
+}
+
+// scenarioTelemetryBudgetPolicyValue is the scenario's chosen telemetry
+// budget policy column value: NULL when its runs use the system threshold
+// settings.
+func scenarioTelemetryBudgetPolicyValue(scenario *Scenario) any {
+	return nullableString(strings.TrimSpace(scenario.TelemetryBudgetPolicyID))
 }
 
 func decodeScenarioJSON(scenario *Scenario, assignmentJSON, goalJSON, runtimeJSON, trafficJSON, jointJSON string) error {

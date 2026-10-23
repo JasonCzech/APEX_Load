@@ -171,3 +171,66 @@ func checkAdoptStandbyPodCapacity(t *testing.T, s *SQLiteStore) {
 		t.Fatalf("frozen standby changed: %+v", got)
 	}
 }
+
+func TestAdoptPodCapacityAcceptsCurrentTermStandby(t *testing.T) {
+	checkAdoptCurrentTermStandbyPodCapacity(t, newAtomicBindingStore(t))
+}
+
+// An evacuation rollback re-reserves an idle standby under the successor's own
+// term before adoption. That row has no old owner, so adopting the run's live
+// claim must not require it, while an old-term standby still must be included.
+func checkAdoptCurrentTermStandbyPodCapacity(t *testing.T, s *SQLiteStore) {
+	t.Helper()
+	const name = "current-term-standby-adoption"
+	ok, old, err := s.TryAcquireSchedulerLeaseTerm(name, "rollback-old", time.Now(), time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("old lease: %v", err)
+	}
+	budget := protocol.CapacityVector{CPUCores: 4, MemoryMB: 1000, NetworkMbps: 100, VUsers: 100}
+	live := PodCapacityReservation{ReservationID: "rollback-attempt", Revision: 1, Target: "rollback-active", TestID: "rollback-run", Incarnation: "active-pod", Generation: old.Generation, ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget.Scale(.5), GroupPeaks: map[string]int32{"g": 50}}
+	if err := s.ReservePodCapacity([]PodCapacityReservation{live}, name, "rollback-old", old.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.TransitionPodCapacity(live.Target, live.TestID, live.Incarnation, live.ReservationID, "committed", name, "rollback-old", old.Generation); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.ListPodCapacityReservations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range stored {
+		if row.TestID == live.TestID && row.Target == live.Target {
+			live = row
+		}
+	}
+	if err := s.ReleaseSchedulerLease(name, "rollback-old"); err != nil {
+		t.Fatal(err)
+	}
+	ok, next, err := s.TryAcquireSchedulerLeaseTerm(name, "rollback-new", time.Now(), time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("new lease: %v", err)
+	}
+	standby := PodCapacityReservation{ReservationID: "spare-attempt", Revision: 3, Target: "rollback-spare", TestID: "rollback-run", Incarnation: "spare-pod", Generation: next.Generation, ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget, Dedicated: true}
+	if err := s.ReservePodCapacity([]PodCapacityReservation{standby}, name, "rollback-new", next.Generation); err != nil {
+		t.Fatal(err)
+	}
+	// Until the generator confirms it, a pending standby still blocks adoption.
+	if err := s.AdoptPodCapacity([]PodCapacityReservation{live}, name, "rollback-new", next.Generation); err == nil {
+		t.Fatal("a pending current-term standby was accepted")
+	}
+	if err := s.TransitionPodCapacity(standby.Target, standby.TestID, standby.Incarnation, standby.ReservationID, "committed", name, "rollback-new", next.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AdoptPodCapacity([]PodCapacityReservation{live}, name, "rollback-new", next.Generation); err != nil {
+		t.Fatalf("current-term standby blocked adoption: %v", err)
+	}
+	rows, err := s.ListPodCapacityReservations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.TestID == "rollback-run" && (row.Generation != next.Generation || row.State != "committed") {
+			t.Fatalf("reservation after adoption: %+v", row)
+		}
+	}
+}

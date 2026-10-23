@@ -568,6 +568,7 @@ func NewServer(cfg ServerConfig) *Server {
 		WithApplicationSecretStore(applicationSecretStore),
 		withSecretReferenceMutationCoordinator(secretReferenceMutations),
 		WithRunContinuityKeyWrapper(wrapper),
+		WithEvacuationRollbackRecovery(envBool("APEXLOAD_EVACUATION_ROLLBACK_RECOVERY")),
 	)
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
 	runner.setLiveStateStore(cache)

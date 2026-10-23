@@ -245,6 +245,8 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     runtimeSettings: cloneRuntimeSettingsDraft(initialScenario?.runtimeSettings),
     ...(initialScenario?.trafficProfile ? { trafficProfile: structuredClone(initialScenario.trafficProfile) } : {}),
     ...(initialScenario?.jointEvidence ? { jointEvidence: structuredClone(initialScenario.jointEvidence) } : {}),
+    ...(initialScenario?.telemetryAcceptancePolicyId ? { telemetryAcceptancePolicyId: initialScenario.telemetryAcceptancePolicyId } : {}),
+    ...(initialScenario?.telemetryBudgetPolicyId ? { telemetryBudgetPolicyId: initialScenario.telemetryBudgetPolicyId } : {}),
     ...(initialScenario?.dataPools ? { dataPools: initialScenario.dataPools.map(binding => structuredClone(binding)) } : {}),
     groups: initialScenario?.groups.length
       ? initialScenario.groups.map(cloneScenarioGroup)
@@ -325,6 +327,8 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       ...(test.dynatrace_capture?.connection_id ? { dynatraceConnectionId: test.dynatrace_capture.connection_id } : {}),
       ...(test.monitor_bindings ? { monitorBindings: test.monitor_bindings.sources.map(binding => ({ ...binding })) } : {}),
       ...(test.joint_evidence ? { jointEvidence: structuredClone(test.joint_evidence) } : {}),
+      ...(test.telemetry_acceptance_policy_id ? { telemetryAcceptancePolicyId: test.telemetry_acceptance_policy_id } : {}),
+      ...(test.telemetry_budget_policy_id ? { telemetryBudgetPolicyId: test.telemetry_budget_policy_id } : {}),
       ...(test.analysis_policy_selections ? { analysisPolicySelections: structuredClone(test.analysis_policy_selections) } : {}),
       sourceTestId: test.id,
       applicationId: test.application_id,

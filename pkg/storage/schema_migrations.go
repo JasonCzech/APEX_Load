@@ -106,6 +106,10 @@ var schemaReleases = []schemaRelease{
 	{Version: 77, Name: "browser-baseline-default-project-index", Fingerprint: "44bf5029b0676240b04a119aa682f6f62bcc84f904dc637807ef1e1a8c1e8908"},
 	{Version: 78, Name: "browser-authoring-schema-integration", Fingerprint: "b83cbdd0900bde9dc06f0614ae6ac7a13598a1faf18cf41f6742750a94d8045b"},
 	{Version: 79, Name: "scenario-joint-evidence", Fingerprint: "1d912aebbf1f83f3997271bc505a5cb53e4502fa90929a039f093718c664fb35"},
+	{Version: 80, Name: "run-telemetry-acceptance-policy", Fingerprint: "c199cb21e197cb26f4e283ce7c4c612832912b7445b1810cf2407979a03cc588"},
+	{Version: 81, Name: "scenario-telemetry-acceptance-policy", Fingerprint: "0acc83c475a344adf8106b524fbff7074e9c10d63c3ac2a8228985ed865b8564"},
+	{Version: 82, Name: "run-telemetry-budget-policy", Fingerprint: "68742713fc81aa4253b085830f7f43e86086c88a61659d92faccae3dcd86d13e"},
+	{Version: 83, Name: "scenario-telemetry-budget-policy", Fingerprint: "6affb200788aa566108f0530bf4ef81389b39a874333caaa7339fa76c02cc585"},
 }
 
 type SchemaMigrationRecord struct {

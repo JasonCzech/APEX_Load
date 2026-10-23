@@ -352,6 +352,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		TTFBMs:                durationMillis(result.TTFB),
 		BytesSent:             result.BytesSent,
 		BytesReceived:         result.BytesReceived,
+		ByteEvidence:          protocol.ByteEvidence(result),
 		StatusCode:            result.StatusCode,
 		Success:               result.Success,
 		ErrorMessage:          result.ErrorMessage,

@@ -2,6 +2,7 @@ package telemetrypolicy
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,5 +78,52 @@ func TestPolicyValidationBoundaries(t *testing.T) {
 		if !Validate(p) {
 			t.Fatalf("valid disabled stage/scope %s rejected", scope)
 		}
+	}
+}
+
+func projectPolicyFixture() *TelemetryBudgetPolicy {
+	p := policyFixture()
+	p.SchemaVersion, p.PolicyID, p.Revision = VersionProjectPolicy, "tight-budgets", 3
+	p.DefinitionSHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	p.Hash = Hash(p)
+	return p
+}
+
+func TestProjectPolicyReceiptIdentity(t *testing.T) {
+	if p := projectPolicyFixture(); !Validate(p) {
+		t.Fatal("valid project policy receipt rejected")
+	}
+	if p := policyFixture(); Hash(p) != p.Hash || !Validate(p) {
+		t.Fatal("the version 1 receipt changed")
+	}
+	for name, change := range map[string]func(*TelemetryBudgetPolicy){
+		"v1 with digest":    func(p *TelemetryBudgetPolicy) { p.SchemaVersion, p.PolicyID, p.Revision = Version, SystemPolicyID, 1 },
+		"v1 other id":       func(p *TelemetryBudgetPolicy) { p.SchemaVersion, p.DefinitionSHA256 = Version, "" },
+		"v2 system id":      func(p *TelemetryBudgetPolicy) { p.PolicyID = SystemPolicyID },
+		"v2 empty id":       func(p *TelemetryBudgetPolicy) { p.PolicyID = "" },
+		"v2 padded id":      func(p *TelemetryBudgetPolicy) { p.PolicyID = " tight" },
+		"v2 control id":     func(p *TelemetryBudgetPolicy) { p.PolicyID = "tight\n" },
+		"v2 long id":        func(p *TelemetryBudgetPolicy) { p.PolicyID = strings.Repeat("a", 129) },
+		"v2 revision zero":  func(p *TelemetryBudgetPolicy) { p.Revision = 0 },
+		"v2 missing digest": func(p *TelemetryBudgetPolicy) { p.DefinitionSHA256 = "" },
+		"v2 upper digest":   func(p *TelemetryBudgetPolicy) { p.DefinitionSHA256 = strings.ToUpper(p.DefinitionSHA256) },
+		"v2 short digest":   func(p *TelemetryBudgetPolicy) { p.DefinitionSHA256 = p.DefinitionSHA256[:63] },
+		"v2 other window":   func(p *TelemetryBudgetPolicy) { p.SustainedBreachWindowMs = 30000 },
+		"unknown version":   func(p *TelemetryBudgetPolicy) { p.SchemaVersion = "apexload.telemetry_policy.v3" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := projectPolicyFixture()
+			change(p)
+			p.Hash = Hash(p)
+			if Validate(p) {
+				t.Fatal("invalid project policy receipt accepted")
+			}
+		})
+	}
+	// The digest covers the chosen revision's identity.
+	p := projectPolicyFixture()
+	p.Revision++
+	if Validate(p) {
+		t.Fatal("a changed revision kept its hash")
 	}
 }

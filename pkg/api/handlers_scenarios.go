@@ -123,6 +123,10 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			writeScenarioAuthoringSaveOutcomeUnavailable(w, true)
 			return
 		}
+		if status, ok := runPolicyErrorStatus(err); ok {
+			writeError(w, status, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -321,6 +325,8 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusConflict
 		} else if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
 			status = http.StatusForbidden
+		} else if policyStatus, ok := runPolicyErrorStatus(err); ok {
+			status = policyStatus
 		}
 		writeError(w, status, err.Error())
 		return

@@ -562,6 +562,15 @@ type GitHubActionsPolicy struct {
 	// for every project that has not opted in. Changing it is a new policy
 	// revision; each CI run keeps the gate it was accepted under.
 	ValidityGate string `json:"validity_gate,omitempty"`
+
+	// AllowTelemetryPolicySelection lets a CI run choose which of the
+	// project's telemetry acceptance policies judges it, and which of its
+	// telemetry budget policies sets its live budgets. Off, a CI run is
+	// judged by the project's default under the system threshold settings,
+	// so a pipeline cannot exchange the default's fail_ci gate, or the
+	// budgets behind its breached-time criterion, for weaker ones. Changing
+	// it is a new policy revision.
+	AllowTelemetryPolicySelection bool `json:"allow_telemetry_policy_selection,omitempty"`
 }
 
 type GitHubAppInstallation struct {
@@ -859,9 +868,17 @@ type Scenario struct {
 	TrafficProfile   any        `json:"traffic_profile,omitempty"`
 	// JointEvidence is the scenario's joint evidence v4 projection (JSON
 	// blob), carried to every run created from the scenario.
-	JointEvidence any       `json:"joint_evidence,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	JointEvidence any `json:"joint_evidence,omitempty"`
+	// TelemetryAcceptancePolicyID names the project telemetry acceptance
+	// policy every run created from the scenario inherits; empty uses the
+	// project's default.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the project telemetry budget policy that
+	// sets the live budgets of every run created from the scenario; empty
+	// uses the system threshold settings.
+	TelemetryBudgetPolicyID string    `json:"telemetry_budget_policy_id,omitempty"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 type ScenarioScript struct {
@@ -1463,6 +1480,12 @@ type TestRecord struct {
 	// binding survives a controller restart / HA failover and can be re-validated
 	// at launch time.
 	TimeslotID *string `json:"timeslot_id,omitempty"`
+	// TelemetryAcceptancePolicyID names the telemetry acceptance policy the
+	// run asked for instead of its project's default; empty uses the default.
+	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
+	// TelemetryBudgetPolicyID names the telemetry budget policy the run asked
+	// for instead of the system threshold settings; empty uses the settings.
+	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
 	// ExecutionGeneration is the HA execution lease generation of the term that
 	// executes the run. The lease-fenced Start transition stamps it and run
 	// adoption advances it; SaveTest never writes it. Zero means the run was

@@ -28,7 +28,7 @@ export interface DashboardAnalyticsQuery {
   evidence_mode?: 'live' | 'archive'
   overlay_selection?: { dataset_id?: string; source_id?: string; metric: string; aggregation: string; host?: string; dimensions?: Record<string, string>; max_lag_seconds?: number; dataset_artifact_sha256?: string }
 
-  population?: 'action' | 'transaction' | 'browser_document' | 'message' | 'java_http_action'
+  population?: 'action' | 'transaction' | 'browser_document' | 'message' | 'java_http_action' | 'byte'
   property_name?: string
   property_value?: string
   comparison_run_id?: string

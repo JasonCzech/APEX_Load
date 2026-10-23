@@ -270,8 +270,17 @@ func omitConcurrentPublicEvidence(result *protocol.Result) {
 		return
 	}
 	originalError := result.ErrorMessage
+	// A result carrying byte evidence keeps it and its protocol, so its byte
+	// counts stay measurements of their population (NA-C). Only adapters
+	// with constant dependency types (HTTP and the protocols wrapping it) set
+	// byte evidence; every other dependency type, which an action parameter
+	// can shape, is cleared.
+	dependency, byteEvidence := result.DependencyType, result.ByteEvidence
 	for _, field := range concurrentPublicStringPointers(result) {
 		*field = ""
+	}
+	if byteEvidence != "" {
+		result.DependencyType, result.ByteEvidence = dependency, byteEvidence
 	}
 	if originalError != "" {
 		result.ErrorMessage = "concurrent HTTP public evidence unavailable"

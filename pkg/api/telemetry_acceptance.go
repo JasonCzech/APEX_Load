@@ -884,11 +884,12 @@ func applyCITelemetryVerdict(response *ciRunResponse, metadata ciRunMetadata) {
 }
 
 // ciTelemetryInconclusiveRequirement refuses a new CI run without a mapping
-// for an inconclusive telemetry verdict when the project's default
-// acceptance policy is fail_ci (decision 5: no default). The policy is
+// for an inconclusive telemetry verdict when the acceptance policy that will
+// judge it (its chosen policy, or the project's default) is fail_ci
+// (decision 5: no default). The policy is
 // pinned at Start, so a later change still meets the
 // telemetry_inconclusive outcome rather than a silent pass.
-func (s *Server) ciTelemetryInconclusiveRequirement(projectID, choice string) (int, string) {
+func (s *Server) ciTelemetryInconclusiveRequirement(projectID, choice, selected string) (int, string) {
 	if choice != "" {
 		return 0, ""
 	}
@@ -896,7 +897,20 @@ func (s *Server) ciTelemetryInconclusiveRequirement(projectID, choice string) (i
 	if !ok || store == nil {
 		return 0, ""
 	}
-	policy, err := projectDefaultPolicy(store, projectID, storage.AnalysisDefinitionKindTelemetryAcceptancePolicy)
+	// The policy the run will be judged by: the one it chose, or the
+	// project's default (TEL-B).
+	which := "the project's default telemetry acceptance policy"
+	var policy *storage.AnalysisDefinition
+	var err error
+	if selected != "" {
+		which = "the run's chosen telemetry acceptance policy"
+		policy, err = projectPolicyByID(store, projectID, storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, selected)
+		if err == nil && policy == nil {
+			return http.StatusBadRequest, fmt.Sprintf("telemetry acceptance policy %q was not found in the run's project", selected)
+		}
+	} else {
+		policy, err = projectDefaultPolicy(store, projectID, storage.AnalysisDefinitionKindTelemetryAcceptancePolicy)
+	}
 	if errors.Is(err, errRunPolicyConfiguration) {
 		return http.StatusConflict, err.Error()
 	}
@@ -908,10 +922,10 @@ func (s *Server) ciTelemetryInconclusiveRequirement(projectID, choice string) (i
 	}
 	var definition TelemetryAcceptancePolicyDefinition
 	if err := json.Unmarshal(policy.Definition, &definition); err != nil {
-		return http.StatusConflict, fmt.Sprintf("the project's default telemetry acceptance policy %q is invalid", policy.Name)
+		return http.StatusConflict, fmt.Sprintf("%s %q is invalid", which, policy.Name)
 	}
 	if definition.EffectiveMode() != "fail_ci" {
 		return 0, ""
 	}
-	return http.StatusBadRequest, fmt.Sprintf("the project's default telemetry acceptance policy %q is fail_ci: choose how an inconclusive telemetry verdict maps (telemetry_inconclusive: pass or fail; apexctl --telemetry-inconclusive)", policy.Name)
+	return http.StatusBadRequest, fmt.Sprintf("%s %q is fail_ci: choose how an inconclusive telemetry verdict maps (telemetry_inconclusive: pass or fail; apexctl --telemetry-inconclusive)", which, policy.Name)
 }

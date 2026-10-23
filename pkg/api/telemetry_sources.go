@@ -474,7 +474,7 @@ func (l *telemetrySourceLedger) snapshotRecords(includeWindows bool, failovers .
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	out := make([]TelemetrySourceEpoch, 0, len(l.epochs)+len(failovers))
+	out := make([]TelemetrySourceEpoch, 0, len(l.epochs))
 	for _, record := range l.epochs {
 		copied := *record
 		copied.CollectionWindowsTruncated = l.collectionsTruncated

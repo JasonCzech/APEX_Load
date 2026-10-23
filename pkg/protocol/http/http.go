@@ -252,12 +252,15 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return h.executeWebSocketStep(ctx, action)
 	}
 	ctx, verification := h.verificationContext(ctx)
+	// A step that returns before dispatching a request (a check, a refused
+	// action) sends and receives no body: its bytes are not a request's.
 	result := &protocol.Result{
 		ActionName:     protocol.ActionName(action),
 		StartTime:      time.Now(),
 		Extractions:    make(map[string]string),
 		DependencyType: "http",
 		NetworkProfile: h.networkProfile,
+		ByteEvidence:   protocol.ByteEvidenceNone,
 	}
 	resourceTimeoutWarned := false
 	callerCtx := ctx
@@ -729,16 +732,24 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	// markUnsentTraceContext clears Sent when a transport failure happened
 	// before any request headers were written, such as a refused dial.
+	// Nor was its body sent (http_body.v1).
 	markUnsentTraceContext := func() {
 		traceMu.Lock()
 		wrote := wroteHeaders
 		traceMu.Unlock()
-		if !wrote && result.TraceContext != nil {
-			result.TraceContext.Sent = false
+		if !wrote {
+			result.BytesSent = 0
+			if result.TraceContext != nil {
+				result.TraceContext.Sent = false
+			}
 		}
 	}
 
-	if requestBytes > 0 {
+	// From here the action dispatches its request or serves it from the
+	// cache, and its body bytes on the wire are measured: a fresh cache hit
+	// sends nothing.
+	result.ByteEvidence = protocol.ByteEvidenceHTTPBody
+	if requestBytes > 0 && !cacheHit {
 		result.BytesSent = requestBytes
 	}
 
@@ -886,6 +897,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	bodyReadDuration := time.Since(bodyReadStart)
 	contentComplete, contentDecoded := false, false
+	// The body as received, before content decoding; a response served from
+	// the cache (fresh, or after a 304) received none (http_body.v1).
+	receivedOnWire := func() int64 {
+		if cacheHit {
+			return 0
+		}
+		return n
+	}
 	if decoder != nil {
 		n = decoder.EncodedBytes()
 		contentComplete, contentDecoded = decoder.Complete(), decoder.Decoding()
@@ -928,7 +947,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		buf.Reset()
 		result.Duration = time.Since(result.StartTime)
 		result.StatusCode = resp.StatusCode
-		result.BytesReceived = n
+		result.BytesReceived = receivedOnWire()
 		reused, rCount, rDur := applyTraceTelemetry()
 		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 		result.Success = false
@@ -952,7 +971,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		if err := h.streaming.wait(ctx, delay); err != nil {
 			result.Duration = time.Since(result.StartTime)
 			result.StatusCode = resp.StatusCode
-			result.BytesReceived = n
+			result.BytesReceived = receivedOnWire()
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
@@ -965,7 +984,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 
 	result.Duration = time.Since(result.StartTime)
 	result.StatusCode = resp.StatusCode
-	result.BytesReceived = n
+	result.BytesReceived = receivedOnWire()
 	reused, rCount, rDur := applyTraceTelemetry()
 	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 	if result.ServerTelemetry != nil {

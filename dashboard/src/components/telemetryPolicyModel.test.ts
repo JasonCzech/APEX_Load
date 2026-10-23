@@ -1,13 +1,13 @@
 // @ts-expect-error Vitest runs in Node; the dashboard app intentionally omits Node globals.
 import { webcrypto } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { telemetryPolicyView } from './telemetryPolicyModel'
+import { telemetryPolicyChosen, telemetryPolicyView } from './telemetryPolicyModel'
 
 const receipt = () => ({ availability: 'available' as const, policy: { schema_version: 'apexload.telemetry_policy.v1' as const, policy_id: 'system-telemetry-budgets' as const, revision: 1 as const, hash: 'e6fe795b839c0b8b2769d48105525f307343b41f20e1ca2e10dc19580fdfea25', captured_at: '2026-10-05T12:00:00Z', capture_boundary: 'execution-admission-before-staging' as const, classification_algorithm: 'legacy-mixed-diagnostic.v1' as const, expected_controller_publication_interval_ms: 3000, cadence_scope: 'local-controller-ticker' as const, sustained_breach_window_ms: 15000, coverage_rule: 'retained-classifications-only;gaps-unknown' as const, budgets: [{ stage: 'sample_age' as const, enabled: true, limit_ms: 11 }, { stage: 'generator_processing' as const, enabled: false, limit_ms: 0 }, { stage: 'transport' as const, enabled: true, limit_ms: 750 }, { stage: 'controller_fanout' as const, enabled: true, limit_ms: 250 }, { stage: 'browser_render' as const, enabled: true, limit_ms: 1e-12 }] } })
 
 describe('telemetryPolicyView', () => {
   beforeEach(() => vi.stubGlobal('crypto', webcrypto))
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
   it('preserves explicit disabled budgets and owns its receipt projection', async () => {
     const original = receipt()
     const view = await telemetryPolicyView(original)
@@ -106,4 +106,64 @@ describe('telemetryPolicyView', () => {
     expect((await telemetryPolicyView(value)).policy?.captured_at).toBe(value.policy.captured_at)
   })
 
+  // A version 2 receipt names a project budget policy revision the run chose
+  // and its definition digest; the hash is the controller's.
+  const projectReceipt = () => {
+    const value = receipt() as unknown as { availability: string; policy: Record<string, unknown> }
+    Object.assign(value.policy, { schema_version: 'apexload.telemetry_policy.v2', policy_id: 'tight-budgets', revision: 3, definition_sha256: 'ab'.repeat(32), hash: 'f034a3ac9bc132b32ff6487f8f2598e799676832958d96049f4b2dd7914a265b' })
+    return value
+  }
+  it('verifies a chosen project policy receipt against the controller digest', async () => {
+    const view = await telemetryPolicyView(projectReceipt())
+    expect(view.policy?.policy_id).toBe('tight-budgets')
+    expect(view.policy?.definition_sha256).toBe('ab'.repeat(32))
+    expect(view.policy && telemetryPolicyChosen(view.policy)).toBe(true)
+    const system = await telemetryPolicyView(receipt())
+    expect(system.policy && telemetryPolicyChosen(system.policy)).toBe(false)
+  })
+  it.each([
+    ['v1 with a digest', (p: Record<string, unknown>) => { Object.assign(p, { schema_version: 'apexload.telemetry_policy.v1', policy_id: 'system-telemetry-budgets', revision: 1 }) }],
+    ['v2 without a digest', (p: Record<string, unknown>) => { delete p.definition_sha256 }],
+    ['v2 null digest', (p: Record<string, unknown>) => { p.definition_sha256 = null }],
+    ['v2 upper-case digest', (p: Record<string, unknown>) => { p.definition_sha256 = 'AB'.repeat(32) }],
+    ['v2 short digest', (p: Record<string, unknown>) => { p.definition_sha256 = 'ab'.repeat(31) }],
+    ['v2 empty id', (p: Record<string, unknown>) => { p.policy_id = '' }],
+    ['v2 system id', (p: Record<string, unknown>) => { p.policy_id = 'system-telemetry-budgets' }],
+    ['v2 padded id', (p: Record<string, unknown>) => { p.policy_id = ' tight-budgets' }],
+    ['v2 id ending in a next-line character, a control character', (p: Record<string, unknown>) => { p.policy_id = 'tight\u0085' }],
+    // Each non-control character Go's strings.TrimSpace removes, trailing and
+    // leading.
+    ...[' ', '\u00a0', '\u1680', ...Array.from({ length: 11 }, (_, i) => String.fromCharCode(0x2000 + i)), '\u2028', '\u2029', '\u202f', '\u205f', '\u3000'].flatMap(space => [
+      [`v2 id ending in U+${space.charCodeAt(0).toString(16).padStart(4, '0')}`, (p: Record<string, unknown>) => { p.policy_id = `tight${space}` }],
+      [`v2 id starting with U+${space.charCodeAt(0).toString(16).padStart(4, '0')}`, (p: Record<string, unknown>) => { p.policy_id = `${space}tight` }],
+    ] as [string, (p: Record<string, unknown>) => void][]),
+    ['v2 lone surrogate id', (p: Record<string, unknown>) => { p.policy_id = 'tight\ud800' }],
+    ['v2 control character id', (p: Record<string, unknown>) => { p.policy_id = 'tight\u0007' }],
+    ['v2 long id', (p: Record<string, unknown>) => { p.policy_id = 'é'.repeat(65) }],
+    ['v2 revision zero', (p: Record<string, unknown>) => { p.revision = 0 }],
+    ['v2 fractional revision', (p: Record<string, unknown>) => { p.revision = 1.5 }],
+    ['unknown version', (p: Record<string, unknown>) => { p.schema_version = 'apexload.telemetry_policy.v3' }],
+  ])('refuses a project policy receipt with %s before any digest', async (_, mutate) => {
+    const digest = vi.spyOn(webcrypto.subtle, 'digest')
+    const value = projectReceipt()
+    mutate(value.policy)
+    expect(await telemetryPolicyView(value)).toEqual({ reason: 'The retained policy receipt is invalid or unsupported.' })
+    expect(digest).not.toHaveBeenCalled()
+  })
+  // Go-computed hashes: a 128-byte ID, an ID Go's encoder escapes, and a
+  // leading U+FEFF, which strings.TrimSpace keeps.
+  it.each([
+    ['a 128-byte id', 'é'.repeat(64), '0c19643c633748383f38cac2813dce632bf06c4fd527762520f225b6c7426b11'],
+    ['an escaped id', 'a<b>&c\u2028d\u2029e', '921051622c7bfe91bb5d65813cf9999cf896877f84468bc2babde10ef030acec'],
+    ['a byte order mark id', '\ufefftight', '780f21d939eed69e26d70659f91feb4285141221b5f788ff21787317dd0e51fa'],
+  ])('admits a project policy receipt with %s', async (_, id, hash) => {
+    const value = projectReceipt()
+    Object.assign(value.policy, { policy_id: id, hash })
+    expect((await telemetryPolicyView(value)).policy?.policy_id).toBe(id)
+  })
+  it('refuses a project policy receipt whose digest no longer matches', async () => {
+    const value = projectReceipt()
+    value.policy.definition_sha256 = 'cd'.repeat(32)
+    expect((await telemetryPolicyView(value)).policy).toBeUndefined()
+  })
 })

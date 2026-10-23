@@ -3315,6 +3315,10 @@ func (tr *TestRunner) loadScenarioScheduleCapacityEvidence(scenarioID, name stri
 	// immutable evidence while compiling the private preview so the off-lock
 	// refactor does not turn one admission snapshot into duplicate store reads.
 	req.projectQuotaEvidence = projectQuota
+	// A capacity preview does not depend on the scenario's telemetry policy;
+	// a lost choice must not hide its capacity findings. Each run's create
+	// judges the choice.
+	req.skipTelemetryPolicyCheck = true
 	preview, _, revision, err := tr.buildManagedTestFromSnapshot(req, "schedule-conflict-preview", "DRAFT")
 	return scenarioScheduleCapacityEvidence{preview: preview, revision: revision, loaded: true, err: err}
 }
@@ -4295,10 +4299,13 @@ func (tr *TestRunner) scenarioScheduleConflictSummaryForSweepLocked(schedule *st
 			findings = append(findings, fmt.Sprintf("Release conflict: release %s is archived.", firstNonEmpty(release.Name, release.ID)))
 		}
 	}
+	// A capacity preview: the scenario's telemetry policy is judged by the
+	// occurrence's create, which records a lost choice as a failed occurrence.
 	preview, err := tr.buildManagedTestForScheduleSweepLockedWithTerm(CreateTestRequest{
-		Name:       schedule.Name,
-		ScenarioID: scenario.ID,
-		ReleaseID:  schedule.ReleaseID,
+		Name:                     schedule.Name,
+		ScenarioID:               scenario.ID,
+		ReleaseID:                schedule.ReleaseID,
+		skipTelemetryPolicyCheck: true,
 	}, "schedule-conflict-preview", "DRAFT", leaseTerm)
 	if err != nil {
 		return "", err

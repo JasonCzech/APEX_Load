@@ -793,6 +793,12 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 		}
 	}
 	lines = append(lines, ciGitHubCheckTelemetryLines(response.TelemetryVerdict)...)
+	// Budgets the run chose decide its degraded and breached time, so they can
+	// loosen a telemetry criterion; the check says they are not the system's,
+	// from the run's metadata so the queued check says so too.
+	if id := sanitizeCIExternalText(metadata.TelemetryBudgetPolicyID, 128); id != "" {
+		lines = append(lines, "", "Telemetry budgets: chosen by the run (project policy "+id+"), not the system threshold settings.")
+	}
 	if len(response.MonitorRuleResults) > 0 {
 		lines = append(lines, "", "Monitoring criteria:")
 		for _, result := range response.MonitorRuleResults {
@@ -835,6 +841,10 @@ func ciGitHubCheckTelemetryLines(verdict *ciTelemetryVerdict) []string {
 	policy := "unknown policy"
 	if verdict.Policy != nil {
 		policy = fmt.Sprintf("%s revision %d", sanitizeCIExternalText(verdict.Policy.Name, 128), verdict.Policy.Revision)
+		// A policy the run chose, rather than the project's default, says so.
+		if verdict.Policy.Source == runPolicySourceSelected {
+			policy += " (chosen by the run)"
+		}
 	}
 	effect := "advisory: never changes the outcome"
 	switch {

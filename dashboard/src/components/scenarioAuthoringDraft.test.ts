@@ -179,6 +179,26 @@ describe('a scenario draft built from imported scripts', () => {
     expect(parseScenarioDraftCheckpoint(malformed, 'project-a')).toBeNull()
   })
 
+  it('keeps a chosen telemetry acceptance policy through a checkpoint and refuses a malformed one (TEL-B)', () => {
+    const value = draft()
+    value.form.telemetry_acceptance_policy_id = 'strict-gate'
+    saveScenarioAuthoringDraft(value)
+    expect(readScenarioDraftCheckpoint('project-a')?.form.telemetry_acceptance_policy_id).toBe('strict-gate')
+    const malformed = JSON.parse(JSON.stringify(value))
+    malformed.form.telemetry_acceptance_policy_id = { id: 'strict-gate' }
+    expect(parseScenarioDraftCheckpoint(malformed, 'project-a')).toBeNull()
+  })
+
+  it('keeps a chosen telemetry budget policy through a checkpoint and refuses a malformed one (TEL-B)', () => {
+    const value = draft()
+    value.form.telemetry_budget_policy_id = 'tight-budgets'
+    saveScenarioAuthoringDraft(value)
+    expect(readScenarioDraftCheckpoint('project-a')?.form.telemetry_budget_policy_id).toBe('tight-budgets')
+    const malformed = JSON.parse(JSON.stringify(value))
+    malformed.form.telemetry_budget_policy_id = 15
+    expect(parseScenarioDraftCheckpoint(malformed, 'project-a')).toBeNull()
+  })
+
   it('names the groups of scripts that share a name apart, as the builder does', () => {
     const draft = scenarioAuthoringDraftFromScripts('project-a', 'Users', [{ id: 's1', name: 'Get user' }, { id: 's2', name: 'Get user' }, { id: 's3', name: 'get user' }])
     expect(draft.form.groups.map(group => group.name)).toEqual(['Get user', 'Get user (#2)', 'get user (#3)'])

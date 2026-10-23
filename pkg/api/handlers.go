@@ -47,6 +47,10 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	// Normalized before the keyed-create digest, so a retry spelling the
+	// same choice differently is the same request.
+	req.TelemetryAcceptancePolicyID = strings.TrimSpace(req.TelemetryAcceptancePolicyID)
+	req.TelemetryBudgetPolicyID = strings.TrimSpace(req.TelemetryBudgetPolicyID)
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 
@@ -90,6 +94,14 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, errTestIDOwnedByAnotherProject) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		if errors.Is(err, errRunPolicyStoreUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		if errors.Is(err, errRunPolicyConfiguration) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}

@@ -24,6 +24,10 @@ export interface ScenarioFormState {
   traffic_profile?: TrafficProfile
   /** The joint evidence every run of the scenario captures; absent is none. */
   joint_evidence?: JointEvidenceProjection
+  /** The telemetry acceptance policy every run of the scenario is judged by; absent is the project's default. */
+  telemetry_acceptance_policy_id?: string
+  /** The telemetry budget policy that sets the live budgets of every run of the scenario; absent is the system threshold settings. */
+  telemetry_budget_policy_id?: string
   /**
    * The scenario-wide runtime defaults, as stored. Every editor writes this
    * canonical override directly (AUTH-3): there are no flat display mirrors.

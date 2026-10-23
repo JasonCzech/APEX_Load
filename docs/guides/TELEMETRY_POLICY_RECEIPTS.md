@@ -4,7 +4,7 @@ Status: immutable policy-receipt slice reviewed and qualified with the full Go s
 
 When managed execution commits INITIALIZING, the controller stores complete initial configuration and resolved telemetry budgets in that same Start transaction before asynchronous runtime staging. Pending admission does not fabricate a receipt. Candidates stay private while SQL waits. Failed writes do not pin settings; successful retries adopt the write-once durable winner, including legacy absent-policy receipts. Later system settings do not rewrite retained run budgets.
 
-The receipt identifies apexload.telemetry_policy.v1, fixed policy system-telemetry-budgets revision 1, semantic SHA-256, UTC capture time and legacy-mixed-diagnostic.v1. Revision 1 identifies the fixed contract, not a global settings edit counter. Capture time is provenance excluded from the digest. Five stages preserve sample age, generator processing, transport, controller fan-out and browser render budgets. Nil resolves existing defaults; explicit zero disables a stage. The existing 15-second sustained window is retained. Actual controller cadence is configured whole seconds for local execution or the existing one-second distributed coalescing gate; it does not certify generator/browser cadence.
+Unless the run chose a budget policy (below), the receipt identifies apexload.telemetry_policy.v1, fixed policy system-telemetry-budgets revision 1, semantic SHA-256, UTC capture time and legacy-mixed-diagnostic.v1. Revision 1 identifies the fixed contract, not a global settings edit counter. Capture time is provenance excluded from the digest. Five stages preserve sample age, generator processing, transport, controller fan-out and browser render budgets. Nil resolves existing defaults; explicit zero disables a stage. The existing 15-second sustained window is retained. Actual controller cadence is configured whole seconds for local execution or the existing one-second distributed coalescing gate; it does not certify generator/browser cadence.
 
 Live status, manifests, archive analysis and report execution details (under **Configuration and infrastructure evidence**) show the receipt. Dashboard WebCrypto verifies exact semantic identity before displaying available evidence; pending, malformed or unverifiable receipts remain unavailable, with stale completion fenced. Zero capture time is invalid even with a matching digest; nonzero nanosecond precision is retained. A matching digest detects content mismatch but does not attest origin. Live badges describe observed age or separate controller cumulative drop observations, not exact run loss or a health verdict. Archive interval classifications are explicitly legacy mixed diagnostic; missing summary/counts are n/a, explicit zero stays zero.
 
@@ -14,6 +14,27 @@ apexctl analysis telemetry-policy --id RUN_ID --mode archive
 ```
 
 Live mode reads the authorized run manifest; archive mode reads its report. Optional --api and --project retain existing conventions. Unsupported filters, excessive bytes, redirects, project mismatch and malformed canonical fields/digests are refused. Output is a closed projection; raw controller errors and credential values are not printed. Old evidence has no invented policy identity.
+
+## Choosing a budget policy
+
+A run can set its live budgets from one of its project's telemetry budget policies (`telemetry_policy`) instead of the system threshold settings: `telemetry_budget_policy_id` on `POST /api/v1/tests` (`apexctl run --api … --telemetry-budget-policy`, the dashboard's revise modal) or `POST /api/v1/ci/runs` (`apexctl ci run --telemetry-budget-policy`, action input `telemetry-budget-policy`). A scenario can choose one for every run created from it (`telemetry_budget_policy_id` on the scenario; the scenario builder's Advanced settings). Without a choice the run keeps the system receipt. The project's default budget policy is still only pinned, as before; it does not set a run's budgets.
+
+- **The receipt.** At Start the chosen policy's current revision replaces the system receipt in the same write. The receipt is `apexload.telemetry_policy.v2` and names the policy's ID, its revision and its definition digest (`definition_sha256`). Cadence, cadence scope, capture time and the classification algorithm stay the controller's. Each stage takes the policy's limit, a stage the policy leaves unset uses the built-in default (as in re-evaluation), and a stage set to `0` is disabled. The run's budget pin has source `run_selection`.
+- **Live classification** uses the receipt, so the chosen budgets decide which telemetry time is degraded or breached, and with it a telemetry acceptance policy's breached-time criterion.
+- **The sustained window** of live classification is fixed at 15 seconds. A policy that sets another `sustained_window_seconds` cannot set a run's budgets and is refused as invalid.
+- **At creation**, the policy must be one of the run's own project's live, valid budget policies: one the project lacks is refused (`400`), an invalid or unusable one with `409`, and a failed read gets `503` (retry).
+- **CI runs** may choose only where the project's GitHub Actions policy sets `allow_telemetry_policy_selection`, the same permission as the acceptance choice, because looser budgets can loosen a `fail_ci` acceptance policy (otherwise `403`). The CI response echoes the choice, and `apexctl` stops a run whose create response does not echo it and exits with a configuration error. An exact retry of an accepted CI run returns that run even if its choice was since disallowed or deleted.
+- **Revised copies** keep their source's choice unless they name another, or `project_default` for the system threshold settings. The dashboard's revise modal offers both.
+- **Scenarios.** A scenario's budget choice follows the same rules as its acceptance choice (below), with the budget policy's own answers:
+  - it is judged when a save changes it (or the scenario's project changes), with the answers given at run creation; a save that keeps it is not judged again;
+  - every run created from the scenario inherits it (a direct run, a schedule and an execution-plan entry) unless the run names another, or `project_default` for the system threshold settings. The acceptance and budget choices are inherited independently;
+  - an inherited choice that is gone, or now sets another sustained window, refuses the run and names the scenario's choice; a scheduled occurrence refused this way is recorded as failed. During a policy-read outage the run is still created with the choice, which Start pins or refuses;
+  - capacity estimates and previews do not judge it;
+  - it is project-local: a library bundle omits it, a new import uses the system threshold settings, a linked import keeps its scenario's own choice, and a remote run of the scenario must name a remote budget policy or `project_default` (otherwise `409`).
+- **Plain CLI runs.** `apexctl run --api … --telemetry-budget-policy ID` sends the choice and requires the create response to echo it, as `--telemetry-policy` does: an unconfirmed choice deletes the queued run (exit `2`, or `3` naming the run when the delete cannot be confirmed), and a controller refusal of the choice (missing, over-long, invalid or another sustained window) is exit `2`. `project_default` is the same as omitting the flag. The flag needs `--api`.
+- **At Start**, a chosen policy that is gone or no longer usable refuses Start rather than falling back to the system settings; a direct Start leaves the run queued.
+- **Remote runs** forward the choice. A remote controller that does not echo it would classify the run by its system settings, so its run is deleted before it starts and the create is refused (`409`).
+- **Readers.** apexctl and the dashboard accept and verify both receipt versions; the dashboard labels a chosen policy as such and shows its definition digest. An older reader never presents a version 2 receipt as the system settings: an older dashboard shows it as unsupported, and an older apexctl refuses it as an invalid receipt.
 
 ## Stage distributions and client render evidence
 
@@ -39,7 +60,28 @@ queues a `telemetry_acceptance` evaluation (`POST /api/v1/analysis/evaluations`)
 
 ## Telemetry acceptance verdicts
 
-A project `telemetry_acceptance_policy` judges a run's telemetry, apart from its application verdict. The policy that applies by default is pinned when the run starts, and its definition is frozen in the admission receipt beside the pin (`provenance.telemetry_acceptance_policy`), so a later edit never reinterprets the run. Its criteria are optional, but at least one is required:
+A project `telemetry_acceptance_policy` judges a run's telemetry, apart from its application verdict. The policy that applies by default is pinned when the run starts, and its definition is frozen in the admission receipt beside the pin (`provenance.telemetry_acceptance_policy`), so a later edit never reinterprets the run.
+
+A run can instead choose one of its project's acceptance policies by ID: `telemetry_acceptance_policy_id` on `POST /api/v1/tests` (`apexctl run --api … --telemetry-policy`, the dashboard's revise modal) or `POST /api/v1/ci/runs` (`apexctl ci run --telemetry-policy`, action input `telemetry-policy`). A scenario can choose one for every run created from it (`telemetry_acceptance_policy_id` on the scenario; the scenario builder's Advanced settings).
+- **At creation**, the policy must be one of the project's live, valid acceptance policies:
+  - one the project lacks is refused (`400`);
+  - an invalid one is refused with `409`;
+  - a failed read gets `503` (retry).
+- **CI runs** may choose only where the project's GitHub Actions policy sets `allow_telemetry_policy_selection`. Otherwise a choice is refused (`403`), so a pipeline cannot exchange a `fail_ci` default for a weaker policy. Naming `project_default` is no choice and needs no permission. The CI response echoes the choice. `apexctl` stops a run whose create response does not echo it, and exits with a configuration error. An exact retry of an accepted CI run returns that run even if its choice was since disallowed or deleted.
+- **Revised copies.** A revised copy of a queued run keeps its source's choice unless it names another, or `project_default` to use the project's default.
+- **Scenarios.** A scenario's choice is validated when it is saved with a new choice, against the scenario's own project's policies, with the same answers as at run creation. A save that keeps the current choice, within the same project, is not judged again, so an unrelated edit, an import or a rollback never fails on it.
+  - **Inheritance.** Every run created from the scenario inherits the choice: a direct run, a schedule and an execution-plan entry, unless the run names another or `project_default`.
+  - **A deleted choice** refuses the inheriting run and names the scenario's choice, rather than judging the run by the default. A scheduled occurrence refused this way is recorded as failed. If the policies cannot be read while such a run is created (a schedule, a plan entry or a direct run naming no policy), the run is still created with the scenario's choice, which was validated when it was saved and which Start pins or refuses. Start reads the project's policies for every run, so a run started during the outage is refused at Start as any run would be.
+  - **Not portable.** The choice is project-local. A library bundle omits it, a new import uses its destination's default, and an import that updates a linked scenario keeps that scenario's choice. A remote run of such a scenario must name the remote policy or `project_default` (otherwise `409`), because the remote judges the run by its own copy's choice or its project's default, never by the local choice.
+- **Plain CLI runs.** `apexctl run --api … --telemetry-policy ID` sends the choice and requires the create response to echo it.
+  - **Not echoed.** The queued run is deleted before Start and `apexctl` exits with a configuration error (`2`). If the delete cannot be confirmed (the run can still be read, or the confirming read fails), the run may still be queued: `apexctl` names it and exits `3`.
+  - **Refused.** A controller refusal of the choice itself (`400` or `409` naming the telemetry acceptance policy: missing, over-long or invalid) is also exit `2`.
+  - The flag needs `--api`.
+- **At Start**, the chosen policy's current revision is pinned with source `run_selection`, in place of the default. A chosen policy that is gone or invalid by Start refuses Start, as an invalid default does, rather than falling back to the default. A direct Start leaves the run queued.
+- **Default changes.** Changing the project's default never changes a run's choice.
+- **Remote runs** forward the choice to the remote controller, which checks it against the remote project's policies. A remote controller that does not echo the choice would judge the run by its project's default, so its run is deleted before it starts and the create is refused (`409`).
+
+A policy's criteria are optional, but at least one is required:
 
 | Criterion | Evidence | Passes when |
 | --- | --- | --- |

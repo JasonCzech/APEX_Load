@@ -7,6 +7,8 @@ export function scenarioAuthoringFixture(scenario: Partial<StoredScenario> = {},
   const document: ScenarioAuthoringDocument = {
     id, project_id: projectId, name: scenario.name ?? 'Fixture scenario', duration: scenario.duration ?? '1m',
     ...(scenario.workload_shape_id ? { workload_shape_id: scenario.workload_shape_id } : {}),
+    ...(scenario.telemetry_acceptance_policy_id ? { telemetry_acceptance_policy_id: scenario.telemetry_acceptance_policy_id } : {}),
+    ...(scenario.telemetry_budget_policy_id ? { telemetry_budget_policy_id: scenario.telemetry_budget_policy_id } : {}),
     groups: (scenario.scripts || []).map(group => ({ name: group.name || '', script_id: group.script_id, vusers: group.vusers, ...(group.ramp_up ? { ramp_up: group.ramp_up } : {}) })),
     data_pools: (scenario.data_pools || []).map(binding => ({ id: binding.id || '', pool_id: binding.pool_id, alias: binding.alias, access_mode: binding.access_mode, selection_strategy: binding.selection_strategy, ...(binding.live_options ? { live_options: structuredClone(binding.live_options) } : {}) })),
   }

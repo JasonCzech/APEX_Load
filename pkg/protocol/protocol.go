@@ -836,6 +836,7 @@ type Result struct {
 	TTFB                time.Duration
 	BytesSent           int64
 	BytesReceived       int64
+	ByteEvidence        string `json:"byte_evidence,omitempty"` // what BytesSent and BytesReceived measure (ByteEvidenceHTTPBody), set by the adapter
 	StatusCode          int
 	Success             bool
 	ErrorMessage        string

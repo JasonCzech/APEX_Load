@@ -110,6 +110,14 @@ func interruptedEvacuationTargets(raw, testID string) (runEvacuationCheckpoint, 
 		if guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) || guard.SourceFencedAt.IsZero() || guard.ReplacementCommittedAt.IsZero() {
 			return runEvacuationCheckpoint{}, nil, errors.New("committed evacuation has contradictory progress")
 		}
+	case runEvacuationPhaseRollingBack:
+		// A successor recorded its rollback intent from prepared or staged. The
+		// source was never fenced, so it and the replacement stay participants.
+		staged := !guard.StagedAt.IsZero()
+		if guard.Version != runEvacuationRollbackCheckpointVersion || guard.RollbackGeneration <= guard.Generation || guard.RollbackOwnerID == "" || guard.RollbackStartedAt.IsZero() ||
+			(staged && !slices.Equal(guard.StagedTargets, replacements)) || (!staged && len(guard.StagedTargets) != 0) || !guard.SourceFencedAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() {
+			return runEvacuationCheckpoint{}, nil, errors.New("rolling-back evacuation has contradictory progress")
+		}
 	default:
 		return runEvacuationCheckpoint{}, nil, errors.New("evacuation journal has an unknown phase")
 	}
@@ -246,6 +254,11 @@ func (tr *TestRunner) recoverInterruptedRunEvacuation(test *ManagedTest) error {
 	}
 	if generation <= guard.Generation {
 		return fmt.Errorf("successor generation %d does not fence evacuation generation %d", generation, guard.Generation)
+	}
+	if guard.Phase == runEvacuationPhaseRollingBack && generation <= guard.RollbackGeneration {
+		// That term may have adopted the prior topology. Its own epoch claim
+		// cannot drain assignments it adopted; only a newer term fences them.
+		return fmt.Errorf("successor generation %d does not fence evacuation rollback generation %d", generation, guard.RollbackGeneration)
 	}
 	ctx, cancel := context.WithDeadline(context.Background(), minTime(deadline, time.Now().Add(runAdoptionClaimBudget)))
 	defer cancel()
@@ -404,8 +417,13 @@ func (tr *TestRunner) resumeInterruptedRunEvacuations() {
 		provenTerminal := interruptedEvacuationHasDurableFenceProof(test)
 		tr.mu.RUnlock()
 		if !provenTerminal {
-			if _, _, err := interruptedEvacuationTargets(raw, test.ID); err != nil {
+			guard, _, err := interruptedEvacuationTargets(raw, test.ID)
+			if err != nil {
 				slog.Warn("interrupted evacuation cannot be fenced automatically; a system administrator can attest that its generators stopped (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "error", err)
+				continue
+			}
+			if generation, _, _, claimErr := tr.generatorExecutionClaim(); guard.Phase == runEvacuationPhaseRollingBack && (claimErr != nil || generation <= guard.RollbackGeneration) {
+				slog.Warn("a failed evacuation rollback waits for a newer controller term or an administrator attestation (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "rollback_generation", guard.RollbackGeneration)
 				continue
 			}
 		}

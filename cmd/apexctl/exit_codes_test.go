@@ -232,3 +232,71 @@ func TestParseCIArgsTelemetryInconclusive(t *testing.T) {
 		t.Fatalf("an unset mapping was sent: %s", encoded)
 	}
 }
+
+// --telemetry-policy names the project telemetry acceptance policy a
+// controller CI run is judged by; it needs controller mode and is omitted when
+// unset, so existing callers keep their derived idempotency keys (TEL-B).
+func TestParseCIArgsTelemetryPolicy(t *testing.T) {
+	base := []string{"--controller-url", "https://apexload.example", "--project-id", "p", "--script-path", "s.json"}
+	args, err := parseCIArgs(append(base, "--telemetry-policy", " strict-gate "))
+	if err != nil || args.telemetryPolicy != "strict-gate" {
+		t.Fatalf("parse = %q %v", args.telemetryPolicy, err)
+	}
+	// project_default is no choice: omitting the flag selects the default.
+	if args, err := parseCIArgs(append(base, "--telemetry-policy", " project_default ")); err != nil || args.telemetryPolicy != "" {
+		t.Fatalf("project_default = %q %v", args.telemetryPolicy, err)
+	}
+	if _, err := parseCIArgs([]string{"--execution-mode", "local", "--publish-check=false", "--script-path", "s.json", "--telemetry-policy", "strict-gate"}); err == nil || !strings.Contains(err.Error(), "controller mode") {
+		t.Fatalf("local mode accepted a telemetry policy: %v", err)
+	}
+	if encoded, _ := json.Marshal(CIRunRequest{ProjectID: "p"}); strings.Contains(string(encoded), "telemetry_acceptance_policy_id") {
+		t.Fatalf("an unset policy was sent: %s", encoded)
+	}
+	if encoded, _ := json.Marshal(CIRunRequest{ProjectID: "p", TelemetryAcceptancePolicyID: "strict-gate"}); !strings.Contains(string(encoded), `"telemetry_acceptance_policy_id":"strict-gate"`) {
+		t.Fatalf("the chosen policy was not sent: %s", encoded)
+	}
+}
+
+// --telemetry-budget-policy names the project telemetry budget policy that
+// sets a controller CI run's live budgets; it needs controller mode and is
+// omitted when unset, so existing callers keep their derived keys (TEL-B).
+func TestParseCIArgsTelemetryBudgetPolicy(t *testing.T) {
+	base := []string{"--controller-url", "https://apexload.example", "--project-id", "p", "--script-path", "s.json"}
+	args, err := parseCIArgs(append(base, "--telemetry-budget-policy", " tight-budgets "))
+	if err != nil || args.telemetryBudgetPolicy != "tight-budgets" || args.telemetryPolicy != "" {
+		t.Fatalf("parse = %q %v", args.telemetryBudgetPolicy, err)
+	}
+	if args, err := parseCIArgs(append(base, "--telemetry-budget-policy", " project_default ")); err != nil || args.telemetryBudgetPolicy != "" {
+		t.Fatalf("project_default = %q %v", args.telemetryBudgetPolicy, err)
+	}
+	if _, err := parseCIArgs([]string{"--execution-mode", "local", "--publish-check=false", "--script-path", "s.json", "--telemetry-budget-policy", "tight-budgets"}); err == nil || !strings.Contains(err.Error(), "--telemetry-budget-policy requires controller mode") {
+		t.Fatalf("local mode accepted a budget policy: %v", err)
+	}
+	if encoded, _ := json.Marshal(CIRunRequest{ProjectID: "p"}); strings.Contains(string(encoded), "telemetry_budget_policy_id") {
+		t.Fatalf("an unset policy was sent: %s", encoded)
+	}
+	if encoded, _ := json.Marshal(CIRunRequest{ProjectID: "p", TelemetryBudgetPolicyID: "tight-budgets"}); !strings.Contains(string(encoded), `"telemetry_budget_policy_id":"tight-budgets"`) {
+		t.Fatalf("the chosen policy was not sent: %s", encoded)
+	}
+}
+
+// The job summary says a run chose its live telemetry budgets.
+func TestCISummaryShowsChosenTelemetryBudgets(t *testing.T) {
+	for _, chosen := range []string{"tight-budgets", ""} {
+		path := filepath.Join(t.TempDir(), "summary.md")
+		result := ciResultFromResponse(&CIRunResponse{Outcome: ciOutcomePassed, Status: "COMPLETE", TelemetryBudgetPolicyID: chosen})
+		if result.TelemetryBudgetPolicyID != chosen {
+			t.Fatalf("result budget policy = %q, want %q", result.TelemetryBudgetPolicyID, chosen)
+		}
+		if err := writeCISummary(path, result); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if shown := strings.Contains(string(data), "| Telemetry budgets | chosen by the run (tight-budgets) |"); shown != (chosen != "") || chosen == "" && strings.Contains(string(data), "Telemetry budgets") {
+			t.Fatalf("summary for choice %q:\n%s", chosen, data)
+		}
+	}
+}

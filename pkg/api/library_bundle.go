@@ -1103,6 +1103,15 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		action = "updated"
 	}
 	req := completeLibraryScenarioSnapshot(item.Scenario.Request)
+	// The telemetry acceptance and budget policy choices are the
+	// destination's own: a new scenario uses its project's default and the
+	// system threshold settings, and an updated one keeps its choices,
+	// whatever the bundle names.
+	req.TelemetryAcceptancePolicyID, req.TelemetryBudgetPolicyID = "", ""
+	if prior != nil {
+		req.TelemetryAcceptancePolicyID = prior.TelemetryAcceptancePolicyID
+		req.TelemetryBudgetPolicyID = prior.TelemetryBudgetPolicyID
+	}
 	req.creationActor = testCreationActor{
 		Type:    "legacy",
 		Subject: "controller:library-import-unattributed",
@@ -1734,6 +1743,10 @@ func normalizePortableScenarioRequestDefaults(req CreateScenarioRequest) CreateS
 	if req.WorkloadShapeID != nil && strings.TrimSpace(*req.WorkloadShapeID) == "" {
 		req.WorkloadShapeID = nil
 	}
+	// A chosen telemetry acceptance or budget policy names one of the source
+	// project's policies, which a bundle does not carry: it is not portable
+	// content. An imported scenario keeps its destination's own choices.
+	req.TelemetryAcceptancePolicyID, req.TelemetryBudgetPolicyID = "", ""
 	return req
 }
 
@@ -1742,19 +1755,21 @@ func createScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioReq
 	// It must preserve explicit clears without aliasing a live/cached scenario.
 	scenario = cloneStoredScenarioForRead(scenario)
 	req := CreateScenarioRequest{
-		Name:             scenario.Name,
-		TerminationMode:  scenario.TerminationMode,
-		Duration:         scenario.Duration,
-		StartDelay:       scenario.StartDelay,
-		ScenarioMode:     scenario.ScenarioMode,
-		ScriptShakeout:   scenario.ScriptShakeout,
-		ResourceBaseline: scenario.ResourceBaseline,
-		Assignment:       scenario.Assignment,
-		GoalConfig:       scenario.GoalConfig,
-		TrafficProfile:   cloneTrafficProfile(scenario.TrafficProfile),
-		RuntimeSettings:  scenario.RuntimeSettings,
-		JointEvidence:    scenario.JointEvidence,
-		DataPools:        scenario.DataPools,
+		Name:                        scenario.Name,
+		TerminationMode:             scenario.TerminationMode,
+		Duration:                    scenario.Duration,
+		StartDelay:                  scenario.StartDelay,
+		ScenarioMode:                scenario.ScenarioMode,
+		ScriptShakeout:              scenario.ScriptShakeout,
+		ResourceBaseline:            scenario.ResourceBaseline,
+		Assignment:                  scenario.Assignment,
+		GoalConfig:                  scenario.GoalConfig,
+		TrafficProfile:              cloneTrafficProfile(scenario.TrafficProfile),
+		RuntimeSettings:             scenario.RuntimeSettings,
+		JointEvidence:               scenario.JointEvidence,
+		TelemetryAcceptancePolicyID: scenario.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:     scenario.TelemetryBudgetPolicyID,
+		DataPools:                   scenario.DataPools,
 	}
 	shapeID := strings.TrimSpace(scenario.WorkloadShapeID)
 	req.WorkloadShapeID = &shapeID

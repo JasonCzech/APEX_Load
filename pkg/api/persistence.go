@@ -444,29 +444,31 @@ func (tr *TestRunner) buildStoredScenarioFromPartsLocked(scenario *storage.Scena
 		derivedProjectID = projectID
 	}
 	return &StoredScenario{
-		ID:               scenario.ID,
-		RefKey:           scenario.RefKey,
-		Name:             scenario.Name,
-		WorkloadShapeID:  scenario.WorkloadShapeID,
-		ProjectID:        derivedProjectID,
-		Duration:         scenario.Duration,
-		StartDelay:       scenario.StartDelay,
-		TerminationMode:  scenario.TerminationMode,
-		ScenarioMode:     normalizeScenarioMode(scenario.ScenarioMode),
-		ScriptShakeout:   scenario.ScriptShakeout,
-		ResourceBaseline: scenario.ResourceBaseline,
-		Assignment:       decodeStoredGeneratorAssignment(scenario.Assignment),
-		GoalConfig:       decodeStoredGoalConfig(scenario.GoalConfig),
-		TrafficProfile:   decodeStoredTrafficProfile(scenario.TrafficProfile),
-		RuntimeSettings:  decodeStoredRuntimeSettings(scenario.RuntimeSettings),
-		JointEvidence:    decodeStoredJointEvidence(scenario.JointEvidence),
-		Scripts:          refs,
-		Schedules:        schedules,
-		DataPools:        dataPools,
-		ArchivedAt:       scenario.ArchivedAt,
-		CreatedAt:        scenario.CreatedAt,
-		UpdatedAt:        scenario.UpdatedAt,
-		ScriptCount:      len(refs),
+		ID:                          scenario.ID,
+		RefKey:                      scenario.RefKey,
+		Name:                        scenario.Name,
+		WorkloadShapeID:             scenario.WorkloadShapeID,
+		ProjectID:                   derivedProjectID,
+		Duration:                    scenario.Duration,
+		StartDelay:                  scenario.StartDelay,
+		TerminationMode:             scenario.TerminationMode,
+		ScenarioMode:                normalizeScenarioMode(scenario.ScenarioMode),
+		ScriptShakeout:              scenario.ScriptShakeout,
+		ResourceBaseline:            scenario.ResourceBaseline,
+		Assignment:                  decodeStoredGeneratorAssignment(scenario.Assignment),
+		GoalConfig:                  decodeStoredGoalConfig(scenario.GoalConfig),
+		TrafficProfile:              decodeStoredTrafficProfile(scenario.TrafficProfile),
+		RuntimeSettings:             decodeStoredRuntimeSettings(scenario.RuntimeSettings),
+		JointEvidence:               decodeStoredJointEvidence(scenario.JointEvidence),
+		TelemetryAcceptancePolicyID: scenario.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:     scenario.TelemetryBudgetPolicyID,
+		Scripts:                     refs,
+		Schedules:                   schedules,
+		DataPools:                   dataPools,
+		ArchivedAt:                  scenario.ArchivedAt,
+		CreatedAt:                   scenario.CreatedAt,
+		UpdatedAt:                   scenario.UpdatedAt,
+		ScriptCount:                 len(refs),
 	}
 }
 
@@ -1094,6 +1096,8 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		pinnedSecrets:            &runPinnedSecretState{},
 	}
 	managedTest.durableExecutionGeneration = record.ExecutionGeneration
+	managedTest.TelemetryAcceptancePolicyID = record.TelemetryAcceptancePolicyID
+	managedTest.TelemetryBudgetPolicyID = record.TelemetryBudgetPolicyID
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
 	}
@@ -1574,23 +1578,25 @@ func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {
 		return nil
 	}
 	return &storage.Scenario{
-		ID:               stored.ID,
-		RefKey:           stored.RefKey,
-		Name:             stored.Name,
-		WorkloadShapeID:  stored.WorkloadShapeID,
-		Duration:         stored.Duration,
-		StartDelay:       stored.StartDelay,
-		TerminationMode:  stored.TerminationMode,
-		ScenarioMode:     stored.ScenarioMode,
-		ScriptShakeout:   stored.ScriptShakeout,
-		ResourceBaseline: stored.ResourceBaseline,
-		Assignment:       generatorAssignmentForStorage(stored.Assignment),
-		GoalConfig:       goalConfigForStorage(stored.GoalConfig),
-		TrafficProfile:   trafficProfileForStorage(stored.TrafficProfile),
-		RuntimeSettings:  runtimeSettingsForStorage(stored.RuntimeSettings),
-		JointEvidence:    jointEvidenceForStorage(stored.JointEvidence),
-		CreatedAt:        stored.CreatedAt,
-		UpdatedAt:        stored.UpdatedAt,
+		ID:                          stored.ID,
+		RefKey:                      stored.RefKey,
+		Name:                        stored.Name,
+		WorkloadShapeID:             stored.WorkloadShapeID,
+		Duration:                    stored.Duration,
+		StartDelay:                  stored.StartDelay,
+		TerminationMode:             stored.TerminationMode,
+		ScenarioMode:                stored.ScenarioMode,
+		ScriptShakeout:              stored.ScriptShakeout,
+		ResourceBaseline:            stored.ResourceBaseline,
+		Assignment:                  generatorAssignmentForStorage(stored.Assignment),
+		GoalConfig:                  goalConfigForStorage(stored.GoalConfig),
+		TrafficProfile:              trafficProfileForStorage(stored.TrafficProfile),
+		RuntimeSettings:             runtimeSettingsForStorage(stored.RuntimeSettings),
+		JointEvidence:               jointEvidenceForStorage(stored.JointEvidence),
+		TelemetryAcceptancePolicyID: stored.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:     stored.TelemetryBudgetPolicyID,
+		CreatedAt:                   stored.CreatedAt,
+		UpdatedAt:                   stored.UpdatedAt,
 	}
 }
 
@@ -1993,6 +1999,8 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		MonitorBindings:                cloneMonitorBindings(test.MonitorBindings),
 		TraceContext:                   runTraceContextForStorage(test.TraceContext),
 		JointEvidence:                  jointEvidenceForStorage(test.JointEvidence),
+		TelemetryAcceptancePolicyID:    test.TelemetryAcceptancePolicyID,
+		TelemetryBudgetPolicyID:        test.TelemetryBudgetPolicyID,
 		AnalysisPolicySelections:       runAnalysisPolicySelectionsForStorage(test.AnalysisPolicySelections),
 	}
 }

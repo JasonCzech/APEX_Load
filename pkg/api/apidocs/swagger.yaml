@@ -12872,6 +12872,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -13393,6 +13395,8 @@ paths:
                                 classification_algorithm:
                                   type: string
                                 coverage_rule:
+                                  type: string
+                                definition_sha256:
                                   type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
@@ -16180,6 +16184,8 @@ paths:
                               type: string
                             coverage_rule:
                               type: string
+                            definition_sha256:
+                              type: string
                             expected_controller_publication_interval_ms:
                               type: integer
                               format: int64
@@ -18125,6 +18131,10 @@ paths:
                     script_shakeout:
                       type: boolean
                     start_delay:
+                      type: string
+                    telemetry_acceptance_policy_id:
+                      type: string
+                    telemetry_budget_policy_id:
                       type: string
                     termination_mode:
                       type: string
@@ -51843,6 +51853,10 @@ paths:
                       type: string
                     workflow_ref:
                       type: string
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
+                  type: string
                 telemetry_inconclusive:
                   type: string
       responses:
@@ -51994,6 +52008,10 @@ paths:
                   status:
                     type: string
                   status_url:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_verdict:
                     type: object
@@ -52350,6 +52368,10 @@ paths:
                     type: string
                   status_url:
                     type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
+                    type: string
                   telemetry_verdict:
                     type: object
                     properties:
@@ -52675,6 +52697,10 @@ paths:
                   status:
                     type: string
                   status_url:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_verdict:
                     type: object
@@ -64531,6 +64557,10 @@ paths:
                                   type: string
                                 stopped_by_subject:
                                   type: string
+                                telemetry_acceptance_policy_id:
+                                  type: string
+                                telemetry_budget_policy_id:
+                                  type: string
                                 telemetry_health:
                                   type: object
                                   description: 'Go type: TelemetryRunHealth'
@@ -64622,6 +64652,10 @@ paths:
                                 script_shakeout:
                                   type: boolean
                                 start_delay:
+                                  type: string
+                                telemetry_acceptance_policy_id:
+                                  type: string
+                                telemetry_budget_policy_id:
                                   type: string
                                 termination_mode:
                                   type: string
@@ -73182,6 +73216,8 @@ paths:
                         actions:
                           type: object
                           properties:
+                            allow_telemetry_policy_selection:
+                              type: boolean
                             allowed_environments:
                               type: array
                               items:
@@ -73536,6 +73572,8 @@ paths:
                           actions:
                             type: object
                             properties:
+                              allow_telemetry_policy_selection:
+                                type: boolean
                               allowed_environments:
                                 type: array
                                 items:
@@ -73794,6 +73832,8 @@ paths:
                         actions:
                           type: object
                           properties:
+                            allow_telemetry_policy_selection:
+                              type: boolean
                             allowed_environments:
                               type: array
                               items:
@@ -74022,6 +74062,8 @@ paths:
                           actions:
                             type: object
                             properties:
+                              allow_telemetry_policy_selection:
+                                type: boolean
                               allowed_environments:
                                 type: array
                                 items:
@@ -74973,6 +75015,8 @@ paths:
                   actions:
                     type: object
                     properties:
+                      allow_telemetry_policy_selection:
+                        type: boolean
                       allowed_environments:
                         type: array
                         items:
@@ -75110,6 +75154,8 @@ paths:
                 actions:
                   type: object
                   properties:
+                    allow_telemetry_policy_selection:
+                      type: boolean
                     allowed_environments:
                       type: array
                       items:
@@ -87973,6 +88019,8 @@ paths:
                           actions:
                             type: object
                             properties:
+                              allow_telemetry_policy_selection:
+                                type: boolean
                               allowed_environments:
                                 type: array
                                 items:
@@ -92481,6 +92529,10 @@ paths:
                     preparation_id:
                       type: string
                   nullable: true
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 test:
@@ -93601,6 +93653,10 @@ paths:
                     script_shakeout:
                       type: boolean
                     start_delay:
+                      type: string
+                    telemetry_acceptance_policy_id:
+                      type: string
+                    telemetry_budget_policy_id:
                       type: string
                     termination_mode:
                       type: string
@@ -97336,6 +97392,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -99926,6 +99984,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -100980,6 +101040,10 @@ paths:
                         type: string
                       stopped_by_subject:
                         type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
+                        type: string
                       telemetry_health:
                         type: object
                         properties:
@@ -101267,6 +101331,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -104725,6 +104795,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -107315,6 +107387,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -108368,6 +108442,10 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -112115,6 +112193,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -114705,6 +114785,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -115758,6 +115840,10 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -119517,6 +119603,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -122107,6 +122195,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -123160,6 +123250,10 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -126919,6 +127013,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -129509,6 +129605,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -130562,6 +130660,10 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -134321,6 +134423,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -136911,6 +137015,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -137964,6 +138070,10 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -141723,6 +141833,8 @@ paths:
                                       type: string
                                     coverage_rule:
                                       type: string
+                                    definition_sha256:
+                                      type: string
                                     expected_controller_publication_interval_ms:
                                       type: integer
                                       format: int64
@@ -144313,6 +144425,8 @@ paths:
                                     type: string
                                   coverage_rule:
                                     type: string
+                                  definition_sha256:
+                                    type: string
                                   expected_controller_publication_interval_ms:
                                     type: integer
                                     format: int64
@@ -145366,6 +145480,10 @@ paths:
                       stopped_by_display_name:
                         type: string
                       stopped_by_subject:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       telemetry_health:
                         type: object
@@ -163841,6 +163959,10 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 traffic_profile:
@@ -164688,6 +164810,10 @@ paths:
                               script_shakeout:
                                 type: boolean
                               start_delay:
+                                type: string
+                              telemetry_acceptance_policy_id:
+                                type: string
+                              telemetry_budget_policy_id:
                                 type: string
                               termination_mode:
                                 type: string
@@ -166905,6 +167031,10 @@ paths:
                             - script_id
                             - vusers
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -168052,6 +168182,10 @@ paths:
                                 type: boolean
                               start_delay:
                                 type: string
+                              telemetry_acceptance_policy_id:
+                                type: string
+                              telemetry_budget_policy_id:
+                                type: string
                               termination_mode:
                                 type: string
                               traffic_profile:
@@ -170268,6 +170402,10 @@ paths:
                             - script_id
                             - vusers
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -171695,6 +171833,10 @@ paths:
                           script_shakeout:
                             type: boolean
                           start_delay:
+                            type: string
+                          telemetry_acceptance_policy_id:
+                            type: string
+                          telemetry_budget_policy_id:
                             type: string
                           termination_mode:
                             type: string
@@ -173763,6 +173905,10 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 traffic_profile:
@@ -174609,6 +174755,10 @@ paths:
                           script_shakeout:
                             type: boolean
                           start_delay:
+                            type: string
+                          telemetry_acceptance_policy_id:
+                            type: string
+                          telemetry_budget_policy_id:
                             type: string
                           termination_mode:
                             type: string
@@ -176826,6 +176976,10 @@ paths:
                         - script_id
                         - vusers
                   start_delay:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   termination_mode:
                     type: string
@@ -177852,6 +178006,10 @@ paths:
                             type: boolean
                           start_delay:
                             type: string
+                          telemetry_acceptance_policy_id:
+                            type: string
+                          telemetry_budget_policy_id:
+                            type: string
                           termination_mode:
                             type: string
                           traffic_profile:
@@ -180068,6 +180226,10 @@ paths:
                         - script_id
                         - vusers
                   start_delay:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   termination_mode:
                     type: string
@@ -181958,6 +182120,10 @@ paths:
                             type: boolean
                           start_delay:
                             type: string
+                          telemetry_acceptance_policy_id:
+                            type: string
+                          telemetry_budget_policy_id:
+                            type: string
                           termination_mode:
                             type: string
                           traffic_profile:
@@ -184175,6 +184341,10 @@ paths:
                         - vusers
                   start_delay:
                     type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
+                    type: string
                   termination_mode:
                     type: string
                   traffic_profile:
@@ -185006,6 +185176,10 @@ paths:
                               script_shakeout:
                                 type: boolean
                               start_delay:
+                                type: string
+                              telemetry_acceptance_policy_id:
+                                type: string
+                              telemetry_budget_policy_id:
                                 type: string
                               termination_mode:
                                 type: string
@@ -186285,6 +186459,10 @@ paths:
                             - script_id
                             - vusers
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -189612,6 +189790,10 @@ paths:
                       type: boolean
                     start_delay:
                       type: string
+                    telemetry_acceptance_policy_id:
+                      type: string
+                    telemetry_budget_policy_id:
+                      type: string
                     termination_mode:
                       type: string
                     traffic_profile:
@@ -191570,6 +191752,10 @@ paths:
                       script_shakeout:
                         type: boolean
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -193732,6 +193918,10 @@ paths:
                         type: boolean
                       start_delay:
                         type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
+                        type: string
                       termination_mode:
                         type: string
                       traffic_profile:
@@ -195484,6 +195674,10 @@ paths:
                     script_shakeout:
                       type: boolean
                     start_delay:
+                      type: string
+                    telemetry_acceptance_policy_id:
+                      type: string
+                    telemetry_budget_policy_id:
                       type: string
                     termination_mode:
                       type: string
@@ -197443,6 +197637,10 @@ paths:
                       script_shakeout:
                         type: boolean
                       start_delay:
+                        type: string
+                      telemetry_acceptance_policy_id:
+                        type: string
+                      telemetry_budget_policy_id:
                         type: string
                       termination_mode:
                         type: string
@@ -199867,6 +200065,10 @@ paths:
                 script_shakeout:
                   type: boolean
                 start_delay:
+                  type: string
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
                   type: string
                 termination_mode:
                   type: string
@@ -361038,6 +361240,10 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 timeslot_id:
@@ -367866,6 +368072,8 @@ paths:
                                 classification_algorithm:
                                   type: string
                                 coverage_rule:
+                                  type: string
+                                definition_sha256:
                                   type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
@@ -375945,6 +376153,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -378194,6 +378404,10 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -385356,6 +385570,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -393434,6 +393650,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -395683,6 +395901,10 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -401952,6 +402174,8 @@ paths:
                             type: string
                           coverage_rule:
                             type: string
+                          definition_sha256:
+                            type: string
                           expected_controller_publication_interval_ms:
                             type: integer
                             format: int64
@@ -405022,6 +405246,8 @@ paths:
                           classification_algorithm:
                             type: string
                           coverage_rule:
+                            type: string
+                          definition_sha256:
                             type: string
                           expected_controller_publication_interval_ms:
                             type: integer
@@ -420180,6 +420406,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -421822,6 +422050,8 @@ paths:
                               classification_algorithm:
                                 type: string
                               coverage_rule:
+                                type: string
+                              definition_sha256:
                                 type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
@@ -425552,6 +425782,8 @@ paths:
                           classification_algorithm:
                             type: string
                           coverage_rule:
+                            type: string
+                          definition_sha256:
                             type: string
                           expected_controller_publication_interval_ms:
                             type: integer
@@ -440446,6 +440678,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -448524,6 +448758,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -450773,6 +451009,10 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -457772,6 +458012,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -465850,6 +466092,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -468099,6 +468343,10 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -481162,6 +481410,8 @@ paths:
                                   type: string
                                 coverage_rule:
                                   type: string
+                                definition_sha256:
+                                  type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
                                   format: int64
@@ -489240,6 +489490,8 @@ paths:
                                 type: string
                               coverage_rule:
                                 type: string
+                              definition_sha256:
+                                type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
                                 format: int64
@@ -491489,6 +491741,10 @@ paths:
                   stopped_by_display_name:
                     type: string
                   stopped_by_subject:
+                    type: string
+                  telemetry_acceptance_policy_id:
+                    type: string
+                  telemetry_budget_policy_id:
                     type: string
                   telemetry_health:
                     type: object
@@ -496810,6 +497066,8 @@ paths:
                             type: string
                           coverage_rule:
                             type: string
+                          definition_sha256:
+                            type: string
                           expected_controller_publication_interval_ms:
                             type: integer
                             format: int64
@@ -499855,6 +500113,8 @@ paths:
                                 classification_algorithm:
                                   type: string
                                 coverage_rule:
+                                  type: string
+                                definition_sha256:
                                   type: string
                                 expected_controller_publication_interval_ms:
                                   type: integer
@@ -507921,6 +508181,8 @@ paths:
                               classification_algorithm:
                                 type: string
                               coverage_rule:
+                                type: string
+                              definition_sha256:
                                 type: string
                               expected_controller_publication_interval_ms:
                                 type: integer
@@ -518303,6 +518565,10 @@ paths:
                   type: boolean
                 start_delay:
                   type: string
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
+                  type: string
                 termination_mode:
                   type: string
                 timeslot_id:
@@ -521179,6 +521445,10 @@ paths:
                 script_shakeout:
                   type: boolean
                 start_delay:
+                  type: string
+                telemetry_acceptance_policy_id:
+                  type: string
+                telemetry_budget_policy_id:
                   type: string
                 termination_mode:
                   type: string

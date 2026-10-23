@@ -235,6 +235,8 @@ cmd=("$apexctl" ci run
 [[ -n "${APEXLOAD_INPUT_MAX_ERROR_COUNT:-}" ]] && cmd+=(--max-error-count "$APEXLOAD_INPUT_MAX_ERROR_COUNT")
 [[ -n "${APEXLOAD_INPUT_IDEMPOTENCY_KEY:-}" ]] && cmd+=(--idempotency-key "$APEXLOAD_INPUT_IDEMPOTENCY_KEY")
 [[ -n "${APEXLOAD_INPUT_TELEMETRY_INCONCLUSIVE:-}" ]] && cmd+=(--telemetry-inconclusive "$APEXLOAD_INPUT_TELEMETRY_INCONCLUSIVE")
+[[ -n "${APEXLOAD_INPUT_TELEMETRY_POLICY:-}" ]] && cmd+=(--telemetry-policy "$APEXLOAD_INPUT_TELEMETRY_POLICY")
+[[ -n "${APEXLOAD_INPUT_TELEMETRY_BUDGET_POLICY:-}" ]] && cmd+=(--telemetry-budget-policy "$APEXLOAD_INPUT_TELEMETRY_BUDGET_POLICY")
 [[ -n "${APEXLOAD_INPUT_WAIT_ANALYSIS:-}" ]] && cmd+=(--wait-analysis "$APEXLOAD_INPUT_WAIT_ANALYSIS")
 
 "${cmd[@]}"

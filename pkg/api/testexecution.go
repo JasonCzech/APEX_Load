@@ -1826,6 +1826,7 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 	executionFence := test.executionFence
 	executionGeneration := test.executionGeneration
 	operationIdentity, _ := queuedStartRecoveryIdentityForTest(test)
+	choices := runPolicyChoices{Acceptance: test.TelemetryAcceptancePolicyID, Budget: test.TelemetryBudgetPolicyID}
 	test.Status = "STARTING"
 
 	tr.mu.Unlock()
@@ -1835,7 +1836,15 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		// runner lock, and frozen into the same write-once admission receipt.
 		// A resolution failure refuses Start: silently dropping a fail_ci
 		// policy would let CI pass without the telemetry gate it configured.
-		pins, acceptance, pinErr := tr.resolveRunPolicyPinsWithSelections(freshAdmission.ProjectID, policySelections)
+		pins, acceptance, budget, pinErr := tr.resolveRunPolicyPinsForRun(freshAdmission.ProjectID, policySelections, choices)
+		if pinErr == nil && budget != nil {
+			// A chosen budget policy sets the run's live budgets: its revision
+			// replaces the system receipt captured above, in the same write.
+			var receipt *TelemetryBudgetPolicy
+			if receipt, pinErr = projectTelemetryBudgetPolicy(freshAdmission.TelemetryPolicy, budget); pinErr == nil {
+				freshAdmission.TelemetryPolicy = receipt
+			}
+		}
 		if errors.Is(pinErr, errRunPolicyConfiguration) {
 			persistErr = pinErr
 		} else if pinErr != nil {

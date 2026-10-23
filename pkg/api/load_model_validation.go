@@ -44,6 +44,7 @@ func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*Loa
 	req.DataPools = bindings
 
 	testReq := createTestRequestFromScenarioDraft(req)
+	testReq.skipTelemetryPolicyCheck = true
 	preview, snapshot, buildRevision, err := tr.buildManagedTestFromSnapshot(testReq, "draft-load-model-validation", "DRAFT")
 	if err != nil {
 		return nil, err

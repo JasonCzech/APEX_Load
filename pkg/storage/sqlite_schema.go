@@ -329,6 +329,8 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			runtime_settings_json TEXT,
 			traffic_profile_json TEXT,
 			joint_evidence_json TEXT,
+			telemetry_acceptance_policy_id TEXT,
+			telemetry_budget_policy_id TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -747,6 +749,8 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			trace_context_json TEXT,
 			joint_evidence_json TEXT,
 			analysis_policy_selections_json TEXT,
+			telemetry_acceptance_policy_id TEXT,
+			telemetry_budget_policy_id TEXT,
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
 			execution_plan_json TEXT,
@@ -2043,6 +2047,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.trace_context_json", query: `ALTER TABLE tests ADD COLUMN trace_context_json TEXT`},
 		{name: "tests.joint_evidence_json", query: `ALTER TABLE tests ADD COLUMN joint_evidence_json TEXT`},
 		{name: "tests.analysis_policy_selections_json", query: `ALTER TABLE tests ADD COLUMN analysis_policy_selections_json TEXT`},
+		{name: "tests.telemetry_acceptance_policy_id", query: `ALTER TABLE tests ADD COLUMN telemetry_acceptance_policy_id TEXT`},
+		{name: "tests.telemetry_budget_policy_id", query: `ALTER TABLE tests ADD COLUMN telemetry_budget_policy_id TEXT`},
 		{name: "tests.start_authorization_json", query: `ALTER TABLE tests ADD COLUMN start_authorization_json TEXT`},
 		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
 		booleanColumnMigration("tests", "shakeout_enabled", false, false),
@@ -2283,6 +2289,13 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		// A scenario's joint evidence projection, carried to every run created
 		// from it. Existing scenarios have none.
 		{name: "scenarios.joint_evidence_json", query: `ALTER TABLE scenarios ADD COLUMN joint_evidence_json TEXT`},
+		// The telemetry acceptance policy every run created from a scenario
+		// inherits (TEL-B). Existing scenarios use their project's default.
+		{name: "scenarios.telemetry_acceptance_policy_id", query: `ALTER TABLE scenarios ADD COLUMN telemetry_acceptance_policy_id TEXT`},
+		// The telemetry budget policy every run created from a scenario
+		// inherits (TEL-B). Existing scenarios' runs use the system threshold
+		// settings.
+		{name: "scenarios.telemetry_budget_policy_id", query: `ALTER TABLE scenarios ADD COLUMN telemetry_budget_policy_id TEXT`},
 	}
 }
 

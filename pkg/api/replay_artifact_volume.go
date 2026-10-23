@@ -51,7 +51,9 @@ func replayArtifactVolumeIdentity(ctx context.Context, root *os.Root) (string, e
 		if err = namespace.Link(temporary, replayArtifactVolumeMarker); err != nil && !os.IsExist(err) {
 			return "", err
 		}
-		identity, err = readReplayArtifactVolumeMarker(namespace)
+		if identity, err = readReplayArtifactVolumeMarker(namespace); err != nil {
+			return "", err
+		}
 	}
 	if err != nil {
 		return "", err

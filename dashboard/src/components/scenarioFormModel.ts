@@ -348,6 +348,8 @@ export function scenarioFormStateFromStoredScenario(
     } : undefined,
     traffic_profile: scenario.traffic_profile ? structuredClone(scenario.traffic_profile) : undefined,
     joint_evidence: scenario.joint_evidence ? structuredClone(scenario.joint_evidence) : undefined,
+    telemetry_acceptance_policy_id: scenario.telemetry_acceptance_policy_id || undefined,
+    telemetry_budget_policy_id: scenario.telemetry_budget_policy_id || undefined,
     runtime_settings: scenario.runtime_settings ? structuredClone(scenario.runtime_settings) : undefined,
     assignment: cloneAssignment(scenario.assignment),
     data_pools: scenario.data_pools?.map(binding => cloneDraft ? {

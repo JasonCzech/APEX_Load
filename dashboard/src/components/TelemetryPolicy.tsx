@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { telemetryPolicyView, telemetryStageLabels, type TelemetryPolicyView } from './telemetryPolicyModel'
+import { telemetryPolicyChosen, telemetryPolicyView, telemetryStageLabels, type TelemetryPolicyView } from './telemetryPolicyModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 export default function TelemetryPolicy({ evidence }: { evidence?: unknown }) {
@@ -15,9 +15,12 @@ export default function TelemetryPolicy({ evidence }: { evidence?: unknown }) {
   return <section className="goal-status-card telemetry-policy-card" aria-label="Telemetry budget policy">
     <h3>Telemetry budget policy</h3>
     {policy ? <>
-      <p>Immutable receipt captured before runtime staging. Later system settings do not rewrite these budgets.</p>
+      <p>Immutable receipt captured before runtime staging. Later system settings or policy revisions do not rewrite these budgets.</p>
       <dl className="manifest-definition-grid">
-        <div><dt>Policy</dt><dd>{policy.policy_id} · revision {policy.revision}</dd></div>
+        <div><dt>Policy</dt><dd>{telemetryPolicyChosen(policy)
+          ? <>Project policy {policy.policy_id} · revision {policy.revision} (chosen by the run)</>
+          : <>System threshold settings ({policy.policy_id} · revision {policy.revision})</>}</dd></div>
+        {policy.definition_sha256 ? <div><dt>Definition digest</dt><dd style={{ overflowWrap: 'anywhere' }}><code>{policy.definition_sha256}</code></dd></div> : null}
         <div><dt>Policy hash</dt><dd style={{ overflowWrap: 'anywhere' }}><code>{policy.hash}</code></dd></div>
         <div><dt>Captured at</dt><dd>{formatDisplayDateTime(policy.captured_at, { seconds: true })}</dd></div>
         <div><dt>Controller publication interval</dt><dd>{policy.expected_controller_publication_interval_ms.toLocaleString()} ms · {policy.cadence_scope === 'local-controller-ticker' ? 'local controller ticker' : 'distributed controller coalescing gate'}</dd></div>

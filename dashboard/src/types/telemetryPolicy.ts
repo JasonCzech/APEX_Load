@@ -1,10 +1,13 @@
 export type TelemetryStage = 'sample_age' | 'generator_processing' | 'transport' | 'controller_fanout' | 'browser_render'
 
-/** A retained policy receipt; availability does not certify collected metrics. */
+/** A retained policy receipt; availability does not certify collected metrics.
+ * Version 1 is the system threshold settings; version 2 is a project
+ * telemetry budget policy revision the run chose, with its definition digest. */
 export interface TelemetryBudgetPolicy {
-  schema_version: 'apexload.telemetry_policy.v1'
-  policy_id: 'system-telemetry-budgets'
-  revision: 1
+  schema_version: 'apexload.telemetry_policy.v1' | 'apexload.telemetry_policy.v2'
+  policy_id: string
+  revision: number
+  definition_sha256?: string
   hash: string
   captured_at: string
   capture_boundary: 'execution-admission-before-staging'

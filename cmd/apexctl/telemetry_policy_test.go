@@ -187,3 +187,43 @@ func TestTelemetryPolicyCLIProjectAndResponseBounds(t *testing.T) {
 		})
 	}
 }
+
+// A version 2 receipt names a project budget policy revision the run chose
+// and its definition digest; the digest field is admitted only there.
+func TestTelemetryPolicyCLIProjectPolicyReceipt(t *testing.T) {
+	evidence := telemetryPolicyCLIFixture(t)
+	policy := *evidence.Policy
+	policy.SchemaVersion, policy.PolicyID, policy.Revision = telemetrypolicy.VersionProjectPolicy, "tight-budgets", 3
+	policy.DefinitionSHA256 = strings.Repeat("ab", 32)
+	policy.Hash = telemetrypolicy.Hash(&policy)
+	// The dashboard pins the same receipt's hash (telemetryPolicyModel.test.ts).
+	if policy.Hash != "f034a3ac9bc132b32ff6487f8f2598e799676832958d96049f4b2dd7914a265b" {
+		t.Fatalf("version 2 receipt hash = %s", policy.Hash)
+	}
+	good, err := json.Marshal(telemetrypolicy.TelemetryPolicyEvidence{Availability: "available", Policy: &policy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeTelemetryPolicyCLI(good)
+	if err != nil || decoded.Policy.PolicyID != "tight-budgets" || decoded.Policy.DefinitionSHA256 != policy.DefinitionSHA256 {
+		t.Fatalf("a version 2 receipt: %+v %v", decoded, err)
+	}
+	v1, err := json.Marshal(telemetryPolicyCLIFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range map[string][]byte{
+		"v1 with digest":    bytes.Replace(v1, []byte(`"revision":1,`), []byte(`"revision":1,"definition_sha256":"`+policy.DefinitionSHA256+`",`), 1),
+		"v2 without digest": bytes.Replace(good, []byte(`"definition_sha256":"`+policy.DefinitionSHA256+`",`), nil, 1),
+		"null digest":       bytes.Replace(good, []byte(`"`+policy.DefinitionSHA256+`"`), []byte(`null`), 1),
+		"numeric digest":    bytes.Replace(good, []byte(`"`+policy.DefinitionSHA256+`"`), []byte(`7`), 1),
+		"changed digest":    bytes.Replace(good, []byte(policy.DefinitionSHA256), []byte(strings.Repeat("cd", 32)), 1),
+		"system id":         bytes.Replace(good, []byte(`"tight-budgets"`), []byte(`"system-telemetry-budgets"`), 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeTelemetryPolicyCLI(raw); err == nil {
+				t.Fatal("an invalid receipt was accepted")
+			}
+		})
+	}
+}
