@@ -428,7 +428,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 					return
 				}
 			}
-			capacityClients := make(map[string]generatorClient, len(adopted)+len(candidate.standbyTargets)+len(restoredStandbys))
+			capacityClients := make(map[string]generatorClient, len(adopted))
 			for target, client := range adopted {
 				capacityClients[target] = client
 			}
