@@ -456,10 +456,11 @@ func (tr *TestRunner) restoreRunEvacuationPriorCheckpoint(test *ManagedTest, raw
 	}
 }
 
-// markRunEvacuationCheckpointAbandoned records that the journal's leader rolled
-// the staging back but could not return its capacity. The journal and its
-// pre-images stay; only the successor rollback is refused. It returns the
-// journal now in effect.
+// markRunEvacuationCheckpointAbandoned marks a same-term version 4 prepared or
+// staged journal its leader no longer drives: a capacity return that did not
+// complete, or a dead journal found on re-arm. The journal and its pre-images
+// stay; only the successor rollback is refused. It returns the journal now in
+// effect.
 func (tr *TestRunner) markRunEvacuationCheckpointAbandoned(test *ManagedTest, raw string, generation uint64, owner string) string {
 	var guard runEvacuationCheckpoint
 	if tr == nil || test == nil || raw == "" || json.Unmarshal([]byte(raw), &guard) != nil || guard.Version != runEvacuationRollbackCheckpointVersion ||

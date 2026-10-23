@@ -58,7 +58,7 @@ Status: implemented behind an opt-in; local qualification only.
   - a panic while handling a failed rollback, which `isolateRunAdoption` catches for any run still under an evacuation journal.
 
   None of these binds an ordinary adoption failure, which would make the run terminal while its participants may still run.
-- **Dead journals left by this leader.** A journal can survive a clean rollback because a journal write failed or the staging rollback errored. The next re-arm of the run, such as a VUser scale, is refused by an unresolved journal. `writeRunContinuity` therefore marks a version 4 `prepared` or `staged` journal of the same term and owner abandoned. A re-arm never overlaps an evacuation of the run, so such a journal is dead, and its prior topology is about to go stale.
+- **Dead journals left by this leader.** A journal can survive because the restore or marker write failed after a clean rollback, or because the staging rollback itself errored. The next re-arm of the run, such as a VUser scale, is refused by an unresolved journal. `writeRunContinuity` therefore marks a version 4 `prepared` or `staged` journal of the same term and owner abandoned. A re-arm never overlaps an evacuation of the run, so such a journal is dead, and its prior topology is about to go stale.
 - **Clean same-leader rollback, ordering.** The leader returns the evacuation's capacity first. The journal holds the standby pre-images, so it is replaced only once the capacity is back:
   - The leader checks the ledger itself (`runEvacuationCapacityReturned`), because an ordinary release reports no error.
   - If the capacity is not back, the journal is marked abandoned at once (`markRunEvacuationCheckpointAbandoned`). A successor never rolls back to an abandoned journal and holds the run `STOPPING`, as for a version 3 journal.
@@ -98,6 +98,7 @@ Status: implemented behind an opt-in; local qualification only.
 - **`TestRestoredRunEvacuationStandbyMatchesFrozenIdentity`**: a newer idle revision is accepted, and changed peaks, incarnation, budget, demand, sharing or attempt are rejected.
 - **`TestEvacuationRollbackUnusablePriorCheckpointHoldsRun`**: an out-of-order prior adoption intent holds the run `STOPPING` with its journal unchanged, and no generator is claimed.
 - **`TestEvacuationRollbackFailurePanicHoldsRun`**: a panic while force-stopping after a failed rollback still holds the run `STOPPING` under its `rolling_back` journal.
+- **`TestEvacuationRollbackPanicAfterSwapIsOrdinaryFailure`**: a panic after the journal was replaced takes the ordinary adoption-failure path. There is no evacuation-uncertain hold and no force stop in that term.
 - **`TestEvacuationRollbackPanicKeepsJournal`**: a panic in the capacity rollback keeps the journal, force-stops the adopted source and holds the run `STOPPING` for attestation.
 - **`TestCleanSameLeaderRollbackRestoresPriorCheckpoint`**:
   - an armed run gets back its prior checkpoint (the same topology and arming time), and the run can be re-armed with new VUser counts afterwards;
@@ -190,6 +191,12 @@ Round 6 used two fresh reviewers. The safety reviewer found nothing: no caller o
 - the order of the abandoned marker and the deferred restore is corrected here and in the spec;
 - an overstated test claim is corrected;
 - two leftover names from the rename are changed.
+
+Round 7 used one tests-and-docs reviewer, because the code was unchanged since the clean round-6 safety review. It found one Low and three Nits, all fixed:
+- `TestEvacuationRollbackPanicAfterSwapIsOrdinaryFailure` covers the switch back to ordinary panic handling once the journal is replaced;
+- two code comments now give both reasons a journal is marked abandoned;
+- the README.md entry and the spec now mention re-arm marking;
+- a sentence that contradicted itself is reworded.
 
 ## Remaining
 

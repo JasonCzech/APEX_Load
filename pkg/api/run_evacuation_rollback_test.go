@@ -1221,3 +1221,34 @@ func TestReArmMarksADeadSameTermJournalAbandoned(t *testing.T) {
 		})
 	}
 }
+
+// panickingAdoptionStore panics while transferring capacity ownership, which
+// happens only after a successful rollback replaced its journal.
+type panickingAdoptionStore struct {
+	*storage.SQLiteStore
+}
+
+func (s *panickingAdoptionStore) AdoptPodCapacity([]storage.PodCapacityReservation, string, string, uint64) error {
+	panic("capacity adoption failure")
+}
+
+func TestEvacuationRollbackPanicAfterSwapIsOrdinaryFailure(t *testing.T) {
+	f := newEvacuationRollbackFixture(t, runEvacuationPhaseStaged, false)
+	f.tr.testStore = &panickingAdoptionStore{SQLiteStore: f.store}
+	if err := f.tr.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	if f.test.adoptedResume == nil || f.test.adoptedResume.finishStatus != "FAILED" || !strings.Contains(f.test.adoptedResume.finishMessage, "internal error while adopting the run") {
+		t.Fatalf("a panic after the swap did not take the ordinary path: %+v", f.test.adoptedResume)
+	}
+	if stops := f.sourceGen.stopGenerations(); len(stops) != 0 {
+		t.Fatalf("the rollback failure path force-stopped the source: %v", stops)
+	}
+	record, err := f.store.GetTest(f.test.ID)
+	if err != nil || record.Status != "RUNNING" || strings.HasPrefix(record.Error, uncertainEvacuationReasonPrefix) {
+		t.Fatalf("a panic after the swap held the run as an uncertain evacuation: %+v, %v", record, err)
+	}
+	if _, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint); err != nil || !present {
+		t.Fatalf("journal was not replaced before the panic: %v", err)
+	}
+}
