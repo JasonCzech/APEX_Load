@@ -276,6 +276,10 @@ func (tr *TestRunner) writeRunContinuity(ctx context.Context, test *ManagedTest,
 			return err
 		}
 	} else if _, _, err := decodeRunContinuityCheckpoint(expected); err != nil {
+		// A re-arm never overlaps an evacuation of this run, so a journal this
+		// leader left behind is dead and its prior topology is about to go
+		// stale. Keep it for fail-closed recovery, but never roll back to it.
+		tr.markRunEvacuationCheckpointAbandoned(test, expected, generation, leaseOwnerID)
 		return fmt.Errorf("cannot overwrite unresolved continuity checkpoint: %w", err)
 	}
 	if !tr.durableExecutionFence || tr.leadership == nil || tr.continuityKeyWrapper == nil {

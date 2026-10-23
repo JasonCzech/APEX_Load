@@ -58,6 +58,7 @@ Status: implemented behind an opt-in; local qualification only.
   - a panic while handling a failed rollback, which `isolateRunAdoption` catches for any run still under an evacuation journal.
 
   None of these binds an ordinary adoption failure, which would make the run terminal while its participants may still run.
+- **Dead journals left by this leader.** A journal can survive a clean rollback because a journal write failed or the staging rollback errored. The next re-arm of the run, such as a VUser scale, is refused by an unresolved journal. `writeRunContinuity` therefore marks a version 4 `prepared` or `staged` journal of the same term and owner abandoned. A re-arm never overlaps an evacuation of the run, so such a journal is dead, and its prior topology is about to go stale.
 - **Clean same-leader rollback, ordering.** The leader returns the evacuation's capacity first. It replaces the journal only once that succeeded, because the journal holds the standby pre-images.
 - **A new term after `rolling_back`** rolls back again, and its source adoption carries the earlier term's token proof.
 
@@ -156,6 +157,8 @@ The tests-and-docs reviewer found three surviving mutations: the standby budget 
 - **More identity cases** in `TestRestoredRunEvacuationStandbyMatchesFrozenIdentity`.
 - **`TestFailedEvacuationRollbackWaitsWhenTermIsUnknown`.** It covers the unreadable-term skip.
 - **`TestRunEvacuationCapacityReturnedReadsTheLedger` and `TestAbandonedEvacuationJournalIsNeverRolledBack`.** They cover the safety fixes.
+
+Round 5 used two fresh reviewers. The safety reviewer confirmed the round-4 fixes and found one Low issue. A journal could still survive unmarked when the restore or the abandoned-marker write itself failed, or when the staging rollback errored, and a later scale then made its topology stale. Fixed: `writeRunContinuity` now marks such a journal abandoned on the refused re-arm (`TestReArmMarksADeadSameTermJournalAbandoned`). Version 3 and other-term journals are left unchanged.
 
 ## Remaining
 

@@ -1151,3 +1151,42 @@ func TestRollingBackJournalRejectsContradictions(t *testing.T) {
 		})
 	}
 }
+
+func TestReArmMarksADeadSameTermJournalAbandoned(t *testing.T) {
+	for _, mode := range []string{"same term", "version 3", "other term"} {
+		t.Run(mode, func(t *testing.T) {
+			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+			tr.evacuationRollbackRecovery = mode != "version 3"
+			tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A scale after a rollback whose journal could not be cleared.
+			scaled := cloneGroupShardMap(previous)
+			scaled["ga"][0].VUsers = 9
+			armGeneration := generation
+			if mode == "other term" {
+				armGeneration++
+			}
+			if err := tr.writeRunContinuity(context.Background(), test, armGeneration, owner, token, scaled, ""); err == nil {
+				t.Fatal("re-arm overwrote an unresolved journal")
+			}
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, planErr := runEvacuationRollbackPlan(record.ContinuityCheckpoint, test.ID)
+			switch mode {
+			case "same term":
+				if planErr == nil || !strings.Contains(planErr.Error(), "abandoned by its leader") {
+					t.Fatalf("dead same-term journal stayed eligible for rollback: %v", planErr)
+				}
+			default:
+				if record.ContinuityCheckpoint != guard {
+					t.Fatalf("%s journal was changed by a re-arm", mode)
+				}
+			}
+		})
+	}
+}
