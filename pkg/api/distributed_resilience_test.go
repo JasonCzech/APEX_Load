@@ -1332,6 +1332,12 @@ func TestLiveTableEvacuationChannelFailureReleasesRunnerLock(t *testing.T) {
 	runEvacuationProvisionScenarioWithFault(t, false, "live-channel")
 }
 
+// evacuationProvisionBackendTimeout bounds each generator RPC of the
+// evacuation provision scenario. It covers AssignWork, CommitWork and the
+// replacement's 200 ms metrics-stream setup window over an in-memory
+// connection, with room for a loaded CI runner: 400 ms was exceeded there.
+const evacuationProvisionBackendTimeout = 2 * time.Second
+
 func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, checkpointFailure string) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
@@ -1384,7 +1390,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	var beforeCommit func() error
 	var beforeAdjust func() error
 	var durationAdjusted atomic.Bool
-	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 400*time.Millisecond, func(ctx context.Context, target string) (generatorClient, error) {
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, evacuationProvisionBackendTimeout, func(ctx context.Context, target string) (generatorClient, error) {
 		if target != "gen-b" {
 			return nil, errors.New("failed generator is unavailable")
 		}
@@ -1646,7 +1652,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	// has never seen this test. Wait beyond the coordinated release barrier to
 	// prove the assignment carried that state across the wire and no replacement
 	// protocol traffic escaped merely because CommitWork released the shard.
-	time.Sleep(distributedCommitStartLead(400*time.Millisecond) + 100*time.Millisecond)
+	time.Sleep(distributedCommitStartLead(evacuationProvisionBackendTimeout) + 100*time.Millisecond)
 	if got := replacementRequests.Load(); got != 0 {
 		t.Fatalf("paused replacement emitted %d requests after its commit barrier", got)
 	}

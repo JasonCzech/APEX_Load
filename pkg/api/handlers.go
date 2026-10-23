@@ -185,6 +185,17 @@ func (s *Server) handlePreflightTest(w http.ResponseWriter, r *http.Request) {
 
 	preflight, err := s.runner.PreflightLaunch(req)
 	if err != nil {
+		// Preflight judges the run's telemetry policy choices as its create
+		// would: a failed policy read is retryable (503) and an unusable
+		// policy is a conflict (409), not a malformed request.
+		if errors.Is(err, errRunPolicyStoreUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		if errors.Is(err, errRunPolicyConfiguration) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
