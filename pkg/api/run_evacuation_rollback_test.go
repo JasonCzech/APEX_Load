@@ -673,7 +673,7 @@ func TestCleanSameLeaderRollbackRestoresPriorCheckpoint(t *testing.T) {
 }
 
 func TestCleanRollbackLeavesOtherJournals(t *testing.T) {
-	for _, mode := range []string{"version 3", "source fenced", "other term"} {
+	for _, mode := range []string{"version 3", "source fenced", "other term", "other owner"} {
 		t.Run(mode, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 			tr.evacuationRollbackRecovery = mode != "version 3"
@@ -690,11 +690,14 @@ func TestCleanRollbackLeavesOtherJournals(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			abandonGeneration := generation
-			if mode == "other term" {
+			abandonGeneration, abandonOwner := generation, owner
+			switch mode {
+			case "other term":
 				abandonGeneration++
+			case "other owner":
+				abandonOwner = "another-leader"
 			}
-			tr.abandonRunEvacuationCheckpoint(test, guard, abandonGeneration, owner)
+			tr.abandonRunEvacuationCheckpoint(test, guard, abandonGeneration, abandonOwner)
 			record, err := store.GetTest(test.ID)
 			if err != nil || record.ContinuityCheckpoint != guard {
 				t.Fatalf("%s journal was replaced: %v", mode, err)
@@ -770,6 +773,16 @@ func TestEvacuationRollbackRefusesChangedLedger(t *testing.T) {
 				r.Demand.VUsers++
 			}
 		}, want: "replacement reservation changed since the evacuation journal"},
+		"replacement committed": {rewrite: func(r *storage.PodCapacityReservation) {
+			if r.Target == "gen-b" {
+				r.State = "committed"
+			}
+		}, want: "replacement reservation changed since the evacuation journal"},
+		"standby newer term": {standby: true, prepare: func(t *testing.T, f *evacuationRollbackFixture) { predecessorRestoreStandby(t, f, true) }, rewrite: func(r *storage.PodCapacityReservation) {
+			if r.Target == "gen-b" {
+				r.Generation += 100
+			}
+		}, want: "standby reservation changed since the evacuation journal"},
 		"replacement idle": {rewrite: func(r *storage.PodCapacityReservation) {
 			if r.Target == "gen-b" {
 				r.GroupPeaks = nil

@@ -97,10 +97,11 @@ Status: implemented behind an opt-in; local qualification only.
 - **`TestCleanSameLeaderRollbackRestoresPriorCheckpoint`**:
   - an armed run gets back its exact prior checkpoint, and the run can be re-armed with new VUser counts afterwards;
   - an unarmed run returns to no checkpoint.
-- **`TestCleanRollbackLeavesOtherJournals`**: version 3, `source_fenced` and other-term journals are not replaced.
+- **`TestCleanRollbackLeavesOtherJournals`**: version 3, `source_fenced`, other-term and other-owner journals are not replaced. The owner check in `abandonRunEvacuationCheckpoint` is defence in depth: the store's lease-fenced swap already refuses another owner, so removing the check does not fail this test.
 - **`TestVersionFourJournalCarriesFailoverHistory`**: a version 4 journal still supplies the run's failover history.
-- **`TestEvacuationRollbackRefusesChangedLedger`** covers five changes, each of which keeps the journal and holds the run `STOPPING`, and none of which reaches the generator's capacity RPC:
-  - a replacement row that changed since the journal;
+- **`TestEvacuationRollbackRefusesChangedLedger`** covers seven changes, each of which keeps the journal and holds the run `STOPPING`, and none of which reaches the generator's capacity RPC:
+  - a replacement row that changed since the journal, or was committed;
+  - a predecessor-restored standby from a newer term;
   - a replacement row without peaks;
   - a predecessor-restored standby with another incarnation;
   - a standby left `releasing`;
@@ -134,6 +135,8 @@ Round 3 used two fresh reviewers. The safety reviewer confirmed the round-2 fixe
 - **Medium:** a rollback candidate whose prior checkpoint could not be used was marked `FAILED` by `failRunAdoption`. Before this change it was held `STOPPING`. Fixed: it is held `STOPPING`.
 - **Low:** a panic inside the rollback failure handling reached `failRunAdoption`. Fixed in `isolateRunAdoption`.
 - **Low:** a clean same-leader rollback replaced the journal before returning the capacity, which could lose the standby pre-image. Fixed: capacity is returned first, and the journal is kept if that fails.
+
+A mutation pass after round 3 removed seven safety checks in `run_evacuation_rollback.go`. Tests were added for the two that survived and have their own effect: the replacement-row state and the standby generation bound. Now every removed check fails the tests except the defence-in-depth owner check described above. The force-stop mutation did not compile, but its effect is asserted by `assertFailedRollbackHeld`.
 
 ## Remaining
 
