@@ -1,6 +1,6 @@
 # Evacuation rollback (REC-A)
 
-Status: implemented behind an opt-in; local qualification only.
+Status: implemented behind an opt-in. Qualified locally only.
 
 ## Contract
 
@@ -197,6 +197,12 @@ Round 7 used one tests-and-docs reviewer, because the code was unchanged since t
 - two code comments now give both reasons a journal is marked abandoned;
 - the README.md entry and the spec now mention re-arm marking;
 - a sentence that contradicted itself is reworded.
+
+Round 8 used one tests-and-docs reviewer. It found nothing: both of its mutations were caught, and the README, the README.md entry and the spec match the code.
+
+Gates on the reviewed code (`dd88b5f54`):
+- the full `pkg/api` suite;
+- the PostgreSQL storage suite (`-tags postgres_integration`), including `TestPodCapacityPostgresAtomicPlacement` with `checkAdoptCurrentTermStandbyPodCapacity`.
 
 ## Remaining
 
