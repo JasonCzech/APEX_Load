@@ -24,6 +24,7 @@ const sources = import.meta.glob<string>([
   '../../docs/IMPORT_FIDELITY_AND_REPAIRS.md',
   '../../docs/CLUSTERS_AND_CLOUD.md',
   '../../docs/ENTERPRISE_PLATFORM_RUNBOOK.md',
+  '../../docs/DATA_MODEL.md',
   '../../docs/ADMIN_USER_GUIDE.md',
   '../../docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md',
   '../../docs/API_USER_GUIDE.md',

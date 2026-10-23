@@ -625,6 +625,14 @@
     ]
   },
   {
+    "id": "data-model",
+    "area": "admin-guide",
+    "title": "Data model",
+    "path": "docs/DATA_MODEL.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
     "id": "lr-web",
     "title": "LoadRunner web coverage",
     "path": "docs/LOADRUNNER_COVERAGE.md",
