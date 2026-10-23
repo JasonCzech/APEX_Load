@@ -431,12 +431,12 @@ func restoredRunEvacuationStandby(row, standby storage.PodCapacityReservation) b
 		reflect.DeepEqual(row.RecoveryPlacement, standby.RecoveryPlacement)
 }
 
-// abandonRunEvacuationCheckpoint restores the checkpoint a version 4 journal
+// restoreRunEvacuationPriorCheckpoint restores the checkpoint a version 4 journal
 // replaced once the same leader has positively rolled its staging back before
 // the source fence. Left in place, the journal's prior topology would go stale
 // as the run's VUsers change, and a successor would roll back to it. Older
 // journals keep their conservative fail-closed behavior.
-func (tr *TestRunner) abandonRunEvacuationCheckpoint(test *ManagedTest, raw string, generation uint64, owner string) {
+func (tr *TestRunner) restoreRunEvacuationPriorCheckpoint(test *ManagedTest, raw string, generation uint64, owner string) {
 	var guard runEvacuationCheckpoint
 	if tr == nil || test == nil || raw == "" || json.Unmarshal([]byte(raw), &guard) != nil || guard.Version != runEvacuationRollbackCheckpointVersion ||
 		(guard.Phase != runEvacuationPhasePrepared && guard.Phase != runEvacuationPhaseStaged) || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner {

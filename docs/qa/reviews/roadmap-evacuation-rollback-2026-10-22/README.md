@@ -15,12 +15,12 @@ Status: implemented behind an opt-in; local qualification only.
 - **Eligibility** (`evacuationRollbackGuard`, `runEvacuationRollbackPlan`). A run qualifies only when:
   - the setting is on and run adoption is enabled;
   - the run is `RUNNING` or `PAUSED`, with the continue failover policy, on the distributed backend;
-  - the journal passes `interruptedEvacuationTargets`, is version 4, and is in phase `prepared`, `staged` or `rolling_back`;
+  - the journal passes `interruptedEvacuationTargets`, is version 4, is in phase `prepared`, `staged` or `rolling_back`, and is not abandoned (`AbandonedAt`);
   - the source is not a prior completed target;
   - no surviving participant's shards changed;
   - every capacity claim and pre-image matches the journal's replacement targets, term and frozen identity.
 
-  Anything else keeps the fail-closed path: `source_fenced`, `replacement_committed` without promotion, `STOPPING`, and the fail policy.
+  Anything else keeps the fail-closed path: `source_fenced`, `replacement_committed` without promotion, abandoned journals, `STOPPING`, and the fail policy.
 - **Successor rollback** (Phase A, `adoptOrphanedRuns`), in order:
   1. The journal's prior checkpoint, whose shards equal `BeforeShards`, becomes the adoption checkpoint.
   2. `persistRunEvacuationRollbackIntent` writes phase `rolling_back`, with the planned adoption intent inside the journal, before any generator sees the rotated token.
@@ -44,7 +44,7 @@ Status: implemented behind an opt-in; local qualification only.
   - A later reader therefore never sees a `RUNNING` row with a plain checkpoint after a failed rollback.
   - That term's fail-closed recovery (`recoverInterruptedRunEvacuation`, `resumeInterruptedRunEvacuations`) does not fence at or below `RollbackGeneration`, because the epoch claim of a term that adopted the prior topology does not drain what it adopted.
   - A newer term fences every participant and records the failure. An administrator attestation also resolves it, because the run has no runtime.
-- **Clean same-leader rollback** (`abandonRunEvacuationCheckpoint`):
+- **Clean same-leader rollback** (`restoreRunEvacuationPriorCheckpoint`):
   - Applies when the leader that wrote a version 4 `prepared` or `staged` journal positively rolls its staging back before the source fence:
     - staging failed and its rollback succeeded;
     - replacement lease establishment failed;
@@ -59,7 +59,11 @@ Status: implemented behind an opt-in; local qualification only.
 
   None of these binds an ordinary adoption failure, which would make the run terminal while its participants may still run.
 - **Dead journals left by this leader.** A journal can survive a clean rollback because a journal write failed or the staging rollback errored. The next re-arm of the run, such as a VUser scale, is refused by an unresolved journal. `writeRunContinuity` therefore marks a version 4 `prepared` or `staged` journal of the same term and owner abandoned. A re-arm never overlaps an evacuation of the run, so such a journal is dead, and its prior topology is about to go stale.
-- **Clean same-leader rollback, ordering.** The leader returns the evacuation's capacity first. It replaces the journal only once that succeeded, because the journal holds the standby pre-images.
+- **Clean same-leader rollback, ordering.** The leader returns the evacuation's capacity first. The journal holds the standby pre-images, so it is replaced only once the capacity is back:
+  - The leader checks the ledger itself (`runEvacuationCapacityReturned`), because an ordinary release reports no error.
+  - If the capacity is not back, the deferred capacity rollback retries, and the restore follows if that succeeds (`finishRestore`).
+  - Otherwise the journal is kept and marked abandoned (`markRunEvacuationCheckpointAbandoned`). A successor never rolls back to an abandoned journal and holds the run `STOPPING`, as for a version 3 journal.
+  - While any journal remains, the run can neither start another evacuation (`beginRunEvacuationCheckpoint`) nor re-arm its checkpoint.
 - **A new term after `rolling_back`** rolls back again, and its source adoption carries the earlier term's token proof.
 
 ## Validation
@@ -98,7 +102,7 @@ Status: implemented behind an opt-in; local qualification only.
 - **`TestCleanSameLeaderRollbackRestoresPriorCheckpoint`**:
   - an armed run gets back its prior checkpoint (the same topology and arming time), and the run can be re-armed with new VUser counts afterwards;
   - an unarmed run returns to no checkpoint.
-- **`TestCleanRollbackLeavesOtherJournals`**: version 3, `source_fenced`, other-term and other-owner journals are not replaced. The owner check in `abandonRunEvacuationCheckpoint` is defence in depth: the store's lease-fenced swap already refuses another owner, so removing the check does not fail this test.
+- **`TestCleanRollbackLeavesOtherJournals`**: version 3, `source_fenced`, other-term and other-owner journals are not replaced. The owner check in `restoreRunEvacuationPriorCheckpoint` is defence in depth: the store's lease-fenced swap already refuses another owner, so removing the check does not fail this test.
 - **`TestVersionFourJournalCarriesFailoverHistory`**: a version 4 journal still supplies the run's failover history.
 - **`TestEvacuationRollbackRefusesChangedLedger`** covers seven changes, each of which keeps the journal and holds the run `STOPPING`. None of the six ledger changes reaches the generator's capacity RPC. The swap failure happens after the capacity was returned. The cases:
   - a replacement row that changed since the journal, or was committed;
@@ -111,6 +115,18 @@ Status: implemented behind an opt-in; local qualification only.
 - **`TestRollbackRunEvacuationCapacityRefusesUnprovableTargets`**: refuses a replacement client without the capacity RPC, and a ledger reservation the journal did not record.
 - **`TestEvacuationRollbackAdoptsPausedRun`**: a paused run is rolled back and stays paused.
 - **`TestFailedEvacuationRollbackIsNotRetriedInItsTerm`**: `resumeInterruptedRunEvacuations` queues no same-term recovery for a failed rollback.
+- **`TestFailedEvacuationRollbackWaitsWhenTermIsUnknown`**: a replica that cannot read its term queues no recovery either. This is a regression check, not one that catches a mutation: an unreadable term reads as generation 0, which already fails the comparison with `RollbackGeneration`.
+- **`TestRollingBackJournalRejectsContradictions`**: each contradiction in a `rolling_back` journal is refused by both the fail-closed recovery and the rollback plan. The contradictions are version 3, the rollback term, owner and start, the staged targets, the source fence and the replacement commit.
+- **`TestRunEvacuationCapacityReturnedReadsTheLedger`**:
+  - a pending or `releasing` replacement reservation is not returned, and a deleted one is;
+  - a pending idle standby is not returned, and a committed idle one is;
+  - a committed row that is still activated, or has another incarnation or budget, is not the returned standby;
+  - a released standby is not returned idle.
+- **`TestAbandonedEvacuationJournalIsNeverRolledBack`**:
+  - the abandoned marker is durable and is not applied twice;
+  - the rollback plan refuses the journal, while the fail-closed participants remain;
+  - the leader can still restore the prior checkpoint once the capacity is back.
+- **`TestReArmMarksADeadSameTermJournalAbandoned`**: a refused re-arm marks a same-term version 4 journal abandoned, and leaves version 3 and other-term journals unchanged.
 - **`TestVersionFourCommittedEvacuationIsPromoted`**: a version 4 `replacement_committed` journal is promoted and its replacement adopted, as for version 3.
 - **`TestAdoptPodCapacityAcceptsCurrentTermStandby`** (`pkg/storage`, and the PostgreSQL integration test): adoption is refused while a standby reserved under the new term is still pending, and succeeds once it is committed. The existing `TestAdoptPodCapacityRequiresEveryStandby` still refuses an old-term standby that was left out.
 
@@ -122,7 +138,7 @@ Round 1 used two reviewers, one on safety and one on the tests and docs.
 - The tests-and-docs reviewer was stopped before it reported, because its snapshot predated those fixes. Its scope moved to round 2.
 
 Round 2 used two fresh reviewers. The safety reviewer confirmed both round-1 fixes and found:
-- **Medium:** a version 4 journal left by a clean same-leader rollback kept a prior topology that went stale as VUsers changed. Fixed by `abandonRunEvacuationCheckpoint`.
+- **Medium:** a version 4 journal left by a clean same-leader rollback kept a prior topology that went stale as VUsers changed. Fixed by `restoreRunEvacuationPriorCheckpoint`.
 - **Low:** a panic before the journal was replaced bound an ordinary adoption failure, which installed a runtime and blocked attestation. Fixed with a rollback-specific recovery.
 - **Low:** failover history was not loaded from version 4 journals. Fixed in `setContinuityCheckpointLocked`.
 The tests-and-docs reviewer of round 2 found weak tests: three mutations of safety checks survived. Its findings and the fixes:
@@ -155,10 +171,18 @@ The tests-and-docs reviewer found three surviving mutations: the standby budget 
 - **`TestEvacuationRollbackResumesAfterAnotherLeaderChange`.** It reads the stored `RUNNING` status. It also checks the replacement fence and the final plain checkpoint.
 - **`TestEvacuationRollbackRefusesChangedLedger`.** It now checks for no capacity RPC on every ledger change.
 - **More identity cases** in `TestRestoredRunEvacuationStandbyMatchesFrozenIdentity`.
-- **`TestFailedEvacuationRollbackWaitsWhenTermIsUnknown`.** It covers the unreadable-term skip.
+- **`TestFailedEvacuationRollbackWaitsWhenTermIsUnknown`.** A regression check for the unreadable-term skip; see Validation.
 - **`TestRunEvacuationCapacityReturnedReadsTheLedger` and `TestAbandonedEvacuationJournalIsNeverRolledBack`.** They cover the safety fixes.
 
 Round 5 used two fresh reviewers. The safety reviewer confirmed the round-4 fixes and found one Low issue. A journal could still survive unmarked when the restore or the abandoned-marker write itself failed, or when the staging rollback errored, and a later scale then made its topology stale. Fixed: `writeRunContinuity` now marks such a journal abandoned on the refused re-arm (`TestReArmMarksADeadSameTermJournalAbandoned`). Version 3 and other-term journals are left unchanged.
+
+The round-5 tests-and-docs reviewer found nine issues, all fixed:
+- **Tests.**
+  - The ledger-return test now covers the standby's identity.
+  - The swap-failure case asserts the capacity was returned.
+  - The unreadable-term test is described as a regression check.
+- **Naming.** The restore functions were renamed, from `abandon…` to `restoreRunEvacuationPriorCheckpoint`, `restoreGuard` and `finishRestore`.
+- **Docs.** The abandoned-journal behaviour is added to this contract, the README.md entry and the spec. The four round-4 tests are listed under Validation. The abandon wiring inside `evacuateGenerator` is listed under Remaining.
 
 ## Remaining
 
@@ -167,7 +191,11 @@ Round 5 used two fresh reviewers. The safety reviewer confirmed the round-4 fixe
   - a restart of a missing replacement for the eligible HTTP workload;
   - replay of source-fenced work.
 - **Drain before release is not proven against a real generator.** That the replacement's epoch claim drains its staged assignment before the capacity release is accepted rests on the generator's existing epoch semantics. These tests use fake generators that accept every release.
-- **The same-leader journal restore** (`abandonRunEvacuationCheckpoint`) is tested directly. Its four call sites in the evacuation flow, and the capacity-first ordering, have no integration test.
+- **The same-leader journal restore** (`restoreRunEvacuationPriorCheckpoint`) and the abandoned marker are tested directly. Inside `evacuateGenerator`, these have no integration test:
+  - the four call sites;
+  - the capacity-first ordering;
+  - marking the journal abandoned when the capacity is not returned;
+  - the deferred retry and restore (`finishRestore`).
 - **Some write failures are untested.** A failed `rolling_back` intent write aborts that Phase A attempt, and Phase A is retried. A failed `STOPPING` write in `failRunEvacuationRollback` is retried in the background. Neither has a dedicated test.
 - **A completed source fails the run.** That happens even when the source finished naturally after a same-leader rollback, because it cannot be told apart from a stop issued before the controller was lost.
 - **A failed rollback** leaves the run `STOPPING`, holding its capacity and timeslot, until a newer term fences it or an administrator attests that its generators stopped. That includes an unfenced replacement, a completed source and an unconfirmed capacity step.

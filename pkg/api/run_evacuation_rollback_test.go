@@ -672,7 +672,7 @@ func TestCleanSameLeaderRollbackRestoresPriorCheckpoint(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			tr.abandonRunEvacuationCheckpoint(test, guard, generation, owner)
+			tr.restoreRunEvacuationPriorCheckpoint(test, guard, generation, owner)
 			record, err := store.GetTest(test.ID)
 			if err != nil || record.ContinuityCheckpoint != test.continuityCheckpoint {
 				t.Fatalf("restored checkpoint not durable: %v", err)
@@ -725,7 +725,7 @@ func TestCleanRollbackLeavesOtherJournals(t *testing.T) {
 			case "other owner":
 				abandonOwner = "another-leader"
 			}
-			tr.abandonRunEvacuationCheckpoint(test, guard, abandonGeneration, abandonOwner)
+			tr.restoreRunEvacuationPriorCheckpoint(test, guard, abandonGeneration, abandonOwner)
 			record, err := store.GetTest(test.ID)
 			if err != nil || record.ContinuityCheckpoint != guard {
 				t.Fatalf("%s journal was replaced: %v", mode, err)
@@ -844,6 +844,9 @@ func TestEvacuationRollbackRefusesChangedLedger(t *testing.T) {
 			f.assertFailedRollbackHeld(t, generation, c.want, true)
 			if _, capacity := f.spareGen.snapshot(); !c.swapFail && len(capacity) != 0 {
 				t.Fatalf("changed ledger still reached the generator: %+v", capacity)
+			}
+			if _, kept := f.ledger(t)["gen-b"]; c.swapFail && kept {
+				t.Fatal("the journal swap failed before the replacement capacity was returned")
 			}
 		})
 	}
@@ -1051,6 +1054,28 @@ func TestRunEvacuationCapacityReturnedReadsTheLedger(t *testing.T) {
 	if !standby.tr.runEvacuationCapacityReturned(standby.test.ID, []storage.PodCapacityReservation{standby.claim}, preImages) {
 		t.Fatal("a committed idle standby did not count as returned")
 	}
+	// A committed row for the standby counts only with the standby's identity.
+	for name, rewrite := range map[string]func(*storage.PodCapacityReservation){
+		"activated":   func(r *storage.PodCapacityReservation) { r.GroupPeaks = map[string]int32{"ga": 5} },
+		"incarnation": func(r *storage.PodCapacityReservation) { r.Incarnation = "pod-c" },
+		"budget":      func(r *storage.PodCapacityReservation) { r.Budget.VUsers++; r.Demand.VUsers++ },
+	} {
+		standby.tr.testStore = &rollbackLedgerStore{SQLiteStore: standby.store, rewrite: func(r *storage.PodCapacityReservation) {
+			if r.Target == "gen-b" {
+				rewrite(r)
+			}
+		}}
+		if standby.tr.runEvacuationCapacityReturned(standby.test.ID, []storage.PodCapacityReservation{standby.claim}, preImages) {
+			t.Fatalf("a committed %s row counted as the returned standby", name)
+		}
+	}
+	standby.tr.testStore = standby.store
+	if err := standby.store.TransitionPodCapacity("gen-b", standby.test.ID, "pod-b", standby.claim.ReservationID, "released", executionLeaseName, owner, generation); err != nil {
+		t.Fatal(err)
+	}
+	if standby.tr.runEvacuationCapacityReturned(standby.test.ID, []storage.PodCapacityReservation{standby.claim}, preImages) {
+		t.Fatal("a released standby counted as returned idle")
+	}
 }
 
 func TestAbandonedEvacuationJournalIsNeverRolledBack(t *testing.T) {
@@ -1080,7 +1105,7 @@ func TestAbandonedEvacuationJournalIsNeverRolledBack(t *testing.T) {
 		t.Fatal("an abandoned journal was marked twice")
 	}
 	// Once the capacity is back, the leader still restores the prior checkpoint.
-	tr.abandonRunEvacuationCheckpoint(test, marked, generation, owner)
+	tr.restoreRunEvacuationPriorCheckpoint(test, marked, generation, owner)
 	record, _ := store.GetTest(test.ID)
 	restored, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
 	original, _, _ := decodeRunContinuityCheckpoint(before)
