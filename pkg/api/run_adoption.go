@@ -792,6 +792,7 @@ func installAdoptedRunTotalsLocked(test *ManagedTest, legacy runTotalsAccumulato
 func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string) {
 	test := candidate.test
 	tr.restoreTelemetryCheckpoint(test, generation, candidate.checkpoint.ExecutionGeneration)
+	tr.restoreTelemetryPolicySegments(test)
 	// cloneClientMap returns nil for an empty map, and a run whose generators
 	// all finished during the gap has no adopted clients.
 	all := make(map[string]generatorClient, len(adopted)+len(completed))
@@ -873,6 +874,7 @@ func (tr *TestRunner) failRunAdoption(b *distributedExecutionBackend, test *Mana
 // means no snapshot is known to be current, so totals come from stored history.
 func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, test *ManagedTest, clients, adopted, completed, archives map[string]generatorClient, generation, priorGeneration uint64, ownerID string, token [generatorrpc.RunSupervisionTokenSize]byte, targets []string, status, message string) {
 	tr.restoreTelemetryCheckpoint(test, generation, priorGeneration)
+	tr.restoreTelemetryPolicySegments(test)
 	tr.mu.Lock()
 	err := tr.installRunAdoptionHandlesLocked(b, test, clients, nil, token)
 	if err == nil {

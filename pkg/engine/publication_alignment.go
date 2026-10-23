@@ -16,11 +16,21 @@ import "time"
 // every n-th collection. Without ticks (no engine yet, or a stopped one), a
 // watchdog publishes every interval and a half.
 func PublishOnCollection(stop <-chan struct{}, interval time.Duration, ticked func() <-chan struct{}, publish func()) {
-	if interval <= 0 {
-		interval = time.Second
+	PublishOnCollectionEvery(stop, func() time.Duration { return interval }, ticked, publish)
+}
+
+// PublishOnCollectionEvery is PublishOnCollection with a cadence that may
+// change while it runs (a run's telemetry policy segment): interval is read
+// before each wait.
+func PublishOnCollectionEvery(stop <-chan struct{}, interval func() time.Duration, ticked func() <-chan struct{}, publish func()) {
+	current := func() time.Duration {
+		if value := interval(); value > 0 {
+			return value
+		}
+		return time.Second
 	}
-	tolerance := min(interval/4, 250*time.Millisecond)
-	watchdog := time.NewTimer(interval + interval/2)
+	cadence := current()
+	watchdog := time.NewTimer(cadence + cadence/2)
 	defer watchdog.Stop()
 	var last time.Time
 	for {
@@ -32,19 +42,23 @@ func PublishOnCollection(stop <-chan struct{}, interval time.Duration, ticked fu
 		case <-stop:
 			return
 		case <-tick:
-			if !last.IsZero() && time.Since(last) < interval-tolerance {
+			cadence = current()
+			if !last.IsZero() && time.Since(last) < cadence-min(cadence/4, 250*time.Millisecond) {
 				continue
 			}
 		case <-watchdog.C:
 		}
-		publish()
+		// Stamped when the publication starts, so a slow publication does
+		// not push the next due tick past the cadence.
 		last = time.Now()
+		publish()
+		cadence = current()
 		if !watchdog.Stop() {
 			select {
 			case <-watchdog.C:
 			default:
 			}
 		}
-		watchdog.Reset(interval + interval/2)
+		watchdog.Reset(cadence + cadence/2)
 	}
 }

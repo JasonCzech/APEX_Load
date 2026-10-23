@@ -85,6 +85,33 @@ func TestPublishOnCollectionFollowsTicksAtTheCadence(t *testing.T) {
 	}
 }
 
+// A publication slower than a quarter of the cadence does not make the next
+// due tick look too soon: the cadence runs from each publication's start.
+func TestPublishOnCollectionKeepsTheCadenceWhenPublishingIsSlow(t *testing.T) {
+	ticks := &fakeCollectionTicks{}
+	published := make(chan time.Time, 64)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		PublishOnCollection(stop, 400*time.Millisecond, ticks.ticked, func() {
+			published <- time.Now()
+			time.Sleep(150 * time.Millisecond)
+		})
+	}()
+	defer func() { close(stop); <-done }()
+	time.Sleep(20 * time.Millisecond)
+	ticks.tick()
+	first := waitPublication(t, published, 200*time.Millisecond)
+	time.Sleep(time.Until(first.Add(400 * time.Millisecond)))
+	ticks.tick()
+	// Published on the tick, well before the watchdog (an interval and a
+	// half after the slow publication ended).
+	if second := waitPublication(t, published, 200*time.Millisecond); second.Sub(first) > 550*time.Millisecond {
+		t.Fatalf("second publication %s after the first", second.Sub(first))
+	}
+}
+
 // Without collection ticks, a watchdog publishes every interval and a half.
 func TestPublishOnCollectionWatchdogWithoutTicks(t *testing.T) {
 	ticks := &fakeCollectionTicks{}

@@ -20,13 +20,14 @@ function appliesByDefault(policy: AnalysisPolicyRecord) {
   return typeof definition === 'object' && definition !== null && (definition as { apply_by_default?: unknown }).apply_by_default === true
 }
 
-const COPY: Record<TelemetryPolicyChoiceKind, { label: string; testId: string; listNoun: string; scenario: string; run: string }> = {
+const COPY: Record<TelemetryPolicyChoiceKind, { label: string; testId: string; listNoun: string; scenario: string; run: string; change: string }> = {
   acceptance: {
     label: 'Telemetry acceptance policy',
     testId: 'telemetry-policy-select',
     listNoun: 'telemetry acceptance policies',
     scenario: 'Every run of this scenario, including scheduled runs and execution plans, is judged by this policy unless the run names another. Its revision is pinned when the run starts.',
     run: 'This run is judged by this policy. Its revision is pinned when the run starts.',
+    change: 'This run is judged by this policy.',
   },
   budget: {
     label: 'Telemetry budget policy',
@@ -34,6 +35,7 @@ const COPY: Record<TelemetryPolicyChoiceKind, { label: string; testId: string; l
     listNoun: 'telemetry budget policies',
     scenario: 'Every run of this scenario, including scheduled runs and execution plans, takes its live telemetry budgets from this policy unless the run names another; without one, runs use the system threshold settings. Its revision is pinned when the run starts.',
     run: 'This run takes its live telemetry budgets from this policy; without one, it uses the system threshold settings. Its revision is pinned when the run starts.',
+    change: "From the moment the change is stored, this running test's live telemetry is classified by this policy's budgets; without one, by the current threshold settings. Intervals already classified keep their classification, and the interval the change falls inside belongs to no segment: its budgets are not judged.",
   },
 }
 
@@ -46,8 +48,8 @@ interface Props {
   onChange: (value: string) => void
   /** A revised copy's source run's choice: the empty value keeps it. */
   inheritedId?: string
-  /** 'scenario' describes every run of a scenario; 'run' describes this run. */
-  subject: 'scenario' | 'run'
+  /** 'scenario' describes every run of a scenario; 'run' describes this run; 'change' a running test's change. */
+  subject: 'scenario' | 'run' | 'change'
   /** A change reloads the project's policies (after a save check found the list stale). */
   refreshKey?: number
   /** The scenario's stored choice: one the project lost is a warning, since a save that keeps it succeeds. */
@@ -124,7 +126,7 @@ export default function TelemetryPolicySelect({ kind = 'acceptance', projectId, 
           {unlisted && <option value={unlisted}>{label(unlisted)}</option>}
         </select>
       </label>
-      <p id={descriptionId} className="scenario-assignment-copy secondary">{subject === 'scenario' ? copy.scenario : copy.run}</p>
+      <p id={descriptionId} className="scenario-assignment-copy secondary">{subject === 'scenario' ? copy.scenario : subject === 'change' ? copy.change : copy.run}</p>
       {list.state === 'failed' && <p className="settings-inline-notice" role="status">{`The project's ${copy.listNoun} could not be loaded; the current choice is kept.`}</p>}
       {/* Described by the select, not announced: a blocked save announces it in the page error. */}
       {issue && <p id={issueId} className={keptStored ? 'settings-inline-warning' : 'form-error'}>{issue}</p>}

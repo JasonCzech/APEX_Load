@@ -517,7 +517,7 @@ controller's response as it is streams it to standard output instead of
 loading it whole. Commands that read the response first still read it within
 a response limit: `journeys`, `browser-findings`, `interactions`, `har-entry`,
 `policies`, `browser-har list`,
-`browser-documents`, `telemetry-policy`, `telemetry-reevaluate`,
+`browser-documents`, `telemetry-policy`, `telemetry-policy-change`, `telemetry-reevaluate`,
 `panel --revision` and `baseline --fail-on-regression` (8 MiB), and
 `browser-resources` (one 2 MiB page at a time):
 

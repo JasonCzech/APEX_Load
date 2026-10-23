@@ -95,4 +95,10 @@ describe('RunExecutionDetails load timeline', () => {
     expect(container.querySelectorAll('[aria-label="Telemetry budget policy"]')).toHaveLength(1)
     expect(container.querySelector('[aria-label="Telemetry budget policy"]')?.closest('details')).toBeNull()
   })
+
+  it("lists a changed run's policy segments, from its own record before its archive", async () => {
+    const changed = { ...run, telemetry_policy_segments: [{ sequence: 1 }, { sequence: 2 }] } as unknown as TestSummary
+    await act(async () => root.render(<RunExecutionDetails test={changed} report={null} history={[]} manifestModel={manifestModel} />))
+    expect(container.querySelector('[data-testid="telemetry-policy-segments"]')).not.toBeNull()
+  })
 })

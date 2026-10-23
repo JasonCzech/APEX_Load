@@ -1,4 +1,4 @@
-import type { TelemetryBudgetPolicy, TelemetryStage } from '../types/telemetryPolicy'
+import type { TelemetryBudgetPolicy, TelemetryPolicySegmentReceipt, TelemetryStage } from '../types/telemetryPolicy'
 
 const stages: TelemetryStage[] = ['sample_age', 'generator_processing', 'transport', 'controller_fanout', 'browser_render']
 export const telemetryStageLabels: Record<TelemetryStage, string> = { sample_age: 'Sample age', generator_processing: 'Generator processing', transport: 'Transport', controller_fanout: 'Controller fan-out', browser_render: 'Browser render' }
@@ -37,8 +37,14 @@ export function telemetryPolicyChosen(policy: TelemetryBudgetPolicy): boolean {
   return policy.schema_version === 'apexload.telemetry_policy.v2'
 }
 
+type TelemetryCaptureBoundary = TelemetryBudgetPolicy['capture_boundary']
+/** A receipt captured at admission: an archive's admission evidence. */
+export const TELEMETRY_ADMISSION_BOUNDARY: readonly TelemetryCaptureBoundary[] = ['execution-admission-before-staging']
+/** Admission or an in-run policy segment (TEL-B): live evidence and segment lists. */
+export const TELEMETRY_ANY_BOUNDARY: readonly TelemetryCaptureBoundary[] = ['execution-admission-before-staging', 'in-run-policy-segment']
+
 /** Bound structural admission before any digest work or display projection. */
-function telemetryPolicyCandidate(value: unknown): TelemetryPolicyView {
+function telemetryPolicyCandidate(value: unknown, boundaries: readonly TelemetryCaptureBoundary[]): TelemetryPolicyView {
   if (value === undefined) return { reason: 'No immutable policy receipt was retained for this evidence.' }
   const evidence = object(value)
   const invalid = { reason: 'The retained policy receipt is invalid or unsupported.' }
@@ -46,6 +52,8 @@ function telemetryPolicyCandidate(value: unknown): TelemetryPolicyView {
   if (evidence.availability === 'unavailable') {
     if (evidence.policy !== undefined && evidence.policy !== null) return invalid
     if (evidence.reason === 'immutable-policy-invalid') return invalid
+    // Live evidence only: an admission view has no segments to read.
+    if (evidence.reason === 'policy-segments-unavailable' && boundaries.includes('in-run-policy-segment')) return { reason: "The run's telemetry policy segments cannot be read now, so no receipt is shown for its live telemetry." }
     if (evidence.reason !== 'immutable-policy-not-retained') return invalid
     return { reason: 'No immutable policy receipt was retained for this evidence.' }
   }
@@ -55,7 +63,7 @@ function telemetryPolicyCandidate(value: unknown): TelemetryPolicyView {
   const interval = policy.expected_controller_publication_interval_ms
   if (typeof policy.hash !== 'string' || !/^[a-f0-9]{64}$/.test(policy.hash) ||
     typeof policy.captured_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(policy.captured_at) || !Number.isFinite(Date.parse(policy.captured_at)) || /^0001-01-01T00:00:00(?:\.0{1,9})?Z$/.test(policy.captured_at) || new Date(policy.captured_at).toISOString().slice(0, 19) !== policy.captured_at.slice(0, 19) ||
-    policy.capture_boundary !== 'execution-admission-before-staging' || policy.classification_algorithm !== 'legacy-mixed-diagnostic.v1' ||
+    !boundaries.includes(policy.capture_boundary as TelemetryCaptureBoundary) || policy.classification_algorithm !== 'legacy-mixed-diagnostic.v1' ||
     typeof interval !== 'number' || !Number.isSafeInteger(interval) || interval < 1000 || interval > 9223372036854 || interval % 1000 !== 0 ||
     policy.cadence_scope !== 'local-controller-ticker' && policy.cadence_scope !== 'distributed-controller-coalescing-gate' ||
     policy.cadence_scope === 'distributed-controller-coalescing-gate' && interval !== 1000 ||
@@ -89,8 +97,8 @@ function telemetryPolicyDigestInput(policy: TelemetryBudgetPolicy): string {
 /** Verify semantic identity before exposing an available receipt. This detects
  * digest/content mismatch; a digest alone does not attest the receipt's origin.
  */
-export async function telemetryPolicyView(value: unknown): Promise<TelemetryPolicyView> {
-  const candidate = telemetryPolicyCandidate(value)
+export async function telemetryPolicyView(value: unknown, boundaries: readonly TelemetryCaptureBoundary[] = TELEMETRY_ADMISSION_BOUNDARY): Promise<TelemetryPolicyView> {
+  const candidate = telemetryPolicyCandidate(value, boundaries)
   if (!candidate.policy) return candidate
   if (!globalThis.crypto?.subtle) return { reason: 'Policy digest verification is unavailable in this browser context.' }
   try {
@@ -100,5 +108,59 @@ export async function telemetryPolicyView(value: unknown): Promise<TelemetryPoli
     return candidate
   } catch {
     return { reason: 'Policy digest verification is unavailable in this browser context.' }
+  }
+}
+
+export type TelemetryPolicySegmentsView = { segments?: TelemetryPolicySegmentReceipt[]; reason?: string }
+
+const segmentSources = ['admission', 'system_settings', 'run_selection']
+const segmentFields = ['sequence', 'effective_at', 'source', 'policy_id', 'policy', 'requested_by']
+
+/** Verify a run's telemetry policy segments (TEL-B): the admission receipt
+ * first (sequence 1, captured at admission), then each change in sequence
+ * order with an in-run boundary, every receipt verified as a single one is.
+ * A change the controller recorded without a receipt (its stored receipt did
+ * not validate) is kept without one. Anything else is refused whole rather
+ * than shown in part. */
+export async function telemetryPolicySegmentsView(value: unknown): Promise<TelemetryPolicySegmentsView> {
+  const invalid = { reason: "The run's retained telemetry policy segments are invalid or unsupported." }
+  if (!Array.isArray(value) || value.length === 0) return invalid
+  const segments: TelemetryPolicySegmentReceipt[] = []
+  for (let index = 0; index < value.length; index++) {
+    const segment = object(value[index])
+    if (!segment || !keys(segment, segmentFields, ['sequence', 'effective_at', 'source', 'policy'])) return invalid
+    const admission = index === 0
+    if (segment.sequence !== index + 1 || typeof segment.effective_at !== 'string' || !Number.isFinite(Date.parse(segment.effective_at)) ||
+      typeof segment.source !== 'string' || !segmentSources.includes(segment.source) || (segment.source === 'admission') !== admission ||
+      segment.policy_id !== undefined && typeof segment.policy_id !== 'string' || segment.requested_by !== undefined && typeof segment.requested_by !== 'string') return invalid
+    if (!admission && segment.policy === null) {
+      segments.push({ sequence: segment.sequence as number, effective_at: segment.effective_at, source: segment.source as TelemetryPolicySegmentReceipt['source'],
+        ...(segment.policy_id !== undefined ? { policy_id: segment.policy_id as string } : {}),
+        ...(segment.requested_by !== undefined ? { requested_by: segment.requested_by as string } : {}) })
+      continue
+    }
+    const view = await telemetryPolicyView({ availability: 'available', policy: segment.policy }, TELEMETRY_ANY_BOUNDARY)
+    if (!view.policy) return view.reason?.includes('unavailable in this browser') ? view : invalid
+    if (view.policy.capture_boundary !== (admission ? 'execution-admission-before-staging' : 'in-run-policy-segment')) return invalid
+    // The source and policy ID agree with the receipt, so the list and the
+    // report name a segment alike.
+    if (segment.policy_id !== undefined && segment.policy_id !== view.policy.policy_id) return invalid
+    if (!admission && (segment.source === 'system_settings') !== (view.policy.policy_id === systemPolicyID)) return invalid
+    segments.push({ sequence: segment.sequence as number, effective_at: segment.effective_at, source: segment.source as TelemetryPolicySegmentReceipt['source'],
+      ...(segment.policy_id !== undefined ? { policy_id: segment.policy_id as string } : {}),
+      ...(segment.requested_by !== undefined ? { requested_by: segment.requested_by as string } : {}), policy: view.policy })
+  }
+  return { segments }
+}
+
+/** A segment's policy as readers name it. */
+export function telemetryPolicySegmentLabel(segment: TelemetryPolicySegmentReceipt): string {
+  switch (segment.source) {
+    case 'admission':
+      return 'Admission receipt'
+    case 'system_settings':
+      return segment.policy ? 'Threshold settings' : 'Threshold settings (receipt invalid)'
+    default:
+      return segment.policy ? `Policy ${segment.policy.policy_id} revision ${segment.policy.revision}` : `Policy ${segment.policy_id ?? 'unknown'} (receipt invalid)`
   }
 }

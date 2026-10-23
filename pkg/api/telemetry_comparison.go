@@ -26,6 +26,10 @@ const (
 	telemetryReasonCapabilityDiffers     = "source_capability_differs"
 	telemetryReasonWorkloadUnqualified   = "workload_unqualified"
 	telemetryReasonWorkloadVersion       = "workload_version_differs"
+	// telemetryReasonPolicyChanged: a run's telemetry policy changed while
+	// it ran (TEL-B), so its whole-run health mixes segments classified by
+	// different policies. Re-evaluation under one policy compares them.
+	telemetryReasonPolicyChanged = "policy_changed_in_run"
 )
 
 // TelemetryRunProfile is what decides how a run's telemetry was classified.
@@ -42,6 +46,10 @@ type TelemetryRunProfile struct {
 	// PolicyPin is the project telemetry policy pinned at Start, recorded
 	// beside the receipt (it does not change the receipt's budgets).
 	PolicyPin *RunPolicyPin `json:"policy_pin,omitempty"`
+	// PolicySegments counts the run's telemetry policy segments when its
+	// policy changed while it ran (TEL-B); the receipt above is the
+	// admission's.
+	PolicySegments int `json:"policy_segments,omitempty"`
 	// SourceCapabilities are the telemetry evidence the run's sources could
 	// produce (source epochs, clock qualification, wall-time coverage).
 	SourceCapabilities []string `json:"source_capabilities"`
@@ -89,6 +97,9 @@ func telemetryRunProfile(runID string, manifest *RunArchiveManifest) TelemetryRu
 		profile.Budgets = append([]TelemetryStageBudget(nil), policy.Budgets...)
 		profile.SustainedBreachWindowMs = policy.SustainedBreachWindowMs
 		profile.CadenceMs, profile.CadenceScope = policy.ExpectedControllerPublicationIntervalMs, policy.CadenceScope
+	}
+	if len(manifest.TelemetryPolicySegments) > 1 {
+		profile.PolicySegments = len(manifest.TelemetryPolicySegments)
 	}
 	for _, pin := range manifest.Provenance.PolicyPins {
 		if pin.Kind == storage.AnalysisDefinitionKindTelemetryPolicy {
@@ -170,6 +181,9 @@ func decideBaselineTelemetry(current, baseline *baselineComparisonRun, workload 
 		}
 		if c.CadenceMs != b.CadenceMs || c.CadenceScope != b.CadenceScope {
 			out.Reasons = append(out.Reasons, telemetryReasonCadenceDiffers)
+		}
+		if c.PolicySegments > 1 || b.PolicySegments > 1 {
+			out.Reasons = append(out.Reasons, telemetryReasonPolicyChanged)
 		}
 	}
 	if !sameStrings(c.SourceCapabilities, b.SourceCapabilities) {

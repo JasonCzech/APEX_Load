@@ -110,6 +110,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 81, Name: "scenario-telemetry-acceptance-policy", Fingerprint: "0acc83c475a344adf8106b524fbff7074e9c10d63c3ac2a8228985ed865b8564"},
 	{Version: 82, Name: "run-telemetry-budget-policy", Fingerprint: "68742713fc81aa4253b085830f7f43e86086c88a61659d92faccae3dcd86d13e"},
 	{Version: 83, Name: "scenario-telemetry-budget-policy", Fingerprint: "6affb200788aa566108f0530bf4ef81389b39a874333caaa7339fa76c02cc585"},
+	{Version: 84, Name: "telemetry-policy-segments", Fingerprint: "a043a0e7fe7a36f8b64c7e44265f5b3fe8b34a4e42a1229b2ba50a2e26559900"},
 }
 
 type SchemaMigrationRecord struct {

@@ -785,6 +785,7 @@ export default function TestExecution({
           isMultiGroup={isMultiGroup}
           groupMetrics={groupMetrics}
           groupColors={GROUP_COLORS}
+          canChangeTelemetryPolicy={canManageTests}
         />
       ),
     },
@@ -993,6 +994,7 @@ export default function TestExecution({
           isMultiGroup={isMultiGroup}
           groupMetrics={groupMetrics}
           groupColors={GROUP_COLORS}
+          canChangeTelemetryPolicy={canManageTests}
         />
         <GRPCDiagnosticsPanel transactions={summaryTransactions} />
         <WebSocketDiagnosticsPanel transactions={summaryTransactions} />

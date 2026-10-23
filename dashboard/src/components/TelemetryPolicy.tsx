@@ -1,25 +1,35 @@
 import { useEffect, useState } from 'react'
-import { telemetryPolicyChosen, telemetryPolicyView, telemetryStageLabels, type TelemetryPolicyView } from './telemetryPolicyModel'
+import { TELEMETRY_ADMISSION_BOUNDARY, TELEMETRY_ANY_BOUNDARY, telemetryPolicyChosen, telemetryPolicyView, telemetryStageLabels, type TelemetryPolicyView } from './telemetryPolicyModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
-export default function TelemetryPolicy({ evidence }: { evidence?: unknown }) {
+interface Props {
+  evidence?: unknown
+  /** Live evidence may be an in-run policy segment's receipt (TEL-B); an archive's admission evidence never is. */
+  acceptSegments?: boolean
+  /** The segment the receipt is, when known (from the run's segments). */
+  segmentSequence?: number
+}
+
+export default function TelemetryPolicy({ evidence, acceptSegments = false, segmentSequence }: Props) {
   const [verified, setVerified] = useState<{ evidence: unknown; view: TelemetryPolicyView }>()
   useEffect(() => {
     let active = true
-    void telemetryPolicyView(evidence).then(view => { if (active) setVerified({ evidence, view }) })
+    void telemetryPolicyView(evidence, acceptSegments ? TELEMETRY_ANY_BOUNDARY : TELEMETRY_ADMISSION_BOUNDARY).then(view => { if (active) setVerified({ evidence, view }) })
     return () => { active = false }
-  }, [evidence])
+  }, [evidence, acceptSegments])
   // A changed response cannot display the previous receipt while its digest is
   // pending. Cleanup fences delayed completions after replacement or unmount.
   const { policy, reason } = verified && verified.evidence === evidence ? verified.view : { reason: 'Verifying the retained policy digest…' }
   return <section className="goal-status-card telemetry-policy-card" aria-label="Telemetry budget policy">
     <h3>Telemetry budget policy</h3>
     {policy ? <>
-      <p>Immutable receipt captured before runtime staging. Later system settings or policy revisions do not rewrite these budgets.</p>
+      {policy.capture_boundary === 'in-run-policy-segment'
+        ? <p>{segmentSequence ? `Segment ${segmentSequence}, changed while the run ran` : "Captured when the run's policy changed while it ran"}: immutable receipt classifying the live telemetry from that change on. Later system settings or policy revisions do not rewrite these budgets.</p>
+        : <p>Immutable receipt captured before runtime staging. Later system settings or policy revisions do not rewrite these budgets.</p>}
       <dl className="manifest-definition-grid">
         <div><dt>Policy</dt><dd>{telemetryPolicyChosen(policy)
-          ? <>Project policy {policy.policy_id} · revision {policy.revision} (chosen by the run)</>
-          : <>System threshold settings ({policy.policy_id} · revision {policy.revision})</>}</dd></div>
+          ? <>Project policy {policy.policy_id} · revision {policy.revision} ({policy.capture_boundary === 'in-run-policy-segment' ? 'chosen while the run ran' : 'chosen by the run'})</>
+          : <>{policy.capture_boundary === 'in-run-policy-segment' ? 'Threshold settings when the policy changed' : 'System threshold settings'} ({policy.policy_id} · revision {policy.revision})</>}</dd></div>
         {policy.definition_sha256 ? <div><dt>Definition digest</dt><dd style={{ overflowWrap: 'anywhere' }}><code>{policy.definition_sha256}</code></dd></div> : null}
         <div><dt>Policy hash</dt><dd style={{ overflowWrap: 'anywhere' }}><code>{policy.hash}</code></dd></div>
         <div><dt>Captured at</dt><dd>{formatDisplayDateTime(policy.captured_at, { seconds: true })}</dd></div>

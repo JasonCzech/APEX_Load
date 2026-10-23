@@ -56,6 +56,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	if kind == "analysis" && action == "telemetry-reevaluate" {
 		return executeTelemetryReevaluateCommand(ctx, args[1:], out)
 	}
+	if kind == "analysis" && action == "telemetry-policy-change" {
+		return executeTelemetryPolicyChangeCommand(ctx, args[1:], out)
+	}
 	if kind == "analysis" && action == "journeys" {
 		return executeAnalysisJourneysCommand(ctx, args[1:], out)
 	}
@@ -533,7 +536,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, precision-review, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, run-query")
+				return errors.New("analysis actions: telemetry-policy, telemetry-policy-change, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, precision-review, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, run-query")
 			}
 		}
 	default:

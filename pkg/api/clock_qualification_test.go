@@ -146,7 +146,7 @@ func TestCrossHostBudgetDecisionsAreUnscoredNotBreached(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			live := &LiveMetrics{Telemetry: &TelemetryHealth{TransportLagMs: tc.lag, TransportLagQuality: tc.quality}}
-			diagnostic, _ := buildTelemetryDiagnostic(nil, live, thresholds)
+			diagnostic, _ := buildTelemetryDiagnostic(nil, live, thresholds, "")
 			if breached := slices.Contains(diagnostic.Conditions, "transport_lag"); breached != tc.breach {
 				t.Fatalf("breach = %v, want %v (%+v)", breached, tc.breach, diagnostic)
 			}

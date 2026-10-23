@@ -11,6 +11,7 @@ const REASON_LABELS: Record<string, string> = {
   source_capability_differs: 'different telemetry source capabilities',
   workload_unqualified: 'different offered workload',
   workload_version_differs: 'differently recorded offered workloads',
+  policy_changed_in_run: "a run's telemetry policy changed while it ran",
 }
 
 const POLL_MS = 2000

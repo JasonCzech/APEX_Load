@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -56,6 +57,11 @@ func init() {
 type TelemetryReevaluationRequest struct {
 	Runs   []string                       `json:"runs"`
 	Policy TelemetryReevaluationPolicyRef `json:"policy"`
+	// Segments selects, per run, one of its telemetry policy segments
+	// (TEL-B): only the intervals that segment classified are re-evaluated,
+	// and its receipt is the original policy. A run not named is re-evaluated
+	// whole. Segment 1 is the admission receipt.
+	Segments map[string]int64 `json:"segments,omitempty"`
 }
 
 // TelemetryReevaluationPolicyRef is a project telemetry_policy revision.
@@ -103,10 +109,19 @@ type TelemetryClassificationCounts struct {
 type TelemetryReevaluationRun struct {
 	RunID          string `json:"run_id"`
 	ManifestSHA256 string `json:"manifest_sha256"`
-	// OriginalPolicyHash is the run's own receipt, when it retained one.
-	OriginalPolicyHash string                        `json:"original_policy_hash,omitempty"`
-	Original           TelemetryClassificationCounts `json:"original"`
-	Answerable         bool                          `json:"answerable"`
+	// Segment is the telemetry policy segment re-evaluated, when one was
+	// selected.
+	Segment int64 `json:"segment,omitempty"`
+	// OriginalPolicyHash is the run's own receipt, when it retained one: the
+	// selected segment's, or for a whole run whose policy never changed, its
+	// admission receipt.
+	OriginalPolicyHash string `json:"original_policy_hash,omitempty"`
+	// PolicySegments is the number of receipts a whole run's original
+	// classification spans when its policy changed while it ran (no single
+	// original receipt is named); select a segment to compare one.
+	PolicySegments int                           `json:"policy_segments,omitempty"`
+	Original       TelemetryClassificationCounts `json:"original"`
+	Answerable     bool                          `json:"answerable"`
 	// Unanswerable says why the retained evidence cannot answer the policy.
 	Unanswerable []string `json:"unanswerable,omitempty"`
 	// Reevaluated is present only for an answerable run.
@@ -131,8 +146,9 @@ type TelemetryReevaluationResult struct {
 }
 
 type telemetryReevaluationRunInput struct {
-	id     string
-	record *storage.RunArchiveRecord
+	id      string
+	record  *storage.RunArchiveRecord
+	segment int64
 }
 
 type telemetryReevaluationInputs struct {
@@ -173,6 +189,18 @@ func prepareTelemetryReevaluation(ctx context.Context, s *Server, projectID stri
 	}
 	digest := sha256.Sum256(definition.Definition)
 	inputs := &telemetryReevaluationInputs{request: request, policy: resolveTelemetryReevaluationPolicy(definition, payload, hex.EncodeToString(digest[:]))}
+	// Segment selections keyed by trimmed run ID; a run named twice is refused.
+	segmentByRun := map[string]int64{}
+	for id, sequence := range request.Segments {
+		id = strings.TrimSpace(id)
+		if _, twice := segmentByRun[id]; twice {
+			return nil, fmt.Errorf("segments names run %s twice", id)
+		}
+		if sequence < 1 {
+			return nil, fmt.Errorf("run %s: a segment is 1 or more", id)
+		}
+		segmentByRun[id] = sequence
+	}
 	seen := map[string]bool{}
 	if s.runner == nil {
 		return nil, evaluationUnavailable(errors.New("runs are unavailable"))
@@ -194,7 +222,12 @@ func prepareTelemetryReevaluation(ctx context.Context, s *Server, projectID stri
 		if !ok || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
 			return nil, evaluationConflict(fmt.Errorf("run %s has no finalized archive", id))
 		}
-		inputs.runs = append(inputs.runs, telemetryReevaluationRunInput{id: test.ID, record: record})
+		inputs.runs = append(inputs.runs, telemetryReevaluationRunInput{id: test.ID, record: record, segment: segmentByRun[id]})
+	}
+	for id := range segmentByRun {
+		if !seen[id] {
+			return nil, fmt.Errorf("segments names run %s, which the re-evaluation does not", id)
+		}
 	}
 	inputs.fingerprint = telemetryReevaluationFingerprint(projectID, inputs)
 	return inputs, nil
@@ -204,6 +237,7 @@ func telemetryReevaluationFingerprint(projectID string, inputs *telemetryReevalu
 	type run struct {
 		ID             string `json:"id"`
 		ManifestSHA256 string `json:"manifest_sha256"`
+		Segment        int64  `json:"segment,omitempty"`
 	}
 	value := struct {
 		Algorithm string `json:"algorithm"`
@@ -214,7 +248,7 @@ func telemetryReevaluationFingerprint(projectID string, inputs *telemetryReevalu
 		Runs      []run  `json:"runs"`
 	}{Algorithm: telemetryReevaluationAlgorithm, Project: projectID, PolicyID: inputs.policy.ID, Revision: inputs.policy.Revision, PolicySHA: inputs.policy.SHA256}
 	for _, r := range inputs.runs {
-		value.Runs = append(value.Runs, run{ID: r.id, ManifestSHA256: strings.ToLower(strings.TrimSpace(r.record.ManifestSHA256))})
+		value.Runs = append(value.Runs, run{ID: r.id, ManifestSHA256: strings.ToLower(strings.TrimSpace(r.record.ManifestSHA256)), Segment: r.segment})
 	}
 	raw, _ := json.Marshal(value)
 	sum := sha256.Sum256(raw)
@@ -305,8 +339,77 @@ func reevaluateRunArchive(ctx context.Context, run telemetryReevaluationRunInput
 	if evidence := telemetryPolicyEvidenceFromProvenance(&manifest.Provenance); evidence.Policy != nil {
 		out.OriginalPolicyHash = evidence.Policy.Hash
 	}
-	reevaluateTelemetryIntervals(&out, intervals, policy, telemetryRunDistributed(manifest))
+	var breaks []time.Time
+	if run.segment > 0 {
+		out.Segment = run.segment
+		hash, ok := telemetryManifestSegmentHash(manifest, run.segment)
+		if !ok {
+			out.Unanswerable = []string{"segment_unknown"}
+			return out, nil
+		}
+		out.OriginalPolicyHash = hash
+		intervals, breaks = telemetryIntervalsOfSegment(intervals, run.segment, len(manifest.TelemetryPolicySegments) < 2, manifest.TelemetryCoverage)
+	} else if len(manifest.TelemetryPolicySegments) > 1 {
+		out.OriginalPolicyHash = ""
+		out.PolicySegments = len(manifest.TelemetryPolicySegments)
+	}
+	reevaluateTelemetryIntervals(&out, intervals, policy, telemetryRunDistributed(manifest), breaks...)
 	return out, nil
+}
+
+// telemetryManifestSegmentHash is the receipt hash of a run's segment: the
+// admission receipt's for segment 1 of a run whose policy never changed.
+func telemetryManifestSegmentHash(manifest *RunArchiveManifest, segment int64) (string, bool) {
+	for _, recorded := range manifest.TelemetryPolicySegments {
+		if recorded.Sequence == segment && recorded.Policy != nil {
+			return recorded.Policy.Hash, true
+		}
+	}
+	if segment == 1 && len(manifest.TelemetryPolicySegments) == 0 {
+		if evidence := telemetryPolicyEvidenceFromProvenance(&manifest.Provenance); evidence.Policy != nil {
+			return evidence.Policy.Hash, true
+		}
+	}
+	return "", false
+}
+
+// telemetryIntervalsOfSegment keeps the intervals a segment classified; an
+// interval a boundary fell inside belongs to none. An interval naming no
+// segment (archived by an older controller) is the segment's in a run whose
+// policy never changed, or when its span as coverage counts it (trimmed to
+// the run's coverage window) lies within the segment's span.
+//
+// breaks are the times of the intervals left out: each ends a breach spell,
+// as it did in the run, so the kept intervals either side never join one.
+func telemetryIntervalsOfSegment(intervals []IntervalSummaryRecord, segment int64, single bool, coverage *TelemetryCoverageRecord) ([]IntervalSummaryRecord, []time.Time) {
+	var span *TelemetryPolicySegment
+	windowStart, windowEnd := int64(math.MinInt64), int64(math.MaxInt64)
+	if coverage != nil {
+		for i := range coverage.Segments {
+			if coverage.Segments[i].Sequence == segment {
+				span = &coverage.Segments[i]
+			}
+		}
+		windowStart, windowEnd = coverage.Coverage.WindowStart.UnixMilli(), coverage.Coverage.WindowEnd.UnixMilli()
+	}
+	out := make([]IntervalSummaryRecord, 0, len(intervals))
+	var breaks []time.Time
+	for _, row := range telemetryRowSpans(intervals, windowStart, windowEnd) {
+		named := int64(0)
+		if row.row.TelemetryStatus != nil {
+			named = row.row.TelemetryStatus.PolicySegment
+		}
+		switch {
+		case named == segment, single && named == 0:
+			out = append(out, row.row)
+		case named == 0 && span != nil && row.ok && row.row.TelemetryStatus != nil && !telemetryRowPolicyUnclassified(row.row.TelemetryStatus) &&
+			span.Start.UnixMilli() <= row.start && row.end <= span.End.UnixMilli():
+			out = append(out, row.row)
+		default:
+			breaks = append(breaks, row.row.Timestamp)
+		}
+	}
+	return out, breaks
 }
 
 const telemetryCadenceScopeDistributed = "distributed-controller-coalescing-gate"
@@ -335,7 +438,9 @@ func telemetryRunDistributed(manifest *RunArchiveManifest) bool {
 
 // reevaluateTelemetryIntervals classifies retained intervals under the
 // policy and decides whether the evidence can answer it.
-func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []IntervalSummaryRecord, policy TelemetryReevaluationPolicy, distributed bool) {
+// breaks (in timestamp order) are intervals left out of a segment's
+// re-evaluation: each ends a breach spell.
+func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []IntervalSummaryRecord, policy TelemetryReevaluationPolicy, distributed bool, breaks ...time.Time) {
 	ordered := append([]IntervalSummaryRecord(nil), intervals...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Timestamp.Before(ordered[j].Timestamp) })
 	reevaluated := TelemetryClassificationCounts{}
@@ -343,7 +448,12 @@ func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []Int
 	window := time.Duration(policy.SustainedBreachWindowMs) * time.Millisecond
 	var streak *time.Time
 	var telemetryTimes []time.Time
+	nextBreak := 0
 	for _, interval := range ordered {
+		for nextBreak < len(breaks) && breaks[nextBreak].Before(interval.Timestamp) {
+			streak = nil
+			nextBreak++
+		}
 		out.Original.Intervals++
 		reevaluated.Intervals++
 		if interval.TelemetryStatus == nil {

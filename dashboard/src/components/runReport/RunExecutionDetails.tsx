@@ -1,5 +1,6 @@
 import TelemetryPolicy from '../TelemetryPolicy'
 import TelemetryAcceptanceVerdict from '../TelemetryAcceptanceVerdict'
+import { TelemetryPolicySegmentList } from '../TelemetryPolicySegments'
 import SeriesChartExport from "../SeriesChartExport"
 import LoadPlanChart from '../LoadPlanChart'
 import { LOAD_PLAN_COLORS } from '../loadPlanSteps'
@@ -138,6 +139,8 @@ export default function RunExecutionDetails({ test, report, history = [], histor
         is evidence about the run, not its story, so it waits with the manifest. */}
     {manifest && evidenceOnly && <TelemetryPolicy evidence={manifest.telemetry_policy} />}
     <TelemetryAcceptanceVerdict verdict={report?.telemetry_acceptance} />
+    {/* A run whose policy changed while it ran: its receipt is only its first segment. Before its archive is written, the run's own list. */}
+    <TelemetryPolicySegmentList segments={report?.telemetry_policy_segments ?? test.telemetry_policy_segments} />
     <details className="run-execution-records"><summary>Configuration and infrastructure evidence</summary>
       {manifest && !evidenceOnly && <TelemetryPolicy evidence={manifest.telemetry_policy} />}
       <p>{manifest?.source === 'archive' ? 'Archived run manifest.' : 'Retained controller record.'} Document generated: {executionDate(manifest?.generated_at)}. Generation time is not the time the run was captured.</p>

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/telemetrypolicy"
 )
 
 // Observed spans merge into a sorted, disjoint union; overlapping and retried
@@ -203,12 +204,30 @@ func TestTelemetryLiveCoverageAfterAdoptionIsALowerBound(t *testing.T) {
 	}
 }
 
-// A captured policy that fails validation names no hash.
+// A run's coverage names its policy only by a valid admission receipt: a
+// receipt that fails validation, or a segment's, names no hash.
 func TestTelemetryPolicySegmentRejectsAnInvalidPolicy(t *testing.T) {
 	start := time.Unix(1_800_000_000, 0).UTC()
 	test := &ManagedTest{initialArchiveProvenance: &RunArchiveProvenance{TelemetryPolicy: &TelemetryBudgetPolicy{Hash: "tampered"}}}
 	if segment := telemetryPolicySegments(test, start, start.Add(time.Second))[0]; segment.PolicyHash != "" || segment.Unavailable != "immutable-policy-invalid" || segment.Legacy {
 		t.Fatalf("invalid policy segment %+v", segment)
+	}
+	// A run admitted with a valid receipt and never changed names it.
+	admission := captureTelemetryBudgetPolicy(RunArchiveExecutionSettingsSnapshot{General: GeneralSettings{MetricsIntervalSeconds: 1}}, false, start)
+	test = &ManagedTest{initialArchiveProvenance: &RunArchiveProvenance{TelemetryPolicy: admission}}
+	if segments := telemetryPolicySegments(test, start, start.Add(time.Second)); admission.Hash == "" || len(segments) != 1 || segments[0].PolicyHash != admission.Hash || segments[0].Legacy || segments[0].Unavailable != "" {
+		t.Fatalf("an admitted run's segments %+v", segments)
+	}
+	// A segment's receipt, valid as one, is never the run's admission receipt.
+	segmentReceipt := captureTelemetryBudgetPolicy(RunArchiveExecutionSettingsSnapshot{General: GeneralSettings{MetricsIntervalSeconds: 1}}, false, start)
+	segmentReceipt.CaptureBoundary = telemetrypolicy.CaptureBoundarySegment
+	segmentReceipt.Hash = telemetryBudgetPolicyHash(segmentReceipt)
+	if !validTelemetryBudgetPolicy(segmentReceipt) {
+		t.Fatal("the segment receipt fixture is invalid")
+	}
+	test = &ManagedTest{initialArchiveProvenance: &RunArchiveProvenance{TelemetryPolicy: segmentReceipt}}
+	if segment := telemetryPolicySegments(test, start, start.Add(time.Second))[0]; segment.PolicyHash != "" || segment.Unavailable != "immutable-policy-invalid" {
+		t.Fatalf("a segment receipt as the admission one: %+v", segment)
 	}
 }
 

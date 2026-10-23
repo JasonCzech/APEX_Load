@@ -14,7 +14,11 @@ import (
 	"unicode/utf8"
 )
 
-func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) (*TelemetryDiagnostic, string) {
+// policyUnscored, when set, is why no telemetry policy segment classifies
+// the interval (TEL-B): its budget decisions are unscored for that reason,
+// and only the conditions no policy decides (losses, gaps, samples) are
+// judged.
+func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings, policyUnscored string) (*TelemetryDiagnostic, string) {
 	if live == nil {
 		return nil, "healthy"
 	}
@@ -25,6 +29,10 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 	signatureParts := make([]string, 0, 8)
 	var unscored []string
 	severity := "healthy"
+	budgets := policyUnscored == ""
+	if !budgets {
+		unscored = append(unscored, policyUnscored)
+	}
 
 	if live.Telemetry != nil {
 		if live.Telemetry.DroppedResults > 0 {
@@ -51,20 +59,24 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 			signatureParts = append(signatureParts, "websocket_drops")
 			severity = maxDiagnosticSeverity(severity, "danger")
 		}
-		if live.Telemetry.SampleAgeUnavailable {
+		if !budgets {
+			// No policy classifies the interval: its budgets are not judged.
+		} else if live.Telemetry.SampleAgeUnavailable {
 			// No sample was reported: there is no age to judge.
 		} else if reason := clockBudgetUnscored(live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs, live.Telemetry.SampleAgeQuality); reason != "" {
 			unscored = append(unscored, "stale_sample:"+reason)
 		} else {
 			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", clockScoredValue(live.Telemetry.SampleAgeMs, live.Telemetry.SampleAgeQuality), thresholds.MaxTelemetrySampleAgeMs)
 		}
-		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "generator_lag", "generator processing lag", live.Telemetry.GeneratorProcessingLagMs, thresholds.MaxTelemetryGeneratorLagMs)
-		if reason := clockBudgetUnscored(live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs, live.Telemetry.TransportLagQuality); reason != "" {
-			unscored = append(unscored, "transport_lag:"+reason)
-		} else {
-			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", clockScoredValue(live.Telemetry.TransportLagMs, live.Telemetry.TransportLagQuality), thresholds.MaxTelemetryTransportLagMs)
+		if budgets {
+			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "generator_lag", "generator processing lag", live.Telemetry.GeneratorProcessingLagMs, thresholds.MaxTelemetryGeneratorLagMs)
+			if reason := clockBudgetUnscored(live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs, live.Telemetry.TransportLagQuality); reason != "" {
+				unscored = append(unscored, "transport_lag:"+reason)
+			} else {
+				appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", clockScoredValue(live.Telemetry.TransportLagMs, live.Telemetry.TransportLagQuality), thresholds.MaxTelemetryTransportLagMs)
+			}
+			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "controller_fanout_lag", "controller fan-out lag", live.Telemetry.ControllerFanoutLagMs, thresholds.MaxTelemetryControllerFanoutMs)
 		}
-		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "controller_fanout_lag", "controller fan-out lag", live.Telemetry.ControllerFanoutLagMs, thresholds.MaxTelemetryControllerFanoutMs)
 		// Browser render lag is advisory (a viewer's tab is not the system
 		// under test): it is reported, never scored into run health.
 	}
@@ -110,6 +122,14 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 		signatureParts = append(signatureParts, "unscored:"+entry)
 	}
 	if len(conditions) == 0 {
+		if !budgets {
+			return &TelemetryDiagnostic{
+				Severity:  "healthy",
+				Summary:   telemetryPolicyUnscoredSummary(policyUnscored),
+				Unscored:  unscored,
+				Telemetry: live.Telemetry,
+			}, policyUnscored
+		}
 		if len(unscored) > 0 {
 			return &TelemetryDiagnostic{
 				Severity:  "healthy",

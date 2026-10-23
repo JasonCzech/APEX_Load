@@ -577,9 +577,20 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages
 	live.Telemetry.WebsocketDroppedEvents = hubStats.DroppedBroadcasts
 	artifacts.enrichLiveMetrics(test, live)
-	policyEvidence, policyThresholds := tr.runTelemetryPolicy(test)
+	tr.retryTelemetryPolicySegments(test, now)
+	policyEvidence, policyThresholds, policyInterval := tr.runTelemetryIntervalPolicy(test, now, telemetryMeasurementOf(live))
 	live.TelemetryPolicy = policyEvidence
-	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, policyThresholds)
+	// No segment classifies an interval a change fell inside (its
+	// measurements were taken partly under each policy, and none is
+	// proportionally invented) or one whose segments could not be read: its
+	// budgets are unscored, and only what no policy decides is judged.
+	policyUnscored := ""
+	if policyInterval.unavailable {
+		policyUnscored = telemetryPolicySegmentsUnavailableUnscored
+	} else if policyInterval.spanning {
+		policyUnscored = telemetryPolicyBoundaryUnscored
+	}
+	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, policyThresholds, policyUnscored)
 	publishDiagnostic := false
 	var telemetryRunHealth *TelemetryRunHealth
 	var previousTelemetryRunHealth *TelemetryRunHealth
@@ -606,7 +617,20 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		tests = append(tests, candidate)
 	}
 	previousTelemetryRunHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
+	if policyInterval.boundary {
+		// A sustained breach is a breach under one policy: a new segment
+		// starts its own. A change merely pending (its write may fail) keeps
+		// the current spell.
+		test.telemetryDiagnostic.BreachStartedAt = nil
+	}
 	telemetryRunHealth = updateTelemetryRunHealth(&test.telemetryDiagnostic, diagnostic, diagnosticSignature, now)
+	if telemetryRunHealth != nil && policyInterval.ok && !policyInterval.spanning {
+		telemetryRunHealth.PolicySegment = policyInterval.segment.Sequence
+		if test.telemetryDiagnostic.Health != nil {
+			test.telemetryDiagnostic.Health.PolicySegment = policyInterval.segment.Sequence
+		}
+	}
+	test.telemetryLastClassifiedAt = now
 	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
 	live.CapacityStatus = buildLiveCapacityStatus(test, live, tests)
 	tr.appendLiveErrorEvidenceLocked(test, live.ErrorEvidence)
@@ -942,14 +966,19 @@ func (tr *TestRunner) forgetRunSnapshotWriteStateLocked(testID string) {
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) time.Time {
-	policyEvidence, _ := tr.runTelemetryPolicy(test)
-	intervalSec := tr.GetSystemSettings().General.MetricsIntervalSeconds
-	if policyEvidence.Policy != nil {
-		intervalSec = int(policyEvidence.Policy.ExpectedControllerPublicationIntervalMs / 1000)
-	}
-	interval, ok := checkedDuration(intervalSec, time.Second)
-	if !ok || interval <= 0 {
-		interval = time.Second
+	// The cadence is the receipt's in force: a telemetry policy segment can
+	// change it while the run runs (TEL-B).
+	interval := func() time.Duration {
+		policyEvidence, _ := tr.runTelemetryPolicy(test)
+		intervalSec := tr.GetSystemSettings().General.MetricsIntervalSeconds
+		if policyEvidence.Policy != nil {
+			intervalSec = int(policyEvidence.Policy.ExpectedControllerPublicationIntervalMs / 1000)
+		}
+		interval, ok := checkedDuration(intervalSec, time.Second)
+		if !ok || interval <= 0 {
+			return time.Second
+		}
+		return interval
 	}
 	lastLatencyCheck := time.Time{}
 	lastPublishedSnapshot := time.Time{}
@@ -957,7 +986,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 	// Publish right after the engine's collections, at the receipt's cadence:
 	// on an unrelated ticker the published snapshot was as old as the two
 	// tickers' phase offset, which was reported as generator processing.
-	engine.PublishOnCollection(done, interval, mge.CollectionTicked, func() {
+	engine.PublishOnCollectionEvery(done, interval, mge.CollectionTicked, func() {
 		snap, ok := mge.LatestSnapshot()
 		if !ok || (!lastPublishedSnapshot.IsZero() && !snap.Timestamp.After(lastPublishedSnapshot)) {
 			return

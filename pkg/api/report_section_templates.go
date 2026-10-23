@@ -554,6 +554,10 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{range .Sources}}<tr><td>{{.Source}}</td><td>{{.Observed}}</td></tr>{{end}}
 </tbody></table>{{end}}
 <p class="section-copy">Classified time: {{.Breach}}</p>
+{{if .Segments}}<p class="section-copy">{{.SegmentsNote}}</p>
+<table><thead><tr><th>Segment</th><th>From</th><th>Source</th><th>Policy</th><th>Cadence</th><th class="num">Healthy (ms)</th><th class="num">Degraded (ms)</th><th class="num">Breached (ms)</th></tr></thead><tbody>
+{{range .Segments}}<tr><td>{{.Sequence}}</td><td>{{.EffectiveAt}}</td><td>{{.Source}}</td><td>{{.Policy}}</td><td>{{.Cadence}}</td><td class="num">{{.Healthy}}</td><td class="num">{{.Degraded}}</td><td class="num">{{.Breached}}</td></tr>{{end}}
+</tbody></table>{{end}}
 <p class="section-copy">Clock quality: {{.Clock}}</p>
 <p class="section-copy">Render population: {{.RenderPopulation}}</p>
 {{if .Stages}}<table><thead><tr><th>Stage</th><th>Availability</th><th class="num">Samples</th><th class="num">P50 (ms)</th><th class="num">P95 (ms)</th><th class="num">P99 (ms)</th><th class="num">Max (ms)</th><th>Excluded</th></tr></thead><tbody>

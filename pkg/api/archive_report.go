@@ -606,6 +606,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.AuraParity = auraParity.result()
 	// From the public projection: its source labels are scrubbed (TEL-B).
 	report.HostNetwork = buildRunArchiveHostNetwork(report.Manifest.HostNetwork)
+	// From the masked manifest, whose telemetry text is scrubbed.
+	report.TelemetryPolicySegments = report.Manifest.TelemetryPolicySegments
 	report.HTTP3Preflight = cloneHTTP3Preflight(manifest.Provenance.HTTP3Preflight)
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 

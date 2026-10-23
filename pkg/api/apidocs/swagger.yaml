@@ -13540,13 +13540,25 @@ paths:
                               items:
                                 type: object
                                 properties:
+                                  breached_ms:
+                                    type: integer
+                                    format: int64
+                                  degraded_ms:
+                                    type: integer
+                                    format: int64
                                   end:
                                     type: string
                                     format: date-time
+                                  healthy_ms:
+                                    type: integer
+                                    format: int64
                                   legacy:
                                     type: boolean
                                   policy_hash:
                                     type: string
+                                  sequence:
+                                    type: integer
+                                    format: int64
                                   start:
                                     type: string
                                     format: date-time
@@ -13626,6 +13638,67 @@ paths:
                                   format: int64
                               nullable: true
                           nullable: true
+                        telemetry_policy_segments:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              effective_at:
+                                type: string
+                                format: date-time
+                              policy:
+                                type: object
+                                properties:
+                                  budgets:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        enabled:
+                                          type: boolean
+                                        limit_ms:
+                                          type: number
+                                          format: double
+                                        stage:
+                                          type: string
+                                  cadence_scope:
+                                    type: string
+                                  capture_boundary:
+                                    type: string
+                                  captured_at:
+                                    type: string
+                                    format: date-time
+                                  classification_algorithm:
+                                    type: string
+                                  coverage_rule:
+                                    type: string
+                                  definition_sha256:
+                                    type: string
+                                  expected_controller_publication_interval_ms:
+                                    type: integer
+                                    format: int64
+                                  hash:
+                                    type: string
+                                  policy_id:
+                                    type: string
+                                  revision:
+                                    type: integer
+                                    format: int64
+                                  schema_version:
+                                    type: string
+                                  sustained_breach_window_ms:
+                                    type: integer
+                                    format: int64
+                                nullable: true
+                              policy_id:
+                                type: string
+                              requested_by:
+                                type: string
+                              sequence:
+                                type: integer
+                                format: int64
+                              source:
+                                type: string
                         telemetry_render_population:
                           type: object
                           properties:
@@ -16205,6 +16278,67 @@ paths:
                         reason:
                           type: string
                       nullable: true
+                    telemetry_policy_segments:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          effective_at:
+                            type: string
+                            format: date-time
+                          policy:
+                            type: object
+                            properties:
+                              budgets:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    enabled:
+                                      type: boolean
+                                    limit_ms:
+                                      type: number
+                                      format: double
+                                    stage:
+                                      type: string
+                              cadence_scope:
+                                type: string
+                              capture_boundary:
+                                type: string
+                              captured_at:
+                                type: string
+                                format: date-time
+                              classification_algorithm:
+                                type: string
+                              coverage_rule:
+                                type: string
+                              definition_sha256:
+                                type: string
+                              expected_controller_publication_interval_ms:
+                                type: integer
+                                format: int64
+                              hash:
+                                type: string
+                              policy_id:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              schema_version:
+                                type: string
+                              sustained_breach_window_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
+                          policy_id:
+                            type: string
+                          requested_by:
+                            type: string
+                          sequence:
+                            type: integer
+                            format: int64
+                          source:
+                            type: string
                     transaction_response_time_sla_results:
                       type: array
                       items:
@@ -64566,6 +64700,12 @@ paths:
                                   description: 'Go type: TelemetryRunHealth'
                                   additionalProperties: true
                                   nullable: true
+                                telemetry_policy_segments:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryPolicySegmentReceipt'
+                                    additionalProperties: true
                                 termination_mode:
                                   type: string
                                 timeslot_id:
@@ -97452,6 +97592,9 @@ paths:
                                 last_transition_at:
                                   type: string
                                   format: date-time
+                                policy_segment:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 status:
@@ -100044,6 +100187,9 @@ paths:
                               last_transition_at:
                                 type: string
                                 format: date-time
+                              policy_segment:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               status:
@@ -101068,6 +101214,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -101085,6 +101234,89 @@ paths:
                           - severity
                           - status
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       termination_mode:
                         type: string
                       timeslot_id:
@@ -104855,6 +105087,9 @@ paths:
                                 last_transition_at:
                                   type: string
                                   format: date-time
+                                policy_segment:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 status:
@@ -107447,6 +107682,9 @@ paths:
                               last_transition_at:
                                 type: string
                                 format: date-time
+                              policy_segment:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               status:
@@ -108471,6 +108709,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -108488,6 +108729,89 @@ paths:
                           - severity
                           - status
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       termination_mode:
                         type: string
                       timeslot_id:
@@ -112253,6 +112577,9 @@ paths:
                                 last_transition_at:
                                   type: string
                                   format: date-time
+                                policy_segment:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 status:
@@ -114845,6 +115172,9 @@ paths:
                               last_transition_at:
                                 type: string
                                 format: date-time
+                              policy_segment:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               status:
@@ -115869,6 +116199,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -115886,6 +116219,89 @@ paths:
                           - severity
                           - status
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       termination_mode:
                         type: string
                       timeslot_id:
@@ -119663,6 +120079,9 @@ paths:
                                 last_transition_at:
                                   type: string
                                   format: date-time
+                                policy_segment:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 status:
@@ -122255,6 +122674,9 @@ paths:
                               last_transition_at:
                                 type: string
                                 format: date-time
+                              policy_segment:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               status:
@@ -123279,6 +123701,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -123296,6 +123721,89 @@ paths:
                           - severity
                           - status
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       termination_mode:
                         type: string
                       timeslot_id:
@@ -127073,6 +127581,9 @@ paths:
                                 last_transition_at:
                                   type: string
                                   format: date-time
+                                policy_segment:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 status:
@@ -129665,6 +130176,9 @@ paths:
                               last_transition_at:
                                 type: string
                                 format: date-time
+                              policy_segment:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               status:
@@ -130689,6 +131203,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -130706,6 +131223,89 @@ paths:
                           - severity
                           - status
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       termination_mode:
                         type: string
                       timeslot_id:
@@ -134483,6 +135083,9 @@ paths:
                                 last_transition_at:
                                   type: string
                                   format: date-time
+                                policy_segment:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 status:
@@ -137075,6 +137678,9 @@ paths:
                               last_transition_at:
                                 type: string
                                 format: date-time
+                              policy_segment:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               status:
@@ -138099,6 +138705,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -138116,6 +138725,89 @@ paths:
                           - severity
                           - status
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       termination_mode:
                         type: string
                       timeslot_id:
@@ -141893,6 +142585,9 @@ paths:
                                 last_transition_at:
                                   type: string
                                   format: date-time
+                                policy_segment:
+                                  type: integer
+                                  format: int64
                                 severity:
                                   type: string
                                 status:
@@ -144485,6 +145180,9 @@ paths:
                               last_transition_at:
                                 type: string
                                 format: date-time
+                              policy_segment:
+                                type: integer
+                                format: int64
                               severity:
                                 type: string
                               status:
@@ -145509,6 +146207,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -145526,6 +146227,89 @@ paths:
                           - severity
                           - status
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       termination_mode:
                         type: string
                       timeslot_id:
@@ -368133,6 +368917,9 @@ paths:
                             last_transition_at:
                               type: string
                               format: date-time
+                            policy_segment:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             status:
@@ -376213,6 +377000,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -378433,6 +379223,9 @@ paths:
                       last_transition_at:
                         type: string
                         format: date-time
+                      policy_segment:
+                        type: integer
+                        format: int64
                       severity:
                         type: string
                       status:
@@ -378450,6 +379243,89 @@ paths:
                       - severity
                       - status
                     nullable: true
+                  telemetry_policy_segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        effective_at:
+                          type: string
+                          format: date-time
+                        policy:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_scope:
+                              type: string
+                            capture_boundary:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            classification_algorithm:
+                              type: string
+                            coverage_rule:
+                              type: string
+                            definition_sha256:
+                              type: string
+                            expected_controller_publication_interval_ms:
+                              type: integer
+                              format: int64
+                            hash:
+                              type: string
+                            policy_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            schema_version:
+                              type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - budgets
+                            - cadence_scope
+                            - capture_boundary
+                            - captured_at
+                            - classification_algorithm
+                            - coverage_rule
+                            - expected_controller_publication_interval_ms
+                            - hash
+                            - policy_id
+                            - revision
+                            - schema_version
+                            - sustained_breach_window_ms
+                          nullable: true
+                        policy_id:
+                          type: string
+                        requested_by:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - effective_at
+                        - policy
+                        - sequence
+                        - source
                   termination_mode:
                     type: string
                   timeslot_id:
@@ -385630,6 +386506,9 @@ paths:
                             last_transition_at:
                               type: string
                               format: date-time
+                            policy_segment:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             status:
@@ -393710,6 +394589,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -395930,6 +396812,9 @@ paths:
                       last_transition_at:
                         type: string
                         format: date-time
+                      policy_segment:
+                        type: integer
+                        format: int64
                       severity:
                         type: string
                       status:
@@ -395947,6 +396832,89 @@ paths:
                       - severity
                       - status
                     nullable: true
+                  telemetry_policy_segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        effective_at:
+                          type: string
+                          format: date-time
+                        policy:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_scope:
+                              type: string
+                            capture_boundary:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            classification_algorithm:
+                              type: string
+                            coverage_rule:
+                              type: string
+                            definition_sha256:
+                              type: string
+                            expected_controller_publication_interval_ms:
+                              type: integer
+                              format: int64
+                            hash:
+                              type: string
+                            policy_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            schema_version:
+                              type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - budgets
+                            - cadence_scope
+                            - capture_boundary
+                            - captured_at
+                            - classification_algorithm
+                            - coverage_rule
+                            - expected_controller_publication_interval_ms
+                            - hash
+                            - policy_id
+                            - revision
+                            - schema_version
+                            - sustained_breach_window_ms
+                          nullable: true
+                        policy_id:
+                          type: string
+                        requested_by:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - effective_at
+                        - policy
+                        - sequence
+                        - source
                   termination_mode:
                     type: string
                   timeslot_id:
@@ -405595,13 +406563,25 @@ paths:
                         items:
                           type: object
                           properties:
+                            breached_ms:
+                              type: integer
+                              format: int64
+                            degraded_ms:
+                              type: integer
+                              format: int64
                             end:
                               type: string
                               format: date-time
+                            healthy_ms:
+                              type: integer
+                              format: int64
                             legacy:
                               type: boolean
                             policy_hash:
                               type: string
+                            sequence:
+                              type: integer
+                              format: int64
                             start:
                               type: string
                               format: date-time
@@ -405713,6 +406693,89 @@ paths:
                           - value
                         nullable: true
                     nullable: true
+                  telemetry_policy_segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        effective_at:
+                          type: string
+                          format: date-time
+                        policy:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_scope:
+                              type: string
+                            capture_boundary:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            classification_algorithm:
+                              type: string
+                            coverage_rule:
+                              type: string
+                            definition_sha256:
+                              type: string
+                            expected_controller_publication_interval_ms:
+                              type: integer
+                              format: int64
+                            hash:
+                              type: string
+                            policy_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            schema_version:
+                              type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - budgets
+                            - cadence_scope
+                            - capture_boundary
+                            - captured_at
+                            - classification_algorithm
+                            - coverage_rule
+                            - expected_controller_publication_interval_ms
+                            - hash
+                            - policy_id
+                            - revision
+                            - schema_version
+                            - sustained_breach_window_ms
+                          nullable: true
+                        policy_id:
+                          type: string
+                        requested_by:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - effective_at
+                        - policy
+                        - sequence
+                        - source
                   telemetry_render_population:
                     type: object
                     properties:
@@ -408267,6 +409330,9 @@ paths:
                                     - sha256
                                     - source
                                   nullable: true
+                                policy_segments:
+                                  type: integer
+                                  format: int64
                                 run_id:
                                   type: string
                                 source_capabilities:
@@ -408529,6 +409595,9 @@ paths:
                                     - sha256
                                     - source
                                   nullable: true
+                                policy_segments:
+                                  type: integer
+                                  format: int64
                                 run_id:
                                   type: string
                                 source_capabilities:
@@ -422291,13 +423360,25 @@ paths:
                             items:
                               type: object
                               properties:
+                                breached_ms:
+                                  type: integer
+                                  format: int64
+                                degraded_ms:
+                                  type: integer
+                                  format: int64
                                 end:
                                   type: string
                                   format: date-time
+                                healthy_ms:
+                                  type: integer
+                                  format: int64
                                 legacy:
                                   type: boolean
                                 policy_hash:
                                   type: string
+                                sequence:
+                                  type: integer
+                                  format: int64
                                 start:
                                   type: string
                                   format: date-time
@@ -422409,6 +423490,89 @@ paths:
                               - value
                             nullable: true
                         nullable: true
+                      telemetry_policy_segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effective_at:
+                              type: string
+                              format: date-time
+                            policy:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_scope:
+                                  type: string
+                                capture_boundary:
+                                  type: string
+                                captured_at:
+                                  type: string
+                                  format: date-time
+                                classification_algorithm:
+                                  type: string
+                                coverage_rule:
+                                  type: string
+                                definition_sha256:
+                                  type: string
+                                expected_controller_publication_interval_ms:
+                                  type: integer
+                                  format: int64
+                                hash:
+                                  type: string
+                                policy_id:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                schema_version:
+                                  type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - budgets
+                                - cadence_scope
+                                - capture_boundary
+                                - captured_at
+                                - classification_algorithm
+                                - coverage_rule
+                                - expected_controller_publication_interval_ms
+                                - hash
+                                - policy_id
+                                - revision
+                                - schema_version
+                                - sustained_breach_window_ms
+                              nullable: true
+                            policy_id:
+                              type: string
+                            requested_by:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            source:
+                              type: string
+                          required:
+                            - effective_at
+                            - policy
+                            - sequence
+                            - source
                       telemetry_render_population:
                         type: object
                         properties:
@@ -425819,6 +426983,89 @@ paths:
                     required:
                       - availability
                     nullable: true
+                  telemetry_policy_segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        effective_at:
+                          type: string
+                          format: date-time
+                        policy:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_scope:
+                              type: string
+                            capture_boundary:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            classification_algorithm:
+                              type: string
+                            coverage_rule:
+                              type: string
+                            definition_sha256:
+                              type: string
+                            expected_controller_publication_interval_ms:
+                              type: integer
+                              format: int64
+                            hash:
+                              type: string
+                            policy_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            schema_version:
+                              type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - budgets
+                            - cadence_scope
+                            - capture_boundary
+                            - captured_at
+                            - classification_algorithm
+                            - coverage_rule
+                            - expected_controller_publication_interval_ms
+                            - hash
+                            - policy_id
+                            - revision
+                            - schema_version
+                            - sustained_breach_window_ms
+                          nullable: true
+                        policy_id:
+                          type: string
+                        requested_by:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - effective_at
+                        - policy
+                        - sequence
+                        - source
                   transaction_response_time_sla_results:
                     type: array
                     items:
@@ -429506,6 +430753,9 @@ paths:
                                 - sha256
                                 - source
                               nullable: true
+                            policy_segments:
+                              type: integer
+                              format: int64
                             run_id:
                               type: string
                             source_capabilities:
@@ -429768,6 +431018,9 @@ paths:
                                 - sha256
                                 - source
                               nullable: true
+                            policy_segments:
+                              type: integer
+                              format: int64
                             run_id:
                               type: string
                             source_capabilities:
@@ -432686,6 +433939,9 @@ paths:
                                 - sha256
                                 - source
                               nullable: true
+                            policy_segments:
+                              type: integer
+                              format: int64
                             run_id:
                               type: string
                             source_capabilities:
@@ -432948,6 +434204,9 @@ paths:
                                 - sha256
                                 - source
                               nullable: true
+                            policy_segments:
+                              type: integer
+                              format: int64
                             run_id:
                               type: string
                             source_capabilities:
@@ -440738,6 +441997,9 @@ paths:
                             last_transition_at:
                               type: string
                               format: date-time
+                            policy_segment:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             status:
@@ -448818,6 +450080,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -451038,6 +452303,9 @@ paths:
                       last_transition_at:
                         type: string
                         format: date-time
+                      policy_segment:
+                        type: integer
+                        format: int64
                       severity:
                         type: string
                       status:
@@ -451055,6 +452323,89 @@ paths:
                       - severity
                       - status
                     nullable: true
+                  telemetry_policy_segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        effective_at:
+                          type: string
+                          format: date-time
+                        policy:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_scope:
+                              type: string
+                            capture_boundary:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            classification_algorithm:
+                              type: string
+                            coverage_rule:
+                              type: string
+                            definition_sha256:
+                              type: string
+                            expected_controller_publication_interval_ms:
+                              type: integer
+                              format: int64
+                            hash:
+                              type: string
+                            policy_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            schema_version:
+                              type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - budgets
+                            - cadence_scope
+                            - capture_boundary
+                            - captured_at
+                            - classification_algorithm
+                            - coverage_rule
+                            - expected_controller_publication_interval_ms
+                            - hash
+                            - policy_id
+                            - revision
+                            - schema_version
+                            - sustained_breach_window_ms
+                          nullable: true
+                        policy_id:
+                          type: string
+                        requested_by:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - effective_at
+                        - policy
+                        - sequence
+                        - source
                   termination_mode:
                     type: string
                   timeslot_id:
@@ -458072,6 +459423,9 @@ paths:
                             last_transition_at:
                               type: string
                               format: date-time
+                            policy_segment:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             status:
@@ -466152,6 +467506,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -468372,6 +469729,9 @@ paths:
                       last_transition_at:
                         type: string
                         format: date-time
+                      policy_segment:
+                        type: integer
+                        format: int64
                       severity:
                         type: string
                       status:
@@ -468389,6 +469749,89 @@ paths:
                       - severity
                       - status
                     nullable: true
+                  telemetry_policy_segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        effective_at:
+                          type: string
+                          format: date-time
+                        policy:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_scope:
+                              type: string
+                            capture_boundary:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            classification_algorithm:
+                              type: string
+                            coverage_rule:
+                              type: string
+                            definition_sha256:
+                              type: string
+                            expected_controller_publication_interval_ms:
+                              type: integer
+                              format: int64
+                            hash:
+                              type: string
+                            policy_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            schema_version:
+                              type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - budgets
+                            - cadence_scope
+                            - capture_boundary
+                            - captured_at
+                            - classification_algorithm
+                            - coverage_rule
+                            - expected_controller_publication_interval_ms
+                            - hash
+                            - policy_id
+                            - revision
+                            - schema_version
+                            - sustained_breach_window_ms
+                          nullable: true
+                        policy_id:
+                          type: string
+                        requested_by:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - effective_at
+                        - policy
+                        - sequence
+                        - source
                   termination_mode:
                     type: string
                   timeslot_id:
@@ -481470,6 +482913,9 @@ paths:
                             last_transition_at:
                               type: string
                               format: date-time
+                            policy_segment:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             status:
@@ -489550,6 +490996,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -491770,6 +493219,9 @@ paths:
                       last_transition_at:
                         type: string
                         format: date-time
+                      policy_segment:
+                        type: integer
+                        format: int64
                       severity:
                         type: string
                       status:
@@ -491787,6 +493239,89 @@ paths:
                       - severity
                       - status
                     nullable: true
+                  telemetry_policy_segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        effective_at:
+                          type: string
+                          format: date-time
+                        policy:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_scope:
+                              type: string
+                            capture_boundary:
+                              type: string
+                            captured_at:
+                              type: string
+                              format: date-time
+                            classification_algorithm:
+                              type: string
+                            coverage_rule:
+                              type: string
+                            definition_sha256:
+                              type: string
+                            expected_controller_publication_interval_ms:
+                              type: integer
+                              format: int64
+                            hash:
+                              type: string
+                            policy_id:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            schema_version:
+                              type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - budgets
+                            - cadence_scope
+                            - capture_boundary
+                            - captured_at
+                            - classification_algorithm
+                            - coverage_rule
+                            - expected_controller_publication_interval_ms
+                            - hash
+                            - policy_id
+                            - revision
+                            - schema_version
+                            - sustained_breach_window_ms
+                          nullable: true
+                        policy_id:
+                          type: string
+                        requested_by:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        source:
+                          type: string
+                      required:
+                        - effective_at
+                        - policy
+                        - sequence
+                        - source
                   termination_mode:
                     type: string
                   timeslot_id:
@@ -500174,6 +501709,9 @@ paths:
                             last_transition_at:
                               type: string
                               format: date-time
+                            policy_segment:
+                              type: integer
+                              format: int64
                             severity:
                               type: string
                             status:
@@ -508242,6 +509780,9 @@ paths:
                           last_transition_at:
                             type: string
                             format: date-time
+                          policy_segment:
+                            type: integer
+                            format: int64
                           severity:
                             type: string
                           status:
@@ -515983,6 +517524,309 @@ paths:
       tags:
         - Tests
       x-handler: handleTestStream
+  /api/v1/tests/{id}/telemetry-policy-segments:
+    get:
+      summary: List Telemetry Policy Segments
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleListTelemetryPolicySegments
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleListTelemetryPolicySegments
+    post:
+      summary: Append Telemetry Policy Segment
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      operationId: handleAppendTelemetryPolicySegment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                controller_publication_interval_seconds:
+                  type: integer
+                  format: int64
+                expected_sequence:
+                  type: integer
+                  format: int64
+                request_id:
+                  type: string
+                telemetry_budget_policy_id:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  effective_at:
+                    type: string
+                    format: date-time
+                  policy:
+                    type: object
+                    properties:
+                      budgets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            limit_ms:
+                              type: number
+                              format: double
+                            stage:
+                              type: string
+                          required:
+                            - enabled
+                            - limit_ms
+                            - stage
+                      cadence_scope:
+                        type: string
+                      capture_boundary:
+                        type: string
+                      captured_at:
+                        type: string
+                        format: date-time
+                      classification_algorithm:
+                        type: string
+                      coverage_rule:
+                        type: string
+                      definition_sha256:
+                        type: string
+                      expected_controller_publication_interval_ms:
+                        type: integer
+                        format: int64
+                      hash:
+                        type: string
+                      policy_id:
+                        type: string
+                      revision:
+                        type: integer
+                        format: int64
+                      schema_version:
+                        type: string
+                      sustained_breach_window_ms:
+                        type: integer
+                        format: int64
+                    required:
+                      - budgets
+                      - cadence_scope
+                      - capture_boundary
+                      - captured_at
+                      - classification_algorithm
+                      - coverage_rule
+                      - expected_controller_publication_interval_ms
+                      - hash
+                      - policy_id
+                      - revision
+                      - schema_version
+                      - sustained_breach_window_ms
+                    nullable: true
+                  policy_id:
+                    type: string
+                  requested_by:
+                    type: string
+                  sequence:
+                    type: integer
+                    format: int64
+                  source:
+                    type: string
+                required:
+                  - effective_at
+                  - policy
+                  - sequence
+                  - source
+                nullable: true
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  effective_at:
+                    type: string
+                    format: date-time
+                  policy:
+                    type: object
+                    properties:
+                      budgets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            limit_ms:
+                              type: number
+                              format: double
+                            stage:
+                              type: string
+                          required:
+                            - enabled
+                            - limit_ms
+                            - stage
+                      cadence_scope:
+                        type: string
+                      capture_boundary:
+                        type: string
+                      captured_at:
+                        type: string
+                        format: date-time
+                      classification_algorithm:
+                        type: string
+                      coverage_rule:
+                        type: string
+                      definition_sha256:
+                        type: string
+                      expected_controller_publication_interval_ms:
+                        type: integer
+                        format: int64
+                      hash:
+                        type: string
+                      policy_id:
+                        type: string
+                      revision:
+                        type: integer
+                        format: int64
+                      schema_version:
+                        type: string
+                      sustained_breach_window_ms:
+                        type: integer
+                        format: int64
+                    required:
+                      - budgets
+                      - cadence_scope
+                      - capture_boundary
+                      - captured_at
+                      - classification_algorithm
+                      - coverage_rule
+                      - expected_controller_publication_interval_ms
+                      - hash
+                      - policy_id
+                      - revision
+                      - schema_version
+                      - sustained_breach_window_ms
+                    nullable: true
+                  policy_id:
+                    type: string
+                  requested_by:
+                    type: string
+                  sequence:
+                    type: integer
+                    format: int64
+                  source:
+                    type: string
+                required:
+                  - effective_at
+                  - policy
+                  - sequence
+                  - source
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleAppendTelemetryPolicySegment
   /api/v1/tests/{id}/telemetry/client-render:
     post:
       summary: Report Client Render
