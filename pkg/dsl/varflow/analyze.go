@@ -580,7 +580,7 @@ func (a *analyzer) walk(actions []dsl.Action, prefix string, s *state) {
 			if action.Control == nil {
 				continue
 			}
-			branchStates := make([]*state, 0, len(action.Control.Cases)+1)
+			branchStates := make([]*state, 0, len(action.Control.Cases))
 			for caseIndex, switchCase := range action.Control.Cases {
 				caseState := s.clone()
 				a.walk(switchCase.Steps, fmt.Sprintf("%s.control.cases[%d].steps", path, caseIndex), caseState)
