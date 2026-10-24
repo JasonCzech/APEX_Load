@@ -50,10 +50,10 @@ var domains = []domain{
 	},
 	{
 		title:   "Runs & results",
-		summary: "A run is a row in tests. It references its scenario, release and application, and also keeps a copy of the groups, pools, goals and plan it started with, so later edits to the scenario do not change its history. Interval summaries are the per-interval metrics written while the run is live.",
+		summary: "A run is a row in tests. It references its scenario, release and application, and also keeps a copy of the groups, pools, goals and plan it started with, so later edits to the scenario do not change its history. Interval summaries are the per-interval metrics written while the run is live. Telemetry policy segments record each policy change made while a run is live, in order, without rewriting earlier ones.",
 		tables: []string{"tests", "test_history", "test_interval_summaries", "test_notes", "run_annotations", "preparations",
 			"run_rendezvous", "threshold_evaluations", "threshold_incidents", "baseline_comparison_snapshots",
-			"usage_accounting_snapshots"},
+			"usage_accounting_snapshots", "test_telemetry_policy_segments"},
 	},
 	{
 		title:   "Run analysis & live state",
@@ -242,6 +242,9 @@ var notReferences = map[columnRef]bool{
 	{"releases", "group_id"}: true, {"feature_acceptance_records", "requirement_id"}: true,
 	{"scenarios", "telemetry_acceptance_policy_id"}: true, {"scenarios", "telemetry_budget_policy_id"}: true,
 	{"tests", "telemetry_acceptance_policy_id"}: true, {"tests", "telemetry_budget_policy_id"}: true,
+	{"test_telemetry_policy_segments", "policy_id"}: true,
+	// A client's retry key, unique per run.
+	{"test_telemetry_policy_segments", "request_id"}: true,
 }
 
 // polymorphicRefs name any resource by a type column plus this ID column.
