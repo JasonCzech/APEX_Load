@@ -63,6 +63,20 @@ function matchListMarker(line: string): ListMarker | null {
   return null
 }
 
+// An HTML comment that starts a line is for editors of the source, not readers.
+// `<!-->` and `<!--->` close themselves, so the search for `-->` starts
+// inside the opener. Returns the index of the line that closes it, or -1 when the line does not
+// open a comment or the comment never closes (then it stays visible text, so an
+// unfinished note does not silently hide everything after it).
+function commentEnd(lines: string[], index: number): number {
+  if (!lines[index].trim().startsWith('<!--')) return -1
+  for (let end = index; end < lines.length; end += 1) {
+    const from = end === index ? lines[index].indexOf('<!--') + 2 : 0
+    if (lines[end].indexOf('-->', from) !== -1) return end
+  }
+  return -1
+}
+
 // Lines that end the current list item's lazy continuation. Anything else that is
 // non-blank and not a new marker is a wrapped line belonging to the current item.
 function endsListContinuation(lines: string[], index: number) {
@@ -72,6 +86,7 @@ function endsListContinuation(lines: string[], index: number) {
     || /^(#{1,6})\s+/.test(line)
     || matchCodeFence(line) !== null
     || isTableStart(lines, index)
+    || commentEnd(lines, index) !== -1
   )
 }
 
@@ -137,6 +152,20 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       continue
     }
 
+    const closing = commentEnd(lines, index)
+    if (closing !== -1) {
+      // Text after the comment on its closing line is still content.
+      const from = closing === index ? lines[index].indexOf('<!--') + 2 : 0
+      const rest = lines[closing].slice(lines[closing].indexOf('-->', from) + 3)
+      if (rest.trim()) {
+        lines[closing] = rest
+        index = closing
+      } else {
+        index = closing + 1
+      }
+      continue
+    }
+
     const fenceMatch = matchCodeFence(line)
     if (fenceMatch) {
       const language = fenceMatch[1].trim().split(/\s+/, 1)[0] || ''
@@ -193,6 +222,7 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       && !matchCodeFence(lines[index])
       && !matchListMarker(lines[index])
       && !isTableStart(lines, index)
+      && commentEnd(lines, index) === -1
     ) {
       paragraphLines.push(lines[index].trim())
       index += 1

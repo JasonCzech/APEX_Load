@@ -169,6 +169,11 @@ Project owners can check scope, script configuration and test data. Administrato
 
 This documentation ships with the dashboard build shown below each article. It describes this checkout's capabilities; a remote controller or generator may run another version. Use the sidebar build information and current API capability responses to compare them.
 
+### October 23, 2026 data model reference
+
+- Added [Data model](DATA_MODEL.md) under Administration: every controller table grouped by product domain, with a table of keys and references for each domain and an entity diagram wherever the domain's tables reference each other.
+- The page is generated from the schema (`go generate ./pkg/storage`), so it changes with each schema migration.
+
 ### October 10, 2026 HTTP/3 and QUIC (preview)
 
 - Added [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md): the `auto+h3` (upgrade when advertised) and `3` (require HTTP/3) policies with worked examples, the QUIC settings panel, what stays on TCP, importing captured HTTP/3, and reading the HTTP version mix in replay, reports, the live run and Power BI.

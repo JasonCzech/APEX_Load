@@ -1,3 +1,6 @@
+// docs/DATA_MODEL.md describes this schema; regenerate it after a schema change.
+//go:generate go run ../../cmd/datamodeldoc -out ../../docs/DATA_MODEL.md
+
 package storage
 
 import (
