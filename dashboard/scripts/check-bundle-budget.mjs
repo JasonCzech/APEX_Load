@@ -56,13 +56,37 @@ const mib = (value) => value * 1024 * 1024
 // Initial shell, Scripts and Test execution remain about 200/228/411 KiB gzip.
 // Allow that measured inventory at 2.45 MiB; keep raw, per-asset, CSS and every
 // route/startup guard unchanged. Evidence: roadmap-e2e-isolation-2026-10-20.
+//
+// 2026-10-24 recalibration. The aggregates were already over at 33125479c
+// (PR #267 merged): 8.54 MiB / 2.46 MiB gzip JS, Test execution route
+// 417.98 KiB. PR #269 (Help data model) had MarkdownRenderer statically load
+// the ER diagram renderer and its parser (route 422.11 KiB); PR #270
+// (telemetry policy segments) had the live status panels statically load
+// the segments list and budget-change form (route 427.54 KiB). Main at
+// da21eec8b measured 8.63 MiB / 2.48 MiB gzip JS and a 427.53 KiB route.
+// Both route regressions were fixed rather than budgeted:
+// - The status panels load the segments list only when a run has two or
+//   more segments and the change form only for an editor of a running or
+//   paused run (423.39 KiB).
+// - MarkdownRenderer loads the ER diagram renderer only for a Mermaid block
+//   that declares an erDiagram, showing its source until then (419.71 KiB).
+// The fixed build measures:
+// - JS: 8.63 MiB (8836 KiB) / 2.48 MiB (2541 KiB) gzip, largest asset
+//   ScriptEditor at 765 KiB raw / 204 KiB gzip.
+// - CSS: 1005 KiB / 183 KiB gzip, largest asset index.css at 225 KiB /
+//   36.5 KiB gzip.
+// - Initial shell 202 KiB gzip, Scripts route 230 KiB, Test execution route
+//   420 KiB.
+// The JS aggregate limits move to 9.0 MiB raw and 2.6 MiB gzip (4.3% and
+// 4.8% headroom). Per-asset, CSS and every route/startup guard stay as they
+// were.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(800),
     maxAssetGzipBytes: kib(220),
-    maxTotalBytes: mib(8.5),
-    maxTotalGzipBytes: mib(2.45),
+    maxTotalBytes: mib(9),
+    maxTotalGzipBytes: mib(2.6),
   }),
   '.css': Object.freeze({
     label: 'CSS',

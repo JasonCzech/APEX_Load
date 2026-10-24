@@ -1,8 +1,20 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
+import { reportClientError } from '../utils/clientErrorReporting'
 import { markdownPlainText, parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
-import EntityDiagram from './EntityDiagram'
-import { parseErDiagram, type EntityDiagramSpec } from './entityDiagramModel'
+import { declaresErDiagram, loadMermaidErDiagram } from './mermaidErDiagramLoader'
+
+// The ER diagram renderer and its parser load only for a document that has
+// an erDiagram block. Until then, and if the chunk cannot load (reported like
+// any other lazy surface), the block shows its source: the same output as a
+// diagram that does not parse.
+const MermaidErDiagram = lazy(() => loadMermaidErDiagram().catch((error: unknown) => {
+  reportClientError('render', error)
+  return { default: MermaidSource }
+}))
+function MermaidSource({ fallback }: { fallback: ReactNode }) {
+  return <>{fallback}</>
+}
 
 type MarkdownHeadingBlock = Extract<MarkdownBlock, { kind: 'heading' }>
 
@@ -129,19 +141,6 @@ function renderMarkdownInline(text: string, keyPrefix: string, options: InlineOp
   return nodes
 }
 
-// Parsed once per source so the diagram keeps its layout across re-renders.
-// Bounded (least recently used first out): note previews re-render on every
-// keystroke, and each edit is a new source.
-const ER_DIAGRAM_CACHE_SIZE = 32
-const erDiagrams = new Map<string, EntityDiagramSpec | null>()
-function erDiagramFor(code: string): EntityDiagramSpec | null {
-  const spec = erDiagrams.has(code) ? erDiagrams.get(code)! : parseErDiagram(code)
-  erDiagrams.delete(code)
-  erDiagrams.set(code, spec)
-  if (erDiagrams.size > ER_DIAGRAM_CACHE_SIZE) erDiagrams.delete(erDiagrams.keys().next().value!)
-  return spec
-}
-
 function renderMarkdownList(block: MarkdownListBlock, key: string, options: BlockOptions): ReactNode {
   const ListTag = block.ordered ? 'ol' : 'ul'
   const className = block.ordered ? 'markdown-list markdown-ordered-list' : 'markdown-list'
@@ -166,15 +165,22 @@ function renderMarkdownBlock(block: MarkdownBlock, key: string, options: BlockOp
     case 'paragraph':
       return <p key={key}>{renderMarkdownInline(block.text, key, options)}</p>
     case 'code': {
+      const source = options.copyExamples
+        ? <CopyCodeBlock code={block.code} language={block.language} />
+        : (
+          <pre className="markdown-code-block">
+            <code data-language={block.language || undefined}>{block.code}</code>
+          </pre>
+        )
       // Mermaid ER diagrams draw natively; other Mermaid stays readable source.
-      const diagram = block.language === 'mermaid' ? erDiagramFor(block.code) : null
-      if (diagram) return <EntityDiagram key={key} spec={diagram} label={options.sectionTitle} />
-      if (options.copyExamples) return <CopyCodeBlock key={key} code={block.code} language={block.language} />
-      return (
-        <pre key={key} className="markdown-code-block">
-          <code data-language={block.language || undefined}>{block.code}</code>
-        </pre>
-      )
+      if (block.language === 'mermaid' && declaresErDiagram(block.code)) {
+        return (
+          <Suspense key={key} fallback={source}>
+            <MermaidErDiagram code={block.code} label={options.sectionTitle} fallback={source} />
+          </Suspense>
+        )
+      }
+      return <Fragment key={key}>{source}</Fragment>
     }
     case 'list':
       return renderMarkdownList(block, key, options)
