@@ -730,6 +730,11 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Warnings = append(result.Warnings, mappingNotes)
 				if strings.EqualFold(stringMapValue(details, "option", ""), "SSL_VERSION") || strings.EqualFold(stringMapValue(details, "option", ""), "TLS_VERSION") {
 					gate := dsl.Action{Name: "Select_supported_TLS", Type: "source_review", Metadata: sourceFunctionMetadata(fn)}
+					// The gate is the actionable form of the warning above, so
+					// a review that lists both can show it once. It is plain
+					// metadata: the review-only rewrite keeps it with the gate's
+					// codes, and clearing those codes leaves it in place.
+					gate.Metadata["covered_warnings"] = []string{mappingNotes}
 					importreview.ApplyToAction(&gate, []importreview.Finding{{Code: "legacy_tls_replacement", ReasonCode: "legacy_tls_replacement", Severity: diag.Blocker, Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber), Resolution: "select_tls", Detail: "Choose a supported TLS replacement for legacy SSL; this is an intentional migration."}})
 					appendTrackedSourceAction(fn, gate, SourceFunctionSupportReviewOnly, "Legacy TLS requires intentional replacement.")
 					result.Stats.ReviewOnlyFunctions--

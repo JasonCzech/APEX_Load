@@ -3,7 +3,9 @@ package importreview
 import (
 	"encoding/json"
 	"fmt"
+	convertreview "github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/contentcontract"
 	"reflect"
@@ -201,6 +203,132 @@ func HasNewProjectedCredential(candidate, projectedCandidate, prior, projectedPr
 	}
 }
 
+// importReviewEvidencePreservedKeys are the metadata.import.preserved keys
+// that hold an import's review evidence and evaluation output. Execution never
+// sends or applies them: no request, runtime setting, credential locator or
+// redaction plan is built from them, and launch admission reads only the
+// verdicts in them (promotion gating). Disclosure still masks a credential
+// they quote (an archive's source text quotes every literal header it
+// converts), and the context comparison would read that masked copy as a kept
+// credential whose context is the whole script, refusing every parameter, data
+// source, action and transport edit. HasNewProjectedCredential still covers
+// these subtrees, so a quoted credential cannot be added, changed or moved out
+// of them into an executable field.
+var importReviewEvidencePreservedKeys = []string{
+	// The review's copy of the source files and their line mappings. Read by
+	// the source text view, promotion gating (file counts) and credential
+	// binding, which takes only the file paths.
+	"source_review",
+	// The reviewed artifact, whose source manifest promotion gating and the
+	// Java classpath check compare. The compatibility runtime runs
+	// runtime_source_artifact instead.
+	"review_artifact",
+	// The TrueClient archive inspection the import summary shows.
+	"trueclient_archive_inspection",
+	// The archive's project file (.usr) sections as recorded. The import
+	// summary lists only the section names; settings a run applies are
+	// converted into the script. Disclosure scrubs this copy as free text, so a
+	// recorded value such as the transaction order list can read as masked.
+	"project_settings",
+	// Importer review payloads the import summary shows. A Salesforce native
+	// preview is a copy for review; the script itself is what runs.
+	"salesforce_review",
+	"mulesoft_review",
+	"agentforce_review",
+	// Converter warning text the review lists.
+	"warnings",
+	// Evaluation output that promotion gating and repairs read and every
+	// repair rebuilds from the repaired script.
+	"fidelity_report",
+	"replay_preflight",
+}
+
+// importReviewEvidencePreservedPaths are the context paths of
+// importReviewEvidencePreservedKeys.
+var importReviewEvidencePreservedPaths = func() map[string]struct{} {
+	paths := make(map[string]struct{}, len(importReviewEvidencePreservedKeys))
+	for _, key := range importReviewEvidencePreservedKeys {
+		paths[AppendImportContextPath("", "metadata", "import", "preserved", key)] = struct{}{}
+	}
+	return paths
+}()
+
+// stepReviewMetadataKeys are the step metadata entries import review stamps
+// (importreview.ApplyToAction) and guided repairs write: gate codes such as
+// missing_producer:<name>, which a save or a repair rebuilds from the script,
+// the review flags stamped beside them, and a repair's migration note. Replay
+// reads them only to gate the step. Disclosure scrubs a code as free text, so
+// a long variable name in one can read as masked, and the context comparison
+// would then pin the step's request to a kept credential it does not carry.
+// HasNewProjectedCredential still covers these entries.
+var stepReviewMetadataKeys = map[string]struct{}{
+	"review_gate":        {},
+	"review_reasons":     {},
+	"execution_blocker":  {},
+	"execution_blockers": {},
+	"import_review":      {},
+	"review_required":    {},
+	"promotion_blocker":  {},
+	"migration_change":   {},
+}
+
+// UnsentStepReviewMetadata reports whether key is a review entry
+// (stepReviewMetadataKeys) in the metadata of action that the step does not
+// send. A Kafka or JMS send delivers each string metadata entry as a record
+// header or message property (varflow.MetadataReads), so its review_gate and
+// execution_blocker are executable values like any other header, except for
+// a dependency code in one, which is server output (stepDependencyCodeLeaf).
+func UnsentStepReviewMetadata(action dsl.Action, key string) bool {
+	if _, review := stepReviewMetadataKeys[key]; !review {
+		return false
+	}
+	sent, _ := varflow.MetadataReads(action, key)
+	return !sent
+}
+
+// unsentStepReviewMetadataLeaf reports whether path is a leaf of a review
+// entry in the metadata of the step at actionPath that the step does not send
+// (UnsentStepReviewMetadata). A send delivers only a top-level string entry,
+// so a nested leaf is never sent.
+func unsentStepReviewMetadataLeaf(path, actionPath string, action map[string]any, leaf any) bool {
+	prefix := actionPath + "/metadata/"
+	if actionPath == "" || !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	key, _, nested := strings.Cut(strings.TrimPrefix(path, prefix), "/")
+	if _, review := stepReviewMetadataKeys[key]; !review {
+		return false
+	}
+	if nested {
+		return true
+	}
+	return UnsentStepReviewMetadata(dsl.Action{
+		Type:     StringJSONValue(action["type"]),
+		Metadata: map[string]any{key: leaf},
+	}, key)
+}
+
+// stepDependencyCodeLeaf reports whether path is a top-level review entry
+// (stepReviewMetadataKeys) in the metadata of the step at actionPath that
+// holds a dependency review code, missing_producer:<name> or
+// conditional_producer:<name>. Import review stamps those codes from the
+// variables the script reads, and every save or repair of an evaluated import
+// stamps them again (importreview.RefreshDependencies), so an unchanged code
+// names a variable, not a kept credential, even where a Kafka or JMS send
+// delivers it as a header or property. It pins no request; the new-credential
+// check still refuses a code that changes or gains masked text.
+func stepDependencyCodeLeaf(path, actionPath string, leaf any) bool {
+	prefix := actionPath + "/metadata/"
+	if actionPath == "" || !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	if _, review := stepReviewMetadataKeys[strings.TrimPrefix(path, prefix)]; !review {
+		return false
+	}
+	code, _ := leaf.(string)
+	return convertreview.IsDependencyCode(code)
+}
+
 func RetainedImportCredentialContextChange(
 	candidate,
 	projectedCandidate,
@@ -245,6 +373,11 @@ func RetainedImportCredentialContextChange(
 		path,
 		actionPath string,
 	) (string, bool) {
+		// Review evidence has no execution context to change. The new-credential
+		// check has already compared it leaf by leaf.
+		if _, evidence := importReviewEvidencePreservedPaths[path]; evidence {
+			return "", false
+		}
 		if _, isAction := candidateActions[path]; isAction {
 			actionPath = path
 		}
@@ -298,6 +431,10 @@ func RetainedImportCredentialContextChange(
 			if reflect.DeepEqual(raw, safe) ||
 				!reflect.DeepEqual(raw, rawPrior) ||
 				reflect.DeepEqual(rawPrior, safePrior) {
+				return "", false
+			}
+			if action, _ := candidateActions[actionPath].(map[string]any); unsentStepReviewMetadataLeaf(path, actionPath, action, raw) ||
+				stepDependencyCodeLeaf(path, actionPath, raw) {
 				return "", false
 			}
 			if actionPath == "" {

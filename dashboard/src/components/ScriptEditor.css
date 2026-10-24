@@ -80,6 +80,16 @@
 .editor-toast.success { background: rgba(var(--success-rgb), 0.12); color: var(--success-text); border: 1px solid rgba(var(--success-rgb), 0.2); }
 .editor-toast.warning { background: rgba(var(--warning-rgb), 0.12); color: var(--warning-text); border: 1px solid rgba(var(--warning-rgb), 0.24); }
 .editor-toast.warning > div + div { margin-top: 4px; }
+/* A refused debug start: readiness to resolve, not an error. */
+.editor-toast.blocked { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: rgba(var(--warning-rgb), 0.12); color: var(--warning-text); border: 1px solid rgba(var(--warning-rgb), 0.28); }
+.editor-toast.blocked .btn { margin-left: auto; }
+/* "Resolve N blockers" opens what refuses replay, so it reads as a warning to act on. */
+.topbar-action-button.topbar-debug-action-blocker:not(:disabled),
+.debugger-icon-btn.danger:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--border));
+  color: var(--danger-text, var(--danger));
+}
+.debugger-tab-failed-count { color: var(--danger-text, var(--danger)); }
 .validation-evidence-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -4816,6 +4826,45 @@ details.replay-code-block > summary,
   border-color: rgba(var(--danger-rgb), 0.22);
   background: rgba(var(--danger-rgb), 0.08);
 }
+/* A blocked step's reason and its guided repair (ScriptBlockerRepairPanel).
+   The repair form and preview share the import review's markup; the import's
+   stylesheet is not part of the editor, so their layout is set here too. */
+.script-blocker-repair { display: grid; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid rgba(var(--danger-rgb), 0.22); border-radius: 8px; background: rgba(var(--danger-rgb), 0.05); color: var(--text-primary); font-size: 12px; }
+.script-blocker-repair h4 { margin: 0; font-size: 13px; }
+.script-blocker-repair-reasons { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.script-blocker-repair-reasons li { display: grid; gap: 3px; }
+.script-blocker-repair-reasons p, .script-blocker-repair-note { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+.script-blocker-repair-source { color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.script-blocker-repair-guard { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(var(--warning-rgb), 0.28); border-radius: 6px; background: rgba(var(--warning-rgb), 0.08); color: var(--warning-text); }
+.script-blocker-repair-guard p { flex: 1 1 180px; margin: 0; }
+.script-blocker-repair-status { margin: 0; color: var(--success-text); }
+/* Empty, the status stays in the accessibility tree so its notices are announced,
+   but out of the grid so it adds no gap. */
+.script-blocker-repair-status:empty { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.script-blocker-repair-error { margin: 0; color: var(--danger-text, var(--danger)); }
+.script-blocker-repair label { display: grid; gap: 4px; font-weight: 600; }
+.script-blocker-repair select, .script-blocker-repair textarea { width: 100%; min-width: 0; }
+.script-blocker-repair .lr-repair-form { display: grid; gap: 10px; margin-top: 0; }
+.script-blocker-repair .lr-repair-form h5, .script-blocker-repair .lr-repair-preview h5 { margin: 0; font-size: 12px; }
+.script-blocker-repair .lr-repair-form label span { color: var(--text-secondary); font-weight: 400; line-height: 1.5; }
+.script-blocker-repair .lr-subtitle { margin: 0; color: var(--text-muted); line-height: 1.5; }
+.script-blocker-repair .lr-issue-action-row { position: static; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0; background: none; }
+.script-blocker-repair .lr-issue-action-row span { color: var(--text-secondary); }
+.script-blocker-repair .lr-repair-preview { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+.script-blocker-repair .lr-repair-preview-heading { display: flex; justify-content: space-between; gap: 8px; }
+.script-blocker-repair .lr-repair-preview-heading h4 { margin: 2px 0 0; }
+.script-blocker-repair .lr-repair-preview-heading p, .script-blocker-repair .lr-repair-preview-fields p, .script-blocker-repair .lr-repair-preview-footer p { margin: 0; color: var(--text-secondary); }
+.script-blocker-repair .lr-repair-preview-outcome { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; }
+.script-blocker-repair .lr-repair-preview-outcome > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
+.script-blocker-repair .lr-repair-preview-outcome span, .script-blocker-repair .lr-repair-preview-outcome small { color: var(--text-muted); font-size: 11px; }
+.script-blocker-repair .lr-repair-preview-outcome strong.healthy { color: var(--success-text); }
+.script-blocker-repair .lr-repair-preview-outcome strong.danger { color: var(--danger-text); }
+.script-blocker-repair .lr-repair-preview-section-heading { display: flex; justify-content: space-between; gap: 8px; }
+.script-blocker-repair .lr-repair-preview-fields ul { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; padding: 0; list-style: none; }
+.script-blocker-repair .lr-repair-preview-fields li { max-width: 100%; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; overflow-wrap: anywhere; }
+.script-blocker-repair .lr-repair-preview-code-grid { display: grid; gap: 8px; }
+.script-blocker-repair .lr-repair-preview-code-grid .source-code-viewer { height: 240px; }
+.script-blocker-repair .lr-repair-preview-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .editor-utility-sidebar {
   grid-area: author-utility;
   min-width: 0;

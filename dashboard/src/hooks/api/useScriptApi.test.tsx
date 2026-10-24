@@ -15,6 +15,8 @@ vi.mock('../apiClient', () => ({
 import { apiFetch, request, requestWithResponse } from '../apiClient'
 import { useScriptApi } from './useScriptApi'
 import type { ApplyParameterizationRequest } from '../../types/scriptImports'
+import type { StoredScript } from '../../types/storedContent'
+import { ScriptSaveOutcomeUnknown } from '../../utils/scriptAuthoringRevision'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -165,6 +167,46 @@ describe('useScriptApi import wrappers', () => {
     ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: savedAuthoringFixture(), headers })
     await expect(api.updateScript('script-1', authoringFixture().projection.script, authoringFixture())).rejects.toThrow('save outcome could not be verified')
     expect(request).not.toHaveBeenCalled()
+  })
+
+  it('sends a saved-script repair with the observed tag and accepts an apply only with a conditioned receipt', async () => {
+    const pair = authoringFixture()
+    const repair = { finding: 'legacy_tls_replacement', action_path: 'init[0]', operation: { type: 'select_tls', tls_min: '1.2', tls_max: '1.3' } }
+    const outcome = { script_id: 'script-1', content_revision: pair.projection.content_revision, findings: [], readiness: { replay_ready: true, promotion_ready: false }, secret_binding_requirements: [], fidelity_report: {} }
+    const evaluated = { ...outcome, script: pair.projection.script, before: pair.projection.script }
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: evaluated, headers: new Headers() })
+    expect(await api.previewScriptRepair('script-1', repair, pair, 'project-1')).toEqual(evaluated)
+    const [previewURL, previewOptions] = (requestWithResponse as Mock).mock.calls[0]
+    expect(previewURL).toBe('/scripts/script-1/repairs/preview')
+    expect(previewOptions).toEqual(expect.objectContaining({ method: 'POST', headers: { 'If-Match': pair.etag }, timeoutMs: 30_000, maxResponseBytes: 12 << 20 }))
+    expect(JSON.parse(previewOptions.body)).toEqual(repair)
+    expect(previewOptions.body).not.toContain('scr-v1-')
+
+    // An apply carries the persisted script, not the preview's before/after pair.
+    const applied = { ...outcome, stored: savedAuthoringFixture({}, 'script-1', 'project-1', 'c') }
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: applied, headers: new Headers({ 'X-APEX-Script-Save-Mode': 'conditioned' }) })
+    expect(await api.applyScriptRepair('script-1', repair, pair, 'project-1')).toEqual(applied)
+    const [applyURL, applyOptions] = (requestWithResponse as Mock).mock.calls[1]
+    expect(applyURL).toBe('/scripts/script-1/repairs/apply')
+    expect(applyOptions.headers).toEqual({ 'If-Match': pair.etag })
+    // An unpaired baseline sends nothing.
+    ;(requestWithResponse as Mock).mockClear()
+    await expect(api.previewScriptRepair('script-1', repair, { ...pair, etag: '"unpaired"' }, 'project-1')).rejects.toThrow('supported paired authoring revision')
+    expect(requestWithResponse).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['no save-mode receipt', new Headers(), (stored: StoredScript) => stored],
+    ['an unconditioned save', new Headers({ 'X-APEX-Script-Save-Mode': 'legacy_unconditioned' }), (stored: StoredScript) => stored],
+    ['another script', new Headers({ 'X-APEX-Script-Save-Mode': 'conditioned' }), (stored: StoredScript) => ({ ...stored, id: 'script-2' })],
+    ['an unpaired next baseline', new Headers({ 'X-APEX-Script-Save-Mode': 'conditioned' }), (stored: StoredScript) => ({ ...stored, content_revision: `scr-v1-${'d'.repeat(64)}` })],
+  ])('refuses a repair apply with %s as an unknown save outcome', async (_label, headers, receipt) => {
+    const pair = authoringFixture()
+    const stored = receipt(savedAuthoringFixture({}, 'script-1', 'project-1', 'c'))
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: { script_id: 'script-1', content_revision: pair.projection.content_revision, stored }, headers })
+    const outcome = api.applyScriptRepair('script-1', { finding: 'legacy_tls_replacement', action_path: 'init[0]', operation: { type: 'select_tls' } }, pair, 'project-1')
+    await expect(outcome).rejects.toBeInstanceOf(ScriptSaveOutcomeUnknown)
+    await expect(outcome).rejects.toThrow('save outcome could not be verified')
   })
 
   it('refuses an old controller which ignores the authoring query', async () => {

@@ -674,6 +674,7 @@ func makeSourceReviewActionDisclosureSafe(action *dsl.Action, fn ParsedFunction,
 	action.Metadata["source_argument_count"] = sourceFunctionArgumentCount(fn)
 	action.Metadata["source_call_shape"] = disclosureSafeSourceCallShape(fn)
 	for _, key := range []string{
+		"covered_warnings",
 		"execution_blocker",
 		"execution_blockers",
 		"import_review",

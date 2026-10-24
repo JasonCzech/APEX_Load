@@ -1471,6 +1471,29 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	sourceProfile string,
 	contentPreconditions ...*storage.ScriptAuthoringPrecondition,
 ) (*StoredScript, bool, error) {
+	return tr.updateScriptDurableInProjectRefreshing(id, script, expectedProjectID, expectedUpdatedAt, expectedActionGraphDigest, rulesetID, expectedRulesetUpdatedAt, trustedImport, sourceProfile, nil, contentPreconditions...)
+}
+
+// updateScriptDurableInProjectRefreshing is updateScriptDurableInProject that,
+// with a non-nil refresh, rebuilds an imported script's server-owned import
+// evaluation (savedImportEvaluationRefresh) once the submitted script has
+// passed every credential and binding check against the durable prior. The
+// evaluation is server output, so it is never judged as submitted content.
+// It reads project secrets only from refresh's snapshot, resolved before
+// this write took its locks.
+func (tr *TestRunner) updateScriptDurableInProjectRefreshing(
+	id string,
+	script *dsl.Script,
+	expectedProjectID string,
+	expectedUpdatedAt time.Time,
+	expectedActionGraphDigest string,
+	rulesetID string,
+	expectedRulesetUpdatedAt time.Time,
+	trustedImport bool,
+	sourceProfile string,
+	refresh *savedImportEvaluationRefresh,
+	contentPreconditions ...*storage.ScriptAuthoringPrecondition,
+) (*StoredScript, bool, error) {
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
 	}
@@ -1575,6 +1598,13 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	script = projected
 	script.ID = current.ID
 	script.ProjectID = current.ProjectID
+	if refresh != nil {
+		// Both inputs are detached: the prepared candidate and this write's own
+		// read of the durable prior, which the evaluation only reads.
+		if err := contentmutation.WriteOutsideLock(&tr.mu, func() error { return refresh.apply(tr, script, current) }); err != nil {
+			return nil, false, err
+		}
+	}
 	currentRequiresJavaApproval := scriptRequiresJavaVuserAuthoringApproval(current)
 	scriptRequiresJavaApproval := scriptRequiresJavaVuserAuthoringApproval(script)
 	if currentRequiresJavaApproval && !scriptRequiresJavaApproval {

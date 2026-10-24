@@ -157,6 +157,101 @@ func TestProjectPreservesCredentialLocatorMetadataWithoutTreatingNamesAsValues(t
 	}
 }
 
+// The import fidelity report's secret_gated is a count of secret-gated
+// payloads, not secret material. Keys that name a secret stay masked, in the
+// same report and anywhere else, whether their value is text or a number.
+func TestProjectDisclosesFidelitySecretGatedCountAndMasksSecretKeys(t *testing.T) {
+	const secret = "fidelity-report-synthetic-secret-4d1e"
+	script := &dsl.Script{
+		Name: "Fidelity", Version: "1", Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "enterprise_script_archive",
+			Preserved: map[string]any{
+				"fidelity_report": map[string]any{
+					"secret_gated":     2,
+					"dropped_bodies":   1,
+					"promotion_status": "blocked",
+					"client_secret":    secret,
+					"gated_secret":     7,
+				},
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "request", Type: "request", Method: "GET", Target: "https://example.test",
+			Params: map[string]any{"secret": secret, "secret_gated": 3},
+		}},
+	}
+	projected, err := Project(script)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	report, _ := projected.Metadata.Import.Preserved["fidelity_report"].(map[string]any)
+	if report == nil {
+		t.Fatalf("projection dropped the fidelity report: %#v", projected.Metadata.Import.Preserved)
+	}
+	for key, want := range map[string]float64{"secret_gated": 2, "dropped_bodies": 1} {
+		if got, _ := report[key].(float64); got != want {
+			t.Fatalf("fidelity_report.%s = %#v, want the count %v", key, report[key], want)
+		}
+	}
+	if report["client_secret"] != credential.Redacted || report["gated_secret"] != credential.Redacted {
+		t.Fatalf("secret-named report keys were disclosed: %#v", report)
+	}
+	if projected.Actions[0].Params["secret"] != credential.Redacted {
+		t.Fatalf("secret param = %#v, want it masked", projected.Actions[0].Params["secret"])
+	}
+	if payload, err := json.Marshal(projected); err != nil {
+		t.Fatal(err)
+	} else if strings.Contains(string(payload), secret) {
+		t.Fatal("projection disclosed a secret-named value")
+	}
+}
+
+// Only a number under secret_gated is the fidelity count. Text under that key
+// is secret-named like any other: masked in params, in a JSON body, in a data
+// source column and in the report itself, and wherever else it is copied.
+func TestProjectMasksSecretGatedTextAndKeepsOnlyTheCount(t *testing.T) {
+	const secret = "syntheticgatedtext"
+	script := &dsl.Script{
+		Name: "Secret gated", Version: "1", Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source:    "enterprise_script_archive",
+			Preserved: map[string]any{"fidelity_report": map[string]any{"secret_gated": 2, "note": map[string]any{"secret_gated": secret}}},
+		}},
+		DataSources: []dsl.DataSource{{Name: "rows", Type: "csv", InlineData: "region,secret_gated\nwest,syntheticgatedcolumn\n"}},
+		Actions: []dsl.Action{
+			{Name: "params", Type: "request", Method: "GET", Target: "https://example.test/search?copy=" + secret, Params: map[string]any{"secret_gated": secret}},
+			{Name: "body", Type: "request", Method: "POST", Target: "https://example.test/submit", Headers: map[string]string{"Content-Type": "application/json"}, Body: `{"secret_gated":"syntheticgatedbody","region":"west"}`},
+		},
+	}
+	projected, err := Project(script)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	report, _ := projected.Metadata.Import.Preserved["fidelity_report"].(map[string]any)
+	if got, _ := report["secret_gated"].(float64); got != 2 {
+		t.Fatalf("fidelity_report.secret_gated = %#v, want the count 2", report["secret_gated"])
+	}
+	if note, _ := report["note"].(map[string]any); note["secret_gated"] != credential.Redacted {
+		t.Fatalf("fidelity_report.note.secret_gated = %#v, want text under the key masked", report["note"])
+	}
+	if got := projected.Actions[0].Params["secret_gated"]; got != credential.Redacted {
+		t.Fatalf("params.secret_gated = %#v, want it masked", got)
+	}
+	if body := projected.Actions[1].Body; !strings.Contains(body, `"region":"west"`) {
+		t.Fatalf("JSON body = %q, want its other fields kept", body)
+	}
+	payload, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{secret, "syntheticgatedbody", "syntheticgatedcolumn"} {
+		if strings.Contains(string(payload), value) {
+			t.Fatalf("projection disclosed %q held under secret_gated: %s", value, payload)
+		}
+	}
+}
+
 func TestProjectFailsClosedWhenNeighboringLocatorIsStale(t *testing.T) {
 	const pin = "731"
 	script := &dsl.Script{

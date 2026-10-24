@@ -140,3 +140,58 @@ func TestVariableReadinessSourceParameterNativeOutputPolicies(t *testing.T) {
 		})
 	}
 }
+
+func TestVariableReadinessSourceStepOutputs(t *testing.T) {
+	tests := []struct {
+		name   string
+		action dsl.Action
+		target string
+	}{
+		{"timestamp param", dsl.Action{Type: "source_parameter", Params: map[string]any{"function": "web_save_timestamp_param", "args": []string{"Tstamp"}}}, "/{{var.Tstamp}}/{{var.tstamp}}"},
+		{"param length", dsl.Action{Type: "source_parameter", Params: map[string]any{"function": "web_save_param_length", "args": []string{"C_Body", "Base=Decimal"}}}, "/{{var.C_Body_Length}}/{{var.c_body_length}}"},
+		{"json select all", dsl.Action{Type: "source_json", Params: map[string]any{"function": "lr_json_get_values", "json_object": "doc", "value_param": "C_OfferIds", "query": "$.ids[*]", "select_all": "Yes"}}, "/{{var.c_offerids_3}}/{{var.C_OfferIds_1}}/{{var.c_offerids_count}}"},
+		{"json scalar", dsl.Action{Type: "source_json", Params: map[string]any{"function": "lr_json_get_values", "json_object": "doc", "value_param": "C_Name", "query": "$.name"}}, "/{{var.C_Name}}/{{var.c_name}}"},
+		{"json stringify", dsl.Action{Type: "source_json", Params: map[string]any{"function": "lr_json_stringify", "json_object": "doc", "output_param": "C_Text"}}, "/{{var.C_Text}}/{{var.c_text}}"},
+		{"oauth suffixes", dsl.Action{Type: "http_oauth2_token", Target: "https://auth.example.test/token", Params: map[string]any{"save_as": "Orders"}}, "/{{var.orders}}/{{var.Orders_token_type}}/{{var.orders_token_type}}/{{var.orders_instance_url}}/{{var.orders_expires_at}}"},
+		{"oauth default", dsl.Action{Type: "http_oauth2_token", Target: "https://auth.example.test/token"}, "/{{var.access_token}}/{{var.access_token_instance_url}}"},
+		{"status message", dsl.Action{Type: "source_message", Params: map[string]any{"format": "done", "status_message": true}}, "/{{var.vuser_status}}"},
+		{"native javascript prefix", dsl.Action{Type: "native_javascript", Params: map[string]any{"source": "return {total: 1}", "result_prefix": "calc"}}, "/{{var.calc.total}}"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			script := &dsl.Script{Protocol: "http", Actions: []dsl.Action{
+				test.action,
+				{Type: "http_request", Target: test.target},
+			}}
+			if got := AnalyzeVariableReadiness(script, nil); len(got.Missing) != 0 {
+				t.Fatalf("readiness=%#v", got)
+			}
+		})
+	}
+}
+
+func TestVariableReadinessSourceStepOutputsKeepRuntimeShapes(t *testing.T) {
+	tests := []struct {
+		name   string
+		action dsl.Action
+		target string
+		want   []string
+	}{
+		{"select all publishes no plain name", dsl.Action{Type: "source_json", Params: map[string]any{"function": "lr_json_get_values", "json_object": "doc", "value_param": "C_OfferIds", "select_all": "yes"}}, "/{{var.c_offerids}}/{{var.C_OFFERIDS_1}}", []string{"C_OFFERIDS_1", "c_offerids"}},
+		{"scalar publishes no slots", dsl.Action{Type: "source_json", Params: map[string]any{"function": "lr_json_get_values", "json_object": "doc", "value_param": "C_Name", "save_all": true}}, "/{{var.c_name_1}}", []string{"c_name_1"}},
+		{"source writes are not case folded", dsl.Action{Type: "source_parameter", Params: map[string]any{"function": "web_convert_param", "save_param": "c_Token_URL", "source_string": "x"}}, "/{{var.c_token_url}}/{{var.C_TOKEN_URL}}", []string{"C_TOKEN_URL"}},
+		{"status message is exact only", dsl.Action{Type: "source_message", Params: map[string]any{"status_message": "true"}}, "/{{var.VUSER_STATUS}}", []string{"VUSER_STATUS"}},
+		{"log-only step reads nothing", dsl.Action{Type: "source_review", Params: map[string]any{"args": []string{"{{var.review_only}}"}}}, "/ready", nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			script := &dsl.Script{Protocol: "http", Actions: []dsl.Action{
+				test.action,
+				{Type: "http_request", Target: test.target},
+			}}
+			if got := MissingVariables(script, nil); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("missing=%v want=%v", got, test.want)
+			}
+		})
+	}
+}

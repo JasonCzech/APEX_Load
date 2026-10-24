@@ -2185,6 +2185,30 @@ func TestVUser_HandleWebConvertParamAction(t *testing.T) {
 	}
 }
 
+// A save_param step with no source_string and no args (or only the name arg)
+// has no SourceString to read. It saves an empty value instead of slicing
+// past the end of args.
+func TestVUser_HandleWebConvertParamActionWithoutSourceArgs(t *testing.T) {
+	for name, params := range map[string]map[string]any{
+		"no args":       {"function": "web_convert_param", "save_param": "Converted"},
+		"name arg only": {"function": "web_convert_param", "save_param": "Converted", "args": []any{"Converted"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vu := &VUser{ID: 1, Variables: map[string]string{"converted": "stale"}}
+			action := dsl.Action{Name: "Convert", Type: "source_parameter", Params: params}
+
+			vu.handleSourceParameterAction("web_convert_param", action)
+
+			if got, ok := vu.Variables["Converted"]; !ok || got != "" {
+				t.Fatalf("Converted = %q (set %v), want an empty value", got, ok)
+			}
+			if got := vu.Variables["converted"]; got != "" {
+				t.Fatalf("converted = %q, want the lowercase alias rewritten empty", got)
+			}
+		})
+	}
+}
+
 type rendezvousTestProtocol struct {
 	executeTimes chan time.Time
 }

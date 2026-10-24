@@ -2,8 +2,9 @@ import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { nativeJavaScriptTemplate } from './nativeServicesModel'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import type { ScriptApprovalQueued, ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
-import { reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
+import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
+import ScriptBlockerRepairPanel from './ScriptBlockerRepairPanel'
 import TooltipButton from './ux/TooltipButton'
 import { isSavedBlock } from './savedBlocks'
 import SharedAssetsDialog from './SharedAssetsDialog'
@@ -43,7 +44,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Key
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
-import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
+import type { BrowserToHTTPPreviewResponse, ScriptRepairResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarAction, type TopbarContribution } from '../hooks/TopbarContributionProvider'
 import TopbarActionButton from './TopbarActionButton'
@@ -98,8 +99,10 @@ import type { ProjectSecretStatus, ScriptSecretStatus } from '../types/secrets'
 import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
-import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, templateVariableNames } from './replayPreflightUtils'
-import { headerIssueText, openingEditorFocus, replayReadinessIssues, type ReadinessFacts } from './replayReadinessIssues'
+import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, replayReviewGateIssues, templateVariableNames, withRefusedReviewGates } from './replayPreflightUtils'
+import { draftImportFindings } from './importReviewIssues'
+import { blockerTitle, dependencyCodeValue, headerIssueText, openingEditorFocus, parseReviewGateIssue, replayReadinessIssues, replayRefusalSummary, type ProtectedBodySource, type ReadinessFacts } from './replayReadinessIssues'
+import { coveredByAuthoring, isPromotionOnlyValidationIssue, promotionFoldCoveredByGate, promotionReviewText, replayBlockers, replayGateAction, replayStartBlockedReason, replayStartGate, storedGateProblemCount, type ReplayGateAction, type ReplayStartGate } from './replayStartGate'
 import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import {
   applyMigrationAssistantSuggestion,
@@ -154,10 +157,12 @@ import {
   isLikelyParameterValue,
   mergeReplayVariables,
   normalizeHeaders,
+  parseReplayStartRefusal,
   parseReplayVariablesText,
   parseInlineData,
   sanitizeVarName,
   stringifyInlineData,
+  type ReplayStartRefusal,
 } from './scriptEditorUtils'
 import {
   ACTION_LIST_TAB_ID,
@@ -217,6 +222,8 @@ import {
   phaseActionsForScript,
   resolveAuthorJsonScope,
   resolveAuthorJsonScopeByKey,
+  resolveNestedAction,
+  stepPathForJsonSubPath,
   updateNestedAction,
   SCRIPT_JSON_DEFAULT_COMPANION_TAB,
   type AuthorCodeFocus,
@@ -542,7 +549,7 @@ function normalizeWarnings(messages?: string[]) {
   return Array.from(new Set(messages.map(message => message.trim()).filter(Boolean)))
 }
 
-type DebugTopbarIconKind = 'run' | 'pause' | 'step' | 'stepOver' | 'loop' | 'stop' | 'break'
+type DebugTopbarIconKind = 'run' | 'pause' | 'step' | 'stepOver' | 'loop' | 'stop' | 'break' | 'blocker'
 
 function DebugTopbarIcon({ kind }: { kind: DebugTopbarIconKind }) {
   switch (kind) {
@@ -598,7 +605,46 @@ function DebugTopbarIcon({ kind }: { kind: DebugTopbarIconKind }) {
           <path d="M12 17h.01" />
         </svg>
       )
+    case 'blocker':
+      return (
+        <svg viewBox="0 0 24 24" focusable="false">
+          <circle cx="12" cy="12" r="8" />
+          <path d="M8.5 15.5l7-7" />
+        </svg>
+      )
   }
+}
+
+/**
+ * A debug start the controller refused for readiness, kept with what it was
+ * judged against: the draft's fingerprint, whether the editor matched the
+ * saved script, and the saved revision then. While the draft is unchanged its
+ * preflight stands in for the local one; a refusal of the saved copy the draft
+ * no longer matches asks for a save instead.
+ */
+type ReplayStartRefusalRecord = {
+  fingerprint: string
+  /** The session variables the start sent (replayVariablesKey), which a draft's preflight is judged with. */
+  variablesKey: string
+  editorClean: boolean
+  baselineRevision: string | null
+  blockersAtRefusal: number
+  /** The refused start's line, from the blockers the refusal names (replayRefusalSummary). */
+  refusedSummary: string
+  /**
+   * The blockers the editor lists for the refusal once its start gate has
+   * settled (null until then). A refusal the editor lists none of, such as
+   * a project secret the controller could not resolve though its status
+   * reads configured, keeps its own line.
+   */
+  editorBlockerIds: string[] | null
+  refusal: ReplayStartRefusal
+}
+
+// The session variables a preflight was judged with, in a form that compares
+// equal for the same values in any order; no variables and `{}` are alike.
+function replayVariablesKey(variables: Record<string, string> | undefined): string {
+  return JSON.stringify(Object.entries(variables || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
 }
 
 type EditorRailActionIconKind = 'undo' | 'redo' | 'save' | 'close'
@@ -738,6 +784,7 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 
 
 const SAVED_SCRIPT_OPENING = 'This script was saved and is opening. Edits made after it was saved are not kept.'
+const REPAIR_APPLIED = 'Repair applied and saved to the script.'
 
 export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onApprovalQueued, onClose, returnTarget, activity, initialWorkspace }: Props) {
   const [authorOverview, setAuthorOverview] = useState(false)
@@ -770,8 +817,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   } | null>(null)
   const projectSecretProbeRequestRef = useRef(0)
   const [projectSecretProbeRetryGeneration, setProjectSecretProbeRetryGeneration] = useState(0)
-  const replayMissingProjectSecretLabelsRef = useRef<string[]>([])
-  const replaySecretStatusKnownRef = useRef(true)
+  // The debug start gate and its handlers as the latest render computed them,
+  // so every start entry point, a handler created earlier included, reads the
+  // same answer the Debug button shows.
+  const replayStartGateRef = useRef<ReplayStartGate>({ kind: 'ready' })
+  const goToReplayBlockerRef = useRef<() => void>(() => undefined)
+  const saveAndReplayRef = useRef<(options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint }) => Promise<void>>(async () => undefined)
   const refreshScriptSecretStatus = useCallback(async () => {
     const requestId = ++scriptSecretStatusRequestRef.current
     if (!scriptId || typeof api.getScriptSecretStatus !== 'function') {
@@ -861,7 +912,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     [validateDraftForAssist, projectId, folderId],
   )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
-  const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
+  // keepAuthoringOpen: the editor goes on with the saved script (Save and
+  // debug), so the page hosting it keeps it open. libraryCopy: only a save
+  // that put the script in the library counts, not one queued for approval.
+  const handleSaveRef = useRef<(options?: { keepAuthoringOpen?: boolean; libraryCopy?: boolean }) => Promise<boolean>>(async () => false)
+  // Reads the editor as it is when a repair's apply answers, not as it was
+  // when the apply was sent.
+  const scriptRepairAppliedRef = useRef<(response: ScriptRepairResponse) => void>(() => undefined)
   const openProjectSecrets = useCallback(() => {
     if (saveInFlightScopeRef.current || secretBindingsOpen) return
     if (scriptId) {
@@ -983,6 +1040,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }, [setError, setSuccess])
   const [replayStartPending, setReplayStartPending] = useState(false)
+  const [replayStartRefusal, setReplayStartRefusal] = useState<ReplayStartRefusalRecord | null>(null)
   const replayStartInFlightRef = useRef<object | null>(null)
   const replayStartAttemptRef = useRef<{
     sessionId: string
@@ -996,6 +1054,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // The fingerprint of the exact document a replay or debug run was started
   // with: its evidence is current only while the editor holds that document.
   const [replayDocumentFingerprint, setReplayDocumentFingerprint] = useState<string | null>(null)
+  // The session variables the last debug start sent (replayVariablesKey).
+  const [replayRunVariablesKey, setReplayRunVariablesKey] = useState(() => replayVariablesKey(undefined))
   const [focusParameterIdx, setFocusParameterIdx] = useState<number | null>(null)
   const [selectedParameterIdx, setSelectedParameterIdx] = useState<number | null>(null)
   // Holds the pending selection while the Parameterize choice dialog (File vs Built-in Function)
@@ -1500,6 +1560,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const [, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
   const [validationReplayPreflight, setValidationReplayPreflight] = useState<ReplayPreflight | null>(null)
+  // Whether a debug start's response set it rather than a check; it then
+  // describes the document and session variables that run started with, as
+  // the run's own preflight does (a check's binding covers both).
+  const [validationPreflightFromRun, setValidationPreflightFromRun] = useState(false)
   const [validationSidebarResult, setValidationSidebarResult] = useState<ValidationSidebarResult | null>(null)
   const saveRequestRef = useRef(0)
   const saveInFlightScopeRef = useRef<object | null>(null)
@@ -1509,7 +1573,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // The save running for the current editor scope: a second request (Save
   // changes in the leave prompt, while Save is still running) shares its
   // outcome instead of being refused.
-  const runningSaveRef = useRef<{ scope: object; outcome: Promise<boolean>; result: { laterEdits: boolean } } | null>(null)
+  const runningSaveRef = useRef<{ scope: object; outcome: Promise<boolean>; result: { laterEdits: boolean; queuedForApproval?: boolean } } | null>(null)
   const pendingParameterDataCellEditsRef = useRef(new Map<string, PendingParameterDataCellEdit>())
   const parameterDataEditGenerationRef = useRef(0)
   const catalogFieldDrafts = useCatalogFieldDrafts(currentDraftScript, () => { parameterDataEditGenerationRef.current += 1 })
@@ -1534,6 +1598,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setPendingParameterDataCellEditCount(0)
   }, [])
   const ownSavedEditorEchoRef = useRef<{ id: string; projectId?: string; documentKey: string; submitted: ScriptData; baseline: ScriptAuthoringBaseline | null } | null>(null)
+  // The document a guided repair saved and the editor adopted, with the
+  // apply's check and notice: the page's echo of that save keeps both.
+  const repairAdoptedEchoRef = useRef<{ documentKey: string } | null>(null)
   const initialScriptDocumentKey = useMemo(() => initialScript ? formatScriptJson(initialScript) : null, [initialScript])
   const editorOwnsSavedEcho = Boolean(ownSavedEditorEchoRef.current && scriptId === ownSavedEditorEchoRef.current.id
     && (projectId === undefined || projectId === ownSavedEditorEchoRef.current.projectId)
@@ -1671,15 +1738,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     },
   })
   useEffect(() => {
-    // Resource changes reuse this component in the authoring surface. Invalidate
-    // any validation issued for the previous script/project before its response
-    // can update readiness evidence or commit validation-time metadata.
-    invalidateValidation()
+    // Resource changes reuse this component in the authoring surface.
     saveRequestRef.current += 1
     saveInFlightScopeRef.current = null
     const ownEcho = ownSavedEditorEchoRef.current
     const canonicalEcho = ownEcho && scriptId === ownEcho.id && (projectId === undefined || projectId === ownEcho.projectId)
       && initialScriptDocumentKey === ownEcho.documentKey
+    const repairEcho = Boolean(canonicalEcho && repairAdoptedEchoRef.current?.documentKey === initialScriptDocumentKey)
+    repairAdoptedEchoRef.current = null
     const previousCatalogResource = catalogResourceRef.current
     catalogResourceRef.current = { scriptId, projectId, folderId }
     const sameCatalogResource = previousCatalogResource.scriptId === scriptId && previousCatalogResource.projectId === projectId && previousCatalogResource.folderId === folderId
@@ -1691,14 +1757,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       clearPendingParameterDataCellEdits()
       pendingCreatedSecretNamesRef.current = [...(initialRetainedCreatedSecretNames || [])]
     }
+    // Invalidate any validation issued for the previous script/project before
+    // its response can update readiness evidence or commit validation-time
+    // metadata. A repair's echo is the document the editor already checked and
+    // showed the outcome for (handleScriptRepairApplied), so it keeps both.
+    if (!repairEcho) {
+      invalidateValidation()
+      setValidationEvidence(null)
+      setValidationReplayPreflight(null)
+      setValidationSidebarResult(null)
+      setSuccess('')
+    }
     replayStartInFlightRef.current = null
     replayStartAttemptRef.current = null
     debugMutationSequenceRef.current += 1
     setValidating(false)
     setSaving(false)
-    setValidationEvidence(null)
-    setValidationReplayPreflight(null)
-    setValidationSidebarResult(null)
     setReplayStartPending(false)
     setReplayEditableActionsKey(null)
     setReplayLayoutKey(null)
@@ -1718,7 +1792,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setReplaying(false)
     setSecretBindingsOpen(false)
     setError('')
-    setSuccess('')
     setWarnings([])
   }, [
     folderId,
@@ -2161,6 +2234,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setAuthorCodeFocus({ phase, actionIndex, stepPath, key, label })
     setShowFullScriptJson(false)
   }
+  // Opens the step a problem names: a nested one (a gated request inside a
+  // transaction) as the outline opens it, else its action.
+  const selectAuthorStep = (row: ScriptPhaseActionRow, stepPath?: string[]) => {
+    const nested = stepPath?.length ? resolveNestedAction(row.action, stepPath) : null
+    if (!stepPath?.length || !nested) {
+      selectAuthorPhaseAction(row)
+      return
+    }
+    focusNestedStep(row.phase, row.actionIndex, stepPath, authorFocusKey({ phase: row.phase, actionIndex: row.actionIndex, stepPath }), nested.name || humanizeStepSegment(stepPath[stepPath.length - 1]))
+  }
+  const selectAuthorStepRef = useRef(selectAuthorStep)
+  selectAuthorStepRef.current = selectAuthorStep
   const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>, options?: { keepCenterTab?: boolean }) => {
     const label = item.kind === 'leaf'
       ? item.childAction.name || item.name || humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
@@ -3024,7 +3109,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     : !currentDraftScript.name
       ? 'Enter a script name before checking readiness'
       : 'Recheck script readiness'
-  const saveScriptNow = async (result: { laterEdits: boolean } = { laterEdits: false }): Promise<boolean> => {
+  // Makes a persisted script the editor's saved state: its paired baseline,
+  // the server's canonical document when the editor still holds the one that
+  // was persisted (adoptDocument), and the parent's echo of it as this
+  // editor's own, so the echo does not reload the editor.
+  const adoptPersistedScript = (saved: { stored: StoredScript; baseline: ScriptAuthoringBaseline | null; definition: ScriptData; submitted: ScriptData }, adoptDocument: boolean) => {
+    if (saved.baseline) acceptSavedBaseline(saved.baseline)
+    if (adoptDocument) {
+      // Adopt the server's canonical document without treating normalization as
+      // an edit or resetting the current selection/history on the parent echo.
+      restoreScript(saved.definition)
+      setJsonText(formatScriptJson(saved.definition))
+      setJsonDirty(false)
+      validationDocumentKeyRef.current = formatScriptJson(saved.definition)
+    }
+    ownSavedEditorEchoRef.current = { id: saved.stored.id, projectId: saved.stored.project_id || saved.definition.project_id || projectId, documentKey: formatScriptJson(saved.definition), submitted: saved.submitted, baseline: saved.baseline }
+    repairAdoptedEchoRef.current = null
+    markBaseline(saved.definition)
+    markSaved()
+  }
+  const saveScriptNow = async (result: { laterEdits: boolean; keepAuthoringOpen?: boolean; queuedForApproval?: boolean } = { laterEdits: false }): Promise<boolean> => {
     if (secretBindingsOpen || (scriptId && (authoringRevisionState !== 'ready' || !authoringBaseline))) return false
     // A create already landed in this editor, which waits for the page to open
     // the saved script: another create would make a second script.
@@ -3067,6 +3171,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       if (persisted.kind === 'approval') {
         const unchangedSinceQueued = validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave
         result.laterEdits = !unchangedSinceQueued
+        result.queuedForApproval = true
         if (unchangedSinceQueued) commitJsonDraft(currentScript)
         // Approval is still pending: no library baseline or saved marker exists.
         setSuccess(`Java Vuser draft "${persisted.name}" queued for approval. Approve it from Scripts to add it to the library.`)
@@ -3075,24 +3180,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         return true
       }
       const { stored: savedScript, baseline: savedBaseline, definition: savedDefinition } = persisted
-      if (savedBaseline) acceptSavedBaseline(savedBaseline)
       const adoptedSavedDocument = validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave
-      if (adoptedSavedDocument) {
-        // Adopt the server's canonical document without treating normalization as
-        // an edit or resetting the current selection/history on the parent echo.
-        restoreScript(savedDefinition)
-        setJsonText(formatScriptJson(savedDefinition))
-        setJsonDirty(false)
-        validationDocumentKeyRef.current = formatScriptJson(savedDefinition)
-      }
+      adoptPersistedScript({ stored: savedScript, baseline: savedBaseline, definition: savedDefinition, submitted: flushedScript }, adoptedSavedDocument)
       const expectedCurrentDocumentKey = adoptedSavedDocument ? formatScriptJson(savedDefinition) : documentKeyAtSave
-      ownSavedEditorEchoRef.current = { id: savedScript.id, projectId: savedScript.project_id || savedDefinition.project_id || projectId, documentKey: formatScriptJson(savedDefinition), submitted: flushedScript, baseline: savedBaseline }
       if (!scriptId) {
         savedScriptOpeningRef.current = true
         setSavedScriptOpening(true)
       }
-      markBaseline(savedDefinition)
-      markSaved()
       const persistedSecretNames = new Set(scriptSecretReferenceSummaries(savedDefinition).map(binding => binding.name))
       pendingCreatedSecretNamesRef.current = pendingCreatedSecretNamesRef.current.filter(name => !persistedSecretNames.has(name))
       setSuccess(persisted.replayed ? 'This draft had already been saved by an earlier attempt; the saved script is opening.' : 'Script saved successfully!')
@@ -3113,7 +3207,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const retainedCreatedSecretNames = pendingCreatedSecretNamesRef.current.length ? [...pendingCreatedSecretNamesRef.current] : undefined
       // Nothing is awaited after onSave: the page holds back the return that
       // follows a save in the same turn (useScriptsAuthoringState).
-      if (hasLaterDraft || configureSecrets || retainedDraft || retainedCreatedSecretNames) onSave?.(savedScript, { ...(hasLaterDraft ? { laterEdits: true } : {}), ...(configureSecrets ? { configureSecrets: true } : {}), ...(retainedDraft ? { retainedDraft } : {}), ...(retainedJsonText !== undefined ? { retainedJsonText } : {}), ...(retainedCreatedSecretNames ? { retainedCreatedSecretNames } : {}) })
+      if (hasLaterDraft || configureSecrets || retainedDraft || retainedCreatedSecretNames) onSave?.(savedScript, { ...(hasLaterDraft ? { laterEdits: true } : {}), ...(result.keepAuthoringOpen ? { keepAuthoringOpen: true } : {}), ...(configureSecrets ? { configureSecrets: true } : {}), ...(retainedDraft ? { retainedDraft } : {}), ...(retainedJsonText !== undefined ? { retainedJsonText } : {}), ...(retainedCreatedSecretNames ? { retainedCreatedSecretNames } : {}) })
+      else if (result.keepAuthoringOpen) onSave?.(savedScript, { keepAuthoringOpen: true })
       else onSave?.(savedScript)
       return true
     } catch (e: unknown) {
@@ -3144,40 +3239,145 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       if (requestIsCurrent()) setSaving(false)
     }
   }
-  const handleSave = (): Promise<boolean> => {
+  const saveScript = (options: { keepAuthoringOpen?: boolean; libraryCopy?: boolean } = {}): Promise<boolean> => {
     const scope = editorResourceScopeRef.current
     const running = runningSaveRef.current
+    // A Java Vuser draft queued for approval is not in the library yet, so
+    // there is no saved script to debug (Save and debug).
+    const answered = (saved: boolean, result: { queuedForApproval?: boolean }) => saved && !(options.libraryCopy && result.queuedForApproval)
     if (running && running.scope === scope) {
       // The running save holds the document as it was when it started; edits
       // made since are not in it, so a request to save them is not answered
       // by it (the leave prompt stays open and says so).
       return running.outcome.then(saved => {
         if (saved && running.result.laterEdits) throw new Error('The save that was running has finished, but edits made since it started are not saved yet. They are still in the editor.')
-        return saved
+        return answered(saved, running.result)
       })
     }
-    const result = { laterEdits: false }
+    const result: { laterEdits: boolean; keepAuthoringOpen?: boolean; queuedForApproval?: boolean } = { laterEdits: false, keepAuthoringOpen: options.keepAuthoringOpen }
     const outcome = saveScriptNow(result)
     runningSaveRef.current = { scope, outcome, result }
     void outcome.finally(() => {
       if (runningSaveRef.current?.outcome === outcome) runningSaveRef.current = null
     })
-    return outcome
+    return options.libraryCopy ? outcome.then(saved => answered(saved, result)) : outcome
   }
-  handleSaveRef.current = handleSave
+  const handleSave = (): Promise<boolean> => saveScript()
+  handleSaveRef.current = saveScript
+
+  // Shows an admitted validation result: its replay preflight, its evidence
+  // and its summary. A fresh check describes the draft now; an earlier
+  // refused start no longer does.
+  const showValidationResult = (res: ScriptValidationResponse) => {
+    const validationWarnings = normalizeWarnings(res.warnings)
+    setValidationReplayPreflight(res.preflight || null)
+    setValidationPreflightFromRun(false)
+    setReplayStartRefusal(null)
+    setValidationEvidence({
+      data_source_fit: res.data_source_fit,
+      ai_guardrails: res.ai_guardrails,
+      authoring_health: res.authoring_health,
+    })
+    setValidationSidebarResult(res.valid ? {
+      tone: validationWarnings.length > 0 ? 'warning' : 'success',
+      message: validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.',
+      warnings: validationWarnings,
+      issues: [],
+    } : {
+      tone: 'error',
+      message: 'Script validation failed.',
+      warnings: validationWarnings,
+      issues: res.issues.length > 0 ? res.issues : ['Script validation failed.'],
+    })
+  }
+  // A repair's notice, kept through the check of the repaired copy it asks
+  // for (a ref: handleValidateScript is also a click handler).
+  const keepSuccessOnNextValidateRef = useRef(false)
+  // What an applied repair says, in the editor's own live region: the step's
+  // repair panel unmounts once its last blocker clears. A trailing space
+  // toggles so a second repair is announced too.
+  const [repairAnnouncement, setRepairAnnouncement] = useState('')
+  const [repairFocusRequest, setRepairFocusRequest] = useState(0)
+  // A guided repair the server saved to this script (ScriptBlockerRepairPanel).
+  // Apply needs a clean editor, so the editor holds exactly the copy the
+  // repair started from: it adopts the repaired copy and its validation as a
+  // save would. An edit made while the apply ran is in neither copy, so the
+  // editor stops for reconciliation rather than drop the edit or the repair.
+  const handleScriptRepairApplied = (response: ScriptRepairResponse) => {
+    const stored = response.stored
+    if (!editorMountedRef.current || !scriptId || !stored || stored.id !== scriptId) return
+    if (scriptEditorDirty || authoringBaseline?.projection.content_revision !== response.content_revision) {
+      blockForReconciliation('The repair was saved to the script while this editor had other changes. Load the current version to compare it with your draft, then reapply your changes or reload.')
+      return
+    }
+    let savedBaseline: ScriptAuthoringBaseline
+    try {
+      savedBaseline = baselineFromSavedScript(stored, projectId)
+    } catch {
+      blockForReconciliation('We could not confirm the repaired script. Load the current version to compare it with this editor.')
+      return
+    }
+    const definition = savedBaseline.projection.script
+    adoptPersistedScript({ stored, baseline: savedBaseline, definition, submitted: definition }, true)
+    setError(''); setWarnings([])
+    // The apply validated the revision it saved, which is the document this
+    // editor holds from the next render on: bind the result to both. That
+    // check had no session variables, so with some set it could name a value
+    // they supply: the repaired document is checked again with them instead.
+    const validation = response.validation
+    const hasReplayVariables = Object.keys(replayConfiguredVariables || {}).length > 0
+    if (validation && !hasReplayVariables && validation.validated_content_revision === savedBaseline.projection.content_revision) {
+      const documentKey = formatScriptJson(definition)
+      const request = beginValidation({ script: definition, documentKey, fingerprint: draftFingerprint(documentKey), editGeneration: parameterDataEditGenerationRef.current }, true)
+      validatedStoredRef.current = true
+      adoptValidated({ ...request, sent: { ...request.sent, contentRevision: savedBaseline.projection.content_revision } }, documentKey, validation.validation_context ?? null)
+      showValidationResult(validation)
+    } else {
+      invalidateValidation()
+      setValidationEvidence(null)
+      setValidationReplayPreflight(null)
+      setValidationSidebarResult(null)
+      setReplayStartRefusal(null)
+      if (hasReplayVariables) {
+        // The check that follows keeps the notice: it is the only place the
+        // save is confirmed once the step has no blocker left to show it.
+        keepSuccessOnNextValidateRef.current = true
+        setRevalidateAfterEdit(count => count + 1)
+      }
+    }
+    setSuccess(REPAIR_APPLIED)
+    setRepairAnnouncement(previous => previous === REPAIR_APPLIED ? `${REPAIR_APPLIED}\u00a0` : REPAIR_APPLIED)
+    setRepairFocusRequest(request => request + 1)
+    void refreshScriptSecretStatus()
+    setProjectSecretProbeRetryGeneration(generation => generation + 1)
+    repairAdoptedEchoRef.current = { documentKey: formatScriptJson(definition) }
+    // The step may have other blockers to repair: a page hosting the editor keeps it open.
+    onSave?.(stored, { keepAuthoringOpen: true })
+  }
+  scriptRepairAppliedRef.current = handleScriptRepairApplied
+  // The saved copy changed under the editor, or an apply's outcome is unknown.
+  const handleScriptRepairReconcile = (cause: unknown) => {
+    blockForReconciliation(cause instanceof ApiError && cause.status === 412
+      ? 'The saved script changed since this editor loaded it, so the repair was not applied. Load the current version, review it, then repair again.'
+      : 'We could not confirm whether this repair reached the server. Load the current version to see whether it was applied.')
+  }
 
   const handleValidateScript = async () => {
     const requestResourceScope = editorResourceScopeRef.current
     setError('')
-    setSuccess('')
+    if (keepSuccessOnNextValidateRef.current) keepSuccessOnNextValidateRef.current = false
+    else setSuccess('')
     setWarnings([])
     setValidationEvidence(null)
     setValidationReplayPreflight(null)
     setValidationSidebarResult(null)
     // A stored script is attested only while the editor holds exactly its
     // baseline; anything else validates the resolved draft, pending data
-    // cells included.
-    let stored = Boolean(scriptId) && !scriptEditorDirty && Boolean(authoringBaseline)
+    // cells included. The stored check judges without session variables, so
+    // with some set the clean copy is checked as a draft with them, as a
+    // debug start would judge it.
+    const hasReplayVariables = Object.keys(replayConfiguredVariables || {}).length > 0
+    let stored = Boolean(scriptId) && !scriptEditorDirty && Boolean(authoringBaseline) && !hasReplayVariables
     let draft: ResolvedScriptDraft
     try {
       draft = resolveDraft()
@@ -3218,13 +3418,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         return
       }
       const validationScript = applyValidationRuntimeSettingsMetadata(currentScript, res)
-      const validationWarnings = normalizeWarnings(res.warnings)
-      setValidationReplayPreflight(res.preflight || null)
-      setValidationEvidence({
-        data_source_fit: res.data_source_fit,
-        ai_guardrails: res.ai_guardrails,
-        authoring_health: res.authoring_health,
-      })
+      showValidationResult(res)
       const validatedDocumentKey = formatScriptJson(validationScript)
       validatedStoredRef.current = stored
       adoptValidated(request, validatedDocumentKey, res.validation_context ?? null)
@@ -3235,21 +3429,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       if (jsonDirty || currentScript.metadata?.import || validationScript !== currentScript) {
         commitJsonDraft(validationScript)
       }
-      if (res.valid) {
-        setValidationSidebarResult({
-          tone: validationWarnings.length > 0 ? 'warning' : 'success',
-          message: validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.',
-          warnings: validationWarnings,
-          issues: [],
-        })
-        return
-      }
-      setValidationSidebarResult({
-        tone: 'error',
-        message: 'Script validation failed.',
-        warnings: validationWarnings,
-        issues: res.issues.length > 0 ? res.issues : ['Script validation failed.'],
-      })
     } catch (e: unknown) {
       if (!requestIsCurrent() || !validationRequestIsCurrent(request)) return
       const validationWarnings = normalizeWarnings(getErrorWarnings(e))
@@ -3347,26 +3526,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setDebugRunHistory([])
   }, [scriptId, projectId, folderId, initialScript])
 
-  const handleReplay = useCallback(async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint }) => {
+  const handleReplay = useCallback(async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint; afterSave?: boolean }) => {
     const replayResourceScope = editorResourceScopeRef.current
     if (replayStartInFlightRef.current === replayResourceScope) return
     const replayResourceIsCurrent = () => (
       editorMountedRef.current
       && editorResourceScopeRef.current === replayResourceScope
     )
-    if (!replaySecretStatusKnownRef.current) {
-      setError('Project secret status is not available yet. Wait for the credential check to complete before running this script.')
+    // Every way to start follows the gate the Debug button shows: a start the
+    // server would refuse opens the next blocker instead, a draft whose saved
+    // copy is gated is saved first, and a start waiting on secret status
+    // or on a save the editor cannot make does nothing yet. None of them is
+    // an error to report.
+    const gate = replayStartGateRef.current
+    if (gate.kind === 'blocked') {
+      goToReplayBlockerRef.current()
       return
     }
-    const missingSecrets = replayMissingProjectSecretLabelsRef.current
-    if (missingSecrets.length > 0) {
-      setError(`Configure missing project secret${missingSecrets.length === 1 ? '' : 's'} before running: ${missingSecrets.join(', ')}.`)
+    if (gate.kind === 'save-first' && !options?.afterSave) {
+      void saveAndReplayRef.current(options)
       return
     }
+    if (gate.kind === 'waiting' && (gate.cause === 'secrets' || gate.cause === 'save')) return
     replayStartInFlightRef.current = replayResourceScope
     setError('')
     setSuccess('')
     setWarnings([])
+    setReplayStartRefusal(null)
     openReplayDebugger()
     setReplaying(true)
     setReplayStartPending(true)
@@ -3374,13 +3560,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     let startRequestDispatched = false
     let requestedReplaySessionId = ''
     let startRuntimeRequest: DebugRuntimeRequest | undefined
+    let startedDraft: { script: ScriptDefinition; fingerprint: string } | null = null
+    let startedVariablesKey = replayVariablesKey(undefined)
     try {
       const replayDraft = resolveDraft()
+      startedDraft = replayDraft
       const currentScript = replayDraft.script
       setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
       setReplayLayoutKey(stepLayoutKey(currentScript))
       setReplayDocumentFingerprint(replayDraft.fingerprint)
       const variables = parseReplayVariablesText(replayOptions.variablesText)
+      startedVariablesKey = replayVariablesKey(variables)
+      setReplayRunVariablesKey(startedVariablesKey)
       const liveTableSeeds = parseLiveTableSandboxSeeds(replayOptions.liveTableSeedsText)
       // Stop here, in the field's own words, rather than send a run identity the controller refuses.
       const runIdProblem = debugRunIdError(replayOptions.runId)
@@ -3477,6 +3668,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       }
       const replayWarnings = normalizeWarnings(res.warnings)
       setValidationReplayPreflight(res.preflight || res.session?.preflight || null)
+      setValidationPreflightFromRun(true)
       const responseSessionFinalized = isFinalizedDebugSession(res.session, res.session?.report)
       if (res.session) {
         setBrowserReplaySession(prev => {
@@ -3556,6 +3748,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const issues = getErrorIssues(e).join(' | ')
       const replayWarnings = normalizeWarnings(getErrorWarnings(e))
       const message = getErrorMessage(e, 'Replay failed')
+      let refusedDetail = ''
       const currentAttempt = replayStartAttemptRef.current
       if (
         startRequestDispatched &&
@@ -3579,7 +3772,31 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         return
       }
       setWarnings(replayWarnings)
-      setError(issues || message)
+      // A start refused for the script's readiness is readiness, not an
+      // error: its problems are the ones the editor already lists (and the
+      // refusal's preflight now stands in for this draft's), so it adds no
+      // row of its own and the counts stay one story.
+      const refusal = startRequestDispatched && startedDraft ? parseReplayStartRefusal(e) : null
+      if (refusal && startedDraft) {
+        const refusedFacts = refusal.preflight || { issues: refusal.gateIssues }
+        const refusedBlockers = replayReadinessIssues(refusedFacts).filter(issue => issue.severity === 'blocker')
+        const refusedScript = startedDraft.script
+        refusedDetail = refusedBlockers.length
+          ? replayRefusalSummary(refusedBlockers, issue => issue.location ? actionBreadcrumb(refusedScript, issue.location) : undefined)
+          : `Debug did not start: ${refusal.message || message}`
+        setReplayStartRefusal({
+          fingerprint: startedDraft.fingerprint,
+          variablesKey: startedVariablesKey,
+          editorClean: !scriptEditorDirty,
+          baselineRevision: authoringBaseline?.projection.content_revision ?? null,
+          blockersAtRefusal: refusedBlockers.length,
+          refusedSummary: refusedDetail,
+          editorBlockerIds: null,
+          refusal,
+        })
+      } else {
+        setError(issues || message)
+      }
       if (message.includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
@@ -3599,8 +3816,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setReplayActivity(prev => upsertReplayActivity(prev, {
         id: 'error',
         kind: 'error',
-        title: 'Replay failed before completion',
-        detail: issues || message,
+        title: refusedDetail ? 'Debug did not start' : 'Replay failed before completion',
+        detail: refusedDetail || issues || message,
         timestamp: new Date().toISOString(),
         success: false,
       }))
@@ -3615,7 +3832,29 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         }
       }
     }
-  }, [api, admitRuntimeSession, invalidateRuntimeAuthority, publishRuntimeAdmission, runtimeRequest, commitJsonDraft, debugBreakpoints, jsonDirty, openReplayDebugger, projectId, replayOptions, scriptEditorDirty, resolveDraft, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
+  }, [api, admitRuntimeSession, authoringBaseline, invalidateRuntimeAuthority, publishRuntimeAdmission, runtimeRequest, commitJsonDraft, debugBreakpoints, jsonDirty, openReplayDebugger, projectId, replayOptions, scriptEditorDirty, resolveDraft, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
+
+  // "Save and debug": the server judges the saved script before the draft,
+  // so a draft whose saved copy still has gates is saved first. The run
+  // starts once the save has rendered, so it reads the gate the new baseline
+  // gives, and it is dispatched even if that copy is still gated: the server's
+  // answer then lists what remains. It runs only the script it saved: a save
+  // that finishes after the editor moved to another script (superseded, or
+  // awaited by the leave prompt) starts nothing, and nor does a draft queued
+  // for approval, which keeps its notice. The page's echo of the save
+  // is the same script, so it is compared by ID, not by the props object.
+  // waitingOn is the document the start waited with for secret status.
+  const [replayAfterSave, setReplayAfterSave] = useState<{ options: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint }; scriptId?: string | null; projectId?: string; waitingOn?: string | null } | null>(null)
+  const saveAndReplay = async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint }) => {
+    const { scriptId: savedId, projectId: savedProjectId } = editorResourceScopeRef.current
+    // The run starts in this editor, so the page hosting it keeps it open.
+    const saved = await handleSaveRef.current({ keepAuthoringOpen: true, libraryCopy: true }).catch(() => false)
+    const current = editorResourceScopeRef.current
+    if (saved && editorMountedRef.current && current.scriptId === savedId && current.projectId === savedProjectId) {
+      setReplayAfterSave({ options: options || {}, scriptId: savedId, projectId: savedProjectId })
+    }
+  }
+  saveAndReplayRef.current = saveAndReplay
 
   useEffect(() => {
     if (replayReport?.completed_at) {
@@ -3879,15 +4118,41 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     () => safeParseReplayVariables(replayOptions.variablesText),
     [replayOptions.variablesText],
   )
+  // A refused start was judged against one document: its preflight speaks for
+  // this draft only while the draft is unchanged, and a refusal of the saved
+  // copy only while the editor held exactly that copy.
+  // A refusal of the draft was judged with the session variables the start
+  // sent too, so it no longer applies once they change; the saved copy's own
+  // gates do not depend on them.
+  const currentReplayVariablesKey = replayVariablesKey(replayConfiguredVariables)
+  const replayRefusalApplies = Boolean(replayStartRefusal && !jsonDirty
+    && replayStartRefusal.fingerprint === currentValidationBinding?.fingerprint
+    && (replayStartRefusal.refusal.gateScope === 'stored_script' ? replayStartRefusal.editorClean : replayStartRefusal.variablesKey === currentReplayVariablesKey))
+  const appliedReplayRefusal = replayRefusalApplies ? replayStartRefusal : null
+  // A refusal of a saved copy the draft did not match says that copy stays
+  // gated until a save replaces it.
+  const staleStoredReplayRefusal = replayStartRefusal && !replayRefusalApplies
+    && replayStartRefusal.refusal.gateScope === 'stored_script'
+    && replayStartRefusal.baselineRevision === (authoringBaseline?.projection.content_revision ?? null)
+    ? replayStartRefusal : null
   // Raw JSON is an executable draft even before the user applies it back to the
   // structured authoring controls. Never reuse an older server/session preflight
   // for that draft: derive requirements from the exact valid script that the Run
   // handler will parse and send.
-  const unreconciledReplayPreflight = useMemo(
-    () => (!jsonDirty && (browserReplaySession?.preflight || validationReplayPreflight))
-      || buildLocalReplayPreflight(currentDraftScript, replayConfiguredVariables),
-    [browserReplaySession?.preflight, currentDraftScript, jsonDirty, replayConfiguredVariables, validationReplayPreflight],
-  )
+  const currentDocumentFingerprint = currentValidationBinding?.fingerprint
+  const unreconciledReplayPreflight = useMemo(() => {
+    const refused = appliedReplayRefusal?.refusal
+    // A run's preflight speaks for the document and session variables it ran
+    // with: once an edit changes the draft, a blocker the edit added must not
+    // hide behind it.
+    const runDescribesDraft = replayDocumentFingerprint !== null && replayDocumentFingerprint === currentDocumentFingerprint && replayRunVariablesKey === currentReplayVariablesKey
+    const sessionPreflight = runDescribesDraft ? browserReplaySession?.preflight : undefined
+    const checkedPreflight = !validationPreflightFromRun || runDescribesDraft ? validationReplayPreflight : null
+    const preflight = (!jsonDirty && (refused?.preflight || sessionPreflight || checkedPreflight))
+      || buildLocalReplayPreflight(currentDraftScript, replayConfiguredVariables)
+    // A refusal naming only its gates adds them to what this draft lists.
+    return refused && !refused.preflight && refused.gateIssues.length > 0 ? withRefusedReviewGates(preflight, refused.gateIssues) : preflight
+  }, [appliedReplayRefusal?.refusal, browserReplaySession?.preflight, currentDocumentFingerprint, currentDraftScript, currentReplayVariablesKey, jsonDirty, replayConfiguredVariables, replayDocumentFingerprint, replayRunVariablesKey, validationPreflightFromRun, validationReplayPreflight])
   const requiredProjectSecretNames = Array.from(new Set([
     ...(unreconciledReplayPreflight.required_secrets || []),
     ...(!jsonDirty && scriptSecretStatus
@@ -3973,7 +4238,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     projectProbeIsUnavailable,
     secretLabels,
   )
-  const replayPreflight = errorCount || jsonParseMessage || (validationResultIsCurrent && validationSidebarResult?.tone === 'error') ? { ...secretReconciledPreflight, valid: false, checks: [...(secretReconciledPreflight.checks || []), { id: 'author-problems', label: 'Current draft', status: 'fail' as const, detail: 'The current draft has blocking issues. Open Author Problems to repair them.' }] } : secretReconciledPreflight
+  // Validation issues only promotion enforces (import fidelity blockers) do
+  // not make the draft's replay readiness fail.
+  const currentValidationIssues = useMemo(() => validationResultIsCurrent ? validationSidebarResult?.issues || [] : [], [validationResultIsCurrent, validationSidebarResult])
+  const validationBlocksDraft = validationResultIsCurrent && validationSidebarResult?.tone === 'error'
+    && (currentValidationIssues.length === 0 || currentValidationIssues.some(issue => !isPromotionOnlyValidationIssue(issue)))
+  const replayPreflight = errorCount || jsonParseMessage || validationBlocksDraft ? { ...secretReconciledPreflight, valid: false, checks: [...(secretReconciledPreflight.checks || []), { id: 'author-problems', label: 'Current draft', status: 'fail' as const, detail: 'The current draft has blocking issues. Open Author Problems to repair them.' }] } : secretReconciledPreflight
   // Readiness problems come from the preflight Checks & readiness shows, so
   // Author Problems, the top bar, the rail and the debugger agree with it.
   // Keyed by the facts' text: the preflight object is rebuilt every render.
@@ -3983,6 +4253,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     blocking_variables: secretReconciledPreflight.blocking_variables,
     placeholder_variables: secretReconciledPreflight.placeholder_variables,
     missing_variables: secretReconciledPreflight.missing_variables,
+    late_produced_variables: secretReconciledPreflight.late_produced_variables,
+    param_blocking_variables: secretReconciledPreflight.param_blocking_variables,
+    config_blocking_variables: secretReconciledPreflight.config_blocking_variables,
     missing_secrets: secretStatusKnown ? secretReconciledPreflight.missing_secrets : [],
     data_source_issues: secretReconciledPreflight.data_source_issues,
     warnings: secretReconciledPreflight.warnings,
@@ -3990,18 +4263,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // Text Author Problems already lists from validation or the last replay.
   const alreadyListedProblemsJson = JSON.stringify([...(validationResultIsCurrent ? validationSidebarResult?.issues || [] : []), ...warnings])
   const secretLabelsJson = JSON.stringify([...secretLabels])
+  // A protected body is restored only while importing: a saved script
+  // imports its source again, while an unsaved draft opened from the import
+  // review (the editor's only return target) goes back to its body repair.
+  const protectedBodySource: ProtectedBodySource = !scriptId && returnTarget ? 'import-review' : 'reimport'
+  // The script locates a gate on a nested step at that step.
   const readinessIssues = useMemo(
     () => replayReadinessIssues(
       JSON.parse(readinessFactsJson) as ReadinessFacts,
       JSON.parse(alreadyListedProblemsJson) as string[],
       new Map(JSON.parse(secretLabelsJson) as [string, string][]),
+      script,
+      protectedBodySource,
     ),
-    [readinessFactsJson, alreadyListedProblemsJson, secretLabelsJson],
+    [readinessFactsJson, alreadyListedProblemsJson, secretLabelsJson, script, protectedBodySource],
   )
   const missingProjectSecrets = replayPreflight.missing_secrets || []
   const missingProjectSecretLabels = missingProjectSecrets.map(name => secretDisplayName(secretLabels, name))
-  replayMissingProjectSecretLabelsRef.current = missingProjectSecretLabels
-  replaySecretStatusKnownRef.current = secretStatusKnown
   const replayBlockedByUnknownSecretStatus = requiredProjectSecretNames.length > 0 && !secretStatusKnown
   const replayBlockedByMissingSecrets = missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus
   const replaySecretStatusState = replayBlockedByUnknownSecretStatus
@@ -4044,9 +4322,105 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecretLabels.join(', ')}.`
       : replayStartButtonLabel
   const debugActionRows = scriptPhaseActionRows
+  // What the server refuses a debug start for, and so what every start
+  // control follows (decision f): readiness blockers and current server
+  // validation issues, never the browser's own authoring checks.
+  // A static issue the server words (`actions[2] "Login": missing target`)
+  // that a check the editor runs itself already reports is that check's
+  // problem: Author Problems lists it once, as the check, and the start gate
+  // counts it once, opening that row.
+  const coveringAuthoringIssue = useCallback((message: string | undefined) => {
+    const match = message ? /(actions|init|teardown)\[(\d+)\].*?(?:missing|required)\s+(target|name)|(?:missing|required)\s+(target|name).*?(actions|init|teardown)\[(\d+)\]/i.exec(message) : null
+    if (!match) return undefined
+    const phase = (match[1] || match[5]) === 'actions' ? 'action' : match[1] || match[5]
+    const index = Number(match[2] || match[6]), field = match[3] || match[4]
+    return authoringIssues.find(local => local.phase === phase && local.actionIndex === index && local.id.endsWith(`:${field}`))
+  }, [authoringIssues])
+  const replayBlockerList = useMemo(() => coveredByAuthoring(replayBlockers(readinessIssues, currentValidationIssues), blocker => {
+    // A server validation issue is titled with its own words, except a header check.
+    const local = coveringAuthoringIssue(blocker.source === 'validation' ? blocker.title : blocker.message)
+    return local && { id: local.id, title: local.message.replace(/\.$/, '') }
+  }), [coveringAuthoringIssue, currentValidationIssues, readinessIssues])
+  // The gate codes the script carries and the readiness problems name. A
+  // promotion fold restating one of them is that problem, listed once, as the
+  // import review lists it.
+  const promotionFoldCodes = useMemo(
+    () => new Set([...draftImportFindings(script).map(finding => finding.code), ...readinessIssues.flatMap(issue => issue.codes || [])]),
+    [readinessIssues, script],
+  )
+  // The saved copy's own gates, which the server judges before the draft
+  // (storedScriptReplayGateError); a refusal of that copy says so too.
+  const savedScriptForReplayGates = scriptId ? authoringBaseline?.projection.script ?? initialScript : null
+  const savedScriptReplayGates = useMemo(() => savedScriptForReplayGates ? replayReviewGateIssues(savedScriptForReplayGates, { enforceBrowserPolicy: false }) : [], [savedScriptForReplayGates])
+  const storedReplayGateIssues = savedScriptReplayGates.length > 0 ? savedScriptReplayGates : staleStoredReplayRefusal?.refusal.gateIssues || []
+  // "Save and debug" cannot save while the saved script's baseline loads or is
+  // held for reconciliation (saveScriptNow refuses quietly), so a start that
+  // must save first waits and says why instead of doing nothing.
+  const replaySaveUnavailableReason = secretBindingsOpen
+    ? 'Close Secret Bindings before saving and debugging.'
+    : scriptId && (authoringRevisionState !== 'ready' || !authoringBaseline)
+      ? authoringRevisionState === 'loading'
+        ? 'Loading the saved script. Save and debug is available once it has loaded.'
+        : 'Load and review the current version of the script before saving and debugging.'
+      : undefined
+  const replayGate = replayStartGate({
+    replaying,
+    saving,
+    hasName: Boolean(currentDraftScript.name),
+    actionCount: (currentDraftScript.actions || []).length,
+    jsonInvalid: Boolean(jsonParseMessage),
+    secretStatus: !replayBlockedByUnknownSecretStatus ? 'known' : replaySecretStatusState === 'unavailable' ? 'unavailable' : 'checking',
+    secretStatusReason: replayBlockedByUnknownSecretStatus ? replayRunButtonTitle : undefined,
+    blockers: replayBlockerList,
+    storedGateIssues: storedReplayGateIssues,
+    saveUnavailableReason: replaySaveUnavailableReason,
+    // Only a saved script is debugged after "Save and debug" saves it.
+    unsavedChanges: Boolean(scriptId) && scriptEditorDirty,
+  })
+  replayStartGateRef.current = replayGate
+  // The blockers the editor lists for a refused start, recorded once its gate
+  // settles (a secret status check for the refusal's preflight may still be
+  // on its way): the refusal's notice says nothing more once those are gone.
+  const replayGateBlockerIdsKey = replayGate.kind === 'blocked' ? JSON.stringify(replayGate.blockers.map(blocker => blocker.id)) : '[]'
+  const replayGateSettled = replayGate.kind !== 'waiting'
+  useEffect(() => {
+    if (!appliedReplayRefusal || appliedReplayRefusal.editorBlockerIds !== null || !replayGateSettled) return
+    const editorBlockerIds = JSON.parse(replayGateBlockerIdsKey) as string[]
+    setReplayStartRefusal(current => current === appliedReplayRefusal ? { ...current, editorBlockerIds } : current)
+  }, [appliedReplayRefusal, replayGateBlockerIdsKey, replayGateSettled])
+  // The pending "Save and debug" start. A save can change which project
+  // secrets the script needs, so the start waits while their status is
+  // checked, then starts (or opens the blocker) once the gate settles. It is
+  // dropped if the check cannot answer, or if an edit, another save or a run
+  // changes the gate while it waits: those are the author's to start again.
+  const replayGateKey = replayGate.kind === 'waiting' ? `waiting:${replayGate.cause}` : replayGate.kind
+  const afterSaveDocument = currentDocumentFingerprint ?? null
+  useEffect(() => {
+    const pending = replayAfterSave
+    if (!pending) return
+    if (pending.scriptId !== scriptId || pending.projectId !== projectId) {
+      setReplayAfterSave(null)
+      return
+    }
+    const gate = replayStartGateRef.current
+    const checkingSecrets = gate.kind === 'waiting' && gate.cause === 'secrets' && replaySecretStatusState === 'checking'
+    if (checkingSecrets && (pending.waitingOn === undefined || pending.waitingOn === afterSaveDocument)) {
+      if (pending.waitingOn === undefined) setReplayAfterSave({ ...pending, waitingOn: afterSaveDocument })
+      return
+    }
+    setReplayAfterSave(null)
+    if (pending.waitingOn !== undefined && (pending.waitingOn !== afterSaveDocument || gate.kind === 'waiting')) return
+    void handleReplay({ ...pending.options, afterSave: true })
+  }, [afterSaveDocument, handleReplay, projectId, replayAfterSave, replayGateKey, replaySecretStatusState, scriptId])
+  const replayGateButton = replayGateAction(replayGate, { hasReport: Boolean(replayReport), readyTitle: replayRunButtonTitle })
+  const replayGateButtonKey = JSON.stringify(replayGateButton)
+  // Why a new run cannot start, for the controls that would start one; the
+  // step controls keep their own titles while the editor is only waiting.
+  const runStartBlockedReason = replayStartBlockedReason(replayGate)
+  const stepStartBlockedTitle = replayGate.kind === 'blocked' || replayGate.kind === 'save-first' ? runStartBlockedReason : undefined
   const stepReplayDisabled = replaying
     ? (!activeReplaySessionId || !isReplayPaused)
-    : (saving || replayBlockedByMissingSecrets || !script.name || debugActionRows.length === 0)
+    : replayGate.kind !== 'ready'
   const breakpointSummary = `${debugBreakpoints.length} breakpoints across ${debugActionRows.length} executable action${debugActionRows.length === 1 ? '' : 's'}`
   useEffect(() => {
     if (hasReplayVariableInspectorData) {
@@ -4125,6 +4499,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setAuthorRailWidth(Math.max(200, Math.min(cap, natural)))
   }
 
+  const replayGateKind = replayGate.kind
   const scriptEditorShortcuts = useMemo(() => [
     {
       id: 'script.escape',
@@ -4156,10 +4531,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     },
     {
       id: 'script.debug.run',
-      label: replaying ? 'Continue debugger' : 'Run debugger',
+      // While blocked, F5 opens the next blocker as the Debug button does.
+      label: replaying ? 'Continue debugger' : replayGateKind === 'blocked' ? 'Resolve replay blockers' : replayGateKind === 'save-first' ? 'Save and debug' : 'Run debugger',
       keys: 'F5',
       group: 'Script Editor',
-      disabled: !replaying && (saving || replayBlockedByMissingSecrets || !script.name || debugActionRows.length === 0),
+      disabled: !replaying && replayGateKind === 'waiting',
       priority: 850,
       onTrigger: () => {
         if (replaying) {
@@ -4183,7 +4559,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       label: 'Step debugger',
       keys: 'F10',
       group: 'Script Editor',
-      disabled: !((replaying && isReplayPaused) || (!replaying && !saving && !replayBlockedByMissingSecrets && script.name && debugActionRows.length > 0)),
+      disabled: !((replaying && isReplayPaused) || (!replaying && replayGateKind === 'ready')),
       priority: 850,
       onTrigger: () => { void handleStepReplay('into') },
     },
@@ -4231,12 +4607,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     handleStepReplay,
     handleStopReplay,
     isReplayPaused,
-    replayBlockedByMissingSecrets,
+    replayGateKind,
     replaying,
     saveScriptDisabled,
-    saving,
     script.actions,
-    script.name,
     selectedReplayEvent,
     selectedDebugRow,
     setDebuggerSettingsOpen,
@@ -5372,6 +5746,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       ? 'in progress'
       : 'missing'
   const validationPassed = validationSidebarResult?.tone === 'success' || validationSidebarResult?.tone === 'warning'
+  // Server validation failed only for import fidelity blockers it folds in
+  // (replayStartGate): promotion and load-test launch hold the script for
+  // import review, and Author Problems lists them as review notes, so the
+  // check reads as a review, not a failure.
+  const validationNeedsImportReview = validationResultIsCurrent && validationSidebarResult?.tone === 'error' && !validationBlocksDraft
+  // That review never refuses a debug run, which is said only while nothing
+  // does: a fold restating a problem listed already (promotionFoldCoveredByGate)
+  // is that problem, such as a step gate, which refuses one.
+  const importReviewAllowsDebug = replayGate.kind !== 'blocked'
+    && !currentValidationIssues.some(issue => promotionFoldCoveredByGate(issue, promotionFoldCodes))
   const approvalReady = Boolean(
     validationEvidence
     && validationPassed
@@ -5391,9 +5775,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       : { key: 'saved', tone: scriptEditorDirty ? 'warn' : 'ok', word: scriptEditorDirty ? 'Unsaved' : 'Saved', detail: scriptEditorDirty ? 'This draft has unsaved changes.' : 'All changes are saved.' },
     {
       key: 'checked',
-      tone: !validationEvidence ? 'none' : !validationEvidenceMatchesCurrentDraft ? 'warn' : validationPassed ? 'ok' : 'bad',
-      word: !validationEvidence ? 'Unchecked' : !validationEvidenceMatchesCurrentDraft ? 'Recheck' : validationPassed ? 'Checked' : 'Checks failed',
-      detail: `Validation evidence: ${!validationEvidence ? 'not yet' : !validationEvidenceMatchesCurrentDraft ? 'stale; recheck this draft' : validationPassed ? 'passed' : 'needs changes'}. Checks & readiness has the details.`,
+      tone: !validationEvidence ? 'none' : !validationEvidenceMatchesCurrentDraft ? 'warn' : validationPassed ? 'ok' : validationNeedsImportReview ? 'warn' : 'bad',
+      word: !validationEvidence ? 'Unchecked' : !validationEvidenceMatchesCurrentDraft ? 'Recheck' : validationPassed ? 'Checked' : validationNeedsImportReview ? 'Needs review' : 'Checks failed',
+      detail: validationEvidence && validationNeedsImportReview
+        ? `Validation evidence: needs import review before promotion${importReviewAllowsDebug ? '; debug runs are not refused for it' : ''}. Checks & readiness has the details.`
+        : `Validation evidence: ${!validationEvidence ? 'not yet' : !validationEvidenceMatchesCurrentDraft ? 'stale; recheck this draft' : validationPassed ? 'passed' : 'needs changes'}. Checks & readiness has the details.`,
     },
     ...(workspaceTab === 'debug' ? [] : [{
       key: 'debugged',
@@ -5403,8 +5789,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }]),
     { key: 'ready', tone: approvalReady ? 'ok' : 'none', word: approvalReady ? 'Ready' : 'Not ready', detail: approvalReady ? 'Approval readiness: ready for review.' : 'Approval readiness: needs a passing check and debug run of this draft.' },
   ]
+  // Nothing runs until the controller admits the start: until then it is starting.
   const debugWorkspaceStatusLabel = replaying
-    ? (isReplayPaused ? 'Paused' : 'Running')
+    ? (replayStartPending && !browserReplaySession ? 'Starting' : isReplayPaused ? 'Paused' : 'Running')
     : replayReport?.completed_at
       ? (!replayEvidenceMatchesCurrentDraft ? 'Stale' : replayReport.stopped ? 'Stopped' : replayReport.success ? 'Passed' : 'Failed')
       : activeReplaySessionId || browserReplaySession
@@ -5427,6 +5814,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
     return firstUse
   }, [readinessIssues, scriptPhaseActionRows])
+  // The blocker step whose repair takes focus once the inspector has opened:
+  // requested after the inspector pane's own heading focus, which would
+  // otherwise cancel it as a newer focus.
+  const replayBlockerFocusRef = useRef<{ phase: ScriptActionPhase; actionIndex: number; stepPath?: string[] } | null>(null)
+  const [replayBlockerFocusRequest, setReplayBlockerFocusRequest] = useState(0)
+  const requestInspectorFocusRef = useRef(requestInspectorFocus)
+  requestInspectorFocusRef.current = requestInspectorFocus
+  useEffect(() => {
+    const location = replayBlockerFocusRef.current
+    replayBlockerFocusRef.current = null
+    if (location) requestInspectorFocusRef.current(location, panel => panel.querySelector<HTMLElement>('[data-blocker-repair] select, [data-blocker-repair] button') || panel.querySelector<HTMLElement>('[data-inspector-focus]'))
+  }, [replayBlockerFocusRequest])
+  // Opens the inspector on a blocked step, already selected, with its repair
+  // focused: "Resolve N blockers", F5 and an Author Problems blocker row alike.
+  const focusReplayBlockerRepair = useCallback((location: { phase: ScriptActionPhase; actionIndex: number; stepPath?: string[] }) => {
+    setAuthorRightSidebarCollapsed(false)
+    setNarrowAuthorPane('inspector')
+    replayBlockerFocusRef.current = location
+    setReplayBlockerFocusRequest(request => request + 1)
+  }, [])
   const editorIssueDetails = useMemo<IssueDetail[]>(() => {
     const structured = [
       ...scriptLevelIssues.map(issue => ({
@@ -5478,51 +5885,85 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         onSelect: () => { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) },
       }] : []),
     ]
-    const serverIssues: IssueDetail[] = validationResultIsCurrent ? (validationSidebarResult?.issues || []).map((title, index) => ({
+    // An import fidelity blocker holds promotion, not replay: a review note,
+    // unless it restates a gate, a body or review codes listed already, and
+    // naming only the review codes not listed. The index stays the issue's
+    // own, as replayBlockers numbers its rows.
+    const serverIssues: IssueDetail[] = validationResultIsCurrent ? (validationSidebarResult?.issues || []).flatMap((title, index): IssueDetail[] => promotionFoldCoveredByGate(title, promotionFoldCodes) ? [] : [isPromotionOnlyValidationIssue(title) ? {
+      id: `server-${index}`, severity: 'warning' as const, ...promotionReviewText(title, promotionFoldCodes), source: 'Import review',
+    } : ({
       id: `server-${index}`, severity: 'error', ...(headerIssueText(title) || { title }), source: 'Server validation', onSelect: () => {
         const match = /(?:script\.)?(actions|init|teardown)\[(\d+)\]/.exec(title)
         if (match) { const row = scriptPhaseActionRows.find(row => row.phase === (match[1] === 'actions' ? 'action' : match[1]) && row.actionIndex === Number(match[2])); if (row) selectAuthorPhaseActionRef.current(row) }
         else { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) }
       },
-    })) : []
-    const overlapsLocal = (issue: IssueDetail) => {
-      const match = /(actions|init|teardown)\[(\d+)\].*?(?:missing|required)\s+(target|name)|(?:missing|required)\s+(target|name).*?(actions|init|teardown)\[(\d+)\]/i.exec(issue.title)
-      if (!match) return false
-      const phase = (match[1] || match[5]) === 'actions' ? 'action' : match[1] || match[5]
-      const index = Number(match[2] || match[6]), field = match[3] || match[4]
-      return authoringIssues.some(local => local.phase === phase && local.actionIndex === index && local.id.endsWith(`:${field}`))
+    })]) : []
+    const overlapsLocal = (issue: IssueDetail) => Boolean(coveringAuthoringIssue(issue.title))
+    // Like an authoring problem, opening one moves focus to the action it
+    // names, or to the nested step a gate sits on.
+    const openActionRow = (row: ScriptPhaseActionRow, stepPath?: string[]) => {
+      selectAuthorStepRef.current(row, stepPath)
+      requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex, ...(stepPath?.length ? { stepPath } : {}) })
     }
-    // Like an authoring problem, opening one moves focus to the action it names.
-    const openActionRow = (row: ScriptPhaseActionRow) => {
-      selectAuthorPhaseActionRef.current(row)
-      requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex })
+    // A configuration reference is replaced in Runtime Settings, on the base
+    // URL when that is where it is: no step or parameter can supply it.
+    const openScriptConfiguration = (baseUrl: boolean) => {
+      openCenterTab('runtime-settings')
+      selectRuntimeSettingsSection('script_config')
+      if (baseUrl) requestAnimationFrame(() => editorElementRef.current?.querySelector<HTMLElement>('[data-author-field="base_url"]')?.focus())
     }
-    const readiness: IssueDetail[] = readinessIssues.map(issue => {
+    // An unsaved draft's project secrets are configured once it is saved, and
+    // saving is the author's choice: its secret row (which "Resolve", F5 and a
+    // refused start's notice open too) goes to "Save & configure secrets"
+    // rather than save the draft itself.
+    const showSaveAndConfigureSecrets = () => requestAnimationFrame(() => {
+      const control = editorElementRef.current?.querySelector<HTMLElement>('[data-save-configure-secrets]')
+      if (!control) { setShowAuthorProblems(true); return }
+      control.scrollIntoView?.({ block: 'nearest' })
+      control.focus()
+    })
+    // A static issue a check the editor runs itself reports is listed as that
+    // check (coveringAuthoringIssue), as the start gate counts it.
+    const readiness: IssueDetail[] = readinessIssues.filter(issue => !coveringAuthoringIssue(issue.message)).map(issue => {
       const location = issue.location
       const row = location ? scriptPhaseActionRows.find(candidate => candidate.phase === location.phase && candidate.actionIndex === location.actionIndex) : undefined
       const variable = issue.variable
       // Where the value is used; with no use found, the parameters open to add one.
-      const used = !row && variable ? readinessVariableFirstUse.get(variable) : undefined
+      const used = !row && variable && !issue.config ? readinessVariableFirstUse.get(variable) : undefined
+      const inBaseUrl = Boolean(issue.config && variable && templateVariableNames(script.config?.base_url || '').has(variable))
       return {
         id: issue.id,
         severity: issue.severity,
         title: issue.title,
         description: issue.description,
-        source: row ? actionBreadcrumb(script, { phase: row.phase, actionIndex: row.actionIndex }) : 'Replay readiness',
-        ownsDestinationFocus: Boolean(row || used),
-        onSelect: row ? () => openActionRow(row)
-          : issue.secret ? openProjectSecrets
+        // The nested step a gate sits on, so two alike in one transaction read apart.
+        source: row ? actionBreadcrumb(script, { phase: row.phase, actionIndex: row.actionIndex, ...(location?.stepPath ? { stepPath: location.stepPath } : {}) }) : 'Replay readiness',
+        ownsDestinationFocus: Boolean(row || used || inBaseUrl || (issue.secret && !scriptId)),
+        // A gated step's problem opens on its repair, as "Resolve N blockers" does.
+        onSelect: row && issue.codes?.length ? () => { openActionRow(row, location?.stepPath); focusReplayBlockerRepair({ phase: row.phase, actionIndex: row.actionIndex, ...(location?.stepPath ? { stepPath: location.stepPath } : {}) }) }
+          : row ? () => openActionRow(row, location?.stepPath)
+          : issue.secret ? scriptId ? openProjectSecrets : showSaveAndConfigureSecrets
+          : issue.config ? () => openScriptConfiguration(inBaseUrl)
           : used ? () => openActionRow(used)
-          : variable ? () => openCenterTab('parameter-data')
+          : variable || issue.id.startsWith('readiness:data:') ? () => openCenterTab('parameter-data')
           : undefined,
       }
     })
+    // Readiness and server validation errors are each a problem the start
+    // gate counts by its row id, so two that read alike (one gate on two
+    // requests of a transaction, one header check on two requests) stay two
+    // rows "Resolve" reaches in turn. Only the other sources fold by words.
+    const counted = new Set<IssueDetail>([...readiness, ...serverIssues.filter(issue => issue.source === 'Server validation')])
+    const listed = [...structured, ...serverIssues.filter(issue => !overlapsLocal(issue)), ...readiness, ...operational.filter(issue => !overlapsLocal(issue))]
+    const folded = new Set(dedupeAuthorIssues(listed.filter(issue => !counted.has(issue))))
+    const countedIds = new Set<string>()
     // Blocking problems lead, whichever check found them; the sort is stable,
     // so each source keeps its own order within a severity.
     const rank = (issue: IssueDetail) => issue.severity === 'blocker' || issue.severity === 'error' ? 0 : issue.severity === 'warning' ? 1 : 2
-    return dedupeAuthorIssues([...structured, ...serverIssues.filter(issue => !overlapsLocal(issue)), ...readiness, ...operational.filter(issue => !overlapsLocal(issue))])
+    return listed
+      .filter(issue => counted.has(issue) ? !countedIds.has(issue.id) && Boolean(countedIds.add(issue.id)) : folded.has(issue))
       .sort((a, b) => rank(a) - rank(b))
-  }, [openProjectSecrets, readinessIssues, readinessVariableFirstUse, selectRuntimeSettingsSection, actionProblemRows, authoringIssues, error, jsonParseMessage, openCenterTab, requestInspectorFocus, script, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
+  }, [coveringAuthoringIssue, focusReplayBlockerRepair, openProjectSecrets, promotionFoldCodes, readinessIssues, readinessVariableFirstUse, selectRuntimeSettingsSection, actionProblemRows, error, jsonParseMessage, openCenterTab, requestInspectorFocus, script, scriptId, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
   const problemCount = editorIssueDetails.length
   const problemErrorCount = editorIssueDetails.filter(issue => issue.severity === 'error' || issue.severity === 'blocker').length
   const problemWarningCount = editorIssueDetails.filter(issue => issue.severity === 'warning').length
@@ -5533,6 +5974,71 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const railAdditionalIssues = editorIssueDetails.filter(issue => !authoringIssueIds.has(issue.id))
   const editorIssueDetailsRef = useRef(editorIssueDetails)
   editorIssueDetailsRef.current = editorIssueDetails
+  // "Resolve N blockers": Author, the next blocker selected as Author Problems
+  // selects it, and the inspector open on its step with the repair focused.
+  // Repeated use walks the blockers in turn; one with nowhere to go opens
+  // Author Problems.
+  const replayBlockerCursorRef = useRef<string | null>(null)
+  const goToReplayBlocker = useCallback(() => {
+    const gate = replayStartGateRef.current
+    const blockers = gate.kind === 'blocked' ? gate.blockers : []
+    activateWorkspaceTab('author')
+    openCenterTab(ACTION_LIST_TAB_ID)
+    const last = blockers.findIndex(blocker => blocker.id === replayBlockerCursorRef.current)
+    const next = blockers.length > 0 ? blockers[(last + 1) % blockers.length] : undefined
+    replayBlockerCursorRef.current = next?.id ?? null
+    const row = next && editorIssueDetailsRef.current.find(issue => issue.id === next.id)
+    if (!next || !row?.onSelect) {
+      setShowAuthorProblems(true)
+      return
+    }
+    row.onSelect()
+    // An editor check's row focuses its own field; there is no repair to focus.
+    if (next.location && next.source !== 'authoring') focusReplayBlockerRepair(next.location)
+  }, [activateWorkspaceTab, focusReplayBlockerRepair, openCenterTab])
+  goToReplayBlockerRef.current = goToReplayBlocker
+  // An applied repair removes the control that had focus. Once the editor has
+  // adopted the repaired copy, focus moves on deliberately: to the next
+  // blocker's repair while replay is still blocked, else to the inspector's
+  // heading, else to the Debug control. Focus the author moved elsewhere
+  // while the apply ran stays there.
+  useEffect(() => {
+    if (!repairFocusRequest) return
+    const active = document.activeElement
+    if (active && active !== document.body && !active.closest('[data-blocker-repair]')) return
+    if (replayStartGateRef.current.kind === 'blocked') {
+      goToReplayBlockerRef.current()
+      return
+    }
+    const target = editorElementRef.current?.querySelector<HTMLElement>('[data-inspector-focus]')
+      || document.querySelector<HTMLElement>('.topbar-debug-action-run')
+    target?.focus()
+  }, [repairFocusRequest])
+  // A refused start's notice is worded from what blocks the draft now; a
+  // refusal of a saved copy the draft does not match asks for a save.
+  const replayStartNotice = (() => {
+    if (replaying) return null
+    if (staleStoredReplayRefusal) {
+      const count = storedGateProblemCount(storedReplayGateIssues)
+      return { kind: 'save-first' as const, text: `Debug did not start: the saved script still has ${count} ${count === 1 ? 'problem that blocks' : 'problems that block'} replay. Save your changes, then debug.` }
+    }
+    if (!appliedReplayRefusal) return null
+    const blockers = replayGate.kind === 'blocked' ? replayGate.blockers : []
+    if (blockers.length === 0) {
+      // A refusal naming nothing the editor lists keeps the controller's words.
+      if (appliedReplayRefusal.blockersAtRefusal === 0) return { kind: 'message' as const, text: `Debug did not start: ${appliedReplayRefusal.refusal.message}` }
+      // Resolved since: the blockers the editor listed for it are gone, so
+      // nothing is left to say (nor is anything before its gate settles).
+      const listed = appliedReplayRefusal.editorBlockerIds
+      if (listed === null || listed.length > 0) return null
+      // The editor lists none of the blockers the controller refused for (a
+      // project secret it could not resolve though its status reads
+      // configured): the refusal's own line names them, and Debug stays
+      // available for a retry once they are fixed.
+      return { kind: 'message' as const, text: appliedReplayRefusal.refusedSummary }
+    }
+    return { kind: 'blocked' as const, text: replayRefusalSummary(blockers, blocker => blocker.location ? actionBreadcrumb(script, blocker.location) : undefined) }
+  })()
   // Open a script on the first problem Author Problems lists, else the first
   // action, rather than an empty "select an action" pane: from the problems
   // already computed for the hydrated script, so a large import pays nothing
@@ -5665,20 +6171,27 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     ),
     secondaryActions: [
       { id: 'save-script', label: saving ? 'Saving…' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
-      {
-        id: 'run-debug',
-        label: replayReport ? 'Debug again' : 'Debug one iteration',
-        hidden: replaying,
-        compactLabel: 'Debug',
-        icon: <DebugTopbarIcon kind="run" />,
-        className: 'topbar-debug-action topbar-debug-action-run',
-        title: replayRunButtonTitle,
-        tone: 'success',
-        disabled: replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0,
-        onClick: () => { void topbarActionHandlersRef.current.handleReplay() },
-      },
+      // Debug follows the start gate: while the server would refuse the
+      // script it reads "Resolve N blockers" and opens them; while only the
+      // saved copy is gated, it saves first.
+      (() => {
+        const action = JSON.parse(replayGateButtonKey) as ReplayGateAction
+        return {
+          id: 'run-debug',
+          label: action.label,
+          hidden: replaying,
+          compactLabel: action.compactLabel,
+          icon: <DebugTopbarIcon kind={action.icon} />,
+          className: `topbar-debug-action topbar-debug-action-${action.intent === 'resolve' ? 'blocker' : 'run'}`,
+          title: action.title,
+          ariaLabel: action.ariaLabel,
+          tone: action.tone,
+          disabled: action.disabled,
+          onClick: () => { void topbarActionHandlersRef.current.handleReplay() },
+        }
+      })(),
     ],
-  }), [currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, duplicateScriptName, duplicateScriptNameNotice, script.name, problemCount, problemErrorCount, replayBlockedByMissingSecrets, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
+  }), [currentDraftScript.name, debugWorkspaceStatusLabel, duplicateScriptName, duplicateScriptNameNotice, script.name, problemCount, problemErrorCount, replayGateButtonKey, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
   useTopbarContribution(scriptTopbarContribution)
   // The step controls belong to the debug session, beside its evidence: the
   // top bar keeps Save and the one action that starts a debug run, so it
@@ -5691,7 +6204,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       icon: <DebugTopbarIcon kind="step" />,
       className: 'topbar-debug-action topbar-debug-action-step',
       hidden: workspaceTab !== 'debug',
-      title: replayReport?.completed_at ? 'Restart in step mode at the first action; previous replay evidence is retained' : 'Step to next action',
+      title: !replaying && stepStartBlockedTitle ? stepStartBlockedTitle : replayReport?.completed_at ? 'Restart in step mode at the first action; previous replay evidence is retained' : 'Step to next action',
       tone: 'secondary',
       disabled: stepReplayDisabled,
       onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('into') },
@@ -5702,7 +6215,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       compactLabel: isReplayPaused ? 'Continue' : 'Pause',
       icon: <DebugTopbarIcon kind={isReplayPaused ? "run" : "pause"} />,
       className: 'topbar-debug-action topbar-debug-action-pause',
-      hidden: workspaceTab !== 'debug' || !replaying,
+      // Nothing can be paused until the controller admits a session.
+      hidden: workspaceTab !== 'debug' || !replaying || !browserReplaySession,
       title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
       tone: 'secondary',
       disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
@@ -5759,7 +6273,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       pressed: replayOptions.breakOnFailure,
       onClick: () => { void topbarActionHandlersRef.current.setBreakOnFailure(!replayOptions.breakOnFailure) },
     },
-  ], [activeReplaySessionId, browserReplaySession, isReplayPaused, replayOptions.breakOnFailure, replayReport, replaying, stepReplayDisabled, workspaceTab])
+  ], [activeReplaySessionId, browserReplaySession, isReplayPaused, replayOptions.breakOnFailure, replayReport, replaying, stepReplayDisabled, stepStartBlockedTitle, workspaceTab])
   // Run controls come and go with the run, so they lead the session bar and
   // Break on failure sits with the controls that never move: when a run ends,
   // nothing persistent slides under the pointer that just pressed Continue.
@@ -5979,6 +6493,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           onOpenSource={() => { setShowFullScriptJson(false); openCenterTab(SCRIPT_JSON_TAB_ID) }}
           checksReplay={checksReplay.replay}
           checksUnavailable={checksReplay.unavailable}
+          blockerRepair={<ScriptBlockerRepairPanel scriptId={scriptId} projectId={projectId} baseline={authoringBaseline}
+            blockedReason={scriptId && authoringRevisionState !== 'ready' ? authoringRevisionState === 'loading' ? 'Loading the saved script. Its repairs are available once it has loaded.' : 'Load and review the current version of the script before repairing it.' : undefined}
+            script={script} bodySource={protectedBodySource} action={activeInspectorScope.action} actionPath={activeInspectorScope.path.replace(/^script\./, '')}
+            dirty={scriptEditorDirty} saving={saving} onSaveFirst={() => { void saveScript({ keepAuthoringOpen: true }) }}
+            onApplied={response => scriptRepairAppliedRef.current(response)} onReconcile={handleScriptRepairReconcile} />}
         />
         </CatalogFieldDraftContext.Provider>
       </ReferenceFieldContext.Provider>
@@ -6405,7 +6924,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                                 <span
                                   className={`action-signal-pill ${executionBlocked ? 'error' : 'warning'}`}
                                   title={executionBlocked
-                                    ? `Execution blocked: ${executionBlockers.join(', ')}`
+                                    ? `Blocks replay: ${executionBlockers.map(blockerTitle).join(', ')}`
                                     : isReviewGatedJavaScriptAction(a)
                                       ? 'JavaScript review gate — must be reviewed before this script can replay'
                                       : 'Review gate — must be reviewed before this script can replay'}
@@ -6700,15 +7219,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   })()
   const renderReadinessValidationResult = () => {
     if (!validationSidebarResult && !validationEvidence) return null
+    // A check that failed only for import review folds holds promotion, not a
+    // debug run: it reads as the review the status chip names, each fold by
+    // its review title, while the result itself stays a failed check.
+    const issues = validationSidebarResult?.issues || []
+    const reviewOnly = validationSidebarResult?.tone === 'error'
+      && issues.length > 0
+      && issues.every(isPromotionOnlyValidationIssue)
+    // A fold restating a problem listed already (promotionFoldCoveredByGate)
+    // is that problem, left out here as Author Problems leaves it out. One
+    // such as a step gate refuses a debug run, so while any remains, or
+    // anything else refuses a run, the review does not say none is refused.
+    const listedIssues = issues.filter(issue => !promotionFoldCoveredByGate(issue, promotionFoldCodes))
+    const reviewAllowsDebug = listedIssues.length === issues.length && replayGate.kind !== 'blocked'
     return (
       <div className="readiness-validation-result" aria-live="polite">
         {validationSidebarResult && (
-          <div className={`readiness-validation-message ${validationSidebarResult.tone}`}>
-            <strong>{validationSidebarResult.message}</strong>
-            {validationSidebarResult.issues.length > 0 && (
+          <div className={`readiness-validation-message ${reviewOnly ? 'warning' : validationSidebarResult.tone}`}>
+            <strong>{reviewOnly ? `Needs import review before promotion.${reviewAllowsDebug ? ' Debug runs are not refused for it.' : ''}` : validationSidebarResult.message}</strong>
+            {listedIssues.length > 0 && (
               <ul>
-                {validationSidebarResult.issues.map((issue, index) => (
-                  <li key={`validation-issue-${index}`}>{issue}</li>
+                {listedIssues.map((issue, index) => (
+                  <li key={`validation-issue-${index}`}>{reviewOnly ? promotionReviewText(issue, promotionFoldCodes).title : issue}</li>
                 ))}
               </ul>
             )}
@@ -6724,6 +7256,49 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
       </div>
     )
+  }
+  // Checks & readiness lists each review gate where Author Problems does (on
+  // the nested step it sits on, so two alike in one transaction read apart),
+  // and opens it the way its Author Problems row does.
+  const reviewGateLocation = (message: string) => {
+    const gate = parseReviewGateIssue(message)
+    if (!gate) return undefined
+    const phase = gate.phase === 'actions' ? 'action' : gate.phase
+    const step = scriptPhaseActionRows.find(candidate => candidate.phase === phase && candidate.actionIndex === gate.actionIndex)
+    const stepPath = step ? stepPathForJsonSubPath(step.action, gate.subPath) : undefined
+    return actionBreadcrumb(script, { phase, actionIndex: gate.actionIndex, ...(stepPath ? { stepPath } : {}) })
+  }
+  const selectReviewGate = (message: string, problem?: { code: string; message: string }) => {
+    // The clicked problem's own row first: the value row a dependency code
+    // folded into (a configuration reference opens Runtime Settings), else
+    // its code's row. Then the gate's own row (one per code for a gate with
+    // several), else the row for exactly its step, else the value row a gate
+    // folded into names; never a row whose path only starts the same
+    // (actions[1], actions[12]).
+    const id = `readiness:issue:${message.trim().replace(/\s+/g, ' ').toLowerCase()}`
+    const gate = parseReviewGateIssue(message)
+    const actionPath = gate ? `${gate.phase}[${gate.actionIndex}]${gate.subPath}` : undefined
+    const value = problem?.code ? dependencyCodeValue(problem.code) : undefined
+    const issue = (value ? readinessIssues.find(candidate => candidate.id === `readiness:blocking:${value}` || candidate.id === `readiness:saved-review:${value}`) : undefined)
+      || (problem?.code ? readinessIssues.find(candidate => candidate.id === `${id}#${problem.code}`) : undefined)
+      || readinessIssues.find(candidate => candidate.id === id || candidate.id.startsWith(`${id}#`))
+      || (actionPath ? readinessIssues.find(candidate => candidate.actionPath === actionPath) : undefined)
+      || (gate?.codes || []).map(code => dependencyCodeValue(code)).filter(Boolean)
+        .map(name => readinessIssues.find(candidate => candidate.id === `readiness:blocking:${name}`)).find(Boolean)
+    const row = issue && editorIssueDetailsRef.current.find(candidate => candidate.id === issue.id)
+    const phase = gate ? (gate.phase === 'actions' ? 'action' : gate.phase) : undefined
+    const step = gate && scriptPhaseActionRows.find(candidate => candidate.phase === phase && candidate.actionIndex === gate.actionIndex)
+    if (row?.onSelect) {
+      activateWorkspaceTab('author')
+      openCenterTab(ACTION_LIST_TAB_ID)
+      row.onSelect()
+    } else if (gate && step) {
+      // Listed nowhere else: open the gate's own step, on its repair.
+      const stepPath = stepPathForJsonSubPath(step.action, gate.subPath)
+      activateWorkspaceTab('author')
+      selectAuthorStep(step, stepPath)
+      if (gate.codes.length) focusReplayBlockerRepair({ phase: step.phase, actionIndex: step.actionIndex, ...(stepPath ? { stepPath } : {}) })
+    } else setShowAuthorProblems(true)
   }
   const renderReadyToRunCard = ({ showChecklist = false }: { showChecklist?: boolean } = {}) => (
     <div className="utility-card debug-readiness-card">
@@ -6751,8 +7326,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         onRetrySecretStatus={replaySecretStatusState === 'unavailable'
           ? () => setProjectSecretProbeRetryGeneration(generation => generation + 1)
           : undefined}
+        issueBreadcrumb={reviewGateLocation}
+        onSelectIssue={selectReviewGate}
+        script={script}
       />
-      {workspaceTab === 'debug' ? renderReadinessValidationResult() : <><p>Validation evidence: {validationResultIsCurrent ? validationPassed ? 'passed' : 'needs changes' : validationEvidence ? 'stale; recheck this draft' : 'not checked'}. Repair individual issues in Author Problems.</p><details><summary>Detailed validation evidence</summary>{renderReadinessValidationResult()}</details></>}
+      {workspaceTab === 'debug' ? renderReadinessValidationResult() : <><p>Validation evidence: {validationResultIsCurrent ? validationPassed ? 'passed' : validationNeedsImportReview ? 'needs import review before promotion' : 'needs changes' : validationEvidence ? 'stale; recheck this draft' : 'not checked'}. Repair individual issues in Author Problems.</p><details><summary>Detailed validation evidence</summary>{renderReadinessValidationResult()}</details></>}
       {showChecklist && (
         <details><summary>Evidence required for approval</summary><div className="utility-checklist">
           {convergenceItems.map(item => (
@@ -6958,6 +7536,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       event.preventDefault()
       if (event.shiftKey) redoEditorChange(); else undoEditorChange()
     }}>
+      <p className="sr-only" role="status" data-repair-announcement>{repairAnnouncement}</p>
       {insertSeed && <AuthorInsertDialog protocol={script.protocol} seed={insertSeed} phase={insertPhase} position={insertPosition} anchorLabel={authorCodeFocus?.phase === insertPhase ? actionBreadcrumb(script, authorCodeFocus) : undefined} canInsertInside={Boolean(activeInspectorScope && ['control_loop', 'control_if'].includes(activeInspectorScope.action.type))} onPlan={(phase, position) => { setInsertPhase(phase); setInsertPosition(position) }} onInsert={insertPreparedAction} onInsertMany={insertPreparedActions} sharedData={insertSharedData} onClose={() => setInsertSeed(null)} onOpenThinkTime={() => { setInsertSeed(null); openCenterTab('runtime-settings'); selectRuntimeSettingsSection('think') }} library={renderActionLibrary()} />}
       {correlationReview && <CorrelationReviewDialog value={correlationReview.value} sourceName={correlationReview.sourceName} suggestedName={correlationReview.suggestedName} taken={correlationReview.taken} uses={correlationReview.uses} onApply={applyCorrelationReview} onClose={() => setCorrelationReview(null)} />}
       {showSavedDiff && <IssueDetailsDialog title="Changes since last save" issues={(() => { const diff = changedDocumentLines(baselineJsonRef.current, jsonDirty ? jsonText : formattedScriptJson); return diff.removed || diff.added ? [{ id: 'saved-diff', severity: 'info', title: `Changed region starting at line ${diff.line}`, description: `BEFORE\n${diff.removed || '(empty)'}\n\nAFTER\n${diff.added || '(empty)'}` }] : [] })()} onClose={() => setShowSavedDiff(false)} />}
@@ -6983,6 +7562,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         </div></details>
         {onClose && <button type="button" className="btn btn-sm btn-ghost" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>}
         <RowActions className="script-editor-more" label="script editor">
+          {replayGate.kind === 'blocked' && <button type="button" className="btn btn-sm btn-ghost" onClick={goToReplayBlocker}>Resolve blockers ({replayGate.blockers.length})</button>}
           {scriptId && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowHistory(true)}>History</button>}
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
         </RowActions>
@@ -7011,7 +7591,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             </span>
           </div>
           <div className="settings-inline-actions">
-            <button className="btn btn-secondary btn-sm" type="button" disabled={saving || secretBindingsOpen} onClick={openProjectSecrets}>{scriptId ? 'Configure secrets' : 'Save & configure secrets'}</button>
+            <button className="btn btn-secondary btn-sm" type="button" data-save-configure-secrets disabled={saving || secretBindingsOpen} onClick={openProjectSecrets}>{scriptId ? 'Configure secrets' : 'Save & configure secrets'}</button>
             {replaySecretStatusState === 'unavailable' && (
               <button className="btn btn-secondary btn-sm" type="button" onClick={() => setProjectSecretProbeRetryGeneration(generation => generation + 1)}>
                 Retry credential check
@@ -7199,25 +7779,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               </button>
             </TabList>
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
-              <TooltipButton type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
-                <span className="debugger-icon" aria-hidden="true">&#9654;</span>
-                <span>{replaying ? 'Running…' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
+              <TooltipButton type="button" className={`debugger-icon-btn${replayGateButton.intent === 'resolve' ? ' danger' : ''}`} title={replayGateButton.title} aria-label={replayGateButton.ariaLabel} onClick={() => void handleReplay()} disabled={replaying || replayGateButton.disabled}>
+                <span className="debugger-icon" aria-hidden="true">{replayGateButton.intent === 'resolve' ? '⊘' : <>&#9654;</>}</span>
+                <span>{replaying ? (replayStartPending && !browserReplaySession ? 'Starting…' : 'Running…') : replayGateButton.label}</span>
               </TooltipButton>
               {workspaceTab === 'debug' && (
                 <>
-                  <TooltipButton type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
+                  {/* Pause and Step Over wait for an admitted session; Stop is always there. */}
+                  {!(replaying && !browserReplaySession) && <TooltipButton type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
                     <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
                     <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
-                  </TooltipButton>
-                  <TooltipButton type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
+                  </TooltipButton>}
+                  <TooltipButton type="button" className="debugger-icon-btn" title={!replaying && stepStartBlockedTitle ? stepStartBlockedTitle : 'Step to next action'} onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#10551;</span>
                     <span>{replayReport?.completed_at ? 'Restart in step mode' : 'Step'}</span>
                   </TooltipButton>
-                  <TooltipButton type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
+                  {!(replaying && !browserReplaySession) && <TooltipButton type="button" className="debugger-icon-btn" title={!replaying && stepStartBlockedTitle ? stepStartBlockedTitle : 'Step over the current block (run the rest of it, pause after)'} onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#10550;</span>
                     <span>{replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over'}</span>
-                  </TooltipButton>
-                  <TooltipButton type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
+                  </TooltipButton>}
+                  <TooltipButton type="button" className="debugger-icon-btn" title={!replaying && stepStartBlockedTitle ? stepStartBlockedTitle : 'Run to the end of the enclosing loop'} onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#8635;</span>
                     <span>Finish Loop</span>
                   </TooltipButton>
@@ -7267,8 +7848,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           </div>
         </div>
       )}
-      {(error || warnings.length > 0 || success) && (
+      {(error || warnings.length > 0 || success || replayStartNotice) && (
         <div className="editor-feedback-strip">
+          {replayStartNotice && <div className="editor-toast blocked" role="status">
+            {replayStartNotice.text}
+            {replayStartNotice.kind === 'blocked' && <button type="button" className="btn btn-sm btn-secondary" onClick={goToReplayBlocker}>Resolve</button>}
+            {replayStartNotice.kind === 'save-first' && <button type="button" className="btn btn-sm btn-secondary" disabled={saving || Boolean(replaySaveUnavailableReason)} title={replaySaveUnavailableReason} onClick={() => { void saveAndReplay() }}>Save and debug</button>}
+          </div>}
           {error && <div className="editor-toast error">
             {error}
             {createNeedsNewIntent && !scriptId && (
@@ -7340,6 +7926,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             }}
             problemCount={problemCount}
             projectId={projectId}
+            replayStartPending={replayStartPending}
+            runStartBlockedReason={runStartBlockedReason}
             replayActivity={replayActivity}
             replayFailingEvent={replayFailingEvent}
             replayFailingEventIndex={replayFailingEventIndex}

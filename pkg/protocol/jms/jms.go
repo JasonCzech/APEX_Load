@@ -1412,13 +1412,7 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 }
 
 func metadataKeyIsProvenance(key string) bool {
-	key = strings.ToLower(strings.TrimSpace(key))
-	switch key {
-	case "original_url", "source_path", "source_step_id", "source_profile", "source_uid":
-		return true
-	default:
-		return strings.HasPrefix(key, "asyncapi_")
-	}
+	return messaging.MetadataKeyIsProvenance(messaging.FamilyJMS, key)
 }
 
 // applyTypedBody fills the structured map/stream payload for a MapMessage or

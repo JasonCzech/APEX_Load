@@ -617,12 +617,12 @@ var lifecycleStoreCreateEntries = map[string]bool{
 // saveStoredScriptWithImportTrust, the only pkg/api caller of the SaveScript
 // upsert: the create cores (primitives) and updates of a durable script.
 var lifecycleSaveScriptCallers = map[string]string{
-	"TestRunner.createScriptDurableCompletingReceipt": "primitive",
-	"TestRunner.storeScriptDurable":                   "primitive",
-	"TestRunner.saveStoredScript":                     "primitive",
-	"TestRunner.updateScriptDurableInProject":         "updates a durable script",
-	"TestRunner.UpdateScriptDurableIfUnchanged":       "updates a durable script",
-	"TestRunner.backfillScriptRefKeys":                "rewrites loaded scripts' ref keys",
+	"TestRunner.createScriptDurableCompletingReceipt":   "primitive",
+	"TestRunner.storeScriptDurable":                     "primitive",
+	"TestRunner.saveStoredScript":                       "primitive",
+	"TestRunner.updateScriptDurableInProjectRefreshing": "updates a durable script",
+	"TestRunner.UpdateScriptDurableIfUnchanged":         "updates a durable script",
+	"TestRunner.backfillScriptRefKeys":                  "rewrites loaded scripts' ref keys",
 }
 
 // lifecycleResolution lists the callers of a reached method whose name is

@@ -1303,6 +1303,22 @@ export interface ReplayPreflight {
   blocking_variables?: string[]
   /** Missing variables that replay sends as their placeholder text. */
   placeholder_variables?: string[]
+  /** Missing variables a step does write, only not on every path before their use. */
+  late_produced_variables?: string[]
+  /**
+   * Blocking variables an undeclared {{param.*}} use blocks: only a declared
+   * script parameter of that name supplies them (the parameter can read its
+   * values from a data source). Current controllers always send it, empty
+   * when none; older controllers omit it.
+   */
+  param_blocking_variables?: string[]
+  /**
+   * Blocking variables a protocol configuration reference (base URL, auth,
+   * default headers) blocks: no step supplies them, only a literal
+   * configuration value clears them. Current controllers always send it,
+   * empty when none; older controllers omit it.
+   */
+  config_blocking_variables?: string[]
   /** Data-source warnings that refuse replay (they are also in warnings). */
   data_source_issues?: string[]
   required_secrets?: string[]

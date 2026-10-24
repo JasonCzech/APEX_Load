@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sort"
 	"strconv"
@@ -1406,17 +1407,99 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 	scoped, scopeErr := s.draftForSecretBinding(script)
 	binding := s.runner.secretBindingForScript(scoped)
 	resolver := s.runner.secretResolverForBinding(binding)
-	response := buildDraftScriptValidationResponseWithVariables(
-		"",
-		script,
-		wrapper.Variables,
-		resolver,
-	)
+	var executed *dsl.Script
+	trusted := false
+	if scopeErr == nil {
+		executed, trusted = s.storedImportDraftForValidation(r, scoped)
+	}
+	var response scriptValidationResponse
+	if trusted {
+		response = buildScriptValidationResponseFromIssues(
+			"",
+			executed,
+			wrapper.Variables,
+			validateStoredExecutionScript(executed),
+			resolver,
+		)
+	} else {
+		response = buildDraftScriptValidationResponseWithVariables(
+			"",
+			script,
+			wrapper.Variables,
+			resolver,
+		)
+	}
 	response.ValidatedFingerprint = wrapper.Fingerprint
 	if scopeErr == nil {
 		s.attachValidationContext(r, &response, script.ProjectID, scoped, binding, resolver)
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// storedImportDraftForValidation resolves a draft of a saved
+// credential-preserving import as a debug start of that saved script
+// resolves the draft it carries (handleStartScriptDebugScript,
+// resolveStoredReplayImportScript): an unchanged echo of the disclosure
+// projection is the durable snapshot, and an edited one is reconciled against
+// it. The start runs the result with its imported credentials and judges it
+// with the stored-execution validator, which accepts a kept credential-bearing
+// Java VM argument; validated as a plain draft, the masked copy would report a
+// static issue the start never raises. scoped is the draft as
+// draftForSecretBinding bound it, whose ID survives only when it names a
+// stored script in the draft's own project. Whether an echo reconciles
+// depends on the kept credential values, which GET /api/v1/scripts/{id}
+// returns unmasked, so a caller that GET would refuse keeps the strict draft
+// validation, which cannot tell a correct guess at them from a wrong one. Any
+// other draft, and an edit the start would refuse, reports false and keeps the
+// strict draft validation.
+func (s *Server) storedImportDraftForValidation(r *http.Request, scoped *dsl.Script) (*dsl.Script, bool) {
+	id := strings.TrimSpace(scoped.ID)
+	if id == "" || s.runner == nil {
+		return nil, false
+	}
+	stored, ok := s.runner.GetScript(id)
+	if !ok || stored == nil || stored.Script == nil || !isCredentialPreservingImport(stored.Script) ||
+		normalizeProjectID(stored.ProjectID) != normalizeProjectID(scoped.ProjectID) ||
+		!s.requestMayReadStoredScript(r, id) {
+		return nil, false
+	}
+	candidate := cloneScriptDefinition(scoped)
+	if candidate == nil {
+		return nil, false
+	}
+	if candidate.Name == "" {
+		candidate.Name = stored.Name
+	}
+	executed, trusted, err := resolveStoredReplayImportScript(candidate, stored.Script)
+	if err != nil || !trusted {
+		return nil, false
+	}
+	return executed, true
+}
+
+// requestMayReadStoredScript reports whether the caller of r may read the
+// stored script id as GET /api/v1/scripts/{id} would let it: that route's own
+// access requirement (accessRequirementForRequest), checked as the auth
+// middleware checks it (authorizeAccessRequirement for the identity r
+// authenticated as, or only the domain feature gate in an auth-bypass mode),
+// so its project role, service-account scope and domain feature all apply.
+// The check runs on a copy of r and writes nothing to the caller's response.
+func (s *Server) requestMayReadStoredScript(r *http.Request, id string) bool {
+	read := r.Clone(r.Context())
+	read.Method = http.MethodGet
+	read.URL.Path, read.URL.RawPath, read.URL.RawQuery = "/api/v1/scripts/"+id, "", ""
+	read.Body, read.ContentLength = http.NoBody, 0
+	read.SetPathValue("id", id)
+	requirement, ok := accessRequirementForRequest(read)
+	if !ok {
+		return false
+	}
+	discarded := httptest.NewRecorder()
+	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
+		account, _ := AuthenticatedServiceAccountFromContext(r.Context())
+		return authorizeAccessRequirement(discarded, read, s.store, authResolution{User: user, ServiceAccount: account}, requirement)
+	}
+	return isAuthBypassMode(s.authSettingsForRequest().Mode) && domainFeatureAllowsRequest(discarded, read, s.store, requirement)
 }
 
 // bindValidationDraft binds a draft to the project its request was
