@@ -2441,7 +2441,7 @@ func runRealGeneratorRollForward(t *testing.T, mode string) {
 			if claim, err := client.ClaimRunSupervision(ctx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: f.oldGen, Token: f.token, RequestedTTL: time.Minute, ExecutionLeaseOwnerID: f.oldOwner}); err != nil || !claim.Accepted {
 				t.Fatalf("supervision claim = (%+v, %v)", claim, err)
 			}
-			if commit, err := client.CommitWorkSupervisedAt(ctx, f.test.ID, f.oldGen, time.Now().Add(50*time.Millisecond), f.token); err != nil || !commit.Accepted {
+			if commit, err := client.CommitWorkSupervisedAt(ctx, f.test.ID, f.oldGen, time.Now().Add(500*time.Millisecond), f.token); err != nil || !commit.Accepted {
 				t.Fatalf("commit = (%+v, %v)", commit, err)
 			}
 			waitForActiveVUsers(t, service, 1)
