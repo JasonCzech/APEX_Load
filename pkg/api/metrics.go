@@ -982,6 +982,12 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 	}
 	lastLatencyCheck := time.Time{}
 	lastPublishedSnapshot := time.Time{}
+	// The latency probe sends a request to the target. It waits one cadence
+	// from the broadcaster's start, as the probe on the old one-cadence ticker
+	// did: the first publication now follows the first collection, so a run
+	// shorter than a cadence would otherwise send the target a request its
+	// script never made.
+	broadcastStarted := time.Now()
 
 	// Publish right after the engine's collections, at the receipt's cadence:
 	// on an unrelated ticker the published snapshot was as old as the two
@@ -1010,7 +1016,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 		}
 
 		// Throttle network latency pings to every 5 seconds
-		if time.Since(lastLatencyCheck) >= 5*time.Second {
+		if time.Since(lastLatencyCheck) >= 5*time.Second && time.Since(broadcastStarted) >= interval() {
 			tr.mu.RLock()
 			probeCtx := test.executionCtx
 			tr.mu.RUnlock()
