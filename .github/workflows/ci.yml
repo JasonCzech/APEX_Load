@@ -709,8 +709,9 @@ jobs:
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
     # Full PostgreSQL storage and API suites run sequentially, each with a
-    # 20-minute deadline, in addition to deployment validation and compilation.
-    timeout-minutes: 60
+    # 35-minute deadline (the API suite alone takes about 20 minutes here), in
+    # addition to deployment validation and compilation.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1066,7 +1067,7 @@ jobs:
           postgres_test_port=$(docker port "${postgres_test_container}" 5432/tcp | awk -F: 'NR == 1 { print $NF }')
           test -n "${postgres_test_port}"
           APEXLOAD_TEST_POSTGRES_URL="postgres://apexload:${POSTGRES_TEST_PASSWORD}@127.0.0.1:${postgres_test_port}/apexload?sslmode=disable" \
-            go test -tags postgres_integration -p 1 -timeout=20m -count=1 ./pkg/storage ./pkg/api
+            go test -tags postgres_integration -p 1 -timeout=35m -count=1 ./pkg/storage ./pkg/api
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})
