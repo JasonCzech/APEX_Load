@@ -4862,9 +4862,13 @@ export interface operations {
                 "healthy_ms"?: number;
                 "retained_intervals"?: number;
                 "segments"?: Array<{
+                  "breached_ms"?: number;
+                  "degraded_ms"?: number;
                   "end"?: string;
+                  "healthy_ms"?: number;
                   "legacy"?: boolean;
                   "policy_hash"?: string;
+                  "sequence"?: number;
                   "start"?: string;
                   "unavailable"?: string;
                 }>;
@@ -4902,6 +4906,32 @@ export interface operations {
                   "value"?: number;
                 }) | null;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at"?: string;
+                "policy"?: ({
+                  "budgets"?: Array<{
+                    "enabled"?: boolean;
+                    "limit_ms"?: number;
+                    "stage"?: string;
+                  }>;
+                  "cadence_scope"?: string;
+                  "capture_boundary"?: string;
+                  "captured_at"?: string;
+                  "classification_algorithm"?: string;
+                  "coverage_rule"?: string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms"?: number;
+                  "hash"?: string;
+                  "policy_id"?: string;
+                  "revision"?: number;
+                  "schema_version"?: string;
+                  "sustained_breach_window_ms"?: number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence"?: number;
+                "source"?: string;
+              }>;
               "telemetry_render_population"?: ({
                 "eligible"?: number;
                 "epoch"?: string;
@@ -5855,6 +5885,32 @@ export interface operations {
               }) | null;
               "reason"?: string;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at"?: string;
+              "policy"?: ({
+                "budgets"?: Array<{
+                  "enabled"?: boolean;
+                  "limit_ms"?: number;
+                  "stage"?: string;
+                }>;
+                "cadence_scope"?: string;
+                "capture_boundary"?: string;
+                "captured_at"?: string;
+                "classification_algorithm"?: string;
+                "coverage_rule"?: string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms"?: number;
+                "hash"?: string;
+                "policy_id"?: string;
+                "revision"?: number;
+                "schema_version"?: string;
+                "sustained_breach_window_ms"?: number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence"?: number;
+              "source"?: string;
+            }>;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count"?: number;
               "excluded_error_count"?: number;
@@ -13825,6 +13881,128 @@ export interface operations {
         };
       };
       "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAppendTelemetryPolicySegment": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "controller_publication_interval_seconds"?: number;
+          "expected_sequence"?: number;
+          "request_id"?: string;
+          "telemetry_budget_policy_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "effective_at": string;
+            "policy": ({
+              "budgets": Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
+              "cadence_scope": string;
+              "capture_boundary": string;
+              "captured_at": string;
+              "classification_algorithm": string;
+              "coverage_rule": string;
+              "definition_sha256"?: string;
+              "expected_controller_publication_interval_ms": number;
+              "hash": string;
+              "policy_id": string;
+              "revision": number;
+              "schema_version": string;
+              "sustained_breach_window_ms": number;
+            }) | null;
+            "policy_id"?: string;
+            "requested_by"?: string;
+            "sequence": number;
+            "source": string;
+          }) | null;
+        };
+      };
+      "201": {
+        content: {
+          "application/json": ({
+            "effective_at": string;
+            "policy": ({
+              "budgets": Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
+              "cadence_scope": string;
+              "capture_boundary": string;
+              "captured_at": string;
+              "classification_algorithm": string;
+              "coverage_rule": string;
+              "definition_sha256"?: string;
+              "expected_controller_publication_interval_ms": number;
+              "hash": string;
+              "policy_id": string;
+              "revision": number;
+              "schema_version": string;
+              "sustained_breach_window_ms": number;
+            }) | null;
+            "policy_id"?: string;
+            "requested_by"?: string;
+            "sequence": number;
+            "source": string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -33473,6 +33651,7 @@ export interface operations {
                   "sha256": string;
                   "source": string;
                 }) | null;
+                "policy_segments"?: number;
                 "run_id": string;
                 "source_capabilities": Array<string>;
                 "sustained_breach_window_ms"?: number;
@@ -33563,6 +33742,7 @@ export interface operations {
                   "sha256": string;
                   "source": string;
                 }) | null;
+                "policy_segments"?: number;
                 "run_id": string;
                 "source_capabilities": Array<string>;
                 "sustained_breach_window_ms"?: number;
@@ -39476,6 +39656,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -40257,6 +40438,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -40610,12 +40792,39 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
                 "unscored"?: Array<string>;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
@@ -48407,6 +48616,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -50772,6 +50982,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -51506,12 +51717,39 @@ export interface operations {
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
+              "policy_segment"?: number;
               "severity": string;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
               "unscored"?: Array<string>;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
@@ -63603,6 +63841,7 @@ export interface operations {
                   "sha256": string;
                   "source": string;
                 }) | null;
+                "policy_segments"?: number;
                 "run_id": string;
                 "source_capabilities": Array<string>;
                 "sustained_breach_window_ms"?: number;
@@ -63693,6 +63932,7 @@ export interface operations {
                   "sha256": string;
                   "source": string;
                 }) | null;
+                "policy_segments"?: number;
                 "run_id": string;
                 "source_capabilities": Array<string>;
                 "sustained_breach_window_ms"?: number;
@@ -67892,6 +68132,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -70253,6 +70494,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -73071,6 +73313,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -73852,6 +74095,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -74205,12 +74449,39 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
                 "unscored"?: Array<string>;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
@@ -77416,9 +77687,13 @@ export interface operations {
               "healthy_ms": number;
               "retained_intervals": number;
               "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
                 "end": string;
+                "healthy_ms"?: number;
                 "legacy"?: boolean;
                 "policy_hash"?: string;
+                "sequence"?: number;
                 "start": string;
                 "unavailable"?: string;
               }>;
@@ -77456,6 +77731,32 @@ export interface operations {
                 "value": number;
               }) | null;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
             "telemetry_render_population"?: ({
               "eligible": number;
               "epoch"?: string;
@@ -78108,6 +78409,7 @@ export interface operations {
                     "sha256": string;
                     "source": string;
                   }) | null;
+                  "policy_segments"?: number;
                   "run_id": string;
                   "source_capabilities": Array<string>;
                   "sustained_breach_window_ms"?: number;
@@ -78198,6 +78500,7 @@ export interface operations {
                     "sha256": string;
                     "source": string;
                   }) | null;
+                  "policy_segments"?: number;
                   "run_id": string;
                   "source_capabilities": Array<string>;
                   "sustained_breach_window_ms"?: number;
@@ -82249,9 +82552,13 @@ export interface operations {
                 "healthy_ms": number;
                 "retained_intervals": number;
                 "segments": Array<{
+                  "breached_ms"?: number;
+                  "degraded_ms"?: number;
                   "end": string;
+                  "healthy_ms"?: number;
                   "legacy"?: boolean;
                   "policy_hash"?: string;
+                  "sequence"?: number;
                   "start": string;
                   "unavailable"?: string;
                 }>;
@@ -82289,6 +82596,32 @@ export interface operations {
                   "value": number;
                 }) | null;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "telemetry_render_population"?: ({
                 "eligible": number;
                 "epoch"?: string;
@@ -83323,6 +83656,32 @@ export interface operations {
               }) | null;
               "reason"?: string;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count": number;
               "excluded_error_count": number;
@@ -91351,6 +91710,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -93716,6 +94076,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -94450,12 +94811,39 @@ export interface operations {
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
+              "policy_segment"?: number;
               "severity": string;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
               "unscored"?: Array<string>;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
@@ -101850,6 +102238,7 @@ export interface operations {
                   "telemetry_acceptance_policy_id"?: string;
                   "telemetry_budget_policy_id"?: string;
                   "telemetry_health"?: (Record<string, unknown>) | null;
+                  "telemetry_policy_segments"?: Array<Record<string, unknown>>;
                   "termination_mode"?: string;
                   "timeslot_id"?: (string) | null;
                   "total_vusers": number;
@@ -105459,6 +105848,44 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListTelemetryPolicySegments": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -114468,6 +114895,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -116833,6 +117261,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -117567,12 +117996,39 @@ export interface operations {
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
+              "policy_segment"?: number;
               "severity": string;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
               "unscored"?: Array<string>;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
@@ -131613,6 +132069,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -132394,6 +132851,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -132747,12 +133205,39 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
                 "unscored"?: Array<string>;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
@@ -133975,6 +134460,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -134756,6 +135242,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -135109,12 +135596,39 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
                 "unscored"?: Array<string>;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
@@ -136337,6 +136851,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -137118,6 +137633,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -137471,12 +137987,39 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
                 "unscored"?: Array<string>;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
@@ -138699,6 +139242,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -139480,6 +140024,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -139833,12 +140378,39 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
                 "unscored"?: Array<string>;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
@@ -141061,6 +141633,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -141842,6 +142415,7 @@ export interface operations {
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
+                  "policy_segment"?: number;
                   "severity": string;
                   "status": string;
                   "summary"?: string;
@@ -142195,12 +142769,39 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
                 "unscored"?: Array<string>;
               }) | null;
+              "telemetry_policy_segments"?: Array<{
+                "effective_at": string;
+                "policy": ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "definition_sha256"?: string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "policy_id"?: string;
+                "requested_by"?: string;
+                "sequence": number;
+                "source": string;
+              }>;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
@@ -146257,6 +146858,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -148622,6 +149224,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -149356,12 +149959,39 @@ export interface operations {
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
+              "policy_segment"?: number;
               "severity": string;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
               "unscored"?: Array<string>;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
@@ -173695,6 +174325,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -176060,6 +176691,7 @@ export interface operations {
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
+                "policy_segment"?: number;
                 "severity": string;
                 "status": string;
                 "summary"?: string;
@@ -176794,12 +177426,39 @@ export interface operations {
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
+              "policy_segment"?: number;
               "severity": string;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
               "unscored"?: Array<string>;
             }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
@@ -196825,6 +197484,10 @@ export interface paths {
   };
   "/api/v1/tests/{id}/stream": {
     "get": operations["handleTestStream"];
+  };
+  "/api/v1/tests/{id}/telemetry-policy-segments": {
+    "get": operations["handleListTelemetryPolicySegments"];
+    "post": operations["handleAppendTelemetryPolicySegment"];
   };
   "/api/v1/tests/{id}/telemetry/client-render": {
     "post": operations["handleReportClientRender"];

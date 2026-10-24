@@ -7606,6 +7606,26 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/telemetry-policy-segments",
+      "operationId": "handleListTelemetryPolicySegments",
+      "summary": "List Telemetry Policy Segments",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/telemetry-policy-segments",
+      "operationId": "handleAppendTelemetryPolicySegment",
+      "summary": "Append Telemetry Policy Segment",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/tests/{id}/telemetry/client-render",
       "operationId": "handleReportClientRender",

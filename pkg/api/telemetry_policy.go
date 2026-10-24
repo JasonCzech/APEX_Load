@@ -73,12 +73,20 @@ func validTelemetryBudgetPolicy(policy *TelemetryBudgetPolicy) bool {
 	return telemetrypolicy.Validate(policy)
 }
 
+// telemetryPolicyEvidenceFromProvenance is a run's admission evidence: a
+// receipt captured at admission, never an in-run segment's.
 func telemetryPolicyEvidenceFromProvenance(initial *RunArchiveProvenance) *TelemetryPolicyEvidence {
+	return telemetryPolicyEvidenceFromReceipt(initial, telemetrypolicy.ValidateAdmission)
+}
+
+// telemetryPolicyEvidenceFromReceipt is evidence for the receipt the
+// provenance holds, valid by valid.
+func telemetryPolicyEvidenceFromReceipt(initial *RunArchiveProvenance, valid func(*TelemetryBudgetPolicy) bool) *TelemetryPolicyEvidence {
 	evidence := &TelemetryPolicyEvidence{Availability: "unavailable", Reason: "immutable-policy-not-retained"}
 	if initial == nil || initial.TelemetryPolicy == nil {
 		return evidence
 	}
-	if !validTelemetryBudgetPolicy(initial.TelemetryPolicy) {
+	if !valid(initial.TelemetryPolicy) {
 		evidence.Reason = "immutable-policy-invalid"
 		return evidence
 	}
@@ -110,8 +118,10 @@ func telemetryPolicyThresholds(policy *TelemetryBudgetPolicy) ThresholdSettings 
 	return limits
 }
 
-// The locked copy pins the receipt used by this exact publication. Legacy runs
-// can use their retained threshold snapshot, but never claim a policy receipt.
+// The locked copy pins the receipt used by this exact publication: the
+// segment in force now (the admission receipt until the run's policy changes,
+// TEL-B). Legacy runs can use their retained threshold snapshot, but never
+// claim a policy receipt.
 func (tr *TestRunner) runTelemetryPolicy(test *ManagedTest) (*TelemetryPolicyEvidence, ThresholdSettings) {
 	tr.mu.RLock()
 	var initial *RunArchiveProvenance
@@ -120,9 +130,61 @@ func (tr *TestRunner) runTelemetryPolicy(test *ManagedTest) (*TelemetryPolicyEvi
 			TelemetryPolicy:   cloneTelemetryBudgetPolicy(test.initialArchiveProvenance.TelemetryPolicy),
 			ExecutionSettings: RunArchiveExecutionSettingsSnapshot{Thresholds: cloneThresholdSettings(test.initialArchiveProvenance.ExecutionSettings.Thresholds)},
 		}
+		if segment, ok := telemetryPolicySegmentAt(telemetryPolicySegmentsLocked(test), time.Now()); ok {
+			initial.TelemetryPolicy = cloneTelemetryBudgetPolicy(segment.Policy)
+		}
 	}
 	tr.mu.RUnlock()
-	evidence := telemetryPolicyEvidenceFromProvenance(initial)
+	return telemetryPolicyEvidenceAndThresholds(tr, initial)
+}
+
+// runTelemetryIntervalPolicy is runTelemetryPolicy for the live interval that
+// ends at now: from the earlier of the previous classification's end (or the
+// run's start) and the start of the publication's measurements, to now. Its
+// segment is the one in force through the whole interval; an interval a
+// segment boundary falls inside is spanning, and the evidence and thresholds
+// are then the segment in force now, for display only.
+func (tr *TestRunner) runTelemetryIntervalPolicy(test *ManagedTest, now time.Time, measured telemetryMeasurement) (*TelemetryPolicyEvidence, ThresholdSettings, telemetryIntervalPolicy) {
+	tr.mu.RLock()
+	var initial *RunArchiveProvenance
+	var interval telemetryIntervalPolicy
+	if test != nil && test.initialArchiveProvenance != nil {
+		initial = &RunArchiveProvenance{
+			TelemetryPolicy:   cloneTelemetryBudgetPolicy(test.initialArchiveProvenance.TelemetryPolicy),
+			ExecutionSettings: RunArchiveExecutionSettingsSnapshot{Thresholds: cloneThresholdSettings(test.initialArchiveProvenance.ExecutionSettings.Thresholds)},
+		}
+		from := test.telemetryLastClassifiedAt
+		if from.IsZero() && test.StartedAt != nil {
+			from = *test.StartedAt
+		}
+		distributed := len(test.remoteClientsByTarget) > 0 || test.telemetrySources != nil
+		if start, known := measured.start(distributed); !known {
+			// The measurements cannot be placed on the controller's clock:
+			// any change since the run started may fall inside them.
+			from = time.Time{}
+		} else if !start.IsZero() && start.Before(from) {
+			from = start
+		}
+		interval = telemetryIntervalPolicyLocked(test, from, now)
+		if interval.unavailable {
+			// The segment in force is unknown: no receipt is claimed.
+			initial.TelemetryPolicy = nil
+		} else if !interval.spanning && interval.ok {
+			initial.TelemetryPolicy = cloneTelemetryBudgetPolicy(interval.segment.Policy)
+		} else if segment, ok := telemetryPolicySegmentAt(telemetryPolicySegmentsLocked(test), now); ok {
+			initial.TelemetryPolicy = cloneTelemetryBudgetPolicy(segment.Policy)
+		}
+	}
+	tr.mu.RUnlock()
+	evidence, thresholds := telemetryPolicyEvidenceAndThresholds(tr, initial)
+	if interval.unavailable {
+		evidence.Reason = telemetryPolicySegmentsUnavailableReason
+	}
+	return evidence, thresholds, interval
+}
+
+func telemetryPolicyEvidenceAndThresholds(tr *TestRunner, initial *RunArchiveProvenance) (*TelemetryPolicyEvidence, ThresholdSettings) {
+	evidence := telemetryPolicyEvidenceFromReceipt(initial, validTelemetryBudgetPolicy)
 	if evidence.Policy != nil {
 		return evidence, telemetryPolicyThresholds(evidence.Policy)
 	}

@@ -341,6 +341,15 @@ func (o *sqliteStoreOverlay) AppendRCAEvidenceRevision(a0 string, a1 string, a2 
 	return o.base().AppendRCAEvidenceRevision(a0, a1, a2, a3, a4)
 }
 
+func (o *sqliteStoreOverlay) AppendTelemetryPolicySegmentIfLeaseHeld(a0 storage.TelemetryPolicySegment, a1 int64, a2 string, a3 string) (storage.TelemetryPolicySegment, bool, error) {
+	if fake, ok := o.fake.(interface {
+		AppendTelemetryPolicySegmentIfLeaseHeld(storage.TelemetryPolicySegment, int64, string, string) (storage.TelemetryPolicySegment, bool, error)
+	}); ok {
+		return fake.AppendTelemetryPolicySegmentIfLeaseHeld(a0, a1, a2, a3)
+	}
+	return o.base().AppendTelemetryPolicySegmentIfLeaseHeld(a0, a1, a2, a3)
+}
+
 func (o *sqliteStoreOverlay) ApproveCapacityReservationWithCapacityFence(a0 string, a1 time.Time, a2 string, a3 func(target *storage.CapacityReservation, approved []*storage.CapacityReservation, settingValue string) (bool, error)) (bool, bool, error) {
 	if fake, ok := o.fake.(interface {
 		ApproveCapacityReservationWithCapacityFence(string, time.Time, string, func(target *storage.CapacityReservation, approved []*storage.CapacityReservation, settingValue string) (bool, error)) (bool, bool, error)
@@ -5408,6 +5417,15 @@ func (o *sqliteStoreOverlay) ListServiceAccounts() ([]*storage.ServiceAccount, e
 		return fake.ListServiceAccounts()
 	}
 	return o.base().ListServiceAccounts()
+}
+
+func (o *sqliteStoreOverlay) ListTelemetryPolicySegments(a0 string) ([]storage.TelemetryPolicySegment, error) {
+	if fake, ok := o.fake.(interface {
+		ListTelemetryPolicySegments(string) ([]storage.TelemetryPolicySegment, error)
+	}); ok {
+		return fake.ListTelemetryPolicySegments(a0)
+	}
+	return o.base().ListTelemetryPolicySegments(a0)
 }
 
 func (o *sqliteStoreOverlay) ListTestCapacityBindings(a0 []string) ([]storage.TestCapacityBindingState, error) {

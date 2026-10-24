@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -203,12 +204,17 @@ const (
 )
 
 // TelemetryPolicySegment is a span of the run classified under one telemetry
-// budget policy. An intentional policy change during a run would open a new
-// segment; the policy is fixed at admission today, so a run has one.
+// budget policy: the admission receipt (sequence 1), then each change made
+// while the run ran (TEL-B). Its classified time counts the intervals the
+// segment classified; an interval a boundary fell inside is unknown.
 type TelemetryPolicySegment struct {
+	Sequence   int64     `json:"sequence,omitempty"`
 	Start      time.Time `json:"start"`
 	End        time.Time `json:"end"`
 	PolicyHash string    `json:"policy_hash,omitempty"`
+	HealthyMs  int64     `json:"healthy_ms,omitempty"`
+	DegradedMs int64     `json:"degraded_ms,omitempty"`
+	BreachedMs int64     `json:"breached_ms,omitempty"`
 	// Unavailable says why a captured policy names no hash.
 	Unavailable string `json:"unavailable,omitempty"`
 	// Legacy marks a run admitted before policies were captured; its
@@ -494,17 +500,48 @@ func requiredTelemetrySources(observed map[string]*coverageSpans, requirements m
 	return out
 }
 
+// telemetryRowSpan is an archived interval's span as coverage counts it
+// (milliseconds): its sample window before its timestamp, trimmed to the run
+// window and to after the previous interval, in timestamp order; ok is false
+// for an interval that covers nothing.
+type telemetryRowSpan struct {
+	row        IntervalSummaryRecord
+	start, end int64
+	ok         bool
+}
+
+// telemetryRowSpans returns the rows' spans in timestamp order; coverage and
+// re-evaluation share it, so both attribute a row to the same segment.
+func telemetryRowSpans(rows []IntervalSummaryRecord, windowStart, windowEnd int64) []telemetryRowSpan {
+	sorted := append([]IntervalSummaryRecord(nil), rows...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Timestamp.Before(sorted[j].Timestamp) })
+	out := make([]telemetryRowSpan, len(sorted))
+	counted := windowStart
+	for i, row := range sorted {
+		out[i].row = row
+		rowEnd := row.Timestamp.UnixMilli()
+		window := int64(row.SampleWindowSeconds * 1000)
+		if window <= 0 && i > 0 {
+			window = rowEnd - sorted[i-1].Timestamp.UnixMilli()
+		}
+		spanStart, spanEnd := max(rowEnd-window, counted, windowStart), min(rowEnd, windowEnd)
+		if window <= 0 || spanEnd <= spanStart {
+			continue
+		}
+		counted = spanEnd
+		out[i].start, out[i].end, out[i].ok = spanStart, spanEnd, true
+	}
+	return out
+}
+
 // telemetryCoverageRecord classifies the run's window by its retained
 // intervals: each interval covers its sample window before its timestamp
 // (overlaps count once), and only the part every required source observed
 // takes the interval's status.
 func telemetryCoverageRecord(coverage TelemetryCoverage, allObserved *coverageSpans, rows []IntervalSummaryRecord, segments []TelemetryPolicySegment) *TelemetryCoverageRecord {
 	record := &TelemetryCoverageRecord{Algorithm: telemetryCoverageAlgorithm, Coverage: coverage, RetainedIntervals: int64(len(rows)), Segments: segments}
-	start, end := coverage.WindowStart.UnixMilli(), coverage.WindowEnd.UnixMilli()
-	sorted := append([]IntervalSummaryRecord(nil), rows...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Timestamp.Before(sorted[j].Timestamp) })
-	counted := start
-	for i, row := range sorted {
+	for _, span := range telemetryRowSpans(rows, coverage.WindowStart.UnixMilli(), coverage.WindowEnd.UnixMilli()) {
+		row := span.row
 		status := ""
 		if row.TelemetryStatus != nil {
 			switch row.TelemetryStatus.Status {
@@ -513,24 +550,31 @@ func telemetryCoverageRecord(coverage TelemetryCoverage, allObserved *coverageSp
 				record.ClassifiedIntervals++
 			}
 		}
-		rowEnd := row.Timestamp.UnixMilli()
-		window := int64(row.SampleWindowSeconds * 1000)
-		if window <= 0 && i > 0 {
-			window = rowEnd - sorted[i-1].Timestamp.UnixMilli()
-		}
-		spanStart, spanEnd := max(rowEnd-window, counted, start), min(rowEnd, end)
-		if window <= 0 || spanEnd <= spanStart {
+		if !span.ok {
 			continue
 		}
-		counted = spanEnd
+		spanStart, spanEnd := span.start, span.end
 		known := allObserved.within(spanStart, spanEnd)
+		var segment *TelemetryPolicySegment
+		if index := telemetryRowSegmentIndex(record.Segments, row.TelemetryStatus, spanStart, spanEnd); index >= 0 {
+			segment = &record.Segments[index]
+		}
 		switch status {
 		case "healthy":
 			record.HealthyMs += known
+			if segment != nil {
+				segment.HealthyMs += known
+			}
 		case "degraded":
 			record.DegradedMs += known
+			if segment != nil {
+				segment.DegradedMs += known
+			}
 		case "breached":
 			record.BreachedMs += known
+			if segment != nil {
+				segment.BreachedMs += known
+			}
 		}
 	}
 	record.ClassifiedMs = record.HealthyMs + record.DegradedMs + record.BreachedMs
@@ -542,16 +586,86 @@ func telemetryCoverageRecord(coverage TelemetryCoverage, allObserved *coverageSp
 	return record
 }
 
-// telemetryPolicySegments is the run's one policy segment: the budget policy
-// captured at admission (or the legacy settings) for the whole window. A
-// captured policy that fails validation names no hash.
-func telemetryPolicySegments(test *ManagedTest, from, to time.Time) []TelemetryPolicySegment {
-	segment := TelemetryPolicySegment{Start: from.UTC(), End: to.UTC()}
+// telemetryRowPolicyUnclassified reports an interval this controller left
+// without a segment on purpose (a change fell inside it, or the run's
+// segments could not be read): never attributed to one by its span, which
+// is how an interval archived before segments existed is attributed.
+func telemetryRowPolicyUnclassified(status *TelemetryRunHealth) bool {
+	if status == nil {
+		return false
+	}
+	for _, reason := range status.Unscored {
+		if reason == telemetryPolicyBoundaryUnscored || reason == telemetryPolicySegmentsUnavailableUnscored {
+			return true
+		}
+	}
+	return false
+}
+
+// telemetryRowSegmentIndex is the segment that classified an archived
+// interval: the one it names; for an interval archived without one, the
+// run's single segment, or (by a controller before segments were recorded,
+// not one left unclassified on purpose) the segment whose span holds the
+// interval's whole span (milliseconds); -1 for none.
+func telemetryRowSegmentIndex(segments []TelemetryPolicySegment, status *TelemetryRunHealth, spanStart, spanEnd int64) int {
+	if status == nil {
+		return -1
+	}
+	if status.PolicySegment == 0 {
+		if len(segments) == 1 {
+			return 0
+		}
+		if telemetryRowPolicyUnclassified(status) {
+			return -1
+		}
+		for index, segment := range segments {
+			if segment.Start.UnixMilli() <= spanStart && spanEnd <= segment.End.UnixMilli() {
+				return index
+			}
+		}
+		return -1
+	}
+	for index := range segments {
+		if segments[index].Sequence == status.PolicySegment {
+			return index
+		}
+	}
+	return -1
+}
+
+// telemetryPolicySegments is the run's policy segments over its window: the
+// admission receipt, then each change made while it ran, each until the next
+// begins. A run without a valid admission receipt has one segment, legacy or
+// naming no hash.
+func telemetryPolicySegments(test *ManagedTest, from, to time.Time, invalid ...TelemetryPolicySegmentReceipt) []TelemetryPolicySegment {
+	if receipts := telemetryPolicySegmentsWithInvalid(telemetryPolicySegmentsLocked(test), invalid); len(receipts) > 0 {
+		out := make([]TelemetryPolicySegment, 0, len(receipts))
+		for index, receipt := range receipts {
+			start, end := from, to
+			if index > 0 {
+				start = receipt.EffectiveAt
+			}
+			if index+1 < len(receipts) {
+				end = receipts[index+1].EffectiveAt
+			}
+			start, end = maxTime(start, from), minTime(end, to)
+			if end.Before(start) {
+				end = start
+			}
+			segment := TelemetryPolicySegment{Sequence: receipt.Sequence, Start: start.UTC(), End: end.UTC()}
+			if receipt.Policy != nil {
+				segment.PolicyHash = receipt.Policy.Hash
+			} else {
+				segment.Unavailable = "immutable-policy-invalid"
+			}
+			out = append(out, segment)
+		}
+		return out
+	}
+	segment := TelemetryPolicySegment{Sequence: 1, Start: from.UTC(), End: to.UTC()}
 	switch {
 	case test == nil || test.initialArchiveProvenance == nil || test.initialArchiveProvenance.TelemetryPolicy == nil:
 		segment.Legacy = true
-	case validTelemetryBudgetPolicy(test.initialArchiveProvenance.TelemetryPolicy):
-		segment.PolicyHash = test.initialArchiveProvenance.TelemetryPolicy.Hash
 	default:
 		segment.Unavailable = "immutable-policy-invalid"
 	}
@@ -617,7 +731,9 @@ type coverageIntervalRow struct {
 	Timestamp           time.Time `json:"timestamp"`
 	SampleWindowSeconds float64   `json:"sample_window_seconds"`
 	TelemetryStatus     *struct {
-		Status string `json:"status"`
+		Status        string   `json:"status"`
+		PolicySegment int64    `json:"policy_segment"`
+		Unscored      []string `json:"unscored"`
 	} `json:"telemetry_status"`
 }
 
@@ -634,11 +750,37 @@ func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *Manage
 	if test == nil || manifest == nil || manifest.TelemetryCoverage != nil {
 		return nil
 	}
+	// The stored segments are authoritative: finalization works on a snapshot
+	// (the run's record, or a copy of the live run), which reads them here.
+	// Coverage is written once, so a run whose segments cannot be read is not
+	// recorded as classified by one policy: the error fails the finalization
+	// step, which is retried.
+	// Serialized with changes: a change admitted before the run ended
+	// commits before this read, never after it.
+	tr.telemetrySegmentMu.Lock()
+	receipts, invalid, supported, err := tr.readTelemetryPolicySegments(test.ID)
+	tr.telemetrySegmentMu.Unlock()
+	if err != nil {
+		return fmt.Errorf("%w: %v", errTelemetrySegmentsUnreadable, err)
+	}
+	if supported {
+		tr.mu.Lock()
+		for _, receipt := range receipts {
+			installTelemetryPolicySegmentLocked(test, receipt)
+		}
+		tr.mu.Unlock()
+	}
 	tr.mu.RLock()
 	from, to, ok := telemetryRunWindowLocked(test, time.Now())
 	ledger := test.telemetrySources
 	assigned := assignedTelemetrySourcesLocked(test)
-	segments := telemetryPolicySegments(test, from, to)
+	// A stored segment whose receipt cannot be decoded is recorded without
+	// one (its time is classified by no receipt the archive can name), not
+	// retried forever and not dropped.
+	segments := telemetryPolicySegments(test, from, to, invalid...)
+	if receipts := telemetryPolicySegmentsWithInvalid(telemetryPolicySegmentsLocked(test), invalid); len(receipts) > 1 {
+		manifest.TelemetryPolicySegments = receipts
+	}
 	adopted := len(test.continuityFailovers) > 0 || ledger.wasAdopted()
 	tr.mu.RUnlock()
 	if !ok {
@@ -646,10 +788,10 @@ func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *Manage
 	}
 	assigned = appendShardTelemetrySources(assigned, manifest.Provenance.GeneratorShards)
 	var rows []IntervalSummaryRecord
-	err := forEachArchiveRecordContext(ctx, record, func(manifest *RunArchiveManifest) string { return manifest.IntervalSummariesFile }, func(row *coverageIntervalRow) error {
+	err = forEachArchiveRecordContext(ctx, record, func(manifest *RunArchiveManifest) string { return manifest.IntervalSummariesFile }, func(row *coverageIntervalRow) error {
 		summary := IntervalSummaryRecord{Timestamp: row.Timestamp, SampleWindowSeconds: row.SampleWindowSeconds}
 		if row.TelemetryStatus != nil {
-			summary.TelemetryStatus = &TelemetryRunHealth{Status: row.TelemetryStatus.Status}
+			summary.TelemetryStatus = &TelemetryRunHealth{Status: row.TelemetryStatus.Status, PolicySegment: row.TelemetryStatus.PolicySegment, Unscored: row.TelemetryStatus.Unscored}
 		}
 		rows = append(rows, summary)
 		return nil

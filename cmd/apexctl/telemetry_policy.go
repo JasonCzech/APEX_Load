@@ -237,7 +237,8 @@ func decodeTelemetryPolicyCLI(raw []byte) (*telemetrypolicy.TelemetryPolicyEvide
 		return nil, invalid
 	}
 	var policy telemetrypolicy.TelemetryBudgetPolicy
-	if err := json.Unmarshal(fields["policy"], &policy); err != nil || !telemetrypolicy.ValidateTelemetryBudgetPolicy(&policy) {
+	// The manifest and the archive report carry the run's admission receipt.
+	if err := json.Unmarshal(fields["policy"], &policy); err != nil || !telemetrypolicy.ValidateAdmission(&policy) {
 		return nil, invalid
 	}
 	evidence.Policy = &policy

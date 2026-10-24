@@ -1056,6 +1056,13 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.BaselinePinnedAt = cloneTimePtr(test.BaselinePinnedAt)
 	cloned.StartedAt = cloneTimePtr(test.StartedAt)
 	cloned.EndedAt = cloneTimePtr(test.EndedAt)
+	cloned.telemetryPolicySegments = append([]TelemetryPolicySegmentReceipt(nil), test.telemetryPolicySegments...)
+	cloned.telemetrySegmentPendingAt = cloneTimePtr(test.telemetrySegmentPendingAt)
+	cloned.telemetrySegmentsInvalid = append([]TelemetryPolicySegmentReceipt(nil), test.telemetrySegmentsInvalid...)
+	cloned.TelemetryPolicySegments = nil
+	if len(test.telemetryPolicySegments) > 0 || len(test.telemetrySegmentsInvalid) > 0 {
+		cloned.TelemetryPolicySegments = telemetryPolicySegmentsListedLocked(test)
+	}
 	cloned.StartAuthorization = cloneQueuedStartAuthorization(test.StartAuthorization)
 	cloned.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval)
 	cloned.ExecutionPlan = cloneTestExecutionPlanLink(test.ExecutionPlan)

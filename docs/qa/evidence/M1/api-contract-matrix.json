@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 768,
+    "routes": 770,
     "public": 31,
-    "protected": 737,
-    "rbac": 732,
+    "protected": 739,
+    "rbac": 734,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 768,
+    "green": 770,
     "partial": 0,
     "missing": 0
   },
@@ -17989,6 +17989,58 @@
       },
       "denied_role": "qa_contract_unlisted",
       "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/telemetry-policy-segments",
+      "operation_id": "handleListTelemetryPolicySegments",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/telemetry-policy-segments",
+      "operation_id": "handleAppendTelemetryPolicySegment",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
     },
     {
       "method": "POST",

@@ -62,6 +62,8 @@ export interface TelemetryRunProfile {
  budgets?: { stage: string; enabled: boolean; limit_ms: number }[]; sustained_breach_window_ms?: number
  cadence_ms?: number; cadence_scope?: string
  policy_pin?: { kind: string; id: string; name: string; revision: number; sha256: string }
+ // Segments when the run's telemetry policy changed while it ran (TEL-B).
+ policy_segments?: number
  source_capabilities: string[]; workload_version?: number
  // The run's own telemetry verdict under its pinned acceptance policy (C7)
  // and its loss totals; verdicts are shown side by side, never compared.

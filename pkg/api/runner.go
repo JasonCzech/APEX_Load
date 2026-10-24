@@ -195,6 +195,8 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
+	// telemetrySegmentMu serializes telemetry policy changes (TEL-B).
+	telemetrySegmentMu sync.Mutex
 	// Run drivers register under mu before dispatch and stay owned through terminal finalization.
 	executionWorkerMu      sync.Mutex
 	executionWorkers       int
@@ -641,6 +643,10 @@ type ManagedTest struct {
 	Archive               *storage.RunArchiveRecord                `json:"archive,omitempty"`
 	TelemetryHealth       *TelemetryRunHealth                      `json:"telemetry_health,omitempty"`
 	Error                 string                                   `json:"error,omitempty"`
+	// TelemetryPolicySegments lists the run's telemetry policy segments, the
+	// admission receipt first, once its policy changed while it ran (TEL-B).
+	// It is computed on read from telemetryPolicySegments.
+	TelemetryPolicySegments []TelemetryPolicySegmentReceipt `json:"telemetry_policy_segments,omitempty"`
 
 	// TelemetryAcceptancePolicyID names the project telemetry acceptance
 	// policy the run asked for instead of the project's default (TEL-B); its
@@ -757,6 +763,12 @@ type ManagedTest struct {
 	remoteStopFinalizerRunning                     bool
 	remoteMetricsLastPublishedAt                   time.Time
 	remoteMetricsFlushScheduled                    bool
+	// remoteMetricsStoredRevisionByTarget is the accepted revision of each
+	// target's latest stored window, and remoteMetricsGateRevision the
+	// accepted revision at the gate's last publication: a target has a new
+	// window when its stored revision is the greater.
+	remoteMetricsStoredRevisionByTarget map[string]uint64
+	remoteMetricsGateRevision           uint64
 	// Accepted/published revisions and the gate make distributed aggregate
 	// publication monotonic when per-target consumers finish out of order.
 	remoteMetricsAcceptedRevision uint64
@@ -807,6 +819,25 @@ type ManagedTest struct {
 	// passive row. It is never serialized.
 	passiveOperationToken string
 	telemetryDiagnostic   telemetryDiagnosticState
+	// telemetryPolicySegments are the run's stored telemetry policy changes
+	// (sequence 2 on); telemetrySegmentPendingAt is the boundary of a change
+	// still being persisted; telemetryLastClassifiedAt is where the previous
+	// live classification's interval ended. All guarded by tr.mu.
+	telemetryPolicySegments   []TelemetryPolicySegmentReceipt
+	telemetrySegmentPendingAt *time.Time
+	telemetryLastClassifiedAt time.Time
+	// telemetrySegmentsUnavailable: an adopted run's stored segments could
+	// not be read, so no segment classifies its live intervals; the read is
+	// retried from telemetrySegmentsRetryAt.
+	telemetrySegmentsUnavailable bool
+	telemetrySegmentsRetryAt     time.Time
+	// telemetrySegmentsInvalid are the stored segments whose receipts do not
+	// validate (listed without one): the run stays unavailable without
+	// retries (a re-read cannot repair them) and its policy cannot change.
+	telemetrySegmentsInvalid []TelemetryPolicySegmentReceipt
+	// telemetrySegmentsMark counts the failures that marked the segments for
+	// a re-read: a re-read clears the mark only if none came after it began.
+	telemetrySegmentsMark uint64
 	// Threshold-alert webhook dedupe (guarded by tr.mu): alerts rebuild every
 	// metrics tick while breached, so webhook dispatch fires once per breach
 	// episode. thresholdAlertActive marks episode keys (metric["|"transaction])
@@ -1302,6 +1333,11 @@ type TelemetryRunHealth struct {
 	BreachStartedAt   *time.Time `json:"breach_started_at,omitempty"`
 	LastObservedAt    time.Time  `json:"last_observed_at"`
 	LastTransitionAt  time.Time  `json:"last_transition_at,omitempty"`
+	// PolicySegment is the telemetry policy segment that classified this
+	// interval (TEL-B; 1 is the admission receipt). It is absent for an
+	// interval a segment boundary fell inside, which no segment classifies,
+	// and for a run without a receipt.
+	PolicySegment int64 `json:"policy_segment,omitempty"`
 	// recovered: this healthy status ends a degraded or breached spell that
 	// was announced (an unscored stretch in between does not end it);
 	// announce: this degraded or breached status is not the one announced.

@@ -179,6 +179,9 @@ type RunArchiveManifest struct {
 	// and unknown time per source, and healthy, degraded, breached and
 	// unknown time with explicit denominators.
 	TelemetryCoverage *TelemetryCoverageRecord `json:"telemetry_coverage,omitempty"`
+	// TelemetryPolicySegments lists the run's telemetry policy segments, the
+	// admission receipt first, when its policy changed while it ran (TEL-B).
+	TelemetryPolicySegments []TelemetryPolicySegmentReceipt `json:"telemetry_policy_segments,omitempty"`
 	// TelemetryStageDistributions are the run's per-stage latency
 	// distributions as this controller sampled them, and
 	// TelemetryStageDigests the mergeable digests behind them.
@@ -590,7 +593,10 @@ type RunArchiveIdentityNames struct {
 }
 
 type RunArchiveReport struct {
-	TelemetryPolicy                  *TelemetryPolicyEvidence              `json:"telemetry_policy,omitempty"`
+	TelemetryPolicy *TelemetryPolicyEvidence `json:"telemetry_policy,omitempty"`
+	// TelemetryPolicySegments lists the run's telemetry policy segments when
+	// its policy changed while it ran (TEL-B), as the manifest records them.
+	TelemetryPolicySegments          []TelemetryPolicySegmentReceipt       `json:"telemetry_policy_segments,omitempty"`
 	BrowserAuthoredPages             *BrowserAuthoredPageReport            `json:"browser_authored_pages,omitempty"`
 	BrowserDocumentEvidence          []protocol.BrowserDocumentObservation `json:"browser_document_evidence,omitempty"`
 	BrowserDocumentEvidenceTruncated bool                                  `json:"browser_document_evidence_truncated,omitempty"`

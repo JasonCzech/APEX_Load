@@ -127,3 +127,26 @@ func TestProjectPolicyReceiptIdentity(t *testing.T) {
 		t.Fatal("a changed revision kept its hash")
 	}
 }
+
+// A receipt captured for an in-run policy segment (TEL-B) is valid with its
+// own boundary, which its hash covers: it never shares a hash with the same
+// budgets captured at admission. No other boundary is valid.
+func TestSegmentCaptureBoundary(t *testing.T) {
+	admission := policyFixture()
+	segment := Clone(admission)
+	segment.CaptureBoundary = CaptureBoundarySegment
+	segment.Hash = Hash(segment)
+	if !Validate(segment) || segment.Hash == admission.Hash {
+		t.Fatalf("segment receipt: valid %v, hash shared %v", Validate(segment), segment.Hash == admission.Hash)
+	}
+	// Valid as a segment, never as a run's admission receipt.
+	if ValidateAdmission(segment) || !ValidateAdmission(admission) {
+		t.Fatal("admission validation accepted a segment receipt or refused an admission one")
+	}
+	other := Clone(admission)
+	other.CaptureBoundary = "run-end"
+	other.Hash = Hash(other)
+	if Validate(other) {
+		t.Fatal("an unknown capture boundary was accepted")
+	}
+}

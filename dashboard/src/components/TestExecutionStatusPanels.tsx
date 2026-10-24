@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import TelemetryPolicy from './TelemetryPolicy'
+import { TelemetryBudgetChange, TelemetryPolicySegmentList } from './TelemetryPolicySegments'
+import type { TelemetryPolicySegmentReceipt } from '../types/telemetryPolicy'
 import TelemetryStageDistributions from './TelemetryStageDistributions'
 import TelemetryAcceptanceVerdict from './TelemetryAcceptanceVerdict'
 import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, RunArchiveHTTPVersionMix, TelemetryHealth, TestSummary, TxMetrics } from '../types'
@@ -40,6 +43,8 @@ interface Props {
   isMultiGroup: boolean
   groupMetrics: GroupLiveMetrics[]
   groupColors: string[]
+  /** The viewer can change the run's telemetry budget policy while it runs (TEL-B). */
+  canChangeTelemetryPolicy?: boolean
 }
 
 function formatGoalThreshold(value: number | undefined, suffix = ''): string {
@@ -206,7 +211,14 @@ export default function TestExecutionStatusPanels({
   isMultiGroup,
   groupMetrics,
   groupColors,
+  canChangeTelemetryPolicy = false,
 }: Props) {
+  // Segments read after a change, until the polled run catches up with them.
+  const [readSegments, setReadSegments] = useState<{ testId: string; segments: unknown }>()
+  const polledSegments = test.telemetry_policy_segments
+  const read = readSegments?.testId === test.id && Array.isArray(readSegments.segments) ? readSegments.segments : undefined
+  const segments: unknown = read && read.length > (polledSegments?.length ?? 0) ? read : polledSegments
+  const latestSegments = Array.isArray(segments) ? segments as TelemetryPolicySegmentReceipt[] : undefined
   const browserDevices = Object.entries(metrics?.browser_by_device ?? {}).map(([profile, value]) => [profile, { ...browserMetricRecord(value), malformed: !browserMetricRecord(value) }] as const)
   const capacityAdvisory = test.capacity_advisory
   const capacityStatus = metrics?.capacity_status
@@ -372,7 +384,12 @@ export default function TestExecutionStatusPanels({
         </div>
       )}
 
-      {metrics && <TelemetryPolicy evidence={metrics.telemetry_policy} />}
+      {metrics && <TelemetryPolicy evidence={metrics.telemetry_policy} acceptSegments
+        segmentSequence={latestSegmentInForce(latestSegments, metrics.telemetry_policy?.policy?.hash)} />}
+      <TelemetryPolicySegmentList segments={segments} />
+      {canChangeTelemetryPolicy && metrics?.telemetry_policy?.policy && <TelemetryBudgetChange key={test.id} testId={test.id} projectId={test.project_id} status={test.status}
+        segments={latestSegments} cadenceScope={metrics.telemetry_policy.policy.cadence_scope}
+        onChanged={listed => setReadSegments({ testId: test.id, segments: listed })} />}
 
       {metrics?.telemetry && (
         <div className="goal-status-card telemetry-status-card">
@@ -715,4 +732,12 @@ export default function TestExecutionStatusPanels({
       )}
     </>
   )
+}
+
+// The segment a live receipt is named by: the run's latest, when the receipt
+// is its receipt. A receipt the list has not caught up with (a policy chosen
+// again, not yet polled) is described without a segment number.
+function latestSegmentInForce(segments: TelemetryPolicySegmentReceipt[] | undefined, hash: string | undefined): number | undefined {
+  const latest = segments?.[segments.length - 1]
+  return hash !== undefined && latest?.policy?.hash === hash ? latest.sequence : undefined
 }

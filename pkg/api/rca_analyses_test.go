@@ -359,6 +359,16 @@ func TestRCAEvidenceDigestSurvivesAdjunctRefresh(t *testing.T) {
 		return evidence, whole
 	}
 	published, publishedManifest := digests("published")
+	// The policy segments are written with the coverage, after the main
+	// manifest: recording them leaves the evidence digest alone.
+	if manifest, err := loadRunArchiveManifestFromRecord(record); err != nil {
+		t.Fatal(err)
+	} else {
+		manifest.TelemetryPolicySegments = []TelemetryPolicySegmentReceipt{{Sequence: 1}, {Sequence: 2}}
+		if withSegments, err := rcaEvidenceDigest(manifest); err != nil || withSegments != published {
+			t.Fatalf("recording policy segments changed the evidence digest: %v", err)
+		}
+	}
 	if err := runner.persistTestManifestArtifact(run, record); err != nil {
 		t.Fatal(err)
 	}

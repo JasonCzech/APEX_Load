@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/telemetrypolicy"
 )
 
 // The telemetry acceptance report section (C7): the run's telemetry verdict
@@ -30,6 +31,55 @@ type telemetryAcceptanceReportView struct {
 	// dashboard client (TEL-A); RenderCounts are its figures for the CSV.
 	RenderPopulation string
 	RenderCounts     [][2]string
+	// Segments lists the run's telemetry policy segments when its policy
+	// changed while it ran (TEL-B), with each one's classified time.
+	Segments []telemetryAcceptanceReportSegment
+	// SegmentsNote explains the segments (HTML and PDF), set with them.
+	SegmentsNote string
+}
+
+type telemetryAcceptanceReportSegment struct {
+	Sequence, EffectiveAt, Source, Policy, Cadence, Hash string
+	Healthy, Degraded, Breached                          string
+}
+
+// telemetryAcceptanceSegmentsNote explains why the segments' classified sums
+// can fall short of the run's.
+const telemetryAcceptanceSegmentsNote = "The run's telemetry policy changed while it ran. Each segment classified the intervals it covered. An interval a change fell inside, or classified while the run's segments could not be read, belongs to no segment: its budgets were not judged, and what no policy decides (losses, gaps, transaction, broker and throttling samples) counts only in the run's totals."
+
+// telemetryAcceptanceReportSegments describes each segment's receipt, with
+// the time it classified from the coverage record.
+func telemetryAcceptanceReportSegments(manifest *RunArchiveManifest) []telemetryAcceptanceReportSegment {
+	if manifest == nil || len(manifest.TelemetryPolicySegments) < 2 {
+		return nil
+	}
+	classified := map[int64]TelemetryPolicySegment{}
+	if manifest.TelemetryCoverage != nil {
+		for _, segment := range manifest.TelemetryCoverage.Segments {
+			classified[segment.Sequence] = segment
+		}
+	}
+	out := make([]telemetryAcceptanceReportSegment, 0, len(manifest.TelemetryPolicySegments))
+	for _, segment := range manifest.TelemetryPolicySegments {
+		row := telemetryAcceptanceReportSegment{Sequence: fmt.Sprint(segment.Sequence), EffectiveAt: segment.EffectiveAt.UTC().Format(time.RFC3339Nano), Source: segment.Source}
+		if policy := segment.Policy; policy != nil {
+			row.Hash = policy.Hash
+			row.Cadence = fmt.Sprintf("%s ms", formatReportCount(policy.ExpectedControllerPublicationIntervalMs))
+			if policy.PolicyID == telemetrypolicy.SystemPolicyID {
+				row.Policy = "threshold settings"
+			} else {
+				row.Policy = fmt.Sprintf("%s revision %d", policy.PolicyID, policy.Revision)
+			}
+		} else {
+			row.Policy = "receipt invalid"
+		}
+		row.Healthy, row.Degraded, row.Breached = "n/a", "n/a", "n/a"
+		if sums, ok := classified[segment.Sequence]; ok {
+			row.Healthy, row.Degraded, row.Breached = formatReportCount(sums.HealthyMs), formatReportCount(sums.DegradedMs), formatReportCount(sums.BreachedMs)
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 type telemetryAcceptanceReportCriterion struct {
@@ -210,6 +260,10 @@ func buildTelemetryAcceptanceReportView(manifest *RunArchiveManifest, verdict *T
 		view.Stages = append(view.Stages, telemetryAcceptanceReportStageOf(stage))
 	}
 	view.RenderPopulation, view.RenderCounts = telemetryRenderPopulationReport(manifest.TelemetryRenderPopulation, manifest.Provenance.StartedAt)
+	view.Segments = telemetryAcceptanceReportSegments(manifest)
+	if len(view.Segments) > 0 {
+		view.SegmentsNote = telemetryAcceptanceSegmentsNote
+	}
 	return view
 }
 
@@ -372,7 +426,14 @@ func telemetryAcceptanceReportPDF(d *runArchiveHTMLReportData, lines *[]string) 
 	for _, loss := range view.Loss {
 		*lines = append(*lines, fmt.Sprintf("Loss %s: %s (%s)%s", loss.Label(), loss.Value, loss.StateLabel(), reportReasonSuffix(loss.ReasonLabel())))
 	}
-	*lines = append(*lines, "Coverage: "+view.Coverage, "Classified time: "+view.Breach, "Clock quality: "+view.Clock, "Render population: "+view.RenderPopulation)
+	*lines = append(*lines, "Coverage: "+view.Coverage, "Classified time: "+view.Breach)
+	if view.SegmentsNote != "" {
+		*lines = append(*lines, view.SegmentsNote)
+	}
+	for _, segment := range view.Segments {
+		*lines = append(*lines, fmt.Sprintf("Policy segment %s from %s (%s): %s, cadence %s; classified healthy %s, degraded %s, breached %s ms; hash %s", segment.Sequence, segment.EffectiveAt, segment.Source, segment.Policy, segment.Cadence, segment.Healthy, segment.Degraded, segment.Breached, segment.Hash))
+	}
+	*lines = append(*lines, "Clock quality: "+view.Clock, "Render population: "+view.RenderPopulation)
 	for _, stage := range view.Stages {
 		line := fmt.Sprintf("Stage %s: %s; samples %s; P50 %s P95 %s P99 %s max %s ms", stage.Label(), stage.AvailabilityLabel, stage.SamplesLabel, stage.P50, stage.P95, stage.P99, stage.Max)
 		if stage.ExcludedLabel != "" {
@@ -418,6 +479,11 @@ func telemetryAcceptanceReportCSV(d *runArchiveHTMLReportData, write reportCSVWr
 		[4]string{"telemetry_render_population", "", "summary", view.RenderPopulation})
 	for _, count := range view.RenderCounts {
 		rows = append(rows, [4]string{"telemetry_render_population", "", count[0], count[1]})
+	}
+	for _, segment := range view.Segments {
+		for _, item := range [][2]string{{"effective_at", segment.EffectiveAt}, {"source", segment.Source}, {"policy", segment.Policy}, {"cadence", segment.Cadence}, {"policy_hash", segment.Hash}, {"healthy_ms", segment.Healthy}, {"degraded_ms", segment.Degraded}, {"breached_ms", segment.Breached}} {
+			rows = append(rows, [4]string{"telemetry_policy_segment", segment.Sequence, item[0], item[1]})
+		}
 	}
 	for _, stage := range view.Stages {
 		for _, item := range [][2]string{{"availability", stage.Availability}, {"samples", stage.Samples}, {"p50_ms", stage.P50}, {"p95_ms", stage.P95}, {"p99_ms", stage.P99}, {"max_ms", stage.Max}, {"excluded", stage.Excluded}} {

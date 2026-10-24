@@ -1,4 +1,5 @@
 import TelemetryPolicy from './TelemetryPolicy'
+import { TelemetryPolicySegmentList } from './TelemetryPolicySegments'
 import { rcaErrorPatternAnchor } from './rca/rcaModel'
 import ElasticArchiveEvidence from './ElasticArchiveEvidence'
 import MonitorRuleResults from './MonitorRuleResults'
@@ -1182,6 +1183,7 @@ export default function TestExecutionArchive({
               )}
 
               {showReportMetadataView && <TelemetryPolicy evidence={archiveReport.telemetry_policy} />}
+              {showReportMetadataView && <TelemetryPolicySegmentList segments={archiveReport.telemetry_policy_segments ?? test.telemetry_policy_segments} />}
               {showReportMetadataView && (
                 <section className="archive-metadata-summary" aria-label="Archive metadata summary">
                   <div className="archive-metadata-grid">

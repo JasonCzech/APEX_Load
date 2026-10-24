@@ -777,6 +777,21 @@ func schemaCreateTableStatementsFor(dialect storeDialect) []string {
 			updated_by TEXT,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS test_telemetry_policy_segments (
+			test_id TEXT NOT NULL,
+			sequence INTEGER NOT NULL,
+			effective_at DATETIME NOT NULL,
+			receipt_json TEXT NOT NULL,
+			source TEXT NOT NULL,
+			policy_id TEXT,
+			request_id TEXT NOT NULL,
+			requested_by_subject TEXT,
+			requested_by_display_name TEXT,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (test_id, sequence),
+			UNIQUE (test_id, request_id),
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS test_interval_summaries (
 			test_id TEXT,
 			schema_version TEXT,

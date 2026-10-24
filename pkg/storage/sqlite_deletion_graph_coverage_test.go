@@ -34,7 +34,7 @@ var manuallyDeletedProjectTables = stringSet(
 	"run_archives", "runtime_secret_provisioning_attempts", "scenario_data_pool_bindings", "scenario_drafts",
 	"scenario_schedule_approvals", "scenario_schedule_occurrences", "scenario_schedules",
 	"scenario_scripts", "script_recordings", "scripts", "shared_data_pool_rows",
-	"shared_data_pools", "test_history", "test_interval_summaries", "test_notes", "tests",
+	"shared_data_pools", "test_history", "test_interval_summaries", "test_notes", "test_telemetry_policy_segments", "tests",
 	"usage_accounting_snapshots", "import_assets",
 	"live_tables", "live_table_finalizations", "run_rendezvous", "project_live_tables", "project_live_table_instances", "project_live_table_attachments",
 	"project_live_table_journal", "project_live_table_operator_receipts",
@@ -64,7 +64,7 @@ var manuallyHandledTestTables = stringSet(
 	"github_check_intents", "github_check_links", "grafana_dashboard_snapshots",
 	"powerbi_publishes", "run_archives", "scenario_schedule_occurrences",
 	"runtime_secret_provisioning_attempts", "scenario_schedules", "test_history",
-	"test_interval_summaries", "test_notes",
+	"test_interval_summaries", "test_notes", "test_telemetry_policy_segments",
 	"live_tables", "run_rendezvous",
 )
 

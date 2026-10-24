@@ -865,6 +865,8 @@ export interface TestSummary {
   telemetry_acceptance_policy_id?: string
   /** The project telemetry budget policy that set the run's live budgets instead of the system threshold settings (TEL-B). */
   telemetry_budget_policy_id?: string
+  /** The run's telemetry policy segments, the admission receipt first, once its policy changed while it ran (TEL-B). */
+  telemetry_policy_segments?: import('./types/telemetryPolicy').TelemetryPolicySegmentReceipt[]
   /** The execution-plan run that started this run. */
   execution_plan?: TestExecutionPlanLink
   archive?: RunArchiveRecord
@@ -1788,6 +1790,8 @@ export interface IntegrationOutcome {
 
 export interface RunArchiveReport {
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
+  /** The run's telemetry policy segments, when its policy changed while it ran (TEL-B). */
+  telemetry_policy_segments?: import('./types/telemetryPolicy').TelemetryPolicySegmentReceipt[]
   // The finalized telemetry verdict under the run's pinned acceptance policy.
   telemetry_acceptance?: TelemetryAcceptanceVerdict
   browser_documents?: BrowserDocumentSummary | null
@@ -2709,6 +2713,8 @@ export interface TelemetryRunHealth {
   breach_started_at?: string
   last_observed_at: string
   last_transition_at?: string
+  /** The telemetry policy segment that classified this interval (TEL-B; 1 is the admission receipt); absent for an interval a change fell inside. */
+  policy_segment?: number
 }
 
 export interface TelemetryDiagnostic {

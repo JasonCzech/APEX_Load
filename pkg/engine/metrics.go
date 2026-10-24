@@ -46,6 +46,31 @@ type MetricsCollector struct {
 	// httpVersions counts every HTTP action since the start of the run; only
 	// the aggregation goroutine touches it.
 	httpVersions protocol.HTTPVersionMix
+	// collectionTick is closed after each collection tick, once that tick's
+	// snapshot (if any) is stored, and replaced lazily: every waiter wakes.
+	collectionTickMu sync.Mutex
+	collectionTick   chan struct{}
+}
+
+// CollectionTicked returns a channel closed after the next collection tick,
+// once that tick's snapshot (if it stored one) is the latest. Publishers wait
+// on it to publish right after a collection rather than at an unrelated phase.
+func (mc *MetricsCollector) CollectionTicked() <-chan struct{} {
+	mc.collectionTickMu.Lock()
+	defer mc.collectionTickMu.Unlock()
+	if mc.collectionTick == nil {
+		mc.collectionTick = make(chan struct{})
+	}
+	return mc.collectionTick
+}
+
+func (mc *MetricsCollector) signalCollectionTick() {
+	mc.collectionTickMu.Lock()
+	defer mc.collectionTickMu.Unlock()
+	if mc.collectionTick != nil {
+		close(mc.collectionTick)
+		mc.collectionTick = nil
+	}
 }
 
 // SetJointProjection sets (or, with nil, clears) the run's joint evidence
@@ -625,6 +650,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 					browserChanged := mc.browserDocuments.sample(true)
 					progressChanged := mc.messagingProgress.sample(true) || browserChanged
 					publishBatch(time.Now(), mc.activeGaugeDirty.Swap(false) || progressChanged)
+					mc.signalCollectionTick()
 					return
 				}
 			}
@@ -654,6 +680,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			// zero noise before ramp-up starts or after ramp-down completes.
 			if len(batch) == 0 && !activeGaugeChanged && !progressChanged && !mc.emitIdleSnapshots.Load() && mc.current.activeVUsers.Load() == 0 {
 				windowStart = windowEnd
+				mc.signalCollectionTick()
 				continue
 			}
 			window := windowEnd.Sub(windowStart)
@@ -664,6 +691,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			windowStart = windowEnd
 			clear(batch)
 			batch = batch[:0]
+			mc.signalCollectionTick()
 		}
 	}
 }

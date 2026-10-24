@@ -877,12 +877,32 @@ func TestDistributedMetricsTopologyRebasesOwnedSurvivingStream(t *testing.T) {
 	if !distributedMetricsConsumerStillOwned(runner, testRun, "generator-b", oldFenceB, false) {
 		t.Fatal("topology-only invalidation retired the still-owned surviving stream")
 	}
+	// A stale pre-topology timer never consumes a newer reservation...
+	newerToken := timerToken.Add(time.Second)
+	runner.mu.Lock()
+	testRun.remoteMetricsLastPublishedAt = newerToken
+	runner.mu.Unlock()
 	backend.flushStoredDistributedMetricsAfterDelay(context.Background(), runner, testRun, "generator-b", 0, timerToken, oldFenceB)
 	runner.mu.RLock()
 	timerStillScheduled := testRun.remoteMetricsFlushScheduled
 	runner.mu.RUnlock()
 	if !timerStillScheduled {
-		t.Fatal("stale pre-topology timer cleared current flush state")
+		t.Fatal("stale pre-topology timer cleared a newer flush reservation")
+	}
+	// ...but one that still holds the reservation releases it, so the gate
+	// can schedule another flush rather than stall.
+	runner.mu.Lock()
+	testRun.remoteMetricsLastPublishedAt = timerToken
+	gateRevision := testRun.remoteMetricsGateRevision
+	runner.mu.Unlock()
+	backend.flushStoredDistributedMetricsAfterDelay(context.Background(), runner, testRun, "generator-b", 0, timerToken, oldFenceB)
+	runner.mu.RLock()
+	timerStillScheduled = testRun.remoteMetricsFlushScheduled
+	// Released by the stale branch, not by a publication.
+	releasedWithoutPublishing := testRun.remoteMetricsLastPublishedAt.Equal(timerToken) && testRun.remoteMetricsGateRevision == gateRevision
+	runner.mu.RUnlock()
+	if timerStillScheduled || !releasedWithoutPublishing {
+		t.Fatalf("stale pre-topology timer holding the reservation: still scheduled %v, released without publishing %v", timerStillScheduled, releasedWithoutPublishing)
 	}
 	if staleFenceA, current := captureDistributedMetricsConsumerFence(runner, testRun, "generator-a", streamA, context.Background(), 7, false); current ||
 		backend.storeRemoteMetricsBatchOnly(runner, testRun, "generator-a", distributedP99Batch(testRun.ID, 3_000, 950), staleFenceA) {

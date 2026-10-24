@@ -413,8 +413,22 @@ func retainTelemetryCollectionLocked(test *ManagedTest, target string, batch gen
 		return
 	}
 	e := TelemetryCollectionEvidence{Source: target, Generation: batch.ExecutionGeneration, Epoch: batch.SourceEpoch, Collection: batch.Telemetry.CollectionSequence, Publication: batch.BatchSequence, Complete: batch.CollectionWindowsComplete, Classification: "unknown"}
-	if p := test.initialArchiveProvenance; p != nil && validTelemetryBudgetPolicy(p.TelemetryPolicy) {
-		e.PolicyHash = p.TelemetryPolicy.Hash
+	// The policy segment in force from the collection to its acceptance;
+	// none when a change falls inside that span, or the collection cannot be
+	// placed on the controller's clock after a change.
+	measured := telemetryMeasurement{collectedAt: time.UnixMilli(batch.Telemetry.CollectedAtUnixMs), offsetMs: batch.Telemetry.CollectedAtOffsetMs, quality: batch.Telemetry.CollectedAtQuality}
+	if batch.Telemetry.CollectedAtUnixMs <= 0 {
+		measured = telemetryMeasurement{}
+	}
+	now := time.Now()
+	from := now
+	if start, known := measured.start(true); !known {
+		from = time.Time{}
+	} else if !start.IsZero() {
+		from = start
+	}
+	if interval := telemetryIntervalPolicyLocked(test, from, now); interval.ok && !interval.spanning {
+		e.PolicyHash = interval.segment.Policy.Hash
 	}
 	e.CounterReadings = map[string]TelemetryCollectionCounter{}
 	for name, reading := range telemetryCounterReadings(batch) {

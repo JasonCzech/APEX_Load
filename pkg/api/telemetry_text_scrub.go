@@ -195,6 +195,15 @@ func scrubTelemetryText(manifest *RunArchiveManifest, s telemetryTextScrubber) *
 		}
 		out.TelemetryCoverage = &copied
 	}
+	if manifest.TelemetryPolicySegments != nil {
+		out.TelemetryPolicySegments = make([]TelemetryPolicySegmentReceipt, len(manifest.TelemetryPolicySegments))
+		for i, segment := range manifest.TelemetryPolicySegments {
+			segment.Source, segment.PolicyID = scrubTelemetryIdentity(segment.Source), scrubTelemetryIdentity(segment.PolicyID)
+			segment.RequestedBy = s.label(segment.RequestedBy)
+			segment.Policy = scrubTelemetryBudgetPolicy(segment.Policy)
+			out.TelemetryPolicySegments[i] = segment
+		}
+	}
 	if manifest.TelemetryStageDigests != nil {
 		// Keys that scrub alike keep the first, in key order.
 		out.TelemetryStageDigests = make(map[string]engine.TDigestSnapshot, len(manifest.TelemetryStageDigests))

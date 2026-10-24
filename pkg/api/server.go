@@ -1115,6 +1115,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PATCH /api/v1/tests/{id}/duration", cors(log(auth(http.HandlerFunc(s.handleAdjustDuration)))))
 	s.mux.Handle("POST /api/v1/tests/{id}/runtime-adjustments/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewRuntimeAdjustment)))))
 	s.mux.Handle("PATCH /api/v1/tests/{id}/runtime-adjustments", cors(log(auth(http.HandlerFunc(s.handleApplyRuntimeAdjustment)))))
+	s.mux.Handle("GET /api/v1/tests/{id}/telemetry-policy-segments", cors(log(auth(http.HandlerFunc(s.handleListTelemetryPolicySegments)))))
+	s.mux.Handle("POST /api/v1/tests/{id}/telemetry-policy-segments", cors(log(auth(http.HandlerFunc(s.handleAppendTelemetryPolicySegment)))))
 	s.mux.Handle("DELETE /api/v1/tests/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteTest)))))
 	s.mux.Handle("PATCH /api/v1/tests/{id}/move", cors(log(auth(http.HandlerFunc(s.handleMoveTest)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/metrics", cors(log(auth(http.HandlerFunc(s.handleGetMetrics)))))

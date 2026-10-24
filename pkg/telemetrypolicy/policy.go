@@ -24,6 +24,14 @@ const VersionProjectPolicy = "apexload.telemetry_policy.v2"
 // SystemPolicyID identifies the version 1 receipt of the system settings.
 const SystemPolicyID = "system-telemetry-budgets"
 
+// CaptureBoundaryAdmission is a receipt captured when the run was admitted;
+// CaptureBoundarySegment one captured for a policy segment the run's
+// telemetry changed to while it ran.
+const (
+	CaptureBoundaryAdmission = "execution-admission-before-staging"
+	CaptureBoundarySegment   = "in-run-policy-segment"
+)
+
 const maxProjectPolicyIDBytes = 128
 
 type TelemetryBudgetPolicy struct {
@@ -81,7 +89,7 @@ func Clone(policy *TelemetryBudgetPolicy) *TelemetryBudgetPolicy {
 func Validate(policy *TelemetryBudgetPolicy) bool {
 	if policy == nil || !validIdentity(policy) ||
 		policy.CapturedAt.IsZero() || policy.CapturedAt.Location() != time.UTC ||
-		policy.CaptureBoundary != "execution-admission-before-staging" || policy.ClassificationAlgorithm != "legacy-mixed-diagnostic.v1" ||
+		(policy.CaptureBoundary != CaptureBoundaryAdmission && policy.CaptureBoundary != CaptureBoundarySegment) || policy.ClassificationAlgorithm != "legacy-mixed-diagnostic.v1" ||
 		policy.SustainedBreachWindowMs != SustainedBreachWindow.Milliseconds() ||
 		policy.CoverageRule != "retained-classifications-only;gaps-unknown" ||
 		policy.ExpectedControllerPublicationIntervalMs <= 0 || policy.ExpectedControllerPublicationIntervalMs > int64((time.Duration(1<<63-1))/time.Millisecond) ||
@@ -100,6 +108,12 @@ func Validate(policy *TelemetryBudgetPolicy) bool {
 }
 
 func ValidateTelemetryBudgetPolicy(policy *TelemetryBudgetPolicy) bool { return Validate(policy) }
+
+// ValidateAdmission is Validate for a run's admission receipt: an in-run
+// segment's receipt is valid, but never as the run's admission evidence.
+func ValidateAdmission(policy *TelemetryBudgetPolicy) bool {
+	return Validate(policy) && policy.CaptureBoundary == CaptureBoundaryAdmission
+}
 
 // validIdentity accepts the system receipt (version 1) or a chosen project
 // policy revision (version 2) with its definition digest.

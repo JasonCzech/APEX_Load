@@ -180,7 +180,7 @@ func TestTelemetryBudgetPolicyDurableAdmissionAndRestart(t *testing.T) {
 	if second.Policy.Hash != first.Policy.Hash || *changedThresholds.MaxTelemetrySampleAgeMs != 11 {
 		t.Fatal("live settings change reinterpreted admitted run")
 	}
-	diagnostic, _ := buildTelemetryDiagnostic(test, &LiveMetrics{Telemetry: &TelemetryHealth{SampleAgeMs: 12}}, changedThresholds)
+	diagnostic, _ := buildTelemetryDiagnostic(test, &LiveMetrics{Telemetry: &TelemetryHealth{SampleAgeMs: 12}}, changedThresholds, "")
 	if diagnostic.Severity != "warning" {
 		t.Fatal("run diagnostic must use immutable11ms policy despite current999ms settings")
 	}
