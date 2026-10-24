@@ -8,6 +8,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // HA run continuity, generator side (docs/HA_RUN_CONTINUITY_PLAN.md §5.2-5.3).
@@ -129,12 +130,16 @@ func (s *Service) adoptRunLocked(generation uint64, adoption *pb.RunAdoption, re
 		return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED, fmt.Sprintf("prior generation %d is not older than %d", prior, generation))
 	}
 	if !exists {
-		if state, terminal := s.metricsBroker.terminalState(testID, prior); terminal {
+		if state, terminal, ok := s.metricsBroker.terminalStateOutcome(testID, prior); ok {
 			outcome := pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED
 			if strings.EqualFold(strings.TrimSpace(state), "COMPLETE") || strings.EqualFold(strings.TrimSpace(state), "COMPLETED") {
 				outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED
 			}
-			return &pb.RunAdoptionResult{TestId: testID, Outcome: outcome, Detail: "the run finished before adoption", TerminalState: state}
+			finished := &pb.RunAdoptionResult{TestId: testID, Outcome: outcome, Detail: "the run finished before adoption", TerminalState: state, TerminalCause: terminal.cause}
+			if terminal.duration > 0 {
+				finished.CompletedLogicalDuration = durationpb.New(terminal.duration)
+			}
+			return finished
 		}
 		if s.hasRunSupervisionTombstoneLocked(runSupervisionTombstoneKey{testID: testID, generation: prior, tokenHash: priorHash}) {
 			return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, "the run's supervision already expired")

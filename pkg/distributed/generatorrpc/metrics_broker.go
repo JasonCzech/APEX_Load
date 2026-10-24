@@ -25,6 +25,7 @@ type terminalBatchKey struct {
 type terminalMetricsTombstone struct {
 	batch       *pb.MetricsBatch
 	completedAt time.Time
+	outcome     terminalOutcome
 }
 
 type metricsSubscriber struct {
@@ -487,6 +488,12 @@ func (broker *metricsBroker) publishTerminal(batch *pb.MetricsBatch) {
 }
 
 func (broker *metricsBroker) publishTerminalAt(batch *pb.MetricsBatch, now time.Time) {
+	broker.publishTerminalOutcome(batch, terminalOutcome{}, now)
+}
+
+// publishTerminalOutcome retains outcome beside the terminal batch, so the
+// two always describe the same terminal transition.
+func (broker *metricsBroker) publishTerminalOutcome(batch *pb.MetricsBatch, outcome terminalOutcome, now time.Time) {
 	if broker == nil || batch == nil || !isGeneratorTerminalLifecycle(batch.GetLifecycleState()) {
 		return
 	}
@@ -510,7 +517,7 @@ func (broker *metricsBroker) publishTerminalAt(batch *pb.MetricsBatch, now time.
 		completedAt = now
 	}
 	broker.mu.Lock()
-	broker.terminalBatches[key] = terminalMetricsTombstone{batch: clone, completedAt: completedAt}
+	broker.terminalBatches[key] = terminalMetricsTombstone{batch: clone, completedAt: completedAt, outcome: outcome}
 	delete(broker.finalizingBatches, key)
 	broker.pruneTerminalLocked(now)
 	broker.mu.Unlock()
@@ -548,6 +555,12 @@ func (broker *metricsBroker) pruneTerminalLocked(now time.Time) {
 }
 
 func (broker *metricsBroker) restoreTerminal(batch *pb.MetricsBatch, completedAt time.Time) {
+	broker.restoreTerminalOutcome(batch, completedAt, terminalOutcome{})
+}
+
+// restoreTerminalOutcome restores a terminal batch with the outcome its archive
+// manifest recorded.
+func (broker *metricsBroker) restoreTerminalOutcome(batch *pb.MetricsBatch, completedAt time.Time, outcome terminalOutcome) {
 	if broker == nil || batch == nil || !isGeneratorTerminalLifecycle(batch.GetLifecycleState()) {
 		return
 	}
@@ -560,7 +573,7 @@ func (broker *metricsBroker) restoreTerminal(batch *pb.MetricsBatch, completedAt
 	}
 	key := terminalBatchKey{testID: clone.GetTestId(), generation: clone.GetExecutionGeneration()}
 	broker.mu.Lock()
-	broker.terminalBatches[key] = terminalMetricsTombstone{batch: clone, completedAt: completedAt}
+	broker.terminalBatches[key] = terminalMetricsTombstone{batch: clone, completedAt: completedAt, outcome: outcome}
 	broker.mu.Unlock()
 }
 
@@ -577,16 +590,22 @@ func (broker *metricsBroker) hasTerminal(key terminalBatchKey) bool {
 // terminalState returns the retained terminal lifecycle state for one exact
 // test generation.
 func (broker *metricsBroker) terminalState(testID string, generation uint64) (string, bool) {
+	state, _, ok := broker.terminalStateOutcome(testID, generation)
+	return state, ok
+}
+
+// terminalStateOutcome also returns the outcome retained with the state.
+func (broker *metricsBroker) terminalStateOutcome(testID string, generation uint64) (string, terminalOutcome, bool) {
 	if broker == nil {
-		return "", false
+		return "", terminalOutcome{}, false
 	}
 	broker.mu.RLock()
 	defer broker.mu.RUnlock()
 	tombstone, ok := broker.terminalBatches[terminalBatchKey{testID: testID, generation: generation}]
 	if !ok || tombstone.batch == nil {
-		return "", false
+		return "", terminalOutcome{}, false
 	}
-	return tombstone.batch.GetLifecycleState(), true
+	return tombstone.batch.GetLifecycleState(), tombstone.outcome, true
 }
 
 func (broker *metricsBroker) terminalGeneration(testID string) (uint64, bool) {

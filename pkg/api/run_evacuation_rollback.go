@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -162,14 +164,16 @@ func (tr *TestRunner) swapRunContinuityCheckpoint(test *ManagedTest, expected, n
 // complete rollback replaces the journal with the plain adoption checkpoint;
 // any problem leaves the journal for failRunEvacuationRollback. A participant
 // that reports a completed run the prior lineage never recorded is a problem.
-func (tr *TestRunner) completeRunEvacuationRollback(ctx context.Context, candidate *runAdoptionCandidate, results map[string]runAdoptionTargetResult, completed map[string]generatorClient, generation uint64, owner string) ([]string, []string) {
+func (tr *TestRunner) completeRunEvacuationRollback(ctx context.Context, candidate *runAdoptionCandidate, results map[string]runAdoptionTargetResult, completed map[string]generatorClient, completions map[string]generatorrpc.RunAdoptionResult, generation uint64, owner string) ([]string, []string) {
 	rollback := candidate.rollback
-	if completed[rollback.guard.Source] != nil {
+	natural := tr.runEvacuationNaturalCompletions(candidate.test, rollback.guard, rollback.replacements, completions)
+	if completed[rollback.guard.Source] != nil && !natural[rollback.guard.Source] {
 		// A staged evacuation may have stopped its source just before the
-		// controller was lost. Completed here cannot be told apart from that.
-		return nil, []string{fmt.Sprintf("evacuation source %s no longer runs its prior assignment", rollback.guard.Source)}
+		// controller was lost. Only a source whose duration ran out is done.
+		return nil, []string{fmt.Sprintf("evacuation source %s no longer runs its prior assignment: %s", rollback.guard.Source,
+			runEvacuationCompletionDoubt(completions[rollback.guard.Source], runEvacuationExpectedDuration(rollback.guard, rollback.replacements, rollback.guard.Source, tr.runEvacuationDuration(candidate.test))))}
 	}
-	if problems := unexpectedRunEvacuationCompletions(rollback.guard, rollback.replacements, completed); len(problems) > 0 {
+	if problems := unexpectedRunEvacuationCompletions(rollback.guard, rollback.replacements, completed, completions, natural, tr.runEvacuationDuration(candidate.test)); len(problems) > 0 {
 		return nil, problems
 	}
 	var problems []string
@@ -193,7 +197,10 @@ func (tr *TestRunner) completeRunEvacuationRollback(ctx context.Context, candida
 	if err != nil {
 		return nil, []string{"evacuation capacity rollback: " + err.Error()}
 	}
-	encoded, err := json.Marshal(rollback.guard.Prior)
+	// The plain checkpoint records a participant whose duration ran out, so a
+	// later successor need not ask its generator, which may have pruned the
+	// outcome, again.
+	encoded, err := json.Marshal(withRunEvacuationNaturalCompletions(rollback.guard.Prior, natural))
 	if err == nil {
 		err = tr.swapRunContinuityCheckpoint(candidate.test, rollback.raw, string(encoded), owner)
 	}
@@ -260,14 +267,15 @@ func (tr *TestRunner) failRunEvacuationRecovery(b *distributedExecutionBackend, 
 }
 
 // unexpectedRunEvacuationCompletions reports each participant that completed
-// although the journal's prior lineage never recorded it completed. A
-// generator ends every controller stop in a completed run, so such a
-// completion cannot be told apart from a stop by a lost controller or a failed
-// earlier successor; it never proves the participant's share ran out.
-func unexpectedRunEvacuationCompletions(guard runEvacuationCheckpoint, replacements []string, completed map[string]generatorClient) []string {
+// although the journal's prior lineage never recorded it completed, unless its
+// generator attributes the completion to the run's duration running out
+// (natural). A generator ends every controller stop in a completed run too, so
+// any other completion may be a stop by a lost controller or a failed earlier
+// successor; it never proves the participant's share ran out.
+func unexpectedRunEvacuationCompletions(guard runEvacuationCheckpoint, replacements []string, completed map[string]generatorClient, completions map[string]generatorrpc.RunAdoptionResult, natural map[string]bool, runDuration time.Duration) []string {
 	targets := make([]string, 0, len(completed))
 	for target := range completed {
-		if !slices.Contains(guard.Prior.CompletedTargets, target) {
+		if !slices.Contains(guard.Prior.CompletedTargets, target) && !natural[target] {
 			targets = append(targets, target)
 		}
 	}
@@ -278,9 +286,88 @@ func unexpectedRunEvacuationCompletions(guard runEvacuationCheckpoint, replaceme
 		if slices.Contains(replacements, target) {
 			role = "replacement"
 		}
-		problems = append(problems, fmt.Sprintf("%s %s reports a completed run the journal never recorded, which cannot be told apart from a controller stop", role, target))
+		problems = append(problems, fmt.Sprintf("%s %s reports a completed run the journal never recorded: %s", role, target,
+			runEvacuationCompletionDoubt(completions[target], runEvacuationExpectedDuration(guard, replacements, target, runDuration))))
 	}
 	return problems
+}
+
+// runEvacuationNaturalCompletions returns the participants whose generator
+// attributes their completed run to its duration running out, at a logical
+// duration no shorter than the durable expectation. Only these completions
+// prove a participant's share is done.
+func (tr *TestRunner) runEvacuationNaturalCompletions(test *ManagedTest, guard runEvacuationCheckpoint, replacements []string, completions map[string]generatorrpc.RunAdoptionResult) map[string]bool {
+	runDuration := tr.runEvacuationDuration(test)
+	natural := make(map[string]bool)
+	for target, completion := range completions {
+		if runEvacuationCompletionDoubt(completion, runEvacuationExpectedDuration(guard, replacements, target, runDuration)) == "" {
+			natural[target] = true
+		}
+	}
+	return natural
+}
+
+// runEvacuationDuration is the run's durable configured duration. A duration
+// change is persisted before it is sent to the generators.
+func (tr *TestRunner) runEvacuationDuration(test *ManagedTest) time.Duration {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return test.Duration
+}
+
+// runEvacuationExpectedDuration is the logical duration, in
+// DurationAdjustment.TargetDuration terms, a participant must have run to: the
+// journaled commit target for a replacement, the run's duration for any other.
+func runEvacuationExpectedDuration(guard runEvacuationCheckpoint, replacements []string, target string, runDuration time.Duration) time.Duration {
+	if slices.Contains(replacements, target) {
+		return guard.CommitTargetDuration
+	}
+	return runDuration
+}
+
+// runEvacuationCompletionDoubt says why a completed run does not prove that
+// the participant's share ran out, or returns "" when it does.
+func runEvacuationCompletionDoubt(completion generatorrpc.RunAdoptionResult, expected time.Duration) string {
+	state := strings.TrimSpace(completion.TerminalState)
+	switch {
+	case completion.Outcome != pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED:
+		return "its generator reported no completed outcome"
+	case !strings.EqualFold(state, "COMPLETE") && !strings.EqualFold(state, "COMPLETED"):
+		return fmt.Sprintf("its terminal state is %q", state)
+	}
+	switch completion.TerminalCause {
+	case pb.RunTerminalCause_RUN_TERMINAL_CAUSE_UNSPECIFIED:
+		return "its generator reports no terminal cause, so it cannot be told apart from a controller stop"
+	case pb.RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP:
+		return "it was stopped by a controller"
+	case pb.RunTerminalCause_RUN_TERMINAL_CAUSE_EXECUTIONS_ENDED_EARLY:
+		return "its executions ended before the run's duration ran out"
+	case pb.RunTerminalCause_RUN_TERMINAL_CAUSE_DURATION_ELAPSED:
+	default:
+		return fmt.Sprintf("its terminal cause %s is unknown", completion.TerminalCause)
+	}
+	switch {
+	case expected <= 0:
+		return "the run records no duration to compare it with"
+	case completion.CompletedDuration < expected:
+		return fmt.Sprintf("its duration ran out at %s, short of the expected %s", completion.CompletedDuration, expected)
+	}
+	return ""
+}
+
+// withRunEvacuationNaturalCompletions returns checkpoint with each naturally
+// completed participant added to its completed targets.
+func withRunEvacuationNaturalCompletions(checkpoint runContinuityCheckpoint, natural map[string]bool) runContinuityCheckpoint {
+	completed := slices.Clone(checkpoint.CompletedTargets)
+	added := make([]string, 0, len(natural))
+	for target, done := range natural {
+		if done && !slices.Contains(completed, target) {
+			added = append(added, target)
+		}
+	}
+	slices.Sort(added)
+	checkpoint.CompletedTargets = append(completed, added...)
+	return checkpoint
 }
 
 // holdInterruptedRunEvacuation keeps a run under its evacuation journal
@@ -585,6 +672,14 @@ func (tr *TestRunner) rollbackRunEvacuationCapacity(ctx context.Context, guard r
 	return restored, errors.Join(failures...)
 }
 
+// runEvacuationReleaseDrainAttempts and runEvacuationReleaseDrainRetryDelay
+// bound the retries of a replacement release refused while the generator
+// finishes the run's terminal transition.
+var (
+	runEvacuationReleaseDrainAttempts   = 20
+	runEvacuationReleaseDrainRetryDelay = 250 * time.Millisecond
+)
+
 func (tr *TestRunner) releaseRunEvacuationReplacementClaim(ctx context.Context, store podCapacityStore, capacity podCapacityClient, row, claim storage.PodCapacityReservation, generation uint64, owner string) error {
 	journaled := row
 	journaled.State = claim.State
@@ -596,11 +691,25 @@ func (tr *TestRunner) releaseRunEvacuationReplacementClaim(ctx context.Context, 
 			return fmt.Errorf("mark replacement reservation releasing: %w", err)
 		}
 	}
-	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	request := podClaim(row, true)
 	request.ExecutionGeneration = generation
-	ack, err := capacity.ReservePodCapacity(callCtx, request)
-	cancel()
+	var ack *pb.PodCapacityAck
+	var err error
+	// A run whose generator already reported its terminal outcome may not have
+	// closed its stop completion yet (a fence write follows the tombstone), and
+	// the generator refuses the release until it has. That window is short, so
+	// retry a few times. Rollback and roll-forward both release through here.
+	for attempt := 1; ; attempt++ {
+		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ack, err = capacity.ReservePodCapacity(callCtx, request)
+		cancel()
+		if err != nil || ack.GetAccepted() || ack.GetErrorMessage() != generatorrpc.PodCapacityStillDrainingMessage || attempt >= runEvacuationReleaseDrainAttempts {
+			break
+		}
+		if sleepWithContext(ctx, runEvacuationReleaseDrainRetryDelay); ctx.Err() != nil {
+			break
+		}
+	}
 	if err != nil || !podCapacityAckConfirms(ack, row.Incarnation) {
 		return fmt.Errorf("generator did not confirm the replacement release: %v %s", err, ack.GetErrorMessage())
 	}
