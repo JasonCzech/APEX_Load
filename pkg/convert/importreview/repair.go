@@ -49,16 +49,27 @@ func RemoveActionCodes(a *dsl.Action, remove func(string) bool) {
 	}
 }
 
-func RefreshDependencies(s *dsl.Script) ([]Finding, error) {
-	err := dslwalk.Walk(s, func(ref dslwalk.SurfaceRef) error {
+// RemoveDependencyCodes removes the dependency review codes
+// (missing_producer:<name> and conditional_producer:<name>) from every step.
+// RefreshDependencies stamps them again from the script.
+func RemoveDependencyCodes(s *dsl.Script) error {
+	return dslwalk.Walk(s, func(ref dslwalk.SurfaceRef) error {
 		a := dsl.Action{Metadata: ref.Metadata()}
-		RemoveActionCodes(&a, func(c string) bool {
-			return strings.HasPrefix(c, "missing_producer:") || strings.HasPrefix(c, "conditional_producer:")
-		})
+		RemoveActionCodes(&a, IsDependencyCode)
 		ref.SetMetadata(a.Metadata)
 		return nil
 	})
-	if err != nil {
+}
+
+// IsDependencyCode reports whether code is a dependency review code
+// (missing_producer:<name> or conditional_producer:<name>), which
+// RefreshDependencies removes and stamps again from the script.
+func IsDependencyCode(code string) bool {
+	return strings.HasPrefix(code, "missing_producer:") || strings.HasPrefix(code, "conditional_producer:")
+}
+
+func RefreshDependencies(s *dsl.Script) ([]Finding, error) {
+	if err := RemoveDependencyCodes(s); err != nil {
 		return nil, err
 	}
 	findings, err := AnalyzeDependencies(s)

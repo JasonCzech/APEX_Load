@@ -1,170 +1,125 @@
 package importreview
 
 import (
-	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
-var variableReference = regexp.MustCompile(`\{\{\s*(var|param)\.([A-Za-z_][A-Za-z0-9_.]*)\s*\}\}`)
-
-// AnalyzeDependencies examines executable values only. Source snapshots and
-// comments are evidence, never producers. A nested producer is conservative
-// evidence: its branch may not execute before a consumer.
+// AnalyzeDependencies reports every template reference that has no value where
+// it executes. It runs the execution-order analysis behind server replay
+// readiness (pkg/dsl/varflow), so the names it reports are the replay
+// preflight's missing_variables except protocol configuration references.
+// Replay readiness reports those from the current configuration on every
+// preflight; no step or guided repair can supply them, so import review never
+// stamps them. Source snapshots, comments and the arguments of steps the
+// runtime only logs or uses literally are evidence, never reads or producers.
+// So is metadata, except the values a Kafka or JMS send delivers as headers or
+// properties and a {{param.*}} in a protocol step's metadata outside its
+// import evidence keys, which replay refuses while it is unresolved.
+//
+// A {{var.*}} reference that some step does write, only not on every path
+// before the use, is conditional_producer: its branch or position may not run
+// first. Any other reference is missing_producer. A use that replay cannot
+// carry as placeholder text (a JSON helper input, an undeclared {{param.*}},
+// a Java HTTP request body, which replay decodes as base64, or a protocol
+// other than HTTP, SOAP and Java HTTP, which has no placeholder fallback)
+// gates execution; every other use gates promotion.
 func AnalyzeDependencies(script *dsl.Script) ([]Finding, error) {
 	if script == nil {
 		return nil, nil
 	}
-	reached := map[string]bool{}
-	parameters := map[string]bool{}
-	possible := map[string]bool{}
-	arrayProducers := map[string]bool{}
-	for _, p := range script.Parameters {
-		parameters[strings.ToLower(p.Name)] = true
-	}
-	producers := func(a dsl.Action) []string {
-		names := []string{}
-		for _, e := range a.Extractors {
-			names = append(names, e.Name)
-			if e.Mode == "all" {
-				names = append(names, e.Name+"_count")
-			}
-		}
-		if a.Type == "source_parameter" || a.Type == "source_json" || a.Type == "source_xml" || a.Type == "set_variable" {
-			for _, k := range []string{"save_param", "saveparam", "save_param_name", "parameter", "param", "name"} {
-				if v, ok := a.Params[k].(string); ok && v != "" {
-					// A save_all producer (lr_json_get_values SelectAll=Yes)
-					// publishes NAME_1..NAME_n and NAME_count, never NAME itself.
-					if all, _ := a.Params["save_all"].(bool); all {
-						names = append(names, v+"_count")
-					} else {
-						names = append(names, v)
-					}
-					break
-				}
-			}
-			var args []map[string]any
-			b, _ := json.Marshal(a.Params["call_args"])
-			_ = json.Unmarshal(b, &args)
-			for _, arg := range args {
-				k, _ := arg["name"].(string)
-				if strings.EqualFold(k, "SaveParam") {
-					if v, ok := arg["value"].(string); ok {
-						names = append(names, v)
-					}
-				}
-			}
-		}
-		// Source parameter actions publish both exact and lowercase names.
-		// Extractor variables remain case sensitive.
-		if strings.HasPrefix(a.Type, "source_") {
-			for _, name := range append([]string(nil), names...) {
-				names = append(names, strings.ToLower(name))
-			}
-		}
-		return names
-	}
-	actionOf := func(ref dslwalk.SurfaceRef) dsl.Action {
-		if ref.Action != nil {
-			return *ref.Action
-		}
-		var a dsl.Action
-		b, _ := json.Marshal(ref.Request)
-		_ = json.Unmarshal(b, &a)
-		return a
-	}
+	// varflow and dslwalk name actions with the same paths, including
+	// control bodies and http_sequence children, so a finding resolves its
+	// source position from the action it is reported on.
+	surfaces := map[string]dependencySurface{}
 	if err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
-		for _, e := range actionOf(ref).Extractors {
-			if e.Mode == "all" {
-				arrayProducers[e.Name] = true
-			}
+		surface := dependencySurface{metadata: ref.Metadata()}
+		if ref.Action != nil {
+			surface.actionType = ref.Action.Type
+		} else if ref.Request != nil {
+			surface.actionType, _ = ref.Request["type"].(string)
 		}
-		if a := actionOf(ref); a.Type == "source_json" {
-			if all, _ := a.Params["save_all"].(bool); all {
-				if name, ok := a.Params["save_param"].(string); ok && name != "" {
-					arrayProducers[name] = true
-				}
-			}
-		}
-		for _, name := range producers(actionOf(ref)) {
-			possible[name] = true
-		}
+		surfaces[ref.Path] = surface
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	var findings []Finding
-	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
-		a := actionOf(ref)
-		// Children are walked separately. Exclude metadata and diagnostic source args.
-		executable := map[string]any{"target": a.Target, "body": a.Body, "headers": a.Headers, "header_list": a.HeaderList, "value": a.Value, "auth": a.Auth}
-		if !strings.HasPrefix(a.Type, "source_") || a.Type == "source_verification" {
-			p := map[string]any{}
-			for k, v := range a.Params {
-				if k != "requests" {
-					p[k] = v
-				}
-			}
-			executable["params"] = p
-		} else if a.Type == "source_parameter" {
-			executable["source_string"] = a.Params["source_string"]
-		} else if a.Type == "source_json" {
-			executable["source_json"] = map[string]any{"buffer": a.Params["buffer"], "query": a.Params["query"]}
+	readiness := varflow.Analyze(script, nil)
+	lateProduced := make(map[string]bool, len(readiness.LateProduced))
+	for _, name := range readiness.LateProduced {
+		lateProduced[name] = true
+	}
+	findings := make([]Finding, 0, len(readiness.Misses))
+	for _, miss := range readiness.Misses {
+		if miss.Config {
+			continue
 		}
-		if a.Type == "http_sequence" {
-			executable = map[string]any{}
-		}
-		b, _ := json.Marshal(executable)
-		seen := map[string]bool{}
-		for _, match := range variableReference.FindAllSubmatch(b, -1) {
-			name := string(match[2])
-			key := name
-			parameterOnly := string(match[1]) == "param"
-			if (!parameterOnly && reached[key]) || parameters[strings.ToLower(key)] || seen[string(match[1])+"."+key] {
-				continue
-			}
-			seen[string(match[1])+"."+key] = true
-			// Like LoadRunner, which sends an undefined {param} literally and
-			// warns that it "is not a parameter", replay sends a {{var.*}}
-			// placeholder unchanged and warns; promotion still requires a
-			// reviewed producer. An unresolved {{param.*}} is never sent, and a
-			// JSON helper fails its step rather than parse placeholder text.
-			code, level, gate := "missing_producer:"+name, diag.Warning, GatePromotion
-			detail := "No preceding producer supplies " + name + ". Replay sends its placeholder text unchanged and warns, as LoadRunner does; bind a producer, parameter, or response extractor if the server needs a real value."
-			switch {
-			case parameterOnly:
-				level, gate = diag.Blocker, GateExecution
-				detail = "No parameter supplies " + name + ", and replay refuses a request with an unresolved parameter. Bind a parameter or data source."
-			case a.Type == "source_json":
-				level, gate = diag.Blocker, GateExecution
-				detail = "No preceding producer supplies " + name + ", and the JSON helper fails its step without a value. Bind a producer, parameter, or response extractor."
-			}
-			arrayValue := false
-			if idx := strings.LastIndex(key, "_"); idx > 0 && arrayProducers[key[:idx]] {
-				n, err := strconv.Atoi(key[idx+1:])
-				arrayValue = err == nil && n > 0
-			}
-			if !parameterOnly && (possible[key] || arrayValue) {
-				code = "conditional_producer:" + name
-				level = diag.Warning
-				gate = GatePromotion
-				detail = "Producer ordering or conditional execution for " + name + " requires review."
-			}
-			source := fmt.Sprintf("%v:%v", a.Metadata["source_file"], a.Metadata["source_line"])
-			findings = append(findings, Finding{Code: code, ReasonCode: code, Severity: level, Gate: gate, Detail: detail, Element: name, ActionPath: ref.Path, Source: "enterprise_script_archive", SourceRef: source, Resolution: "bind_producer"})
-		}
-		for _, name := range producers(a) {
-			if ref.Depth == 1 {
-				reached[name] = true
+		surface := surfaces[miss.Path]
+		name := miss.Reference.Name
+		code, detail := "missing_producer:"+name, missingProducerDetail(miss, surface)
+		// A variable write never supplies {{param.*}}, so only a variable use
+		// can be out of order.
+		if miss.Reference.Namespace == varflow.NamespaceVar && lateProduced[name] {
+			code = "conditional_producer:" + name
+			detail = "Producer ordering or conditional execution for " + name + " requires review."
+			if miss.Blocking {
+				detail += " " + blockingUseReason(miss, surface)
 			}
 		}
-		return nil
-	})
-	return NormalizeFindings(findings), err
+		level, gate := diag.Warning, GatePromotion
+		if miss.Blocking {
+			level, gate = diag.Blocker, GateExecution
+		}
+		source := fmt.Sprintf("%v:%v", surface.metadata["source_file"], surface.metadata["source_line"])
+		findings = append(findings, Finding{Code: code, ReasonCode: code, Severity: level, Gate: gate, Detail: detail, Element: name, ActionPath: miss.Path, Source: "enterprise_script_archive", SourceRef: source, Resolution: "bind_producer"})
+	}
+	return NormalizeFindings(findings), nil
+}
+
+// dependencySurface is what a dependency finding needs from the action it is
+// reported on.
+type dependencySurface struct {
+	actionType string
+	metadata   map[string]any
+}
+
+func missingProducerDetail(miss varflow.Miss, surface dependencySurface) string {
+	name := miss.Reference.Name
+	switch {
+	case miss.Reference.Namespace == varflow.NamespaceParam:
+		// The runtime resolves {{param.*}} only from declared parameters; a
+		// data source column is published as data.<source>.<column>.
+		return "No parameter supplies " + name + ", and replay refuses to start with an unresolved parameter. Declare a script parameter named " + name + " (it can read its values from a data source)."
+	case !miss.Blocking:
+		// Like LoadRunner, which sends an undefined {param} literally and
+		// warns that it "is not a parameter", replay sends a {{var.*}}
+		// placeholder unchanged and warns; promotion still requires a
+		// reviewed producer.
+		return "No preceding producer supplies " + name + ". Replay sends its placeholder text unchanged and warns, as LoadRunner does; bind a producer, parameter, or response extractor if the server needs a real value."
+	case dsl.CanonicalActionType(surface.actionType) == "source_json":
+		return "No preceding producer supplies " + name + ", and the JSON helper fails its step without a value. Bind a producer, parameter, or response extractor."
+	case miss.Base64Body:
+		// JavaHTTP.Execute (pkg/protocol/java_http/java_http.go) decodes the
+		// body as base64 before the HTTP adapter could send a placeholder.
+		return "No preceding producer supplies " + name + ", and Java HTTP replay decodes the request body as base64, so placeholder text there fails the step. Bind a producer, parameter, or response extractor."
+	default:
+		return "No preceding producer supplies " + name + ", and this protocol has no placeholder fallback, so replay refuses the step without a value. Bind a producer, parameter, or response extractor."
+	}
+}
+
+// blockingUseReason explains why a variable use that replay cannot carry as
+// placeholder text gates execution.
+func blockingUseReason(miss varflow.Miss, surface dependencySurface) string {
+	switch {
+	case dsl.CanonicalActionType(surface.actionType) == "source_json":
+		return "The JSON helper fails its step when the value is absent."
+	case miss.Base64Body:
+		return "Java HTTP replay decodes the request body as base64, so the step fails when the value is absent."
+	default:
+		return "This protocol has no placeholder fallback, so replay refuses the step when the value is absent."
+	}
 }

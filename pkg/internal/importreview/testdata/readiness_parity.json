@@ -1,0 +1,1791 @@
+[
+  {
+    "name": "source step outputs supply their consumers in both spellings",
+    "script": {
+      "id": "",
+      "name": "source_steps",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {}
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "actions": [
+        {
+          "name": "token",
+          "type": "source_parameter",
+          "target": "",
+          "params": {
+            "args": [
+              "abc",
+              "C_Token"
+            ],
+            "function": "lr_save_string"
+          },
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "token length",
+          "type": "source_parameter",
+          "target": "",
+          "params": {
+            "args": [
+              "C_Token"
+            ],
+            "function": "web_save_param_length"
+          },
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 3
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "token url",
+          "type": "source_parameter",
+          "target": "",
+          "params": {
+            "args": [
+              "c_Token_URL",
+              "SourceEncoding=PLAIN",
+              "TargetEncoding=URL"
+            ],
+            "function": "web_convert_param",
+            "save_param": "c_Token_URL",
+            "source_string": "{{var.c_token}}"
+          },
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 4
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "offers",
+          "type": "source_json",
+          "target": "",
+          "params": {
+            "buffer": "{\"offers\":[{\"id\":1},{\"id\":2},{\"id\":3}]}",
+            "function": "lr_eval_json",
+            "json_object": "offers"
+          },
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 5
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "offer ids",
+          "type": "source_json",
+          "target": "",
+          "params": {
+            "function": "lr_json_get_values",
+            "json_object": "offers",
+            "query": "$.offers[*].id",
+            "save_all": true,
+            "save_param": "C_OfferIds",
+            "select_all": "Yes",
+            "value_param": "C_OfferIds"
+          },
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 6
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "offers text",
+          "type": "source_json",
+          "target": "",
+          "params": {
+            "function": "lr_json_stringify",
+            "json_object": "offers",
+            "output_param": "C_OffersText"
+          },
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 7
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "offer",
+          "type": "POST",
+          "method": "POST",
+          "target": "/offers/{{var.c_offerids_3}}?n={{var.c_offerids_count}}&first={{var.C_OfferIds_1}}",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 8
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "offer body",
+          "type": "POST",
+          "method": "POST",
+          "target": "/offers",
+          "body": "token={{var.C_Token}}&len={{var.c_token_length}}&url={{var.c_token_url}}&doc={{var.c_offerstext}}",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 9
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": null,
+    "preflight": {
+      "valid": true,
+      "action_count": 8,
+      "expected_action_count": 8,
+      "data_source_count": 0,
+      "parameter_count": 0,
+      "browser_required": false,
+      "param_blocking_variables": [],
+      "config_blocking_variables": [],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "pass",
+          "detail": "No review-gated actions block replay."
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "pass",
+          "detail": "All replay variables are seeded or extracted before use."
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  },
+  {
+    "name": "producer order and absent values",
+    "script": {
+      "id": "",
+      "name": "producer_order",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {}
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "actions": [
+        {
+          "name": "store",
+          "type": "GET",
+          "method": "GET",
+          "target": "/stores/{{var.C_StoreId}}",
+          "metadata": {
+            "promotion_blocker": true,
+            "review_gate": "conditional_producer:C_StoreId",
+            "review_reasons": [
+              "conditional_producer:C_StoreId"
+            ],
+            "review_required": true,
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "cart document",
+          "type": "source_json",
+          "target": "",
+          "params": {
+            "buffer": "{{var.c_cart_body}}",
+            "function": "lr_eval_json",
+            "json_object": "cart"
+          },
+          "metadata": {
+            "execution_blocker": "conditional_producer:c_cart_body",
+            "execution_blockers": [
+              "conditional_producer:c_cart_body"
+            ],
+            "import_review": {
+              "reason_codes": [
+                "conditional_producer:c_cart_body"
+              ],
+              "resolution": "bind_producer",
+              "source": "enterprise_script_archive",
+              "source_refs": [
+                "Action.c:3"
+              ],
+              "version": 1
+            },
+            "source_file": "Action.c",
+            "source_line": 3
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "stores",
+          "type": "GET",
+          "method": "GET",
+          "target": "/stores",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 4
+          },
+          "extractors": [
+            {
+              "name": "C_StoreId",
+              "source": "body",
+              "type": "regex",
+              "expression": "C_StoreId=(\\w+)"
+            }
+          ],
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "cart",
+          "type": "GET",
+          "method": "GET",
+          "target": "/cart",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 5
+          },
+          "extractors": [
+            {
+              "name": "c_cart_body",
+              "source": "body",
+              "type": "regex",
+              "expression": "c_cart_body=(\\w+)"
+            }
+          ],
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "promo",
+          "type": "GET",
+          "method": "GET",
+          "target": "/promo/{{var.c_promo}}",
+          "metadata": {
+            "promotion_blocker": true,
+            "review_gate": "missing_producer:c_promo",
+            "review_reasons": [
+              "missing_producer:c_promo"
+            ],
+            "review_required": true,
+            "source_file": "Action.c",
+            "source_line": 6
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": [
+      {
+        "code": "conditional_producer:C_StoreId",
+        "severity": "warning",
+        "element": "store",
+        "detail": "imported behavior requires review before replay or promotion",
+        "location": "actions[0]",
+        "action_path": "actions[0]",
+        "gate": "promotion",
+        "acknowledgement_required": true
+      },
+      {
+        "code": "conditional_producer:c_cart_body",
+        "severity": "blocker",
+        "element": "cart document",
+        "detail": "imported behavior has an unresolved execution blocker",
+        "location": "actions[1]",
+        "action_path": "actions[1]",
+        "source": "enterprise_script_archive",
+        "reason_code": "conditional_producer:c_cart_body",
+        "source_ref": "Action.c:3",
+        "resolution": "bind_producer",
+        "gate": "execution"
+      },
+      {
+        "code": "missing_producer:c_promo",
+        "severity": "warning",
+        "element": "promo",
+        "detail": "imported behavior requires review before replay or promotion",
+        "location": "actions[4]",
+        "action_path": "actions[4]",
+        "gate": "promotion",
+        "acknowledgement_required": true
+      }
+    ],
+    "preflight": {
+      "valid": false,
+      "action_count": 5,
+      "expected_action_count": 5,
+      "data_source_count": 0,
+      "parameter_count": 0,
+      "browser_required": false,
+      "missing_variables": [
+        "C_StoreId",
+        "c_cart_body",
+        "c_promo"
+      ],
+      "blocking_variables": [
+        "c_cart_body"
+      ],
+      "placeholder_variables": [
+        "C_StoreId",
+        "c_promo"
+      ],
+      "late_produced_variables": [
+        "C_StoreId",
+        "c_cart_body"
+      ],
+      "param_blocking_variables": [],
+      "config_blocking_variables": [],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "issues": [
+        "actions[1] \"cart document\": execution blocker conditional_producer:c_cart_body blocks replay until the imported behavior is resolved"
+      ],
+      "warnings": [
+        "variable(s) with no seed or preceding extractor are sent as placeholder text: C_StoreId, c_promo"
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "fail",
+          "detail": "actions[1] \"cart document\": execution blocker conditional_producer:c_cart_body blocks replay until the imported behavior is resolved"
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "fail",
+          "detail": "Unresolved: c_cart_body; Sent as placeholder text: C_StoreId, c_promo"
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  },
+  {
+    "name": "an undeclared parameter blocks and a declared one matches any case",
+    "script": {
+      "id": "",
+      "name": "parameter_namespace",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {}
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "parameters": [
+        {
+          "name": "Store",
+          "type": "list",
+          "update": "once",
+          "values": [
+            "s1"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "name": "store",
+          "type": "GET",
+          "method": "GET",
+          "target": "/stores/{{param.store}}/{{var.STORE}}/{{param.region}}",
+          "metadata": {
+            "execution_blocker": "missing_producer:region",
+            "execution_blockers": [
+              "missing_producer:region"
+            ],
+            "import_review": {
+              "reason_codes": [
+                "missing_producer:region"
+              ],
+              "resolution": "bind_producer",
+              "source": "enterprise_script_archive",
+              "source_refs": [
+                "Action.c:2"
+              ],
+              "version": 1
+            },
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": [
+      {
+        "code": "missing_producer:region",
+        "severity": "blocker",
+        "element": "store",
+        "detail": "imported behavior has an unresolved execution blocker",
+        "location": "actions[0]",
+        "action_path": "actions[0]",
+        "source": "enterprise_script_archive",
+        "reason_code": "missing_producer:region",
+        "source_ref": "Action.c:2",
+        "resolution": "bind_producer",
+        "gate": "execution"
+      }
+    ],
+    "preflight": {
+      "valid": false,
+      "action_count": 1,
+      "expected_action_count": 1,
+      "data_source_count": 0,
+      "parameter_count": 1,
+      "browser_required": false,
+      "missing_variables": [
+        "region"
+      ],
+      "blocking_variables": [
+        "region"
+      ],
+      "param_blocking_variables": [
+        "region"
+      ],
+      "config_blocking_variables": [],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "issues": [
+        "actions[0] \"store\": execution blocker missing_producer:region blocks replay until the imported behavior is resolved"
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "fail",
+          "detail": "actions[0] \"store\": execution blocker missing_producer:region blocks replay until the imported behavior is resolved"
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "fail",
+          "detail": "Unresolved: region"
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  },
+  {
+    "name": "nested producers follow execution order",
+    "script": {
+      "id": "",
+      "name": "nested_producers",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {}
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "actions": [
+        {
+          "name": "mode",
+          "type": "GET",
+          "method": "GET",
+          "target": "/mode",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "extractors": [
+            {
+              "name": "c_mode",
+              "source": "body",
+              "type": "regex",
+              "expression": "c_mode=(\\w+)"
+            }
+          ],
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "only a",
+          "type": "control_if",
+          "target": "",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 3
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          },
+          "control": {
+            "condition": {
+              "left": "{{var.c_mode}}",
+              "op": "eq",
+              "right": "a"
+            },
+            "steps": [
+              {
+                "name": "a",
+                "type": "GET",
+                "method": "GET",
+                "target": "/a",
+                "metadata": {
+                  "source_file": "Action.c",
+                  "source_line": 4
+                },
+                "extractors": [
+                  {
+                    "name": "c_only_if",
+                    "source": "body",
+                    "type": "regex",
+                    "expression": "c_only_if=(\\w+)"
+                  }
+                ],
+                "think_time": {
+                  "type": "",
+                  "mean_ms": 0
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "pages",
+          "type": "control_loop",
+          "target": "",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 5
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          },
+          "control": {
+            "steps": [
+              {
+                "name": "page",
+                "type": "GET",
+                "method": "GET",
+                "target": "/page/{{var.loop_index}}",
+                "metadata": {
+                  "source_file": "Action.c",
+                  "source_line": 6
+                },
+                "extractors": [
+                  {
+                    "name": "c_page",
+                    "source": "body",
+                    "type": "regex",
+                    "expression": "c_page=(\\w+)"
+                  }
+                ],
+                "think_time": {
+                  "type": "",
+                  "mean_ms": 0
+                }
+              }
+            ],
+            "count": 2
+          }
+        },
+        {
+          "name": "sequence",
+          "type": "http_sequence",
+          "target": "",
+          "params": {
+            "requests": [
+              {
+                "extractors": [
+                  {
+                    "expression": "c_seq=(\\w+)",
+                    "name": "c_seq",
+                    "source": "body",
+                    "type": "regex"
+                  }
+                ],
+                "metadata": {
+                  "source_file": "Action.c",
+                  "source_line": 8
+                },
+                "method": "GET",
+                "name": "first",
+                "target": "/seq/1",
+                "type": "GET"
+              },
+              {
+                "metadata": {
+                  "source_file": "Action.c",
+                  "source_line": 9
+                },
+                "method": "GET",
+                "name": "second",
+                "target": "/seq/2?x={{var.c_seq}}",
+                "type": "GET"
+              }
+            ]
+          },
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 7
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "use",
+          "type": "GET",
+          "method": "GET",
+          "target": "/use/{{var.c_only_if}}/{{var.c_page}}/{{var.c_seq}}",
+          "metadata": {
+            "promotion_blocker": true,
+            "review_gate": "conditional_producer:c_only_if",
+            "review_reasons": [
+              "conditional_producer:c_only_if"
+            ],
+            "review_required": true,
+            "source_file": "Action.c",
+            "source_line": 10
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": [
+      {
+        "code": "conditional_producer:c_only_if",
+        "severity": "warning",
+        "element": "use",
+        "detail": "imported behavior requires review before replay or promotion",
+        "location": "actions[4]",
+        "action_path": "actions[4]",
+        "gate": "promotion",
+        "acknowledgement_required": true
+      }
+    ],
+    "preflight": {
+      "valid": true,
+      "action_count": 5,
+      "expected_action_count": 6,
+      "data_source_count": 0,
+      "parameter_count": 0,
+      "browser_required": false,
+      "missing_variables": [
+        "c_only_if"
+      ],
+      "placeholder_variables": [
+        "c_only_if"
+      ],
+      "late_produced_variables": [
+        "c_only_if"
+      ],
+      "param_blocking_variables": [],
+      "config_blocking_variables": [],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "warnings": [
+        "variable(s) with no seed or preceding extractor are sent as placeholder text: c_only_if"
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "pass",
+          "detail": "No review-gated actions block replay."
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "warn",
+          "detail": "Sent as placeholder text: c_only_if"
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  },
+  {
+    "name": "stale dependency codes are refreshed away",
+    "script": {
+      "id": "",
+      "name": "stale_dependency_codes",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {}
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "actions": [
+        {
+          "name": "login",
+          "type": "GET",
+          "method": "GET",
+          "target": "/login",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "extractors": [
+            {
+              "name": "c_session",
+              "source": "body",
+              "type": "regex",
+              "expression": "c_session=(\\w+)"
+            }
+          ],
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "home",
+          "type": "GET",
+          "method": "GET",
+          "target": "/home?s={{var.c_session}}",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 3
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "cart",
+          "type": "GET",
+          "method": "GET",
+          "target": "/cart",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 4
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": null,
+    "preflight": {
+      "valid": true,
+      "action_count": 3,
+      "expected_action_count": 3,
+      "data_source_count": 0,
+      "parameter_count": 0,
+      "browser_required": false,
+      "param_blocking_variables": [],
+      "config_blocking_variables": [],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "pass",
+          "detail": "No review-gated actions block replay."
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "pass",
+          "detail": "All replay variables are seeded or extracted before use."
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  },
+  {
+    "name": "legacy TLS gates in init block replay",
+    "script": {
+      "id": "",
+      "name": "legacy_tls_gates",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {}
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "init": [
+        {
+          "name": "Select_supported_TLS",
+          "type": "source_review",
+          "target": "",
+          "metadata": {
+            "execution_blocker": "legacy_tls_replacement",
+            "execution_blockers": [
+              "legacy_tls_replacement"
+            ],
+            "import_review": {
+              "reason_codes": [
+                "legacy_tls_replacement"
+              ],
+              "resolution": "select_tls",
+              "source": "enterprise_script_archive",
+              "source_refs": [
+                "vuser_init.c:3"
+              ],
+              "version": 1
+            },
+            "source_file": "vuser_init.c",
+            "source_function": "web_set_sockets_option",
+            "source_line": 3
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "Select_supported_TLS",
+          "type": "source_review",
+          "target": "",
+          "metadata": {
+            "execution_blocker": "legacy_tls_replacement",
+            "execution_blockers": [
+              "legacy_tls_replacement"
+            ],
+            "import_review": {
+              "reason_codes": [
+                "legacy_tls_replacement"
+              ],
+              "resolution": "select_tls",
+              "source": "enterprise_script_archive",
+              "source_refs": [
+                "vuser_init.c:4"
+              ],
+              "version": 1
+            },
+            "source_file": "vuser_init.c",
+            "source_function": "web_set_sockets_option",
+            "source_line": 4
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "login",
+          "type": "GET",
+          "method": "GET",
+          "target": "/login",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 5
+          },
+          "extractors": [
+            {
+              "name": "C_Session",
+              "source": "body",
+              "type": "regex",
+              "expression": "C_Session=(\\w+)"
+            }
+          ],
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "actions": [
+        {
+          "name": "home",
+          "type": "GET",
+          "method": "GET",
+          "target": "/home?session={{var.C_Session}}",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": [
+      {
+        "code": "legacy_tls_replacement",
+        "severity": "blocker",
+        "element": "Select_supported_TLS",
+        "detail": "imported behavior has an unresolved execution blocker",
+        "location": "init[0]",
+        "action_path": "init[0]",
+        "source": "enterprise_script_archive",
+        "reason_code": "legacy_tls_replacement",
+        "source_ref": "vuser_init.c:3",
+        "resolution": "select_tls",
+        "gate": "execution"
+      },
+      {
+        "code": "legacy_tls_replacement",
+        "severity": "blocker",
+        "element": "Select_supported_TLS",
+        "detail": "imported behavior has an unresolved execution blocker",
+        "location": "init[1]",
+        "action_path": "init[1]",
+        "source": "enterprise_script_archive",
+        "reason_code": "legacy_tls_replacement",
+        "source_ref": "vuser_init.c:4",
+        "resolution": "select_tls",
+        "gate": "execution"
+      }
+    ],
+    "preflight": {
+      "valid": false,
+      "action_count": 4,
+      "expected_action_count": 4,
+      "data_source_count": 0,
+      "parameter_count": 0,
+      "browser_required": false,
+      "param_blocking_variables": [],
+      "config_blocking_variables": [],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "issues": [
+        "init[0] \"Select_supported_TLS\": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved",
+        "init[1] \"Select_supported_TLS\": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved"
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "fail",
+          "detail": "init[0] \"Select_supported_TLS\": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved, init[1] \"Select_supported_TLS\": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved"
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "pass",
+          "detail": "All replay variables are seeded or extracted before use."
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  },
+  {
+    "name": "protocol configuration references block replay as configuration, not as step gates",
+    "script": {
+      "id": "",
+      "name": "protocol_configuration",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {
+            "type": "basic",
+            "username": "{{var.pUser}}",
+            "hosts": [
+              "shop.example.test"
+            ]
+          },
+          "default_headers": {
+            "X-Tenant": "{{var.c_tenant}}"
+          }
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "parameters": [
+        {
+          "name": "pUser",
+          "type": "list",
+          "update": "once",
+          "values": [
+            "perf_user_01"
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "name": "login",
+          "type": "POST",
+          "method": "POST",
+          "target": "/login",
+          "metadata": {
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        },
+        {
+          "name": "tenant",
+          "type": "GET",
+          "method": "GET",
+          "target": "/tenants/{{var.c_tenant}}",
+          "metadata": {
+            "promotion_blocker": true,
+            "review_gate": "missing_producer:c_tenant",
+            "review_reasons": [
+              "missing_producer:c_tenant"
+            ],
+            "review_required": true,
+            "source_file": "Action.c",
+            "source_line": 3
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": [
+      {
+        "code": "missing_producer:c_tenant",
+        "severity": "warning",
+        "element": "tenant",
+        "detail": "imported behavior requires review before replay or promotion",
+        "location": "actions[1]",
+        "action_path": "actions[1]",
+        "gate": "promotion",
+        "acknowledgement_required": true
+      }
+    ],
+    "preflight": {
+      "valid": false,
+      "action_count": 2,
+      "expected_action_count": 2,
+      "data_source_count": 0,
+      "parameter_count": 1,
+      "browser_required": false,
+      "missing_variables": [
+        "c_tenant",
+        "pUser"
+      ],
+      "blocking_variables": [
+        "c_tenant",
+        "pUser"
+      ],
+      "param_blocking_variables": [],
+      "config_blocking_variables": [
+        "c_tenant",
+        "pUser"
+      ],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "pass",
+          "detail": "No review-gated actions block replay."
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "fail",
+          "detail": "Unresolved: c_tenant, pUser"
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  },
+  {
+    "name": "a request gated by two codes blocks replay once per code",
+    "script": {
+      "id": "",
+      "name": "two_code_gate",
+      "version": "1.0",
+      "protocol": "http",
+      "config": {
+        "base_url": "https://shop.example.test",
+        "think_time": {
+          "type": "",
+          "mean_ms": 0
+        },
+        "pacing": {
+          "type": ""
+        },
+        "http": {
+          "tls": {},
+          "proxy": {},
+          "auth": {}
+        },
+        "web_runtime": {
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {},
+          "data_formatting": {}
+        },
+        "websocket": {},
+        "grpc": {},
+        "java_http": {},
+        "java_vuser": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "database": {},
+        "network": {},
+        "browser": {
+          "viewport": {},
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {}
+        },
+        "sapgui": {},
+        "jms": {},
+        "kafka": {},
+        "eventhubs": {},
+        "error_handling": {},
+        "results": {},
+        "run_logic": {},
+        "observability": {},
+        "log": {}
+      },
+      "actions": [
+        {
+          "name": "submit order",
+          "type": "POST",
+          "method": "POST",
+          "target": "/orders",
+          "metadata": {
+            "execution_blocker": "request_body_xml_json_content_type_mismatch",
+            "execution_blockers": [
+              "request_body_xml_json_content_type_mismatch",
+              "restored_body_required"
+            ],
+            "import_review": {
+              "reason_codes": [
+                "request_body_xml_json_content_type_mismatch",
+                "restored_body_required"
+              ],
+              "resolution": "restore_body",
+              "source": "enterprise_script_archive",
+              "source_refs": [
+                "Action.c:2"
+              ],
+              "version": 1
+            },
+            "source_file": "Action.c",
+            "source_line": 2
+          },
+          "think_time": {
+            "type": "",
+            "mean_ms": 0
+          }
+        }
+      ],
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "findings": [
+      {
+        "code": "request_body_xml_json_content_type_mismatch",
+        "severity": "blocker",
+        "element": "submit order",
+        "detail": "The request body is XML, but the Content-Type header declares JSON. Update this request's Content-Type header to the XML media type expected by the service, then re-import and validate.",
+        "location": "actions[0]",
+        "action_path": "actions[0]",
+        "source": "enterprise_script_archive",
+        "reason_code": "request_body_xml_json_content_type_mismatch",
+        "source_ref": "Action.c:2",
+        "resolution": "restore_body",
+        "gate": "execution"
+      },
+      {
+        "code": "restored_body_required",
+        "severity": "blocker",
+        "element": "submit order",
+        "detail": "imported behavior has an unresolved execution blocker",
+        "location": "actions[0]",
+        "action_path": "actions[0]",
+        "source": "enterprise_script_archive",
+        "reason_code": "request_body_xml_json_content_type_mismatch",
+        "source_ref": "Action.c:2",
+        "resolution": "restore_body",
+        "gate": "execution"
+      }
+    ],
+    "preflight": {
+      "valid": false,
+      "action_count": 1,
+      "expected_action_count": 1,
+      "data_source_count": 0,
+      "parameter_count": 0,
+      "browser_required": false,
+      "param_blocking_variables": [],
+      "config_blocking_variables": [],
+      "runtime_prerequisites": [
+        "Required protocol: http",
+        "Runner availability and target connectivity are checked when debugging starts."
+      ],
+      "issues": [
+        "actions[0] \"submit order\": execution blocker request_body_xml_json_content_type_mismatch, restored_body_required blocks replay until the imported behavior is resolved"
+      ],
+      "checks": [
+        {
+          "id": "validation",
+          "label": "Script validation",
+          "status": "pass",
+          "detail": "Ready"
+        },
+        {
+          "id": "review_gates",
+          "label": "Review gates",
+          "status": "fail",
+          "detail": "actions[0] \"submit order\": execution blocker request_body_xml_json_content_type_mismatch, restored_body_required blocks replay until the imported behavior is resolved"
+        },
+        {
+          "id": "variables",
+          "label": "Variable readiness",
+          "status": "pass",
+          "detail": "All replay variables are seeded or extracted before use."
+        },
+        {
+          "id": "secrets",
+          "label": "Secret bindings",
+          "status": "pass",
+          "detail": "No project secret references detected."
+        },
+        {
+          "id": "data_sources",
+          "label": "Data source readiness",
+          "status": "pass",
+          "detail": "No data sources configured."
+        },
+        {
+          "id": "runtime",
+          "label": "Runtime prerequisites",
+          "status": "warn",
+          "detail": "Required protocol: http; Runner availability and target connectivity are checked when debugging starts."
+        }
+      ]
+    }
+  }
+]

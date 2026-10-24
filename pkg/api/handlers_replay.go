@@ -95,7 +95,7 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeStoredScriptReplayGate(w, stored.Script, err)
 		return
 	}
 

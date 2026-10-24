@@ -585,3 +585,68 @@ func TestParallelReadinessIsolatesBranchExtractors(t *testing.T) {
 		t.Fatal("joined branch extraction unavailable")
 	}
 }
+
+func TestAnalyzeVariableReadinessReportsLateProducedValues(t *testing.T) {
+	t.Parallel()
+	script := &dsl.Script{
+		Protocol: "http",
+		Actions: []dsl.Action{
+			{Name: "early", Type: "request", Method: "GET", Target: "/stores/{{var.store_id}}/{{var.never_set}}"},
+			{
+				Name: "stores", Type: "request", Method: "GET", Target: "/stores",
+				Extractors: []dsl.Extractor{{Name: "store_id", Source: "body", Type: "jsonpath", Expression: "$.id"}},
+			},
+			{Name: "late", Type: "request", Method: "GET", Target: "/stores/{{var.store_id}}"},
+		},
+	}
+	got := AnalyzeVariableReadiness(script, nil)
+	if !reflect.DeepEqual(got.Missing, []string{"never_set", "store_id"}) ||
+		!reflect.DeepEqual(got.ByAction, map[string][]string{"actions[0]": {"never_set", "store_id"}}) {
+		t.Fatalf("readiness = %#v", got)
+	}
+	if !reflect.DeepEqual(got.LateProduced, []string{"store_id"}) {
+		t.Fatalf("late produced = %#v, want only the value a later step writes", got.LateProduced)
+	}
+}
+
+func TestAnalyzeVariableReadinessBlocksUndeclaredParameterReferences(t *testing.T) {
+	t.Parallel()
+	script := &dsl.Script{
+		Protocol:   "http",
+		Parameters: []dsl.Parameter{{Name: "Region"}},
+		Actions: []dsl.Action{{
+			Name: "use", Type: "request", Method: "GET",
+			Target: "/{{param.region}}/{{param.tenant}}/{{var.trace}}",
+		}},
+	}
+	got := AnalyzeVariableReadiness(script, nil)
+	if !reflect.DeepEqual(got.Missing, []string{"tenant", "trace"}) {
+		t.Fatalf("missing = %#v", got.Missing)
+	}
+	if !reflect.DeepEqual(got.Blocking, []string{"tenant"}) {
+		t.Fatalf("blocking = %#v, an unresolved {{param.*}} is refused while HTTP keeps var placeholders", got.Blocking)
+	}
+}
+
+// A client words a blocking name by why it blocks: only a declared parameter
+// clears a {{param.*}} use and only a literal clears a configuration
+// reference, whatever a step writes later.
+func TestAnalyzeVariableReadinessSaysWhichBlockingNamesNoStepCanSupply(t *testing.T) {
+	t.Parallel()
+	script := &dsl.Script{
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://{{var.host}}"},
+		Actions: []dsl.Action{
+			{Name: "early", Type: "request", Method: "GET", Target: "https://bootstrap.example.test/{{var.region}}/{{param.region}}"},
+			{Name: "save", Type: "source_parameter", Params: map[string]any{"function": "lr_save_string", "args": []any{"eu", "region"}}},
+			{Name: "relative", Type: "request", Method: "GET", Target: "/orders"},
+		},
+	}
+	got := AnalyzeVariableReadiness(script, nil)
+	if !reflect.DeepEqual(got.Blocking, []string{"host", "region"}) || !reflect.DeepEqual(got.LateProduced, []string{"region"}) {
+		t.Fatalf("blocking = %#v, late produced = %#v", got.Blocking, got.LateProduced)
+	}
+	if !reflect.DeepEqual(got.ParamBlocking, []string{"region"}) || !reflect.DeepEqual(got.ConfigBlocking, []string{"host"}) {
+		t.Fatalf("param blocking = %#v, config blocking = %#v", got.ParamBlocking, got.ConfigBlocking)
+	}
+}

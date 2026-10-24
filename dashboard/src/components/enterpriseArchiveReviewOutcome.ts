@@ -1,10 +1,17 @@
 import type { EnterpriseArchiveImportResult } from '../types/scriptImports'
-import type { ReplayPreflight } from '../types/scripts'
+import type { ReplayPreflight, ScriptDefinition } from '../types/scripts'
+import type { ImportReadiness } from './importReviewIssues'
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 
 // The archive review's unsaved-work guard. An editor opened from the review
 // keeps it when it returns there, since the review stays open behind it.
 export const ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID = 'enterprise-archive-import'
+
+// A fidelity blocker that restates a step gate: the converter's
+// "<code> at <path>" line, or the bare code a guided repair writes
+// (pkg/api import_repairs.go recomputedFidelityBlocker). Every other line is
+// a converter sentence.
+const GATE_BACKED_FIDELITY_BLOCKER = /^\S+( at \S+)?$/
 
 interface ReviewState {
   result: EnterpriseArchiveImportResult | null
@@ -19,7 +26,11 @@ interface ReviewState {
   replayValidationSession: { status: string } | null
 }
 
-export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string, projectId: string): string {
+/**
+ * @param inspectedReadiness the readiness a script's protected candidate
+ *   reported when inspected, once one has answered.
+ */
+export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string, projectId: string, inspectedReadiness?: (script: ScriptDefinition) => ImportReadiness | undefined): string {
   const result = item.result
   const scripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
   const savedCount = scripts.filter((_, index) => Object.prototype.hasOwnProperty.call(item.savedResultScripts, index)).length
@@ -33,11 +44,23 @@ export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string,
   if (protocol && protocol.import_mode !== 'executable') return 'Review only'
   if (scripts.length === 0) return 'Review required'
   const fidelity = result.fidelity_report ?? result.summary?.fidelity_report
-  if (fidelity?.promotion_status === 'blocked' || result.summary?.migration_readiness?.blocked) return 'Blocker'
+  // Promotion is also held by review codes that never refuse replay (a value
+  // sent as placeholder text, a review decision) and by the converter's
+  // archive-level sentences, which hold promotion and load-test launch only.
+  // Only a blocker that names a step gate, or the runtime migration policy,
+  // makes the held status a blocker.
+  const promotionHeld = fidelity?.promotion_status === 'blocked'
+  if ((promotionHeld && (fidelity?.blockers || []).some(blocker => GATE_BACKED_FIDELITY_BLOCKER.test(blocker))) || result.summary?.migration_readiness?.blocked) return 'Blocker'
   if (scripts.some(script => {
     const preflight = (script.metadata?.import?.preserved?.replay_preflight ?? result.preflight) as ReplayPreflight | undefined
+    // As the review counts credentials (importReviewFindings): an inspection's
+    // readiness resolves secrets against the project, while a preflight
+    // stamped without that resolver lists every project secret as missing, so
+    // it counts only until an inspection answers.
+    const readiness = inspectedReadiness?.(script)
+    const unresolvedCredentials = readiness ? (readiness.unresolved_bindings ?? 0) > 0 : Boolean(preflight?.missing_secrets?.length)
     // Missing variables block only through valid/checks: replay sends most as placeholder text.
-    return preflight?.valid === false || Boolean(preflight?.missing_secrets?.length) || preflight?.checks?.some(check => check.status === 'fail')
+    return preflight?.valid === false || unresolvedCredentials || preflight?.checks?.some(check => check.status === 'fail')
   })) return 'Blocker'
   const browserIndex = scripts.findIndex(script => script.protocol === 'browser')
   if (browserIndex >= 0) {
@@ -51,6 +74,7 @@ export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string,
     return 'Needs replay'
   }
   if ((result.secret_binding_requirements || []).some(requirement => !requirementsPreserveDestinationValues([requirement]))) return 'Needs credential review'
-  if ((result.parameterization?.suggestions || []).some(suggestion => !suggestion.pre_applied)) return 'Needs parameter review'
+  if (promotionHeld) return 'Needs review'
+  // Parameterization suggestions are optional and never hold back a save.
   return 'Ready to save'
 }

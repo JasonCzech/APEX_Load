@@ -15,12 +15,14 @@ import {
   formatScriptJson,
   formatScriptJsonDraft,
   formatParameterCandidateOccurrence,
+  jsonPathForActionStepPath,
   offsetForLine,
   parameterReferenceLines,
   parseScriptJsonDraft,
   resolveAuthorJsonScope,
   selectionStateForJsonRequest,
   shouldWrapScriptJsonLines,
+  stepPathForJsonSubPath,
   synchronizeStructuredScriptJson,
   updateScriptJsonText,
 } from './scriptEditorJsonModel'
@@ -187,6 +189,36 @@ describe('Script JSON path and line navigation', () => {
 		expect(codePathForAuthorFocus(defaultFocus)).toBe('script.actions[0].control.default[0]')
 		expect(resolveAuthorJsonScope(switchScript, defaultFocus)).toMatchObject({ action: { name: 'Fallback' } })
 	})
+
+  it('maps a JSON path below an action back to the step path the outline gives it', () => {
+    const leaf = (name: string): ScriptActionDefinition => ({ name, type: 'GET', target: `/${name}` })
+    const loop: ScriptActionDefinition = { name: 'Poll', type: 'control_loop', target: '', control: { steps: [leaf('tick')] } }
+    const sequence: ScriptActionDefinition = { name: 'Checkout', type: 'http_sequence', target: '', params: { requests: [leaf('first'), leaf('second')] } }
+    const root: ScriptActionDefinition = {
+      name: 'Route', type: 'control_if', target: '',
+      control: { steps: [sequence, loop], else: [leaf('fallback')] },
+    }
+    const cases: Array<[ScriptActionDefinition, string, string[]]> = [
+      [sequence, '.params.requests[1]', ['requests[1]']],
+      [root, '.control.steps[0].params.requests[0]', ['then[0]', 'requests[0]']],
+      [root, '.control.steps[1].control.steps[0]', ['then[1]', 'loop[0]']],
+      [root, '.control.else[0]', ['else[0]']],
+      [{ name: 'Route', type: 'control_switch', target: '', control: { cases: [{ condition: { expr: 'x' }, steps: [leaf('a')] }], default: [leaf('b')] } }, '.control.cases[0].steps[0]', ['case[0][0]']],
+      [{ name: 'Route', type: 'control_switch', target: '', control: { default: [leaf('b')] } }, '.control.default[0]', ['default[0]']],
+      [{ name: 'Fan out', type: 'control_parallel', target: '', control: { branches: [{ name: 'one', steps: [leaf('a')] }] } }, '.control.branches[0].steps[0]', ['branches[0].steps[0]']],
+    ]
+    for (const [action, subPath, stepPath] of cases) {
+      expect({ subPath, stepPath: stepPathForJsonSubPath(action, subPath) }).toEqual({ subPath, stepPath })
+      // The inverse of the path the outline's step path names.
+      expect(jsonPathForActionStepPath(stepPath)).toBe(subPath)
+      expect(resolveAuthorJsonScope(script({ actions: [action] }), { phase: 'action', actionIndex: 0, stepPath })?.subAction).toBe(true)
+    }
+    // A path that names no step, or nothing below the action, has no step path.
+    expect(stepPathForJsonSubPath(sequence, '.params.requests[5]')).toBeUndefined()
+    expect(stepPathForJsonSubPath(sequence, '.header_list[0]')).toBeUndefined()
+    expect(stepPathForJsonSubPath(sequence, '')).toBeUndefined()
+    expect(stepPathForJsonSubPath(undefined, '.params.requests[0]')).toBeUndefined()
+  })
 
   it('maps parameter references and candidate literals to stable lines and offsets', () => {
     const text = [

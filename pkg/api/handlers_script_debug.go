@@ -102,7 +102,7 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeStoredScriptReplayGate(w, stored.Script, err)
 		return
 	}
 
@@ -173,7 +173,7 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeStoredScriptReplayGate(w, stored.Script, err)
 		return
 	}
 

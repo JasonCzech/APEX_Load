@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importsession"
@@ -175,43 +176,23 @@ func (s *Server) processImportRepair(w http.ResponseWriter, r *http.Request, app
 		writeError(w, 400, err.Error())
 		return
 	}
-	findings, err := importreview.RefreshDependencies(draft)
-	if err != nil {
-		writeError(w, 400, "Cannot traverse candidate")
-		return
-	}
-	requirements := discoverSecretBindingRequirements(draft, 0)
-	unresolvedBindings := len(requirements)
+	var resolver engine.SecretResolver
 	if s.runner != nil {
-		_, missing := replaySecretRefs(draft, s.runner.secretResolverForProject(draft.ProjectID))
-		unresolvedBindings += len(missing)
+		resolver = s.runner.secretResolverForProject(draft.ProjectID)
 	}
-	readiness, err := importreview.EvaluateScript(draft, importreview.EvaluationInput{ValidationIssues: dsl.ValidateScriptIssuesWithPreservedImportCredentials(draft), UnresolvedBindings: unresolvedBindings})
+	findings, requirements, readiness, report, err := evaluateRepairedScript(draft, resolver)
 	if err != nil {
-		writeError(w, 400, "Cannot evaluate candidate")
+		writeError(w, 400, err.Error())
 		return
 	}
-	// Fidelity and readiness are rebuilt from the same surviving requirements.
 	ensureCredentialPreservingImportMetadata(draft, enterpriseArchiveSaveProfile)
 	preserved := ensureScriptImportPreserved(draft, enterpriseArchiveSaveProfile)
 	preserved["guided_repair_candidate"] = true
-	report := map[string]any{}
-	reportBytes, _ := json.Marshal(preserved["fidelity_report"])
-	_ = json.Unmarshal(reportBytes, &report)
-	if report == nil {
-		report = map[string]any{}
-	}
-	report["promotion_status"] = map[bool]string{true: "promotable", false: "blocked"}[readiness.PromotionReady]
-	report["blockers"] = readiness.BlockingCodes
-	report["warnings"] = readiness.ReviewCodes
-	secretGated := 0
-	for _, f := range findings {
-		if f.Code == "restored_body_required" {
-			secretGated++
-		}
-	}
-	report["secret_gated"] = secretGated
-	preserved["fidelity_report"] = report
+	// The review reads the preserved preflight before it inspects a candidate
+	// again, so it must describe the repaired draft, not the conversion. The
+	// stored candidate and the response are both built from this draft below,
+	// which keeps the save-time digest of the submitted script matching.
+	attachImportReplayPreflight(draft, enterpriseArchiveSaveProfile, repairReplayPreflight(draft, candidate.Script, resolver))
 	response := ImportRepairResponse{SecretBindingRequirements: requirements, CandidateID: req.CandidateID, Revision: req.Revision, Before: before, Script: repairDisclosure(draft), Findings: findings, Readiness: readiness, Allocation: allocation, ExpiresAt: candidate.ExpiresAt, FidelityReport: report}
 	if !apply || req.Operation.Type == "preview_allocation" || req.Operation.Type == "inspect" {
 		writeJSON(w, 200, response)
@@ -255,6 +236,248 @@ func (s *Server) processImportRepair(w http.ResponseWriter, r *http.Request, app
 		return
 	}
 	writeJSON(w, 200, response)
+}
+
+var (
+	errRepairTraversal  = errors.New("Cannot traverse candidate")
+	errRepairEvaluation = errors.New("Cannot evaluate candidate")
+)
+
+// evaluateRepairedScript rebuilds what a repair can change from the repaired
+// draft: dependency findings, secret-binding requirements, readiness and the
+// preserved fidelity report, all from the same surviving requirements. Every
+// repair route shares it so the same script reports the same findings, and an
+// editor save of an imported script reuses it (refreshSavedImportEvaluation). It
+// does not mark the draft a guided-repair candidate; only an import candidate
+// is one, and its caller sets that. The returned error is the message to
+// answer with.
+//
+// The persisted report is evaluated from the script alone. Project-secret
+// state never enters it: a secret configured later, or a secret store that
+// fails while the repair runs, must not become a durable promotion blocker,
+// and launch admission checks secrets when a run starts. The resolver only
+// adds missing project secrets to the returned readiness, so a preview or an
+// apply still shows them; a nil resolver skips that check.
+func evaluateRepairedScript(draft *dsl.Script, resolver engine.SecretResolver) ([]importreview.Finding, []SecretBindingRequirement, importreview.Readiness, map[string]any, error) {
+	findings, err := importreview.RefreshDependencies(draft)
+	if err != nil {
+		return nil, nil, importreview.Readiness{}, nil, errRepairTraversal
+	}
+	requirements := discoverSecretBindingRequirements(draft, 0)
+	input := importreview.EvaluationInput{ValidationIssues: dsl.ValidateScriptIssuesWithPreservedImportCredentials(draft), UnresolvedBindings: len(requirements)}
+	persisted, err := importreview.EvaluateScript(draft, input)
+	if err != nil {
+		return nil, nil, importreview.Readiness{}, nil, errRepairEvaluation
+	}
+	readiness := persisted
+	if resolver != nil {
+		if _, missing := replaySecretRefs(draft, resolver); len(missing) > 0 {
+			input.UnresolvedBindings += len(missing)
+			if readiness, err = importreview.EvaluateScript(draft, input); err != nil {
+				return nil, nil, importreview.Readiness{}, nil, errRepairEvaluation
+			}
+		}
+	}
+	preserved := ensureScriptImportPreserved(draft, enterpriseArchiveSaveProfile)
+	report := map[string]any{}
+	reportBytes, _ := json.Marshal(preserved["fidelity_report"])
+	_ = json.Unmarshal(reportBytes, &report)
+	if report == nil {
+		report = map[string]any{}
+	}
+	secretGated := 0
+	for _, f := range findings {
+		if f.Code == "restored_body_required" {
+			secretGated++
+		}
+	}
+	// A repair can clear only the step gates readiness evaluates, so the
+	// converter's archive-level blockers (protocol classification, Java
+	// lifecycle, trailing contributors, C parse failures, a real Solace
+	// adapter, dropped bodies) survive it unchanged.
+	blockers := append([]string(nil), persisted.BlockingCodes...)
+	for _, line := range fidelityReportLines(report["blockers"]) {
+		if line == secretGatedFidelityBlocker || recomputedFidelityBlocker.MatchString(line) {
+			continue
+		}
+		blockers = append(blockers, line)
+	}
+	if secretGated > 0 {
+		blockers = append(blockers, secretGatedFidelityBlocker)
+	}
+	blockers = uniqueSortedStrings(blockers)
+	// Review codes (a placeholder producer, for example) are not blockers;
+	// the converter never counts them, and none refuses a replay. So review
+	// codes alone never turn a report blocked: a report blocked before the
+	// repair stays blocked while any remains, and any other report, including
+	// a script saved without one, which launch does not hold, does not become
+	// blocked over them.
+	priorStatus, _ := report["promotion_status"].(string)
+	reviewHeld := len(persisted.ReviewCodes) > 0 && strings.EqualFold(strings.TrimSpace(priorStatus), "blocked")
+	blocked := len(blockers) > 0 || len(persisted.ValidationIssues) > 0 || reviewHeld
+	report["promotion_status"] = map[bool]string{true: "blocked", false: "promotable"}[blocked]
+	report["blockers"] = blockers
+	report["warnings"] = persisted.ReviewCodes
+	// The converter omits a zero count (ImportFidelityReport.SecretGated is
+	// omitempty), so a repaired report does too.
+	if secretGated > 0 {
+		report["secret_gated"] = secretGated
+	} else {
+		delete(report, "secret_gated")
+	}
+	preserved["fidelity_report"] = report
+	return findings, requirements, readiness, report, nil
+}
+
+// secretGatedFidelityBlocker is the converter's blocker for lr_unmask bodies
+// (enterprisearchive.BuildImportFidelityReport). A repaired report keeps it
+// only while a body still has to be restored.
+const secretGatedFidelityBlocker = "One or more lr_unmask request bodies require governed secret resolution before executable promotion."
+
+// recomputedFidelityBlocker matches a fidelity blocker that restates a step
+// gate: the converter's "<code> at <path>" line or a code an earlier repair
+// wrote. Readiness evaluates every surviving gate again, so such a line is
+// replaced rather than carried; every other line is a converter sentence.
+var recomputedFidelityBlocker = regexp.MustCompile(`^\S+( at \S+)?$`)
+
+// fidelityReportLines reads a list of strings from a fidelity report decoded
+// from JSON.
+func fidelityReportLines(value any) []string {
+	values, _ := value.([]any)
+	lines := make([]string, 0, len(values))
+	for _, value := range values {
+		if line, ok := value.(string); ok && strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// repairReplayPreflight rebuilds the preserved preflight of a repaired draft
+// the way the conversion built the one it replaces (ImportDraft.Augment,
+// finalizeImportCommitScript): without a governed resolver, so project-secret
+// state never makes it invalid or fails its secrets check, and with the
+// prior's converter warnings carried (carriedConverterWarnings).
+//
+// Built that way, though, its missing secrets are the ones the legacy
+// environment probe cannot find, which includes every secret configured only
+// in the project store. A repair that adds a reference, such as a proxy
+// secret binding, would then list a configured secret as missing beside the
+// readiness that resolved it. So when the repair has the resolver its
+// readiness counts unresolved bindings with (evaluateRepairedScript), the
+// missing secrets, their configure-later warning and the secrets check's
+// detail come from that resolver. A nil resolver keeps the probe.
+func repairReplayPreflight(draft, prior *dsl.Script, resolver engine.SecretResolver) *ReplayPreflight {
+	preflight := buildReplayPreflight(draft, nil, validateScript(draft), carriedConverterWarnings(prior))
+	if resolver == nil {
+		return preflight
+	}
+	required, missing := replaySecretRefs(draft, resolver)
+	warnings := make([]string, 0, len(preflight.Warnings))
+	for _, line := range preflight.Warnings {
+		if !strings.HasPrefix(line, unconfiguredSecretsWarning) {
+			warnings = append(warnings, line)
+		}
+	}
+	if len(missing) > 0 {
+		warnings = append(warnings, unconfiguredSecretsWarning+strings.Join(missing, ", "))
+	}
+	preflight.RequiredSecrets, preflight.MissingSecrets, preflight.Warnings = required, missing, warnings
+	for index := range preflight.Checks {
+		if preflight.Checks[index].ID == "secrets" {
+			preflight.Checks[index].Detail = replaySecretDetail(required, missing)
+		}
+	}
+	return preflight
+}
+
+// unconfiguredSecretsWarning begins the configure-later line BuildReplayPreflight
+// writes for missing secrets when it has no resolver
+// (pkg/internal/importreview/replay_preflight.go).
+const unconfiguredSecretsWarning = "secret(s) require project configuration before execution: "
+
+// carriedConverterWarnings returns the converter warnings the prior preserved
+// preflight was built from. BuildReplayPreflight appends its own messaging,
+// placeholder, data-source and secret lines after them, and those are derived
+// again from the repaired draft; carrying the old ones would keep reporting a
+// problem the repair fixed. A line is dropped when the prior draft generates
+// it now, or when it has a generated line's form, which also covers a
+// preflight stamped before the draft last changed.
+func carriedConverterWarnings(prior *dsl.Script) []string {
+	previous := preservedReplayPreflight(prior)
+	if previous == nil || len(previous.Warnings) == 0 {
+		return nil
+	}
+	generated := make(map[string]struct{})
+	for _, line := range buildReplayPreflight(prior, nil, nil, nil).Warnings {
+		generated[line] = struct{}{}
+	}
+	var carried []string
+	for _, line := range previous.Warnings {
+		if _, ok := generated[line]; ok || replayPreflightGeneratedWarning(line) {
+			continue
+		}
+		carried = append(carried, line)
+	}
+	return carried
+}
+
+// replayPreflightGeneratedWarnings matches the warning lines BuildReplayPreflight
+// writes itself (pkg/internal/importreview/replay_preflight.go).
+var replayPreflightGeneratedWarnings = []*regexp.Regexp{
+	regexp.MustCompile(`^variable\(s\) with no seed or preceding extractor are sent as placeholder text: `),
+	regexp.MustCompile(`^configure project secret\(s\) before replay: `),
+	regexp.MustCompile(`^` + regexp.QuoteMeta(unconfiguredSecretsWarning)),
+	regexp.MustCompile(`^(file )?data source ".*" (has no |contains a generated OpenAPI placeholder|requires an import file binding)`),
+	regexp.MustCompile(`^parameter ".*" references missing data source ".*"$`),
+	regexp.MustCompile(`^config\.jms\.mock is enabled; replay uses the in-memory JMS broker$`),
+}
+
+func replayPreflightGeneratedWarning(line string) bool {
+	for _, pattern := range replayPreflightGeneratedWarnings {
+		if pattern.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// preservedReplayPreflight reads a script's preserved replay preflight, held
+// as the typed value in memory or as decoded JSON once stored.
+func preservedReplayPreflight(script *dsl.Script) *ReplayPreflight {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return nil
+	}
+	value := script.Metadata.Import.Preserved["replay_preflight"]
+	if typed, ok := value.(*ReplayPreflight); ok {
+		return typed
+	}
+	if value == nil {
+		return nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var preflight ReplayPreflight
+	if json.Unmarshal(raw, &preflight) != nil {
+		return nil
+	}
+	return &preflight
+}
+
+// hasExecutionCode reports whether code gates execution of the surface that
+// carries this metadata.
+func hasExecutionCode(metadata map[string]any, code string) bool {
+	if dslwalk.MetadataString(metadata, "execution_blocker") == code {
+		return true
+	}
+	for _, c := range dslwalk.MetadataStrings(metadata, "execution_blockers") {
+		if c == code {
+			return true
+		}
+	}
+	return false
 }
 
 func repairDisclosure(script *dsl.Script) *dsl.Script {
@@ -307,9 +530,7 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 		if ref.Path == req.ActionPath {
 			target = ref.Action
 			if target == nil && ref.Request != nil {
-				target = &dsl.Action{}
-				b, _ := json.Marshal(ref.Request)
-				_ = json.Unmarshal(b, target)
+				target = repairRequestAction(ref.Request)
 				targetRequest = ref.Request
 			}
 		}
@@ -372,22 +593,46 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 			if !repairVariableName.MatchString(op.Producer) || op.Producer == name {
 				return nil, errors.New("Choose a different producer name")
 			}
-			// Only replace references in this selected consumer's executable fields.
+			// Only replace references in this selected consumer's executable
+			// fields: every field but its metadata, and the metadata entries
+			// replay reads (varflow.MetadataReads), such as a header a Kafka
+			// send delivers. Import evidence and every other entry keep the
+			// recorded text. A control step's bodies and an http_sequence's
+			// requests are steps of their own, with their own findings and
+			// import evidence, so they are set aside and restored unchanged.
+			nested := detachNestedSteps(target)
 			raw, _ := json.Marshal(target)
 			var value map[string]any
 			_ = json.Unmarshal(raw, &value)
-			metadata := value["metadata"]
+			metadata, _ := value["metadata"].(map[string]any)
 			delete(value, "metadata")
 			raw, _ = json.Marshal(value)
 			reference := regexp.MustCompile(`\{\{\s*(var|param)\.` + regexp.QuoteMeta(name) + `\s*\}\}`)
-			if !reference.Match(raw) {
+			parameterReference := regexp.MustCompile(`\{\{\s*(param)\.` + regexp.QuoteMeta(name) + `\s*\}\}`)
+			replacement := "{{${1}." + op.Producer + "}}"
+			rebound := reference.Match(raw)
+			raw = reference.ReplaceAll(raw, []byte(replacement))
+			for key, entry := range metadata {
+				pattern := parameterReference
+				if vars, params := varflow.MetadataReads(*target, key); vars {
+					pattern = reference
+				} else if !params {
+					continue
+				}
+				if entry, changed := rebindTemplateReferences(entry, pattern, replacement); changed {
+					metadata[key] = entry
+					rebound = true
+				}
+			}
+			if !rebound {
+				nested.restore(target)
 				return nil, errors.New("Selected consumer no longer references this variable")
 			}
-			raw = reference.ReplaceAll(raw, []byte("{{${1}."+op.Producer+"}}"))
 			_ = json.Unmarshal(raw, &value)
 			value["metadata"] = metadata
 			raw, _ = json.Marshal(value)
 			_ = json.Unmarshal(raw, target)
+			nested.restore(target)
 		case "add_extractor":
 			if op.Extractor == nil || op.Extractor.Name != name || op.Extractor.Expression == "" {
 				return nil, errors.New("Provide an extractor for the missing variable")
@@ -431,7 +676,21 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 		script.Config.HTTP.TLS.MinVersion = op.TLSMin
 		script.Config.HTTP.TLS.MaxVersion = op.TLSMax
 		delete(script.Config.WebRuntime.AdditionalAttributes, "web_set_sockets_option.SSL_VERSION")
-		target.Metadata["migration_change"] = "Operator selected TLS " + op.TLSMin + "–" + op.TLSMax + "; intentional migration, not exact LR parity."
+		change := "Operator selected TLS " + op.TLSMin + "–" + op.TLSMax + "; intentional migration, not exact LR parity."
+		target.Metadata["migration_change"] = change
+		// The TLS range is script-wide, so it resolves every step gated on the
+		// same requirement, not only the one the operator selected. The
+		// selected step is cleared after the switch, like every repair target.
+		_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+			if ref.Path == req.ActionPath || !hasExecutionCode(ref.Metadata(), req.Finding) {
+				return nil
+			}
+			gated := dsl.Action{Metadata: ref.Metadata()}
+			gated.Metadata["migration_change"] = change
+			importreview.RemoveActionCodes(&gated, resolved)
+			ref.SetMetadata(gated.Metadata)
+			return nil
+		})
 	default:
 		return nil, fmt.Errorf("Unsupported repair operation %q", op.Type)
 	}
@@ -459,6 +718,109 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 		return nil, errors.New("Repair creates an invalid draft; check the supplied operation fields")
 	}
 	return nil, nil
+}
+
+// repairRequestAction decodes a nested request (an http_sequence entry) as
+// the action a repair edits and reads in its place.
+func repairRequestAction(request map[string]any) *dsl.Action {
+	action := &dsl.Action{}
+	raw, _ := json.Marshal(request)
+	_ = json.Unmarshal(raw, action)
+	return action
+}
+
+// nestedSteps are the steps a control step or an http_sequence carries, set
+// aside while a repair rewrites only the step's own fields.
+type nestedSteps struct {
+	control *dsl.ControlFlow
+	params  map[string]any
+}
+
+// detachNestedSteps gives action a control without its bodies and params
+// without its requests, as varflow reads a control or sequence shell, and
+// returns the originals for restore.
+func detachNestedSteps(action *dsl.Action) nestedSteps {
+	var nested nestedSteps
+	switch strings.ToLower(strings.TrimSpace(action.Type)) {
+	case "control_if", "control_switch", "control_loop", "control_parallel":
+		if action.Control == nil {
+			break
+		}
+		nested.control = action.Control
+		shell := *action.Control
+		shell.Steps, shell.Else, shell.Default = nil, nil, nil
+		shell.Cases = append([]dsl.SwitchCase(nil), action.Control.Cases...)
+		for index := range shell.Cases {
+			shell.Cases[index].Steps = nil
+		}
+		shell.Branches = append([]dsl.ParallelBranch(nil), action.Control.Branches...)
+		for index := range shell.Branches {
+			shell.Branches[index].Steps = nil
+		}
+		action.Control = &shell
+	case "http_sequence":
+		if _, present := action.Params["requests"]; !present {
+			break
+		}
+		nested.params = action.Params
+		shell := make(map[string]any, len(action.Params))
+		for key, value := range action.Params {
+			if key != "requests" {
+				shell[key] = value
+			}
+		}
+		action.Params = shell
+	}
+	return nested
+}
+
+// restore puts the nested steps back, as recorded, into action, whose own
+// fields a repair may have rewritten. A rewrite changes only text, so the
+// cases and branches keep their order.
+func (nested nestedSteps) restore(action *dsl.Action) {
+	if nested.control != nil && action.Control != nil {
+		action.Control.Steps, action.Control.Else, action.Control.Default = nested.control.Steps, nested.control.Else, nested.control.Default
+		for index := range min(len(action.Control.Cases), len(nested.control.Cases)) {
+			action.Control.Cases[index].Steps = nested.control.Cases[index].Steps
+		}
+		for index := range min(len(action.Control.Branches), len(nested.control.Branches)) {
+			action.Control.Branches[index].Steps = nested.control.Branches[index].Steps
+		}
+	}
+	if nested.params != nil {
+		if action.Params == nil {
+			action.Params = make(map[string]any, 1)
+		}
+		action.Params["requests"] = nested.params["requests"]
+	}
+}
+
+// rebindTemplateReferences replaces reference in every string of a decoded
+// JSON value, in place for objects and arrays, and reports whether any
+// string changed.
+func rebindTemplateReferences(value any, reference *regexp.Regexp, replacement string) (any, bool) {
+	changed := false
+	switch typed := value.(type) {
+	case string:
+		if reference.MatchString(typed) {
+			return reference.ReplaceAllString(typed, replacement), true
+		}
+	case map[string]any:
+		for key, item := range typed {
+			if item, rebound := rebindTemplateReferences(item, reference, replacement); rebound {
+				typed[key] = item
+				changed = true
+			}
+		}
+	case []any:
+		for index, item := range typed {
+			if item, rebound := rebindTemplateReferences(item, reference, replacement); rebound {
+				typed[index] = item
+				changed = true
+			}
+		}
+	}
+	return value, changed
 }
 
 var requiresExactRepairDraft = draftreview.RequiresExactRepairDraft

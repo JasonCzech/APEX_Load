@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { ScriptActionDefinition, ScriptAssertionDefinition } from '../types/scripts'
 import { ActionEditor, ControlBranchEditor, ControlFlowFields } from './ScriptEditorActionEditor'
 import { CODE_LINE_WRAP_STORAGE_KEY } from './codeLineWrapPreference'
@@ -195,7 +195,7 @@ describe('ActionEditor transaction field', () => {
 
   const renderEditor = (
     action: ScriptActionDefinition,
-    options: { protocol?: string; isJmsScript?: boolean; inspector?: boolean; assertionUpdate?: (ai: number, ai2: number, field: keyof ScriptAssertionDefinition, value: unknown) => void } = {},
+    options: { protocol?: string; isJmsScript?: boolean; inspector?: boolean; assertionUpdate?: (ai: number, ai2: number, field: keyof ScriptAssertionDefinition, value: unknown) => void; blockerRepair?: ReactNode } = {},
   ) => {
     const updates: Array<[number, string, unknown]> = []
     const noop = () => {}
@@ -226,6 +226,7 @@ describe('ActionEditor transaction field', () => {
           isJmsScript={options.isJmsScript || false}
           isSoapScript={false}
           issues={[]}
+          blockerRepair={options.blockerRepair}
         />,
       )
     })
@@ -501,7 +502,37 @@ describe('ActionEditor transaction field', () => {
 
     const pill = [...container.querySelectorAll<HTMLElement>('.action-signal-pill')]
       .find(element => element.textContent === 'blocked')
-    expect(pill?.getAttribute('title')).toContain('import_missing_variables')
+    // The pill says what blocks replay in words, not as a raw code.
+    expect(pill?.getAttribute('title')).toBe('Blocks replay: Import missing variables')
+  })
+
+  it('titles a blocked pill by what each blocker asks for', () => {
+    renderEditor({ name: 'web_set_sockets_option_15', type: 'source_review', target: 'web_set_sockets_option', metadata: { execution_blockers: ['legacy_tls_replacement', 'encrypted_proxy_password'] } } as unknown as ScriptActionDefinition)
+    const pill = [...container.querySelectorAll<HTMLElement>('.action-signal-pill')].find(element => element.textContent === 'blocked')
+    expect(pill?.getAttribute('title')).toBe('Blocks replay: Replace encrypted proxy password, Choose supported TLS settings')
+  })
+
+  it('shows the blocker repair slot under the header only while the step blocks replay', () => {
+    const blocked = { name: 'web_set_sockets_option_15', type: 'source_review', target: 'web_set_sockets_option', metadata: { execution_blocker: 'legacy_tls_replacement' } } as unknown as ScriptActionDefinition
+    renderEditor(blocked, { inspector: true, blockerRepair: <section data-testid="blocker-repair" /> })
+    const slot = container.querySelector('[data-testid="blocker-repair"]')
+    expect(slot).not.toBeNull()
+    expect(slot?.previousElementSibling?.classList.contains('action-editor-top')).toBe(true)
+    renderEditor({ ...blocked, metadata: { migration_change: 'legacy TLS replaced' } } as unknown as ScriptActionDefinition, { inspector: true, blockerRepair: <section data-testid="blocker-repair" /> })
+    expect(container.querySelector('[data-testid="blocker-repair"]')).toBeNull()
+  })
+
+  it('describes a review marker as sending nothing, not as a replayed source call', () => {
+    renderEditor({
+      name: 'web_set_sockets_option_15', type: 'source_review', target: 'web_set_sockets_option',
+      metadata: { execution_blocker: 'legacy_tls_replacement', source_function: 'web_set_sockets_option', source_file: 'vuser_init.c', source_line: 15 },
+    } as unknown as ScriptActionDefinition, { inspector: true })
+    const hint = container.querySelector('.form-hint')
+    expect(hint?.textContent).toBe('Review marker for web_set_sockets_option at vuser_init.c:15. It sends nothing; replay refuses to run while it carries a blocker.')
+    expect(container.textContent).not.toContain('Replays the source call')
+    // Without a blocker or a recorded location it still sends nothing.
+    renderEditor({ name: 'Unconverted call', type: 'source_review', params: { function: 'lr_custom_call' } } as unknown as ScriptActionDefinition, { inspector: true })
+    expect(container.querySelector('.form-hint')?.textContent).toBe('Review marker for lr_custom_call. It sends nothing.')
   })
 
   it('renders separate RE2 pattern and expected-value fields', () => {

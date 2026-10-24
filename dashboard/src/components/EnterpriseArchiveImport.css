@@ -125,6 +125,9 @@
   line-height: 1.35;
   white-space: normal;
 }
+.lr-file-revalidate {
+  flex: 0 0 auto;
+}
 .lr-file-remove {
   flex: 0 0 auto;
 }

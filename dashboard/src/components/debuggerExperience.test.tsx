@@ -24,6 +24,15 @@ describe('debugger operator experience', () => {
     expect(executionLabel(false, session, { ...report([]), stopped: true })).toBe('Stopped')
     expect(executionLabel(false, null, null)).toBe('Ready')
   })
+  it('says a start is only being checked until the controller admits a session', () => {
+    expect(executionLabel(true, null, null, true)).toBe('Checking replay readiness…')
+    // Without the start pending, an unadmitted run is still starting the debugger.
+    expect(executionLabel(true, null, null)).toBe('Starting debugger')
+    // Once a session exists it reports where the run is, start pending or not.
+    const running = { status: 'running', current_action: { action_name: 'Get customer' } } as ScriptDebugSession
+    expect(executionLabel(true, running, null, true)).toBe('Executing: Get customer')
+    expect(executionLabel(false, null, null, true)).toBe('Ready')
+  })
   it('reconstructs only values known at the selected execution', () => {
     const events = [event({ extractions: { customer: 'first' } }), event({ extractions: { customer: 'second', order: '123' } })]
     expect(variablesAt(events, { input: 'seed' }, 0)).toEqual({ input: 'seed', customer: 'first' })

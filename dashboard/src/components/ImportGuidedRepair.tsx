@@ -1,30 +1,47 @@
 import ImportIssueRuntimeEditor from './ImportIssueRuntimeEditor'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
-import SourceCodeViewer from './SourceCodeViewer'
+import { GuidedRepairForm, RepairPreview } from './GuidedRepairForm'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useImportSettings } from './ImportSettingsContext'
 import { request } from '../hooks/apiClient'
 import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '../types/scriptImports'
 import type { ScriptDefinition } from '../types/scripts'
-import { draftImportFindings, groupImportFindings, importActionEntries, issueCategories, issueRepairOptions, issueScope, changedRepairPaths, type ImportFinding, type ImportIssue, type IssueCategory } from './importReviewIssues'
+import { countLabel } from '../utils/numberFormat'
+import { importActionEntries, isConfigReferenceIssue, issueCategories, issueRepairOptions, issueScope, readinessCounts, readinessSummaryText, repairImpactText, unresolvedIssueCount, type ImportFinding, type ImportIssue, type IssueCategory, type RepairFields, type RepairOperation } from './importReviewIssues'
 
 export type RepairResult = { secret_binding_requirements: SecretBindingRequirement[]; fidelity_report: EnterpriseArchiveFidelityReport; candidate_id: string; revision: string; script: ScriptDefinition; before: ScriptDefinition; findings: ImportFinding[]; readiness: { replay_ready: boolean; promotion_ready: boolean; blocking_codes?: string[]; validation_issues?: string[]; unresolved_bindings?: number }; allocation?: { name: string; rows: number; block_size: number; population: number }[]; expires_at: string }
-type Operation = { type: string; [key: string]: unknown }
 type Props = {
   script: ScriptDefinition; projectId: string; disabled?: boolean; disabledReason?: string; onApplied: (result: RepairResult) => void; onViewSource?: (path: string, finding?: ImportFinding) => void
   onCredentialTarget?: (target: HTMLDivElement | null) => void; onReimport?: () => void
+  // The archive's own Validate again, for a draft kept with applied repairs:
+  // validating from archive setup leaves it alone, so once it expires only
+  // this renews it (discarding those repairs).
+  validateAgain?: { disabled: boolean; onValidate: () => void }
+  // The draft is in a save APEX has not confirmed: Save resends that save,
+  // and validating again would drop it, so no Validate again is offered.
+  unconfirmedSave?: boolean
   onSection?: (section: 'credentials' | 'data' | 'preserved' | 'source') => void
   categoryFocus?: { category: IssueCategory | 'all'; revision: number };
   focusPath?: string; focusRequest?: number; onBusyChange?: (busy: boolean) => void
-  view?: 'overview' | 'data' | 'hidden'; additionalFindings?: ImportFinding[]; onReview?: (result: RepairResult) => void
+  view?: 'overview' | 'data' | 'hidden'; onReview?: (result: RepairResult) => void
   onReviewedChange?: (issueIds: string[]) => void
   // The importer is saving, converting, or otherwise consuming this draft.
   inspectionPaused?: boolean
+  // The importer's grouped issues for this draft: the queue lists exactly
+  // these, so its counts are the importer's counts.
+  issues: ImportIssue[]
+  // The importer's inspection of the current candidate, an apply response
+  // included. One that matches the candidate is not inspected again.
+  inspection?: RepairResult | null
+  // Groups a repair response as the importer would list it, for the apply
+  // announcement and the preview outcome.
+  regroup: (result: RepairResult) => ImportIssue[]
+  // The importer still waits for this candidate's inspection: counts read "Checking…".
+  countsPending?: boolean
 }
-const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name' }
 
-export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, onCredentialTarget, onReimport, view = 'overview', additionalFindings = [], onReview, onReviewedChange, categoryFocus, focusPath, focusRequest, onBusyChange, inspectionPaused = false }: Props) {
+export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, onCredentialTarget, onReimport, validateAgain, unconfirmedSave = false, view = 'overview', onReview, onReviewedChange, categoryFocus, focusPath, focusRequest, onBusyChange, inspectionPaused = false, issues, inspection, regroup, countsPending = false }: Props) {
   const settings = useImportSettings()
   const candidate = String(script.metadata?.import?.preserved?.server_import_attestation_v1 || '')
   const scope = `${candidate}:${projectId}`
@@ -33,11 +50,13 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const inspectionRef = useRef<{ scope: string; promise: Promise<RepairResult>; delivered?: boolean } | null>(null)
   const onReviewRef = useRef(onReview); onReviewRef.current = onReview
   useEffect(() => { currentScope.current = scope; return () => { currentScope.current = '' } }, [scope])
-  const [review, setReview] = useState<RepairResult | null>(null)
+  const [inspected, setInspected] = useState<RepairResult | null>(null)
+  const importerInspection = candidate && inspection?.candidate_id === candidate ? inspection : null
+  const importerInspectionRef = useRef(importerInspection); importerInspectionRef.current = importerInspection
+  const review = importerInspection || inspected
   const [allocationPreview, setAllocationPreview] = useState<RepairResult | null>(null)
   const [allocationUser, setAllocationUser] = useState(1)
   const [preview, setPreview] = useState<RepairResult | null>(null)
-  const [showComparison, setShowComparison] = useState(false)
   const [selection, setSelection] = useState('')
   const [occurrence, setOccurrence] = useState('')
   const [kind, setKind] = useState('')
@@ -53,7 +72,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const notifyBusy = useRef(onBusyChange); notifyBusy.current = onBusyChange
   useEffect(() => { notifyBusy.current?.(busy || loading) }, [busy, loading])
   useEffect(() => () => notifyBusy.current?.(false), [])
-  const [pending, setPending] = useState<{ operation: Operation; finding: ImportFinding } | null>(null)
+  const [pending, setPending] = useState<{ operation: RepairOperation; finding: ImportFinding } | null>(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const previewVersion = useRef(0)
@@ -74,21 +93,20 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const detailRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => { if (view === 'overview') detailRef.current?.focus() }, [selection, view])
   const entries = useMemo(() => importActionEntries(script), [script])
-  const issues = useMemo(() => groupImportFindings([...(review?.findings || draftImportFindings(script)), ...additionalFindings], script), [review, script, additionalFindings])
   const selected = issues.find(i => i.id === selection) || resolved.find(i => i.id === selection)
-  const finding = selected?.findings.find(f => f.action_path === occurrence) || selected?.findings[0]
+  // A configuration reference reads as its configuration finding, whichever
+  // step's finding for the value led here: no step repair supplies it.
+  const finding = selected && isConfigReferenceIssue(selected) ? selected.findings[0] : selected?.findings.find(f => f.action_path === occurrence) || selected?.findings[0]
   const options = finding ? issueRepairOptions(finding.code) : []
   const selectedResolved = !!selected && !issues.some(i => i.id === selected.id)
-  const blocked = issues.filter(i => i.blocking).length
-  // A review mark settles a non-blocking note for this session, so it leaves
+  // A review mark settles a warning or note for this session, so it leaves
   // the unresolved counts and moves to the reviewed filter.
-  const reviewedCount = issues.filter(issue => !issue.blocking && reviewed.has(issue.id)).length
-  const unresolvedCount = issues.length - reviewedCount
-  const reviewCount = unresolvedCount - blocked
-  const inView = (i: ImportIssue) => (category === 'all' || i.category === category) && (filter !== 'blockers' || i.blocking) && (filter !== 'review' || !i.blocking) && `${i.title} ${i.findings.map(f => `${f.source_ref} ${f.action_path} ${f.detail}`).join(' ')}`.toLowerCase().includes(search.toLowerCase())
+  const counts = readinessCounts(issues, reviewed)
+  const unresolvedCount = unresolvedIssueCount(counts)
+  const inView = (i: ImportIssue) => (category === 'all' || i.category === category) && (filter !== 'blockers' || i.blocking) && (filter !== 'warnings' || i.severity === 'warning') && (filter !== 'review' || i.severity === 'note') && `${i.title} ${i.findings.map(f => `${f.source_ref} ${f.action_path} ${f.detail}`).join(' ')}`.toLowerCase().includes(search.toLowerCase())
   const shown = (filter === 'resolved' ? resolved : issues).filter(i => inView(i) && (filter === 'reviewed' ? reviewed.has(i.id) : filter === 'resolved' || i.blocking || !reviewed.has(i.id)))
   // Notes this view would list if they were not marked reviewed.
-  const hiddenAsReviewed = filter === 'all' || filter === 'review' ? issues.filter(i => inView(i) && !i.blocking && reviewed.has(i.id)).length : 0
+  const hiddenAsReviewed = filter === 'all' || filter === 'warnings' || filter === 'review' ? issues.filter(i => inView(i) && !i.blocking && reviewed.has(i.id)).length : 0
   const expiry = review?.expires_at ? new Date(review.expires_at).getTime() : NaN
   const expired = Number.isFinite(expiry) && expiry <= now
   // While the importer consumes this draft, no repair may race it either.
@@ -104,13 +122,12 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
     : inspectionPaused ? 'An import operation is in progress. Wait for it to finish before previewing allocation.'
     : ''
   const canRepair = candidate.startsWith('protected:') && !!review && !selectedResolved && !finding?.code.startsWith('diagnostic:')
-  // The first inspection replaces the draft's provisional issues: until it
-  // answers, counts would change under the reader, so they read "checking".
-  const checking = loading && !review
+  // Until the first inspection answers, the issues are the draft's provisional
+  // ones, so counts read "checking" here exactly when they do in the importer.
+  const checking = countsPending || (loading && !review)
   const counted = (label: string, count: number) => checking ? label : `${label} (${count})`
-  const preceding = entries.slice(0, entries.findIndex(e => e.path === finding?.action_path)).filter(e => !!e.action.target && e.action.type !== 'http_sequence')
-  const requestPayload = (operation: Operation, target = finding) => ({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: target?.code || '', action_path: target?.action_path || '', operation })
-  function resetPreview() { previewVersion.current++; setPreview(null); setPending(null); setShowComparison(false) }
+  const requestPayload = (operation: RepairOperation, target = finding) => ({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: target?.code || '', action_path: target?.action_path || '', operation })
+  function resetPreview() { previewVersion.current++; setPreview(null); setPending(null) }
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000)
     return () => clearInterval(timer)
@@ -118,12 +135,18 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const resetScopeRef = useRef<string | null>(null)
   useEffect(() => {
     const inspectionScope = `${candidate}:${projectId}`
+    // An apply response already describes the candidate it created, and the
+    // importer passes it back as this candidate's inspection: keep the
+    // repair's own state and do not inspect that candidate again.
+    const answered = importerInspectionRef.current?.candidate_id === candidate
     if (resetScopeRef.current !== inspectionScope) {
       resetScopeRef.current = inspectionScope
-      setAllocationPreview(null); setReview(null); setPreview(null); setShowComparison(false); setValue(''); setError(''); setPending(null); setBusy(false)
-      setLoading(false)
+      if (!answered) {
+        setAllocationPreview(null); setInspected(null); setPreview(null); setValue(''); setError(''); setPending(null); setBusy(false)
+        setLoading(false)
+      }
     }
-    if (!candidate.startsWith('protected:')) return
+    if (!candidate.startsWith('protected:') || answered) return
     // A save or draft mutation consumes this candidate. Inspecting it at the same
     // time only races that request and reports a stale candidate, so wait until
     // the importer is idle; an inspection that already started is still shown.
@@ -132,10 +155,10 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
     let active = true
     setLoading(true)
     // StrictMode replays effects; reuse one inspection per candidate instead of issuing duplicates.
-    const inspection = started
+    const pendingInspection = started
       ?? (inspectionRef.current = { scope: inspectionScope, promise: request<RepairResult>('/scripts/import/repairs/preview', { method: 'POST', body: JSON.stringify({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: '', action_path: '', operation: { type: 'inspect' } }) }) })
-    inspection.promise
-      .then(result => { if (active) { inspection.delivered = true; setReview(result); onReviewRef.current?.(result) } }).catch(e => { if (active) { inspection.delivered = true; setError(String(e.message || e)) } }).finally(() => { if (active) setLoading(false) })
+    pendingInspection.promise
+      .then(result => { if (active) { pendingInspection.delivered = true; setInspected(result); onReviewRef.current?.(result) } }).catch(e => { if (active) { pendingInspection.delivered = true; setError(String(e.message || e)) } }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [candidate, projectId, inspectionPaused])
   const lastFocus = useRef<number | undefined>(undefined)
@@ -146,16 +169,18 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
     lastFocus.current = focusRequest
     setCategory('all'); setFilter('all'); setSearch('')
     const saved = formDrafts.current.get(issue.id)
-    setSelection(issue.id); setOccurrence(focusPath)
-    setKind(saved?.kind || issueRepairOptions(issue.findings.find(f => f.action_path === focusPath)?.code || '')[0]?.value || '')
+    // A configuration reference keeps no step occurrence, so no step form opens for it now or later.
+    const config = isConfigReferenceIssue(issue)
+    setSelection(issue.id); setOccurrence(config ? '' : focusPath)
+    setKind(saved?.kind || issueRepairOptions((config ? issue.findings[0] : issue.findings.find(f => f.action_path === focusPath))?.code || '')[0]?.value || '')
     setValue(saved?.value || ''); setResponsePath(saved?.responsePath || ''); setExtractorType(saved?.extractorType || 'jsonpath'); resetPreview()
   }, [focusPath, focusRequest, issues])
   function choose(issue: ImportIssue) {
     const saved = formDrafts.current.get(issue.id)
-    setSelection(issue.id); setOccurrence(saved?.occurrence || issue.findings[0]?.action_path || ''); setKind(saved?.kind || issueRepairOptions(issue.findings[0]?.code || '')[0]?.value || '')
+    setSelection(issue.id); setOccurrence(isConfigReferenceIssue(issue) ? '' : saved?.occurrence || issue.findings[0]?.action_path || ''); setKind(saved?.kind || issueRepairOptions(issue.findings[0]?.code || '')[0]?.value || '')
     setValue(saved?.value || ''); setResponsePath(saved?.responsePath || ''); setExtractorType(saved?.extractorType || 'jsonpath'); setError(''); resetPreview()
   }
-  async function run(operation: Operation, apply = false) {
+  async function run(operation: RepairOperation, apply = false) {
     if (locked || (operation.type === 'preview_allocation' && allocationUnavailable)) return
     const requestScope = currentScope.current
     const requestPreviewVersion = previewVersion.current
@@ -165,23 +190,23 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
       const result = await request<RepairResult>(`/scripts/import/repairs/${apply ? 'apply' : 'preview'}`, { method: 'POST', body: JSON.stringify(requestPayload(operation, target)) })
       if (requestScope !== currentScope.current) return
       if (apply) {
-        const remaining = groupImportFindings(result.findings, result.script)
+        // Grouped as the importer lists the repaired draft, its other findings included.
+        const remaining = regroup(result)
         setResolved(previous => [...previous.filter(i => !remaining.some(next => next.id === i.id)), ...issues.filter(i => !i.findings[0]?.code.startsWith('diagnostic:') && !remaining.some(next => next.id === i.id) && !previous.some(p => p.id === i.id))])
-        setValue(''); resetPreview(); setReview(result); setAnnouncement(`Repair applied. ${remaining.filter(i => i.blocking).length} grouped issues block replay.`); onApplied(result)
+        setValue(''); resetPreview(); setInspected(result); setAnnouncement(`Repair applied. ${readinessSummaryText(readinessCounts(remaining))}.`); onApplied(result)
       } else if (operation.type === 'preview_allocation') { setAllocationPreview(result) } else if (requestPreviewVersion === previewVersion.current) { setPreview(result); setPending(target ? { operation, finding: target } : null) }
     } catch (e) { if (requestScope === currentScope.current) setError(e instanceof Error ? e.message : 'Repair failed') }
     finally { if (requestScope === currentScope.current) setBusy(false) }
   }
-  function operation(): Operation {
-    const variable = finding?.code.split(':').slice(1).join(':') || ''
-    switch (kind) {
-      case 'restore_body': return { type: kind, body: value }
-      case 'replace_proxy_secret': return { type: kind, secret_name: value }
-      case 'bind_variable': return { type: kind, producer: value }
-      case 'add_parameter': return { type: kind, parameter: { name: variable, type: 'list', values: value.split('\n'), update: 'once', selection: 'sequential' } }
-      case 'add_extractor': return { type: kind, response_path: responsePath, extractor: { name: variable, type: extractorType, source: 'body', expression: value, on_miss: 'fail' } }
-      default: return { type: 'select_tls', tls_min: value || '1.2', tls_max: '1.3' }
-    }
+  // The form's fields, which survive navigation through formDrafts; any
+  // change drops the preview it no longer describes.
+  const fields: RepairFields = { kind, value, responsePath, extractorType }
+  function changeFields(change: Partial<RepairFields>) {
+    if (change.kind !== undefined) setKind(change.kind)
+    if (change.value !== undefined) setValue(change.value)
+    if (change.responsePath !== undefined) setResponsePath(change.responsePath)
+    if (change.extractorType !== undefined) setExtractorType(change.extractorType)
+    resetPreview()
   }
   const nextIssues = shown.filter(issue => !reviewed.has(issue.id))
   const nextIssue = nextIssues[(nextIssues.findIndex(issue => issue.id === selection) + 1) % nextIssues.length]
@@ -189,31 +214,21 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const canViewSource = !!finding && !!onViewSource && !!(finding.action_path || finding.source_mapping_id || finding.source_file)
   const narrowerAssertion = /web_reg_find.*Search=ALL/i.test(finding?.detail || '')
   const runtimeDiagnostic = selected?.category === 'runtime' && !!finding?.code.startsWith('diagnostic:')
-  const issueImpact = selected?.category === 'values' ? finding?.code.startsWith('conditional_') ? 'A possible producer exists, but its order or execution path needs review. It must run before the selected request.' : 'This value has no reachable producer. Bind an existing value, add test data, or extract it from a preceding response.' : selected?.category === 'bodies' ? 'The original payload could not be restored. Supply the body below; previews keep its contents protected.' : finding?.code === 'legacy_tls_replacement' ? 'The source uses legacy TLS behavior. Choose a supported replacement and preview the migration.' : narrowerAssertion ? 'The converted check can miss text outside the main response body. Verify the intended assertion before replay.' : runtimeDiagnostic ? 'Some imported settings need an explicit choice or have no editable equivalent. Review their source values and replay consequences below.' : finding?.detail || 'Inspect the evidence and choose an available resolution below.'
-  const previewCounts = preview ? groupImportFindings(preview.findings, preview.script) : []
-  const previewBlockers = previewCounts.filter(issue => issue.blocking).length
-  const changedPaths = preview ? changedRepairPaths(preview.before, preview.script) : []
-  const previewContent = preview && <section className="lr-repair-preview" aria-label="Redacted repair preview">
-    <header className="lr-repair-preview-heading"><div><span className="script-create-kicker">Repair preview</span><h4>Review this change</h4><p>Check the outcome and changed fields before applying this repair.</p></div><span className="repository-status-pill imported-runtime-file-tag">Preview only</span></header>
-    <div className="lr-repair-preview-outcome" role="group" aria-label="Repair outcome">
-      <div><span>Replay checks</span><strong className={preview.readiness.replay_ready ? 'healthy' : 'danger'}>{preview.readiness.replay_ready ? 'Passed' : 'Blocked'}</strong><small>{preview.readiness.replay_ready ? 'Target replay is not verified' : 'Execution remains blocked'}</small></div>
-      <div><span>Blocking issues</span><strong>{previewBlockers}</strong><small>grouped issues after this change</small></div>
-      <div><span>Credential requirements</span><strong>{preview.readiness.unresolved_bindings || 0}</strong><small>unresolved after this change</small></div>
-    </div>
-    <div className="lr-repair-preview-fields"><div className="lr-repair-preview-section-heading"><h5>Fields changed</h5><span>{changedPaths.length} shown</span></div>{changedPaths.length ? <ul>{changedPaths.map(path => <li key={path}><code>{path}</code></li>)}</ul> : <p>No field paths changed in this preview.</p>}<p>Only field paths are summarized here. Protected values stay hidden; up to 100 fields are listed.</p></div>
-    {preview.allocation && <div className="lr-issue-table"><table><thead><tr><th>Parameter</th><th>Usable rows</th><th>Block per VUser</th><th>VUsers</th></tr></thead><tbody>{preview.allocation.map(p => <tr key={p.name}><td>{p.name}</td><td>{p.rows}</td><td>{p.block_size}</td><td>{p.population}</td></tr>)}</tbody></table></div>}
-    <details className="lr-repair-preview-comparison" onToggle={event => setShowComparison(event.currentTarget.open)}><summary>Redacted before / after</summary>{showComparison && <div className="lr-repair-preview-code-grid"><div><h6>Before repair</h6><SourceCodeViewer ariaLabel="Before repair JSON" sourcePath="before.json" value={JSON.stringify(preview.before, null, 2)} /></div><div><h6>After repair</h6><SourceCodeViewer ariaLabel="After repair JSON" sourcePath="after.json" value={JSON.stringify(preview.script, null, 2)} /></div></div>}</details>
-    {pending && pending.operation.type !== 'preview_allocation' && <div className="lr-repair-preview-footer"><p>Preview only. Nothing changes until you apply.</p><button className="btn btn-primary" type="button" disabled={locked} onClick={() => run(pending.operation, true)}>Apply reviewed repair</button></div>}
-  </section>
+  const issueImpact = (finding && repairImpactText(finding.code, finding.detail)) || 'Inspect the evidence and choose an available resolution below.'
+  const previewIssues = useMemo(() => preview ? regroup(preview) : [], [preview, regroup])
+  const previewBlockers = readinessCounts(previewIssues).blockers
+  const previewContent = preview && <RepairPreview preview={preview} blockers={previewBlockers} apply={pending && pending.operation.type !== 'preview_allocation' ? { disabled: locked, onApply: () => run(pending.operation, true) } : undefined} />
   return <section className="lr-issue-workspace" aria-label={view === 'data' ? 'Preview unique data allocation' : 'Guided import repair'} hidden={view === 'hidden' || (view === 'data' && (!hasUniqueParameters || (!!settings && settings.dataView !== 'allocation')))}>
     <p className="lr-repair-announcement" role="status">{announcement}</p>
     {view !== 'data' ? <>
-      <ImportReviewSectionHeader title="Resolve import issues" description={`${resolved.length} resolved${reviewedCount ? ` and ${reviewedCount} reviewed` : ''} in this session. Repeated findings are grouped; request locations are available within each issue.`} actions={
+      <ImportReviewSectionHeader title="Resolve import issues" description={`${resolved.length} resolved${counts.reviewed ? ` and ${counts.reviewed} reviewed` : ''} in this session. Repeated findings are grouped; request locations are available within each issue.`} actions={
         <button type="button" className="btn btn-secondary" disabled={busy || loading || filter === 'resolved' || !nextIssue || nextIssue.id === selection} onClick={() => nextIssue && choose(nextIssue)}>Next unresolved issue</button>
       } />
-      {(expired || (!candidate.startsWith('protected:') && issues.some(issue => issue.findings.some(item => issueRepairOptions(item.code).length > 0)))) && <div className="lr-issue-unavailable" role="status"><strong>{expired ? 'This protected draft has expired' : 'Protected repairs unavailable for this draft'}</strong><p>{expired ? 'Revalidate the archive to renew its repair session.' : 'Body, correlation, and TLS repairs require encrypted import storage. Existing settings and credential editors remain available when supported.'}</p>{onReimport && <button type="button" className="btn btn-secondary btn-sm" onClick={onReimport}>Open archive setup to revalidate</button>}</div>}
+      {(expired || (!candidate.startsWith('protected:') && issues.some(issue => issue.findings.some(item => issueRepairOptions(item.code).length > 0)))) && <div className="lr-issue-unavailable" role="status"><strong>{expired ? 'This protected draft has expired' : 'Protected repairs unavailable for this draft'}</strong><p>{expired && unconfirmedSave ? 'APEX has not confirmed the earlier save of this draft. Save first: it resends the unconfirmed save, which APEX answers if it was saved.' : expired && validateAgain ? 'It can no longer be saved. Only Validate again on this archive renews it, and the repairs applied to it are discarded.' : expired ? 'Revalidate the archive to renew its repair session.' : 'Body, correlation, and TLS repairs require encrypted import storage. Existing settings and credential editors remain available when supported.'}</p>{expired && unconfirmedSave ? null : expired && validateAgain
+        ? <button type="button" className="btn btn-secondary btn-sm" disabled={validateAgain.disabled} title="Validate this archive again. The repairs applied to its reviewed draft are discarded." onClick={validateAgain.onValidate}>Validate again</button>
+        : onReimport && <button type="button" className="btn btn-secondary btn-sm" onClick={onReimport}>Open archive setup to revalidate</button>}</div>}
       <div className="import-review-toolbar"><label>Find an issue<input type="search" autoComplete="off" value={search} placeholder="Search values or source locations" onChange={e => setSearch(e.target.value)} /></label>
-        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">{counted('All unresolved', unresolvedCount)}</option><option value="blockers">{counted('Blockers', blocked)}</option><option value="review">{counted('Review notes', reviewCount)}</option><option value="resolved">{counted('Resolved', resolved.length)}</option><option value="reviewed">{counted('Reviewed with limitation', reviewedCount)}</option></select></label>
+        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">{counted('All unresolved', unresolvedCount)}</option><option value="blockers">{counted('Blockers', counts.blockers)}</option><option value="warnings">{counted('Warnings', counts.warnings)}</option><option value="review">{counted('Review notes', counts.notes)}</option><option value="resolved">{counted('Resolved', resolved.length)}</option><option value="reviewed">{counted('Reviewed with limitation', counts.reviewed)}</option></select></label>
         <label>Issue category<select value={category} onChange={e => { setCategory(e.target.value as IssueCategory | 'all'); setSelection(''); resetPreview() }}><option value="all">All categories</option>{(Object.keys(issueCategories) as IssueCategory[]).map(key => <option value={key} key={key}>{issueCategories[key]}</option>)}</select></label>
         {/* The one place a running inspection is announced. */}
         <span role="status">{loading ? 'Checking repair requirements…' : `${shown.length} matching issues`}</span>
@@ -222,7 +237,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
         {(Object.keys(issueCategories) as IssueCategory[]).map(category => {
           const rows = shown.filter(i => i.category === category)
           if (!rows.length) return null
-          return <details key={category} open><summary>{issueCategories[category]} <span>{rows.length} issues</span></summary><ul>{rows.map(issue => <li key={issue.id}><button type="button" className="lr-issue-row" aria-pressed={selection === issue.id} onClick={() => choose(issue)} disabled={busy} onKeyDown={event => {
+          return <details key={category} open><summary>{issueCategories[category]} <span>{checking ? 'Checking…' : countLabel(rows.length, 'issue')}</span></summary><ul>{rows.map(issue => <li key={issue.id}><button type="button" className="lr-issue-row" aria-pressed={selection === issue.id} onClick={() => choose(issue)} disabled={busy} onKeyDown={event => {
               if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
               event.preventDefault()
               const buttons = Array.from(event.currentTarget.closest('.lr-issue-queue')?.querySelectorAll<HTMLButtonElement>('.lr-issue-row:not(:disabled)') || []).filter(button => button.closest('details')?.open !== false)
@@ -230,7 +245,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
               const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
               buttons[next]?.focus()
             }}>
-            <span className="lr-issue-row-title">{issue.title}</span><span className="lr-issue-row-meta"><ImportIssueSeverityTag severity={filter === 'resolved' ? 'resolved' : issue.blocking ? 'blocker' : 'info'} /><span>{reviewed.has(issue.id) ? 'Reviewed with limitation · ' : ''}{issueScope(issue)}</span></span>
+            <span className="lr-issue-row-title">{issue.title}</span><span className="lr-issue-row-meta"><ImportIssueSeverityTag severity={filter === 'resolved' ? 'resolved' : issue.severity === 'note' ? 'info' : issue.severity} /><span>{reviewed.has(issue.id) ? 'Reviewed with limitation · ' : ''}{issueScope(issue)}</span></span>
           </button></li>)}</ul></details>
         })}
         {!shown.length && <p>{hiddenAsReviewed ? 'Every issue in this view is marked reviewed. Show "Reviewed with limitation" to reopen one.' : search ? 'No issues match this search.' : filter === 'resolved' ? 'Applied repairs will appear here when their issues are resolved.' : 'No issues in this view.'}</p>}
@@ -243,15 +258,10 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
           {issueLocation && <p className="lr-issue-location"><strong>Location</strong> {issueLocation} {canViewSource && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onViewSource?.(finding.action_path || '', finding)}>Inspect {finding.source_ref || 'selected request'}</button>}</p>}
           {runtimeDiagnostic && <ImportIssueRuntimeEditor script={script} migrationPending={issues.some(issue => issue.findings.some(item => item.code === 'legacy_tls_replacement'))} />}
           {selected.category === 'credentials' && onCredentialTarget && view === 'overview' && <section aria-label="Fix credential bindings here"><h5>Configure credentials</h5><div ref={onCredentialTarget} /></section>}
-          {selectedResolved ? <p>This issue was removed by an applied repair. Remaining requirements are evaluated independently.</p> : canRepair && options.length ? <div className="lr-repair-form"><h5>Fix this issue</h5>
-            <label>Repair operation<select aria-label="Repair operation" value={kind} disabled={locked} onChange={e => { setKind(e.target.value); setValue(''); resetPreview() }}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
-            {selected.findings.length > 1 && <label>Consumer to repair<select aria-label="Repair finding" value={finding.action_path || ''} disabled={locked} onChange={e => { setOccurrence(e.target.value); setResponsePath(''); resetPreview() }}>{selected.findings.map(f => <option key={f.action_path} value={f.action_path}>{f.source_ref || f.action_path} — {entries.find(e => e.path === f.action_path)?.action.name || f.action_path}</option>)}</select></label>}
-            <p className="lr-subtitle">{kind === 'add_parameter' ? 'Adds a script-wide parameter. Preview checks which occurrences it satisfies.' : 'Repairs the selected consumer or setting. Other occurrences stay unresolved until the updated checks prove they are satisfied.'}</p>
-            {kind === 'add_extractor' && <><label>Preceding response<select aria-label="Preceding response path" value={responsePath} disabled={locked} onChange={e => { setResponsePath(e.target.value); resetPreview() }}><option value="">Choose a preceding response</option>{preceding.map(e => <option key={e.path} value={e.path}>{e.action.name || e.path} · {e.path}</option>)}</select></label><label>Extractor type<select value={extractorType} disabled={locked} onChange={e => { setExtractorType(e.target.value); resetPreview() }}><option value="jsonpath">JSONPath</option><option value="regex">Regular expression</option></select></label></>}
-            {kind === 'select_tls' ? <label>Minimum TLS<select value={value || '1.2'} disabled={locked} onChange={e => { setValue(e.target.value); resetPreview() }}><option value="1.2">TLS 1.2 (up to 1.3)</option><option value="1.3">TLS 1.3 only</option></select><span>This records an intentional migration change, not exact SSL 2/3 parity.</span></label> : <label>{labels[kind]}<textarea aria-label="Repair value" autoComplete="off" value={value} onChange={e => { setValue(e.target.value); resetPreview() }} disabled={locked} rows={kind === 'restore_body' ? 6 : 3} /></label>}
-            <div className="lr-issue-action-row"><button className="btn btn-primary" type="button" disabled={locked || (kind !== 'restore_body' && kind !== 'select_tls' && !value.trim()) || (kind === 'add_extractor' && !responsePath)} onClick={() => run(operation())}>{busy ? 'Checking repair…' : 'Preview repair'}</button><span>Preview first. Nothing changes until you apply.</span></div>
+          {selectedResolved ? <p>This issue was removed by an applied repair. Remaining requirements are evaluated independently.</p> : canRepair && options.length ? <GuidedRepairForm finding={finding} occurrences={selected.findings} options={options} entries={entries} fields={fields} onChange={changeFields}
+            onOccurrence={path => { setOccurrence(path); setResponsePath(''); resetPreview() }} locked={locked} busy={busy} onPreview={operation => run(operation)}>
             {previewContent}
-          </div> : <div className="lr-repair-actions"><h5>{options.length ? 'Repair availability' : 'Available resolution'}</h5><p>{options.length ? (loading ? 'Checking whether a guided repair applies to this issue…' : 'Protected repairs are unavailable until this archive has a current protected draft. Use archive setup to revalidate after encrypted import storage is configured.') : selected.blocking ? 'This requires a supported source or configuration change. Reviewing the limitation cannot clear this blocker.' : 'Review the specific behavior above. A review decision records your assessment; it does not change replay behavior or prove compatibility.'}</p>
+          </GuidedRepairForm> : <div className="lr-repair-actions"><h5>{options.length ? 'Repair availability' : 'Available resolution'}</h5><p>{options.length ? (loading ? 'Checking whether a guided repair applies to this issue…' : 'Protected repairs are unavailable until this archive has a current protected draft. Use archive setup to revalidate after encrypted import storage is configured.') : selected.blocking ? 'This requires a supported source or configuration change. Reviewing the limitation cannot clear this blocker.' : 'Review the specific behavior above. A review decision records your assessment; it does not change replay behavior or prove compatibility.'}</p>
             {onSection && selected.category !== 'review' && !(selected.category === 'credentials' && onCredentialTarget) && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onSection(selected.category === 'credentials' ? 'credentials' : selected.category === 'values' ? 'data' : selected.category === 'runtime' ? 'preserved' : 'source')}>{selected.category === 'credentials' ? 'Configure credential bindings' : selected.category === 'values' ? 'Edit data and parameters' : selected.category === 'runtime' ? 'Open all runtime settings' : 'Inspect source files'}</button>}
             {!options.length && selected.category === 'review' && !canViewSource && <p>No unique source mapping is available. Use the diagnostic location below to find the relevant source; no unrelated mapping will be selected automatically.</p>}
           </div>}

@@ -8,6 +8,7 @@ import {
   BrowserReplayNetworkEntry,
 } from '../types'
 import {
+  type ReplayPreflight,
   type ScriptActionDefinition,
   type ScriptDataSource,
   type ScriptDefinition,
@@ -738,6 +739,60 @@ export function isDefiniteReplayStartRejection(error: unknown): boolean {
   }
   const payload = candidate.payload
   return typeof payload === 'object' && payload !== null && Array.isArray((payload as { issues?: unknown }).issues)
+}
+
+/**
+ * A debug start the controller refused for the script's readiness, which the
+ * editor shows as readiness problems rather than as an error.
+ * - gateScope 'stored_script': the saved copy's own review gates refused it,
+ *   before the draft the request carried was read; its paths and preflight
+ *   describe the saved copy.
+ * - gateScope 'request': the draft the request carried was judged.
+ */
+export interface ReplayStartRefusal {
+  status: number
+  message: string
+  /** The preflight the controller judged, when it sent one. */
+  preflight?: ReplayPreflight
+  /** The review gates that refused the start. */
+  gateIssues: string[]
+  warnings: string[]
+  gateScope: 'stored_script' | 'request'
+}
+
+const REPLAY_BLOCKED_PREFIX = 'script replay is blocked: '
+
+/**
+ * Reads a refused debug start: a 4xx (not 408) carrying a preflight (the
+ * request-time readiness refusal and the stored-script gate refusal), a
+ * script_replay_blocked refusal listing its gates (409 from the session
+ * start), or, from an older controller, the stored-gate refusal's bare
+ * `script replay is blocked: <gate>; <gate>` text. Anything else (a transport
+ * error, a 5xx or 408, an unrelated 4xx) is null and stays an error.
+ */
+export function parseReplayStartRefusal(error: unknown): ReplayStartRefusal | null {
+  if (typeof error !== 'object' || error === null) return null
+  const { status, payload, code } = error as { status?: unknown; payload?: unknown; code?: unknown }
+  if (typeof status !== 'number' || status < 400 || status >= 500 || status === 408) return null
+  const body = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+  const message = getErrorMessage(error, '')
+  const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  const blockedCode = (code ?? body.code) === 'script_replay_blocked'
+  const preflight = typeof body.preflight === 'object' && body.preflight !== null && !Array.isArray(body.preflight) ? body.preflight as ReplayPreflight : undefined
+  const legacy = message.startsWith(REPLAY_BLOCKED_PREFIX)
+  if (!preflight && !(blockedCode && Array.isArray(body.issues)) && !legacy) return null
+  // The structured refusals list their gates; the older one only words them.
+  const gateIssues = blockedCode ? strings(body.issues)
+    : !preflight && legacy ? message.slice(REPLAY_BLOCKED_PREFIX.length).split('; ').map(issue => issue.trim()).filter(Boolean)
+      : []
+  return {
+    status,
+    message,
+    ...(preflight ? { preflight } : {}),
+    gateIssues,
+    warnings: strings(body.warnings),
+    gateScope: body.gate_scope === 'stored_script' || (!body.gate_scope && legacy && status === 400) ? 'stored_script' : 'request',
+  }
 }
 
 export function parseReplayVariablesText(text: string): Record<string, string> | undefined {
