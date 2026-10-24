@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
@@ -27,7 +28,7 @@ type runEvacuationRollback struct {
 }
 
 // evacuationRollbackGuard reports whether a stored run is held by a version 4
-// prepared, staged or rolling_back journal that this successor may roll back.
+// or 5 prepared, staged or rolling_back journal that this successor may roll back.
 // Every other journal, and every journal while the recovery is disabled, keeps
 // the fail-closed STOPPING path. The caller holds tr.mu or owns test.
 func (tr *TestRunner) evacuationRollbackGuard(test *ManagedTest, raw string) (runEvacuationCheckpoint, []string, bool) {
@@ -58,7 +59,7 @@ func runEvacuationRollbackPlan(raw, testID string) (runEvacuationCheckpoint, []s
 	if err != nil {
 		return runEvacuationCheckpoint{}, nil, err
 	}
-	if guard.Version != runEvacuationRollbackCheckpointVersion {
+	if !rollbackRunEvacuationCheckpointVersion(guard.Version) {
 		return runEvacuationCheckpoint{}, nil, errors.New("evacuation journal predates successor rollback")
 	}
 	switch guard.Phase {
@@ -76,23 +77,8 @@ func runEvacuationRollbackPlan(raw, testID string) (runEvacuationCheckpoint, []s
 	if err != nil {
 		return runEvacuationCheckpoint{}, nil, err
 	}
-	// The planner moves only the source's shards to targets new to the run. A
-	// journal that changed any surviving participant cannot be undone by
-	// adopting the prior topology.
-	survivors := make(map[string]struct{})
-	for _, topology := range []map[string][]GeneratorShardSummary{guard.BeforeShards, guard.NextShards} {
-		for _, shards := range topology {
-			for _, shard := range shards {
-				if shard.Target != guard.Source && !slices.Contains(replacements, shard.Target) {
-					survivors[shard.Target] = struct{}{}
-				}
-			}
-		}
-	}
-	for target := range survivors {
-		if targetShardAssignmentChanged(guard.BeforeShards, guard.NextShards, target) {
-			return runEvacuationCheckpoint{}, nil, fmt.Errorf("evacuation changed surviving participant %s", target)
-		}
+	if err := runEvacuationSurvivorsUnchanged(guard, replacements); err != nil {
+		return runEvacuationCheckpoint{}, nil, err
 	}
 	if err := validateRunEvacuationCapacityJournal(guard, replacements); err != nil {
 		return runEvacuationCheckpoint{}, nil, err
@@ -125,7 +111,7 @@ func validateRunEvacuationCapacityJournal(guard runEvacuationCheckpoint, replace
 
 // persistRunEvacuationRollbackIntent replaces the journal's prior checkpoint
 // with the successor's planned adoption intent before any generator sees the
-// rotated token. The journal stays version 4 so an older peer still refuses it.
+// rotated token. The journal keeps its version so an older peer still refuses it.
 func (tr *TestRunner) persistRunEvacuationRollbackIntent(test *ManagedTest, raw string, guard runEvacuationCheckpoint, planned runContinuityCheckpoint, generation uint64, owner string) (runEvacuationCheckpoint, string, error) {
 	next := guard
 	next.Phase = runEvacuationPhaseRollingBack
@@ -174,13 +160,17 @@ func (tr *TestRunner) swapRunContinuityCheckpoint(test *ManagedTest, expected, n
 // prior participants were adopted. Each replacement's accepted claim drained
 // its staged assignment, so the capacity it reserved can be returned. Only a
 // complete rollback replaces the journal with the plain adoption checkpoint;
-// any problem leaves the journal for failRunEvacuationRollback.
+// any problem leaves the journal for failRunEvacuationRollback. A participant
+// that reports a completed run the prior lineage never recorded is a problem.
 func (tr *TestRunner) completeRunEvacuationRollback(ctx context.Context, candidate *runAdoptionCandidate, results map[string]runAdoptionTargetResult, completed map[string]generatorClient, generation uint64, owner string) ([]string, []string) {
 	rollback := candidate.rollback
 	if completed[rollback.guard.Source] != nil {
 		// A staged evacuation may have stopped its source just before the
 		// controller was lost. Completed here cannot be told apart from that.
 		return nil, []string{fmt.Sprintf("evacuation source %s no longer runs its prior assignment", rollback.guard.Source)}
+	}
+	if problems := unexpectedRunEvacuationCompletions(rollback.guard, rollback.replacements, completed); len(problems) > 0 {
+		return nil, problems
 	}
 	var problems []string
 	clients := make(map[string]generatorClient, len(rollback.replacements))
@@ -213,12 +203,19 @@ func (tr *TestRunner) completeRunEvacuationRollback(ctx context.Context, candida
 	return restored, nil
 }
 
-// failRunEvacuationRollback force-stops the prior participants this term just
-// adopted and keeps the run STOPPING under its evacuation journal. Without a
+// failRunEvacuationRollback holds the run STOPPING under its evacuation
+// journal, then force-stops the prior participants this term just adopted. Without a
 // live runtime the run stays eligible for administrator attestation, and a
 // newer term's fail-closed recovery fences every possible participant. This
 // term cannot fence them itself: its epoch claim does not drain what it adopted.
 func (tr *TestRunner) failRunEvacuationRollback(b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted map[string]generatorClient, clients []map[string]generatorClient, generation uint64, owner string, problems []string) {
+	tr.failRunEvacuationRecovery(b, candidate, adopted, clients, generation, owner, "roll back", problems)
+}
+
+// failRunEvacuationRecovery holds the run under its journal for a failed
+// rollback or roll-forward (action), then force-stops what this term adopted
+// with the rotated token, adding any unacknowledged stop to the held reason.
+func (tr *TestRunner) failRunEvacuationRecovery(b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted map[string]generatorClient, clients []map[string]generatorClient, generation uint64, owner, action string, problems []string) {
 	test := candidate.test
 	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: owner, generation: generation})
 	defer func() {
@@ -232,55 +229,283 @@ func (tr *TestRunner) failRunEvacuationRollback(b *distributedExecutionBackend, 
 			}
 		}
 	}()
+	// Hold the run before any stop is sent, as failClosedUncertainEvacuation
+	// does: a stopped assignment later reports a completed run, so a RUNNING
+	// row must never outlive the stops. If this controller is lost after the
+	// hold, a newer term fences the adopted assignments. A failed hold write
+	// is retried in the background and the stops are still sent.
+	detail := "controller failover could not " + action + " the interrupted evacuation: "
+	slog.Warn("evacuation recovery failed; the run stays STOPPING until its generators are fenced", "test_id", test.ID, "action", action, "execution_generation", generation, "problems", strings.Join(problems, "; "))
+	hold := tr.newInterruptedRunEvacuationHold(test, executionLeaseTerm{ownerID: owner, generation: generation})
+	hold.hold(detail + strings.Join(problems, "; "))
 	targets := make([]string, 0, len(adopted))
 	for target := range adopted {
 		targets = append(targets, target)
 	}
 	slices.Sort(targets)
+	var unstopped []string
 	for _, target := range targets {
 		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 		stop, err := stopGeneratorTestWithToken(ctx, adopted[target], test.ID, false, generation, candidate.newToken[:])
 		cancel()
 		if err != nil || !stop.Acknowledged {
-			problems = append(problems, fmt.Sprintf("%s: force stop of the adopted prior assignment was not acknowledged: %v", target, err))
+			unstopped = append(unstopped, fmt.Sprintf("%s: force stop of the adopted assignment was not acknowledged: %v", target, err))
 		}
 	}
-	slog.Warn("evacuation rollback failed; the run stays STOPPING until its generators are fenced", "test_id", test.ID, "execution_generation", generation, "problems", strings.Join(problems, "; "))
-	tr.holdInterruptedRunEvacuation(test, "controller failover could not roll back the interrupted evacuation: "+strings.Join(problems, "; "))
+	if len(unstopped) > 0 {
+		slog.Warn("adopted assignments of a failed evacuation recovery were not stopped", "test_id", test.ID, "problems", strings.Join(unstopped, "; "))
+		// The same hold: a retry still queued for the first reason writes this one.
+		hold.hold(detail + strings.Join(append(problems, unstopped...), "; "))
+	}
+}
+
+// unexpectedRunEvacuationCompletions reports each participant that completed
+// although the journal's prior lineage never recorded it completed. A
+// generator ends every controller stop in a completed run, so such a
+// completion cannot be told apart from a stop by a lost controller or a failed
+// earlier successor; it never proves the participant's share ran out.
+func unexpectedRunEvacuationCompletions(guard runEvacuationCheckpoint, replacements []string, completed map[string]generatorClient) []string {
+	targets := make([]string, 0, len(completed))
+	for target := range completed {
+		if !slices.Contains(guard.Prior.CompletedTargets, target) {
+			targets = append(targets, target)
+		}
+	}
+	slices.Sort(targets)
+	problems := make([]string, 0, len(targets))
+	for _, target := range targets {
+		role := "participant"
+		if slices.Contains(replacements, target) {
+			role = "replacement"
+		}
+		problems = append(problems, fmt.Sprintf("%s %s reports a completed run the journal never recorded, which cannot be told apart from a controller stop", role, target))
+	}
+	return problems
 }
 
 // holdInterruptedRunEvacuation keeps a run under its evacuation journal
 // STOPPING with no runtime, as reconcileStoredActiveTest does for a journal it
 // cannot roll back: possible load is never reported terminal, and an
-// administrator can attest the generators stopped.
-func (tr *TestRunner) holdInterruptedRunEvacuation(test *ManagedTest, detail string) {
+// administrator can attest the generators stopped. term is the controller term
+// that decided the hold.
+func (tr *TestRunner) holdInterruptedRunEvacuation(test *ManagedTest, term executionLeaseTerm, detail string) {
+	tr.newInterruptedRunEvacuationHold(test, term).hold(detail)
+}
+
+// interruptedRunEvacuationHold persists one run's hold for the controller term
+// that decided it. The run's latest hold is registered in
+// TestRunner.evacuationHolds, and one retry per run writes whichever hold is
+// registered until none is left, so neither a later reason of the same hold
+// nor a later hold for the run is lost to an earlier retry. Every hold of a
+// run writes under the run's one write lock (evacuationHoldWriteLock), and
+// only while it is still the run's latest hold.
+type interruptedRunEvacuationHold struct {
+	tr     *TestRunner
+	test   *ManagedTest
+	term   executionLeaseTerm
+	mu     sync.Mutex
+	reason string
+}
+
+// evacuationHoldWriteLock serializes every hold write of one run, across hold
+// objects, so a write of a superseded hold cannot land after a later one.
+func (tr *TestRunner) evacuationHoldWriteLock(testID string) *sync.Mutex {
+	tr.evacuationHoldsMu.Lock()
+	defer tr.evacuationHoldsMu.Unlock()
+	if tr.evacuationHoldWrites == nil {
+		tr.evacuationHoldWrites = make(map[string]*sync.Mutex)
+	}
+	lock := tr.evacuationHoldWrites[testID]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		tr.evacuationHoldWrites[testID] = lock
+	}
+	return lock
+}
+
+func (tr *TestRunner) newInterruptedRunEvacuationHold(test *ManagedTest, term executionLeaseTerm) *interruptedRunEvacuationHold {
+	return &interruptedRunEvacuationHold{tr: tr, test: test, term: term}
+}
+
+func (h *interruptedRunEvacuationHold) hold(detail string) {
 	reason := uncertainEvacuationReasonPrefix + detail
 	reason = boundedtext.TruncateUTF8(scrub.Value(reason, scrub.Policy{}), 2048) + uncertainEvacuationIntervention
-	persist := func() error {
-		tr.mu.Lock()
-		if tr.tests[test.ID] != test {
-			tr.mu.Unlock()
-			return nil
+	h.mu.Lock()
+	h.reason = reason
+	h.mu.Unlock()
+	tr, testID := h.tr, h.test.ID
+	if !h.register() {
+		slog.Warn("dropped an evacuation hold of an ended term or a replaced run object; the current term's hold of the run stands", "test_id", testID)
+		return
+	}
+	if err := h.persist(); err != nil {
+		slog.Warn("persist interrupted evacuation hold remains retryable", "test_id", testID, "error", err)
+		tr.ensureEvacuationHoldRetry(testID)
+	}
+}
+
+// register makes h the run's latest hold. A hold of an ended term, or of a run
+// object that is no longer registered, never displaces a registered hold: it
+// could not be written, and a current hold it displaced would then write
+// nothing. Currency is read outside the registry lock, since run removal takes
+// the runner lock before it.
+func (h *interruptedRunEvacuationHold) register() bool {
+	tr, testID := h.tr, h.test.ID
+	for {
+		tr.evacuationHoldsMu.Lock()
+		existing := tr.evacuationHolds[testID]
+		tr.evacuationHoldsMu.Unlock()
+		if existing != nil && existing != h && !h.current() {
+			return false
 		}
-		if err := tr.claimTestExecutionFence(test); err != nil {
-			tr.mu.Unlock()
-			return err
+		tr.evacuationHoldsMu.Lock()
+		if tr.evacuationHolds[testID] != existing {
+			tr.evacuationHoldsMu.Unlock()
+			continue
 		}
-		fence := test.executionFence
-		tr.mu.Unlock()
-		if err := tr.persistStoredTestStatus(test.ID, fence, "STOPPING", nil, reason); err != nil {
-			return err
+		if tr.evacuationHolds == nil {
+			tr.evacuationHolds = make(map[string]*interruptedRunEvacuationHold)
 		}
-		tr.mu.Lock()
-		if tr.tests[test.ID] == test {
-			test.Status, test.Error = "STOPPING", reason
-		}
-		tr.mu.Unlock()
+		tr.evacuationHolds[testID] = h
+		tr.evacuationHoldsMu.Unlock()
+		return true
+	}
+}
+
+// current reports a hold of this process's current term for the registered
+// run object.
+func (h *interruptedRunEvacuationHold) current() bool {
+	if !h.term.valid() || !h.tr.executionLeaseTermLocallyCurrent(h.term) {
+		return false
+	}
+	h.tr.mu.RLock()
+	defer h.tr.mu.RUnlock()
+	return h.tr.tests[h.test.ID] == h.test
+}
+
+// persist writes the latest reason under the hold's own term. There is nothing
+// left to hold once the run is terminal, for example after an administrator
+// attestation, or its journal was replaced. Once the term has ended the hold is
+// dropped rather than written under another lease: the next term decides the
+// run from its journal, and a participant this term stopped reports a
+// completion that its prior lineage never recorded, which holds the run. The
+// term-bound fence claim is the one term gate; a claim refused while the term
+// is still current keeps the hold for the retry.
+func (h *interruptedRunEvacuationHold) persist() error {
+	tr, test := h.tr, h.test
+	// The run's write lock spans reading the reason and writing it. A hold a
+	// later hold of the run replaced leaves the write to that one.
+	write := tr.evacuationHoldWriteLock(test.ID)
+	write.Lock()
+	defer write.Unlock()
+	tr.evacuationHoldsMu.Lock()
+	latest := tr.evacuationHolds[test.ID] == h
+	tr.evacuationHoldsMu.Unlock()
+	if !latest {
 		return nil
 	}
-	if err := persist(); err != nil {
-		slog.Warn("persist interrupted evacuation hold remains retryable", "test_id", test.ID, "error", err)
-		tr.enqueueTerminalRetry("evacuation-rollback:"+test.ID, "interrupted evacuation hold", persist)
+	if !h.term.valid() {
+		h.forget()
+		return nil
+	}
+	h.mu.Lock()
+	reason := h.reason
+	h.mu.Unlock()
+	tr.mu.Lock()
+	if tr.tests[test.ID] != test || isTerminalTestStatus(test.Status) || !interruptedRunEvacuation(test.continuityCheckpoint) {
+		tr.mu.Unlock()
+		h.forget()
+		return nil
+	}
+	if err := tr.claimTestExecutionFenceWithTerm(test, h.term); err != nil {
+		tr.mu.Unlock()
+		if !tr.executionLeaseTermLocallyCurrent(h.term) {
+			h.forget()
+			return nil
+		}
+		return err
+	}
+	fence := test.executionFence
+	tr.mu.Unlock()
+	if err := tr.persistStoredTestStatus(test.ID, fence, "STOPPING", nil, reason); err != nil {
+		return err
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test && !isTerminalTestStatus(test.Status) {
+		test.Status, test.Error = "STOPPING", reason
+		test.evacuationHoldOwner = fence
+	}
+	tr.mu.Unlock()
+	h.mu.Lock()
+	written := h.reason == reason
+	h.mu.Unlock()
+	if written {
+		h.forget()
+	}
+	return nil
+}
+
+// forget unregisters the hold unless a later hold replaced it.
+func (h *interruptedRunEvacuationHold) forget() {
+	h.tr.evacuationHoldsMu.Lock()
+	if h.tr.evacuationHolds[h.test.ID] == h {
+		delete(h.tr.evacuationHolds, h.test.ID)
+	}
+	h.tr.evacuationHoldsMu.Unlock()
+}
+
+// forgetEvacuationHold drops a removed run's hold; its retry then ends.
+func (tr *TestRunner) forgetEvacuationHold(testID string) {
+	tr.evacuationHoldsMu.Lock()
+	delete(tr.evacuationHolds, testID)
+	delete(tr.evacuationHoldWrites, testID)
+	tr.evacuationHoldsMu.Unlock()
+}
+
+// ensureEvacuationHoldRetry starts the run's hold retry unless one runs. Both
+// starting and ending are decided under evacuationHoldsMu, so a hold
+// registered while a retry ends always gets a retry.
+func (tr *TestRunner) ensureEvacuationHoldRetry(testID string) {
+	tr.evacuationHoldsMu.Lock()
+	defer tr.evacuationHoldsMu.Unlock()
+	if _, running := tr.evacuationHoldRetrying[testID]; running || tr.evacuationHolds[testID] == nil {
+		return
+	}
+	if tr.evacuationHoldRetrying == nil {
+		tr.evacuationHoldRetrying = make(map[string]struct{})
+	}
+	tr.evacuationHoldRetrying[testID] = struct{}{}
+	go tr.retryEvacuationHold(testID)
+}
+
+// retryEvacuationHold writes the run's registered hold until none is left. It
+// does not wait for admission like the terminal-transition retries: holds are
+// decided during acquisition reconcile (Phase A), and each hold is gated on its
+// own term instead.
+func (tr *TestRunner) retryEvacuationHold(testID string) {
+	delay := executionPlanRetryInitialDelay
+	for {
+		timer := time.NewTimer(delay)
+		<-timer.C
+		tr.mu.RLock()
+		shuttingDown := tr.shuttingDown
+		tr.mu.RUnlock()
+		tr.evacuationHoldsMu.Lock()
+		h := tr.evacuationHolds[testID]
+		if h == nil || shuttingDown {
+			delete(tr.evacuationHolds, testID)
+			delete(tr.evacuationHoldRetrying, testID)
+			tr.evacuationHoldsMu.Unlock()
+			return
+		}
+		tr.evacuationHoldsMu.Unlock()
+		if err := h.persist(); err != nil {
+			slog.Warn("interrupted evacuation hold retry failed", "test_id", testID, "error", err)
+			if !durableBackgroundRetryable(err) {
+				h.forget()
+			}
+		}
+		delay = min(delay*2, executionPlanRetryMaxDelay)
 	}
 }
 
@@ -431,14 +656,14 @@ func restoredRunEvacuationStandby(row, standby storage.PodCapacityReservation) b
 		reflect.DeepEqual(row.RecoveryPlacement, standby.RecoveryPlacement)
 }
 
-// restoreRunEvacuationPriorCheckpoint restores the checkpoint a version 4 journal
-// replaced once the same leader has positively rolled its staging back before
+// restoreRunEvacuationPriorCheckpoint restores the checkpoint a version 4 or 5
+// journal replaced once the same leader has positively rolled its staging back before
 // the source fence. Left in place, the journal's prior topology would go stale
 // as the run's VUsers change, and a successor would roll back to it. Older
 // journals keep their conservative fail-closed behavior.
 func (tr *TestRunner) restoreRunEvacuationPriorCheckpoint(test *ManagedTest, raw string, generation uint64, owner string) {
 	var guard runEvacuationCheckpoint
-	if tr == nil || test == nil || raw == "" || json.Unmarshal([]byte(raw), &guard) != nil || guard.Version != runEvacuationRollbackCheckpointVersion ||
+	if tr == nil || test == nil || raw == "" || json.Unmarshal([]byte(raw), &guard) != nil || !rollbackRunEvacuationCheckpointVersion(guard.Version) ||
 		(guard.Phase != runEvacuationPhasePrepared && guard.Phase != runEvacuationPhaseStaged) || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner {
 		return
 	}
@@ -456,14 +681,14 @@ func (tr *TestRunner) restoreRunEvacuationPriorCheckpoint(test *ManagedTest, raw
 	}
 }
 
-// markRunEvacuationCheckpointAbandoned marks a same-term version 4 prepared or
-// staged journal its leader no longer drives: a capacity return that did not
+// markRunEvacuationCheckpointAbandoned marks a same-term version 4 or 5
+// prepared or staged journal its leader no longer drives: a capacity return that did not
 // complete, or a dead journal found on re-arm. The journal and its pre-images
 // stay; only the successor rollback is refused. It returns the journal now in
 // effect.
 func (tr *TestRunner) markRunEvacuationCheckpointAbandoned(test *ManagedTest, raw string, generation uint64, owner string) string {
 	var guard runEvacuationCheckpoint
-	if tr == nil || test == nil || raw == "" || json.Unmarshal([]byte(raw), &guard) != nil || guard.Version != runEvacuationRollbackCheckpointVersion ||
+	if tr == nil || test == nil || raw == "" || json.Unmarshal([]byte(raw), &guard) != nil || !rollbackRunEvacuationCheckpointVersion(guard.Version) ||
 		(guard.Phase != runEvacuationPhasePrepared && guard.Phase != runEvacuationPhaseStaged) || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner || !guard.AbandonedAt.IsZero() {
 		return raw
 	}

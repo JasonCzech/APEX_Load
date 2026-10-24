@@ -79,7 +79,7 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			if _, err := tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner); err == nil {
 				t.Fatal("source fence accepted a guard without staging proof")
 			}
-			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,7 +135,7 @@ func TestInterruptedEvacuationPhasesRemainStoppingAfterTakeover(t *testing.T) {
 				t.Fatal(err)
 			}
 			if phase != runEvacuationPhasePrepared {
-				guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+				guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -179,7 +179,7 @@ func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestLegacyCommittedEvacuationWaitsForCleanupProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestRunEvacuationCommitWaitsForReplacementCapacity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,7 @@ func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +409,7 @@ func TestRunEvacuationCommittedProofRejectsCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, tc.targets); err == nil {
+			if _, err := tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, tc.targets, runEvacuationStagedTiming{}); err == nil {
 				t.Fatal("invalid staged target set accepted")
 			}
 			record, err := store.GetTest(test.ID)
@@ -507,11 +507,11 @@ func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
 			case "replay":
-				if _, err := tr.markRunEvacuationStaged(ctx, test, guard, generation, owner, []string{"gen-b"}); err != nil {
+				if _, err := tr.markRunEvacuationStaged(ctx, test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if _, err := tr.markRunEvacuationStaged(ctx, test, guard, generation, owner, []string{"gen-b"}); err == nil {
+			if _, err := tr.markRunEvacuationStaged(ctx, test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{}); err == nil {
 				t.Fatal("stale staged progress accepted")
 			}
 			record, err := store.GetTest(test.ID)
@@ -627,7 +627,7 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,7 +682,7 @@ func TestRunEvacuationSourceFenceRejectsStaleOrUnownedProgress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -750,7 +750,7 @@ func TestRunEvacuationReplacementCommitRejectsInvalidProgress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -900,7 +900,7 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}

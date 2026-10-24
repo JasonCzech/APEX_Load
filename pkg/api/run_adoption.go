@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -110,8 +111,11 @@ func (tr *TestRunner) isRunAdoptionCandidate(test *ManagedTest) bool {
 	if _, committed := committedRunEvacuationCheckpoint(test.continuityCheckpoint, test.ID); committed {
 		return true
 	}
-	_, _, rollback := tr.evacuationRollbackGuard(test, test.continuityCheckpoint)
-	return rollback
+	if _, _, rollback := tr.evacuationRollbackGuard(test, test.continuityCheckpoint); rollback {
+		return true
+	}
+	_, _, rollForward := tr.evacuationRollForwardGuard(test, test.continuityCheckpoint)
+	return rollForward
 }
 
 // awaitRunAdoptionReconcile holds the generator epoch keeper until generation's
@@ -168,6 +172,9 @@ type runAdoptionCandidate struct {
 	// rollback is set when the run is returned to the prior topology of an
 	// interrupted prepared or staged evacuation.
 	rollback *runEvacuationRollback
+	// rollForward is set when the run moves on to the next topology of an
+	// evacuation interrupted once its replacement may have been committed.
+	rollForward *runEvacuationRollForward
 }
 
 type runAdoptionTargetResult struct {
@@ -203,6 +210,15 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 	tr.mu.Lock()
 	for _, test := range tests {
 		test.jointHeldFromStart = false
+		if test.executionCtx == nil && test.cancel == nil {
+			// No live runtime: any fence is left from a term this process lost.
+			// The reload before Phase A already replaced such an object, so a
+			// lost-term goroutine cannot hold this one. Clear it, leaving the
+			// fence empty while the generators are claimed; the first hold or
+			// install then claims this term, as installRunAdoptionHandlesLocked
+			// does.
+			test.executionFence = ""
+		}
 	}
 	tr.mu.Unlock()
 	generation, ownerID, leaseDeadline, err := tr.generatorExecutionClaim()
@@ -222,6 +238,10 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		if guard, replacements, ok := tr.evacuationRollbackGuard(test, raw); ok {
 			rollback = &runEvacuationRollback{guard: guard, raw: raw, replacements: replacements}
 		}
+		var rollForward *runEvacuationRollForward
+		if guard, replacements, ok := tr.evacuationRollForwardGuard(test, raw); ok {
+			rollForward = &runEvacuationRollForward{guard: guard, raw: raw, replacements: replacements}
+		}
 		tr.mu.RUnlock()
 		if _, committed := committedRunEvacuationCheckpoint(raw, test.ID); committed {
 			promoted, promoteErr := tr.promoteCommittedRunEvacuationCheckpoint(ctx, test, raw, generation, ownerID)
@@ -234,6 +254,10 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		if rollback != nil {
 			// The journal's prior checkpoint is the topology the run returns to.
 			checkpoint, decodeErr = rollback.guard.Prior, nil
+		}
+		if rollForward != nil {
+			// The next topology, under the predecessor's lineage.
+			checkpoint, decodeErr = runEvacuationRollForwardCheckpoint(rollForward.guard), nil
 		}
 		if decodeErr == nil && (checkpoint.PinnedSecretCiphertext != "" || checkpoint.PinnedSecretKey != nil) {
 			values, openErr := openRunPinnedSecrets(ctx, tr.continuityKeyWrapper, test.ID,
@@ -271,7 +295,12 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				// Nothing was adopted. The journal's participants may still run, so
 				// keep the run STOPPING as a non-rollback successor would.
 				tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
-				tr.holdInterruptedRunEvacuation(test, fmt.Sprintf("controller failover could not use the evacuation journal's prior checkpoint (%v)", decodeErr))
+				tr.holdInterruptedRunEvacuation(test, executionLeaseTerm{ownerID: ownerID, generation: generation}, fmt.Sprintf("controller failover could not use the evacuation journal's prior checkpoint (%v)", decodeErr))
+				continue
+			}
+			if rollForward != nil {
+				tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
+				tr.holdInterruptedRunEvacuation(test, executionLeaseTerm{ownerID: ownerID, generation: generation}, fmt.Sprintf("controller failover could not use the evacuation journal's next checkpoint (%v)", decodeErr))
 				continue
 			}
 			if stopping {
@@ -296,6 +325,15 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			}
 			rollback.guard, rollback.raw = guard, rolling
 			candidate.rollback = rollback
+		} else if rollForward != nil {
+			// The intent stays inside the journal until the replacement is
+			// adopted, shortened and its capacity committed.
+			guard, rolling, rollForwardErr := tr.persistRunEvacuationRollForwardIntent(test, raw, rollForward.guard, candidate.checkpoint, generation, ownerID)
+			if rollForwardErr != nil {
+				return fmt.Errorf("persist evacuation roll-forward intent for %s: %w", test.ID, rollForwardErr)
+			}
+			rollForward.guard, rollForward.raw = guard, rolling
+			candidate.rollForward = rollForward
 		} else if err := tr.persistRunAdoptionIntent(test, raw, candidate.checkpoint, ownerID); err != nil {
 			return fmt.Errorf("persist adoption intent for %s: %w", test.ID, err)
 		}
@@ -443,7 +481,32 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				}
 				capacityClients[target] = result.client
 			}
-			if len(problems) == 0 {
+			if candidate.rollForward != nil {
+				// Until the journal is replaced, a panic must keep the
+				// roll-forward's fail-closed handling, as for a rollback.
+				journalKept := true
+				defer func() {
+					if journalKept {
+						if recovered := recover(); recovered != nil {
+							slog.Error("evacuation roll-forward panicked", "test_id", candidate.test.ID, "panic", recovered)
+							tr.failRunEvacuationRollForward(b, candidate, adopted, []map[string]generatorClient{reachable, archives}, generation, ownerID,
+								append(problems, fmt.Sprintf("internal error while rolling the evacuation forward (%v)", recovered)))
+						}
+					}
+				}()
+				if len(problems) == 0 {
+					rollForwardProblems := tr.completeRunEvacuationRollForward(ctx, b, candidate, adopted, completed, capacityClients, generation, ownerID)
+					problems = append(problems, rollForwardProblems...)
+					journalKept = len(rollForwardProblems) > 0
+				}
+				if len(problems) > 0 {
+					// The journal is replaced only after a complete roll-forward,
+					// which also transferred the run's capacity.
+					journalKept = false
+					tr.failRunEvacuationRollForward(b, candidate, adopted, []map[string]generatorClient{reachable, archives}, generation, ownerID, problems)
+					return
+				}
+			} else if len(problems) == 0 {
 				if err := tr.adoptPodCapacity(ctx, candidate.test.ID, capacityClients, generation, ownerID); err != nil {
 					problems = append(problems, "capacity ownership transfer: "+err.Error())
 				}
@@ -623,13 +686,18 @@ func (tr *TestRunner) isolateRunAdoption(b *distributedExecutionBackend, test *M
 			}
 		}()
 		tr.mu.RLock()
-		journaled := interruptedRunEvacuation(test.continuityCheckpoint)
+		raw := test.continuityCheckpoint
 		tr.mu.RUnlock()
-		if journaled {
+		if interruptedRunEvacuation(raw) {
 			// A run still under its evacuation journal may have unfenced
 			// participants; it stays STOPPING rather than terminal.
+			action := "rolling back the evacuation"
+			var guard runEvacuationCheckpoint
+			if json.Unmarshal([]byte(raw), &guard) == nil && guard.Phase == runEvacuationPhaseRollingForward {
+				action = "rolling the evacuation forward"
+			}
 			tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
-			tr.holdInterruptedRunEvacuation(test, fmt.Sprintf("controller failover: internal error while rolling back the evacuation (%v)", recovered))
+			tr.holdInterruptedRunEvacuation(test, executionLeaseTerm{ownerID: ownerID, generation: generation}, fmt.Sprintf("controller failover: internal error while %s (%v)", action, recovered))
 			return
 		}
 		tr.failRunAdoption(b, test, nil, generation, ownerID, [generatorrpc.RunSupervisionTokenSize]byte{}, fmt.Sprintf("controller failover: internal error while adopting the run (%v)", recovered))
