@@ -25,7 +25,7 @@ Status: implemented behind an opt-in. Qualified locally only.
   1. The journal's prior checkpoint, whose shards equal `BeforeShards`, becomes the adoption checkpoint.
   2. `persistRunEvacuationRollbackIntent` writes phase `rolling_back`, with the planned adoption intent inside the journal, before any generator sees the rotated token.
   3. The same batched epoch claim adopts the prior participants and claims each replacement with no adoption for the run. That claim drains the staged replacement assignment before it is acknowledged.
-  4. `completeRunEvacuationRollback` requires every replacement claim to be acknowledged and the source to be adopted, not completed.
+  4. `completeRunEvacuationRollback` requires every replacement claim to be acknowledged, the source to be adopted, not completed, and no participant completed outside `Prior.CompletedTargets`.
   5. `rollbackRunEvacuationCapacity` then runs under the successor's term:
      - It releases the replacement reservation, or the activated standby reservation, and confirms the release with the generator.
      - For a standby, it then reserves the pre-image idle again and confirms it before committing it.
@@ -34,13 +34,15 @@ Status: implemented behind an opt-in. Qualified locally only.
   7. `adoptPodCapacity` skips, and `AdoptPodCapacity` accepts, an idle standby already reserved under the successor's term.
 - **Failures stay fail-closed.**
   - The journal is replaced only after a complete rollback. That needs:
-    - every prior participant adopted, and the source adopted rather than completed;
+    - every prior participant adopted, the source adopted rather than completed, and no participant completed outside `Prior.CompletedTargets`;
     - every replacement claim acknowledged;
     - every capacity step confirmed.
   - On any problem, `failRunEvacuationRollback`:
     - keeps the `rolling_back` journal;
-    - force-stops each prior participant this term adopted, with the rotated token;
-    - writes the run `STOPPING` with the evacuation-uncertain reason, and installs no runtime.
+    - first writes the run `STOPPING` with the evacuation-uncertain reason, and installs no runtime;
+    - then force-stops each prior participant this term adopted, with the rotated token, and adds any stop that is not acknowledged to the held reason.
+
+    Updated 2026-10-24: the hold now precedes the stops (previously the stops came first), and a participant that reports a completed run the prior lineage never recorded fails the rollback. Both came from the [roll-forward review](../roadmap-evacuation-rollforward-2026-10-24/README.md#review), as did two reload rules that apply to rollback holds too: a reload keeps a hold written in the current term over a row read before the write, and replaces a run object left fenced to a lease term this process lost.
   - A later reader therefore never sees a `RUNNING` row with a plain checkpoint after a failed rollback.
   - That term's fail-closed recovery (`recoverInterruptedRunEvacuation`, `resumeInterruptedRunEvacuations`) does not fence at or below `RollbackGeneration`, because the epoch claim of a term that adopted the prior topology does not drain what it adopted.
   - A newer term fences every participant and records the failure. An administrator attestation also resolves it, because the run has no runtime.
@@ -216,6 +218,6 @@ Gates on the reviewed code (`dd88b5f54`):
   - the capacity-first ordering;
   - marking the journal abandoned when the capacity is not returned;
   - the deferred retry and restore (`finishRestore`).
-- **Some write failures are untested.** A failed `rolling_back` intent write aborts that Phase A attempt, and Phase A is retried. A failed `STOPPING` write in `failRunEvacuationRollback` is retried in the background. Neither has a dedicated test.
-- **A completed source fails the run.** That happens even when the source finished naturally after a same-leader rollback, because it cannot be told apart from a stop issued before the controller was lost.
-- **A failed rollback** leaves the run `STOPPING`, holding its capacity and timeslot, until a newer term fences it or an administrator attests that its generators stopped. That includes an unfenced replacement, a completed source and an unconfirmed capacity step.
+- **Some write failures are untested.** A failed `rolling_back` intent write aborts that Phase A attempt, and Phase A is retried. A failed `STOPPING` write in `failRunEvacuationRollback` is retried in the background. The intent write failure has no dedicated test here; the failed `STOPPING` write and its retry are exercised by the roll-forward record's `TestEvacuationRecoveryHoldsUnrecordedCompletion` and `TestInterruptedRunEvacuationHoldRetry`, which share `failRunEvacuationRecovery`.
+- **A completed source, or a participant with a completion outside `Prior.CompletedTargets`, fails the rollback and holds the run `STOPPING`.** That happens even when it finished naturally, for example the source after a same-leader rollback, because a controller stop ends the same way on the generator.
+- **A failed rollback** leaves the run `STOPPING`, holding its capacity and timeslot, until a newer term fences it or an administrator attests that its generators stopped. That includes an unfenced replacement, a completed source, a participant with an unrecorded completion and an unconfirmed capacity step.
