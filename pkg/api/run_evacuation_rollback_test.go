@@ -19,16 +19,44 @@ import (
 // generator receives during a successor's evacuation rollback.
 type rollbackGeneratorClient struct {
 	*capacityAdoptionClient
-	mu        sync.Mutex
-	claims    [][]generatorrpc.RunAdoption
-	capacity  []*pb.PodCapacityClaim
-	stops     []uint64
-	rejectCap bool
-	panicCap  bool
-	panicStop bool
+	mu       sync.Mutex
+	claims   [][]generatorrpc.RunAdoption
+	capacity []*pb.PodCapacityClaim
+	stops    []uint64
+	// stopTokens records the token of each forced stop; beforeStop runs
+	// first; onClaim runs inside each epoch claim.
+	stopTokens [][]byte
+	beforeStop func()
+	onClaim    func()
+	failStop   bool
+	rejectCap  bool
+	panicCap   bool
+	panicStop  bool
+	// adjustments records duration adjustments; rejectAdjust refuses them.
+	adjustments  []generatorrpc.DurationAdjustment
+	rejectAdjust bool
 }
 
-func (c *rollbackGeneratorClient) StopTestAtGenerationWithToken(_ context.Context, _ string, graceful bool, generation uint64, _ []byte) (generatorrpc.StopResult, error) {
+func (c *rollbackGeneratorClient) AdjustDuration(_ context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.adjustments = append(c.adjustments, adjustment)
+	if c.rejectAdjust {
+		return generatorrpc.DurationResult{}, nil
+	}
+	return generatorrpc.DurationResult{Accepted: true, CurrentDuration: adjustment.TargetDuration}, nil
+}
+
+func (c *rollbackGeneratorClient) durationAdjustments() []generatorrpc.DurationAdjustment {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]generatorrpc.DurationAdjustment(nil), c.adjustments...)
+}
+
+func (c *rollbackGeneratorClient) StopTestAtGenerationWithToken(_ context.Context, _ string, graceful bool, generation uint64, token []byte) (generatorrpc.StopResult, error) {
+	if c.beforeStop != nil {
+		c.beforeStop()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if graceful {
@@ -37,8 +65,29 @@ func (c *rollbackGeneratorClient) StopTestAtGenerationWithToken(_ context.Contex
 	if c.panicStop {
 		panic("stop client failure")
 	}
+	if c.failStop {
+		return generatorrpc.StopResult{}, errors.New("stop not acknowledged")
+	}
 	c.stops = append(c.stops, generation)
+	c.stopTokens = append(c.stopTokens, append([]byte(nil), token...))
 	return generatorrpc.StopResult{Acknowledged: true}, nil
+}
+
+// stoppedWithClaimedToken reports whether every forced stop carried the new
+// token this generator's last epoch claim adopted the run with.
+func (c *rollbackGeneratorClient) stoppedWithClaimedToken() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.claims) == 0 || len(c.claims[len(c.claims)-1]) != 1 {
+		return false
+	}
+	want := c.claims[len(c.claims)-1][0].NewToken
+	for _, token := range c.stopTokens {
+		if len(want) == 0 || string(token) != string(want) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *rollbackGeneratorClient) stopGenerations() []uint64 {
@@ -69,6 +118,9 @@ func (c *rollbackGeneratorClient) ClaimExecutionEpochWithAdoptions(ctx context.C
 	c.mu.Lock()
 	c.claims = append(c.claims, append([]generatorrpc.RunAdoption(nil), adoptions...))
 	c.mu.Unlock()
+	if c.onClaim != nil {
+		c.onClaim()
+	}
 	return c.adoptionFakeClient.ClaimExecutionEpochWithAdoptions(ctx, generation, owner, ttl, adoptions)
 }
 
@@ -95,6 +147,11 @@ type evacuationRollbackFixture struct {
 	sourceGen *rollbackGeneratorClient
 	spareGen  *rollbackGeneratorClient
 	spareDown bool
+	// survivorGen, when set, serves gen-c, a participant the evacuation left
+	// unchanged. replacement, when set, serves gen-b instead of spareGen.
+	survivorGen *rollbackGeneratorClient
+	replacement generatorClient
+	token       []byte
 }
 
 var rollbackBudget = protocol.CapacityVector{CPUCores: 1, MemoryMB: 100, NetworkMbps: 100, VUsers: 10}
@@ -146,7 +203,7 @@ func newEvacuationRollbackFixture(t *testing.T, phase string, standby bool, befo
 		t.Fatal(err)
 	}
 	if phase == runEvacuationPhaseStaged || phase == runEvacuationPhaseSourceFenced {
-		if guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}); err != nil {
+		if guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -186,7 +243,7 @@ func (f *evacuationRollbackFixture) handOver(t *testing.T, name string) (string,
 	successor := newExecutionLeadership(f.store, name)
 	successor.tick()
 	f.tr.leadership = successor
-	f.tr.execution = newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, func(_ context.Context, target string) (generatorClient, error) {
+	f.tr.execution = newDistributedExecutionBackend([]string{"gen-a", "gen-b", "gen-c"}, time.Second, func(_ context.Context, target string) (generatorClient, error) {
 		switch target {
 		case "gen-a":
 			return f.sourceGen, nil
@@ -194,7 +251,14 @@ func (f *evacuationRollbackFixture) handOver(t *testing.T, name string) (string,
 			if f.spareDown {
 				return nil, errors.New("replacement unreachable")
 			}
+			if f.replacement != nil {
+				return f.replacement, nil
+			}
 			return f.spareGen, nil
+		case "gen-c":
+			if f.survivorGen != nil {
+				return f.survivorGen, nil
+			}
 		}
 		return nil, errors.New("unknown generator")
 	})
@@ -250,7 +314,7 @@ func TestEvacuationJournalVersionFollowsRollbackRecovery(t *testing.T) {
 			t.Fatal("an older adoption reader accepted the evacuation journal")
 		}
 		// Progress keeps the version it was written with.
-		staged, err := tr.markRunEvacuationStaged(context.Background(), test, raw, generation, owner, []string{"gen-b"})
+		staged, err := tr.markRunEvacuationStaged(context.Background(), test, raw, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -434,14 +498,14 @@ func (f *evacuationRollbackFixture) assertFailedRollbackHeld(t *testing.T, gener
 		t.Fatal("failed rollback is not eligible for administrator attestation")
 	}
 	stops := f.sourceGen.stopGenerations()
-	if sourceAdopted && (len(stops) != 1 || stops[0] != generation) {
-		t.Fatalf("adopted source stops = %v, want one forced stop at %d", stops, generation)
+	if sourceAdopted && (len(stops) != 1 || stops[0] != generation || !f.sourceGen.stoppedWithClaimedToken()) {
+		t.Fatalf("adopted source stops = %v, want one forced stop at %d with the rotated token", stops, generation)
 	}
 	if !sourceAdopted && len(stops) != 0 {
 		t.Fatalf("unadopted source was stopped: %v", stops)
 	}
 	// The same term may have adopted the prior topology; it cannot fence it.
-	if err := f.tr.recoverInterruptedRunEvacuation(f.test); err == nil || !strings.Contains(err.Error(), "rollback generation") {
+	if err := f.tr.recoverInterruptedRunEvacuation(f.test); err == nil || !strings.Contains(err.Error(), "recovery generation") {
 		t.Fatalf("same-term fail-closed recovery = %v", err)
 	}
 }
@@ -668,7 +732,7 @@ func TestCleanSameLeaderRollbackRestoresPriorCheckpoint(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -710,7 +774,7 @@ func TestCleanRollbackLeavesOtherJournals(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}); err != nil {
+			if guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{}); err != nil {
 				t.Fatal(err)
 			}
 			if mode == "source fenced" {
@@ -941,7 +1005,7 @@ func TestVersionFourCommittedEvacuationIsPromoted(t *testing.T) {
 	}
 	for _, step := range []func(string) (string, error){
 		func(raw string) (string, error) {
-			return tr.markRunEvacuationStaged(context.Background(), test, raw, generation, owner, []string{"gen-b"})
+			return tr.markRunEvacuationStaged(context.Background(), test, raw, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 		},
 		func(raw string) (string, error) {
 			return tr.markRunEvacuationSourceFenced(context.Background(), test, raw, generation, owner)
@@ -1189,7 +1253,7 @@ func TestReArmMarksADeadSameTermJournalAbandoned(t *testing.T) {
 			}
 			if mode == "same term staged" {
 				// The lease and supervision failures roll back after staging.
-				if guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}); err != nil {
+				if guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{}); err != nil {
 					t.Fatal(err)
 				}
 			}

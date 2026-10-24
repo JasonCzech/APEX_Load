@@ -502,7 +502,8 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			stagedTargets = append(stagedTargets, replacementTarget)
 		}
 		slices.Sort(stagedTargets)
-		stagedGuard, stageErr := tr.markRunEvacuationStaged(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID, stagedTargets)
+		stagedGuard, stageErr := tr.markRunEvacuationStaged(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID, stagedTargets,
+			runEvacuationStagedTiming{steadyElapsed: steadyElapsed, remaining: remainingDuration, paused: startPaused})
 		if stageErr != nil {
 			closeUntouchedDialedClients(touchedTargets)
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
@@ -794,6 +795,24 @@ sourceFenced:
 			err:                fmt.Errorf("steady-state duration expired before replacement commit"),
 		}, streamsByTarget, openedStreams, releaseTopology)
 	}
+	if evacuationGuard != "" {
+		// A version 5 journal records the commit and the exact duration the
+		// replacement ends up with (shortened below, or as staged) before any
+		// replacement can cross its start barrier, so a successor can roll it
+		// forward. If the write fails, CommitWork is never sent.
+		committingGuard, committingErr := tr.markRunEvacuationReplacementCommitting(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID, steadyElapsed+min(refreshedRemaining, remainingDuration))
+		if committingErr != nil {
+			closeUntouchedDialedClients(touchedTargets)
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                fmt.Errorf("persist replacement commit intent before CommitWork: %w", committingErr),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+		evacuationGuard = committingGuard
+	}
 	replacementStartAt := time.Now().Add(distributedCommitStartLead(b.timeout))
 	if err := b.commitDistributedWork(executionCtx, testID, executionGeneration, replacementStartAt, replacementClients, runSupervisionToken); err != nil {
 		uncertain := &distributedEvacuationUncertainError{
@@ -830,7 +849,9 @@ sourceFenced:
 		// coordinated start barrier keeps replacement traffic fenced while this
 		// shortening is applied. The replacement checkpoint must not become
 		// adoptable until every shortening acknowledgement is durable in the
-		// generator; a successor cannot safely recompute it after a crash.
+		// generator; a successor cannot safely recompute it after a crash. A
+		// version 5 journal recorded this exact target before CommitWork, and
+		// only a roll-forward successor sends it again.
 		refreshedLogicalDuration := steadyElapsed + refreshedRemaining
 		for _, client := range replacementClients {
 			adjustCtx, cancel := context.WithTimeout(executionCtx, b.timeout)

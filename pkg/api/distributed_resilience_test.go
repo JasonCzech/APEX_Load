@@ -1328,6 +1328,17 @@ func TestDistributedEvacuationCheckpointWriteFailures(t *testing.T) {
 	}
 }
 
+// TestDistributedEvacuationRollForwardJournal drives a real version 5
+// evacuation: the commit intent is durable before CommitWork with the exact
+// duration later sent, and a failed intent write never sends CommitWork.
+func TestDistributedEvacuationRollForwardJournal(t *testing.T) {
+	for _, phase := range []string{"", "replacement-committing", "replacement-committed"} {
+		t.Run(map[string]string{"": "complete"}[phase]+phase, func(t *testing.T) {
+			runEvacuationProvisionScenarioWithOptions(t, true, phase, true)
+		})
+	}
+}
+
 func TestLiveTableEvacuationChannelFailureReleasesRunnerLock(t *testing.T) {
 	runEvacuationProvisionScenarioWithFault(t, false, "live-channel")
 }
@@ -1339,6 +1350,12 @@ func TestLiveTableEvacuationChannelFailureReleasesRunnerLock(t *testing.T) {
 const evacuationProvisionBackendTimeout = 2 * time.Second
 
 func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, checkpointFailure string) {
+	runEvacuationProvisionScenarioWithOptions(t, continuity, checkpointFailure, false)
+}
+
+// runEvacuationProvisionScenarioWithOptions runs the scenario; rollForward
+// enables version 5 journals.
+func runEvacuationProvisionScenarioWithOptions(t *testing.T, continuity bool, checkpointFailure string, rollForward bool) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	const bufSize = 1024 * 1024
@@ -1472,6 +1489,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			t.Fatal(err)
 		}
 		test.Assignment.FailoverPolicy = "continue"
+		runner.evacuationRollbackRecovery, runner.evacuationRollForwardRecovery = rollForward, rollForward
 		if checkpointFailure == "" {
 			var shortened atomic.Bool
 			shortenBeforeSourceFence = func() {
@@ -1494,6 +1512,13 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		}
 	}
 
+	// A version 5 journal holds the commit intent while CommitWork and the
+	// duration adjustment are sent.
+	commitPhase := runEvacuationPhaseSourceFenced
+	if rollForward {
+		commitPhase = runEvacuationPhaseReplacementCommitting
+	}
+	var journaledTarget atomic.Int64
 	if continuity {
 		beforeAssign = func() {
 			record, err := store.GetTest(test.ID)
@@ -1516,8 +1541,17 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			if err := json.Unmarshal([]byte(record.ContinuityCheckpoint), &guard); err != nil {
 				return err
 			}
-			if guard.Phase != runEvacuationPhaseSourceFenced || guard.StagedAt.IsZero() || len(guard.StagedTargets) != 1 || guard.StagedTargets[0] != "gen-b" || guard.SourceFencedAt.IsZero() {
+			if guard.Phase != commitPhase || guard.StagedAt.IsZero() || len(guard.StagedTargets) != 1 || guard.StagedTargets[0] != "gen-b" || guard.SourceFencedAt.IsZero() {
 				return errors.New("replacement commit preceded durable positive source fence")
+			}
+			if rollForward {
+				// The staged timing is the paused run's, and the commit intent
+				// never exceeds it.
+				if guard.Version != runEvacuationRollForwardCheckpointVersion || guard.CommittingAt.IsZero() || !guard.StagedPaused || guard.StagedRemaining <= 0 ||
+					guard.CommitTargetDuration <= 0 || guard.CommitTargetDuration > guard.StagedSteadyElapsed+guard.StagedRemaining {
+					return fmt.Errorf("replacement commit preceded a complete commit intent: %+v", guard)
+				}
+				journaledTarget.Store(int64(guard.CommitTargetDuration))
 			}
 			return nil
 		}
@@ -1531,7 +1565,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			if err := json.Unmarshal([]byte(record.ContinuityCheckpoint), &guard); err != nil {
 				return err
 			}
-			if guard.Phase != runEvacuationPhaseSourceFenced || !guard.ReplacementCommittedAt.IsZero() {
+			if guard.Phase != commitPhase || !guard.ReplacementCommittedAt.IsZero() {
 				return fmt.Errorf("replacement became adoptable before duration adjustment: %s", guard.Phase)
 			}
 			return nil
@@ -1539,14 +1573,19 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	}
 
 	if checkpointFailure != "" && checkpointFailure != "live-channel" {
+		journalVersion := runEvacuationCheckpointVersion
+		if rollForward {
+			journalVersion = runEvacuationRollForwardCheckpointVersion
+		}
 		runner.testStore = sqliteOverlay(&evacuationCheckpointFaultStore{SQLiteStore: store, rejectWrite: func(next string) bool {
 			var guard runEvacuationCheckpoint
-			if json.Unmarshal([]byte(next), &guard) != nil || guard.Version != runEvacuationCheckpointVersion {
+			if json.Unmarshal([]byte(next), &guard) != nil || guard.Version != journalVersion {
 				return checkpointFailure == "complete"
 			}
 			return (checkpointFailure == "prepare" && guard.Phase == runEvacuationPhasePrepared) ||
 				(checkpointFailure == "staged" && guard.Phase == runEvacuationPhaseStaged) ||
 				(checkpointFailure == "source-fenced" && guard.Phase == runEvacuationPhaseSourceFenced) ||
+				(checkpointFailure == "replacement-committing" && guard.Phase == runEvacuationPhaseReplacementCommitting) ||
 				(checkpointFailure == "replacement-committed" && guard.Phase == runEvacuationPhaseReplacementCommitted)
 		}})
 	}
@@ -1594,7 +1633,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		if got := replacementRequests.Load(); got != 0 {
 			t.Fatalf("paused replacement emitted %d requests", got)
 		}
-		if (checkpointFailure == "staged" || checkpointFailure == "source-fenced") && replacementClient == nil {
+		if (checkpointFailure == "staged" || checkpointFailure == "source-fenced" || checkpointFailure == "replacement-committing") && replacementClient == nil {
 			t.Fatal("checkpoint fault never reached a staged replacement")
 		}
 		if checkpointFailure != "complete" && checkpointFailure != "replacement-committed" && replacementClient != nil && replacementClient.commitCalls.Load() != 0 {
@@ -1638,6 +1677,9 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	if continuity {
 		if !durationAdjusted.Load() {
 			t.Fatal("continuity evacuation did not exercise pre-checkpoint duration shortening")
+		}
+		if adjustments := replacementClient.recordedDurationAdjustments(); rollForward && (len(adjustments) != 1 || int64(adjustments[0].TargetDuration) != journaledTarget.Load()) {
+			t.Fatalf("duration adjustments = %+v, want exactly the journaled %s", adjustments, time.Duration(journaledTarget.Load()))
 		}
 		select {
 		case phase := <-sourceStopCheckpointPhase:

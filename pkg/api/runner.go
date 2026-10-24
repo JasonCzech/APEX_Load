@@ -377,6 +377,23 @@ type TestRunner struct {
 	// a successor roll a prepared or staged evacuation back to its prior
 	// topology. Off until that recovery is qualified for a deployment.
 	evacuationRollbackRecovery bool
+	// evacuationRollForwardRecovery, with evacuationRollbackRecovery, writes
+	// version 5 evacuation journals and lets a successor roll an evacuation
+	// forward once its replacement may have received CommitWork. Off until
+	// that recovery is qualified for a deployment.
+	evacuationRollForwardRecovery bool
+	// evacuationHolds is each run's latest interrupted-evacuation hold; the
+	// run's single background hold retry (evacuationHoldRetrying) writes it.
+	evacuationHoldsMu      sync.Mutex
+	evacuationHolds        map[string]*interruptedRunEvacuationHold
+	evacuationHoldRetrying map[string]struct{}
+	// evacuationHoldWrites is each run's hold write lock, shared by every
+	// hold object of the run.
+	evacuationHoldWrites map[string]*sync.Mutex
+	// afterLiveTableFinalizeCheck is a deterministic test barrier between a
+	// live-table finalization's ownership check and the finalization itself.
+	// Production leaves it nil.
+	afterLiveTableFinalizeCheck func()
 	// runAdoptionDoneGeneration is the durable execution generation whose
 	// acquire-time run adoption (Phase A) has finished. The generator epoch
 	// keeper waits for it instead of for the whole reconcile.
@@ -812,6 +829,10 @@ type ManagedTest struct {
 	// that created/claimed this run. It is intentionally process-private and is
 	// checked transactionally for every production full-row save.
 	executionFence string
+	// evacuationHoldOwner is the lease owner under which an interrupted
+	// evacuation hold last wrote this run STOPPING. A reload keeps that newer
+	// local hold over a row read before the write only within the same term.
+	evacuationHoldOwner string
 	// passiveOperationToken serializes process-local transitions that persist a
 	// startable row after releasing tr.mu. The HA execution fence cannot provide
 	// this protection when durable fencing is disabled, so every controller mode
