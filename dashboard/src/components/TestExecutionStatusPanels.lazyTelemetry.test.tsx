@@ -19,7 +19,7 @@ vi.mock('./TelemetryPolicySegments', async importOriginal => {
   await chunk.ready
   return importOriginal()
 })
-vi.mock('./TelemetryPolicySelect', () => ({ default: () => <select data-testid="budget-select" /> }))
+vi.mock('./TelemetryPolicySelect', () => ({ default: () => <select aria-label="Telemetry budget policy" data-testid="budget-select" /> }))
 
 const policy = { policy_id: 'system-telemetry-budgets', hash: 'a'.repeat(64), cadence_scope: 'local-controller-ticker', budgets: [] } as unknown as TelemetryBudgetPolicy
 const run = (id: string, status: string, segments?: unknown[]) => ({ id, name: 'Run', status, project_id: 'project-a', groups: [], total_vusers: 1, duration: '1m',
