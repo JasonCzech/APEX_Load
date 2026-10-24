@@ -101,6 +101,7 @@ Every Markdown file directly under `docs/`, other than this index itself, appear
 | [dsl.schema.json](dsl.schema.json) | Generated | `go generate ./pkg/dsl` |
 | [DSL_ACTION_REFERENCE.md](DSL_ACTION_REFERENCE.md) | Generated | `go generate ./pkg/dsl` |
 | [LOADRUNNER_COVERAGE.md](LOADRUNNER_COVERAGE.md) | Generated | `go generate ./pkg/convert/enterprisearchive` |
+| [DATA_MODEL.md](DATA_MODEL.md) | Generated | `go generate ./pkg/storage` |
 
 ## Roadmap and QA program
 

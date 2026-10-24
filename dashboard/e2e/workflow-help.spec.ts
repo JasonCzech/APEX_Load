@@ -242,6 +242,37 @@ test('Help maintains readable contrast across the supported themes', async ({ pa
   }
 })
 
+test('administrators can read the data model as drawn, accessible diagrams in every theme', async ({ page }, testInfo) => {
+  await page.goto('/#/docs?guide=admin-guide&article=data-model')
+  await expect(page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'Data model', exact: true })).toHaveAttribute('aria-current', 'page')
+  const figures = page.locator('figure.entity-diagram')
+  await expect(figures.first().getByRole('img')).toHaveAttribute('aria-label', /^Overview: entity relationship diagram of \d+ tables and \d+ relationships$/)
+  expect(await figures.count()).toBeGreaterThan(10)
+  // Every erDiagram fence draws; none is left as Mermaid source.
+  await expect(page.locator('pre code[data-language="mermaid"]')).toHaveCount(0)
+  await figures.first().locator('.entity-diagram-node').filter({ has: page.locator('.entity-diagram-name', { hasText: /^tests$/ }) }).hover()
+  await expect(figures.first().locator('.entity-diagram-edges path.is-active')).toHaveCount(9)
+  await page.screenshot({ path: testInfo.outputPath('help-data-model.png'), animations: 'disabled' })
+  const audit = () => page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace', { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations)
+  expect(await audit()).toEqual([])
+  // Theme preferences persist per user, so switch the document theme only.
+  for (const theme of ['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed']) {
+    await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+    await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'))
+    const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('figure.entity-diagram', { runOnly: ['color-contrast'] })).violations)
+    expect(violations, theme).toEqual([])
+  }
+  // At phone width the diagrams keep legible text and scroll inside their figure, not the page.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect.poll(() => figures.nth(1).getAttribute('role')).toBe('region')
+  expect(await page.locator('.help-workspace').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  expect(await audit()).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('help-data-model-narrow.png'), animations: 'disabled' })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('run_archive_replica_holds')
+  await expect(page.locator('.help-search-results').getByRole('link', { name: /Data model/ }).first()).toBeVisible()
+})
+
 test('retained resource guide is searchable and remains selected after reload and narrowing', async ({ page }, testInfo) => {
   await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('opaque continuation')
   await page.locator('.help-search-results').getByRole('link', { name: 'Retained resource inspection', exact: true }).click()
