@@ -18,9 +18,11 @@ import (
 // evacuation whose source was positively fenced and whose replacement may have
 // received CommitWork. The source can no longer produce load, so the next
 // topology is the only one that can. Only an adopted replacement proves it
-// crossed its start barrier: a staged one is drained by the epoch claim, and a
-// completed one cannot be told apart from a stopped staged assignment, so the
-// run is held STOPPING. So is a survivor completed outside the prior lineage.
+// crossed its start barrier: a staged one is drained by the epoch claim. A
+// completed one proves it only when its generator reports that the
+// replacement's journaled duration ran out; any other completion may be a
+// stopped staged assignment, so the run is held STOPPING. So is a survivor
+// completed outside the prior lineage for any reason but its duration.
 type runEvacuationRollForward struct {
 	guard        runEvacuationCheckpoint
 	raw          string
@@ -231,20 +233,25 @@ func (tr *TestRunner) persistRunEvacuationRollForwardIntent(test *ManagedTest, r
 }
 
 // completeRunEvacuationRollForward runs after the batched epoch claim adopted
-// the survivors and the replacement. It requires every replacement adopted and
-// no completion the prior lineage did not record, applies the journaled
-// duration to each replacement, commits and transfers the run's capacity and only then
-// replaces the journal with the plain adoption checkpoint. Any problem leaves
-// the journal for failRunEvacuationRollForward.
-func (tr *TestRunner) completeRunEvacuationRollForward(ctx context.Context, b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted, completed, capacityClients map[string]generatorClient, generation uint64, owner string) []string {
+// the survivors and the replacement. It requires every replacement adopted or
+// naturally completed and no other completion the prior lineage did not
+// record, applies the journaled duration to each adopted replacement, commits
+// and transfers the run's capacity, releases a naturally completed
+// replacement's pending reservation, and only then replaces the journal with
+// the plain adoption checkpoint, which records the natural completions. Any
+// problem leaves the journal for failRunEvacuationRollForward.
+func (tr *TestRunner) completeRunEvacuationRollForward(ctx context.Context, b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted, completed map[string]generatorClient, completions map[string]generatorrpc.RunAdoptionResult, capacityClients map[string]generatorClient, generation uint64, owner string) []string {
 	rollForward := candidate.rollForward
 	guard := rollForward.guard
 	// A stop ends in a completed run on the generator, of a still-staged
-	// replacement as of a survivor, so only the prior lineage's completions are
-	// trusted. Anything else may be load this run lost.
-	problems := unexpectedRunEvacuationCompletions(guard, rollForward.replacements, completed)
+	// replacement as of a survivor, so only the prior lineage's completions
+	// and completions whose duration ran out are trusted. Anything else may
+	// be load this run lost.
+	natural := tr.runEvacuationNaturalCompletions(candidate.test, guard, rollForward.replacements, completions)
+	problems := unexpectedRunEvacuationCompletions(guard, rollForward.replacements, completed, completions, natural, tr.runEvacuationDuration(candidate.test))
 	for _, target := range rollForward.replacements {
-		// A completion outside the prior lineage is already reported above.
+		// A completion outside the prior lineage is natural or already
+		// reported above.
 		if adopted[target] == nil && (completed[target] == nil || slices.Contains(guard.Prior.CompletedTargets, target)) {
 			problems = append(problems, fmt.Sprintf("replacement %s was not adopted, so its shard never committed", target))
 		}
@@ -254,9 +261,13 @@ func (tr *TestRunner) completeRunEvacuationRollForward(ctx context.Context, b *d
 	}
 	// The predecessor shortened the replacement right after CommitWork. The
 	// target is absolute, so a repeat is a no-op, and an elapsed one ends the
-	// replacement's engines at once.
+	// replacement's engines at once. A replacement whose journaled duration
+	// already ran out needs none.
 	for _, target := range rollForward.replacements {
 		client := adopted[target]
+		if client == nil && natural[target] {
+			continue
+		}
 		if client == nil {
 			// Already a problem above; never send it a duration change.
 			problems = append(problems, fmt.Sprintf("replacement %s has no adopted generator to shorten", target))
@@ -281,12 +292,16 @@ func (tr *TestRunner) completeRunEvacuationRollForward(ctx context.Context, b *d
 	if len(problems) > 0 {
 		return problems
 	}
-	if err := tr.commitRunEvacuationRollForwardCapacity(ctx, guard, rollForward.replacements, adopted, generation, owner); err != nil {
+	if err := tr.commitRunEvacuationRollForwardCapacity(ctx, guard, rollForward.replacements, adopted, completed, natural, generation, owner); err != nil {
 		return []string{"evacuation capacity commit: " + err.Error()}
 	}
 	if err := tr.adoptPodCapacity(ctx, candidate.test.ID, capacityClients, generation, owner); err != nil {
 		return []string{"capacity ownership transfer: " + err.Error()}
 	}
+	// The plain checkpoint records each participant whose duration ran out, so
+	// a later successor need not ask its generator, which may have pruned the
+	// outcome, again.
+	candidate.checkpoint = withRunEvacuationNaturalCompletions(candidate.checkpoint, natural)
 	encoded, err := json.Marshal(candidate.checkpoint)
 	if err == nil {
 		err = tr.swapRunContinuityCheckpoint(candidate.test, rollForward.raw, string(encoded), owner)
@@ -301,8 +316,11 @@ func (tr *TestRunner) completeRunEvacuationRollForward(ctx context.Context, b *d
 // reservation to committed, as the predecessor would have after CommitWork. A
 // pending row is first confirmed by the adopted replacement at this epoch. A
 // row already committed, by the predecessor or by an earlier successor term,
-// is left for adoptPodCapacity to transfer. Every replacement was adopted.
-func (tr *TestRunner) commitRunEvacuationRollForwardCapacity(ctx context.Context, guard runEvacuationCheckpoint, replacements []string, adopted map[string]generatorClient, generation uint64, owner string) error {
+// is left for adoptPodCapacity to transfer. A naturally completed replacement
+// needs no capacity: its pending row is released through its retained client,
+// a row an earlier term released is gone, and a committed row is left, as for
+// any completed participant. Every other replacement was adopted.
+func (tr *TestRunner) commitRunEvacuationRollForwardCapacity(ctx context.Context, guard runEvacuationCheckpoint, replacements []string, adopted, completed map[string]generatorClient, natural map[string]bool, generation uint64, owner string) error {
 	store, ok := tr.testStore.(podCapacityStore)
 	if !ok {
 		if len(guard.CapacityClaims) > 0 {
@@ -332,6 +350,8 @@ func (tr *TestRunner) commitRunEvacuationRollForwardCapacity(ctx context.Context
 			return fmt.Errorf("%s holds a reservation the evacuation journal did not record", target)
 		case !journaled:
 			continue
+		case !present && natural[target] && adopted[target] == nil:
+			continue
 		case !present:
 			return fmt.Errorf("%s lost its replacement reservation", target)
 		}
@@ -342,6 +362,15 @@ func (tr *TestRunner) commitRunEvacuationRollForwardCapacity(ctx context.Context
 		}
 		switch {
 		case row.State == "committed" && row.Generation >= guard.Generation && row.Generation < generation:
+			continue
+		case natural[target] && adopted[target] == nil && (row.State == "pending" || row.State == "releasing") && row.Generation == guard.Generation:
+			capacity, ok := completed[target].(podCapacityClient)
+			if !ok {
+				return fmt.Errorf("%s cannot confirm capacity changes", target)
+			}
+			if err := tr.releaseRunEvacuationReplacementClaim(ctx, store, capacity, row, claim, generation, owner); err != nil {
+				return fmt.Errorf("%s: release the completed replacement's reservation: %w", target, err)
+			}
 			continue
 		case row.State == "pending" && row.Generation == guard.Generation:
 		default:

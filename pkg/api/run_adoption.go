@@ -371,6 +371,9 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 	for _, candidate := range candidates {
 		adopted := make(map[string]generatorClient)
 		completed := make(map[string]generatorClient)
+		// completions holds what each generator that reported a completed run
+		// said about it; prior completed targets were not asked.
+		completions := make(map[string]generatorrpc.RunAdoptionResult)
 		reachable := make(map[string]generatorClient)
 		problems := make([]string, 0)
 		unreachableGenerator := false
@@ -408,7 +411,9 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			case outcome.Outcome == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED:
 				adopted[target] = client
 			case outcome.Outcome == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED:
-				completed[target] = client
+				completed[target], completions[target] = client, outcome
+				slog.Info("generator reports the run completed before adoption", "test_id", candidate.test.ID, "target", target,
+					"terminal_cause", outcome.TerminalCause.String(), "completed_logical_duration", outcome.CompletedDuration)
 			default:
 				detail := strings.TrimSpace(outcome.Detail)
 				if outcome.TerminalState != "" {
@@ -454,7 +459,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				}()
 				if len(problems) == 0 {
 					var rollbackProblems []string
-					restoredStandbys, rollbackProblems = tr.completeRunEvacuationRollback(ctx, candidate, results, completed, generation, ownerID)
+					restoredStandbys, rollbackProblems = tr.completeRunEvacuationRollback(ctx, candidate, results, completed, completions, generation, ownerID)
 					problems = append(problems, rollbackProblems...)
 					journalKept = len(rollbackProblems) > 0
 				}
@@ -495,7 +500,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 					}
 				}()
 				if len(problems) == 0 {
-					rollForwardProblems := tr.completeRunEvacuationRollForward(ctx, b, candidate, adopted, completed, capacityClients, generation, ownerID)
+					rollForwardProblems := tr.completeRunEvacuationRollForward(ctx, b, candidate, adopted, completed, completions, capacityClients, generation, ownerID)
 					problems = append(problems, rollForwardProblems...)
 					journalKept = len(rollForwardProblems) > 0
 				}

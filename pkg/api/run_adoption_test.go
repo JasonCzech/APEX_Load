@@ -219,10 +219,14 @@ func TestGeneratorEpochKeeperReleasesWhenAdoptionPhaseCompletes(t *testing.T) {
 }
 
 // adoptionFakeClient answers epoch claims with one adoption outcome for every
-// requested run. Other generatorClient methods are unused by Phase A.
+// requested run, reporting cause and completed as a completed run's terminal
+// cause and logical duration. Other generatorClient methods are unused by
+// Phase A.
 type adoptionFakeClient struct {
 	generatorClient
-	outcome pb.RunAdoptionOutcome
+	outcome   pb.RunAdoptionOutcome
+	cause     pb.RunTerminalCause
+	completed time.Duration
 }
 
 func (c *adoptionFakeClient) ClaimExecutionEpoch(_ context.Context, generation uint64, _ string, _ time.Duration) (generatorrpc.ExecutionEpochResult, error) {
@@ -232,7 +236,7 @@ func (c *adoptionFakeClient) ClaimExecutionEpoch(_ context.Context, generation u
 func (c *adoptionFakeClient) ClaimExecutionEpochWithAdoptions(_ context.Context, generation uint64, _ string, _ time.Duration, adoptions []generatorrpc.RunAdoption) (generatorrpc.ExecutionEpochResult, error) {
 	result := generatorrpc.ExecutionEpochResult{Accepted: true, CurrentGeneration: generation, AdoptionSupported: true}
 	for _, adoption := range adoptions {
-		result.Adoptions = append(result.Adoptions, generatorrpc.RunAdoptionResult{TestID: adoption.TestID, Outcome: c.outcome, TerminalState: "COMPLETE"})
+		result.Adoptions = append(result.Adoptions, generatorrpc.RunAdoptionResult{TestID: adoption.TestID, Outcome: c.outcome, TerminalState: "COMPLETE", TerminalCause: c.cause, CompletedDuration: c.completed})
 	}
 	return result, nil
 }

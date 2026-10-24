@@ -593,6 +593,13 @@ replacement that never committed is drained by the epoch claim, or reports a
 completed run, which does not prove a commit; that, or any participant
 reporting a completion the prior lineage never recorded, holds the run
 `STOPPING` ([record](qa/reviews/roadmap-evacuation-rollforward-2026-10-24/README.md)).
+Current generators now report why a run ended, and both paths trust a
+participant whose duration ran out, at no less than the journaled commit
+target or the run's durable duration; a controller stop, an early end, a
+shorter duration or a generator that reports no cause still holds the run
+([record](qa/reviews/roadmap-generator-terminal-cause-2026-10-24/README.md)).
+Version 3 and 4 `source_fenced` journals stay fail-closed until a newer term
+fences the run or an administrator attests.
 Neither path restarts a missing replacement, and neither is qualified on a
 deployed cluster.
 

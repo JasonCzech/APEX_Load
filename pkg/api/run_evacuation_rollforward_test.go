@@ -895,28 +895,35 @@ func (f *evacuationRollbackFixture) restartAfterFailedHold(t *testing.T, faults 
 }
 
 // A generator reports a completed run for a stopped staged assignment too,
-// so a completed replacement never proves its commit.
+// so a completed replacement proves its commit only when its duration ran out
+// (TestEvacuationRecoveryTrustsANaturalCompletion). A stop, or a generator that
+// reports no cause, holds the run.
 func TestEvacuationRollForwardHoldsCompletedReplacement(t *testing.T) {
-	t.Run("stopped by its own leader", func(t *testing.T) {
-		// The predecessor's uncertain path stopped the still-staged
-		// replacement after writing its commit intent.
-		f := newEvacuationRollForwardFixture(t, rollForwardOptions{})
-		f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED
-		_, generation := f.tr.leadership.executionLeaseTerm()
-		if err := f.tr.adoptOrphanedRuns(); err != nil {
-			t.Fatal(err)
-		}
-		f.assertFailedRollForwardHeld(t, generation, "replacement gen-b reports a completed run", true, false)
-		if adjustments := f.spareGen.durationAdjustments(); len(adjustments) != 0 {
-			t.Fatalf("a completed replacement was adjusted: %+v", adjustments)
-		}
-		if _, capacity := f.spareGen.snapshot(); len(capacity) != 0 {
-			t.Fatalf("a completed replacement received capacity requests: %+v", capacity)
-		}
-		if row := f.ledger(t)["gen-b"]; row.State != "pending" || row.Generation != f.oldGen {
-			t.Fatalf("completed replacement capacity changed: %+v", row)
-		}
-	})
+	for cause, want := range map[pb.RunTerminalCause]string{
+		pb.RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP: "replacement gen-b reports a completed run the journal never recorded: it was stopped by a controller",
+		pb.RunTerminalCause_RUN_TERMINAL_CAUSE_UNSPECIFIED:     "replacement gen-b reports a completed run the journal never recorded: its generator reports no terminal cause",
+	} {
+		t.Run("stopped by its own leader/"+cause.String(), func(t *testing.T) {
+			// The predecessor's uncertain path stopped the still-staged
+			// replacement after writing its commit intent.
+			f := newEvacuationRollForwardFixture(t, rollForwardOptions{})
+			completeWithCause(f.spareGen, cause, 0)
+			_, generation := f.tr.leadership.executionLeaseTerm()
+			if err := f.tr.adoptOrphanedRuns(); err != nil {
+				t.Fatal(err)
+			}
+			f.assertFailedRollForwardHeld(t, generation, want, true, false)
+			if adjustments := f.spareGen.durationAdjustments(); len(adjustments) != 0 {
+				t.Fatalf("a completed replacement was adjusted: %+v", adjustments)
+			}
+			if _, capacity := f.spareGen.snapshot(); len(capacity) != 0 {
+				t.Fatalf("a completed replacement received capacity requests: %+v", capacity)
+			}
+			if row := f.ledger(t)["gen-b"]; row.State != "pending" || row.Generation != f.oldGen {
+				t.Fatalf("completed replacement capacity changed: %+v", row)
+			}
+		})
+	}
 	t.Run("stopped by a failed successor", func(t *testing.T) {
 		// The first successor fails after adopting, cannot write its hold, and
 		// still stops everything it adopted.
@@ -937,14 +944,14 @@ func TestEvacuationRollForwardHoldsCompletedReplacement(t *testing.T) {
 				t.Fatalf("%s stops after a failed hold = %v, want one at %d", name, stops, first)
 			}
 		}
-		// Every stopped assignment now reports a completed run.
-		f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED
-		f.survivorGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED
+		// Every stopped assignment now reports a run a controller stopped.
+		completeWithCause(f.spareGen, pb.RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP, 0)
+		completeWithCause(f.survivorGen, pb.RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP, 0)
 		_, second := f.restartAfterFailedHold(t, faults, "roll-forward-after-a-failed-successor")
 		if err := f.tr.adoptOrphanedRuns(); err != nil {
 			t.Fatal(err)
 		}
-		f.assertFailedRollForwardHeld(t, second, "reports a completed run the journal never recorded", false, false)
+		f.assertFailedRollForwardHeld(t, second, "reports a completed run the journal never recorded: it was stopped by a controller", false, false)
 		if adjustments := f.spareGen.durationAdjustments(); len(adjustments) != 1 || adjustments[0].ExecutionGeneration != first {
 			t.Fatalf("duration adjustments = %+v, want only the first successor's", adjustments)
 		}
@@ -1004,7 +1011,7 @@ func TestEvacuationRecoveryHoldsUnrecordedCompletion(t *testing.T) {
 			// The lost leader's uncertain path stopped the survivor, and was cut
 			// off before it stopped the rest.
 			f := newEvacuationRollForwardFixture(t, rollForwardOptions{phase: phase})
-			f.survivorGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED
+			completeWithCause(f.survivorGen, pb.RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP, 0)
 			_, generation := f.tr.leadership.executionLeaseTerm()
 			if err := f.tr.adoptOrphanedRuns(); err != nil {
 				t.Fatal(err)
@@ -1032,7 +1039,7 @@ func TestEvacuationRecoveryHoldsUnrecordedCompletion(t *testing.T) {
 			if stops := f.survivorGen.stopGenerations(); len(stops) != 1 || stops[0] != first {
 				t.Fatalf("survivor stops = %v, want one at %d", stops, first)
 			}
-			f.survivorGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED
+			completeWithCause(f.survivorGen, pb.RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP, 0)
 			stillRunning.failStop, f.spareGen.rejectAdjust, f.spareDown = false, false, false
 			record, second := f.restartAfterFailedHold(t, faults, name+"-after-a-failed-successor")
 			if record.Status != "RUNNING" {
@@ -1915,7 +1922,7 @@ func TestCompleteRunEvacuationRollForwardRequiresTheReplacement(t *testing.T) {
 				t.Fatalf("completion without the replacement panicked: %v", recovered)
 			}
 		}()
-		problems = f.tr.completeRunEvacuationRollForward(context.Background(), f.tr.execution.(*distributedExecutionBackend), candidate, survivor, nil, survivor, generation, owner)
+		problems = f.tr.completeRunEvacuationRollForward(context.Background(), f.tr.execution.(*distributedExecutionBackend), candidate, survivor, nil, nil, survivor, generation, owner)
 	}()
 	if len(problems) != 1 || !strings.Contains(problems[0], "replacement gen-b was not adopted") {
 		t.Fatalf("problems = %v", problems)
@@ -1944,21 +1951,32 @@ func TestCommitRunEvacuationRollForwardCapacityRefusesUnprovableRows(t *testing.
 	adopted := map[string]generatorClient{"gen-b": f.spareGen}
 	unrecorded := guard
 	unrecorded.CapacityClaims = nil
-	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, unrecorded, replacements, adopted, generation, owner); err == nil || !strings.Contains(err.Error(), "did not record") {
+	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, unrecorded, replacements, adopted, nil, nil, generation, owner); err == nil || !strings.Contains(err.Error(), "did not record") {
 		t.Fatalf("unjournaled reservation = %v", err)
 	}
-	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, guard, replacements, map[string]generatorClient{"gen-b": &adoptionFakeClient{}}, generation, owner); err == nil || !strings.Contains(err.Error(), "cannot confirm capacity changes") {
+	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, guard, replacements, map[string]generatorClient{"gen-b": &adoptionFakeClient{}}, nil, nil, generation, owner); err == nil || !strings.Contains(err.Error(), "cannot confirm capacity changes") {
 		t.Fatalf("client without capacity RPC = %v", err)
 	}
+	// A naturally completed replacement's row is released only at the
+	// journal's own term.
+	f.tr.testStore = &rollbackLedgerStore{SQLiteStore: f.store, rewrite: func(r *storage.PodCapacityReservation) {
+		if r.Target == "gen-b" {
+			r.Generation += 100
+		}
+	}}
+	natural := map[string]bool{"gen-b": true}
+	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, guard, replacements, nil, adopted, natural, generation, owner); err == nil || !strings.Contains(err.Error(), "replacement reservation is pending under generation") {
+		t.Fatalf("natural replacement row from another term = %v", err)
+	}
 	f.tr.testStore = noLedgerTestStore{f.store}
-	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, guard, replacements, adopted, generation, owner); err == nil || !strings.Contains(err.Error(), "capacity ledger unavailable") {
+	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, guard, replacements, adopted, nil, nil, generation, owner); err == nil || !strings.Contains(err.Error(), "capacity ledger unavailable") {
 		t.Fatalf("no capacity ledger = %v", err)
 	}
 	f.tr.testStore = f.store
 	if err := f.store.TransitionPodCapacity("gen-b", f.test.ID, "pod-b", f.claim.ReservationID, "released", executionLeaseName, owner, generation); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, guard, replacements, adopted, generation, owner); err == nil || !strings.Contains(err.Error(), "lost its replacement reservation") {
+	if err := f.tr.commitRunEvacuationRollForwardCapacity(ctx, guard, replacements, adopted, nil, nil, generation, owner); err == nil || !strings.Contains(err.Error(), "lost its replacement reservation") {
 		t.Fatalf("lost reservation = %v", err)
 	}
 	if _, capacity := f.spareGen.snapshot(); len(capacity) != 0 {
@@ -2345,6 +2363,12 @@ func TestEvacuationRollForwardAgainstRealGenerator(t *testing.T) {
 	// The orphaned loss-tolerant replacement's per-run lease was cleared when
 	// its epoch lapsed; the duration adjustment does not need it renewed.
 	t.Run("loss-tolerant replacement is adopted", func(t *testing.T) { runRealGeneratorRollForward(t, "loss tolerant") })
+	// The committed replacement's staged duration ran out before the
+	// successor: its generator reports why, so the run rolls forward with the
+	// replacement completed.
+	t.Run("naturally completed replacement rolls forward", func(t *testing.T) { runRealGeneratorRollForward(t, "naturally completed") })
+	// The predecessor stopped the committed replacement: a controller stop.
+	t.Run("stopped committed replacement is held", func(t *testing.T) { runRealGeneratorRollForward(t, "stopped committed") })
 }
 
 // TestEvacuationRollForwardExpiredDeadlineCompletes rolls forward a
@@ -2361,8 +2385,15 @@ func runRealGeneratorRollForward(t *testing.T, mode string) {
 	t.Cleanup(target.Close)
 	client, service := newTestGeneratorRPCClient(t, "gen-b", 10, generatorrpc.WithExecution(), generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")))
 	commitTarget := rollForwardCommitTarget
+	stagedRemaining := rollForwardStagedRemaining
 	if mode == "expired" {
 		commitTarget = rollForwardStagedElapsed + time.Millisecond
+	}
+	if mode == "naturally completed" {
+		// The predecessor staged exactly the journaled target, so it sent no
+		// adjustment after CommitWork.
+		stagedRemaining = 300 * time.Millisecond
+		commitTarget = rollForwardStagedElapsed + stagedRemaining
 	}
 	ctx := context.Background()
 	lossTolerant := mode == "loss tolerant"
@@ -2387,7 +2418,7 @@ func runRealGeneratorRollForward(t *testing.T, mode string) {
 		}
 		assign, err := client.AssignWork(ctx, generatorrpc.Assignment{
 			TestID: f.test.ID, GroupName: "ga", ScriptID: "script", ScriptContent: content, ExpectedScriptHash: hash,
-			VUserCount: 1, ExecutionGeneration: f.oldGen, TargetDuration: rollForwardStagedRemaining, DurationOffset: rollForwardStagedElapsed,
+			VUserCount: 1, ExecutionGeneration: f.oldGen, TargetDuration: stagedRemaining, DurationOffset: rollForwardStagedElapsed,
 			RunSupervisionToken: f.token, AdoptionGrace: 30 * time.Second, RequireTestExecutionLease: lossTolerant,
 		})
 		if err != nil || !assign.Accepted {
@@ -2415,6 +2446,17 @@ func runRealGeneratorRollForward(t *testing.T, mode string) {
 			}
 			waitForActiveVUsers(t, service, 1)
 		}
+		switch mode {
+		case "naturally completed":
+			awaitRetainedTerminal(t, client, f.test.ID, f.oldGen)
+		case "stopped committed":
+			stopCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			stop, err := stopGeneratorTestWithToken(stopCtx, client, f.test.ID, false, f.oldGen, f.token)
+			cancel()
+			if err != nil || !stop.Acknowledged {
+				t.Fatalf("predecessor stop of the committed replacement = (%+v, %v)", stop, err)
+			}
+		}
 		if lossTolerant {
 			// Wait until the lost term's epoch has lapsed and the generator
 			// refuses its mutations; the replacement is then orphaned. The
@@ -2437,8 +2479,19 @@ func runRealGeneratorRollForward(t *testing.T, mode string) {
 	if err := f.tr.adoptOrphanedRuns(); err != nil {
 		t.Fatal(err)
 	}
-	if mode == "stopped staged" {
-		f.assertFailedRollForwardHeld(t, generation, "replacement gen-b reports a completed run", true, false)
+	if mode == "stopped staged" || mode == "stopped committed" {
+		f.assertFailedRollForwardHeld(t, generation, "replacement gen-b reports a completed run the journal never recorded: it was stopped by a controller", true, false)
+		return
+	}
+	if mode == "naturally completed" {
+		resume := f.test.adoptedResume
+		if resume == nil || resume.finishStatus != "" || resume.completed["gen-b"] == nil || resume.adopted["gen-b"] != nil || resume.adopted["gen-c"] == nil {
+			t.Fatalf("naturally completed replacement not rolled forward: %+v", resume)
+		}
+		owner, _ := f.tr.leadership.executionLeaseTerm()
+		if completed := f.durableCompletedTargets(t, owner, generation); !slices.Contains(completed, "gen-b") {
+			t.Fatalf("completed targets = %v, want gen-b", completed)
+		}
 		return
 	}
 	if mode == "staged" {
@@ -2478,6 +2531,28 @@ func runRealGeneratorRollForward(t *testing.T, mode string) {
 	defer cancel()
 	if _, err := stopGeneratorTestWithToken(stopCtx, client, f.test.ID, false, generation, token[:]); err != nil {
 		t.Logf("stop after test: %v", err)
+	}
+}
+
+// awaitRetainedTerminal waits until the generator retained the run's terminal
+// outcome for generation, which a subscription replays.
+func awaitRetainedTerminal(t *testing.T, client *generatorrpc.Client, testID string, generation uint64) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	stream, err := client.OpenMetricsStreamForTestGeneration(ctx, testID, generation)
+	if err != nil {
+		t.Fatalf("open metrics stream: %v", err)
+	}
+	defer stream.CloseSend()
+	for {
+		batch, err := stream.Receive()
+		if err != nil {
+			t.Fatalf("no retained terminal outcome: %v", err)
+		}
+		if batch.TestID == testID && strings.EqualFold(batch.LifecycleState, "COMPLETE") {
+			return
+		}
 	}
 }
 

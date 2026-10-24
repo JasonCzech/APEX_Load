@@ -751,6 +751,9 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 	}
 
 	assignment, _ = coordinator.beginStopping(testID, assignment.executionGeneration, assignment)
+	// This stop removes the assignment, so it decides the cause, even of an
+	// assignment still staged or one whose duration deadline already passed.
+	assignment.terminalCause = pb.RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP
 	service.assignments[testID] = assignment
 	persistentJavaDrainToken := service.reserveAssignmentJavaDrainLocked(assignment)
 	releaseAssignmentRuntimeResources(assignment)
