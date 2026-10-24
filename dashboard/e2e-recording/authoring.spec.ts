@@ -116,7 +116,9 @@ test('recorded browser inputs use list parameters, CSV rows and session override
   fill.value='{{secret.customer_value}}'
   await editSource(page,script)
   await page.getByRole('group',{name:'Script workspace'}).getByRole('button',{name:'Debug',exact:true}).click()
-  await expect(page.locator('.topbar-debug-action-run')).toBeDisabled()
+  // A missing secret refuses replay, so Debug offers to resolve it instead of starting.
+  await expect(page.locator('.topbar-debug-action-blocker')).toHaveAccessibleName(/^Resolve \d+ blockers? that refuse replay$/)
+  await expect(page.locator('.topbar-debug-action-run')).toHaveCount(0)
   await page.getByRole('button',{name:'Configure secrets',exact:true}).first().click()
   const bindings=page.getByRole('dialog',{name:/^Secret Bindings/})
   await expect(bindings).toContainText('Missing value')
