@@ -452,7 +452,7 @@ func ReplayPhaseActions(script *dsl.Script) []dsl.Action {
 	if script == nil {
 		return nil
 	}
-	actions := make([]dsl.Action, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
+	actions := make([]dsl.Action, 0, len(script.Actions))
 	actions = append(actions, script.Init...)
 	actions = append(actions, script.Actions...)
 	actions = append(actions, script.Teardown...)
