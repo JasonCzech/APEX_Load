@@ -41,6 +41,7 @@ function applyDashboardZoom(zoom: number) {
 
   const normalized = normalizeDashboardZoom(zoom)
   document.documentElement.style.setProperty('--dashboard-zoom', String(normalized))
+  document.documentElement.style.setProperty('--dashboard-zoom-inverse', String(1 / normalized))
 }
 
 function shortcutActionForEvent(event: KeyboardEvent): DashboardZoomAction | null {

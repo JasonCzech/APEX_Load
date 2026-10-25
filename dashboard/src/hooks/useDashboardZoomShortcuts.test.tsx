@@ -34,6 +34,7 @@ describe('useDashboardZoomShortcuts', () => {
     root = createRoot(container)
     window.localStorage.clear()
     document.documentElement.style.removeProperty('--dashboard-zoom')
+    document.documentElement.style.removeProperty('--dashboard-zoom-inverse')
   })
 
   afterEach(async () => {
@@ -42,6 +43,7 @@ describe('useDashboardZoomShortcuts', () => {
     })
     container.remove()
     document.documentElement.style.removeProperty('--dashboard-zoom')
+    document.documentElement.style.removeProperty('--dashboard-zoom-inverse')
     vi.restoreAllMocks()
   })
 
@@ -52,6 +54,7 @@ describe('useDashboardZoomShortcuts', () => {
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
     expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--dashboard-zoom-inverse')).toBe('1')
     expect(window.localStorage.getItem(DASHBOARD_ZOOM_STORAGE_KEY)).toBe('1')
   })
 
@@ -74,6 +77,7 @@ describe('useDashboardZoomShortcuts', () => {
 
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.2')
     expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1.2')
+    expect(Number(document.documentElement.style.getPropertyValue('--dashboard-zoom-inverse'))).toBeCloseTo(1 / 1.2)
   })
 
   it('uses and applies the default zoom when browser storage is blocked', async () => {
@@ -105,6 +109,7 @@ describe('useDashboardZoomShortcuts', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.1')
     expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1.1')
+    expect(Number(document.documentElement.style.getPropertyValue('--dashboard-zoom-inverse'))).toBeCloseTo(1 / 1.1)
     expect(window.localStorage.getItem(DASHBOARD_ZOOM_STORAGE_KEY)).toBe('1.1')
 
     await act(async () => {

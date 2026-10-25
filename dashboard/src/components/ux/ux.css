@@ -1,18 +1,27 @@
 /* Shared interaction surfaces. Colors inherit the active application theme. */
 :root { --ux-dialog-layer: 2000; --ux-control-height: 36px; --ux-space: 16px; }
-.ux-dialog-layer { position: fixed; inset: 0; z-index: var(--ux-dialog-layer); pointer-events: none; }
+/* Dialogs live in a body-level portal to escape app clipping and stacking
+   contexts. Scale that portal with the dashboard while expanding its layout
+   box by the reciprocal so backdrops still cover the physical viewport. */
+.ux-dialog-layer {
+  position: fixed; top: 0; left: 0;
+  width: calc(100vw * var(--dashboard-zoom-inverse, 1));
+  height: calc(100dvh * var(--dashboard-zoom-inverse, 1));
+  zoom: var(--dashboard-zoom, 1);
+  z-index: var(--ux-dialog-layer); pointer-events: none;
+}
 .ux-dialog-layer > * { pointer-events: auto; }
 .ux-dialog-layer :is(.modal-overlay, .pp-modal-overlay, .project-modal-backdrop, .access-modal-overlay, .lr-modal-backdrop) {
-  position: fixed; inset: 0; padding: 20px; overflow: auto; display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; padding: calc(20px * var(--dashboard-zoom-inverse, 1)); overflow: auto; display: flex; align-items: center; justify-content: center;
   background: var(--modal-backdrop); backdrop-filter: blur(8px); z-index: auto;
 }
 .ux-dialog-layer :is(.modal, .modal-content, .pp-modal, .project-modal, .access-modal) {
   box-sizing: border-box; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);
-  border-radius: 12px; max-width: calc(100vw - 40px); max-height: calc(100dvh - 40px); overflow-y: auto;
+  border-radius: 12px; max-width: calc((100vw - 40px) * var(--dashboard-zoom-inverse, 1)); max-height: calc((100dvh - 40px) * var(--dashboard-zoom-inverse, 1)); overflow-y: auto;
 }
 /* Settings and fleet form dialogs share one readable width tier; the generic
    viewport cap above would otherwise stretch their single-column fields. */
-.ux-dialog-layer .pp-modal { max-width: min(760px, calc(100vw - 40px)); }
+.ux-dialog-layer .pp-modal { max-width: min(calc(760px * var(--dashboard-zoom-inverse, 1)), calc((100vw - 40px) * var(--dashboard-zoom-inverse, 1))); }
 .ux-dialog-layer :is(.modal-header, .pp-modal-header, .project-modal-header) { gap: 16px; align-items: flex-start; }
 .ux-dialog-layer :is(.modal-header, .pp-modal-header, .project-modal-header) h3 { margin: 0; font-size: 18px; line-height: 1.4; }
 .ux-dialog-layer :is(.modal-actions, .pp-modal-actions, .project-modal-actions) {
@@ -26,8 +35,8 @@
 .ux-panel-toggle > span:first-child { font-size: 20px; line-height: 1; }
 .ux-panel-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (max-width: 700px) {
-  .ux-dialog-layer :is(.modal-overlay, .pp-modal-overlay, .project-modal-backdrop, .access-modal-overlay, .lr-modal-backdrop) { padding: 12px; }
-  .ux-dialog-layer :is(.modal, .modal-content, .pp-modal, .project-modal, .access-modal) { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .ux-dialog-layer :is(.modal-overlay, .pp-modal-overlay, .project-modal-backdrop, .access-modal-overlay, .lr-modal-backdrop) { padding: calc(12px * var(--dashboard-zoom-inverse, 1)); }
+  .ux-dialog-layer :is(.modal, .modal-content, .pp-modal, .project-modal, .access-modal) { max-width: calc((100vw - 24px) * var(--dashboard-zoom-inverse, 1)); max-height: calc((100dvh - 24px) * var(--dashboard-zoom-inverse, 1)); }
   .ux-dialog-layer .test-notes-grid { grid-template-columns: 1fr; }
   .ux-dialog-layer .test-notes-list-pane { max-height: 170px; overflow: auto; }
 }
@@ -59,8 +68,8 @@
   .run-calendar-weekdays { display: none; }
   .run-calendar-grid .run-calendar-day { min-height: 80px; }
 }
-.ux-dialog-layer :is(.editor-dialog-backdrop, .generate-report-backdrop, .runtime-adjustment-backdrop, .snapshot-full-dialog-backdrop, .command-palette-backdrop) { position: fixed; inset: 0; padding: 20px; background: var(--modal-backdrop); backdrop-filter: blur(8px); z-index: auto; }
-.ux-dialog-layer :is(.editor-dialog, .generate-report-modal, .runtime-adjustment-dialog, .snapshot-full-dialog) { max-width: calc(100vw - 40px); max-height: calc(100dvh - 40px); border-radius: 12px; }
+.ux-dialog-layer :is(.editor-dialog-backdrop, .generate-report-backdrop, .runtime-adjustment-backdrop, .snapshot-full-dialog-backdrop, .command-palette-backdrop) { position: fixed; inset: 0; padding: calc(20px * var(--dashboard-zoom-inverse, 1)); background: var(--modal-backdrop); backdrop-filter: blur(8px); z-index: auto; }
+.ux-dialog-layer :is(.editor-dialog, .generate-report-modal, .runtime-adjustment-dialog, .snapshot-full-dialog) { max-width: calc((100vw - 40px) * var(--dashboard-zoom-inverse, 1)); max-height: calc((100dvh - 40px) * var(--dashboard-zoom-inverse, 1)); border-radius: 12px; }
 .ux-dialog-layer :is(.editor-dialog-header, .generate-report-header) h3 { font-size: 18px; line-height: 1.4; }
 .main-topbar .topbar-page-section-toggle, .main-topbar .dashboard-section-tabs { border-radius: 8px; }
 .main-topbar .topbar-page-section-toggle button, .main-topbar .dashboard-section-tabs button { border-radius: 6px; }
