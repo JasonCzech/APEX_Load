@@ -54,7 +54,7 @@ func TestTerminalMetricsEvictNonterminalWhenSubscriberQueueIsFull(t *testing.T) 
 	}
 
 	terminal := service.metricsBatchForState("run", 0, 12, false, map[string]int32{"buyers": 12}, "COMPLETE", "")
-	service.publishTerminalMetrics(terminal)
+	service.publishTerminalMetrics(terminal, terminalOutcome{})
 	if got := service.metricsBroker.droppedCount(); got != 1 {
 		t.Fatalf("evicted nonterminal batches = %d, want 1", got)
 	}
@@ -87,7 +87,7 @@ func TestTerminalOnlyBacklogFencesAtHardBoundAndReconnectReplays(t *testing.T) {
 	for index := 0; index < metricsSubscriberQueueCapacity+1; index++ {
 		service.publishTerminalMetrics(service.metricsBatchForState(
 			string(rune('a'+index)), 0, 0, false, nil, "COMPLETE", "",
-		))
+		), terminalOutcome{})
 	}
 	select {
 	case <-subscriber.fenced:
@@ -136,7 +136,7 @@ func TestStreamMetricsReturnsResourceExhaustedForTerminalBacklog(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	service.publishTerminalMetrics(service.metricsBatchForState("blocked-send", 0, 0, false, nil, "COMPLETE", ""))
+	service.publishTerminalMetrics(service.metricsBatchForState("blocked-send", 0, 0, false, nil, "COMPLETE", ""), terminalOutcome{})
 	select {
 	case <-stream.sendStarted:
 	case <-time.After(time.Second):
@@ -145,7 +145,7 @@ func TestStreamMetricsReturnsResourceExhaustedForTerminalBacklog(t *testing.T) {
 	for index := 0; index < metricsSubscriberQueueCapacity+1; index++ {
 		service.publishTerminalMetrics(service.metricsBatchForState(
 			string(rune('A'+index)), 0, 0, false, nil, "COMPLETE", "",
-		))
+		), terminalOutcome{})
 	}
 	close(stream.releaseSend)
 	select {
@@ -228,7 +228,7 @@ func TestDuplicateForcedStopWaitsForQuiescenceAndRetainsFinalEvidence(t *testing
 func TestTerminalTombstoneReplaysOnEveryReconnect(t *testing.T) {
 	service := newIsolatedService(t, 50)
 	terminal := service.metricsBatchForState("run", 0, 0, false, map[string]int32{"buyers": 7}, "FAILED", "engine failed")
-	service.publishTerminalMetrics(terminal)
+	service.publishTerminalMetrics(terminal, terminalOutcome{})
 
 	for reconnect := 0; reconnect < 2; reconnect++ {
 		id, _, initial, err := service.registerScopedSubscriber(0, "run")
@@ -286,7 +286,7 @@ func TestTerminalTombstoneMakesExactGenerationStopIdempotent(t *testing.T) {
 	service.executionGeneration = 7
 	service.executionExpiresAt = time.Now().Add(time.Minute)
 	service.mu.Unlock()
-	service.publishTerminalMetrics(service.metricsBatchForState("run", 7, 0, false, nil, "COMPLETE", ""))
+	service.publishTerminalMetrics(service.metricsBatchForState("run", 7, 0, false, nil, "COMPLETE", ""), terminalOutcome{})
 
 	for attempt := 0; attempt < 2; attempt++ {
 		ack, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: "run", ExecutionGeneration: 7})

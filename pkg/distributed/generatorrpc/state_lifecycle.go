@@ -407,7 +407,7 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 	toLoad := append([]directory(nil), retained[removeCount:]...)
 	toLoad = append(toLoad, failedRemovals...)
 	for _, dir := range toLoad {
-		record, terminalBatch, err := s.loadRetainedGeneratorArchive(dir.testID, dir.identity)
+		record, terminalBatch, outcome, err := s.loadRetainedGeneratorArchive(dir.testID, dir.identity)
 		if err != nil {
 			// Keep a quarantined catalog entry so the test ID remains reserved and
 			// normal TTL/count retention can remove the crash-left directory. This
@@ -426,43 +426,43 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 		}
 		s.archiveManager.restoreRecord(record, dir.identity)
 		if terminalBatch != nil {
-			s.metricsBroker.restoreTerminal(terminalBatch, record.CompletedAt)
+			s.metricsBroker.restoreTerminalOutcome(terminalBatch, record.CompletedAt, outcome)
 		}
 	}
 }
 
-func (s *Service) loadRetainedGeneratorArchive(testID string, expectedIdentity os.FileInfo) (*storage.RunArchiveRecord, *pb.MetricsBatch, error) {
+func (s *Service) loadRetainedGeneratorArchive(testID string, expectedIdentity os.FileInfo) (*storage.RunArchiveRecord, *pb.MetricsBatch, terminalOutcome, error) {
 	namespace, namespaceErr := s.archiveManager.namespaceSnapshot()
 	if namespaceErr != nil {
-		return nil, nil, namespaceErr
+		return nil, nil, terminalOutcome{}, namespaceErr
 	}
 	runRoot, identity, err := openGeneratorArchiveRun(namespace, testID, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, terminalOutcome{}, err
 	}
 	defer runRoot.Close()
 	if expectedIdentity == nil || !os.SameFile(expectedIdentity, identity) {
-		return nil, nil, fmt.Errorf("generator archive run changed during recovery")
+		return nil, nil, terminalOutcome{}, fmt.Errorf("generator archive run changed during recovery")
 	}
 	manifestFile, _, err := openGeneratorArchiveRegularFile(runRoot, "manifest.json")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, terminalOutcome{}, err
 	}
 	defer manifestFile.Close()
 	const manifestLimit = int64(8 << 20)
 	data, err := io.ReadAll(io.LimitReader(manifestFile, manifestLimit+1))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, terminalOutcome{}, err
 	}
 	if int64(len(data)) > manifestLimit {
-		return nil, nil, fmt.Errorf("generator archive manifest exceeds %d bytes", manifestLimit)
+		return nil, nil, terminalOutcome{}, fmt.Errorf("generator archive manifest exceeds %d bytes", manifestLimit)
 	}
 	var manifest archiveManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return nil, nil, err
+		return nil, nil, terminalOutcome{}, err
 	}
 	if manifest.TestID != testID || manifest.SchemaVersion == "" || manifest.CompletedAt.IsZero() {
-		return nil, nil, fmt.Errorf("generator archive manifest is incomplete or mismatched")
+		return nil, nil, terminalOutcome{}, fmt.Errorf("generator archive manifest is incomplete or mismatched")
 	}
 	record := &storage.RunArchiveRecord{
 		TestID: manifest.TestID, SchemaVersion: manifest.SchemaVersion,
@@ -476,10 +476,10 @@ func (s *Service) loadRetainedGeneratorArchive(testID string, expectedIdentity o
 		if len(manifest.TerminalMetrics) > 0 {
 			terminalBatch = &pb.MetricsBatch{}
 			if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(manifest.TerminalMetrics, terminalBatch); err != nil {
-				return nil, nil, fmt.Errorf("decode retained terminal metrics: %w", err)
+				return nil, nil, terminalOutcome{}, fmt.Errorf("decode retained terminal metrics: %w", err)
 			}
 			if terminalBatch.GetTestId() != testID || terminalBatch.GetExecutionGeneration() != manifest.ExecutionGeneration || !isGeneratorTerminalLifecycle(terminalBatch.GetLifecycleState()) {
-				return nil, nil, fmt.Errorf("retained terminal metrics identity is incomplete or mismatched")
+				return nil, nil, terminalOutcome{}, fmt.Errorf("retained terminal metrics identity is incomplete or mismatched")
 			}
 		} else {
 			// Backward compatibility for archives finalized before aggregate terminal
@@ -494,5 +494,5 @@ func (s *Service) loadRetainedGeneratorArchive(testID string, expectedIdentity o
 		terminalBatch.LifecycleError = manifest.Error
 		terminalBatch.TimestampUnixMs = manifest.CompletedAt.UnixMilli()
 	}
-	return record, terminalBatch, nil
+	return record, terminalBatch, manifestTerminalOutcome(manifest), nil
 }

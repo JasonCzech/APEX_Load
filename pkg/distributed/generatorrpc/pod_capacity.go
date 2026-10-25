@@ -2,6 +2,7 @@ package generatorrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -15,6 +16,12 @@ import (
 )
 
 const FeaturePodCapacityV1 = "pod_capacity_v1"
+
+// PodCapacityStillDrainingMessage is the error a release is refused with while
+// the test is stopping. A run whose terminal tombstone is already published
+// can still be in that window until its stop completion closes (a fence write
+// follows the tombstone), so a controller may retry the release.
+const PodCapacityStillDrainingMessage = "test is still draining"
 
 // FeaturePodCapacityStandbyV1 permits a dedicated full-budget claim with no
 // executable groups. Controllers must still plan and durably reserve failure-
@@ -123,7 +130,7 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 			return reject(fmt.Errorf("test still executing, staging or controlling"))
 		}
 		if s.lifecycleCoordinator.isStoppingLocked(claim.TestId) {
-			return reject(fmt.Errorf("test is still draining"))
+			return reject(errors.New(PodCapacityStillDrainingMessage))
 		}
 		delete(s.podCapacityClaims, claim.TestId)
 		return &pb.PodCapacityAck{Accepted: true, Snapshot: s.podCapacitySnapshotLocked()}, nil

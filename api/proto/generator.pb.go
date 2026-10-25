@@ -138,6 +138,65 @@ func (RunAdoptionOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_api_proto_generator_proto_rawDescGZIP(), []int{1}
 }
 
+// RunTerminalCause is why a generator ended a run COMPLETE. The first
+// lifecycle transition that removes the assignment decides it. Older
+// generators, and archives they finalized, report UNSPECIFIED.
+type RunTerminalCause int32
+
+const (
+	RunTerminalCause_RUN_TERMINAL_CAUSE_UNSPECIFIED RunTerminalCause = 0
+	// A controller's StopTest ended the run, including a stop of staged work.
+	RunTerminalCause_RUN_TERMINAL_CAUSE_CONTROLLER_STOP RunTerminalCause = 1
+	// Every group's engine reached the run's duration deadline.
+	RunTerminalCause_RUN_TERMINAL_CAUSE_DURATION_ELAPSED RunTerminalCause = 2
+	// The executions ended without error before a duration deadline, for
+	// example on iteration termination.
+	RunTerminalCause_RUN_TERMINAL_CAUSE_EXECUTIONS_ENDED_EARLY RunTerminalCause = 3
+)
+
+// Enum value maps for RunTerminalCause.
+var (
+	RunTerminalCause_name = map[int32]string{
+		0: "RUN_TERMINAL_CAUSE_UNSPECIFIED",
+		1: "RUN_TERMINAL_CAUSE_CONTROLLER_STOP",
+		2: "RUN_TERMINAL_CAUSE_DURATION_ELAPSED",
+		3: "RUN_TERMINAL_CAUSE_EXECUTIONS_ENDED_EARLY",
+	}
+	RunTerminalCause_value = map[string]int32{
+		"RUN_TERMINAL_CAUSE_UNSPECIFIED":            0,
+		"RUN_TERMINAL_CAUSE_CONTROLLER_STOP":        1,
+		"RUN_TERMINAL_CAUSE_DURATION_ELAPSED":       2,
+		"RUN_TERMINAL_CAUSE_EXECUTIONS_ENDED_EARLY": 3,
+	}
+)
+
+func (x RunTerminalCause) Enum() *RunTerminalCause {
+	p := new(RunTerminalCause)
+	*p = x
+	return p
+}
+
+func (x RunTerminalCause) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RunTerminalCause) Descriptor() protoreflect.EnumDescriptor {
+	return file_api_proto_generator_proto_enumTypes[2].Descriptor()
+}
+
+func (RunTerminalCause) Type() protoreflect.EnumType {
+	return &file_api_proto_generator_proto_enumTypes[2]
+}
+
+func (x RunTerminalCause) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RunTerminalCause.Descriptor instead.
+func (RunTerminalCause) EnumDescriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{2}
+}
+
 type EvidenceAcknowledgement struct {
 	state          protoimpl.MessageState  `protogen:"open.v1"`
 	TestId         string                  `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
@@ -2800,8 +2859,13 @@ type RunAdoptionResult struct {
 	Detail  string                 `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
 	// Terminal lifecycle state reported for ALREADY_COMPLETED/ALREADY_STOPPED.
 	TerminalState string `protobuf:"bytes,4,opt,name=terminal_state,json=terminalState,proto3" json:"terminal_state,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Set only for a COMPLETE terminal state.
+	TerminalCause RunTerminalCause `protobuf:"varint,5,opt,name=terminal_cause,json=terminalCause,proto3,enum=apexload.v1.RunTerminalCause" json:"terminal_cause,omitempty"`
+	// The run's logical duration target, in DurationAdjustment.target_duration
+	// terms, that the engines ran to when the cause is DURATION_ELAPSED.
+	CompletedLogicalDuration *durationpb.Duration `protobuf:"bytes,6,opt,name=completed_logical_duration,json=completedLogicalDuration,proto3" json:"completed_logical_duration,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *RunAdoptionResult) Reset() {
@@ -2860,6 +2924,20 @@ func (x *RunAdoptionResult) GetTerminalState() string {
 		return x.TerminalState
 	}
 	return ""
+}
+
+func (x *RunAdoptionResult) GetTerminalCause() RunTerminalCause {
+	if x != nil {
+		return x.TerminalCause
+	}
+	return RunTerminalCause_RUN_TERMINAL_CAUSE_UNSPECIFIED
+}
+
+func (x *RunAdoptionResult) GetCompletedLogicalDuration() *durationpb.Duration {
+	if x != nil {
+		return x.CompletedLogicalDuration
+	}
+	return nil
 }
 
 type ExecutionEpochAck struct {
@@ -9528,12 +9606,14 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10prior_generation\x18\x02 \x01(\x04R\x0fpriorGeneration\x12=\n" +
 	"\x1bprior_run_supervision_token\x18\x03 \x01(\fR\x18priorRunSupervisionToken\x129\n" +
 	"\x19new_run_supervision_token\x18\x04 \x01(\fR\x16newRunSupervisionToken\x12@\n" +
-	"\fprior_proofs\x18\x05 \x03(\v2\x1d.apexload.v1.RunAdoptionProofR\vpriorProofs\"\xa6\x01\n" +
+	"\fprior_proofs\x18\x05 \x03(\v2\x1d.apexload.v1.RunAdoptionProofR\vpriorProofs\"\xc5\x02\n" +
 	"\x11RunAdoptionResult\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x129\n" +
 	"\aoutcome\x18\x02 \x01(\x0e2\x1f.apexload.v1.RunAdoptionOutcomeR\aoutcome\x12\x16\n" +
 	"\x06detail\x18\x03 \x01(\tR\x06detail\x12%\n" +
-	"\x0eterminal_state\x18\x04 \x01(\tR\rterminalState\"\xcd\x02\n" +
+	"\x0eterminal_state\x18\x04 \x01(\tR\rterminalState\x12D\n" +
+	"\x0eterminal_cause\x18\x05 \x01(\x0e2\x1d.apexload.v1.RunTerminalCauseR\rterminalCause\x12W\n" +
+	"\x1acompleted_logical_duration\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\x18completedLogicalDuration\"\xcd\x02\n" +
 	"\x11ExecutionEpochAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12-\n" +
 	"\x12current_generation\x18\x02 \x01(\x04R\x11currentGeneration\x12+\n" +
@@ -10222,7 +10302,12 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"&RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED\x10\x02\x12(\n" +
 	"$RUN_ADOPTION_OUTCOME_ALREADY_STOPPED\x10\x03\x12!\n" +
 	"\x1dRUN_ADOPTION_OUTCOME_REJECTED\x10\x04\x12%\n" +
-	"!RUN_ADOPTION_OUTCOME_UNKNOWN_TEST\x10\x052\xcf\f\n" +
+	"!RUN_ADOPTION_OUTCOME_UNKNOWN_TEST\x10\x05*\xb6\x01\n" +
+	"\x10RunTerminalCause\x12\"\n" +
+	"\x1eRUN_TERMINAL_CAUSE_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"RUN_TERMINAL_CAUSE_CONTROLLER_STOP\x10\x01\x12'\n" +
+	"#RUN_TERMINAL_CAUSE_DURATION_ELAPSED\x10\x02\x12-\n" +
+	")RUN_TERMINAL_CAUSE_EXECUTIONS_ENDED_EARLY\x10\x032\xcf\f\n" +
 	"\x10GeneratorControl\x12P\n" +
 	"\x12ReservePodCapacity\x12\x1d.apexload.v1.PodCapacityClaim\x1a\x1b.apexload.v1.PodCapacityAck\x12W\n" +
 	"\x13ClaimExecutionEpoch\x12 .apexload.v1.ExecutionEpochClaim\x1a\x1e.apexload.v1.ExecutionEpochAck\x12W\n" +
@@ -10260,273 +10345,276 @@ func file_api_proto_generator_proto_rawDescGZIP() []byte {
 	return file_api_proto_generator_proto_rawDescData
 }
 
-var file_api_proto_generator_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_api_proto_generator_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 99)
 var file_api_proto_generator_proto_goTypes = []any{
 	(RunSupervisionState)(0),                     // 0: apexload.v1.RunSupervisionState
 	(RunAdoptionOutcome)(0),                      // 1: apexload.v1.RunAdoptionOutcome
-	(*EvidenceAcknowledgement)(nil),              // 2: apexload.v1.EvidenceAcknowledgement
-	(*AcknowledgedEvidence)(nil),                 // 3: apexload.v1.AcknowledgedEvidence
-	(*EvidenceAck)(nil),                          // 4: apexload.v1.EvidenceAck
-	(*PreparationCheckRequest)(nil),              // 5: apexload.v1.PreparationCheckRequest
-	(*CapacityVector)(nil),                       // 6: apexload.v1.CapacityVector
-	(*PodCapacityClaim)(nil),                     // 7: apexload.v1.PodCapacityClaim
-	(*PodCapacitySnapshot)(nil),                  // 8: apexload.v1.PodCapacitySnapshot
-	(*PodCapacityAck)(nil),                       // 9: apexload.v1.PodCapacityAck
-	(*SourcePlanManifest)(nil),                   // 10: apexload.v1.SourcePlanManifest
-	(*SourcePlanGroup)(nil),                      // 11: apexload.v1.SourcePlanGroup
-	(*WorkAssignment)(nil),                       // 12: apexload.v1.WorkAssignment
-	(*BrowserAuthoredDefinition)(nil),            // 13: apexload.v1.BrowserAuthoredDefinition
-	(*JointEvidenceProjection)(nil),              // 14: apexload.v1.JointEvidenceProjection
-	(*JointMetricsInfo)(nil),                     // 15: apexload.v1.JointMetricsInfo
-	(*RuntimeResourceDemand)(nil),                // 16: apexload.v1.RuntimeResourceDemand
-	(*RuntimeResourceClaim)(nil),                 // 17: apexload.v1.RuntimeResourceClaim
-	(*RuntimeResourceAdmission)(nil),             // 18: apexload.v1.RuntimeResourceAdmission
-	(*RuntimeResourceCapacity)(nil),              // 19: apexload.v1.RuntimeResourceCapacity
-	(*JavaHostSelection)(nil),                    // 20: apexload.v1.JavaHostSelection
-	(*JavaHostProfile)(nil),                      // 21: apexload.v1.JavaHostProfile
-	(*JavaHostCapabilities)(nil),                 // 22: apexload.v1.JavaHostCapabilities
-	(*WorkCommitRequest)(nil),                    // 23: apexload.v1.WorkCommitRequest
-	(*WorkCommitAck)(nil),                        // 24: apexload.v1.WorkCommitAck
-	(*RunSupervisionClaim)(nil),                  // 25: apexload.v1.RunSupervisionClaim
-	(*RunSupervisionAck)(nil),                    // 26: apexload.v1.RunSupervisionAck
-	(*ExecutionEpochClaim)(nil),                  // 27: apexload.v1.ExecutionEpochClaim
-	(*RunAdoption)(nil),                          // 28: apexload.v1.RunAdoption
-	(*RunAdoptionResult)(nil),                    // 29: apexload.v1.RunAdoptionResult
-	(*ExecutionEpochAck)(nil),                    // 30: apexload.v1.ExecutionEpochAck
-	(*RedactionRule)(nil),                        // 31: apexload.v1.RedactionRule
-	(*DataFile)(nil),                             // 32: apexload.v1.DataFile
-	(*JavaHostPlacement)(nil),                    // 33: apexload.v1.JavaHostPlacement
-	(*AssignmentAck)(nil),                        // 34: apexload.v1.AssignmentAck
-	(*JavaVMOutcome)(nil),                        // 35: apexload.v1.JavaVMOutcome
-	(*VUserAdjustment)(nil),                      // 36: apexload.v1.VUserAdjustment
-	(*AdjustmentAck)(nil),                        // 37: apexload.v1.AdjustmentAck
-	(*ThroughputCapRequest)(nil),                 // 38: apexload.v1.ThroughputCapRequest
-	(*ThroughputCapAck)(nil),                     // 39: apexload.v1.ThroughputCapAck
-	(*DurationAdjustment)(nil),                   // 40: apexload.v1.DurationAdjustment
-	(*DurationAck)(nil),                          // 41: apexload.v1.DurationAck
-	(*StopRequest)(nil),                          // 42: apexload.v1.StopRequest
-	(*StopAck)(nil),                              // 43: apexload.v1.StopAck
-	(*MetricsBatch)(nil),                         // 44: apexload.v1.MetricsBatch
-	(*MetricsCollectionWindow)(nil),              // 45: apexload.v1.MetricsCollectionWindow
-	(*MetricsBatchTelemetry)(nil),                // 46: apexload.v1.MetricsBatchTelemetry
-	(*GroupMetric)(nil),                          // 47: apexload.v1.GroupMetric
-	(*HTTPVersionMix)(nil),                       // 48: apexload.v1.HTTPVersionMix
-	(*TransactionResponseTimeSLACompliance)(nil), // 49: apexload.v1.TransactionResponseTimeSLACompliance
-	(*TDigestCentroid)(nil),                      // 50: apexload.v1.TDigestCentroid
-	(*TDigestSnapshot)(nil),                      // 51: apexload.v1.TDigestSnapshot
-	(*DurationSketchBin)(nil),                    // 52: apexload.v1.DurationSketchBin
-	(*DurationSketchSnapshot)(nil),               // 53: apexload.v1.DurationSketchSnapshot
-	(*MetricAggregate)(nil),                      // 54: apexload.v1.MetricAggregate
-	(*TraceExemplar)(nil),                        // 55: apexload.v1.TraceExemplar
-	(*BrowserMetrics)(nil),                       // 56: apexload.v1.BrowserMetrics
-	(*BrowserDeviceMetrics)(nil),                 // 57: apexload.v1.BrowserDeviceMetrics
-	(*ServerTelemetry)(nil),                      // 58: apexload.v1.ServerTelemetry
-	(*JavaHTTPSummary)(nil),                      // 59: apexload.v1.JavaHTTPSummary
-	(*JavaHTTPByteMoments)(nil),                  // 60: apexload.v1.JavaHTTPByteMoments
-	(*JavaHTTPBytePair)(nil),                     // 61: apexload.v1.JavaHTTPBytePair
-	(*JavaHTTPWorkPair)(nil),                     // 62: apexload.v1.JavaHTTPWorkPair
-	(*JavaHTTPDurationDistribution)(nil),         // 63: apexload.v1.JavaHTTPDurationDistribution
-	(*JavaHTTPDiagnostics)(nil),                  // 64: apexload.v1.JavaHTTPDiagnostics
-	(*WebSocketDiagnostics)(nil),                 // 65: apexload.v1.WebSocketDiagnostics
-	(*GRPCDiagnostics)(nil),                      // 66: apexload.v1.GRPCDiagnostics
-	(*TransactionMetric)(nil),                    // 67: apexload.v1.TransactionMetric
-	(*GeneratorStats)(nil),                       // 68: apexload.v1.GeneratorStats
-	(*ControlSignal)(nil),                        // 69: apexload.v1.ControlSignal
-	(*PauseRequest)(nil),                         // 70: apexload.v1.PauseRequest
-	(*PauseAck)(nil),                             // 71: apexload.v1.PauseAck
-	(*HeartbeatPing)(nil),                        // 72: apexload.v1.HeartbeatPing
-	(*ProtocolRuntimeCapacity)(nil),              // 73: apexload.v1.ProtocolRuntimeCapacity
-	(*SharedJVMCapacity)(nil),                    // 74: apexload.v1.SharedJVMCapacity
-	(*GeneratorSafetyExitEvidence)(nil),          // 75: apexload.v1.GeneratorSafetyExitEvidence
-	(*HeartbeatPong)(nil),                        // 76: apexload.v1.HeartbeatPong
-	(*ScriptPayload)(nil),                        // 77: apexload.v1.ScriptPayload
-	(*ScriptAck)(nil),                            // 78: apexload.v1.ScriptAck
-	(*ArchiveArtifactRequest)(nil),               // 79: apexload.v1.ArchiveArtifactRequest
-	(*ArchiveArtifact)(nil),                      // 80: apexload.v1.ArchiveArtifact
-	(*ArchiveArtifactChunk)(nil),                 // 81: apexload.v1.ArchiveArtifactChunk
-	(*RunAdoptionProof)(nil),                     // 82: apexload.v1.RunAdoptionProof
-	(*HTTP3ProbeRequest)(nil),                    // 83: apexload.v1.HTTP3ProbeRequest
-	(*HTTP3ProbeResponse)(nil),                   // 84: apexload.v1.HTTP3ProbeResponse
-	(*HTTP3ProbeResult)(nil),                     // 85: apexload.v1.HTTP3ProbeResult
-	(*LiveTableRequest)(nil),                     // 86: apexload.v1.LiveTableRequest
-	(*LiveTableReply)(nil),                       // 87: apexload.v1.LiveTableReply
-	(*RendezvousRequest)(nil),                    // 88: apexload.v1.RendezvousRequest
-	(*RendezvousReply)(nil),                      // 89: apexload.v1.RendezvousReply
-	nil,                                          // 90: apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
-	nil,                                          // 91: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
-	nil,                                          // 92: apexload.v1.CapacityVector.ProtocolsEntry
-	nil,                                          // 93: apexload.v1.PodCapacityClaim.GroupPeaksEntry
-	nil,                                          // 94: apexload.v1.WorkAssignment.EnvironmentEntry
-	nil,                                          // 95: apexload.v1.WorkAssignment.SecretBundleEntry
-	nil,                                          // 96: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
-	nil,                                          // 97: apexload.v1.HTTPVersionMix.ByVersionEntry
-	nil,                                          // 98: apexload.v1.HTTPVersionMix.BySelectionEntry
-	nil,                                          // 99: apexload.v1.HTTPVersionMix.ByFallbackEntry
-	nil,                                          // 100: apexload.v1.HTTPVersionMix.ByQuicErrorEntry
-	(*durationpb.Duration)(nil),                  // 101: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),                // 102: google.protobuf.Timestamp
+	(RunTerminalCause)(0),                        // 2: apexload.v1.RunTerminalCause
+	(*EvidenceAcknowledgement)(nil),              // 3: apexload.v1.EvidenceAcknowledgement
+	(*AcknowledgedEvidence)(nil),                 // 4: apexload.v1.AcknowledgedEvidence
+	(*EvidenceAck)(nil),                          // 5: apexload.v1.EvidenceAck
+	(*PreparationCheckRequest)(nil),              // 6: apexload.v1.PreparationCheckRequest
+	(*CapacityVector)(nil),                       // 7: apexload.v1.CapacityVector
+	(*PodCapacityClaim)(nil),                     // 8: apexload.v1.PodCapacityClaim
+	(*PodCapacitySnapshot)(nil),                  // 9: apexload.v1.PodCapacitySnapshot
+	(*PodCapacityAck)(nil),                       // 10: apexload.v1.PodCapacityAck
+	(*SourcePlanManifest)(nil),                   // 11: apexload.v1.SourcePlanManifest
+	(*SourcePlanGroup)(nil),                      // 12: apexload.v1.SourcePlanGroup
+	(*WorkAssignment)(nil),                       // 13: apexload.v1.WorkAssignment
+	(*BrowserAuthoredDefinition)(nil),            // 14: apexload.v1.BrowserAuthoredDefinition
+	(*JointEvidenceProjection)(nil),              // 15: apexload.v1.JointEvidenceProjection
+	(*JointMetricsInfo)(nil),                     // 16: apexload.v1.JointMetricsInfo
+	(*RuntimeResourceDemand)(nil),                // 17: apexload.v1.RuntimeResourceDemand
+	(*RuntimeResourceClaim)(nil),                 // 18: apexload.v1.RuntimeResourceClaim
+	(*RuntimeResourceAdmission)(nil),             // 19: apexload.v1.RuntimeResourceAdmission
+	(*RuntimeResourceCapacity)(nil),              // 20: apexload.v1.RuntimeResourceCapacity
+	(*JavaHostSelection)(nil),                    // 21: apexload.v1.JavaHostSelection
+	(*JavaHostProfile)(nil),                      // 22: apexload.v1.JavaHostProfile
+	(*JavaHostCapabilities)(nil),                 // 23: apexload.v1.JavaHostCapabilities
+	(*WorkCommitRequest)(nil),                    // 24: apexload.v1.WorkCommitRequest
+	(*WorkCommitAck)(nil),                        // 25: apexload.v1.WorkCommitAck
+	(*RunSupervisionClaim)(nil),                  // 26: apexload.v1.RunSupervisionClaim
+	(*RunSupervisionAck)(nil),                    // 27: apexload.v1.RunSupervisionAck
+	(*ExecutionEpochClaim)(nil),                  // 28: apexload.v1.ExecutionEpochClaim
+	(*RunAdoption)(nil),                          // 29: apexload.v1.RunAdoption
+	(*RunAdoptionResult)(nil),                    // 30: apexload.v1.RunAdoptionResult
+	(*ExecutionEpochAck)(nil),                    // 31: apexload.v1.ExecutionEpochAck
+	(*RedactionRule)(nil),                        // 32: apexload.v1.RedactionRule
+	(*DataFile)(nil),                             // 33: apexload.v1.DataFile
+	(*JavaHostPlacement)(nil),                    // 34: apexload.v1.JavaHostPlacement
+	(*AssignmentAck)(nil),                        // 35: apexload.v1.AssignmentAck
+	(*JavaVMOutcome)(nil),                        // 36: apexload.v1.JavaVMOutcome
+	(*VUserAdjustment)(nil),                      // 37: apexload.v1.VUserAdjustment
+	(*AdjustmentAck)(nil),                        // 38: apexload.v1.AdjustmentAck
+	(*ThroughputCapRequest)(nil),                 // 39: apexload.v1.ThroughputCapRequest
+	(*ThroughputCapAck)(nil),                     // 40: apexload.v1.ThroughputCapAck
+	(*DurationAdjustment)(nil),                   // 41: apexload.v1.DurationAdjustment
+	(*DurationAck)(nil),                          // 42: apexload.v1.DurationAck
+	(*StopRequest)(nil),                          // 43: apexload.v1.StopRequest
+	(*StopAck)(nil),                              // 44: apexload.v1.StopAck
+	(*MetricsBatch)(nil),                         // 45: apexload.v1.MetricsBatch
+	(*MetricsCollectionWindow)(nil),              // 46: apexload.v1.MetricsCollectionWindow
+	(*MetricsBatchTelemetry)(nil),                // 47: apexload.v1.MetricsBatchTelemetry
+	(*GroupMetric)(nil),                          // 48: apexload.v1.GroupMetric
+	(*HTTPVersionMix)(nil),                       // 49: apexload.v1.HTTPVersionMix
+	(*TransactionResponseTimeSLACompliance)(nil), // 50: apexload.v1.TransactionResponseTimeSLACompliance
+	(*TDigestCentroid)(nil),                      // 51: apexload.v1.TDigestCentroid
+	(*TDigestSnapshot)(nil),                      // 52: apexload.v1.TDigestSnapshot
+	(*DurationSketchBin)(nil),                    // 53: apexload.v1.DurationSketchBin
+	(*DurationSketchSnapshot)(nil),               // 54: apexload.v1.DurationSketchSnapshot
+	(*MetricAggregate)(nil),                      // 55: apexload.v1.MetricAggregate
+	(*TraceExemplar)(nil),                        // 56: apexload.v1.TraceExemplar
+	(*BrowserMetrics)(nil),                       // 57: apexload.v1.BrowserMetrics
+	(*BrowserDeviceMetrics)(nil),                 // 58: apexload.v1.BrowserDeviceMetrics
+	(*ServerTelemetry)(nil),                      // 59: apexload.v1.ServerTelemetry
+	(*JavaHTTPSummary)(nil),                      // 60: apexload.v1.JavaHTTPSummary
+	(*JavaHTTPByteMoments)(nil),                  // 61: apexload.v1.JavaHTTPByteMoments
+	(*JavaHTTPBytePair)(nil),                     // 62: apexload.v1.JavaHTTPBytePair
+	(*JavaHTTPWorkPair)(nil),                     // 63: apexload.v1.JavaHTTPWorkPair
+	(*JavaHTTPDurationDistribution)(nil),         // 64: apexload.v1.JavaHTTPDurationDistribution
+	(*JavaHTTPDiagnostics)(nil),                  // 65: apexload.v1.JavaHTTPDiagnostics
+	(*WebSocketDiagnostics)(nil),                 // 66: apexload.v1.WebSocketDiagnostics
+	(*GRPCDiagnostics)(nil),                      // 67: apexload.v1.GRPCDiagnostics
+	(*TransactionMetric)(nil),                    // 68: apexload.v1.TransactionMetric
+	(*GeneratorStats)(nil),                       // 69: apexload.v1.GeneratorStats
+	(*ControlSignal)(nil),                        // 70: apexload.v1.ControlSignal
+	(*PauseRequest)(nil),                         // 71: apexload.v1.PauseRequest
+	(*PauseAck)(nil),                             // 72: apexload.v1.PauseAck
+	(*HeartbeatPing)(nil),                        // 73: apexload.v1.HeartbeatPing
+	(*ProtocolRuntimeCapacity)(nil),              // 74: apexload.v1.ProtocolRuntimeCapacity
+	(*SharedJVMCapacity)(nil),                    // 75: apexload.v1.SharedJVMCapacity
+	(*GeneratorSafetyExitEvidence)(nil),          // 76: apexload.v1.GeneratorSafetyExitEvidence
+	(*HeartbeatPong)(nil),                        // 77: apexload.v1.HeartbeatPong
+	(*ScriptPayload)(nil),                        // 78: apexload.v1.ScriptPayload
+	(*ScriptAck)(nil),                            // 79: apexload.v1.ScriptAck
+	(*ArchiveArtifactRequest)(nil),               // 80: apexload.v1.ArchiveArtifactRequest
+	(*ArchiveArtifact)(nil),                      // 81: apexload.v1.ArchiveArtifact
+	(*ArchiveArtifactChunk)(nil),                 // 82: apexload.v1.ArchiveArtifactChunk
+	(*RunAdoptionProof)(nil),                     // 83: apexload.v1.RunAdoptionProof
+	(*HTTP3ProbeRequest)(nil),                    // 84: apexload.v1.HTTP3ProbeRequest
+	(*HTTP3ProbeResponse)(nil),                   // 85: apexload.v1.HTTP3ProbeResponse
+	(*HTTP3ProbeResult)(nil),                     // 86: apexload.v1.HTTP3ProbeResult
+	(*LiveTableRequest)(nil),                     // 87: apexload.v1.LiveTableRequest
+	(*LiveTableReply)(nil),                       // 88: apexload.v1.LiveTableReply
+	(*RendezvousRequest)(nil),                    // 89: apexload.v1.RendezvousRequest
+	(*RendezvousReply)(nil),                      // 90: apexload.v1.RendezvousReply
+	nil,                                          // 91: apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
+	nil,                                          // 92: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
+	nil,                                          // 93: apexload.v1.CapacityVector.ProtocolsEntry
+	nil,                                          // 94: apexload.v1.PodCapacityClaim.GroupPeaksEntry
+	nil,                                          // 95: apexload.v1.WorkAssignment.EnvironmentEntry
+	nil,                                          // 96: apexload.v1.WorkAssignment.SecretBundleEntry
+	nil,                                          // 97: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
+	nil,                                          // 98: apexload.v1.HTTPVersionMix.ByVersionEntry
+	nil,                                          // 99: apexload.v1.HTTPVersionMix.BySelectionEntry
+	nil,                                          // 100: apexload.v1.HTTPVersionMix.ByFallbackEntry
+	nil,                                          // 101: apexload.v1.HTTPVersionMix.ByQuicErrorEntry
+	(*durationpb.Duration)(nil),                  // 102: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),                // 103: google.protobuf.Timestamp
 }
 var file_api_proto_generator_proto_depIdxs = []int32{
-	3,   // 0: apexload.v1.EvidenceAcknowledgement.artifacts:type_name -> apexload.v1.AcknowledgedEvidence
-	90,  // 1: apexload.v1.PreparationCheckRequest.expected_groups:type_name -> apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
-	91,  // 2: apexload.v1.PreparationCheckRequest.expected_runtime_resources:type_name -> apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
-	92,  // 3: apexload.v1.CapacityVector.protocols:type_name -> apexload.v1.CapacityVector.ProtocolsEntry
-	6,   // 4: apexload.v1.PodCapacityClaim.schedulable:type_name -> apexload.v1.CapacityVector
-	6,   // 5: apexload.v1.PodCapacityClaim.demand:type_name -> apexload.v1.CapacityVector
-	93,  // 6: apexload.v1.PodCapacityClaim.group_peaks:type_name -> apexload.v1.PodCapacityClaim.GroupPeaksEntry
-	6,   // 7: apexload.v1.PodCapacitySnapshot.schedulable:type_name -> apexload.v1.CapacityVector
-	6,   // 8: apexload.v1.PodCapacitySnapshot.reserved:type_name -> apexload.v1.CapacityVector
-	8,   // 9: apexload.v1.PodCapacityAck.snapshot:type_name -> apexload.v1.PodCapacitySnapshot
-	11,  // 10: apexload.v1.SourcePlanManifest.groups:type_name -> apexload.v1.SourcePlanGroup
-	94,  // 11: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
-	32,  // 12: apexload.v1.WorkAssignment.data_files:type_name -> apexload.v1.DataFile
-	31,  // 13: apexload.v1.WorkAssignment.redaction_rules:type_name -> apexload.v1.RedactionRule
-	101, // 14: apexload.v1.WorkAssignment.target_duration:type_name -> google.protobuf.Duration
-	101, // 15: apexload.v1.WorkAssignment.ramp_up:type_name -> google.protobuf.Duration
-	101, // 16: apexload.v1.WorkAssignment.ramp_down:type_name -> google.protobuf.Duration
-	101, // 17: apexload.v1.WorkAssignment.pre_baseline:type_name -> google.protobuf.Duration
-	101, // 18: apexload.v1.WorkAssignment.post_baseline:type_name -> google.protobuf.Duration
-	101, // 19: apexload.v1.WorkAssignment.duration_offset:type_name -> google.protobuf.Duration
-	95,  // 20: apexload.v1.WorkAssignment.secret_bundle:type_name -> apexload.v1.WorkAssignment.SecretBundleEntry
-	101, // 21: apexload.v1.WorkAssignment.start_offset:type_name -> google.protobuf.Duration
-	10,  // 22: apexload.v1.WorkAssignment.source_plan:type_name -> apexload.v1.SourcePlanManifest
-	101, // 23: apexload.v1.WorkAssignment.adoption_grace:type_name -> google.protobuf.Duration
-	20,  // 24: apexload.v1.WorkAssignment.java_host:type_name -> apexload.v1.JavaHostSelection
-	17,  // 25: apexload.v1.WorkAssignment.runtime_resource_claim:type_name -> apexload.v1.RuntimeResourceClaim
-	14,  // 26: apexload.v1.WorkAssignment.joint_evidence_projection:type_name -> apexload.v1.JointEvidenceProjection
-	13,  // 27: apexload.v1.WorkAssignment.browser_authored_definition:type_name -> apexload.v1.BrowserAuthoredDefinition
-	54,  // 28: apexload.v1.JointMetricsInfo.other:type_name -> apexload.v1.MetricAggregate
-	16,  // 29: apexload.v1.RuntimeResourceClaim.requested:type_name -> apexload.v1.RuntimeResourceDemand
-	17,  // 30: apexload.v1.RuntimeResourceAdmission.claim:type_name -> apexload.v1.RuntimeResourceClaim
-	16,  // 31: apexload.v1.RuntimeResourceAdmission.admitted:type_name -> apexload.v1.RuntimeResourceDemand
-	21,  // 32: apexload.v1.JavaHostCapabilities.profiles:type_name -> apexload.v1.JavaHostProfile
-	96,  // 33: apexload.v1.WorkCommitAck.runtime_resource_admissions:type_name -> apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
+	4,   // 0: apexload.v1.EvidenceAcknowledgement.artifacts:type_name -> apexload.v1.AcknowledgedEvidence
+	91,  // 1: apexload.v1.PreparationCheckRequest.expected_groups:type_name -> apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
+	92,  // 2: apexload.v1.PreparationCheckRequest.expected_runtime_resources:type_name -> apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
+	93,  // 3: apexload.v1.CapacityVector.protocols:type_name -> apexload.v1.CapacityVector.ProtocolsEntry
+	7,   // 4: apexload.v1.PodCapacityClaim.schedulable:type_name -> apexload.v1.CapacityVector
+	7,   // 5: apexload.v1.PodCapacityClaim.demand:type_name -> apexload.v1.CapacityVector
+	94,  // 6: apexload.v1.PodCapacityClaim.group_peaks:type_name -> apexload.v1.PodCapacityClaim.GroupPeaksEntry
+	7,   // 7: apexload.v1.PodCapacitySnapshot.schedulable:type_name -> apexload.v1.CapacityVector
+	7,   // 8: apexload.v1.PodCapacitySnapshot.reserved:type_name -> apexload.v1.CapacityVector
+	9,   // 9: apexload.v1.PodCapacityAck.snapshot:type_name -> apexload.v1.PodCapacitySnapshot
+	12,  // 10: apexload.v1.SourcePlanManifest.groups:type_name -> apexload.v1.SourcePlanGroup
+	95,  // 11: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
+	33,  // 12: apexload.v1.WorkAssignment.data_files:type_name -> apexload.v1.DataFile
+	32,  // 13: apexload.v1.WorkAssignment.redaction_rules:type_name -> apexload.v1.RedactionRule
+	102, // 14: apexload.v1.WorkAssignment.target_duration:type_name -> google.protobuf.Duration
+	102, // 15: apexload.v1.WorkAssignment.ramp_up:type_name -> google.protobuf.Duration
+	102, // 16: apexload.v1.WorkAssignment.ramp_down:type_name -> google.protobuf.Duration
+	102, // 17: apexload.v1.WorkAssignment.pre_baseline:type_name -> google.protobuf.Duration
+	102, // 18: apexload.v1.WorkAssignment.post_baseline:type_name -> google.protobuf.Duration
+	102, // 19: apexload.v1.WorkAssignment.duration_offset:type_name -> google.protobuf.Duration
+	96,  // 20: apexload.v1.WorkAssignment.secret_bundle:type_name -> apexload.v1.WorkAssignment.SecretBundleEntry
+	102, // 21: apexload.v1.WorkAssignment.start_offset:type_name -> google.protobuf.Duration
+	11,  // 22: apexload.v1.WorkAssignment.source_plan:type_name -> apexload.v1.SourcePlanManifest
+	102, // 23: apexload.v1.WorkAssignment.adoption_grace:type_name -> google.protobuf.Duration
+	21,  // 24: apexload.v1.WorkAssignment.java_host:type_name -> apexload.v1.JavaHostSelection
+	18,  // 25: apexload.v1.WorkAssignment.runtime_resource_claim:type_name -> apexload.v1.RuntimeResourceClaim
+	15,  // 26: apexload.v1.WorkAssignment.joint_evidence_projection:type_name -> apexload.v1.JointEvidenceProjection
+	14,  // 27: apexload.v1.WorkAssignment.browser_authored_definition:type_name -> apexload.v1.BrowserAuthoredDefinition
+	55,  // 28: apexload.v1.JointMetricsInfo.other:type_name -> apexload.v1.MetricAggregate
+	17,  // 29: apexload.v1.RuntimeResourceClaim.requested:type_name -> apexload.v1.RuntimeResourceDemand
+	18,  // 30: apexload.v1.RuntimeResourceAdmission.claim:type_name -> apexload.v1.RuntimeResourceClaim
+	17,  // 31: apexload.v1.RuntimeResourceAdmission.admitted:type_name -> apexload.v1.RuntimeResourceDemand
+	22,  // 32: apexload.v1.JavaHostCapabilities.profiles:type_name -> apexload.v1.JavaHostProfile
+	97,  // 33: apexload.v1.WorkCommitAck.runtime_resource_admissions:type_name -> apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
 	0,   // 34: apexload.v1.RunSupervisionAck.state:type_name -> apexload.v1.RunSupervisionState
-	28,  // 35: apexload.v1.ExecutionEpochClaim.adoptions:type_name -> apexload.v1.RunAdoption
-	82,  // 36: apexload.v1.RunAdoption.prior_proofs:type_name -> apexload.v1.RunAdoptionProof
+	29,  // 35: apexload.v1.ExecutionEpochClaim.adoptions:type_name -> apexload.v1.RunAdoption
+	83,  // 36: apexload.v1.RunAdoption.prior_proofs:type_name -> apexload.v1.RunAdoptionProof
 	1,   // 37: apexload.v1.RunAdoptionResult.outcome:type_name -> apexload.v1.RunAdoptionOutcome
-	29,  // 38: apexload.v1.ExecutionEpochAck.adoptions:type_name -> apexload.v1.RunAdoptionResult
-	20,  // 39: apexload.v1.JavaHostPlacement.selection:type_name -> apexload.v1.JavaHostSelection
-	33,  // 40: apexload.v1.AssignmentAck.java_host:type_name -> apexload.v1.JavaHostPlacement
-	18,  // 41: apexload.v1.AssignmentAck.runtime_resource_admission:type_name -> apexload.v1.RuntimeResourceAdmission
-	35,  // 42: apexload.v1.AssignmentAck.java_vm:type_name -> apexload.v1.JavaVMOutcome
-	13,  // 43: apexload.v1.AssignmentAck.browser_authored_definition:type_name -> apexload.v1.BrowserAuthoredDefinition
-	101, // 44: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
-	101, // 45: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
-	101, // 46: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
-	67,  // 47: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
-	68,  // 48: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
-	47,  // 49: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
-	46,  // 50: apexload.v1.MetricsBatch.telemetry:type_name -> apexload.v1.MetricsBatchTelemetry
-	54,  // 51: apexload.v1.MetricsBatch.transaction_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 52: apexload.v1.MetricsBatch.dependency_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 53: apexload.v1.MetricsBatch.soap_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 54: apexload.v1.MetricsBatch.network_profile_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 55: apexload.v1.MetricsBatch.fleet_metrics:type_name -> apexload.v1.MetricAggregate
-	56,  // 56: apexload.v1.MetricsBatch.browser_metrics:type_name -> apexload.v1.BrowserMetrics
-	57,  // 57: apexload.v1.MetricsBatch.browser_device_metrics:type_name -> apexload.v1.BrowserDeviceMetrics
-	54,  // 58: apexload.v1.MetricsBatch.region_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 59: apexload.v1.MetricsBatch.property_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 60: apexload.v1.MetricsBatch.action_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 61: apexload.v1.MetricsBatch.action_property_metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 62: apexload.v1.MetricsBatch.action_dimension_metrics:type_name -> apexload.v1.MetricAggregate
-	49,  // 63: apexload.v1.MetricsBatch.transaction_response_time_sla:type_name -> apexload.v1.TransactionResponseTimeSLACompliance
-	54,  // 64: apexload.v1.MetricsBatch.joint_metrics_v4:type_name -> apexload.v1.MetricAggregate
-	15,  // 65: apexload.v1.MetricsBatch.joint_metrics_info:type_name -> apexload.v1.JointMetricsInfo
-	48,  // 66: apexload.v1.MetricsBatch.http_version_mix:type_name -> apexload.v1.HTTPVersionMix
-	45,  // 67: apexload.v1.MetricsBatch.collection_windows:type_name -> apexload.v1.MetricsCollectionWindow
-	102, // 68: apexload.v1.MetricsCollectionWindow.start:type_name -> google.protobuf.Timestamp
-	102, // 69: apexload.v1.MetricsCollectionWindow.end:type_name -> google.protobuf.Timestamp
-	54,  // 70: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
-	54,  // 71: apexload.v1.GroupMetric.transaction_metrics:type_name -> apexload.v1.MetricAggregate
-	97,  // 72: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
-	98,  // 73: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
-	99,  // 74: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
-	100, // 75: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
-	50,  // 76: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
-	52,  // 77: apexload.v1.DurationSketchSnapshot.bins:type_name -> apexload.v1.DurationSketchBin
-	51,  // 78: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
-	55,  // 79: apexload.v1.MetricAggregate.exemplars:type_name -> apexload.v1.TraceExemplar
-	53,  // 80: apexload.v1.MetricAggregate.duration_sketch:type_name -> apexload.v1.DurationSketchSnapshot
-	59,  // 81: apexload.v1.MetricAggregate.java_http:type_name -> apexload.v1.JavaHTTPSummary
-	56,  // 82: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
-	66,  // 83: apexload.v1.ServerTelemetry.grpc:type_name -> apexload.v1.GRPCDiagnostics
-	65,  // 84: apexload.v1.ServerTelemetry.websocket:type_name -> apexload.v1.WebSocketDiagnostics
-	64,  // 85: apexload.v1.ServerTelemetry.java_http:type_name -> apexload.v1.JavaHTTPDiagnostics
-	60,  // 86: apexload.v1.JavaHTTPSummary.request_encoded:type_name -> apexload.v1.JavaHTTPByteMoments
-	60,  // 87: apexload.v1.JavaHTTPSummary.request_decoded:type_name -> apexload.v1.JavaHTTPByteMoments
-	60,  // 88: apexload.v1.JavaHTTPSummary.prepared_request_body:type_name -> apexload.v1.JavaHTTPByteMoments
-	60,  // 89: apexload.v1.JavaHTTPSummary.response_retained:type_name -> apexload.v1.JavaHTTPByteMoments
-	60,  // 90: apexload.v1.JavaHTTPSummary.response_base64:type_name -> apexload.v1.JavaHTTPByteMoments
-	61,  // 91: apexload.v1.JavaHTTPSummary.decoded_per_encoded:type_name -> apexload.v1.JavaHTTPBytePair
-	61,  // 92: apexload.v1.JavaHTTPSummary.prepared_per_decoded:type_name -> apexload.v1.JavaHTTPBytePair
-	61,  // 93: apexload.v1.JavaHTTPSummary.base64_per_retained:type_name -> apexload.v1.JavaHTTPBytePair
-	63,  // 94: apexload.v1.JavaHTTPSummary.base64_decode_ms:type_name -> apexload.v1.JavaHTTPDurationDistribution
-	63,  // 95: apexload.v1.JavaHTTPSummary.base64_encode_ms:type_name -> apexload.v1.JavaHTTPDurationDistribution
-	63,  // 96: apexload.v1.JavaHTTPSummary.enclosing_ms:type_name -> apexload.v1.JavaHTTPDurationDistribution
-	62,  // 97: apexload.v1.JavaHTTPSummary.base64_work:type_name -> apexload.v1.JavaHTTPWorkPair
-	58,  // 98: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
-	36,  // 99: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
-	42,  // 100: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
-	70,  // 101: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
-	68,  // 102: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
-	19,  // 103: apexload.v1.ProtocolRuntimeCapacity.resources:type_name -> apexload.v1.RuntimeResourceCapacity
-	74,  // 104: apexload.v1.ProtocolRuntimeCapacity.shared_jvm:type_name -> apexload.v1.SharedJVMCapacity
-	68,  // 105: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
-	73,  // 106: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
-	75,  // 107: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	75,  // 108: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	8,   // 109: apexload.v1.HeartbeatPong.pod_capacity:type_name -> apexload.v1.PodCapacitySnapshot
-	22,  // 110: apexload.v1.HeartbeatPong.java_host:type_name -> apexload.v1.JavaHostCapabilities
-	85,  // 111: apexload.v1.HTTP3ProbeResponse.results:type_name -> apexload.v1.HTTP3ProbeResult
-	17,  // 112: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
-	18,  // 113: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
-	7,   // 114: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
-	27,  // 115: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
-	25,  // 116: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
-	12,  // 117: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
-	23,  // 118: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
-	5,   // 119: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
-	36,  // 120: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
-	40,  // 121: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
-	38,  // 122: apexload.v1.GeneratorControl.SetThroughputCap:input_type -> apexload.v1.ThroughputCapRequest
-	70,  // 123: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
-	42,  // 124: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
-	69,  // 125: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
-	87,  // 126: apexload.v1.GeneratorControl.LiveTableChannel:input_type -> apexload.v1.LiveTableReply
-	89,  // 127: apexload.v1.GeneratorControl.RendezvousChannel:input_type -> apexload.v1.RendezvousReply
-	72,  // 128: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
-	77,  // 129: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
-	79,  // 130: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	79,  // 131: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	2,   // 132: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
-	83,  // 133: apexload.v1.GeneratorControl.ProbeHTTP3:input_type -> apexload.v1.HTTP3ProbeRequest
-	9,   // 134: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
-	30,  // 135: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
-	26,  // 136: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
-	34,  // 137: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
-	24,  // 138: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
-	24,  // 139: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
-	37,  // 140: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
-	41,  // 141: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
-	39,  // 142: apexload.v1.GeneratorControl.SetThroughputCap:output_type -> apexload.v1.ThroughputCapAck
-	71,  // 143: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
-	43,  // 144: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
-	44,  // 145: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
-	86,  // 146: apexload.v1.GeneratorControl.LiveTableChannel:output_type -> apexload.v1.LiveTableRequest
-	88,  // 147: apexload.v1.GeneratorControl.RendezvousChannel:output_type -> apexload.v1.RendezvousRequest
-	76,  // 148: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
-	78,  // 149: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
-	80,  // 150: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
-	81,  // 151: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
-	4,   // 152: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
-	84,  // 153: apexload.v1.GeneratorControl.ProbeHTTP3:output_type -> apexload.v1.HTTP3ProbeResponse
-	134, // [134:154] is the sub-list for method output_type
-	114, // [114:134] is the sub-list for method input_type
-	114, // [114:114] is the sub-list for extension type_name
-	114, // [114:114] is the sub-list for extension extendee
-	0,   // [0:114] is the sub-list for field type_name
+	2,   // 38: apexload.v1.RunAdoptionResult.terminal_cause:type_name -> apexload.v1.RunTerminalCause
+	102, // 39: apexload.v1.RunAdoptionResult.completed_logical_duration:type_name -> google.protobuf.Duration
+	30,  // 40: apexload.v1.ExecutionEpochAck.adoptions:type_name -> apexload.v1.RunAdoptionResult
+	21,  // 41: apexload.v1.JavaHostPlacement.selection:type_name -> apexload.v1.JavaHostSelection
+	34,  // 42: apexload.v1.AssignmentAck.java_host:type_name -> apexload.v1.JavaHostPlacement
+	19,  // 43: apexload.v1.AssignmentAck.runtime_resource_admission:type_name -> apexload.v1.RuntimeResourceAdmission
+	36,  // 44: apexload.v1.AssignmentAck.java_vm:type_name -> apexload.v1.JavaVMOutcome
+	14,  // 45: apexload.v1.AssignmentAck.browser_authored_definition:type_name -> apexload.v1.BrowserAuthoredDefinition
+	102, // 46: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
+	102, // 47: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
+	102, // 48: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
+	68,  // 49: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
+	69,  // 50: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
+	48,  // 51: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
+	47,  // 52: apexload.v1.MetricsBatch.telemetry:type_name -> apexload.v1.MetricsBatchTelemetry
+	55,  // 53: apexload.v1.MetricsBatch.transaction_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 54: apexload.v1.MetricsBatch.dependency_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 55: apexload.v1.MetricsBatch.soap_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 56: apexload.v1.MetricsBatch.network_profile_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 57: apexload.v1.MetricsBatch.fleet_metrics:type_name -> apexload.v1.MetricAggregate
+	57,  // 58: apexload.v1.MetricsBatch.browser_metrics:type_name -> apexload.v1.BrowserMetrics
+	58,  // 59: apexload.v1.MetricsBatch.browser_device_metrics:type_name -> apexload.v1.BrowserDeviceMetrics
+	55,  // 60: apexload.v1.MetricsBatch.region_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 61: apexload.v1.MetricsBatch.property_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 62: apexload.v1.MetricsBatch.action_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 63: apexload.v1.MetricsBatch.action_property_metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 64: apexload.v1.MetricsBatch.action_dimension_metrics:type_name -> apexload.v1.MetricAggregate
+	50,  // 65: apexload.v1.MetricsBatch.transaction_response_time_sla:type_name -> apexload.v1.TransactionResponseTimeSLACompliance
+	55,  // 66: apexload.v1.MetricsBatch.joint_metrics_v4:type_name -> apexload.v1.MetricAggregate
+	16,  // 67: apexload.v1.MetricsBatch.joint_metrics_info:type_name -> apexload.v1.JointMetricsInfo
+	49,  // 68: apexload.v1.MetricsBatch.http_version_mix:type_name -> apexload.v1.HTTPVersionMix
+	46,  // 69: apexload.v1.MetricsBatch.collection_windows:type_name -> apexload.v1.MetricsCollectionWindow
+	103, // 70: apexload.v1.MetricsCollectionWindow.start:type_name -> google.protobuf.Timestamp
+	103, // 71: apexload.v1.MetricsCollectionWindow.end:type_name -> google.protobuf.Timestamp
+	55,  // 72: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
+	55,  // 73: apexload.v1.GroupMetric.transaction_metrics:type_name -> apexload.v1.MetricAggregate
+	98,  // 74: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
+	99,  // 75: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
+	100, // 76: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
+	101, // 77: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
+	51,  // 78: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
+	53,  // 79: apexload.v1.DurationSketchSnapshot.bins:type_name -> apexload.v1.DurationSketchBin
+	52,  // 80: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
+	56,  // 81: apexload.v1.MetricAggregate.exemplars:type_name -> apexload.v1.TraceExemplar
+	54,  // 82: apexload.v1.MetricAggregate.duration_sketch:type_name -> apexload.v1.DurationSketchSnapshot
+	60,  // 83: apexload.v1.MetricAggregate.java_http:type_name -> apexload.v1.JavaHTTPSummary
+	57,  // 84: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
+	67,  // 85: apexload.v1.ServerTelemetry.grpc:type_name -> apexload.v1.GRPCDiagnostics
+	66,  // 86: apexload.v1.ServerTelemetry.websocket:type_name -> apexload.v1.WebSocketDiagnostics
+	65,  // 87: apexload.v1.ServerTelemetry.java_http:type_name -> apexload.v1.JavaHTTPDiagnostics
+	61,  // 88: apexload.v1.JavaHTTPSummary.request_encoded:type_name -> apexload.v1.JavaHTTPByteMoments
+	61,  // 89: apexload.v1.JavaHTTPSummary.request_decoded:type_name -> apexload.v1.JavaHTTPByteMoments
+	61,  // 90: apexload.v1.JavaHTTPSummary.prepared_request_body:type_name -> apexload.v1.JavaHTTPByteMoments
+	61,  // 91: apexload.v1.JavaHTTPSummary.response_retained:type_name -> apexload.v1.JavaHTTPByteMoments
+	61,  // 92: apexload.v1.JavaHTTPSummary.response_base64:type_name -> apexload.v1.JavaHTTPByteMoments
+	62,  // 93: apexload.v1.JavaHTTPSummary.decoded_per_encoded:type_name -> apexload.v1.JavaHTTPBytePair
+	62,  // 94: apexload.v1.JavaHTTPSummary.prepared_per_decoded:type_name -> apexload.v1.JavaHTTPBytePair
+	62,  // 95: apexload.v1.JavaHTTPSummary.base64_per_retained:type_name -> apexload.v1.JavaHTTPBytePair
+	64,  // 96: apexload.v1.JavaHTTPSummary.base64_decode_ms:type_name -> apexload.v1.JavaHTTPDurationDistribution
+	64,  // 97: apexload.v1.JavaHTTPSummary.base64_encode_ms:type_name -> apexload.v1.JavaHTTPDurationDistribution
+	64,  // 98: apexload.v1.JavaHTTPSummary.enclosing_ms:type_name -> apexload.v1.JavaHTTPDurationDistribution
+	63,  // 99: apexload.v1.JavaHTTPSummary.base64_work:type_name -> apexload.v1.JavaHTTPWorkPair
+	59,  // 100: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
+	37,  // 101: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
+	43,  // 102: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
+	71,  // 103: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
+	69,  // 104: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
+	20,  // 105: apexload.v1.ProtocolRuntimeCapacity.resources:type_name -> apexload.v1.RuntimeResourceCapacity
+	75,  // 106: apexload.v1.ProtocolRuntimeCapacity.shared_jvm:type_name -> apexload.v1.SharedJVMCapacity
+	69,  // 107: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
+	74,  // 108: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
+	76,  // 109: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	76,  // 110: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	9,   // 111: apexload.v1.HeartbeatPong.pod_capacity:type_name -> apexload.v1.PodCapacitySnapshot
+	23,  // 112: apexload.v1.HeartbeatPong.java_host:type_name -> apexload.v1.JavaHostCapabilities
+	86,  // 113: apexload.v1.HTTP3ProbeResponse.results:type_name -> apexload.v1.HTTP3ProbeResult
+	18,  // 114: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
+	19,  // 115: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
+	8,   // 116: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
+	28,  // 117: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
+	26,  // 118: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
+	13,  // 119: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
+	24,  // 120: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
+	6,   // 121: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
+	37,  // 122: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
+	41,  // 123: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
+	39,  // 124: apexload.v1.GeneratorControl.SetThroughputCap:input_type -> apexload.v1.ThroughputCapRequest
+	71,  // 125: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
+	43,  // 126: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
+	70,  // 127: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
+	88,  // 128: apexload.v1.GeneratorControl.LiveTableChannel:input_type -> apexload.v1.LiveTableReply
+	90,  // 129: apexload.v1.GeneratorControl.RendezvousChannel:input_type -> apexload.v1.RendezvousReply
+	73,  // 130: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
+	78,  // 131: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
+	80,  // 132: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	80,  // 133: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	3,   // 134: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
+	84,  // 135: apexload.v1.GeneratorControl.ProbeHTTP3:input_type -> apexload.v1.HTTP3ProbeRequest
+	10,  // 136: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
+	31,  // 137: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
+	27,  // 138: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
+	35,  // 139: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
+	25,  // 140: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
+	25,  // 141: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
+	38,  // 142: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
+	42,  // 143: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
+	40,  // 144: apexload.v1.GeneratorControl.SetThroughputCap:output_type -> apexload.v1.ThroughputCapAck
+	72,  // 145: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
+	44,  // 146: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
+	45,  // 147: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
+	87,  // 148: apexload.v1.GeneratorControl.LiveTableChannel:output_type -> apexload.v1.LiveTableRequest
+	89,  // 149: apexload.v1.GeneratorControl.RendezvousChannel:output_type -> apexload.v1.RendezvousRequest
+	77,  // 150: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
+	79,  // 151: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
+	81,  // 152: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
+	82,  // 153: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
+	5,   // 154: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
+	85,  // 155: apexload.v1.GeneratorControl.ProbeHTTP3:output_type -> apexload.v1.HTTP3ProbeResponse
+	136, // [136:156] is the sub-list for method output_type
+	116, // [116:136] is the sub-list for method input_type
+	116, // [116:116] is the sub-list for extension type_name
+	116, // [116:116] is the sub-list for extension extendee
+	0,   // [0:116] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_generator_proto_init() }
@@ -10551,7 +10639,7 @@ func file_api_proto_generator_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_generator_proto_rawDesc), len(file_api_proto_generator_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   99,
 			NumExtensions: 0,
 			NumServices:   1,

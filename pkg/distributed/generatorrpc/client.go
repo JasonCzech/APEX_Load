@@ -541,6 +541,12 @@ type RunAdoptionResult struct {
 	Outcome       pb.RunAdoptionOutcome
 	Detail        string
 	TerminalState string
+	// TerminalCause is why a COMPLETE run ended; older generators leave it
+	// UNSPECIFIED. CompletedDuration is the run's logical duration target, in
+	// DurationAdjustment.TargetDuration terms, its engines ran to when the
+	// cause is DURATION_ELAPSED.
+	TerminalCause     pb.RunTerminalCause
+	CompletedDuration time.Duration
 }
 
 type Heartbeat struct {
@@ -994,9 +1000,14 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 		AdoptionSupported: ack.GetAdoptionSupported(),
 	}
 	for _, adoption := range ack.GetAdoptions() {
+		var completed time.Duration
+		if duration := adoption.GetCompletedLogicalDuration(); duration != nil && duration.CheckValid() == nil {
+			completed = duration.AsDuration()
+		}
 		result.Adoptions = append(result.Adoptions, RunAdoptionResult{
 			TestID: adoption.GetTestId(), Outcome: adoption.GetOutcome(),
 			Detail: adoption.GetDetail(), TerminalState: adoption.GetTerminalState(),
+			TerminalCause: adoption.GetTerminalCause(), CompletedDuration: completed,
 		})
 	}
 	if testID != "" && !ack.GetTestLeaseAccepted() {

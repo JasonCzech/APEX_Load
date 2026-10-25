@@ -298,7 +298,7 @@ Round 13 was the last cycle: by agreement, review stopped once a round found no 
 - **REC-A exit cases untested at this phase:**
   - a capability mismatch between the replacement and the run;
   - no spare capacity at the `replacement_committing` or `rolling_forward` phase;
-  - the run's own deadline elapsing before the successor (only the replacement's journaled target elapsing is tested);
+  - the run's own deadline elapsing before the successor on a deployed cluster (exercised only with fake generators in the `staged`, `rolling_back`, `replacement_committing` and `rolling_forward` phases and an in-process replacement, not the `prepared` phase or an in-process survivor or source, since the [generator terminal cause slice](../roadmap-generator-terminal-cause-2026-10-24/README.md));
   - a stop requested while the roll-forward runs;
   - a worker or node partition;
   - rolling-version refusal by older controllers during an upgrade;
@@ -307,7 +307,7 @@ Round 13 was the last cycle: by agreement, review stopped once a round found no 
   - a restart of a missing replacement for the eligible HTTP workload;
   - replay of work whose replacement never committed: such a run is held `STOPPING`.
 - **Duration during the gap.** Between `CommitWork` and the successor's adjustment, the replacement runs on its staged duration. In its own logical clock it never exceeds the configured duration, but if the gap outlasts the fleet deadline it can run up to the staging time past it before the adjustment ends it.
-- **Completion is ambiguous.** A participant that finished naturally after the journal froze its prior lineage is indistinguishable from one a controller stopped, so it holds the run for attestation. That covers a completion between the evacuation's start and the controller's loss, and a committed replacement whose staged duration ran out before the successor. That is conservative. The durable fix is a generator terminal state that tells a controller stop apart from natural completion.
+- **Completion is ambiguous.** Resolved on 2026-10-24 for causes reported by current generators by the [generator terminal cause slice](../roadmap-generator-terminal-cause-2026-10-24/README.md): a participant whose generator reports that its duration ran out, at no less than the durable expectation, no longer holds the run, and a naturally completed replacement rolls forward. A completion from an older generator, an older archive or a pruned tombstone, a controller stop, executions that ended early, or a shorter duration still holds the run for attestation.
 - **A failed roll-forward** leaves the run `STOPPING`, holding its capacity and timeslot, until a newer term fences it or an administrator attests that its generators stopped. That includes a replacement that never committed.
 - **Write failures.** A failed `STOPPING` write in `failRunEvacuationRecovery` is retried in the background by the hold registry's retry. `TestEvacuationRollForwardHoldsCompletedReplacement` shows the stops are still sent and the next term holds the run, and `TestInterruptedRunEvacuationHoldRetry` covers the background retry.
 - **Removal paths.** `forgetEvacuationHold` is called where a run is removed (`tests.go`, `persistence.go`, `timeslot_reservation.go`), but only the function itself is tested, not each call site. Those calls only free the entry sooner: `persist` already drops a hold whose run object is no longer registered (`tr.tests[test.ID] != test`), which ends the retry.

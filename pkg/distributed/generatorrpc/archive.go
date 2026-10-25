@@ -81,6 +81,11 @@ type archiveManifest struct {
 	// drop counters at execution start and end; the controller names the
 	// source when it merges the archives.
 	HostNetwork []hostnet.RunEvidence `json:"host_network,omitempty"`
+	// TerminalCause and CompletedLogicalDuration restore a COMPLETE run's
+	// terminal outcome after a restart (run_terminal_cause.go). They are kept
+	// out of TerminalMetrics, which an older generator decodes strictly.
+	TerminalCause            string        `json:"terminal_cause,omitempty"`
+	CompletedLogicalDuration time.Duration `json:"completed_logical_duration_ns,omitempty"`
 }
 
 type archiveMessageDetailCapture struct {

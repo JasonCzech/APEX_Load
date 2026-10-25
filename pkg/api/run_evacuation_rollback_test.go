@@ -35,6 +35,8 @@ type rollbackGeneratorClient struct {
 	// adjustments records duration adjustments; rejectAdjust refuses them.
 	adjustments  []generatorrpc.DurationAdjustment
 	rejectAdjust bool
+	// drainingReleases refuses that many capacity releases as still draining.
+	drainingReleases int
 }
 
 func (c *rollbackGeneratorClient) AdjustDuration(_ context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error) {
@@ -108,6 +110,10 @@ func newRollbackGeneratorClient(outcome pb.RunAdoptionOutcome, incarnation strin
 		}
 		if client.rejectCap {
 			return &pb.PodCapacityAck{ErrorMessage: "refused", Snapshot: &pb.PodCapacitySnapshot{Incarnation: incarnation}}, nil
+		}
+		if claim.Release && client.drainingReleases > 0 {
+			client.drainingReleases--
+			return &pb.PodCapacityAck{ErrorMessage: generatorrpc.PodCapacityStillDrainingMessage, Snapshot: &pb.PodCapacitySnapshot{Incarnation: incarnation}}, nil
 		}
 		return &pb.PodCapacityAck{Accepted: true, Snapshot: &pb.PodCapacitySnapshot{Incarnation: incarnation}}, nil
 	}
