@@ -3,7 +3,7 @@ import NativeScriptActionFields from './NativeScriptActionFields'
 import { useActionParameterMenu } from './useActionParameterMenu'
 import { OpenActionBody } from './actionInspectorContext'
 import type { HTTP3ScriptContext } from './httpQUICModel'
-import { useState, useEffect, createContext, useContext, useId } from 'react'
+import { useState, useEffect, createContext, useContext, useId, type ReactNode } from 'react'
 import TabList from './ux/TabList'
 import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameterDefinition, ScriptValidationResponse } from '../types/scripts'
 import type { ActionEditorParameterDraft } from './scriptEditorState'
@@ -19,6 +19,7 @@ import CatalogActionForm from './CatalogActionForm'
 import ActionChecks from './ActionChecks'
 import type { ChecksReplay } from './actionChecksModel'
 import ReferenceField from './ReferenceField'
+import { blockerTitle } from './replayReadinessIssues'
 import { HTTP_RUNTIME_ACTION_TYPES, NO_RESPONSE_ACTION_TYPES, hasHandBuiltEditor, type LiveTableFormContext } from './catalogActionFormModel'
 
 type Action = ScriptActionDefinition
@@ -36,14 +37,25 @@ function SourceFunctionSummary({ action }: { action: Action }) {
   if (action.type === 'rendezvous' && !Array.isArray(params.args)) {
     return <div className="form-hint full-width">VUsers wait at rendezvous point <code>{asString(params.key) || action.name}</code> until the others arrive. It has no request target, headers or body.</div>
   }
-  const fn = asString(params.function) || action.type
+  const metadata = action.metadata || {}
+  const fn = asString(params.function) || asString(metadata.source_function) || action.type
   const args = Array.isArray(params.args) ? params.args.map(value => typeof value === 'string' ? value : JSON.stringify(value)) : []
+  // A review marker stands where a source call could not be converted: it
+  // keeps the evidence and sends nothing.
+  if (action.type.replace(/^loadrunner_/, 'source_') === 'source_review') {
+    const file = asString(metadata.source_file)
+    const line = typeof metadata.source_line === 'number' ? String(metadata.source_line) : asString(metadata.source_line)
+    const where = file ? `${file}${line ? `:${line}` : ''}` : ''
+    return <div className="form-hint full-width">
+      Review marker for <code>{fn}</code>{where && <> at <code>{where}</code></>}. It sends nothing{actionExecutionBlockers(action).length > 0 ? '; replay refuses to run while it carries a blocker' : ''}.
+    </div>
+  }
   return <div className="form-hint full-width">
     Replays the source call <code>{fn}({args.join(', ')})</code> at its original position. It has no request target, headers or body.
   </div>
 }
 
-export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, scriptHTTPContext, isBrowserScript, isJmsScript, isSoapScript, issues, catalogContext, onOpenSource, checksReplay, checksUnavailable }: {
+export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, scriptHTTPContext, isBrowserScript, isJmsScript, isSoapScript, issues, catalogContext, onOpenSource, checksReplay, checksUnavailable, blockerRepair }: {
   inspector?: boolean
   initialSection?: string
   onOpenBody?: () => void
@@ -80,6 +92,8 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   checksReplay?: ChecksReplay | null
   /** Why a replayed script has no result for this step, or ''. */
   checksUnavailable?: string
+  /** Why the step blocks replay and its guided repair, shown while it carries an execution blocker. */
+  blockerRepair?: ReactNode
 }) {
   const [section, setSection] = useState(initialSection)
   const sectionIdBase = useId()
@@ -104,6 +118,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   return (
     <ActionProtocolContext.Provider value={protocol}><div className="action-editor-panel">
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
+      {blockerRepair && actionExecutionBlockers(action).length > 0 && blockerRepair}
 
       {inspector && <TabList className="inspector-section-tabs ux-underline-tabs" aria-label="Action property sections">
         {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" role="tab" key={value} id={`${sectionIdBase}-${value}-tab`} aria-controls={`${sectionIdBase}-${value}-panel`} aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? catalogDriven ? 'Settings' : isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isNativeRendezvous ? 'Rendezvous' : isNativeScript ? 'Host JavaScript' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
@@ -382,7 +397,7 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
           <div className="action-editor-issue-pills">
             {isControlAction(action) && <span className="action-signal-pill control">control</span>}
             {executionBlocked
-              ? <span className="action-signal-pill error" title={`Execution blocked: ${executionBlockers.join(', ')}`}>blocked</span>
+              ? <span className="action-signal-pill error" title={`Blocks replay: ${executionBlockers.map(blockerTitle).join(', ')}`}>blocked</span>
               : reviewGated && <span className="action-signal-pill warning">review</span>}
             {isReviewGatedJavaScriptAction(action) && <span className="action-signal-pill warning">js</span>}
             {fallbackCount > 0 && <span className="action-signal-pill selector">fallbacks {fallbackCount}</span>}

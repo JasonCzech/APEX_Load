@@ -297,6 +297,19 @@ export function wsUrl(
   return url.toString();
 }
 
+// A response body larger than the caller's maxResponseBytes. The request
+// itself completed, so a caller that needs the body can say it was too large
+// instead of reporting a failure.
+export class ApiResponseTooLargeError extends Error {
+  limitBytes: number;
+
+  constructor(limitBytes: number) {
+    super("API response exceeds the approved size limit.");
+    this.name = "ApiResponseTooLargeError";
+    this.limitBytes = limitBytes;
+  }
+}
+
 async function parseJsonResponse(res: Response, maxBytes?: number): Promise<unknown> {
   const contentType = (res.headers.get("content-type") || "").toLowerCase();
   if (res.status === 204 || res.status === 205) {
@@ -314,7 +327,7 @@ async function parseJsonResponse(res: Response, maxBytes?: number): Promise<unkn
         bytes += chunk.value.byteLength;
         if (bytes > maxBytes) {
           void reader.cancel().catch(() => undefined);
-          throw new Error("API response exceeds the approved size limit.");
+          throw new ApiResponseTooLargeError(maxBytes);
         }
         chunks.push(chunk.value);
       }
@@ -328,7 +341,7 @@ async function parseJsonResponse(res: Response, maxBytes?: number): Promise<unkn
   } else {
     text = await res.text();
     if (maxBytes !== undefined && new TextEncoder().encode(text).byteLength > maxBytes) {
-      throw new Error("API response exceeds the approved size limit.");
+      throw new ApiResponseTooLargeError(maxBytes);
     }
   }
   if (!text.trim()) {

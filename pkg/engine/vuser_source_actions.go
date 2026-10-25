@@ -1100,7 +1100,10 @@ func (vu *VUser) handleSourceMetricAction(ctx context.Context, action dsl.Action
 
 func (vu *VUser) handleSourceStateAction(ctx context.Context, action dsl.Action) {
 	function := sourceActionFunction(action)
-	switch action.Type {
+	// Dispatch on the canonical type, as handleEngineAction does: a legacy
+	// loadrunner_parameter or loadrunner_secret step must save its value, which
+	// replay readiness (pkg/dsl/varflow) already assumes.
+	switch dsl.CanonicalActionType(action.Type) {
 	case "source_parameter":
 		vu.handleSourceParameterAction(function, action)
 	case "source_secret":
@@ -1293,7 +1296,8 @@ func (vu *VUser) handleWebConvertParamAction(action dsl.Action, args []string) {
 	source := ""
 	if value, ok := actionParamString(action.Params, "source_string"); ok {
 		source = value
-	} else {
+	} else if len(args) > 1 {
+		// A save_param step may carry no args; args[1:] would then panic.
 		for _, arg := range args[1:] {
 			key, value, ok := strings.Cut(arg, "=")
 			if ok && strings.EqualFold(strings.TrimSpace(key), "SourceString") {

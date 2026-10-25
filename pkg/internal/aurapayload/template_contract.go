@@ -100,7 +100,7 @@ func ReadTemplateContract(raw any) (*TemplateContract, error) {
 	if contract.Version != 1 || len(contract.FormWireOccurrences)+len(contract.LiteralOccurrences) > MaxTemplateOccurrences {
 		return nil, fail(InvalidTemplateContract)
 	}
-	seen := make(map[string]bool, len(contract.FormWireOccurrences)+len(contract.LiteralOccurrences))
+	seen := make(map[string]bool, len(contract.FormWireOccurrences))
 	for _, rows := range [][]TemplateOccurrence{contract.FormWireOccurrences, contract.LiteralOccurrences} {
 		for _, row := range rows {
 			if !contractHash(row.ContextID) || !contractHash(row.ExpressionSHA256) || row.OccurrenceIndex < 0 || row.OccurrenceIndex >= MaxTemplateOccurrences {

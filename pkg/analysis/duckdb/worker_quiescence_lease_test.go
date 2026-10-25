@@ -10,6 +10,7 @@ import (
 )
 
 func TestNativeQuiescenceRetainsGateAcrossActualIOJoinAndMetadataOutage(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	physical, err := p.AcquireIO()
 	if err != nil {
@@ -156,6 +157,7 @@ func TestNativeQuiescenceJoinsChildIdentityBeforeMetadataProof(t *testing.T) {
 	}
 }
 func TestNativeQuiescenceUnresolvedMetadataProtectsExactStaging(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	directory := filepath.Join(t.TempDir(), "exact-owned-staging")
 	if err := os.Mkdir(directory, 0700); err != nil {

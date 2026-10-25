@@ -72,6 +72,11 @@ type workerPipeEvent struct {
 }
 type workerWriteEvent struct{ err error }
 
+// workerProofWindow is how long a caller waits for physical ownership to be
+// proven before reporting it unresolved: past a running attempt's own
+// deadline, and for a release's cleanup (workerReleaseWait).
+const workerProofWindow = 6 * time.Second
+
 // workerLogUnresolved records why an attempt's physical ownership stayed
 // unproven. Such an attempt stays charged, so its fixed public error alone
 // cannot tell an operator what is still held.
@@ -104,7 +109,7 @@ func runWorkerParent(a *workerAttempt, request workerRequest, options workerRunO
 			err    error
 		}{result, err}
 	}()
-	proofWindow := 6 * time.Second
+	proofWindow := workerProofWindow
 	if options.testCallerProofWindow > 0 {
 		proofWindow = options.testCallerProofWindow
 	}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import MarkdownRenderer, { MarkdownLabel } from './MarkdownRenderer'
+import { containsErDiagram, loadMermaidErDiagram } from './mermaidErDiagramLoader'
 import { markdownPlainText, parseMarkdown, type MarkdownBlock } from './repositoryGuideMarkdown'
 
 type Props = {
@@ -30,6 +31,46 @@ function buildOutline(headings: Heading[]): OutlineEntry[] {
   return outline
 }
 
+// Input that shows the reader has taken over the page from a deep link.
+const READER_INTENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
+// How long the destination stays aligned after the last layout change it
+// followed, and at most.
+export const FOLLOW_IDLE_MS = 1500
+export const FOLLOW_MAX_MS = 10_000
+
+// React may reveal lazily drawn diagrams a little after their chunk arrives,
+// and each diagram lays out again once it measures its width. Keep the
+// destination aligned as the article above it changes height, until focus
+// leaves it, the page scrolls other than by this alignment (screen-reader
+// browsing fires no key events), or the layout has settled.
+function followDestination(article: HTMLElement, scroller: HTMLElement | null, target: HTMLElement): () => void {
+  if (typeof ResizeObserver === 'undefined') return () => {}
+  let alignedTop = scroller?.scrollTop
+  let idle: ReturnType<typeof setTimeout> | undefined
+  const stop = () => {
+    observer.disconnect()
+    scroller?.removeEventListener('scroll', onScroll)
+    clearTimeout(idle)
+    clearTimeout(cap)
+  }
+  const onScroll = () => { if (scroller && scroller.scrollTop !== alignedTop) stop() }
+  const observer = new ResizeObserver(() => {
+    if (article.ownerDocument.activeElement !== target) {
+      stop()
+      return
+    }
+    target.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+    alignedTop = scroller?.scrollTop
+    clearTimeout(idle)
+    idle = setTimeout(stop, FOLLOW_IDLE_MS)
+  })
+  const cap = setTimeout(stop, FOLLOW_MAX_MS)
+  idle = setTimeout(stop, FOLLOW_IDLE_MS)
+  observer.observe(article)
+  scroller?.addEventListener('scroll', onScroll, { passive: true })
+  return stop
+}
+
 export default function GuideMarkdownArticle({ source, blocks: providedBlocks, className, section, sectionHref, resolveLink }: Props) {
   const blocks = useMemo(() => providedBlocks ?? parseMarkdown(source), [providedBlocks, source])
   const bodyBlocks = blocks.filter(block => block.kind !== 'heading' || block.level !== 1)
@@ -39,6 +80,7 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
   const sectionIndexes = new Map<string, Heading[]>(sectioned ? outline.filter(entry => entry.children.length >= SECTION_INDEX_MIN).map(entry => [entry.heading.id, entry.children]) : [])
   const href = (id: string) => sectionHref?.(id) || `#${id}`
   const ref = useRef<HTMLDivElement>(null)
+  const waitsForDiagrams = Boolean(section) && containsErDiagram(bodyBlocks)
   useEffect(() => {
     const container = ref.current
     if (!container) return
@@ -57,17 +99,43 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
     updateOffset()
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(updateOffset)
     if (toolbar) observer?.observe(toolbar)
-    const frame = requestAnimationFrame(() => {
-      const target = section ? Array.from(container.querySelectorAll<HTMLElement>('[id]')).find(node => node.id === section) : undefined
-      if (target) {
-        target.scrollIntoView?.({ block: 'start', behavior: 'instant' })
-        target.focus({ preventScroll: true })
-      } else if (scroller) {
-        scroller.scrollTop = 0
-      }
-    })
-    return () => { cancelAnimationFrame(frame); observer?.disconnect() }
-  }, [source, section, providedBlocks])
+    let cancelled = false
+    let frame = 0
+    let stopFollowing = () => {}
+    // While a deep link waits for its diagrams, and while it follows them,
+    // the reader may scroll or move focus; from then on the page is theirs.
+    let readerActed = false
+    const onIntent = () => {
+      readerActed = true
+      stopFollowing()
+    }
+    const document = container.ownerDocument
+    if (waitsForDiagrams) for (const type of READER_INTENTS) document.addEventListener(type, onIntent, { capture: true, passive: true })
+    const jump = () => {
+      frame = requestAnimationFrame(() => {
+        if (readerActed) return
+        const target = section ? Array.from(container.querySelectorAll<HTMLElement>('[id]')).find(node => node.id === section) : undefined
+        if (target) {
+          target.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+          target.focus({ preventScroll: true })
+          if (waitsForDiagrams) stopFollowing = followDestination(container, scroller, target)
+        } else if (scroller) {
+          scroller.scrollTop = 0
+        }
+      })
+    }
+    // ER diagrams show their shorter source until the renderer loads, so a
+    // deep link into an article with diagrams jumps once it has (or failed).
+    if (waitsForDiagrams) void loadMermaidErDiagram().catch(() => undefined).then(() => { if (!cancelled && !readerActed) jump() })
+    else jump()
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+      stopFollowing()
+      for (const type of READER_INTENTS) document.removeEventListener(type, onIntent, true)
+    }
+  }, [source, section, providedBlocks, waitsForDiagrams])
   const link = (heading: Heading) => <a href={href(heading.id)} aria-current={section === heading.id ? 'location' : undefined}><MarkdownLabel text={heading.text} /></a>
   return <div ref={ref} className={['guide-markdown-article', className].filter(Boolean).join(' ')} data-table-pagination="off">
     {headings.length > 1 && <nav className="help-article-toc" aria-label="On this page">

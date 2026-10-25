@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -128,6 +129,24 @@ const workerMaxParentDescriptorRecords = 32768
 
 var workerAttemptQuarantine sync.Map
 
+// workerReleaseWait bounds the public waiter of an attempt or pipeline
+// release. Cleanup continues past it, still charged, but a release that
+// returns early fails a caller that checks it, such as an import's
+// ReleaseOutputs after normalization. Windows can refuse to delete the
+// executable a worker just ran for well over a second, so the waiter allows
+// the same proof window as a running attempt.
+func workerReleaseWait() time.Duration {
+	if wait := workerReleaseWaitOverride.Load(); wait > 0 {
+		return time.Duration(wait)
+	}
+	return workerProofWindow
+}
+
+// workerReleaseWaitOverride shortens workerReleaseWait for tests that hold
+// cleanup back on purpose. An abandoned attempt's release may read it after
+// its test, so it is atomic.
+var workerReleaseWaitOverride atomic.Int64
+
 // Cleanup is a retained continuation outside the attempt mutex. Its public
 // waiter is bounded; the exact owner stays charged while OS/filesystem calls
 // block or return an unknown outcome. There is no repeated-Close fake proof.
@@ -148,12 +167,17 @@ func (a *workerAttempt) release() error {
 	done := a.cleanupDone
 	a.mu.Unlock()
 	a.cleanupOnce.Do(func() { workerAttemptQuarantine.Store(a, a); go a.cleanupPhysical() })
-	timer := time.NewTimer(time.Second)
+	wait := workerReleaseWait()
+	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
 	case <-done:
 		return nil
 	case <-timer.C:
+		a.mu.Lock()
+		parentOperations, readers, started, reaped, pipesJoined, joined, removeErr := a.parentOperations, a.readers, a.started, a.reaped, a.pipesJoined, a.descriptorsJoinedLocked(false), a.cleanupRemoveErr
+		a.mu.Unlock()
+		workerLogUnresolved(a, "release_timeout", "parent_operations", parentOperations, "readers", readers, "started", started, "reaped", reaped, "pipes_joined", pipesJoined, "descriptors_joined", joined, "remove_error", removeErr, "waited", wait)
 		return errWorkerOwnership
 	}
 }
@@ -181,15 +205,21 @@ func (a *workerAttempt) cleanupPhysical() {
 			closed := a.descriptorsJoinedLocked(false)
 			a.mu.Unlock()
 			if closed {
-				if path != "" && os.RemoveAll(path) != nil {
-					retry := time.NewTimer(removeRetry)
-					select {
-					case <-retry.C:
-					case <-a.physicalWake:
+				if path != "" {
+					removeErr := os.RemoveAll(path)
+					a.mu.Lock()
+					a.cleanupRemoveErr = removeErr
+					a.mu.Unlock()
+					if removeErr != nil {
+						retry := time.NewTimer(removeRetry)
+						select {
+						case <-retry.C:
+						case <-a.physicalWake:
+						}
+						retry.Stop()
+						removeRetry = min(2*removeRetry, time.Second)
+						continue
 					}
-					retry.Stop()
-					removeRetry = min(2*removeRetry, time.Second)
-					continue
 				}
 				a.mu.Lock()
 				cancel, release := a.preparationCancel, a.releaseAdmission

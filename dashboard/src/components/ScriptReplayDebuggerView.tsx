@@ -222,6 +222,10 @@ export interface ScriptReplayDebuggerViewProps {
   runtimeInspectionMode: RuntimeInspectionMode
   onRuntimeInspectionMode: (mode: RuntimeInspectionMode) => void
   runtimeVariablesUnavailable?: boolean
+  /** The start request is out and no session is admitted yet: nothing runs until the controller answers. */
+  replayStartPending?: boolean
+  /** Why a new run cannot start now (blockers to resolve, a save first); Run to selected action says so. */
+  runStartBlockedReason?: string
   replayVariableTimeline: ReplayVariableTimelineEntry[]
   saving: boolean
   /** Which policies an event's request can switch to auto+h3: its own, the script default, or both. */
@@ -308,6 +312,8 @@ export function ScriptReplayDebuggerView({
   replayVariableDiffs,
   replayVariableInspector,
   runtimeVariablesUnavailable = false,
+  replayStartPending = false,
+  runStartBlockedReason,
   currentRuntimeSnapshot, currentRuntimeReason, runtimeInspectionMode, onRuntimeInspectionMode, canInspectRuntimeFrame, onInspectRuntimeFrame,
   replayVariableTimeline,
   saving,
@@ -426,7 +432,9 @@ export function ScriptReplayDebuggerView({
   const [rawLogs, setRawLogs] = useState(false)
   const [breakpointsPending, setBreakpointsPending] = useState(false)
   const runtimeFailures = debugEvents.map((event, index) => ({ event, index })).filter(({ event }) => !event.success)
-  const statusText = executionLabel(replaying, browserReplaySession, replayReport)
+  // Until the controller admits a session, the start is only being checked.
+  const startPending = replaying && replayStartPending && !browserReplaySession
+  const statusText = executionLabel(replaying, browserReplaySession, replayReport, startPending)
   // Shown beside Debug options, except while a run is live and the step controls need the room; the button's tooltip always carries it.
   const debugOptionsSummary = `1 virtual user · ${replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · ${replayOptions.logLevel} logging${replayOptions.startPaused ? ' · Start paused' : ''} · ${debugContinuesAfterFailure(replayOptions, script) ? 'Continues' : 'Stops'} after a failure`
   const jumpToEvent = (index: number) => { setExpandedReplayEvent(index); setDebuggerTab('request'); setDebugDetailCollapsed(false); setNarrowPane('editor') }
@@ -492,7 +500,7 @@ export function ScriptReplayDebuggerView({
               {sessionControls}
               {(replaying || replayReport) ? (
                 <div className={`debugger-live-strip ${debuggerStatusState}`}>
-                  <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : browserReplaySession?.status === 'stopped' ? 'Stopping' : 'Running') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Passed' : 'Failed'}</span>
+                  <span className="replay-live-badge">{replaying ? (startPending ? 'Starting' : isReplayPaused ? 'Paused' : browserReplaySession?.status === 'stopped' ? 'Stopping' : 'Running') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Passed' : 'Failed'}</span>
                   {/* The badge carries the outcome; the text adds where the run is,
                       or what it recorded once it is over, never the same word. */}
                   <div className="debugger-live-strip-text">
@@ -595,7 +603,7 @@ export function ScriptReplayDebuggerView({
                 <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
                 <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
                 <button type="button" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
-                <TooltipButton type="button" title="Runs prerequisites; during a paused run, stops at the next matching execution" disabled={!selectedRow || (replaying && !isReplayPaused)} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
+                <TooltipButton type="button" title={!replaying && runStartBlockedReason ? runStartBlockedReason : 'Runs prerequisites; during a paused run, stops at the next matching execution'} disabled={!selectedRow || (replaying ? !isReplayPaused : Boolean(runStartBlockedReason))} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
               </div>
               <div className="debug-session-disclosures">
               <details className="debug-effective-settings"><summary>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</summary><dl><dt>Base URL (relative targets)</dt><dd>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</dd><dt>Evidence capture</dt><dd>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</dd><dt>Failure policy</dt><dd>{runRecord?.failurePolicy || (debugContinuesAfterFailure(replayOptions, script) ? 'Continue on error' : 'Stop on error')}</dd><dt>Inputs</dt><dd>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameters; session variables override matching inputs.</dd></dl><ul>{(runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))).map(p => <li key={p.name}>{p.name}: {p.source} · {p.selection} · {p.update || 'default update'}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</li>)}</ul></details>
@@ -1206,7 +1214,10 @@ export function ScriptReplayDebuggerView({
                     <TabList role="tablist" aria-label="Debug logs and problems" className="debugger-bottom-tab-list ux-underline-tabs" onKeyDown={handleTabKey}>
                     <TooltipButton type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('console') }} title="Wire log — raw protocol request/response and engine output" tabIndex={(debuggerBottomTab === 'console') ? 0 : -1}>Engine logs</TooltipButton>
                     <TooltipButton type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('timeline') }} title="Flow log — actions, transactions, and variable changes in order" tabIndex={(debuggerBottomTab === 'timeline') ? 0 : -1}>Timeline</TooltipButton>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('problems') }} tabIndex={(debuggerBottomTab === 'problems') ? 0 : -1}>Problems{problemCount + runtimeFailures.length > 0 ? ` ${problemCount + runtimeFailures.length}` : ''}</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('problems') }} tabIndex={(debuggerBottomTab === 'problems') ? 0 : -1} aria-label={`Problems: ${problemCount} script ${problemCount === 1 ? 'issue' : 'issues'}${runtimeFailures.length ? `, ${runtimeFailures.length} failed ${runtimeFailures.length === 1 ? 'execution' : 'executions'}` : ''}`}>
+                      {/* The script's problems are the count Author shows; run failures are their own badge, never added in. */}
+                      Problems{problemCount > 0 ? ` ${problemCount}` : ''}{runtimeFailures.length > 0 && <span className="debugger-tab-failed-count"> · {runtimeFailures.length} failed</span>}
+                    </button>
 
                     </TabList>
                   </div>

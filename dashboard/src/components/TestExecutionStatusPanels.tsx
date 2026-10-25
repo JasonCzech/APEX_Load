@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import TelemetryPolicy from './TelemetryPolicy'
-import { TelemetryBudgetChange, TelemetryPolicySegmentList } from './TelemetryPolicySegments'
+import LazyLoadBoundary from './LazyLoadBoundary'
 import type { TelemetryPolicySegmentReceipt } from '../types/telemetryPolicy'
 import TelemetryStageDistributions from './TelemetryStageDistributions'
 import TelemetryAcceptanceVerdict from './TelemetryAcceptanceVerdict'
@@ -15,6 +15,12 @@ import { MISSING_VALUE } from './runReport/reportPresentation'
 import { ratioParts, usedHTTP3, versionMixHeadline } from './runReport/httpVersionMixModel'
 import { formatDateTime } from '../utils/dateTime'
 import { formatGapToTarget, goalStanding, isOffTarget } from './goalThroughputModel'
+
+// The segments list renders only once a run's policy changed (two or more
+// segments) and the change form only for an editor of a running or paused
+// run, so the live route loads them on use.
+const TelemetryPolicySegmentList = lazy(() => import('./TelemetryPolicySegments').then(module => ({ default: module.TelemetryPolicySegmentList })))
+const TelemetryBudgetChange = lazy(() => import('./TelemetryPolicySegments').then(module => ({ default: module.TelemetryBudgetChange })))
 
 interface LiveMetricsSummary {
   browser_documents?: BrowserDocumentSummary | null
@@ -386,10 +392,15 @@ export default function TestExecutionStatusPanels({
 
       {metrics && <TelemetryPolicy evidence={metrics.telemetry_policy} acceptSegments
         segmentSequence={latestSegmentInForce(latestSegments, metrics.telemetry_policy?.policy?.hash)} />}
-      <TelemetryPolicySegmentList segments={segments} />
-      {canChangeTelemetryPolicy && metrics?.telemetry_policy?.policy && <TelemetryBudgetChange key={test.id} testId={test.id} projectId={test.project_id} status={test.status}
-        segments={latestSegments} cadenceScope={metrics.telemetry_policy.policy.cadence_scope}
-        onChanged={listed => setReadSegments({ testId: test.id, segments: listed })} />}
+      {/* The list renders nothing for fewer than two segments. */}
+      {Array.isArray(segments) && segments.length >= 2 && <LazyLoadBoundary title="Telemetry policy segments could not be loaded.">
+        <Suspense fallback={null}><TelemetryPolicySegmentList segments={segments} /></Suspense>
+      </LazyLoadBoundary>}
+      {canChangeTelemetryPolicy && (test.status === 'RUNNING' || test.status === 'PAUSED') && metrics?.telemetry_policy?.policy && <LazyLoadBoundary key={test.id} title="The telemetry budget change could not be loaded.">
+        <Suspense fallback={null}><TelemetryBudgetChange testId={test.id} projectId={test.project_id} status={test.status}
+          segments={latestSegments} cadenceScope={metrics.telemetry_policy.policy.cadence_scope}
+          onChanged={listed => setReadSegments({ testId: test.id, segments: listed })} /></Suspense>
+      </LazyLoadBoundary>}
 
       {metrics?.telemetry && (
         <div className="goal-status-card telemetry-status-card">

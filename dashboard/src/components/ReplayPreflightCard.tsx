@@ -1,6 +1,17 @@
 import './ReplayPreflightCard.css'
-import type { ReplayPreflight } from '../types/scripts'
+import { useMemo } from 'react'
+import type { ReplayPreflight, ScriptDefinition } from '../types/scripts'
 import { replayPreflightStatusLabel } from './replayPreflightUtils'
+import { dependencyCodeFolding, parseReviewGateIssue, readinessIssueText, replayReadinessIssues, reviewGateBreadcrumb, reviewGateCodeProblems, savedReviewTitle } from './replayReadinessIssues'
+
+// The preflight issues the review_gates check stands for: execution blockers
+// and the review wording of a review-required gate, not static validation.
+function reviewGateMessages(preflight: ReplayPreflight): string[] {
+  return [...new Set((preflight.issues || []).map(message => message.trim()).filter(message => {
+    const gate = parseReviewGateIssue(message)
+    return Boolean(gate && (gate.codes.length > 0 || /\breview/i.test(gate.rest)))
+  }))]
+}
 
 export default function ReplayPreflightCard({
   preflight,
@@ -9,6 +20,9 @@ export default function ReplayPreflightCard({
   secretStatusState,
   onRetrySecretStatus,
   configureSecretsLabel = 'Configure secrets',
+  onSelectIssue,
+  issueBreadcrumb = reviewGateBreadcrumb,
+  script,
 }: {
   preflight: ReplayPreflight
   compact?: boolean
@@ -16,8 +30,55 @@ export default function ReplayPreflightCard({
   secretStatusState?: 'checking' | 'unavailable'
   onRetrySecretStatus?: () => void
   configureSecretsLabel?: string
+  /**
+   * Opens a review gate's step, given the gate and the row's own problem
+   * (its code, empty for a gate that names none); without it the gates are
+   * listed as text.
+   */
+  onSelectIssue?: (message: string, problem: { code: string; message: string }) => void
+  /** Where a gate sits, for its list item; defaults to the gate's own path and name. */
+  issueBreadcrumb?: (message: string) => string | undefined
+  /** The document the preflight describes, so a blocking value is titled by why it blocks. */
+  script?: ScriptDefinition
 }) {
   const expectedActionCount = preflight.expected_action_count ?? preflight.action_count
+  const gateMessages = reviewGateMessages(preflight)
+  // A dependency code naming a value that blocks replay is that value's
+  // problem, listed once, at the first gate naming it, and titled as Author
+  // Problems and the start gate title it (replayReadinessIssues); so are the
+  // codes for a value the draft now supplies, which a save re-evaluates.
+  const folding = dependencyCodeFolding(preflight)
+  // The titles can analyze the whole script (an older controller's preflight
+  // does not say why a value blocks), and the editor renders this card on
+  // every render, so they are computed once per preflight and script.
+  const valueTitles = useMemo(() => new Map((preflight.blocking_variables || []).length === 0 ? [] : replayReadinessIssues({ ...preflight, issues: [] }, [], new Map(), script)
+    .flatMap(issue => issue.id.startsWith('readiness:blocking:') && issue.variable ? [[issue.variable, issue.title] as const] : [])), [preflight, script])
+  const listedValues = new Set<string>()
+  // A gate reads by what to do about it and where, as Author Problems lists
+  // it, rather than as the raw sentence the check carries: one row per
+  // problem, so a gate with two codes is two rows here as it is two blockers
+  // in Author Problems and the start gate. Each row opens its own problem.
+  const gateList = gateMessages.length > 0 && (
+    <ul className="replay-preflight-gates" aria-label="Review gates that block replay">
+      {gateMessages.flatMap(message => {
+        const where = issueBreadcrumb(message)
+        const problems = reviewGateCodeProblems(message)
+        return (problems.length > 0 ? problems : [{ code: '', message }]).flatMap(problem => {
+          const value = folding(problem.code)
+          const folded = value && value.kind !== 'code' ? `${value.kind}:${value.name}` : undefined
+          if (folded && listedValues.has(folded)) return []
+          if (folded) listedValues.add(folded)
+          const title = value?.kind === 'value' ? valueTitles.get(value.name) || `Unresolved value: ${value.name}`
+            : value?.kind === 'saved-review' ? savedReviewTitle(value.name)
+              : readinessIssueText(problem.message).title
+          const content = <><strong>{title}</strong>{where && <small>{where}</small>}</>
+          return [<li key={folded || `${message}#${problem.code}`}>{onSelectIssue
+            ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => onSelectIssue(message, problem)}>{content}</button>
+            : content}</li>]
+        })
+      })}
+    </ul>
+  )
   return (
     <div className={`replay-preflight-card ${preflight.valid && !secretStatusState ? 'ready' : 'attention'}`}>
       <div className="replay-preflight-header">
@@ -44,7 +105,7 @@ export default function ReplayPreflightCard({
         {(preflight.checks || []).filter(check => !compact || check.status !== 'pass').sort((a, b) => ((a.status === 'fail' ? 0 : a.status === 'warn' ? 1 : 2) - (b.status === 'fail' ? 0 : b.status === 'warn' ? 1 : 2))).map(check => (
           <div key={check.id} className={`replay-preflight-check ${check.status}`}>
             <span>{check.label}</span><strong>{check.id === 'runtime' && check.status === 'warn' ? 'Not verified' : check.status === 'pass' ? 'Passed' : check.status === 'warn' ? (check.id === 'secrets' && preflight.missing_secrets?.length ? 'Needs work' : 'Review') : 'Needs work'}</strong>
-            {check.detail && <small>{check.detail}</small>}
+            {check.id === 'review_gates' && check.status !== 'pass' && gateList ? gateList : check.detail && <small>{check.detail}</small>}
           </div>
         ))}
       </div>

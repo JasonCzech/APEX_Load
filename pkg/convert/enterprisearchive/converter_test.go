@@ -11,8 +11,10 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
 const sampleActionC = `
@@ -838,6 +840,58 @@ Action()
 	args, ok := exits[0]["args"].([]string)
 	if !ok || len(args) != 2 || args[0] != "LR_EXIT_VUSER" || args[1] != "LR_AUTO" {
 		t.Fatalf("lr_exit args = %#v, want LR_EXIT_VUSER/LR_AUTO", exits[0]["args"])
+	}
+}
+
+// The legacy TLS gate names the converter warning it stands for, so a review
+// listing both can show the requirement once. A guided repair clears only the
+// gate's codes, and the covered warning must survive it.
+func TestConvertLegacyTLSGateCoversItsWarning(t *testing.T) {
+	for _, value := range []string{"2&3", "AUTO"} {
+		t.Run(value, func(t *testing.T) {
+			parsed, err := ParseActionFile("Action.c", `
+Action()
+{
+	web_set_sockets_option("SSL_VERSION", "`+value+`");
+	web_url("request", "URL=https://example.test/", LAST);
+	return 0;
+}`)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+			if err != nil {
+				t.Fatalf("convert error: %v", err)
+			}
+			want := fmt.Sprintf("web_set_sockets_option SSL_VERSION=%q is unsupported; APEX TLS defaults remain unchanged and review is required", value)
+			found := false
+			for _, warning := range result.Warnings {
+				found = found || warning == want
+			}
+			if !found {
+				t.Fatalf("warnings = %#v, want %q kept for older consumers", result.Warnings, want)
+			}
+			var gate *dsl.Action
+			for index := range result.Script.Actions {
+				if result.Script.Actions[index].Metadata["execution_blocker"] == "legacy_tls_replacement" {
+					gate = &result.Script.Actions[index]
+				}
+			}
+			if gate == nil || gate.Type != "source_review" {
+				t.Fatalf("actions = %#v, want a source_review TLS gate", result.Script.Actions)
+			}
+			if got := dslwalk.MetadataStrings(gate.Metadata, "covered_warnings"); len(got) != 1 || got[0] != want {
+				t.Fatalf("covered_warnings = %#v, want exactly %q", gate.Metadata["covered_warnings"], want)
+			}
+
+			importreview.RemoveActionCodes(gate, func(code string) bool { return code == "legacy_tls_replacement" })
+			if _, gated := gate.Metadata["execution_blocker"]; gated {
+				t.Fatalf("gate metadata = %#v, want the repaired code removed", gate.Metadata)
+			}
+			if got := dslwalk.MetadataStrings(gate.Metadata, "covered_warnings"); len(got) != 1 || got[0] != want {
+				t.Fatalf("covered_warnings after repair = %#v, want %q kept", gate.Metadata["covered_warnings"], want)
+			}
+		})
 	}
 }
 

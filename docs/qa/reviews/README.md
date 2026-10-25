@@ -1,5 +1,7 @@
 # QA Review Records
 
+- [LoadRunner import, Script Editor and debug readiness](import-repair-readiness-2026-10-24/README.md) — repaired drafts saved as reviewed, one producer contract, Resolve-N-blockers debug gate with saved-script repairs, and one readiness story across import and editor.
+
 - [Browser baseline full measurement windows](roadmap-browser-source-windows-2026-10-21/README.md) — refuse populations whose source windows cross the compared steady-load span.
 
 - [Browser baseline bucket timestamps](roadmap-browser-bucket-grid-2026-10-21/README.md) — reject ambiguous retained grids without filling missing evidence.

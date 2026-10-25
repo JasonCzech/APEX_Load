@@ -243,6 +243,21 @@ test('Help maintains readable contrast across the supported themes', async ({ pa
 })
 
 test('administrators can read the data model as drawn, accessible diagrams in every theme', async ({ page }, testInfo) => {
+  // A deep link below a dozen lazily drawn diagrams (their renderer not yet
+  // loaded) lands on its section once they have drawn, not where it stood
+  // while they still showed their source.
+  await page.goto('/#/docs?guide=admin-guide&article=data-model&section=github-integration')
+  const destination = page.locator('#github-integration')
+  await expect(destination).toBeFocused()
+  await expect(page.locator('pre code[data-language="mermaid"]')).toHaveCount(0)
+  // scroll-margin-top places it 32 px below the toolbar; allow for rounding.
+  const belowToolbar = async () => {
+    const target = await destination.boundingBox()
+    const toolbar = await page.locator('.main-topbar').boundingBox()
+    return target && toolbar ? Math.round(target.y - (toolbar.y + toolbar.height)) : Number.NaN
+  }
+  await expect.poll(belowToolbar).toBeLessThanOrEqual(48)
+  expect(await belowToolbar()).toBeGreaterThanOrEqual(0)
   await page.goto('/#/docs?guide=admin-guide&article=data-model')
   await expect(page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'Data model', exact: true })).toHaveAttribute('aria-current', 'page')
   const figures = page.locator('figure.entity-diagram')

@@ -3,6 +3,7 @@
 package duckdb
 
 import (
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -196,17 +198,34 @@ type workerWindowsJobAccounting struct {
 
 func (p *workerOwnedProcess) closeAfterWait() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if !p.reaped {
+	reaped, assigned, job := p.reaped, p.assigned, p.job
+	p.mu.Unlock()
+	if !reaped {
 		return errWorkerOwnership
 	}
-	if p.assigned {
+	if assigned {
+		// The job may still count the reaped worker for a moment. Only the
+		// kernel's own count of zero proves it empty; the job handle, and
+		// kill-on-close with it, stays open until then.
 		var accounting workerWindowsJobAccounting
-		if err := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil); err != nil || accounting.ActiveProcesses != 0 {
-			workerLogUnresolved(p.owner, "job_still_active", "active_processes", accounting.ActiveProcesses, "total_processes", accounting.TotalProcesses, "query_error", err)
+		began, slow := time.Now(), false
+		if err := workerAwaitDrained(func() (uint32, error) {
+			err := windows.QueryInformationJobObject(job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil)
+			return accounting.ActiveProcesses, err
+		}, workerJobDrainWarnAfter, func(active uint32, waited time.Duration) {
+			slow = true
+			workerLogUnresolved(p.owner, "job_still_active", "active_processes", active, "total_processes", accounting.TotalProcesses, "waited", waited)
+		}); err != nil {
+			workerLogUnresolved(p.owner, "job_query_failed", "query_error", err)
 			return errWorkerOwnership
 		}
+		if slow {
+			// Pairs with the job_still_active warning: the lag was transient.
+			slog.Info("native worker job drained", "attempt", p.owner.bootstrap.Identity.AttemptID, "waited", time.Since(began))
+		}
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.cmd.Process != nil && p.cmd.Process.Release() != nil {
 		return errWorkerOwnership
 	}

@@ -1,4 +1,4 @@
-import type { JMeterBatchRepairRequest, JMeterBatchRepairResponse } from '../../types/scriptImports'
+import type { EnterpriseArchiveFidelityReport, JMeterBatchRepairRequest, JMeterBatchRepairResponse, SecretBindingRequirement } from '../../types/scriptImports'
 import { useCallback, useMemo } from 'react'
 
 import {
@@ -47,6 +47,36 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
+// One import finding on a saved script and the repair for it
+// (POST /scripts/{id}/repairs/{preview|apply}). The script and its revision
+// come from the path and If-Match, never from the body.
+export interface ScriptRepairRequest {
+  finding: string
+  action_path: string
+  operation: { type: string; [key: string]: unknown }
+}
+
+// A guided repair of a saved script, as an import repair reports one: what
+// the repaired script's evaluation finds. content_revision is the revision the
+// repair was computed from. Only a preview returns the disclosure-safe script
+// before and after. Apply omits both and returns the persisted script and its
+// validation instead, so a large script's receipt carries it once and stays
+// under the response cap.
+export interface ScriptRepairResponse {
+  script_id: string
+  content_revision: string
+  script?: ScriptDefinition
+  before?: ScriptDefinition
+  findings: Array<{ code: string; action_path?: string; source_ref?: string; detail: string; gate?: string; severity?: string }>
+  readiness: { replay_ready: boolean; promotion_ready: boolean; blocking_codes?: string[]; validation_issues?: string[]; unresolved_bindings?: number }
+  secret_binding_requirements: SecretBindingRequirement[]
+  fidelity_report: EnterpriseArchiveFidelityReport
+  stored?: StoredScript
+  validation?: ScriptValidationResponse
+}
+// A preview always carries the two scripts it compares.
+export type ScriptRepairPreviewResponse = ScriptRepairResponse & { script: ScriptDefinition; before: ScriptDefinition }
+
 import { type ApplyImportTransportRequest, type ApplyImportTransportResponse, type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JavaCompileDiagnostic, type JavaCompileRequest, type JavaCompileResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, REQUEST_ID_HEADER, apiFetch, request, requestWithResponse } from '../apiClient'
@@ -425,6 +455,31 @@ export function useScriptApi() {
     baselineFromSavedScript(response.body, admitted.projection.project_id)
     return response.body
   }, [])
+
+  // A guided repair on the saved copy, computed from the baseline's exact
+  // revision (If-Match). Apply persists it as a conditioned save, so its
+  // receipt is checked as a save's is; it carries no before/after scripts.
+  const scriptRepair = useCallback(async <T extends ScriptRepairResponse>(mode: 'preview' | 'apply', id: string, repair: ScriptRepairRequest, baseline: ScriptAuthoringBaseline, projectId?: string): Promise<T> => {
+    const admitted = admitScriptAuthoringBaseline(baseline?.projection, baseline?.etag ?? null, id, projectId)
+    const response = await requestWithResponse<T>(`/scripts/${encodeURIComponent(id)}/repairs/${mode}`, {
+      method: 'POST', headers: { 'If-Match': admitted.etag }, body: JSON.stringify(repair),
+      timeoutMs: 30_000, maxResponseBytes: 12 << 20,
+    })
+    if (mode === 'apply') {
+      const stored = response.body?.stored
+      if (response.headers.get('X-APEX-Script-Save-Mode') !== 'conditioned' || !stored || stored.id !== id) throw new ScriptSaveOutcomeUnknown()
+      baselineFromSavedScript(stored, admitted.projection.project_id)
+    }
+    return response.body
+  }, [])
+  const previewScriptRepair = useCallback(
+    (id: string, repair: ScriptRepairRequest, baseline: ScriptAuthoringBaseline, projectId?: string) => scriptRepair<ScriptRepairPreviewResponse>('preview', id, repair, baseline, projectId),
+    [scriptRepair],
+  )
+  const applyScriptRepair = useCallback(
+    (id: string, repair: ScriptRepairRequest, baseline: ScriptAuthoringBaseline, projectId?: string) => scriptRepair<ScriptRepairResponse>('apply', id, repair, baseline, projectId),
+    [scriptRepair],
+  )
 
   const deleteScript = useCallback((id: string) => request<DeleteScriptResponse>(`/scripts/${id}`, { method: 'DELETE' }), [])
 
@@ -1662,6 +1717,8 @@ export function useScriptApi() {
       getScript,
       getScriptAuthoring,
       updateScript,
+      previewScriptRepair,
+      applyScriptRepair,
       deleteScript,
       moveScript,
       replaceLibraryAssignment,
@@ -1790,6 +1847,8 @@ export function useScriptApi() {
       getScript,
       getScriptAuthoring,
       updateScript,
+      previewScriptRepair,
+      applyScriptRepair,
       deleteScript,
       moveScript,
       replaceLibraryAssignment,

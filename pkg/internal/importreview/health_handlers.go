@@ -103,11 +103,16 @@ func BuildScriptValidationResponseFromIssues(
 	issues []string,
 	resolvers ...engine.SecretResolver,
 ) ScriptValidationResponse {
+	// An import fidelity blocker refuses promotion and launch, never a replay,
+	// so the preflight judges the issues as they were before those are folded
+	// in: a Recheck then judges replay readiness as a debug start does, while
+	// Issues and Valid keep reporting the blockers.
+	replayIssues := issues
 	for _, blocker := range ScriptImportPromotionBlockers(script) {
 		issues = append(issues, "import fidelity blocker: "+blocker)
 	}
 	warnings := ValidationWarnings(script)
-	preflight := BuildReplayPreflight(script, variables, issues, warnings, resolvers...)
+	preflight := BuildReplayPreflight(script, variables, replayIssues, warnings, resolvers...)
 	parity := BuildValidationRuntimeSettingsParity(script)
 	counts := enterprisearchive.RuntimeSettingStatusCounts(parity)
 	readiness := enterprisearchive.BuildRTSMigrationReadiness(parity, ValidationRuntimeSettingMigrationPolicy(script))

@@ -25,6 +25,11 @@ var validatePreservedImportCredentialEdits = importreview.ValidatePreservedImpor
 
 var hasNewProjectedCredential = importreview.HasNewProjectedCredential
 
+// unsentStepReviewMetadata reports whether a step metadata entry is review
+// output (a gate code, review flag or migration note) that the step does not
+// send.
+var unsentStepReviewMetadata = importreview.UnsentStepReviewMetadata
+
 // retainedImportCredentialContextChange prevents a masked read-modify-write
 // from turning an already-authorized imported credential into a bearer
 // capability for a different destination or request. A credential restored

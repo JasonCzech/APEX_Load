@@ -385,6 +385,13 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		// The write rebuilds an evaluated import's dependency codes from the
+		// saved script, so the copy the editor read, whose long variable names
+		// disclosure may mask, is dropped before the gate reads the script.
+		if err := removeSubmittedDependencyCodes(script, stored.Script); err != nil {
+			writeError(w, http.StatusBadRequest, errSavedImportEvaluation.Error())
+			return
+		}
 		// Updates must pass the same disclosure-safe binding gate as creates. In
 		// particular, a PUT must not become a back door for introducing a new raw
 		// password, token, or executable [REDACTED] sentinel into durable storage.
@@ -427,11 +434,10 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	var updated *StoredScript
 	var ok bool
-	if expected != nil {
-		updated, ok, err = s.runner.UpdateScriptAuthoringDurable(id, script, *expected)
-	} else {
-		updated, ok, err = s.runner.UpdateScriptDurableInProject(id, script, authorizedProjectOr(r, stored.ProjectID))
-	}
+	// The write also rebuilds an imported script's dependency codes, fidelity
+	// report and review preflight from the saved script, as a repair does, so
+	// a save that fixes a dependency is no longer judged by its stale code.
+	updated, ok, err = s.runner.UpdateScriptEditorSaveDurable(id, script, expected, authorizedProjectOr(r, stored.ProjectID))
 	if operationID != "" {
 		status, outcome := "failure", "unknown"
 		if err == nil && ok {

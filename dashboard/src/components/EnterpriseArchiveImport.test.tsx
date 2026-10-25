@@ -23,6 +23,7 @@ const apiMock = {
   getBrowserReplaySession: vi.fn(),
   applySecretBindings: vi.fn(),
   applyImportParameterization: vi.fn(),
+  applyImportSharedValues: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
@@ -101,6 +102,176 @@ function executableEnterpriseResult(script: Record<string, unknown>, extra: Reco
     },
     ...extra,
   }
+}
+
+type TLSRange = { min_version: string; max_version: string }
+
+// A validated Web draft whose init step still sets SSL 2/3, as the converter
+// gates it. `protected:<name>` is its server candidate; a selected TLS range
+// clears the gate and is recorded in config.http.tls.
+function legacyTLSDraft(name: string, token = `protected:${name}`, tls?: TLSRange) {
+  return {
+    name, version: '1.0.0', protocol: 'http',
+    config: { base_url: 'https://example.test', ...(tls ? { http: { tls } } : {}) },
+    init: [{
+      name: 'Select_supported_TLS', type: 'source_review', target: '',
+      metadata: tls
+        ? { source_file: 'vuser_init.c', source_line: 3, migration_change: `Operator selected TLS ${tls.min_version}–${tls.max_version}; intentional migration, not exact LR parity.` }
+        : { source_file: 'vuser_init.c', source_line: 3, execution_blocker: 'legacy_tls_replacement' },
+    }],
+    actions: [{ name: 'Home', type: 'request', method: 'GET', target: '/home' }],
+    metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: token } } },
+  }
+}
+
+const repairedTLSToken = (name: string) => `protected:${name}:repaired`
+
+// The guided-repair endpoints for legacyTLSDraft candidates. Inspect reports
+// the TLS gate, a select_tls preview shows the change, and apply stores the
+// repaired draft as the new candidate `protected:<name>:repaired`, which
+// expires at repairedExpiresAt (given per draft name, or for every draft).
+function stubTLSRepairEndpoints(repairedExpiresAt: string | ((name: string) => string) = '2099-09-19T00:00:00Z') {
+  const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input, init) => {
+    const url = String(input)
+    if (!url.includes('/scripts/import/repairs/')) {
+      return new Response(JSON.stringify({ error: 'not stubbed' }), { status: 404, headers: { 'content-type': 'application/json' } })
+    }
+    const body = JSON.parse(String(init?.body || '{}')) as { candidate_id: string; operation: { type: string; tls_min?: string; tls_max?: string } }
+    const name = body.candidate_id.replace(/^protected:/, '').replace(/:repaired$/, '')
+    const repairedCandidate = body.candidate_id.endsWith(':repaired')
+    const applying = url.endsWith('/apply')
+    const tls = { min_version: body.operation.tls_min || '1.2', max_version: body.operation.tls_max || '1.3' }
+    const original = legacyTLSDraft(name)
+    const pending = body.operation.type === 'inspect' && !repairedCandidate
+    const candidate = applying || repairedCandidate ? repairedTLSToken(name) : body.candidate_id
+    const script = pending ? original : legacyTLSDraft(name, candidate, tls)
+    return new Response(JSON.stringify({
+      candidate_id: candidate, revision: candidate, before: original, script,
+      findings: pending ? [{ code: 'legacy_tls_replacement', action_path: 'init[0]', source_ref: 'vuser_init.c:3', gate: 'execution', detail: 'Choose a supported TLS replacement for legacy SSL; this is an intentional migration.' }] : [],
+      readiness: { replay_ready: !pending, promotion_ready: !pending, blocking_codes: pending ? ['legacy_tls_replacement'] : [] },
+      secret_binding_requirements: [],
+      fidelity_report: { promotion_status: pending ? 'blocked' : 'promotable', blockers: [] },
+      expires_at: applying || repairedCandidate ? (typeof repairedExpiresAt === 'function' ? repairedExpiresAt(name) : repairedExpiresAt) : '2099-09-19T00:00:00Z',
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return {
+    applies: () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/scripts/import/repairs/apply')),
+  }
+}
+
+// The converter's warning for one legacy TLS call. Its gate covers it.
+const LEGACY_TLS_WARNING = 'web_set_sockets_option SSL_VERSION="2&3" is unsupported; APEX TLS defaults remain unchanged and review is required'
+const ASSERTION_WARNING = 'line 9: web_reg_find Search=ALL checks the main response body only'
+
+// A validated Web draft with two legacy TLS gates in init, each covering the
+// converter's TLS warning; a value its producer sets too late (C_StoreId) and
+// one nothing sets (c_promo). The repaired draft records the TLS choice and
+// carries the preflight the server restamps after the repair.
+function readinessDraft(name: string, token = `protected:${name}`, repaired = false) {
+  const tlsGate = (line: number) => ({
+    name: `web_set_sockets_option_${line}`, type: 'source_review', target: '',
+    metadata: repaired
+      ? { source_file: 'vuser_init.c', source_line: line, covered_warnings: [LEGACY_TLS_WARNING], migration_change: 'Operator selected TLS 1.2–1.3; intentional migration, not exact LR parity.' }
+      : { source_file: 'vuser_init.c', source_line: line, covered_warnings: [LEGACY_TLS_WARNING], execution_blocker: 'legacy_tls_replacement', import_review: { reason_codes: ['legacy_tls_replacement'], resolution: 'select_tls', source: 'enterprise_script_archive', source_refs: [`vuser_init.c:${line}`] } },
+  })
+  const review = (code: string, line: number) => ({ source_file: 'Action.c', source_line: line, review_reasons: [code], review_gate: code, review_required: true, promotion_blocker: true })
+  return {
+    name, version: '1.0.0', protocol: 'http',
+    config: { base_url: 'https://shop.example.test', ...(repaired ? { http: { tls: { min_version: '1.2', max_version: '1.3' } } } : {}) },
+    init: [tlsGate(3), { name: 'login', type: 'GET', method: 'GET', target: '/login' }, tlsGate(5)],
+    actions: [
+      { name: 'store', type: 'GET', method: 'GET', target: '/stores/{{var.C_StoreId}}', metadata: review('conditional_producer:C_StoreId', 2) },
+      { name: 'stores', type: 'GET', method: 'GET', target: '/stores', extractors: [{ name: 'C_StoreId', source: 'body', type: 'regex', expression: 'C_StoreId=(\\w+)' }] },
+      { name: 'promo', type: 'GET', method: 'GET', target: '/promo/{{var.c_promo}}', metadata: review('missing_producer:c_promo', 6) },
+    ],
+    metadata: { import: { source: 'enterprise_script_archive', preserved: {
+      server_import_attestation_v1: token,
+      replay_preflight: {
+        valid: repaired, action_count: 6, expected_action_count: 6, data_source_count: 0, parameter_count: 0,
+        missing_variables: ['C_StoreId', 'c_promo'], placeholder_variables: ['C_StoreId', 'c_promo'], late_produced_variables: ['C_StoreId'],
+        issues: repaired ? [] : [0, 2].map(index => `init[${index}] "web_set_sockets_option_${index + 3}": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved`),
+        warnings: [LEGACY_TLS_WARNING, ASSERTION_WARNING, 'variable(s) with no seed or preceding extractor are sent as placeholder text: C_StoreId, c_promo'],
+        checks: [
+          { id: 'validation', label: 'Script validation', status: 'warn' },
+          { id: 'review_gates', label: 'Review gates', status: repaired ? 'pass' : 'fail' },
+          { id: 'variables', label: 'Variable readiness', status: 'warn' },
+        ],
+      },
+    } } },
+  }
+}
+
+function readinessArchiveResult(script: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  return executableEnterpriseResult(script, {
+    warnings: [LEGACY_TLS_WARNING, LEGACY_TLS_WARNING, ASSERTION_WARNING],
+    review_sections: [
+      { key: 'warnings', title: 'Conversion Warnings', severity: 'warning', summary: 'Review converter warnings.', items: [LEGACY_TLS_WARNING, LEGACY_TLS_WARNING, ASSERTION_WARNING] },
+      { key: 'runtime_settings_parity', title: 'Runtime Settings Parity', severity: 'warning', summary: 'One runtime setting differs.', items: ['Partial: Logging'] },
+      { key: 'detected_protocol', title: 'Detected Source Protocol', severity: 'warning', summary: 'Web HTTP/HTML', items: ['Conflict: none'] },
+      { key: 'preserved_metadata', title: 'Preserved Source Metadata', severity: 'info', summary: 'Kept.', items: ['Project file: Shop.usr'] },
+    ],
+    fidelity_report: { promotion_status: 'blocked', blockers: ['legacy_tls_replacement at init[0]', 'legacy_tls_replacement at init[2]'] },
+    ...extra,
+  })
+}
+
+// The guided-repair endpoints for readinessDraft candidates, answering as the
+// server does: findings as FindingsFromScript reads the draft, and one
+// select_tls apply clears both TLS gates. An inspection can fail or wait for
+// release().
+function stubReadinessRepairEndpoints({ inspect = 'answer' }: { inspect?: 'answer' | 'fail' | 'pending' } = {}) {
+  let release: () => void = () => {}
+  const held = new Promise<void>(resolve => { release = resolve })
+  const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input, init) => {
+    const url = String(input)
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    if (!url.includes('/scripts/import/repairs/')) return json({ error: 'not stubbed' }, 404)
+    const body = JSON.parse(String(init?.body || '{}')) as { candidate_id: string; operation: { type: string } }
+    const applying = url.endsWith('/apply')
+    const name = body.candidate_id.replace(/^protected:/, '').replace(/:repaired$/, '')
+    const repairedCandidate = body.candidate_id.endsWith(':repaired')
+    const repaired = applying || repairedCandidate || body.operation.type === 'select_tls'
+    if (body.operation.type === 'inspect' && !repairedCandidate) {
+      if (inspect === 'fail') return json({ error: 'Repair inspection is unavailable.' }, 500)
+      if (inspect === 'pending') await held
+    }
+    const candidate = applying || repairedCandidate ? `protected:${name}:repaired` : body.candidate_id
+    const tlsFindings = repaired ? [] : [[0, 3], [2, 5]].map(([index, line]) => ({
+      code: 'legacy_tls_replacement', severity: 'blocker', element: `web_set_sockets_option_${line}`, detail: 'imported behavior has an unresolved execution blocker',
+      location: `init[${index}]`, action_path: `init[${index}]`, source: 'enterprise_script_archive', reason_code: 'legacy_tls_replacement', source_ref: `vuser_init.c:${line}`, resolution: 'select_tls', gate: 'execution',
+    }))
+    const reviewFindings = [['conditional_producer:C_StoreId', 'actions[0]', 'store'], ['missing_producer:c_promo', 'actions[2]', 'promo']].map(([code, path, element]) => ({
+      code, severity: 'warning', element, detail: 'imported behavior requires review before replay or promotion', location: path, action_path: path, gate: 'promotion', acknowledgement_required: true,
+    }))
+    const reviewCodes = ['conditional_producer:C_StoreId', 'missing_producer:c_promo']
+    return json({
+      candidate_id: candidate, revision: candidate, before: readinessDraft(name, body.candidate_id), script: readinessDraft(name, candidate, repaired),
+      findings: [...tlsFindings, ...reviewFindings],
+      readiness: { state: 'blocked', draft_valid: true, replay_ready: repaired, promotion_ready: false, blocking_codes: repaired ? [] : ['legacy_tls_replacement'], review_codes: reviewCodes },
+      secret_binding_requirements: [],
+      fidelity_report: { promotion_status: 'blocked', blockers: repaired ? [] : ['legacy_tls_replacement'], warnings: reviewCodes },
+      expires_at: '2099-09-19T00:00:00Z',
+    })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const operations = (type: string) => fetchMock.mock.calls.filter(([, init]) => JSON.parse(String(init?.body || '{}')).operation?.type === type)
+  return { release: () => release(), inspections: () => operations('inspect'), applies: () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/scripts/import/repairs/apply')) }
+}
+
+// Every import count for the selected draft, as the reader sees each one.
+function importReadinessCounts(container: HTMLElement) {
+  const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Script archive review sections"] [role="tab"]'))
+  return {
+    line: container.querySelector('.lr-tab-readiness')?.textContent,
+    badges: Object.fromEntries(tabs.map(tab => [tab.id.replace('lr-validation-review-tab-', ''), tab.querySelector('.lr-tab-count')?.textContent || ''])),
+    stepper: Array.from(container.querySelectorAll('.lr-import-step')).find(step => step.textContent?.includes('Review and resolve'))?.querySelector('small')?.textContent,
+    categories: Array.from(container.querySelectorAll('.lr-issue-queue summary')).map(summary => summary.textContent),
+  }
+}
+
+function attestationOf(script: { metadata?: { import?: { preserved?: Record<string, unknown> } } }) {
+  return script.metadata?.import?.preserved?.server_import_attestation_v1
 }
 
 function cssRule(css: string, selector: string) {
@@ -1116,7 +1287,7 @@ describe('EnterpriseArchiveImport', () => {
     }))
   })
 
-  it('stages parameterization for review and saves the server-applied enterprise script', async () => {
+  it('saves on the first click when only optional parameterization suggestions remain', async () => {
     const defaultResult = await apiMock.importEnterpriseArchive()
     apiMock.importEnterpriseArchive.mockClear()
     apiMock.importEnterpriseArchive.mockResolvedValueOnce({
@@ -1169,30 +1340,16 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
     await flushPromises()
     await clickButton(findButton(container, 'Save to script library')!)
+    await flushPromises()
 
-    expect(apiMock.createScript).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Review parameterization suggestions before saving.')
-    expect(container.textContent).toContain('Parameter suggestions — Parameterized Enterprise Script (1)')
-    await clickButton(findButton(container, 'Preview parameter changes')!)
+    // The suggestions stay optional: the recorded literal is saved as is.
     expect(apiMock.applyImportParameterization).not.toHaveBeenCalled()
-    await act(async () => {
-      findButton(container, 'Apply reviewed parameter changes')?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    await act(async () => {
-      findButton(container, 'Save to script library')?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
-      selected_ids: ['pz_enterprise_customer'],
-    }))
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Parameterized Enterprise Script',
-      actions: [expect.objectContaining({ target: '/orders?customer_id={{var.customer_id}}' })],
+      actions: [expect.objectContaining({ target: '/orders?customer_id=42' })],
     }), 'project-1', undefined)
+    expect(container.textContent).not.toContain('Review parameterization suggestions before saving.')
   })
 
   it('opens Shared assets over the review for the secrets its preflight misses, and says which exist on return', async () => {
@@ -1423,6 +1580,1536 @@ describe('EnterpriseArchiveImport', () => {
       expect(inspections()).toHaveLength(1)
       await act(async () => finishSecond(executableEnterpriseResult(protectedDraft('second'))))
       await flushPromises()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('saves a validated draft with an applied guided TLS repair without converting the archive again', async () => {
+    const repairs = stubTLSRepairEndpoints()
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(legacyTLSDraft('TLS archive'), {
+      parameterization: {
+        suggestions: [{ id: 'pz_home', kind: 'data_param', var_name: 'home', replacement: '{{var.home}}', confidence: 0.6, rule_id: 'test.home', rationale: 'Optional', auto_apply: false, high_risk: false, pre_applied: false }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 0, review_count: 1, high_risk_count: 0, pre_applied_count: 0 },
+      },
+    }))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'tls.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      expect(repairs.applies()).toHaveLength(1)
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      const [saved] = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts
+      expect(attestationOf(saved)).toBe(repairedTLSToken('TLS archive'))
+      expect(saved.config.http.tls).toEqual({ min_version: '1.2', max_version: '1.3' })
+      expect(saved.project_id).toBe('project-1')
+      expect(container.textContent).toContain('Saved 1 script to the library')
+      expect(container.textContent).not.toContain('Converted and saved')
+      expect(container.textContent).not.toContain('Review parameterization suggestions')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('Save draft and open in Visual Editor saves the repaired draft and then opens it', async () => {
+    stubTLSRepairEndpoints()
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(legacyTLSDraft('TLS editor archive')))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} onImported={onImported} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'tls-editor.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save draft and open in Visual Editor')!)
+      await flushPromises()
+
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(attestationOf(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts[0])).toBe(repairedTLSToken('TLS editor archive'))
+      expect(onImported).toHaveBeenCalledTimes(1)
+      expect(onImported.mock.calls[0][0]).toEqual(expect.objectContaining({ scripts: [expect.objectContaining({ name: 'TLS editor archive' })] }))
+      // Without stayInImportReview the host leaves the import for the editor.
+      expect(onImported.mock.calls[0][0].stayInImportReview).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps a repaired archive in the atomic batch with the other validated archives', async () => {
+    stubTLSRepairEndpoints()
+    const ready = { name: 'Ready archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    const readyFile = new File(['zip'], 'ready.zip', { type: 'application/zip' })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'repaired.zip' ? legacyTLSDraft('Repaired archive') : ready))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(ready))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'repaired.zip', { type: 'application/zip' }), readyFile])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      // Only the unchanged archive is converted again.
+      expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+      expect(apiMock.importEnterpriseArchive.mock.calls[0][0]).toBe(readyFile)
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      const scripts = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts
+      expect(scripts.map((script: { name: string }) => script.name)).toEqual(['Repaired archive', 'Ready archive'])
+      expect(attestationOf(scripts[0])).toBe(repairedTLSToken('Repaired archive'))
+      expect(scripts[0].config.http.tls).toEqual({ min_version: '1.2', max_version: '1.3' })
+      expect(container.textContent).toContain('Converted and saved 2 scripts to the library')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // A deferred atomic save, answered by finishSave(), so its busy label shows.
+  const deferEnterpriseArchiveSave = () => {
+    let finishSave: () => void = () => {}
+    apiMock.saveEnterpriseArchiveImport.mockImplementationOnce((payload: { scripts: Array<{ name: string }> }) => new Promise(resolve => {
+      finishSave = () => resolve({ scripts: payload.scripts.map((script, index) => ({ id: `deferred-${index}`, name: script.name, protocol: 'http', version: '1.0.0', created_at: '2026-10-10T00:00:00Z', script })), count: payload.scripts.length })
+    }))
+    return () => finishSave()
+  }
+  const CONVERTS_VALIDATED_ARCHIVE = 'Convert the validated archive to save the generated script.'
+  const SAVES_REVIEWED_DRAFT = 'Save the reviewed draft, with the repairs applied here, to the script library.'
+
+  it('words a repaired draft\'s review as saving it as reviewed, and an unchanged one\'s as converting it', async () => {
+    stubTLSRepairEndpoints()
+    const ready = { name: 'Ready archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'repaired.zip' ? legacyTLSDraft('Repaired archive') : ready))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(ready))
+    const finishSave = deferEnterpriseArchiveSave()
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'ready.zip', { type: 'application/zip' }), new File(['zip'], 'repaired.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate 2 Scripts')
+      // Unchanged, a validated draft is converted when it is saved.
+      await selectQueueItem(container, 'ready.zip')
+      expect(container.textContent).toContain(CONVERTS_VALIDATED_ARCHIVE)
+      await selectQueueItem(container, 'repaired.zip')
+      await applyGuidedTLSRepair(container)
+      expect(container.textContent).toContain(SAVES_REVIEWED_DRAFT)
+      expect(container.textContent).not.toContain(CONVERTS_VALIDATED_ARCHIVE)
+      await selectQueueItem(container, 'ready.zip')
+      expect(container.textContent).toContain(CONVERTS_VALIDATED_ARCHIVE)
+
+      // The unchanged archive is converted as the batch saves.
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(container.querySelector('.lr-import-action-buttons')?.textContent).toContain('Converting and saving…')
+      await act(async () => { finishSave() })
+      await flushPromises()
+      expect(container.textContent).toContain('Converted and saved 2 scripts to the library')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('says a batch of repaired drafts is saving, not converting, while it saves', async () => {
+    stubTLSRepairEndpoints()
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(legacyTLSDraft(file.name === 'first.zip' ? 'First archive' : 'Second archive')))
+    const finishSave = deferEnterpriseArchiveSave()
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'first.zip', { type: 'application/zip' }), new File(['zip'], 'second.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate 2 Scripts')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'second.zip')
+      await applyGuidedTLSRepair(container)
+      expect(container.textContent).toContain(SAVES_REVIEWED_DRAFT)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      // Both are saved as reviewed: nothing is converted, and the busy save says so.
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      const setupActions = container.querySelector('.lr-import-action-buttons')
+      expect(setupActions?.textContent).toContain('Saving…')
+      expect(setupActions?.textContent).not.toContain('Converting')
+      await act(async () => { finishSave() })
+      await flushPromises()
+      expect(container.textContent).toContain('Saved 2 scripts to the library')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('saves two same-named archives under the names their reviews showed after the second is repaired', async () => {
+    // The repair route names the repaired draft as detected ("Checkout"), not
+    // as this batch named its archive ("Checkout_2").
+    stubTLSRepairEndpoints()
+    const ready = { name: 'Checkout', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    const firstFile = new File(['zip'], 'first.zip', { type: 'application/zip' })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'second.zip' ? legacyTLSDraft('Checkout') : ready))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(ready))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [firstFile, new File(['zip'], 'second.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate 2 Scripts')
+      await selectQueueItem(container, 'second.zip')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      // Only the unchanged archive converts again, and keeps its own name.
+      expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+      expect(apiMock.importEnterpriseArchive.mock.calls[0][0]).toBe(firstFile)
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      const scripts = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts as Array<{ name: string; metadata?: { import?: { preserved?: Record<string, unknown> } } }>
+      expect(scripts.map(script => [script.name, attestationOf(script) ?? null])).toEqual(expect.arrayContaining([
+        ['Checkout', null],
+        ['Checkout_2', repairedTLSToken('Checkout')],
+      ]))
+      expect(scripts).toHaveLength(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('counts the same issues on every surface with or without the inspection, in validation and conversion mode', async () => {
+    // Two TLS gates block replay; the late and the absent value are warnings;
+    // the text-check warning and the runtime difference are review notes. The
+    // covered TLS warnings and the sections the queue leaves out count nowhere.
+    const counts = {
+      line: '2 block replay · 2 warnings · 2 review notes',
+      badges: { overview: '6', credentials: '', data: '2', preserved: '3', dsl: '', source: '' },
+      stepper: ' · 2 blocking',
+      categories: ['Missing values & correlations 2 issues', 'Transport & runtime 3 issues', 'Review decisions 1 issue'],
+    }
+    for (const inspect of ['answer', 'fail'] as const) {
+      const repairs = stubReadinessRepairEndpoints({ inspect })
+      apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(readinessArchiveResult(readinessDraft('Readiness archive')))
+      apiMock.importEnterpriseArchive.mockResolvedValueOnce(readinessArchiveResult(readinessDraft('Readiness archive', 'protected:Readiness archive:converted'), {
+        // A script changed in APEX since its last import holds the converted draft for review.
+        existing_scripts: [{ script_id: 'earlier', name: 'Readiness archive', updated_at: '2026-10-15T10:00:00Z', matches: 1, same_source: true, edited_since_import: true }],
+      }))
+      try {
+        await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+        await flushPromises()
+        await addArchiveFiles(container, [new File(['zip'], 'readiness.zip', { type: 'application/zip' })])
+        await clickImportAction(container, 'Validate Only')
+        await settle(() => repairs.inspections().length === 1 && !container.textContent?.includes('Checking repair requirements'))
+        expect({ inspect, mode: 'validation', ...importReadinessCounts(container) }).toEqual({ inspect, mode: 'validation', ...counts })
+        const queue = Array.from(container.querySelectorAll('.lr-issue-row-title')).map(row => row.textContent || '')
+        expect(queue.filter(title => title.includes('C_StoreId'))).toEqual([expect.stringMatching(/^Check producer order: C_StoreId/)])
+        expect(queue.some(title => title.startsWith('Missing value: C_StoreId'))).toBe(false)
+        expect(queue.some(title => title === 'Choose supported TLS settings')).toBe(false)
+
+        await clickButton(findButton(container, 'Save draft')!)
+        await flushPromises()
+        expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+        expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
+        await settle(() => repairs.inspections().length === 2 && !container.textContent?.includes('Checking repair requirements'))
+        expect({ inspect, mode: 'conversion', ...importReadinessCounts(container) }).toEqual({ inspect, mode: 'conversion', ...counts })
+      } finally {
+        vi.unstubAllGlobals()
+        await act(async () => root.unmount())
+        root = createRoot(container)
+        apiMock.importEnterpriseArchive.mockClear()
+      }
+    }
+  })
+
+  it('reads "Checking…" on every count while the protected draft is inspected', async () => {
+    const repairs = stubReadinessRepairEndpoints({ inspect: 'pending' })
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(readinessArchiveResult(readinessDraft('Pending archive')))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'pending.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await settle(() => repairs.inspections().length === 1)
+      expect(importReadinessCounts(container)).toEqual({
+        line: 'Checking repair requirements…',
+        badges: { overview: '…', credentials: '…', data: '…', preserved: '…', dsl: '', source: '' },
+        stepper: ' · checking',
+        categories: ['Missing values & correlations Checking…', 'Transport & runtime Checking…', 'Review decisions Checking…'],
+      })
+      expect(container.querySelector('#lr-validation-review-tab-overview')?.getAttribute('aria-label')).toBe('Review, checking issues')
+      expect(Array.from(container.querySelectorAll('.lr-issue-workspace option')).map(option => option.textContent).slice(0, 4)).toEqual(['All unresolved', 'Blockers', 'Warnings', 'Review notes'])
+      await clickButton(findButton(container, 'Data & parameters')!)
+      expect(container.querySelector('.import-review-navigation p')?.textContent).toBe('Checking repair requirements…')
+
+      await act(async () => repairs.release())
+      await settle(() => !container.textContent?.includes('Checking repair requirements'))
+      expect(container.querySelector('.import-review-navigation p')?.textContent).toBe('2 unresolved grouped replay issues in missing values & correlations.')
+      expect(importReadinessCounts(container).line).toBe('2 block replay · 2 warnings · 2 review notes')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('clears both TLS blockers with one repair, leaves no TLS note and stops calling the archive a blocker', async () => {
+    const repairs = stubReadinessRepairEndpoints()
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(readinessArchiveResult(readinessDraft('Repaired readiness')))
+    const chip = () => container.querySelector('.lr-file-row-meta')?.textContent || ''
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'repaired-readiness.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await settle(() => repairs.inspections().length === 1 && !container.textContent?.includes('Checking repair requirements'))
+      expect(chip()).toContain('Blocker')
+      expect(importReadinessCounts(container).line).toBe('2 block replay · 2 warnings · 2 review notes')
+
+      await applyGuidedTLSRepair(container)
+
+      expect(repairs.applies()).toHaveLength(1)
+      // The apply response is the repaired candidate's inspection: it is not inspected again.
+      expect(repairs.inspections()).toHaveLength(1)
+      expect(importReadinessCounts(container)).toEqual({
+        line: '0 block replay · 2 warnings · 2 review notes',
+        badges: { overview: '4', credentials: '', data: '2', preserved: '1', dsl: '', source: '' },
+        stepper: ' · 2 warnings',
+        categories: ['Missing values & correlations 2 issues', 'Transport & runtime 1 issue', 'Review decisions 1 issue'],
+      })
+      expect(container.querySelector('.lr-repair-announcement')?.textContent).toBe('Repair applied. 0 block replay · 2 warnings · 2 review notes.')
+      expect(Array.from(container.querySelectorAll('.lr-issue-row-title')).some(row => row.textContent?.startsWith('Choose supported TLS settings'))).toBe(false)
+      expect(chip()).not.toContain('Blocker')
+      expect(chip()).toContain('Needs review')
+      expect(container.textContent).toContain('Imported — ready for review. Target replay is not verified.')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('lists an archive fidelity sentence as a warning that blocks neither replay, the save nor the queue', async () => {
+    // The converter's sentence for a response contributor after the last
+    // request. The server holds promotion and load-test launch for it; a
+    // debug start is not refused.
+    const trailing = 'One or more response contributors or one-shot headers occur after the final request and cannot be bound faithfully.'
+    const script = { name: 'Trailing archive', version: '1.0.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [{ name: 'Home', type: 'GET', method: 'GET', target: '/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, { fidelity_report: { promotion_status: 'blocked', blockers: [trailing] } }))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'trailing.zip', { type: 'application/zip' })])
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+
+    expect(importReadinessCounts(container).line).toBe('0 block replay · 1 warning · 0 review notes')
+    expect(importReadinessCounts(container).stepper).toBe(' · 1 warning')
+    expect(Array.from(container.querySelectorAll('.lr-issue-row')).map(row => [row.querySelector('.lr-issue-row-title')?.textContent, row.querySelector('.import-issue-severity-tag')?.textContent])).toEqual([['Review import requirement', 'Warning']])
+    expect(container.textContent).toContain('Imported — ready for review. Target replay is not verified.')
+    expect(container.textContent).not.toContain('repairs needed before replay')
+    expect(container.textContent).not.toContain('resolve blockers first')
+    expect(container.textContent).not.toContain('execution blocked')
+    const chip = container.querySelector('.lr-file-row-meta')?.textContent || ''
+    expect(chip).not.toContain('Blocker')
+    expect(chip).toContain('Needs review')
+  })
+
+  it('counts a protocol configuration reference the stamped preflight blocks on as one configuration blocker, as the editor does', async () => {
+    // An imported web_set_user leaves its user in the auth settings, where
+    // replay never interpolates it; the import stamps no step for it.
+    const script = {
+      name: 'Configured archive', version: '1.0.0', protocol: 'http',
+      config: { base_url: 'https://example.test', http: { auth: { type: 'basic', username: '{{var.pUser}}' } } },
+      parameters: [{ name: 'pUser', type: 'list', values: ['perf_user_01'], update: 'once' }],
+      actions: [{ name: 'Home', type: 'GET', method: 'GET', target: '/home' }],
+    }
+    const preflight = {
+      valid: false, action_count: 1, expected_action_count: 1, data_source_count: 0, parameter_count: 1,
+      missing_variables: ['pUser'], blocking_variables: ['pUser'], config_blocking_variables: ['pUser'],
+      checks: [{ id: 'variables', label: 'Variable readiness', status: 'fail', detail: 'Unresolved: pUser' }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult({ ...script, metadata: { import: { source: 'enterprise_script_archive', preserved: { replay_preflight: preflight } } } }))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'configured.zip', { type: 'application/zip' })])
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+
+    expect(importReadinessCounts(container).line).toBe('1 blocks replay · 0 warnings · 0 review notes')
+    expect(Array.from(container.querySelectorAll('.lr-issue-row')).map(row => [row.querySelector('.lr-issue-row-title')?.textContent, row.querySelector('.import-issue-severity-tag')?.textContent])).toEqual([['Replace configuration reference: pUser', 'Blocker']])
+    expect(container.textContent).toContain('Imported — repairs needed before replay.')
+    // Worded as the configuration change it needs, never as a generic prerequisite.
+    expect(container.textContent).not.toContain('Review execution prerequisites')
+    expect(container.querySelector('.lr-file-row-meta')?.textContent || '').toContain('Blocker')
+  })
+
+  it('reads replay readiness from the inspected candidate\'s restamped preflight, not the draft\'s stale stamp', async () => {
+    // The draft's stamp predates a runtime-settings change: it refused the
+    // draft for a validation issue or a configuration reference that the
+    // change cleared. The inspection answers for the changed candidate, with
+    // the preflight the server restamped for it.
+    const preflight = (extra: Record<string, unknown>) => ({ action_count: 1, expected_action_count: 1, data_source_count: 0, parameter_count: 0, ...extra })
+    const passed = preflight({ valid: true, config_blocking_variables: [], checks: [{ id: 'validation', label: 'Script validation', status: 'pass' }] })
+    const stale = {
+      validation: preflight({ valid: false, issues: ['config.http.proxy.url must be an absolute URL'], checks: [{ id: 'validation', label: 'Script validation', status: 'fail', detail: '1 validation issue' }] }),
+      configuration: preflight({ valid: false, blocking_variables: ['c_proxy'], config_blocking_variables: ['c_proxy'], checks: [{ id: 'variables', label: 'Variable readiness', status: 'fail', detail: 'Unresolved: c_proxy' }] }),
+    }
+    const draft = (name: string, stamp: Record<string, unknown>) => ({
+      name, version: '1.0.0', protocol: 'http', config: { base_url: 'https://example.test' },
+      actions: [{ name: 'Home', type: 'GET', method: 'GET', target: '/home' }],
+      metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: `protected:${name}`, replay_preflight: stamp } } },
+    })
+    for (const [cause, stamp] of Object.entries(stale)) {
+      const name = `Stale ${cause}`
+      const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => new Response(JSON.stringify({
+        candidate_id: `protected:${name}`, revision: `protected:${name}`, before: draft(name, stamp), script: draft(name, passed), findings: [],
+        readiness: { replay_ready: true, promotion_ready: true, blocking_codes: [], validation_issues: [] },
+        secret_binding_requirements: [], fidelity_report: { promotion_status: 'promotable', blockers: [] }, expires_at: '2099-09-19T00:00:00Z',
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      vi.stubGlobal('fetch', fetchMock)
+      apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(draft(name, stamp)))
+      try {
+        await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+        await flushPromises()
+        await addArchiveFiles(container, [new File(['zip'], 'stale.zip', { type: 'application/zip' })])
+        await clickImportAction(container, 'Validate Only')
+        await settle(() => fetchMock.mock.calls.length === 1 && !container.textContent?.includes('Checking repair requirements'))
+        expect({ cause, line: importReadinessCounts(container).line }).toEqual({ cause, line: '0 block replay · 0 warnings · 0 review notes' })
+        expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(0)
+        expect(container.textContent).toContain('Imported — ready for review. Target replay is not verified.')
+        expect(container.textContent).not.toContain('Review execution prerequisites')
+        expect(container.textContent).not.toContain('Replace configuration reference')
+        expect(findButton(container, 'Save draft — execution blocked')).toBeUndefined()
+      } finally {
+        vi.unstubAllGlobals()
+        await act(async () => root.unmount())
+        root = createRoot(container)
+      }
+    }
+  })
+
+  it('previews and applies a proxy secret binding the inspection resolves as passing, whatever the restamped preflight cannot resolve', async () => {
+    const name = 'Proxy archive'
+    // The restamped preflight has no project resolver, so it lists the bound
+    // project secret as missing; the resolver-backed readiness has no
+    // unresolved binding and omits the count.
+    const draft = (token: string, repaired: boolean) => ({
+      name, version: '1.0.0', protocol: 'http',
+      config: { base_url: 'https://example.test', ...(repaired ? { http: { proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.proxy_pw}}' } } } : {}) },
+      init: [{ name: 'Proxy settings', type: 'source_review', target: '', metadata: repaired ? { source_file: 'vuser_init.c', source_line: 4 } : { source_file: 'vuser_init.c', source_line: 4, execution_blocker: 'encrypted_proxy_password' } }],
+      actions: [{ name: 'Home', type: 'GET', method: 'GET', target: '/home' }],
+      metadata: { import: { source: 'enterprise_script_archive', preserved: {
+        server_import_attestation_v1: token,
+        ...(repaired ? { replay_preflight: { valid: true, action_count: 2, expected_action_count: 2, data_source_count: 0, parameter_count: 0, required_secrets: ['proxy_pw'], missing_secrets: ['proxy_pw'], checks: [{ id: 'secrets', label: 'Secret bindings', status: 'warn' }] } } : {}),
+      } } },
+    })
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input, init) => {
+      const body = JSON.parse(String(init?.body || '{}')) as { candidate_id: string; operation: { type: string } }
+      const applying = String(input).endsWith('/apply')
+      const repaired = body.operation.type === 'replace_proxy_secret' || body.candidate_id.endsWith(':repaired')
+      const candidate = applying || body.candidate_id.endsWith(':repaired') ? `protected:${name}:repaired` : body.candidate_id
+      return new Response(JSON.stringify({
+        candidate_id: candidate, revision: candidate, before: draft(body.candidate_id, false), script: draft(candidate, repaired),
+        findings: repaired ? [] : [{ code: 'encrypted_proxy_password', action_path: 'init[0]', source_ref: 'vuser_init.c:4', gate: 'execution', detail: '' }],
+        readiness: repaired ? { replay_ready: true, promotion_ready: true } : { replay_ready: false, promotion_ready: false, blocking_codes: ['encrypted_proxy_password'] },
+        secret_binding_requirements: [], fidelity_report: { promotion_status: repaired ? 'promotable' : 'blocked', blockers: [] }, expires_at: '2099-09-19T00:00:00Z',
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(draft(`protected:${name}`, false)))
+    const checking = () => container.textContent?.includes('Checking repair requirements') === true
+    const proxyIssue = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-issue-row')).find(row => row.textContent?.includes('Replace encrypted proxy password'))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'proxy.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await settle(() => Boolean(proxyIssue()) && !checking())
+      expect(importReadinessCounts(container).line).toBe('1 blocks replay · 0 warnings · 0 review notes')
+      await clickButton(proxyIssue()!)
+      const input = container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'proxy_pw')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await clickButton(findButton(container, 'Preview repair')!)
+      await settle(() => Boolean(findButton(container, 'Apply reviewed repair')))
+      const outcome = Array.from(container.querySelectorAll('.lr-repair-preview-outcome > div')).map(item => `${item.querySelector('span')?.textContent}: ${item.querySelector('strong')?.textContent}`)
+      expect(outcome).toEqual(['Replay checks: Passed', 'Blocking issues: 0', 'Credential requirements: 0'])
+
+      await clickButton(findButton(container, 'Apply reviewed repair')!)
+      await settle(() => container.textContent?.includes('Repair applied.') === true && !checking())
+      expect(importReadinessCounts(container).line).toBe('0 block replay · 0 warnings · 0 review notes')
+      expect(container.textContent).not.toContain('Configure unresolved credential bindings')
+      expect(container.textContent).toContain('Imported — ready for review. Target replay is not verified.')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('applies parameterization during validation and saves that draft without converting again', async () => {
+    const script = { name: 'Validated parameters', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Get Order', type: 'request', method: 'GET', target: '/orders?customer_id=42' }] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, {
+      parameterization: {
+        suggestions: [{
+          id: 'pz_enterprise_customer', kind: 'data_param', var_name: 'customer_id', replacement: '{{var.customer_id}}', sample_value: '42',
+          confidence: 0.9, rule_id: 'test.enterprise.customer', rationale: 'Customer identifier should vary by virtual user', auto_apply: true, high_risk: false,
+          locations: [{ section: 'actions', action_index: 0, action_name: 'Get Order', field: 'target' }],
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      },
+    }))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'validated-parameters.zip', { type: 'application/zip' })])
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Data & parameters')!)
+    await clickButton(findButton(container, 'Preview parameter changes')!)
+    await clickButton(findButton(container, 'Apply reviewed parameter changes')!)
+    await flushPromises()
+    expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({ selected_ids: ['pz_enterprise_customer'] }))
+
+    await clickButton(findButton(container, 'Save draft')!)
+    await flushPromises()
+
+    expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ target: '/orders?customer_id={{var.customer_id}}' })],
+    }), 'project-1', undefined)
+  })
+
+  it('keeps shared values applied during validation when saving', async () => {
+    const script = { name: 'Shared values draft', version: '1.0.0', protocol: 'http', config: { base_url: 'https://stage.example.test' }, actions: [{ name: 'Home', type: 'request', method: 'GET', target: '/home' }] }
+    const updated = { ...script, config: { base_url: 'https://perf.example.test' } }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, {
+      shared_values: {
+        candidates: [{ id: 'sv_base', kind: 'existing_parameter', name: 'base_url', current_value: 'https://stage.example.test', occurrence_count: 1, script_names: [script.name], rationale: 'Defined once per script.', targets_base_url: true }],
+        summary: { total: 1, by_kind: { existing_parameter: 1 }, credential_count: 0, multi_script_count: 0 },
+      },
+    }))
+    apiMock.applyImportSharedValues.mockResolvedValueOnce({ scripts: [updated], diffs: [], applied_count: 1 })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'shared-values.zip', { type: 'application/zip' })])
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Data & parameters')!)
+    const value = container.querySelector<HTMLInputElement>('#shared-value-sv_base')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(value, 'https://perf.example.test')
+      value.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await clickButton(findButton(container, 'Preview substitutions')!)
+    await clickButton(findButton(container, 'Apply reviewed substitutions')!)
+    await flushPromises()
+    expect(apiMock.applyImportSharedValues).toHaveBeenCalledWith(expect.objectContaining({ values: { sv_base: 'https://perf.example.test' } }))
+
+    await clickButton(findButton(container, 'Save draft')!)
+    await flushPromises()
+
+    expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts).toEqual([{ ...updated, project_id: 'project-1' }])
+  })
+
+  // A reviewed draft keeps the match it was refused for, so saving again is
+  // refused again until its own row is resolved; a fresh conversion is matched
+  // anew by the next save.
+  it.each([
+    { staleReviewed: true, kept: 'Nothing was saved. Another archive in this batch must be resolved first (see its row), then save again to keep this reviewed draft.', fresh: 'Nothing was saved. Another archive in this batch must be resolved first (see its row), then save again to save this archive.' },
+    { staleReviewed: false, kept: 'Another draft in this batch could not be saved, so nothing was saved. Save again to keep this reviewed draft.', fresh: undefined },
+  ])('tells the other archives of a batch refused for a stale script to update when saving again can pass (stale draft reviewed: $staleReviewed)', async ({ staleReviewed, kept, fresh }) => {
+    stubTLSRepairEndpoints()
+    const match = { script_id: 'earlier-stale', name: 'Stale archive', updated_at: '2026-10-15T10:00:00Z', content_digest: 'digest-stale', matches: 1, same_source: true, edited_since_import: false }
+    const freshDraft = { name: 'Fresh archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    const staleDraft = () => executableEnterpriseResult(staleReviewed ? legacyTLSDraft('Stale archive') : { ...freshDraft, name: 'Stale archive' }, { existing_scripts: [match] })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => file.name === 'stale.zip' ? staleDraft()
+      : executableEnterpriseResult(file.name === 'kept.zip' ? legacyTLSDraft('Kept archive') : freshDraft))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => file.name === 'stale.zip' ? staleDraft() : executableEnterpriseResult(freshDraft))
+    apiMock.saveEnterpriseArchiveImport.mockRejectedValueOnce(new ApiError('script 1: the script to update changed after review; inspect the source again', 409, {
+      error: 'script 1: the script to update changed after review; inspect the source again', code: 'import_update_target_stale',
+    }))
+    const names = staleReviewed ? ['stale.zip', 'kept.zip', 'fresh.zip'] : ['stale.zip', 'kept.zip']
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, names.map(name => new File(['zip'], name, { type: 'application/zip' })))
+      await clickImportAction(container, 'Validate Only')
+      if (staleReviewed) await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'kept.zip')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].update_targets?.filter(Boolean)).toEqual([{ script_id: 'earlier-stale', expected_updated_at: '2026-10-15T10:00:00Z', expected_content_digest: 'digest-stale' }])
+      const notices = () => Array.from(container.querySelectorAll('.settings-notice')).map(element => element.textContent || '')
+      await selectQueueItem(container, 'kept.zip')
+      expect(notices()).toContain(kept)
+      if (fresh) {
+        await selectQueueItem(container, 'fresh.zip')
+        expect(notices()).toContain(fresh)
+        expect(notices().join(' ')).not.toContain('could not be saved, so nothing was saved. Save again')
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('drops a save refused for a stale script to update, and saves the repaired draft as a copy once chosen', async () => {
+    stubTLSRepairEndpoints()
+    const match = { script_id: 'earlier-login', name: 'Login', updated_at: '2026-10-15T10:00:00Z', content_digest: 'digest-login', matches: 1, same_source: true, edited_since_import: false }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Login'), { existing_scripts: [match] }))
+    // The script to update changed in APEX after this review.
+    const stale = () => new ApiError('script 1: the script to update changed after review; inspect the source again', 409, {
+      error: 'script 1: the script to update changed after review; inspect the source again', code: 'import_update_target_stale', script_index: 0,
+    })
+    apiMock.saveEnterpriseArchiveImport.mockRejectedValueOnce(stale()).mockRejectedValueOnce(stale())
+    const updateTarget = { script_id: 'earlier-login', expected_updated_at: '2026-10-15T10:00:00Z', expected_content_digest: 'digest-login' }
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'login.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      const first = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0]
+      expect(first.update_targets).toEqual([updateTarget])
+      // A refusal, not a lost response: nothing is kept to reconcile.
+      expect(container.textContent).toContain('The script imported before that this save updates changed after this review, so nothing was saved.')
+      // A repaired draft is refreshed only by its archive's own Validate again,
+      // which discards its repairs; a copy keeps them.
+      expect(container.textContent).toContain('Under Imported before, choose Create a copy to keep the repairs, or choose Validate again on this archive (its repairs are discarded) to refresh the match, then save.')
+      expect(container.querySelector('button[aria-label="Validate again: login.zip"]')).not.toBeNull()
+      expect(container.textContent).not.toContain('could not confirm')
+      expect(container.textContent).not.toContain('Convert again')
+
+      // The repaired draft is kept: saving it unchanged is a new request,
+      // refused the same way, never the first one resent.
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      const second = apiMock.saveEnterpriseArchiveImport.mock.calls[1][0]
+      expect(second.update_targets).toEqual([updateTarget])
+      expect(second.operation_id).not.toBe(first.operation_id)
+      expect(container.textContent).not.toContain('could not confirm')
+
+      const choice = container.querySelector<HTMLSelectElement>('section[aria-label="Imported before"] select')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(choice, 'copy')
+        choice.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(3)
+      const copy = apiMock.saveEnterpriseArchiveImport.mock.calls[2][0]
+      expect(copy.update_targets).toBeUndefined()
+      // The repaired candidate, not a fresh conversion.
+      expect(copy.scripts[0].metadata.import.preserved.server_import_attestation_v1).toBe(repairedTLSToken('Login'))
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // An unconfirmed save may have committed, and only that same operation lets
+  // the server's receipt say so. Built anew from a changed re-import choice,
+  // it could save the archive a second time.
+  it('resends an unconfirmed save as it was sent after the re-import choice changes, and says why', async () => {
+    stubTLSRepairEndpoints()
+    const match = { script_id: 'earlier-login', name: 'Login', updated_at: '2026-10-15T10:00:00Z', content_digest: 'digest-login', matches: 1, same_source: true, edited_since_import: false }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Login'), { existing_scripts: [match] }))
+    apiMock.saveEnterpriseArchiveImport
+      .mockRejectedValueOnce(new ApiError('response interrupted', 500))
+      .mockRejectedValueOnce(new ApiError('receipt still finalizing', 500))
+      .mockRejectedValueOnce(new ApiError('response interrupted', 500))
+      .mockRejectedValueOnce(new ApiError('receipt still finalizing', 500))
+    const updateTarget = { script_id: 'earlier-login', expected_updated_at: '2026-10-15T10:00:00Z', expected_content_digest: 'digest-login' }
+    // The resend is the earlier save itself: if it was not saved, it updates Login now.
+    const resendNotice = 'APEX has not confirmed the earlier save of this archive. Save resends that save unchanged: if it was not saved, it is saved now with the re-import choice it was sent with, which updates Login as a new version. The re-import choice changed since applies only if APEX refuses that resend.'
+    const choice = () => container.querySelector<HTMLSelectElement>('section[aria-label="Imported before"] select')!
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'login.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      const unconfirmed = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0]
+      expect(unconfirmed.update_targets).toEqual([updateTarget])
+      expect(container.textContent).toContain('APEX could not confirm the atomic batch save.')
+      // Nothing was chosen since, so there is nothing to explain.
+      expect(container.textContent).not.toContain(resendNotice)
+
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(choice(), 'copy')
+        choice().dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(container.textContent).toContain(resendNotice)
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(4)
+      // The earlier save resent exactly: its operation, scripts and update
+      // target, not the copy chosen since.
+      for (const [resent] of apiMock.saveEnterpriseArchiveImport.mock.calls.slice(2)) {
+        expect(resent.operation_id).toBe(unconfirmed.operation_id)
+        expect(resent.update_targets).toEqual([updateTarget])
+        expect(resent.scripts).toBe(unconfirmed.scripts)
+      }
+      // Still unanswered: the copy keeps waiting, and the notice says why.
+      expect(container.textContent).toContain('APEX could not confirm the atomic batch save.')
+      expect(container.textContent).toContain(resendNotice)
+      expect(choice().value).toBe('copy')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // Validating a reviewed draft again drops the unconfirmed save it is in, so
+  // a later save would be a new operation that could store it a second time.
+  it('offers no Validate again on a reviewed draft in an unconfirmed save, even once it expires, and Save resends that save', async () => {
+    const expiresAt = Date.now() + 10 * 60_000
+    stubTLSRepairEndpoints(new Date(expiresAt).toISOString())
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Login')))
+    const clock: { restore?: () => void } = {}
+    apiMock.saveEnterpriseArchiveImport
+      // The reviewed draft expires while its save goes unanswered.
+      .mockImplementationOnce(async () => {
+        const now = vi.spyOn(Date, 'now').mockReturnValue(expiresAt + 1)
+        clock.restore = () => now.mockRestore()
+        throw new ApiError('response interrupted', 500)
+      })
+      .mockRejectedValueOnce(new ApiError('receipt still finalizing', 500))
+      .mockImplementationOnce(async ({ scripts }: { scripts: Array<{ name: string; protocol: string; version: string }> }) => ({
+        count: 1,
+        scripts: scripts.map(script => ({ id: 'saved-login', name: script.name, protocol: script.protocol, version: script.version, created_at: '2026-10-24T00:00:00Z', script })),
+      }))
+    const saveFirst = 'Save first: it resends the unconfirmed save, which APEX answers if it was saved.'
+    // Only the review's expiry clock is driven by hand.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'login.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      expect(container.querySelector('button[aria-label="Validate again: login.zip"]')).not.toBeNull()
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      const unconfirmed = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0]
+      expect(container.textContent).toContain('APEX could not confirm the atomic batch save.')
+
+      // Neither the archive's row nor the expired draft's banner offers Validate again.
+      expect(container.querySelector('button[aria-label="Validate again: login.zip"]')).toBeNull()
+      // The review's expiry clock ticks.
+      await act(async () => { vi.advanceTimersByTime(30_000) })
+      const banner = container.querySelector<HTMLElement>('.lr-issue-unavailable')!
+      expect(banner.querySelector('strong')?.textContent).toBe('This protected draft has expired')
+      expect(banner.querySelector('p')?.textContent).toBe(`APEX has not confirmed the earlier save of this draft. ${saveFirst}`)
+      expect(banner.querySelector('button')).toBeNull()
+      expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Validate again')).toBe(false)
+
+      // Validating the batch leaves it alone and says to save first, not to validate it again.
+      await clickButton(findButton(container, 'Validate Script')!)
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain(`The reviewed draft with applied repairs is in a save APEX has not confirmed. ${saveFirst}`)
+      expect(container.textContent).not.toContain('Only Validate again')
+
+      // Save resends the unconfirmed save itself, expired draft and all.
+      // An expired draft's Save otherwise asks for a new import.
+      expect(findButton(container, 'Save draft')!.disabled).toBe(false)
+      expect(container.textContent).not.toContain('Re-run the import before saving')
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(3)
+      const resent = apiMock.saveEnterpriseArchiveImport.mock.calls[2][0]
+      expect(resent.operation_id).toBe(unconfirmed.operation_id)
+      expect(resent.scripts).toBe(unconfirmed.scripts)
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    } finally {
+      clock.restore?.()
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('saves the re-import choice made since as a new save once the resent unconfirmed save is refused for a stale script to update', async () => {
+    stubTLSRepairEndpoints()
+    const match = { script_id: 'earlier-login', name: 'Login', updated_at: '2026-10-15T10:00:00Z', content_digest: 'digest-login', matches: 1, same_source: true, edited_since_import: false }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Login'), { existing_scripts: [match] }))
+    apiMock.saveEnterpriseArchiveImport
+      .mockRejectedValueOnce(new ApiError('response interrupted', 500))
+      .mockRejectedValueOnce(new ApiError('receipt still finalizing', 500))
+      .mockRejectedValueOnce(new ApiError('script 1: the script to update changed after review; inspect the source again', 409, {
+        error: 'script 1: the script to update changed after review; inspect the source again', code: 'import_update_target_stale', script_index: 0,
+      }))
+    const updateTarget = { script_id: 'earlier-login', expected_updated_at: '2026-10-15T10:00:00Z', expected_content_digest: 'digest-login' }
+    const resendNotice = 'APEX has not confirmed the earlier save of this archive'
+    const choice = () => container.querySelector<HTMLSelectElement>('section[aria-label="Imported before"] select')!
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'login.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      const unconfirmed = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0]
+
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(choice(), 'copy')
+        choice().dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(container.textContent).toContain(resendNotice)
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      // The resend is answered definitively: its update target changed, so
+      // nothing was saved under it and nothing is left to reconcile.
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(3)
+      const resent = apiMock.saveEnterpriseArchiveImport.mock.calls[2][0]
+      expect(resent.operation_id).toBe(unconfirmed.operation_id)
+      expect(resent.update_targets).toEqual([updateTarget])
+      expect(container.textContent).toContain('The script imported before that this save updates changed after this review, so nothing was saved.')
+      expect(container.textContent).not.toContain(resendNotice)
+      expect(container.textContent).not.toContain('could not confirm')
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(4)
+      const copy = apiMock.saveEnterpriseArchiveImport.mock.calls[3][0]
+      expect(copy.update_targets).toBeUndefined()
+      expect(copy.operation_id).not.toBe(unconfirmed.operation_id)
+      // The repaired candidate, not a fresh conversion.
+      expect(copy.scripts[0].metadata.import.preserved.server_import_attestation_v1).toBe(repairedTLSToken('Login'))
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('does not convert a repaired draft again after the server refuses it as expired', async () => {
+    stubTLSRepairEndpoints()
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Refused archive')))
+    apiMock.saveEnterpriseArchiveImport.mockRejectedValueOnce(new ApiError('Conflict', 409, {
+      code: 'import_draft_attestation_invalid',
+      error: 'enterprise archive import draft is invalid or expired; run the conversion again',
+    }))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'refused.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save draft')!)
+      await flushPromises()
+
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('Nothing was saved. Choose Validate again on this archive and re-apply its repairs')
+      expect(container.textContent).not.toContain('Choose Convert again')
+      // The failed draft cannot be saved again, and nothing converts it.
+      const save = findButton(container, 'Save draft')
+      expect(save?.disabled).toBe(true)
+      await clickButton(save!)
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+
+      await clickButton(findButton(container, 'Validate Script')!)
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('refuses an expired repaired draft without a save request while the other archives save', async () => {
+    // The repaired candidate expired while another archive was reviewed.
+    stubTLSRepairEndpoints('2000-01-01T00:00:00Z')
+    const ready = { name: 'Ready archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'expired.zip' ? legacyTLSDraft('Expired archive') : ready))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(ready))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'expired.zip', { type: 'application/zip' }), new File(['zip'], 'ready.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'ready.zip')
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts.map((script: { name: string }) => script.name)).toEqual(['Ready archive'])
+      await selectQueueItem(container, 'expired.zip')
+      expect(container.textContent).toContain('Nothing was saved. Choose Validate again on this archive and re-apply its repairs')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('counts saves, not conversions, when a repaired draft expired and the other archive waits for review', async () => {
+    stubTLSRepairEndpoints('2000-01-01T00:00:00Z')
+    const held = { name: 'Held archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'expired.zip' ? legacyTLSDraft('Expired archive') : held))
+    // A script changed in APEX since its earlier import holds this conversion for review.
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(held, {
+      existing_scripts: [{ script_id: 'earlier', name: 'Held archive', updated_at: '2026-10-15T10:00:00Z', matches: 1, same_source: true, edited_since_import: true }],
+    }))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'expired.zip', { type: 'application/zip' }), new File(['zip'], 'held.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'held.zip')
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      // The expired reviewed draft is refused without a request, the other
+      // archive is converted and held, and nothing reaches the library.
+      expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('Saved 0 of 2 enterprise script archives; 1 needs review before saving; 1 failed.')
+      expect(container.textContent).not.toMatch(/Converted \d+ of 2/)
+      await selectQueueItem(container, 'expired.zip')
+      expect(container.textContent).toContain('Nothing was saved. Choose Validate again on this archive and re-apply its repairs')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('counts saves, not conversions, when the server refuses every repaired draft in the batch', async () => {
+    stubTLSRepairEndpoints()
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(legacyTLSDraft(file.name === 'first.zip' ? 'First archive' : 'Second archive')))
+    apiMock.saveEnterpriseArchiveImport.mockRejectedValueOnce(new ApiError('Conflict', 409, {
+      code: 'import_draft_attestation_invalid',
+      error: 'enterprise archive import draft is invalid or expired; run the conversion again',
+    }))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'first.zip', { type: 'application/zip' }), new File(['zip'], 'second.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'second.zip')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      // Neither archive is converted again, and nothing reaches the library.
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('Saved 0 of 2 enterprise script archives; 2 failed.')
+      expect(container.textContent).not.toMatch(/Converted \d+ of 2/)
+      expect(container.textContent).not.toContain('Choose Convert again')
+      expect(container.textContent).toContain('Nothing was saved. Choose Validate again on this archive and re-apply its repairs')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps a reviewed draft that is still valid when the server refuses another one in the batch', async () => {
+    // Both archives are repaired; the first repaired candidate expires while
+    // the batch is saved, so the server refuses the batch.
+    const firstExpiresAt = Date.now() + 10 * 60_000
+    stubTLSRepairEndpoints(name => name === 'First archive' ? new Date(firstExpiresAt).toISOString() : '2099-09-19T00:00:00Z')
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(legacyTLSDraft(file.name === 'first.zip' ? 'First archive' : 'Second archive')))
+    const clock: { restore?: () => void } = {}
+    apiMock.saveEnterpriseArchiveImport.mockImplementationOnce(async () => {
+      const now = vi.spyOn(Date, 'now').mockReturnValue(firstExpiresAt + 1)
+      clock.restore = () => now.mockRestore()
+      throw new ApiError('Conflict', 409, {
+        code: 'import_draft_attestation_invalid',
+        error: 'enterprise archive import draft is invalid or expired; run the conversion again',
+      })
+    })
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'first.zip', { type: 'application/zip' }), new File(['zip'], 'second.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'second.zip')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts.map(attestationOf)).toEqual([repairedTLSToken('First archive'), repairedTLSToken('Second archive')])
+      expect(container.textContent).toContain('Saved 0 of 2 enterprise script archives; 1 failed.')
+      const texts = (selector: string) => Array.from(container.querySelectorAll(selector)).map(element => element.textContent || '')
+      const refused = 'Nothing was saved. Choose Validate again on this archive and re-apply its repairs'
+      // The expired draft is the one refused.
+      await selectQueueItem(container, 'first.zip')
+      expect(texts('.lr-error').some(text => text.includes(refused))).toBe(true)
+      // The other keeps its review and its repairs, and says why nothing was saved.
+      await selectQueueItem(container, 'second.zip')
+      expect(texts('.lr-error').some(text => text.includes(refused))).toBe(false)
+      expect(texts('.settings-notice')).toContain('Another draft in this batch could not be saved, so nothing was saved. Save again to keep this reviewed draft.')
+
+      // Saving again reuses the kept draft, repairs and all, without the refused one.
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      const [saved] = apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].scripts
+      expect(apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].scripts).toHaveLength(1)
+      expect(attestationOf(saved)).toBe(repairedTLSToken('Second archive'))
+      expect(saved.config.http.tls).toEqual({ min_version: '1.2', max_version: '1.3' })
+    } finally {
+      clock.restore?.()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('tells a mixed batch the server refused which reviewed drafts were kept and which need their repairs again', async () => {
+    // Two repaired archives and one converted fresh: the first repaired
+    // candidate expires while the batch is saved, so the server refuses it.
+    const firstExpiresAt = Date.now() + 10 * 60_000
+    stubTLSRepairEndpoints(name => name === 'First archive' ? new Date(firstExpiresAt).toISOString() : '2099-09-19T00:00:00Z')
+    const fresh = { name: 'Fresh archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'fresh.zip' ? fresh : legacyTLSDraft(file.name === 'first.zip' ? 'First archive' : 'Second archive')))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(fresh))
+    const clock: { restore?: () => void } = {}
+    apiMock.saveEnterpriseArchiveImport.mockImplementationOnce(async () => {
+      const now = vi.spyOn(Date, 'now').mockReturnValue(firstExpiresAt + 1)
+      clock.restore = () => now.mockRestore()
+      throw new ApiError('Conflict', 409, {
+        code: 'import_draft_attestation_invalid',
+        error: 'enterprise archive import draft is invalid or expired; run the conversion again',
+      })
+    })
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, ['first.zip', 'second.zip', 'fresh.zip'].map(name => new File(['zip'], name, { type: 'application/zip' })))
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'second.zip')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'fresh.zip')
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts.map((script: { name: string }) => script.name).sort()).toEqual(['First archive', 'Fresh archive', 'Second archive'])
+      // Only the refused draft needs its repairs again; the kept one is saved with the fresh drafts.
+      expect(container.textContent).toContain('An invalid or expired import draft refused the batch, so nothing was saved. Choose Convert again to generate fresh drafts for archives without applied repairs and save the reviewed draft kept with its repairs; choose Validate again on the refused repaired archive and re-apply its repairs. No individual script save will be attempted.')
+      expect(container.textContent).not.toContain('re-apply their repairs')
+      await selectQueueItem(container, 'second.zip')
+      expect(container.textContent).toContain('Another draft in this batch could not be saved, so nothing was saved. Save again to keep this reviewed draft.')
+    } finally {
+      clock.restore?.()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('tells a mixed batch the server refused that its one reviewed draft needs its repairs again', async () => {
+    stubTLSRepairEndpoints()
+    const fresh = { name: 'Fresh archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'fresh.zip' ? fresh : legacyTLSDraft('Repaired archive')))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(fresh))
+    apiMock.saveEnterpriseArchiveImport.mockRejectedValueOnce(new ApiError('Conflict', 409, {
+      code: 'import_draft_attestation_invalid',
+      error: 'enterprise archive import draft is invalid or expired; run the conversion again',
+    }))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, ['repaired.zip', 'fresh.zip'].map(name => new File(['zip'], name, { type: 'application/zip' })))
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'fresh.zip')
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('The import drafts are invalid or expired and could not be saved. Choose Convert again to generate fresh drafts for archives without applied repairs; choose Validate again on the repaired archive and re-apply its repairs. No individual script save will be attempted.')
+      expect(container.textContent).not.toContain('kept with')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('validates the refused archive again without starting over the reviewed draft the refusal kept', async () => {
+    // A mixed batch: the first repaired candidate expires while the batch is
+    // saved, so the server refuses it and the second reviewed draft is kept.
+    const firstExpiresAt = Date.now() + 10 * 60_000
+    stubTLSRepairEndpoints(name => name === 'First archive' ? new Date(firstExpiresAt).toISOString() : '2099-09-19T00:00:00Z')
+    const fresh = { name: 'Fresh archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    const draftFor = (file: File) => file.name === 'fresh.zip' ? fresh : legacyTLSDraft(file.name === 'first.zip' ? 'First archive' : 'Second archive')
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(draftFor(file)))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => executableEnterpriseResult(draftFor(file)))
+    const clock: { restore?: () => void } = {}
+    apiMock.saveEnterpriseArchiveImport.mockImplementationOnce(async () => {
+      const now = vi.spyOn(Date, 'now').mockReturnValue(firstExpiresAt + 1)
+      clock.restore = () => now.mockRestore()
+      throw new ApiError('Conflict', 409, {
+        code: 'import_draft_attestation_invalid',
+        error: 'enterprise archive import draft is invalid or expired; run the conversion again',
+      })
+    })
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, ['first.zip', 'second.zip', 'fresh.zip'].map(name => new File(['zip'], name, { type: 'application/zip' })))
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'second.zip')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(container.textContent).toContain('choose Validate again on the refused repaired archive and re-apply its repairs')
+      // The refused archive has its own control to start over.
+      expect(container.querySelector('button[aria-label="Validate again: first.zip"]')).toBeTruthy()
+
+      // Validating the batch again, with the kept draft selected, starts over
+      // the refused archive and the one without repairs, not the kept draft.
+      const validations = apiMock.validateEnterpriseArchiveImport.mock.calls.length
+      await clickButton(findButton(container, 'Validate 3 Scripts')!)
+      await flushPromises()
+      expect(apiMock.validateEnterpriseArchiveImport.mock.calls.slice(validations).map(([file]) => file.name)).toEqual(['first.zip', 'fresh.zip'])
+      await selectQueueItem(container, 'second.zip')
+      expect(Array.from(container.querySelectorAll('.settings-notice')).map(element => element.textContent || '')).toContain('Another draft in this batch could not be saved, so nothing was saved. Save again to keep this reviewed draft.')
+
+      // The next save keeps its repairs and converts only the other two.
+      const conversions = apiMock.importEnterpriseArchive.mock.calls.length
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(apiMock.importEnterpriseArchive.mock.calls.slice(conversions).map(([file]) => file.name)).toEqual(['first.zip', 'fresh.zip'])
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      const kept = apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].scripts.find((script: { name: string }) => script.name === 'Second archive')
+      expect(attestationOf(kept)).toBe(repairedTLSToken('Second archive'))
+      expect(kept.config.http.tls).toEqual({ min_version: '1.2', max_version: '1.3' })
+    } finally {
+      clock.restore?.()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps a reviewed draft when its archive is validated again, and starts it over from its own Validate again', async () => {
+    const repairs = stubTLSRepairEndpoints()
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Kept archive')))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'kept.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      expect(repairs.applies()).toHaveLength(1)
+
+      // Validating again does not silently discard the applied repair.
+      await clickButton(findButton(container, 'Validate Script')!)
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('The reviewed draft with applied repairs is kept; save it, or choose Validate again on its archive to start over.')
+
+      // The archive's own control starts it over, repairs and all.
+      await clickButton(container.querySelector<HTMLButtonElement>('button[aria-label="Validate again: kept.zip"]')!)
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain('Validation finished.')
+      expect(container.querySelector('button[aria-label="Validate again: kept.zip"]')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('renews an expired reviewed draft only from Validate again, and never asks to save it', async () => {
+    // The repaired candidate expired while it was reviewed.
+    stubTLSRepairEndpoints('2000-01-01T00:00:00Z')
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Expired archive')))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'expired.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      const banner = () => container.querySelector<HTMLElement>('.lr-issue-unavailable')
+      expect(banner()?.querySelector('strong')?.textContent).toBe('This protected draft has expired')
+      expect(banner()?.querySelector('p')?.textContent).toBe('It can no longer be saved. Only Validate again on this archive renews it, and the repairs applied to it are discarded.')
+      // Archive setup's Validate leaves a kept draft alone, so the banner does not lead there.
+      expect(Array.from(banner()!.querySelectorAll('button')).map(button => button.textContent)).toEqual(['Validate again'])
+
+      // Validating from archive setup says the draft cannot be saved, and how it is renewed.
+      await clickButton(findButton(container, 'Validate Script')!)
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('The reviewed draft with applied repairs has expired and can no longer be saved. Only Validate again on its archive renews it, and the repairs applied to it are discarded.')
+      expect(container.textContent).not.toContain('save it')
+
+      // The banner's Validate again renews it, as the archive's own control does.
+      await clickButton(banner()!.querySelector('button')!)
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain('Validation finished.')
+      expect(container.querySelector('button[aria-label="Validate again: expired.zip"]')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('says which reviewed drafts are kept and which expired when the batch is validated again', async () => {
+    stubTLSRepairEndpoints(name => name === 'Expired archive' ? '2000-01-01T00:00:00Z' : '2099-09-19T00:00:00Z')
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(legacyTLSDraft(file.name === 'expired.zip' ? 'Expired archive' : 'Kept archive')))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'kept.zip', { type: 'application/zip' }), new File(['zip'], 'expired.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate 2 Scripts')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'expired.zip')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Validate 2 Scripts')!)
+      expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain('1 reviewed draft with applied repairs is kept; save it, or choose Validate again on its archive to start over. 1 reviewed draft with applied repairs has expired and can no longer be saved. Only Validate again on its archive renews it, and the repairs applied to it are discarded.')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('says a held reviewed draft was kept, not converted again', async () => {
+    stubTLSRepairEndpoints()
+    // A script changed in APEX since its earlier import holds the second archive for an update-or-copy choice.
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => file.name === 'ready.zip'
+      ? executableEnterpriseResult(legacyTLSDraft('Ready archive'))
+      : executableEnterpriseResult(legacyTLSDraft('Held archive'), {
+        existing_scripts: [{ script_id: 'earlier', name: 'Held archive', updated_at: '2026-10-15T10:00:00Z', matches: 1, same_source: true, edited_since_import: true }],
+      }))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'ready.zip', { type: 'application/zip' }), new File(['zip'], 'held.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'held.zip')
+      await applyGuidedTLSRepair(container)
+
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts.map(attestationOf)).toEqual([repairedTLSToken('Ready archive')])
+      await selectQueueItem(container, 'held.zip')
+      const notices = Array.from(container.querySelectorAll('.settings-notice')).map(element => element.textContent || '')
+      expect(notices).toContain('Reviewed draft kept. A script imported before was changed in APEX since; under Imported before, choose Update existing or Create a copy, then save.')
+      expect(notices.some(notice => notice.includes('Conversion complete'))).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps a held reviewed draft when the batch is validated again with it selected, and starts it over from its own Validate again', async () => {
+    stubTLSRepairEndpoints()
+    // A script changed in APEX since its earlier import holds the archive for an update-or-copy choice.
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => file.name === 'ready.zip'
+      ? executableEnterpriseResult(legacyTLSDraft('Ready archive'))
+      : executableEnterpriseResult(legacyTLSDraft('Held archive'), {
+        existing_scripts: [{ script_id: 'earlier', name: 'Held archive', updated_at: '2026-10-15T10:00:00Z', matches: 1, same_source: true, edited_since_import: true }],
+      }))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'ready.zip', { type: 'application/zip' }), new File(['zip'], 'held.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      await selectQueueItem(container, 'held.zip')
+      await applyGuidedTLSRepair(container)
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      await selectQueueItem(container, 'held.zip')
+      expect(Array.from(container.querySelectorAll('.settings-notice')).map(element => element.textContent || '')).toContain('Reviewed draft kept. A script imported before was changed in APEX since; under Imported before, choose Update existing or Create a copy, then save.')
+
+      // Validating again does not silently start the held reviewed draft over.
+      const validations = apiMock.validateEnterpriseArchiveImport.mock.calls.length
+      await clickButton(findButton(container, 'Validate 2 Scripts')!)
+      await flushPromises()
+      expect(apiMock.validateEnterpriseArchiveImport.mock.calls.slice(validations)).toEqual([])
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('The reviewed draft with applied repairs is kept; save it, or choose Validate again on its archive to start over.')
+
+      // The archive's own control starts it over, repairs and all.
+      const again = container.querySelector<HTMLButtonElement>('button[aria-label="Validate again: held.zip"]')
+      expect(again).toBeTruthy()
+      // The saved archive has nothing left to validate, so it has no such control.
+      expect(container.querySelector('button[aria-label="Validate again: ready.zip"]')).toBeNull()
+      await clickButton(again!)
+      await flushPromises()
+      expect(apiMock.validateEnterpriseArchiveImport.mock.calls.slice(validations).map(([file]) => file.name)).toEqual(['held.zip'])
+      expect(container.querySelector('button[aria-label="Validate again: held.zip"]')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('lays out the Validate again control from the stylesheet, as the row Remove control', async () => {
+    stubTLSRepairEndpoints()
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(legacyTLSDraft('Kept archive')))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'kept.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+      const again = container.querySelector<HTMLButtonElement>('button[aria-label="Validate again: kept.zip"]')!
+      expect(again.classList.contains('lr-file-revalidate')).toBe(true)
+      expect(again.getAttribute('style')).toBeNull()
+      // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+      const { readFileSync } = await import('node:fs')
+      const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+      const importCss = readFileSync(`${cwd}/src/components/EnterpriseArchiveImport.css`, 'utf8') as string
+      expect(cssRule(importCss, '.lr-file-revalidate')).toContain('flex: 0 0 auto;')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('preserves an edited validated review when another archive is added and validated', async () => {
+    stubTLSRepairEndpoints()
+    const added = { name: 'Added archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    const addedFile = new File(['zip'], 'added.zip', { type: 'application/zip' })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'repaired.zip' ? legacyTLSDraft('Kept archive') : added))
+    apiMock.importEnterpriseArchive.mockImplementation(async () => executableEnterpriseResult(added))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'repaired.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await applyGuidedTLSRepair(container)
+
+      await addArchiveFiles(container, [addedFile])
+      await clickButton(findButton(container, 'Validate 2 Scripts')!)
+      await flushPromises()
+
+      expect(apiMock.validateEnterpriseArchiveImport.mock.calls.map(([file]) => file.name)).toEqual(['repaired.zip', 'added.zip'])
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(apiMock.importEnterpriseArchive.mock.calls.map(([file]) => file)).toEqual([addedFile])
+      const scripts = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts
+      expect(scripts.map(attestationOf)).toEqual([repairedTLSToken('Kept archive'), undefined])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('validates and saves an archive added next to a reviewed draft under its own detected name', async () => {
+    stubTLSRepairEndpoints()
+    // The server names a draft from the name option, or detects one.
+    const added = (name?: string) => ({ name: name || 'Added archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File, options: { name?: string }) => executableEnterpriseResult(file.name === 'first.zip' ? legacyTLSDraft(options.name || 'First archive') : added(options.name)))
+    apiMock.importEnterpriseArchive.mockImplementation(async (_file: File, options: { name?: string }) => executableEnterpriseResult(added(options.name)))
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'first.zip', { type: 'application/zip' })])
+      const name = container.querySelector<HTMLInputElement>('input[placeholder="Auto-detected from .usr file"]')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Checkout flow')
+        name.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await clickImportAction(container, 'Validate Only')
+      expect(apiMock.validateEnterpriseArchiveImport.mock.calls[0][1]).toEqual(expect.objectContaining({ name: 'Checkout flow' }))
+      await applyGuidedTLSRepair(container)
+
+      await addArchiveFiles(container, [new File(['zip'], 'added.zip', { type: 'application/zip' })])
+      await clickButton(findButton(container, 'Validate 2 Scripts')!)
+      await flushPromises()
+
+      // Only the added archive is validated, and the first one's name is not applied to it.
+      expect(apiMock.validateEnterpriseArchiveImport.mock.calls.map(([file]) => file.name)).toEqual(['first.zip', 'added.zip'])
+      expect(apiMock.validateEnterpriseArchiveImport.mock.calls[1][1].name).toBeUndefined()
+      await selectQueueItem(container, 'added.zip')
+      await clickButton(findButton(container, 'DSL Preview')!)
+      const reviewedDraft = container.querySelector('.script-import-review-preview pre')?.textContent || ''
+      expect(reviewedDraft).toContain('"name": "Added archive"')
+      expect(reviewedDraft).not.toContain('Checkout flow')
+
+      // The save converts it under the same name its review showed.
+      await clickButton(findButton(container, 'Save reviewed drafts')!)
+      await flushPromises()
+      expect(apiMock.importEnterpriseArchive.mock.calls.map(([file, options]) => [file.name, options.name])).toEqual([['added.zip', undefined]])
+      expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts.map((script: { name: string }) => script.name)).toEqual(['Checkout flow', 'Added archive'])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('saves the one validated archive of a batch without the script name typed before the batch', async () => {
+    const draft = (name?: string) => ({ name: name || 'First archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File, options: { name?: string }) => {
+      if (file.name === 'broken.zip') throw new Error('The archive could not be read.')
+      return executableEnterpriseResult(draft(options.name))
+    })
+    apiMock.importEnterpriseArchive.mockImplementation(async (_file: File, options: { name?: string }) => executableEnterpriseResult(draft(options.name)))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'first.zip', { type: 'application/zip' })])
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="Auto-detected from .usr file"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Checkout flow')
+      name.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    // The name field is disabled once a second archive is queued, and keeps its value.
+    await addArchiveFiles(container, [new File(['zip'], 'broken.zip', { type: 'application/zip' })])
+    await clickButton(findButton(container, 'Validate 2 Scripts')!)
+    await flushPromises()
+    expect(apiMock.validateEnterpriseArchiveImport.mock.calls.map(([file, options]) => [file.name, options.name])).toEqual([['first.zip', undefined], ['broken.zip', undefined]])
+
+    // Only first.zip is saved; it is converted under the name its review showed.
+    await clickButton(findButton(container, 'Save reviewed drafts')!)
+    await flushPromises()
+    expect(apiMock.importEnterpriseArchive.mock.calls.map(([file, options]) => [file.name, options.name])).toEqual([['first.zip', undefined]])
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts.map((script: { name: string }) => script.name)).toEqual(['First archive'])
+  })
+
+  it('saves an archive validated alone under its script name after another archive is queued unvalidated', async () => {
+    const draft = (name?: string) => ({ name: name || 'Detected archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (_file: File, options: { name?: string }) => executableEnterpriseResult(draft(options.name)))
+    apiMock.importEnterpriseArchive.mockImplementation(async (_file: File, options: { name?: string }) => executableEnterpriseResult(draft(options.name)))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'a.zip', { type: 'application/zip' })])
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="Auto-detected from .usr file"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Checkout flow')
+      name.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+    expect(apiMock.validateEnterpriseArchiveImport.mock.calls.map(([file, options]) => [file.name, options.name])).toEqual([['a.zip', 'Checkout flow']])
+
+    // A second archive queued without validating does not change the name a.zip's review showed.
+    await addArchiveFiles(container, [new File(['zip'], 'b.zip', { type: 'application/zip' })])
+    await selectQueueItem(container, 'a.zip')
+    await clickButton(findButton(container, 'Save reviewed drafts')!)
+    await flushPromises()
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.importEnterpriseArchive.mock.calls.map(([file, options]) => [file.name, options.name])).toEqual([['a.zip', 'Checkout flow']])
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts.map((script: { name: string }) => script.name)).toEqual(['Checkout flow'])
+  })
+
+  it("keeps the other lane's repair when the editor saves one lane of a validated archive", async () => {
+    stubTLSRepairEndpoints()
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const firstLane = { name: 'First Lane', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'First request', type: 'request', method: 'GET', target: '/' }] }
+    const secondLane = legacyTLSDraft('Second Lane')
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({ ...executableEnterpriseResult(firstLane), scripts: [firstLane, secondLane] })
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} onImported={onImported} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['lanes'], 'lanes.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await clickButton(findButton(container, 'Open draft in Visual Editor')!)
+      await flushPromises()
+      const recordSave = onEdit.mock.calls[0]?.[2] as ((saved: { id: string; name: string }) => void) | undefined
+      expect(recordSave).toBeTruthy()
+
+      const secondTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.getAttribute('aria-label') === 'Review generated script Second Lane')!
+      await clickButton(secondTab)
+      await applyGuidedTLSRepair(container)
+
+      const saved = { id: 'script-first-lane', name: 'First Lane', protocol: 'http', version: '1.0.0', created_at: '2026-10-09T00:00:00Z' }
+      await act(async () => { recordSave!(saved) })
+      await flushPromises()
+
+      // The archive is promoted in place instead of being converted again.
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(container.textContent).not.toContain('Converting the remaining drafts of lanes.zip again')
+      expect(onImported).toHaveBeenCalledWith({ scripts: [saved], stayInImportReview: true })
+      expect(container.textContent).toContain('Saved First Lane to the script library')
+
+      await clickButton(findButton(container, 'Save to script library')!)
+      await flushPromises()
+
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      const [lane] = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts
+      expect(lane.name).toBe('Second Lane')
+      expect(attestationOf(lane)).toBe(repairedTLSToken('Second Lane'))
+      expect(lane.config.http.tls).toEqual({ min_version: '1.2', max_version: '1.3' })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("keeps a repaired lane's refreshed credential requirements on that lane of a validated archive", async () => {
+    const repairs = stubTLSRepairEndpoints()
+    const firstToken = { id: 'first-token', path: '/actions/0/headers/Authorization', label: 'First token', suggested_name: 'FIRST_TOKEN', script_index: 0, script_name: 'First Lane' }
+    const secondToken = { id: 'second-token', path: '/actions/0/headers/Authorization', label: 'Second token', suggested_name: 'SECOND_TOKEN', script_index: 1, script_name: 'Second Lane' }
+    // The repair re-discovers the second lane in isolation, so the server
+    // numbers its refreshed requirement from script_index 0.
+    const repairFetch = globalThis.fetch
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await repairFetch(input, init)
+      if (!String(input).endsWith('/scripts/import/repairs/apply')) return response
+      return new Response(JSON.stringify({ ...await response.json(), secret_binding_requirements: [{ ...secondToken, script_index: 0 }] }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const firstLane = { name: 'First Lane', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'First request', type: 'request', method: 'GET', target: '/', headers: { Authorization: '[REDACTED]' } }] }
+    const resolvedFirstLane = { ...firstLane, actions: [{ ...firstLane.actions[0], headers: { Authorization: '{{secret.FIRST_TOKEN}}' } }] }
+    const repairedSecondLane = legacyTLSDraft('Second Lane', repairedTLSToken('Second Lane'), { min_version: '1.2', max_version: '1.3' })
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({ ...executableEnterpriseResult(firstLane, { secret_binding_requirements: [firstToken, secondToken] }), scripts: [firstLane, legacyTLSDraft('Second Lane')] })
+    apiMock.applySecretBindings
+      .mockResolvedValueOnce({ script: repairedSecondLane, secret_binding_requirements: [] })
+      .mockResolvedValueOnce({ script: resolvedFirstLane, secret_binding_requirements: [] })
+    const credentialNames = () => Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onImported={vi.fn()} />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['lanes'], 'lanes.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      const secondTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.getAttribute('aria-label') === 'Review generated script Second Lane')!
+      await clickButton(secondTab)
+      await applyGuidedTLSRepair(container)
+      expect(repairs.applies()).toHaveLength(1)
+      // The refreshed requirement stays on the lane that was repaired.
+      expect(credentialNames()).toEqual(['SECOND_TOKEN'])
+
+      // Saving prepares the repaired lane's credential for that lane, then
+      // the first lane's own credential, unchanged.
+      await clickButton(findButton(container, 'Save to script library')!)
+      expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+      expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(1, {
+        script: repairedSecondLane,
+        script_index: 1,
+        bindings: [{ requirement_id: 'second-token', secret_name: 'SECOND_TOKEN' }],
+      })
+      expect(credentialNames()).toEqual(['FIRST_TOKEN'])
+      await clickButton(findButton(container, 'Save remaining 2 scripts atomically')!)
+      await flushPromises()
+
+      expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(2)
+      expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(2, {
+        script: firstLane,
+        script_index: 0,
+        bindings: [{ requirement_id: 'first-token', secret_name: 'FIRST_TOKEN' }],
+      })
+      expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+      expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+      const [first, second] = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts
+      expect(first).toEqual(expect.objectContaining({ name: 'First Lane', actions: resolvedFirstLane.actions }))
+      expect(second.name).toBe('Second Lane')
+      expect(attestationOf(second)).toBe(repairedTLSToken('Second Lane'))
     } finally {
       vi.unstubAllGlobals()
     }
@@ -1885,6 +3572,47 @@ describe('EnterpriseArchiveImport', () => {
     }))
   })
 
+  it('counts stamped missing secrets in the queue only until the inspection answers, as the review does', async () => {
+    // The converter stamps the preflight without the project's secret
+    // resolver, so the project secret reads as missing; the inspection
+    // resolves it against the project and finds nothing unresolved.
+    const secretDraft = {
+      name: 'Secret archive', version: '1.0.0', protocol: 'http', config: { base_url: 'https://example.test' },
+      actions: [{ name: 'Home', type: 'request', method: 'GET', target: '/home', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }],
+      metadata: { import: { source: 'enterprise_script_archive', preserved: {
+        server_import_attestation_v1: 'protected:Secret archive',
+        replay_preflight: { valid: true, action_count: 1, expected_action_count: 1, data_source_count: 0, parameter_count: 0, required_secrets: ['LOGIN_TOKEN'], missing_secrets: ['LOGIN_TOKEN'], checks: [{ id: 'secrets', label: 'Secret bindings', status: 'warn' }] },
+      } } },
+    }
+    const plain = { name: 'Plain archive', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Home', type: 'GET', target: 'https://example.test/home' }] }
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => executableEnterpriseResult(file.name === 'secret.zip' ? secretDraft : plain))
+    let inspected = false
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (!String(input).includes('/scripts/import/repairs/')) return new Response(JSON.stringify({ error: 'not stubbed' }), { status: 404, headers: { 'content-type': 'application/json' } })
+      inspected = true
+      return new Response(JSON.stringify({
+        candidate_id: 'protected:Secret archive', revision: 'protected:Secret archive', before: secretDraft, script: secretDraft, findings: [],
+        readiness: { replay_ready: true, promotion_ready: true }, secret_binding_requirements: [],
+        fidelity_report: { promotion_status: 'promotable', blockers: [] }, expires_at: '2099-09-19T00:00:00Z',
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }))
+    const outcomes = () => Array.from(container.querySelectorAll('.lr-review-project-picker option')).map(option => option.textContent)
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'secret.zip', { type: 'application/zip' }), new File(['zip'], 'plain.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      await selectQueueItem(container, 'secret.zip')
+      await settle(() => inspected && !container.textContent?.includes('Checking repair requirements'))
+      expect(outcomes()).toEqual(['secret.zip — Ready to save', 'plain.zip — Ready to save'])
+      // The archive keeps its inspected answer once another one is reviewed.
+      await selectQueueItem(container, 'plain.zip')
+      expect(outcomes()).toEqual(['secret.zip — Ready to save', 'plain.zip — Ready to save'])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('updates an earlier script from one archive only when two archives match it in one batch save', async () => {
     const files = [
       new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
@@ -2157,7 +3885,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).not.toContain('Resolve the redacted credential bindings before saving')
   })
 
-  it('manually saves a reviewed conversion without replacing a preserved imported credential', async () => {
+  it('saves a reviewed conversion in one click without replacing a preserved imported credential', async () => {
     const importedScript = {
       name: 'Reviewed Enterprise Login',
       version: '1.0.0',
@@ -2220,12 +3948,9 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(findButton(container, 'Save to script library')!)
     await flushPromises()
 
-    expect(apiMock.createScript).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Review parameterization suggestions before saving')
-    await clickButton(findButton(container, 'Save to script library')!)
-    await flushPromises()
-
+    expect(container.textContent).not.toContain('Review parameterization suggestions before saving')
     expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({
         body: 'password=imported-runtime-password&user=alice',
@@ -2471,6 +4196,118 @@ describe('EnterpriseArchiveImport', () => {
       project_id: 'project-1',
       source_secret_session_id: 'credentialed-archive-session',
     })
+  })
+
+  it('says an atomic lane save refused for a stale script to update saved nothing, and saves again as a new request', async () => {
+    const first = {
+      name: 'Credentialed Web', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Login', type: 'request', method: 'POST', target: '/login', body: 'token=[REDACTED]' }],
+    }
+    const second = {
+      name: 'Credentialed Database', version: '1.0.0', protocol: 'database', config: { base_url: '', database: { dsn: '[REDACTED]' } },
+      actions: [{ name: 'Query', type: 'db_query', target: 'SELECT 1' }],
+    }
+    const resolvedFirst = { ...first, actions: [{ ...first.actions[0], body: 'token={{secret.WEB_TOKEN}}' }] }
+    const resolvedSecond = { ...second, config: { ...second.config, database: { dsn: '{{secret.DATABASE_DSN}}' } } }
+    const match = { script_id: 'earlier-web', name: 'Credentialed Web', updated_at: '2026-10-15T10:00:00Z', content_digest: 'digest-web', matches: 1, same_source: true, edited_since_import: false }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      scripts: [first, second], script: first,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+      summary: { project_file: 'credentialed.usr', migration_readiness: { score_pct: 100, blocked: false, summary: 'Ready', policy: { block_statuses: [] } } },
+      stats: { total_functions: 2, converted_actions: 2, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+      source_secret_session_id: 'credentialed-archive-session',
+      source_secret_session_expires_at: '2099-01-01T00:00:00Z',
+      source_secret_migration_allowed: false,
+      secret_binding_requirements: [
+        { id: 'web-token', path: '/actions/0/body', label: 'Web token', context: 'Login token', suggested_name: 'WEB_TOKEN', script_index: 0, script_name: first.name },
+        { id: 'database-dsn', path: '/config/database/dsn', label: 'Database DSN', context: 'Database credential', suggested_name: 'DATABASE_DSN', script_index: 1, script_name: second.name },
+      ],
+      existing_scripts: [match, null],
+    })
+    apiMock.applySecretBindings
+      .mockResolvedValueOnce({ script: resolvedFirst, secret_binding_requirements: [] })
+      .mockResolvedValueOnce({ script: resolvedSecond, secret_binding_requirements: [] })
+    apiMock.saveEnterpriseArchiveImport.mockRejectedValueOnce(new ApiError('script 1: the script to update changed after review; inspect the source again', 409, {
+      error: 'script 1: the script to update changed after review; inspect the source again', code: 'import_update_target_stale', script_index: 0,
+    }))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'credentialed.zip', { type: 'application/zip' })])
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Save to script library')!)
+    await clickButton(findButton(container, 'Prepare Credentials for Script 1 of 2')!)
+    await clickButton(findButton(container, 'Save remaining 2 scripts atomically')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    const refused = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0]
+    expect(refused.update_targets).toEqual([{ script_id: 'earlier-web', expected_updated_at: '2026-10-15T10:00:00Z', expected_content_digest: 'digest-web' }, null])
+    // A definitive refusal, as on the validated path: nothing to reconcile.
+    // No review changes: the archive has no Validate again of its own, so
+    // the match is refreshed by validating it from Archive setup.
+    expect(container.textContent).toContain('The script imported before that this save updates changed after this review, so nothing was saved. Under Imported before, choose Create a copy, or validate the archive again (Validate Script in Archive setup) to refresh the match, then save.')
+    expect(container.querySelector('.lr-file-revalidate')).toBeNull()
+    expect(findButton(container, 'Validate Script')).toBeTruthy()
+    expect(container.textContent).not.toContain('retrying reuses the same atomic save operation')
+
+    await clickButton(findButton(container, 'Save remaining 2 scripts atomically')!)
+    await flushPromises()
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].operation_id).not.toBe(refused.operation_id)
+  })
+
+  it('saves credential-prepared lanes atomically despite optional parameterization suggestions', async () => {
+    const first = {
+      name: 'Suggested Web', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Login', type: 'request', method: 'POST', target: '/login?customer_id=42', body: 'token=[REDACTED]' }],
+    }
+    const second = {
+      name: 'Suggested Database', version: '1.0.0', protocol: 'database', config: { base_url: '', database: { dsn: '[REDACTED]' } },
+      actions: [{ name: 'Query', type: 'db_query', target: 'SELECT 1' }],
+    }
+    const resolvedFirst = { ...first, actions: [{ ...first.actions[0], body: 'token={{secret.WEB_TOKEN}}' }] }
+    const resolvedSecond = { ...second, config: { ...second.config, database: { dsn: '{{secret.DATABASE_DSN}}' } } }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      scripts: [first, second], script: first,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+      summary: { project_file: 'suggested.usr', migration_readiness: { score_pct: 100, blocked: false, summary: 'Ready', policy: { block_statuses: [] } } },
+      stats: { total_functions: 2, converted_actions: 2, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+      secret_binding_requirements: [
+        { id: 'web-token', path: '/actions/0/body', label: 'Web token', context: 'Login token', suggested_name: 'WEB_TOKEN', script_index: 0, script_name: first.name },
+        { id: 'database-dsn', path: '/config/database/dsn', label: 'Database DSN', context: 'Database credential', suggested_name: 'DATABASE_DSN', script_index: 1, script_name: second.name },
+      ],
+      parameterization: {
+        suggestions: [{
+          id: 'pz_customer', kind: 'data_param', script_name: first.name, var_name: 'customer_id', replacement: '{{var.customer_id}}', sample_value: '42',
+          confidence: 0.6, rule_id: 'test.customer', rationale: 'Customer identifier may vary by virtual user', auto_apply: false, high_risk: false, pre_applied: false,
+          locations: [{ section: 'actions', action_index: 0, action_name: 'Login', field: 'target' }],
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 0, review_count: 1, high_risk_count: 0, pre_applied_count: 0 },
+      },
+    })
+    apiMock.applySecretBindings
+      .mockResolvedValueOnce({ script: resolvedFirst, secret_binding_requirements: [] })
+      .mockResolvedValueOnce({ script: resolvedSecond, secret_binding_requirements: [] })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    await addArchiveFiles(container, [new File(['zip'], 'suggested.zip', { type: 'application/zip' })])
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Save to script library')!)
+    await clickButton(findButton(container, 'Prepare Credentials for Script 1 of 2')!)
+    await clickButton(findButton(container, 'Save remaining 2 scripts atomically')!)
+    await flushPromises()
+
+    expect(container.textContent).not.toContain('Apply or dismiss the archive parameterization review')
+    expect(apiMock.applyImportParameterization).not.toHaveBeenCalled()
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ name: resolvedFirst.name, actions: resolvedFirst.actions }),
+        expect.objectContaining({ name: resolvedSecond.name }),
+      ],
+    }))
   })
 
   it('does not publish a late credential result after the selected generated script changes', async () => {
@@ -3223,31 +5060,14 @@ describe('EnterpriseArchiveImport', () => {
       protocol: 'http',
       actions: [{ name: 'A', type: 'request', method: 'GET', target: '/a' }],
     }
-    // A parameterization suggestion left for review keeps the batch conversion
-    // from auto-saving, so the lane is saved through the review panel instead.
+    // A script imported before and changed in APEX since keeps the batch
+    // conversion from auto-saving, so the lane is saved through the review
+    // panel instead. (Optional parameterization suggestions no longer hold it.)
     apiMock.importEnterpriseArchive.mockResolvedValue(executableEnterpriseResult(draft, {
-      parameterization: {
-        suggestions: [{
-          id: 'review-alpha',
-          kind: 'data_param',
-          var_name: 'ALPHA',
-          replacement: '{{var.ALPHA}}',
-          confidence: 0.8,
-          rule_id: 'test',
-          rationale: 'Review the generated parameter.',
-          auto_apply: false,
-          high_risk: false,
-          pre_applied: false,
-        }],
-        summary: {
-          total: 1,
-          by_kind: { data_param: 1 },
-          auto_apply_count: 0,
-          review_count: 1,
-          high_risk_count: 0,
-          pre_applied_count: 0,
-        },
-      },
+      existing_scripts: [{
+        script_id: 'earlier-alpha', name: draft.name, updated_at: '2026-10-15T10:00:00Z',
+        matches: 1, same_source: true, edited_since_import: true,
+      }],
     }))
     let resolveCreate: ((script: Record<string, unknown>) => void) | undefined
     apiMock.createScript.mockImplementationOnce(() => new Promise(resolve => {
@@ -3960,6 +5780,7 @@ describe('EnterpriseArchiveImport', () => {
       data_source_count: 0,
       parameter_count: 1,
       missing_variables: ['LANE_PARAMETER'],
+      missing_secrets: ['LANE_SECRET'],
       checks: [{ id: 'variables', label: 'Variables', status: 'fail', detail: 'LANE_PARAMETER' }],
     }
     const responsePreflight = {
@@ -3969,6 +5790,7 @@ describe('EnterpriseArchiveImport', () => {
       data_source_count: 0,
       parameter_count: 1,
       missing_variables: ['RESPONSE_PARAMETER'],
+      missing_secrets: ['RESPONSE_SECRET'],
       checks: [{ id: 'variables', label: 'Variables', status: 'fail', detail: 'RESPONSE_PARAMETER' }],
     }
     const first = {
@@ -4004,12 +5826,17 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     await clickImportAction(container, 'Validate Only')
-    expect(container.textContent).toContain('Missing value: LANE_PARAMETER')
-    expect(container.textContent).not.toContain('Missing value: RESPONSE_PARAMETER')
+    // Missing values are the draft's own dependency findings: the stamped
+    // preflight's list is not merged in again beside them.
+    expect(container.textContent).not.toContain('Missing value: LANE_PARAMETER')
+    const missingSecrets = () => [...container.querySelectorAll('.import-credentials-introduction li')].map(item => item.textContent)
+    await clickButton(findButton(container, 'Credentials')!)
+    expect(missingSecrets()).toEqual(['LANE_SECRET'])
 
     await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="Review generated script JMS lane"]')!)
-    expect(container.textContent).toContain('Missing value: RESPONSE_PARAMETER')
-    expect(container.textContent).not.toContain('Missing value: LANE_PARAMETER')
+    await clickButton(findButton(container, 'Credentials')!)
+    expect(missingSecrets()).toEqual(['RESPONSE_SECRET'])
+    expect(container.textContent).not.toContain('Missing value: RESPONSE_PARAMETER')
   })
 
   it('surfaces TrueClient2 compatibility report from Enterprise Script Archive import responses', async () => {
@@ -4566,32 +6393,16 @@ describe('EnterpriseArchiveImport', () => {
       config: { base_url: 'https://review.example.test' },
       actions: [{ name: 'Review', type: 'request', method: 'POST', target: '/review' }],
     }
+    // The reviewed lane updates a script changed in APEX since its import, so
+    // the batch holds it for review while the ready lane saves.
     apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => (
       file.name === 'ready.zip'
         ? executableEnterpriseResult(readyScript)
         : executableEnterpriseResult(reviewedScript, {
-            parameterization: {
-              suggestions: [{
-                id: 'review-user',
-                kind: 'data_param',
-                var_name: 'USER',
-                replacement: '{{var.USER}}',
-                confidence: 0.8,
-                rule_id: 'test',
-                rationale: 'Review this parameter.',
-                auto_apply: false,
-                high_risk: false,
-                pre_applied: false,
-              }],
-              summary: {
-                total: 1,
-                by_kind: { data_param: 1 },
-                auto_apply_count: 0,
-                review_count: 1,
-                high_risk_count: 0,
-                pre_applied_count: 0,
-              },
-            },
+            existing_scripts: [{
+              script_id: 'earlier-reviewed', name: reviewedScript.name, updated_at: '2026-10-15T10:00:00Z',
+              matches: 1, same_source: true, edited_since_import: true,
+            }],
           })
     ))
 
@@ -4653,30 +6464,14 @@ describe('EnterpriseArchiveImport', () => {
       config: { base_url: 'https://multi.example.test' },
       actions: [{ name: 'B', type: 'request', method: 'GET', target: '/b' }],
     }
+    // Lane A updates a script changed in APEX since its import, so the batch
+    // holds the archive and each lane is saved from its review.
     apiMock.importEnterpriseArchive.mockResolvedValueOnce({
       ...executableEnterpriseResult(first, {
-        parameterization: {
-          suggestions: [{
-            id: 'review-lanes',
-            kind: 'data_param',
-            var_name: 'LANE',
-            replacement: '{{var.LANE}}',
-            confidence: 0.8,
-            rule_id: 'test',
-            rationale: 'Review the generated lanes.',
-            auto_apply: false,
-            high_risk: false,
-            pre_applied: false,
-          }],
-          summary: {
-            total: 1,
-            by_kind: { data_param: 1 },
-            auto_apply_count: 0,
-            review_count: 1,
-            high_risk_count: 0,
-            pre_applied_count: 0,
-          },
-        },
+        existing_scripts: [{
+          script_id: 'earlier-lane-a', name: first.name, updated_at: '2026-10-15T10:00:00Z',
+          matches: 1, same_source: true, edited_since_import: true,
+        }],
       }),
       script: first,
       scripts: [first, second],
@@ -8167,4 +9962,40 @@ async function clickImportAction(container: HTMLElement, label: string) {
   if (!button) return null
   await clickButton(button)
   return button
+}
+
+async function addArchiveFiles(container: HTMLElement, files: File[]) {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip,.usz"]')!
+  await act(async () => {
+    Object.defineProperty(input, 'files', { configurable: true, value: files })
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function selectQueueItem(container: HTMLElement, fileName: string) {
+  const row = Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-file-row-select')).find(button => button.textContent?.includes(fileName))
+  expect(row).toBeTruthy()
+  await clickButton(row!)
+}
+
+// Stubbed fetch responses settle over macrotasks, unlike the mocked API calls.
+async function settle(done: () => boolean, attempts = 50) {
+  for (let attempt = 0; attempt < attempts && !done(); attempt += 1) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  }
+  expect(done()).toBe(true)
+}
+
+// Applies the selected draft's guided TLS repair (see stubTLSRepairEndpoints)
+// and waits for the repaired candidate's own inspection to finish.
+async function applyGuidedTLSRepair(container: HTMLElement) {
+  const checking = () => container.textContent?.includes('Checking repair requirements') === true
+  const tlsIssue = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-issue-row')).find(row => row.textContent?.includes('Choose supported TLS settings'))
+  await settle(() => Boolean(tlsIssue()) && !checking())
+  await clickButton(tlsIssue()!)
+  await settle(() => Boolean(findButton(container, 'Preview repair')))
+  await clickButton(findButton(container, 'Preview repair')!)
+  await settle(() => Boolean(findButton(container, 'Apply reviewed repair')))
+  await clickButton(findButton(container, 'Apply reviewed repair')!)
+  await settle(() => container.textContent?.includes('Repair applied.') === true && !checking())
 }

@@ -1045,8 +1045,8 @@ func TestServiceHeartbeatReadPathIsRaceFree(t *testing.T) {
 				service.mu.RLock()
 				_ = service.activeVUsersLocked()
 				_ = service.availableCapacityLocked()
+				_ = service.activeTestIDsLocked()
 				service.mu.RUnlock()
-				_ = service.activeTestIDs()
 			}
 		}()
 	}

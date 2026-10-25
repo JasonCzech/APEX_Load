@@ -718,7 +718,7 @@ func (p *payload) render(replacements map[*node]string, fields map[int][2]string
 	if p.codec == DirectJSON {
 		return message, nil
 	}
-	patches := make([]patch, 0, len(fields)*2+1)
+	patches := make([]patch, 0, len(fields))
 	for i, f := range p.fields {
 		if i == p.messageIndex {
 			if message != f.value {

@@ -1085,13 +1085,7 @@ func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 }
 
 func metadataKeyIsProvenance(key string) bool {
-	key = strings.ToLower(strings.TrimSpace(key))
-	switch key {
-	case "original_url", "source_path", "source_step_id", "source_profile", "source_uid", "source_node_id":
-		return true
-	default:
-		return strings.HasPrefix(key, "asyncapi_") || strings.HasPrefix(key, "jmeter_")
-	}
+	return messaging.MetadataKeyIsProvenance(messaging.FamilyKafka, key)
 }
 
 // resolvePartition mirrors a producer's partitioner: an explicit partition param

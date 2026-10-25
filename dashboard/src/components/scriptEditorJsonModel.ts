@@ -382,6 +382,35 @@ export function jsonPathForActionStepPath(stepPath?: string[]): string {
   }).join('')
 }
 
+const JSON_STEP_SEGMENT = /\.params\.requests\[(\d+)\]|\.control\.branches\[(\d+)\]\.steps\[(\d+)\]|\.control\.cases\[(\d+)\]\.steps\[(\d+)\]|\.control\.(steps|else|default)\[(\d+)\]/y
+
+/**
+ * The step path the outline gives the step at a JSON path below an action
+ * (`.params.requests[1]`, `.control.steps[0]`), the inverse of
+ * jsonPathForActionStepPath: `control.steps` is `loop[i]` in a loop and
+ * `then[i]` otherwise. Undefined for an empty path, or one that does not
+ * name a step of root.
+ */
+export function stepPathForJsonSubPath(root: ScriptActionDefinition | undefined, subPath: string): string[] | undefined {
+  if (!root || !subPath) return undefined
+  const stepPath: string[] = []
+  let current: ScriptActionDefinition | null = root
+  JSON_STEP_SEGMENT.lastIndex = 0
+  while (current && JSON_STEP_SEGMENT.lastIndex < subPath.length) {
+    const match = JSON_STEP_SEGMENT.exec(subPath)
+    if (!match) return undefined
+    const [, request, branch, branchStep, switchCase, caseStep, list, listStep] = match
+    const segment = request !== undefined ? `requests[${request}]`
+      : branch !== undefined ? `branches[${branch}].steps[${branchStep}]`
+      : switchCase !== undefined ? `case[${switchCase}][${caseStep}]`
+      : list === 'steps' ? `${current.type === 'control_loop' ? 'loop' : 'then'}[${listStep}]`
+      : `${list}[${listStep}]`
+    current = resolveNestedAction(current, [segment])
+    stepPath.push(segment)
+  }
+  return current ? stepPath : undefined
+}
+
 export function authorFocusKey(focus: Pick<AuthorCodeFocus, 'phase' | 'actionIndex' | 'stepPath'>): string {
   const base = `${focus.phase}:${focus.actionIndex}`
   return focus.stepPath?.length ? `${base}#${focus.stepPath.join('/')}` : base

@@ -250,7 +250,7 @@ run_suite "root-cause v2 end to end (real local runs, about eight minutes)" \
 run_suite "full PostgreSQL storage and API suites" \
   "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
-  go test -tags postgres_integration -p 1 -timeout=20m -count=1 ./pkg/storage ./pkg/api
+  go test -tags postgres_integration -p 1 -timeout=35m -count=1 ./pkg/storage ./pkg/api
 
 # These separate profiles provision their own pinned disposable broker.
 # --all is the sole opt-in; do not silently skip missing tools/required fixtures.

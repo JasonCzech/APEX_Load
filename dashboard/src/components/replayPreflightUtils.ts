@@ -4,6 +4,7 @@ import {
   actionExecutionBlockerDetails,
   actionMetadataBool,
 } from './scriptActionHelpers'
+import { analyzeVariableReadiness } from './variableFlow'
 
 type ScriptWithPhases = ScriptDefinition & {
   init?: ScriptActionDefinition[]
@@ -94,6 +95,7 @@ function appendReviewGateIssues(
   path: string,
   script: ScriptDefinition,
   issues: string[],
+  enforceBrowserPolicy: boolean,
 ): void {
   const blockers = actionExecutionBlockerDetails(action)
   const name = action.name?.trim()
@@ -107,7 +109,7 @@ function appendReviewGateIssues(
     issues.push(`${label}: review-required action blocks replay until review metadata is removed`)
     return
   }
-  if (script.protocol?.trim().toLowerCase() !== 'browser') return
+  if (!enforceBrowserPolicy || script.protocol?.trim().toLowerCase() !== 'browser') return
   const policy = script.config.browser?.review_policy
   if (reviewGatedJavaScriptAction(action)) {
     if (!policy?.allow_reviewed_javascript) {
@@ -130,6 +132,7 @@ function collectReviewGateIssues(
   depth: number,
   script: ScriptDefinition,
   issues: string[],
+  enforceBrowserPolicy: boolean,
 ): void {
   if (depth > REPLAY_REVIEW_GATE_MAX_CONTROL_DEPTH) {
     issues.push(`${pathPrefix}: action nesting exceeds ${REPLAY_REVIEW_GATE_MAX_CONTROL_DEPTH} levels`)
@@ -137,7 +140,7 @@ function collectReviewGateIssues(
   }
   actions.forEach((action, index) => {
     const path = `${pathPrefix}[${index}]`
-    appendReviewGateIssues(action, path, script, issues)
+    appendReviewGateIssues(action, path, script, issues, enforceBrowserPolicy)
 
     if (action.type?.trim().toLowerCase() === 'http_sequence') {
       const requests = action.params && Array.isArray(action.params.requests)
@@ -150,26 +153,34 @@ function collectReviewGateIssues(
           `${path}.params.requests[${requestIndex}]`,
           script,
           issues,
+          enforceBrowserPolicy,
         )
       })
     }
 
     if (!action.control) return
-    collectReviewGateIssues(action.control.steps || [], `${path}.control.steps`, depth + 1, script, issues)
-    collectReviewGateIssues(action.control.else || [], `${path}.control.else`, depth + 1, script, issues)
+    collectReviewGateIssues(action.control.steps || [], `${path}.control.steps`, depth + 1, script, issues, enforceBrowserPolicy)
+    collectReviewGateIssues(action.control.else || [], `${path}.control.else`, depth + 1, script, issues, enforceBrowserPolicy)
 	;(action.control.cases || []).forEach((switchCase, caseIndex) => {
-		collectReviewGateIssues(switchCase.steps || [], `${path}.control.cases[${caseIndex}].steps`, depth + 1, script, issues)
+		collectReviewGateIssues(switchCase.steps || [], `${path}.control.cases[${caseIndex}].steps`, depth + 1, script, issues, enforceBrowserPolicy)
 	})
-	collectReviewGateIssues(action.control.default || [], `${path}.control.default`, depth + 1, script, issues)
+	collectReviewGateIssues(action.control.default || [], `${path}.control.default`, depth + 1, script, issues, enforceBrowserPolicy)
   })
 }
 
-function executionGateIssues(script: ScriptDefinition): string[] {
+/**
+ * The review gates that refuse a replay of script, worded as the server words
+ * them. With enforceBrowserPolicy false, a browser script's review_policy
+ * gates are left out, as the server leaves them out when it judges a saved
+ * script before a start (storedScriptReplayGateError): those a per-replay
+ * override may still allow. Execution blockers and durable import gates stay.
+ */
+export function replayReviewGateIssues(script: ScriptDefinition, { enforceBrowserPolicy = true }: { enforceBrowserPolicy?: boolean } = {}): string[] {
   const phasedScript = script as ScriptWithPhases
   const issues: string[] = []
-  collectReviewGateIssues(phasedScript.init || [], 'init', 1, script, issues)
-  collectReviewGateIssues(script.actions || [], 'actions', 1, script, issues)
-  collectReviewGateIssues(phasedScript.teardown || [], 'teardown', 1, script, issues)
+  collectReviewGateIssues(phasedScript.init || [], 'init', 1, script, issues, enforceBrowserPolicy)
+  collectReviewGateIssues(script.actions || [], 'actions', 1, script, issues, enforceBrowserPolicy)
+  collectReviewGateIssues(phasedScript.teardown || [], 'teardown', 1, script, issues, enforceBrowserPolicy)
   return issues.sort()
 }
 
@@ -342,94 +353,25 @@ export function reconcileReplayPreflightSecretStatus(
   }
 }
 
-function sequenceChildExtractors(action: ScriptActionDefinition) {
-  if (action.type?.trim().toLowerCase() !== 'http_sequence') return []
-  const requests = action.params && Array.isArray(action.params.requests)
-    ? action.params.requests
-    : []
-  return requests.flatMap(request => Array.isArray(request?.extractors) ? request.extractors : [])
-}
-
-type ReadinessVarContext = {
-  available: Set<string>
-  missing: Set<string>
-  // Missing references replay cannot carry as placeholder text (see the API preflight).
-  blocking: Set<string>
-  placeholders: boolean
-  secrets: Set<string>
-  loopDepth: number
-  foreachVars: Set<string>
-  // Live-table result prefixes: the step sets <prefix>.status, <prefix>.values.<column>….
-  resultPrefixes: Set<string>
-}
-
-// isReadinessVarAvailable reports whether a {{var.<name>}} reference resolves to a
-// variable the runtime will provide: a seeded/param/extracted variable, the
-// engine-injected {{var.loop_index}} inside any control_loop body, or a foreach
-// row binding {{var.<V>.<col>}} inside a control_loop whose for_each.var is V.
-function isReadinessVarAvailable(name: string, ctx: ReadinessVarContext): boolean {
-  if (ctx.available.has(name)) return true
-  if (ctx.loopDepth > 0 && (name === 'loop_index' || name.startsWith('loop_index.'))) return true
-  const prefix = name.includes('.') ? name.slice(0, name.indexOf('.')) : name
-  return ctx.foreachVars.has(prefix) || [...ctx.resultPrefixes].some(result => name.startsWith(`${result}.`))
-}
-
-// collectReadinessRefs walks the action tree in execution order, tracking which
-// loop-injected variables are in scope so a control body does not false-flag
-// {{var.loop_index}} or foreach row bindings ({{var.<V>.<col>}}) as missing.
-// Extractor outputs accumulate forward, matching replay's single-pass variable
-// resolution. Container actions contribute only their shell (condition) refs here;
-// their bodies are walked recursively with the loop scope applied.
-function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessVarContext, depth: number): void {
+// collectReadinessSecretRefs gathers the project secrets replay steps use.
+// Review-only steps are evidence and never run. A control contributes only its
+// shell (condition) refs here; its bodies are walked on their own. Variable
+// readiness is analyzeVariableReadiness's, the server's execution-order model.
+function collectReadinessSecretRefs(actions: ScriptActionDefinition[], secrets: Set<string>, depth: number): void {
   if (depth > REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return
   actions.forEach(action => {
     if (isReviewOnlyAction(action as unknown as Record<string, unknown>)) return
     const type = action.type?.trim().toLowerCase()
-    const isLoop = type === 'control_loop'
     const isIf = type === 'control_if'
-	const isSwitch = type === 'control_switch'
-	const refSource = isLoop || isIf || isSwitch ? controlShellAction(action) : action
-    sequenceChildExtractors(action).forEach(extractor => {
-      if (extractor.name) ctx.available.add(extractor.name)
-    })
-    // A control_loop's own while-condition is evaluated each pass with loop_index
-    // already set, so scan the shell with the loop scope applied.
-    const refCtx: ReadinessVarContext = isLoop ? { ...ctx, loopDepth: ctx.loopDepth + 1 } : ctx
-    // A JSON helper fails its step on an unresolved buffer instead of parsing placeholder text.
-    const keepsPlaceholders = ctx.placeholders && type?.replace(/^loadrunner_/, 'source_') !== 'source_json'
-    collectTemplateRefs(refSource, 'var').forEach(name => {
-      if (isReadinessVarAvailable(name, refCtx)) return
-      ctx.missing.add(name)
-      if (!keepsPlaceholders) ctx.blocking.add(name)
-    })
-    collectTemplateRefs(refSource, 'secret').forEach(name => ctx.secrets.add(name))
-    ;(action.extractors || []).forEach(extractor => {
-      if (extractor.name) ctx.available.add(extractor.name)
-    })
-    const resultPrefix = type === 'live_table' && typeof action.params?.result_prefix === 'string' ? action.params.result_prefix.trim() : ''
-    if (resultPrefix) ctx.resultPrefixes.add(resultPrefix)
-	if ((isLoop || isIf || isSwitch) && action.control) {
-      const childCtx: ReadinessVarContext = {
-        available: ctx.available,
-        missing: ctx.missing,
-        blocking: ctx.blocking,
-        placeholders: ctx.placeholders,
-        secrets: ctx.secrets,
-        loopDepth: isLoop ? ctx.loopDepth + 1 : ctx.loopDepth,
-        foreachVars: ctx.foreachVars,
-        resultPrefixes: ctx.resultPrefixes,
-      }
-      const foreachVar = isLoop ? action.control.for_each?.var?.trim() : ''
-      if (foreachVar) {
-        childCtx.foreachVars = new Set(ctx.foreachVars)
-        childCtx.foreachVars.add(foreachVar)
-      }
-      collectReadinessRefs(action.control.steps || [], childCtx, depth + 1)
-      if (isIf) collectReadinessRefs(action.control.else || [], childCtx, depth + 1)
-	  if (isSwitch) {
-		;(action.control.cases || []).forEach(switchCase => collectReadinessRefs(switchCase.steps || [], childCtx, depth + 1))
-		collectReadinessRefs(action.control.default || [], childCtx, depth + 1)
-	  }
+    const isSwitch = type === 'control_switch'
+    const isControl = isIf || isSwitch || type === 'control_loop'
+    collectTemplateRefs(isControl ? controlShellAction(action) : action, 'secret').forEach(name => secrets.add(name))
+    if (!isControl || !action.control) return
+    collectReadinessSecretRefs(action.control.steps || [], secrets, depth + 1)
+    if (isIf) collectReadinessSecretRefs(action.control.else || [], secrets, depth + 1)
+    if (isSwitch) {
+      ;(action.control.cases || []).forEach(switchCase => collectReadinessSecretRefs(switchCase.steps || [], secrets, depth + 1))
+      collectReadinessSecretRefs(action.control.default || [], secrets, depth + 1)
     }
   })
 }
@@ -485,40 +427,72 @@ function browserEvidenceCaptureCheck(script: ScriptDefinition) {
   }
 }
 
+/**
+ * A preflight with the review gates a refused start named added to it, for a
+ * refusal that lists only its gates (an older controller's bare text, or a
+ * gate refusal without a preflight). Both sides word a gate alike, so a gate
+ * the preflight already lists is not listed twice.
+ */
+export function withRefusedReviewGates(preflight: ReplayPreflight, gateIssues: readonly string[]): ReplayPreflight {
+  const known = new Set((preflight.issues || []).map(issue => issue.trim()))
+  const added = [...new Set(gateIssues.map(issue => issue.trim()).filter(issue => issue && !known.has(issue)))]
+  if (added.length === 0) return preflight.valid ? { ...preflight, valid: false } : preflight
+  const checks = preflight.checks || []
+  const gateCheck = checks.find(check => check.id === 'review_gates')
+  const detail = [...(gateCheck?.status === 'fail' && gateCheck.detail ? [gateCheck.detail] : []), ...added].join('; ')
+  return {
+    ...preflight,
+    valid: false,
+    issues: [...(preflight.issues || []), ...added],
+    checks: gateCheck
+      ? checks.map(check => check === gateCheck ? { ...check, status: 'fail' as const, detail } : check)
+      : [...checks, { id: 'review_gates', label: 'Review gates', status: 'fail' as const, detail }],
+  }
+}
+
+/**
+ * The blocking variables no producer can help with: those an undeclared
+ * {{param.*}} use blocks, which only a declared script parameter satisfies,
+ * and those a protocol configuration reference blocks, which no step can
+ * supply. A preflight lists them (the server's and the local one), as empty
+ * lists when there are none; for one from an older controller, which omits
+ * them, they are derived from the script it describes, as neither depends on
+ * replay seeds. Without the script either, none is known. The editor words a
+ * blocking value by them, and the import review lists the configuration ones,
+ * so both tell one story.
+ */
+export function replayBlockingKinds(
+  preflight: Pick<ReplayPreflight, 'blocking_variables' | 'param_blocking_variables' | 'config_blocking_variables'> | null | undefined,
+  script?: ScriptDefinition,
+): { param: Set<string>; config: Set<string> } {
+  if (Array.isArray(preflight?.param_blocking_variables) || Array.isArray(preflight?.config_blocking_variables)) {
+    return { param: new Set(preflight?.param_blocking_variables || []), config: new Set(preflight?.config_blocking_variables || []) }
+  }
+  if (!script || !(preflight?.blocking_variables || []).length) return { param: new Set(), config: new Set() }
+  const readiness = analyzeVariableReadiness(script)
+  return { param: new Set(readiness.paramBlocking), config: new Set(readiness.configBlocking) }
+}
+
 export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: Record<string, string>): ReplayPreflight {
   const phaseActions = phaseReplayActions(script)
   const definitionCount = actionDefinitionCount(phaseActions, 0)
   const expectedCount = expectedReplayActionCount(phaseActions, 0)
-  const availableVariables = new Set<string>([
-    ...Object.keys(variables || {}).filter(Boolean),
-    ...(script.parameters || []).map(parameter => parameter.name).filter(Boolean),
-  ])
-  const missingVariables = new Set<string>()
-  const blockingVariables = new Set<string>()
   const requiredSecrets = new Set<string>(collectTemplateRefs(script.config, 'secret'))
   collectDedicatedProjectSecretRefs(script, requiredSecrets, true)
-
-  collectReadinessRefs(phaseActions, {
-    available: availableVariables,
-    missing: missingVariables,
-    blocking: blockingVariables,
-    // HTTP replay sends a missing variable as its placeholder text and warns, as LoadRunner does.
-    placeholders: ['http', 'http/1.1', 'http/2', 'http/3'].includes(script.protocol?.trim() || ''),
-    secrets: requiredSecrets,
-    loopDepth: 0,
-    foreachVars: new Set<string>(),
-    resultPrefixes: new Set<string>(),
-  }, 0)
+  collectReadinessSecretRefs(phaseActions, requiredSecrets, 0)
+  // HTTP replay sends a missing variable as its placeholder text and warns, as
+  // LoadRunner does; the rest refuse replay (see the API preflight).
+  const readiness = analyzeVariableReadiness(script, variables)
 
   const dataWarnings = buildDataWarnings(script)
-  const missingVariableList = sortedValues(missingVariables)
-  const blockingVariableList = sortedValues(blockingVariables)
-  const placeholderVariableList = missingVariableList.filter(name => !blockingVariables.has(name))
+  const missingVariableList = readiness.missing
+  const blockingVariableList = readiness.blocking
+  const placeholderVariableList = missingVariableList.filter(name => !blockingVariableList.includes(name))
   const requiredSecretList = sortedValues(requiredSecrets)
   const browserRequired = script.protocol === 'browser'
   const prerequisites = runtimePrerequisites(script, browserRequired)
   const hasRequiredFields = Boolean(script.name && definitionCount > 0)
-  const gateIssues = executionGateIssues(script)
+  const gateIssues = replayReviewGateIssues(script)
 
   const checks = [
     {
@@ -572,6 +546,9 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     missing_variables: missingVariableList,
     blocking_variables: blockingVariableList,
     placeholder_variables: placeholderVariableList,
+    late_produced_variables: readiness.lateProduced,
+    param_blocking_variables: readiness.paramBlocking,
+    config_blocking_variables: readiness.configBlocking,
     data_source_issues: dataWarnings,
     required_secrets: requiredSecretList,
     missing_secrets: requiredSecretList,

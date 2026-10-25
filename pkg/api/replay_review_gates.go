@@ -3,6 +3,7 @@ package api
 import "github.com/jasonczech/apexload/pkg/internal/importreview"
 
 import (
+	"encoding/json"
 	"errors"
 
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func validateScriptForReplay(script *dsl.Script) []string {
@@ -77,6 +79,67 @@ func writeScriptReplayBlocked(w http.ResponseWriter, err error) bool {
 	}
 	writeJSON(w, http.StatusConflict, body)
 	return true
+}
+
+// writeStoredScriptReplayGate answers a stored-script start that the saved
+// copy's own review gates refuse (storedScriptReplayGateError). It keeps the
+// 400 and the message older clients show, and adds each gate plus the saved
+// copy's replay preflight, so an editor can list what to resolve instead of one
+// long sentence. gate_scope says the gates describe the saved script, not the
+// draft the request carried. Any other error is answered as before.
+//
+// The gates and the preflight are worded from storedReplayGateDisplayScript,
+// so each step name they quote is scrubbed with the message's policy.
+func (s *Server) writeStoredScriptReplayGate(w http.ResponseWriter, stored *dsl.Script, err error) {
+	var blocked *scriptReplayBlockedError
+	if !errors.As(err, &blocked) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	display, ok := storedReplayGateDisplayScript(stored)
+	var shown *scriptReplayBlockedError
+	if !ok || !errors.As(storedScriptReplayGateError(display), &shown) {
+		// Names decide no gate, so this is unreachable; the plain message is
+		// still never sent with unscrubbed gates.
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusBadRequest, map[string]any{
+		// Scrubbed exactly as writeError sent it, so the text is unchanged.
+		"error":      scrub.Value(err.Error(), scrub.Policy{}),
+		"code":       "script_replay_blocked",
+		"gate_scope": "stored_script",
+		"issues":     shown.Issues(),
+		"preflight":  buildReplayPreflight(display, nil, nil, nil, s.runner.secretResolverForScript(stored)),
+	})
+}
+
+// storedReplayGateDisplayScript is a copy of a stored script whose step names
+// are scrubbed as writeError scrubs a message. A gate quotes its step's name,
+// and a name is never a secret binding, so a script that keeps no credentials
+// can still hold one there as recorded. Gates depend on metadata, types and
+// configuration, never on names, so the copy reports the same gates in the
+// same order, quoting the scrubbed names. Each name is scrubbed alone: the
+// whole gate reads to the scrubber as a quoted field label and its value, so
+// scrubbing it could redact the blocker codes an editor reads after the name.
+func storedReplayGateDisplayScript(stored *dsl.Script) (*dsl.Script, bool) {
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		return nil, false
+	}
+	var display dsl.Script
+	if json.Unmarshal(raw, &display) != nil {
+		return nil, false
+	}
+	_ = dslwalk.Walk(&display, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action != nil {
+			ref.Action.Name = scrub.Value(ref.Action.Name, scrub.Policy{})
+		} else if name, named := ref.Request["name"].(string); named {
+			ref.Request["name"] = scrub.Value(name, scrub.Policy{})
+		}
+		return nil
+	})
+	return &display, true
 }
 
 var replayReviewGateError = importreview.ReplayReviewGateError

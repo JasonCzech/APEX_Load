@@ -39,7 +39,7 @@ import { buildImportSaveChoices, importMatchesIdentity, type ImportSaveChoice } 
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
-import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
+import { groupImportFindings, importReviewFindings, readinessCounts, readinessSummaryText, unresolvedIssueCount, type ImportReadiness, type IssueCategory } from './importReviewIssues'
 import SharedAssetsDialog from './SharedAssetsDialog'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import AuraOutcomeReview from './AuraOutcomeReview'
@@ -57,7 +57,7 @@ import {
   updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
-import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
+import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry, importDraftExpiryStatus } from './protectedImportSession'
 import { importJunkReason } from '../utils/importJunkFiles'
 import './EnterpriseArchiveImport.css'
 import { useSuggestImportFolderName } from './importDestinationContext'
@@ -110,6 +110,85 @@ function enterpriseArchiveDraftNeedsRefresh(error: unknown): boolean {
       // message fallback so a newer dashboard can still recover against them.
       || /enterprise archive import draft (?:is invalid or expired|is missing its server capability)/i
         .test(getErrorMessage(error, '')))
+}
+
+// The script a save updates as a new version changed, moved or was archived
+// after the review that matched it.
+function enterpriseArchiveUpdateTargetStale(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && error.code === 'import_update_target_stale'
+}
+
+// A save the server refused as sent, which resending can never pass: a
+// stale script to update, or a request it rejects as invalid. Nothing was
+// saved under its operation (a save it committed is answered from its
+// receipt before the script to update is checked, and an invalid request
+// was refused the first time too), so unlike a lost response it is not
+// retained for reconciliation; the next save is a new request.
+function enterpriseArchiveSaveRefused(error: unknown): boolean {
+  return enterpriseArchiveUpdateTargetStale(error)
+    || (error instanceof ApiError && (error.status === 400 || error.status === 413 || error.status === 422))
+}
+
+// A reviewed draft's repairs and other review changes exist only in its one
+// server candidate; they cannot be replayed onto a fresh conversion. Once that
+// candidate expires or is refused, the archive is validated again instead.
+const REVIEWED_DRAFT_REFUSED_MESSAGE = 'The reviewed draft and the repairs applied to it can no longer be saved: it expired or was already used. Nothing was saved. Choose Validate again on this archive and re-apply its repairs before saving.'
+const REVIEWED_DRAFT_KEPT_MESSAGE = 'Another draft in this batch could not be saved, so nothing was saved. Save again to keep this reviewed draft.'
+// A reviewed draft refused for a stale script to update keeps that match, so
+// a save is refused again until its own row is resolved: the other archives
+// wait for it rather than be told to save again.
+function enterpriseArchiveStaleSiblingMessage(reviewedDraft: boolean): string {
+  return `Nothing was saved. Another archive in this batch must be resolved first (see its row), then save again to ${reviewedDraft ? 'keep this reviewed draft' : 'save this archive'}.`
+}
+// Validating an archive again drops the unconfirmed save it is in, so the next
+// save could store it twice; Save resends that save as it was sent.
+const UNCONFIRMED_SAVE_FIRST_MESSAGE = 'Save first: it resends the unconfirmed save, which APEX answers if it was saved.'
+const ENTERPRISE_ARCHIVE_UPDATE_TARGET_STALE_MESSAGE = 'The script imported before that this save updates changed after this review, so nothing was saved.'
+
+// How to refresh a stale match, by the controls the refused archives have: a
+// reviewed draft keeps its repairs only as a copy, and only its own Validate
+// again (which discards them) refreshes its match; any other archive is
+// validated again from Archive setup.
+function enterpriseArchiveUpdateTargetStaleGuidance(reviewedDrafts: number, otherArchives: number, validateLabel: string): string {
+  const setup = `${validateLabel} in Archive setup`
+  if (reviewedDrafts === 0) return `Under Imported before, choose Create a copy, or validate the archive again (${setup}) to refresh the match, then save.`
+  if (otherArchives === 0) {
+    return `Under Imported before, choose Create a copy to keep the repairs, or choose Validate again on ${reviewedDrafts === 1 ? 'this archive (its' : 'each archive (their'} repairs are discarded) to refresh the match, then save.`
+  }
+  return `Under Imported before, choose Create a copy, then save; a repaired draft keeps its repairs only as a copy. To refresh the match instead, choose Validate again on a repaired archive (its repairs are discarded), or validate any other archive again (${setup}).`
+}
+
+// Save resends an unconfirmed save unchanged, re-import choices and all: if
+// APEX did not save it, it is saved now, with the effects named here (one per
+// script whose choice changed since). A choice made since applies only to a
+// new save, which follows only once APEX refuses that resend.
+function enterpriseArchiveUnconfirmedSaveChoiceMessage(effects: readonly string[]): string {
+  const named = effects.length > 0 ? `, which ${effects.join(' and ')}` : ''
+  return `APEX has not confirmed the earlier save of this archive. Save resends that save unchanged: if it was not saved, it is saved now with the re-import choice it was sent with${named}. The re-import choice changed since applies only if APEX refuses that resend.`
+}
+
+// A reviewed draft (applied repairs or other review changes) is kept work
+// while validated, and once converted: a save held it for a choice ("Reviewed
+// draft kept. …") or promoted it in place with drafts left to save. Validating
+// the batch again leaves it alone; only the archive's own Validate again
+// control, or an options change, starts it over.
+function enterpriseArchiveReviewedDraftIsKept(item: EnterpriseArchiveImportQueueItem): boolean {
+  return (item.status === 'validated' || item.status === 'converted') && (item.reviewedDraftEdits || 0) > 0
+}
+
+// Whether an archive still has a draft to save or queue, which is what
+// validating it again can reach.
+function enterpriseArchiveItemHasUnhandledDrafts(item: EnterpriseArchiveImportQueueItem): boolean {
+  return (Object.keys(item.savedResultScripts || {}).length + Object.keys(item.queuedResultScripts || {}).length) === 0
+    || getEnterpriseArchiveResultScripts(item.result).some((_, index) => !enterpriseArchiveResultScriptIsHandled(item, index))
+}
+
+// Whether an archive offers its own Validate again: validating the batch
+// keeps its reviewed draft (kept, refused or held), so only this starts that
+// one archive over, discarding the repairs applied to it.
+function enterpriseArchiveCanValidateAgain(item: EnterpriseArchiveImportQueueItem): boolean {
+  return (enterpriseArchiveReviewedDraftIsKept(item) || (item.status === 'failed' && (item.reviewedDraftEdits || 0) > 0))
+    && enterpriseArchiveItemHasUnhandledDrafts(item)
 }
 
 function javaSimpleClassName(className: string) {
@@ -522,6 +601,7 @@ function buildEnterpriseArchiveImportQueueItem(file: File, id: string, folderFil
     reviewOptionsIdentity: '',
     savedResultScripts: {}, queuedResultScripts: {},
     sourceSecretProjectId: '',
+    reviewedDraftEdits: 0,
   }
 }
 
@@ -601,6 +681,14 @@ interface EnterpriseArchiveImportQueueItem {
   savedResultScripts: Record<number, StoredScript>
   queuedResultScripts?: Record<number, ScriptApprovalQueued>
   sourceSecretProjectId: string
+  // Guided repairs, parameterization and shared values applied to result since
+  // the server produced it. A validated draft that carries any is saved as
+  // reviewed: converting the archive again would discard that work.
+  reviewedDraftEdits?: number
+  // The script name option the review applied to result, recorded when it ran:
+  // a fresh conversion on save names the draft as its review showed, even if
+  // another archive was queued since.
+  reviewNameOverride?: string
 }
 
 type EnterpriseArchiveAtomicSaveEntry = {
@@ -622,6 +710,33 @@ type RetainedEnterpriseArchiveAtomicSave = {
   scriptsToPersist: ScriptDefinition[]
   /** Positional with scriptsToPersist; absent when nothing updates. */
   updateTargets?: (ImportUpdateTarget | null)[]
+}
+
+// Whether a save of targetItems resends the retained unconfirmed atomic save:
+// the same archives, sources and drafts, to the same project, folder and
+// options. Re-import choices made since are deliberately not compared. The
+// first attempt may have committed, and only the same operation (its id,
+// scripts and update targets) lets the server's receipt say so; a changed
+// choice sent as a new operation could save the archive a second time.
+function enterpriseArchiveSaveResendsRetained(
+  retained: RetainedEnterpriseArchiveAtomicSave,
+  targetItems: readonly EnterpriseArchiveImportQueueItem[],
+  projectId: string | undefined,
+  folderId: string | null,
+  optionsIdentity: string,
+): boolean {
+  return retained.projectId === projectId
+    && retained.folderId === folderId
+    && retained.optionsIdentity === optionsIdentity
+    && retained.entries.length === targetItems.length
+    && retained.entries.every((entry, index) => {
+      const item = targetItems[index]
+      return item?.id === entry.itemId
+        && item.file === entry.file
+        && item.harFile === entry.harFile
+        && item.supplementalFiles === entry.supplementalFiles
+        && item.result === entry.result
+    })
 }
 
 type EnterpriseArchiveSupportMatrixSection = {
@@ -1039,6 +1154,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     && importItems.find(item => item.id === refreshingRemainingDraftsOf.itemId)?.status === 'converting'
     ? refreshingRemainingDraftsOf.archiveName
     : null
+  // A save of reviewed drafts alone converts nothing: each is saved as reviewed.
+  const savingReviewedDraftsOnly = workingMode === 'convert' && importItems.some(item => item.status === 'converting')
+    && importItems.every(item => item.status !== 'converting' || (item.reviewedDraftEdits || 0) > 0)
   const sourceMutationLocked = classpathUploadInProgress || settingsEditing || reviewArtifactPersistenceInProgress || scriptSaveInProgress || atomicSaveInProgress
     // Options stay put while an archive's remaining drafts are converted again.
     || refreshingRemainingDrafts !== null
@@ -1079,12 +1197,30 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       })
     })
   }
-  // The archives an unconfirmed atomic save covers: none opens in the editor
-  // until Convert again reconciles that save.
-  const [retainedAtomicSaveItemIds, setRetainedAtomicSaveItemIds] = useState<readonly string[]>([])
+  // The update targets an atomic save of these archives sends, by position
+  // with their scripts, from the re-import choices now; undefined when nothing
+  // updates. Archives are matched one at a time, so two can name the same
+  // earlier script: the first updates it and the next saves a copy.
+  const atomicSaveUpdateTargets = (entries: readonly { itemId: string; result: EnterpriseArchiveImportResult; scripts: readonly ScriptDefinition[] }[]) => {
+    const targetedScriptIds = new Set<string>()
+    const targets = entries.flatMap(entry => {
+      const choices = reimportChoicesFor(entry.itemId, entry.result)
+      return entry.scripts.map((_script, index) => {
+        const target = choices.updateTargetFor(index)
+        if (!target || targetedScriptIds.has(target.script_id)) return null
+        targetedScriptIds.add(target.script_id)
+        return target
+      })
+    })
+    return targets.some(Boolean) ? targets : undefined
+  }
+  // The unconfirmed atomic save, for rendering: none of its archives opens in
+  // the editor until Convert again reconciles that save, and a re-import
+  // choice changed since is named as waiting for that save's answer.
+  const [retainedAtomicSaveView, setRetainedAtomicSaveView] = useState<RetainedEnterpriseArchiveAtomicSave | null>(null)
   const retainAtomicSave = useCallback((retained: RetainedEnterpriseArchiveAtomicSave | null) => {
     retainedAtomicSaveRef.current = retained
-    setRetainedAtomicSaveItemIds(retained ? retained.entries.map(entry => entry.itemId) : [])
+    setRetainedAtomicSaveView(retained)
   }, [])
   const clearRetainedAtomicSave = useCallback((itemIds?: readonly string[]) => {
     const retained = retainedAtomicSaveRef.current
@@ -1274,6 +1410,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       reviewGeneration: item.reviewGeneration + 1,
       savedResultScripts: {}, queuedResultScripts: {},
       sourceSecretProjectId: '',
+      reviewedDraftEdits: 0,
+      reviewNameOverride: undefined,
     })))
   }, [invalidateOperationScopes, projectId])
   const previousFolderIdRef = useRef(folderId ?? null)
@@ -1411,6 +1549,19 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const archiveSetupRef = useRef<HTMLDetailsElement>(null)
   const [categoryFocus, setCategoryFocus] = useState<{ category: IssueCategory | 'all'; revision: number }>({ category: 'all', revision: 0 })
   const currentRepairReview = protectedReview?.project === (projectId || '') && protectedReview.result.candidate_id === importedScript?.metadata?.import?.preserved?.server_import_attestation_v1 ? protectedReview.result : null
+  // The readiness each protected candidate's inspection reported, by project
+  // and candidate, so an archive's queue chip counts its credentials as its
+  // review does (archiveReviewOutcome), also once another archive is selected.
+  const [inspectedReadiness, setInspectedReadiness] = useState<ReadonlyMap<string, ImportReadiness>>(() => new Map())
+  useEffect(() => {
+    if (!currentRepairReview) return
+    const key = `${projectId || ''}\u0000${currentRepairReview.candidate_id}`
+    setInspectedReadiness(previous => previous.get(key) === currentRepairReview.readiness ? previous : new Map(previous).set(key, currentRepairReview.readiness))
+  }, [currentRepairReview, projectId])
+  const inspectedReadinessFor = (script: ScriptDefinition) => {
+    const candidate = script.metadata?.import?.preserved?.server_import_attestation_v1
+    return typeof candidate === 'string' && candidate ? inspectedReadiness.get(`${projectId || ''}\u0000${candidate}`) : undefined
+  }
   const replayPreflight = getEnterpriseArchiveReplayPreflight(importedScript, result)
   const selectedResultScriptHandled = Boolean(
     selectedItem
@@ -1544,47 +1695,33 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     : importSummary.unsupportedFunctions
   const reviewSections = useMemo(() => result?.review_sections || [], [result?.review_sections])
   const repairSuggestions = result?.repair_suggestions || []
-  const needsExecutionRepair = currentRepairReview ? !currentRepairReview.readiness.replay_ready : Boolean((detectedProtocol && detectedProtocol.import_mode !== 'executable') || fidelityReport?.promotion_status === 'blocked'
-    || result?.summary?.migration_readiness?.blocked
-    || (replayPreflight?.valid === false
-    || replayPreflight?.checks?.some(check => check.status === 'fail')
-    || replayPreflight?.missing_secrets?.length)
-    || reviewSections.some(section => section.severity === 'blocker'))
-  const readinessMessage = needsExecutionRepair
-    ? 'Imported — repairs needed before replay.'
-    : 'Imported — ready for review. Target replay is not verified.'
-  const additionalRepairFindings = useMemo<ImportFinding[]>(() => {
-    const canonical = currentRepairReview?.findings || (importedScript ? draftImportFindings(importedScript) : [])
-    const codes = new Set(canonical.map(f => f.code))
-    const extra: ImportFinding[] = []
-    // Older/unprotected imports still expose archive-level gates. Keep them visible
-    // without rendering another copy of action-level findings.
-    for (const [index, detail] of (currentRepairReview?.fidelity_report.blockers || fidelityReport?.blockers || []).entries()) {
-      if ([...codes].some(code => detail.includes(code)) || (codes.has('restored_body_required') && /lr_unmask|secret.gated/i.test(detail))) continue
-      extra.push({ code: `diagnostic:archive:${index}`, detail, gate: 'execution' })
-    }
-    const diagnosticSections = currentRepairReview ? reviewSections.filter(section => ['warnings', 'conversion_warnings'].includes(section.key)) : reviewSections
-    const warningFallback = result?.warnings?.length ? [{ key: 'warnings', title: 'Conversion warnings', severity: 'warning', summary: '', items: result.warnings }] : []
-    extra.push(...reviewSectionFindings([...diagnosticSections, ...warningFallback], sourceReview || undefined).filter(finding => finding.gate !== 'execution' || !canonical.length))
-    // Replay sends a missing variable as placeholder text unless the variable-readiness check fails.
-    const variablesBlocked = replayPreflight?.checks?.some(check => check.id === 'variables' && check.status === 'fail')
-    if (!currentRepairReview) for (const variable of replayPreflight?.missing_variables || []) {
-      if (!codes.has(`missing_producer:${variable}`)) extra.push({ code: `missing_producer:${variable}`, detail: `Missing variable: ${variable}`, gate: variablesBlocked ? 'execution' : 'promotion' })
-    }
-    const bindings = currentRepairReview?.readiness.unresolved_bindings ?? replayPreflight?.missing_secrets?.length ?? 0
-    if (bindings) extra.push({ code: 'diagnostic:credential_bindings', detail: `${bindings} credential requirements remain unresolved. Review project secret bindings and protected body requirements. Counts may include several requirements for one request.`, gate: 'execution' })
-    if (currentRepairReview?.readiness.validation_issues?.length) extra.push({ code: 'diagnostic:validation', detail: currentRepairReview.readiness.validation_issues.join('\n'), gate: 'execution' })
-    if (needsExecutionRepair && !canonical.some(f => f.gate === 'execution') && !extra.some(f => f.gate === 'execution')) extra.push({ code: 'diagnostic:execution', detail: 'Additional protocol or execution checks need attention. Inspect conversion details and the related review sections before replay.', gate: 'execution' })
-    return extra
-  }, [currentRepairReview, importedScript, fidelityReport, reviewSections, sourceReview, replayPreflight, needsExecutionRepair, result?.warnings])
-  const allTabIssues = useMemo(() => importedScript ? groupImportFindings([...(currentRepairReview?.findings || draftImportFindings(importedScript)), ...additionalRepairFindings], importedScript) : [], [currentRepairReview, importedScript, additionalRepairFindings])
+  const executionGated = Boolean((detectedProtocol && detectedProtocol.import_mode !== 'executable') || result?.summary?.migration_readiness?.blocked)
+  const fidelityBlockers = fidelityReport?.blockers
+  const resultWarnings = result?.warnings
+  // One grouping for every count here and in the guided repair, with the same
+  // review policy whether or not the protected candidate's inspection has
+  // answered. An inspection's script carries the preflight the server
+  // restamped for that candidate; the draft's own stamp predates a runtime
+  // settings, parameterization or shared-values change.
+  const groupReviewIssues = useCallback((script: ScriptDefinition, inspection: RepairResult | null, blockers: readonly string[] | undefined) => groupImportFindings(importReviewFindings({
+    script, inspection, preflight: getEnterpriseArchiveReplayPreflight(inspection?.script ?? script, result), fidelityBlockers: blockers, reviewSections, warnings: resultWarnings, sourceReview: sourceReview || undefined, executionGated,
+  }), script), [result, reviewSections, resultWarnings, sourceReview, executionGated])
+  const allTabIssues = useMemo(() => importedScript ? groupReviewIssues(importedScript, currentRepairReview, fidelityBlockers) : [], [groupReviewIssues, importedScript, currentRepairReview, fidelityBlockers])
+  // A repair response is grouped as the draft it describes, with the fidelity
+  // report the review adopts from it when the repair is applied.
+  const regroupRepairResult = useCallback((repaired: RepairResult) => groupReviewIssues(repaired.script, repaired, repaired.fidelity_report?.blockers), [groupReviewIssues])
   // Review marks live in the guided repair panel; notes marked reviewed there
   // stop counting as open review work in the tab badges and readiness line.
   const guidedRepairScope = `${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`
   const [reviewedRepairIssues, setReviewedRepairIssues] = useState<{ scope: string; ids: string[] }>({ scope: '', ids: [] })
   const reviewedRepairIssueIds = useMemo(() => new Set(reviewedRepairIssues.scope === guidedRepairScope ? reviewedRepairIssues.ids : []), [reviewedRepairIssues, guidedRepairScope])
   const tabIssues = useMemo(() => allTabIssues.filter(issue => issue.blocking || !reviewedRepairIssueIds.has(issue.id)), [allTabIssues, reviewedRepairIssueIds])
-  const reviewedTabIssueCount = allTabIssues.length - tabIssues.length
+  // The readiness line, tab badges, section header and stepper all count this.
+  const importCounts = useMemo(() => readinessCounts(allTabIssues, reviewedRepairIssueIds), [allTabIssues, reviewedRepairIssueIds])
+  const needsExecutionRepair = importCounts.blockers > 0
+  const readinessMessage = needsExecutionRepair
+    ? 'Imported — repairs needed before replay.'
+    : 'Imported — ready for review. Target replay is not verified.'
   // The review tabs and the review's save header stick in turn below the top
   // bar, so each sticky offset needs the measured heights above it. They are
   // written straight to CSS variables; a re-render of this page per resize
@@ -1642,7 +1779,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     requestAnimationFrame(() => requestAnimationFrame(restoreScroll))
   }
   const reviewCategory: IssueCategory | 'all' = validationReviewTab === 'credentials' ? 'credentials' : validationReviewTab === 'data' ? 'values' : validationReviewTab === 'preserved' ? 'runtime' : 'all'
-  const sectionIssueCount = tabIssues.filter(issue => reviewCategory === 'all' || issue.category === reviewCategory).length
+  const sectionIssueCount = reviewCategory === 'all' ? unresolvedIssueCount(importCounts) : tabIssues.filter(issue => issue.category === reviewCategory).length
   const openReviewIssues = () => {
     setCategoryFocus(previous => ({ category: reviewCategory, revision: previous.revision + 1 }))
     selectReviewSection('overview')
@@ -1915,6 +2052,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     : (saveRequiresBrowserReplay
       ? `${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay against the converted browser script before saving it to the library.`
       : 'The latest draft browser replay completed. Review the draft browser replay results before saving it to the library.')
+  // A validated draft with repairs or other review changes applied is saved as
+  // reviewed, never converted again (see runConvertValidatedItems).
+  const selectedReviewedDraft = (selectedItem?.reviewedDraftEdits || 0) > 0
   const reviewSubtitle = reviewMode === 'validation'
     ? (saveBlockedByMigrationPolicy
         ? 'This preview came from the dry-run validator. Conversion can continue, but saving will remain blocked until migration readiness blockers are resolved or the Migration Block Policy in Conversion Options is relaxed.'
@@ -1926,7 +2066,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 ? `This preview came from the dry-run validator. Save the combined Java Vuser review artifact and resolve its fidelity blockers before authoring approval.`
                 : `This preview came from the dry-run validator. ${protocolGateName} execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}; save ${combinedJavaVuserApprovalReady ? 'the combined draft' : 'the review artifact'} for approval.`)
               : 'This preview came from the dry-run validator. Save the review artifact before script promotion.')
-              : browserImport ? 'This preview came from the dry-run validator. Continue to conversion and required draft browser replay before saving.' : 'This preview came from the dry-run validator. Convert the validated archive to save the generated script.')))
+              : selectedReviewedDraft
+                ? (browserImport
+                    ? 'This preview came from the dry-run validator. Continue with the reviewed draft, with the repairs applied here, to the required draft browser replay before saving.'
+                    : 'This preview came from the dry-run validator. Save the reviewed draft, with the repairs applied here, to the script library.')
+                : browserImport ? 'This preview came from the dry-run validator. Continue to conversion and required draft browser replay before saving.' : 'This preview came from the dry-run validator. Convert the validated archive to save the generated script.')))
     : (saveBlockedByMigrationPolicy
         ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the Migration Block Policy in Conversion Options is relaxed.'
         : (browserReplayInProgress
@@ -2047,8 +2191,20 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           reviewGeneration: item.reviewGeneration + 1,
           savedResultScripts: {}, queuedResultScripts: {},
           sourceSecretProjectId: '',
+          reviewedDraftEdits: 0,
+          reviewNameOverride: undefined,
         }
       : { ...item, replayValidationLoading: false }))
+  }
+
+  // markReviewedDraftEdit records an in-review change to an item's draft (a
+  // guided repair, parameterization or shared values) together with its patch.
+  // The item keeps its status, so a validated draft stays in the validated
+  // batch, but that batch now saves this draft instead of converting again.
+  const markReviewedDraftEdit = (itemId: string, patch: Partial<EnterpriseArchiveImportQueueItem>) => {
+    setImportItems(items => items.map(item => item.id === itemId
+      ? { ...item, ...patch, reviewedDraftEdits: (item.reviewedDraftEdits || 0) + 1 }
+      : item))
   }
 
   const prepareImportedScriptForEditor = async (): Promise<ScriptDefinition | null> => {
@@ -2094,8 +2250,32 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     }
   }
 
-  const editorBlockedByUnconfirmedSave = Boolean(selectedItem && retainedAtomicSaveItemIds.includes(selectedItem.id))
-  const editorBlocked = editorBlockedByBatch || editorBlockedByUnconfirmedSave
+  const editorBlockedByUnconfirmedSave = Boolean(selectedItem && retainedAtomicSaveView?.entries.some(entry => entry.itemId === selectedItem.id))
+  // Save resends an unconfirmed save as it was sent (see
+  // enterpriseArchiveSaveResendsRetained). A re-import choice changed since
+  // is not in that request, so say why rather than let Save seem to apply it.
+  const unconfirmedSaveChoiceChanged = Boolean(
+    editorBlockedByUnconfirmedSave
+    && retainedAtomicSaveView
+    && enterpriseArchiveSaveResendsRetained(retainedAtomicSaveView, validatedItems, projectId, folderId ?? null, importOptionsIdentity(options))
+    && JSON.stringify(atomicSaveUpdateTargets(retainedAtomicSaveView.entries) ?? null) !== JSON.stringify(retainedAtomicSaveView.updateTargets ?? null),
+  )
+  // What that resend saves, if the earlier save was not saved, for each script
+  // whose re-import choice changed since: an update of the script imported
+  // before as a new version, or a copy beside it.
+  const unconfirmedSaveChoiceMessage = (() => {
+    if (!unconfirmedSaveChoiceChanged || !retainedAtomicSaveView) return ''
+    const sent = retainedAtomicSaveView.updateTargets ?? []
+    const chosen = atomicSaveUpdateTargets(retainedAtomicSaveView.entries) ?? []
+    const matches = retainedAtomicSaveView.entries.flatMap(entry => entry.scripts.map((_script, index) => entry.result.existing_scripts?.[index] ?? null))
+    return enterpriseArchiveUnconfirmedSaveChoiceMessage(retainedAtomicSaveView.scriptsToPersist.flatMap((script, index) => {
+      const target = sent[index] ?? null
+      if (JSON.stringify(target) === JSON.stringify(chosen[index] ?? null)) return []
+      if (!target) return [`creates a copy named ${script.name}`]
+      return [`updates ${matches.find(match => match?.script_id === target.script_id)?.name || 'the script imported before'} as a new version`]
+    }))
+  })()
+  const editorBlocked =editorBlockedByBatch || editorBlockedByUnconfirmedSave
   const editorBlockedReason = classpathUploadInProgress
     ? 'Wait for the Java dependency upload to finish before editing.'
     : refreshingRemainingDrafts
@@ -2166,7 +2346,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     // A validated archive with a saved draft is treated as any partly saved
     // archive is: it becomes a conversion review, and its remaining drafts are
     // converted again (runReview), so validation's save cannot repeat this one.
+    // A reviewed draft (repairs or other review changes applied) is promoted in
+    // place instead: validation and conversion return the same draft, and
+    // converting again would discard the changes to its remaining drafts.
     const validated = item.status === 'validated'
+    const reviewedDraft = validated && (item.reviewedDraftEdits || 0) > 0
     const nextItems = importItemsRef.current.map(candidate => candidate.id !== itemId
       ? candidate
       : {
@@ -2176,7 +2360,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           notice: `Saved ${saved.name} to the script library.`,
         })
     const updated = nextItems.find(candidate => candidate.id === itemId)
-    if (validated && updated && getEnterpriseArchiveResultScripts(updated.result).some((_script, index) => !enterpriseArchiveResultScriptIsHandled(updated, index))) {
+    if (validated && !reviewedDraft && updated && getEnterpriseArchiveResultScripts(updated.result).some((_script, index) => !enterpriseArchiveResultScriptIsHandled(updated, index))) {
       setConvertAfterEditorSave({ itemId, notice: `Saved ${saved.name} to the script library. Continue reviewing the remaining generated scripts before leaving this import.`, archiveName: item.file.name })
     }
     // The guard's rendered state catches up only on the next render; a save
@@ -2741,6 +2925,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       replayProjectId: '',
       savedResultScripts: {}, queuedResultScripts: {},
       sourceSecretProjectId: '',
+      reviewedDraftEdits: 0,
+      reviewNameOverride: undefined,
       error: '',
       notice: '',
     })
@@ -2765,6 +2951,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       replayProjectId: '',
       savedResultScripts: {}, queuedResultScripts: {},
       sourceSecretProjectId: '',
+      reviewedDraftEdits: 0,
+      reviewNameOverride: undefined,
       notice: '',
       error: '',
     })
@@ -2809,6 +2997,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       replayProjectId: '',
       savedResultScripts: {}, queuedResultScripts: {},
       sourceSecretProjectId: '',
+      reviewedDraftEdits: 0,
+      reviewNameOverride: undefined,
       error: '',
       notice: '',
     }))
@@ -2870,16 +3060,40 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     completionNotice?: string,
     itemIds?: string[],
   ) => {
-    const eligibleItems = importItems.filter(item => (!itemIds || itemIds.includes(item.id))
-      && ((Object.keys(item.savedResultScripts || {}).length + Object.keys(item.queuedResultScripts || {}).length) === 0
-        || getEnterpriseArchiveResultScripts(item.result).some((_, index) => !enterpriseArchiveResultScriptIsHandled(item, index))))
+    const eligibleItems = importItems.filter(item => (!itemIds || itemIds.includes(item.id)) && enterpriseArchiveItemHasUnhandledDrafts(item))
     const addingFiles = eligibleItems.some(item => item.status === 'queued')
     // Adding files preserves existing reviews; an explicit refresh with no new work
-    // renews the selected review, including an expired protected draft.
-    const targetItems = eligibleItems.filter(item => itemIds || item.status !== 'converted'
+    // renews the selected review, including an expired protected draft. A
+    // validated review with applied repairs or other changes is kept work, so
+    // only its own Validate again control (itemIds) validates it again.
+    const targetItems = eligibleItems.filter(item => itemIds
+      || (item.status !== 'converted' && !enterpriseArchiveReviewedDraftIsKept(item))
       || item.reviewOptionsIdentity !== importOptionsIdentity(reviewOptions)
-      || (!addingFiles && item.id === selectedItemId))
-    if (targetItems.length === 0) return
+      || (!addingFiles && item.id === selectedItemId && !enterpriseArchiveReviewedDraftIsKept(item)))
+    if (targetItems.length === 0) {
+      // Say why nothing was validated rather than ignore the click. An
+      // expired kept draft can no longer be saved (the save refuses it), so
+      // only its archive's Validate again renews it, discarding its repairs.
+      // A draft in a save APEX has not confirmed offers no Validate again:
+      // Save resends that save, which APEX answers if it was saved.
+      const retainedIds = new Set(retainedAtomicSaveRef.current?.entries.map(entry => entry.itemId) || [])
+      const reviewed = eligibleItems.filter(enterpriseArchiveReviewedDraftIsKept)
+      const kept = reviewed.filter(item => !retainedIds.has(item.id))
+      const unconfirmed = reviewed.length - kept.length
+      const expired = kept.filter(item => importDraftExpiryStatus(item.result?.import_draft_expires_at)?.expired).length
+      const savable = kept.length - expired
+      if (reviewed.length > 0) {
+        // Counted only beside drafts of the other kind.
+        const subject = (count: number) => count < reviewed.length ? countLabel(count, 'reviewed draft') : count === 1 ? 'The reviewed draft' : 'Reviewed drafts'
+        setError('')
+        setNotice([
+          unconfirmed > 0 ? `${subject(unconfirmed)} with applied repairs ${unconfirmed === 1 ? 'is' : 'are'} in a save APEX has not confirmed. ${UNCONFIRMED_SAVE_FIRST_MESSAGE}` : '',
+          savable > 0 ? `${subject(savable)} with applied repairs ${savable === 1 ? 'is' : 'are'} kept; save ${savable === 1 ? 'it' : 'them'}, or choose Validate again on ${savable === 1 ? 'its archive' : 'one'} to start over.` : '',
+          expired > 0 ? `${subject(expired)} with applied repairs ${expired === 1 ? 'has' : 'have'} expired and can no longer be saved. Only Validate again on ${expired === 1 ? 'its archive renews it' : 'each archive renews them'}, and the repairs applied to ${expired === 1 ? 'it' : 'them'} are discarded.` : '',
+        ].filter(Boolean).join(' '))
+      }
+      return
+    }
     clearRetainedAtomicSave(targetItems.map(item => item.id))
     void discardQueuedSourceSecretSessions(targetItems)
     const operationGeneration = ++operationGenerationRef.current
@@ -2933,12 +3147,16 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           reviewGeneration: item.reviewGeneration + 1,
           savedResultScripts: item.savedResultScripts,
           sourceSecretProjectId: '',
+          reviewedDraftEdits: 0,
+          reviewNameOverride: undefined,
         }
       : item))
 
     let successCount = 0
     let failureCount = 0
-    const useNameOverride = targetItems.length === 1
+    // The script name option applies only while one archive is queued, as its
+    // field does; a batch's archives keep their detected names at every step.
+    const useNameOverride = importItems.length === 1
 
     for (const item of targetItems) {
       if (!operationIsCurrent()) break
@@ -2984,6 +3202,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               reviewOptionsIdentity: sourceOptionsIdentity,
               reviewGeneration: item.reviewGeneration + 1,
               sourceSecretProjectId: sourceProjectId || '',
+              // The server reviews collection members under their detected names.
+              reviewNameOverride: undefined,
               error: archive.error || '',
               notice: archive.response ? 'Import checks complete. Review this project independently before saving.' : '',
             }
@@ -3019,6 +3239,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           reviewOptionsIdentity: sourceOptionsIdentity,
           savedResultScripts: item.savedResultScripts,
           sourceSecretProjectId: sourceProjectId || '',
+          reviewedDraftEdits: 0,
+          reviewNameOverride: useNameOverride ? reviewOptions.name || undefined : undefined,
           error: '',
           notice: completionNotice || (mode === 'validate'
             ? 'Validation finished. Review execution readiness and required repairs below.'
@@ -3084,26 +3306,29 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const sourceOptionsIdentity = importOptionsIdentity(options)
     const destinationFolderId = folderId ?? null
     const retainedCandidate = retainedAtomicSaveRef.current
+    // An unconfirmed save is resent as it was sent, re-import choices and
+    // all, until APEX answers it; a choice changed since waits for a new save.
     const retainedAtomicSave = retainedCandidate
-      && retainedCandidate.projectId === sourceProjectId
-      && retainedCandidate.folderId === destinationFolderId
-      && retainedCandidate.optionsIdentity === sourceOptionsIdentity
-      && retainedCandidate.entries.length === targetItems.length
-      && retainedCandidate.entries.every((entry, index) => {
-        const item = targetItems[index]
-        return item?.id === entry.itemId
-          && item.file === entry.file
-          && item.harFile === entry.harFile
-          && item.supplementalFiles === entry.supplementalFiles
-          && item.result === entry.result
-      })
+      && enterpriseArchiveSaveResendsRetained(retainedCandidate, targetItems, sourceProjectId, destinationFolderId, sourceOptionsIdentity)
       ? retainedCandidate
       : null
     if (retainedCandidate && !retainedAtomicSave) {
       clearRetainedAtomicSave()
     }
+    // A validated draft with applied repairs or other review changes is saved
+    // as reviewed. Converting the archive again would return a fresh draft
+    // without them, so only unchanged drafts are converted. The latest result
+    // is read from the ref: a click-time handler may run after the change.
+    const reusedResults = new Map<string, EnterpriseArchiveImportResult>()
+    targetItems.forEach(item => {
+      const current = importItemsRef.current.find(candidate => candidate.id === item.id)
+      if (current?.status === 'validated' && (current.reviewedDraftEdits || 0) > 0 && current.result) {
+        reusedResults.set(item.id, current.result)
+      }
+    })
     if (!retainedAtomicSave) {
-      void discardQueuedSourceSecretSessions(targetItems)
+      // A reused draft's source-secret session belongs to the draft being saved.
+      void discardQueuedSourceSecretSessions(targetItems.filter(item => !reusedResults.has(item.id)))
     }
     const operationGeneration = ++operationGenerationRef.current
     const requestTokens = new Map(targetItems.map(item => [
@@ -3125,11 +3350,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
 
     const targetIds = new Set(targetItems.map(item => item.id))
     const scriptNameRegistry: EnterpriseArchiveScriptNameRegistry = new Map()
+    // Reused drafts keep their reviewed names, so fresh conversions name around them.
     importItems
-      .filter(item => !targetIds.has(item.id))
-      .flatMap(item => getEnterpriseArchiveResultScripts(item.result))
+      .filter(item => !targetIds.has(item.id) || reusedResults.has(item.id))
+      .flatMap(item => getEnterpriseArchiveResultScripts(reusedResults.get(item.id) ?? item.result))
       .forEach(script => { reserveEnterpriseArchiveScriptName(script.name || '', scriptNameRegistry) })
-    const useNameOverride = targetItems.length === 1
     const savedScripts: StoredScript[] = []
     const readyAtomicSaves: Array<{
       item: EnterpriseArchiveImportQueueItem
@@ -3148,6 +3373,15 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     let skippedCount = 0
     let atomicSaveUnconfirmed = false
     let atomicSaveNeedsFreshDraft = false
+    // A refusal resending cannot pass, and whether it was the script to update.
+    let atomicSaveRefused = false
+    let atomicSaveTargetStale = false
+    // How the archives whose script to update changed refresh their match.
+    let staleTargetGuidance = ''
+    // Reviewed drafts a refused atomic save failed, and those it kept for the
+    // next save, so the batch notice says what happened to them.
+    let refusedReusedCount = 0
+    let keptReusedCount = 0
 
     setWorkingMode('convert')
     setError('')
@@ -3180,30 +3414,52 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         skippedCount += 1
         continue
       }
+      const reusedResult = reusedResults.get(item.id)
+      // An expired reviewed draft can no longer be saved, and a fresh
+      // conversion would drop its changes: refuse it without a request.
+      if (reusedResult && importDraftExpiryStatus(reusedResult.import_draft_expires_at)?.expired) {
+        failureCount += 1
+        const patch: Partial<EnterpriseArchiveImportQueueItem> = {
+          status: 'failed',
+          result: reusedResult,
+          reviewMode: 'validation',
+          error: REVIEWED_DRAFT_REFUSED_MESSAGE,
+          notice: '',
+        }
+        conversionItemPatches.set(item.id, patch)
+        updateImportItem(item.id, patch)
+        continue
+      }
       let conversionResult: EnterpriseArchiveImportResult | null = null
       try {
-        conversionResult = await api.importEnterpriseArchive(item.archiveFile || item.file, {
-          ...(item.archiveMember ? { archive_member: item.archiveMember } : {}),
-          name: useNameOverride ? options.name || undefined : undefined,
-          project_id: sourceProjectId,
-          base_url: options.base_url || undefined,
-          include_assertions: options.include_assertions,
-          preserve_transactions: options.preserve_transactions,
-          migration_block_statuses: buildMigrationBlockStatuses(options),
-          ...(options.expire_draft ? { expire_draft: true } : {}),
-          ...(item.harFile ? { har_file: item.harFile } : {}),
-          ...(item.folderFiles ? { folder_files: item.folderFiles } : {}),
-          ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
-          ...(options.salesforce_native ? { salesforce_native: true } : {}),
-        })
-        if (!requestIsCurrent(item)) {
-          skippedCount += 1
-          if (sourceProjectId && conversionResult.source_secret_session_id) {
-            await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
+        if (reusedResult) {
+          conversionResult = reusedResult
+        } else {
+          conversionResult = await api.importEnterpriseArchive(item.archiveFile || item.file, {
+            ...(item.archiveMember ? { archive_member: item.archiveMember } : {}),
+            // Named as its review showed: the name option applied only if this
+            // archive was the one queued then, whatever was queued since.
+            name: item.reviewNameOverride,
+            project_id: sourceProjectId,
+            base_url: options.base_url || undefined,
+            include_assertions: options.include_assertions,
+            preserve_transactions: options.preserve_transactions,
+            migration_block_statuses: buildMigrationBlockStatuses(options),
+            ...(options.expire_draft ? { expire_draft: true } : {}),
+            ...(item.harFile ? { har_file: item.harFile } : {}),
+            ...(item.folderFiles ? { folder_files: item.folderFiles } : {}),
+            ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
+            ...(options.salesforce_native ? { salesforce_native: true } : {}),
+          })
+          if (!requestIsCurrent(item)) {
+            skippedCount += 1
+            if (sourceProjectId && conversionResult.source_secret_session_id) {
+              await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
+            }
+            continue
           }
-          continue
+          conversionResult = uniquifyEnterpriseArchiveResultScriptNames(conversionResult, scriptNameRegistry)
         }
-        conversionResult = uniquifyEnterpriseArchiveResultScriptNames(conversionResult, scriptNameRegistry)
         const scriptsToSave = getEnterpriseArchiveResultScripts(conversionResult)
         const conversionDetectedProtocol = conversionResult.detected_protocol ?? conversionResult.summary?.detected_protocol ?? null
         const conversionBlockedByProtocol = Boolean(conversionDetectedProtocol && conversionDetectedProtocol.import_mode !== 'executable')
@@ -3212,14 +3468,17 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         const conversionSecretBindingRequirements = conversionResult.secret_binding_requirements ?? []
         const conversionRequiresSecretBindings = conversionSecretBindingRequirements.length > 0
           && !requirementsPreserveDestinationValues(conversionSecretBindingRequirements)
-        const conversionRequiresParameterizationReview = (conversionResult.parameterization?.suggestions || [])
-          .some(suggestion => !suggestion.pre_applied)
+        // Parameterization suggestions are optional: they stay available in the
+        // Data tab and from the editor, and never hold back a save.
         // A script changed in APEX since its earlier import is not replaced by
         // a save nobody reviewed: the archive waits for an update-or-copy choice.
         const conversionChoices = reimportChoicesFor(item.id, conversionResult)
         const unreviewedEditedUpdates = (conversionResult.existing_scripts ?? [])
           .filter((match, index) => match?.edited_since_import && !conversionChoices.chosen(index) && conversionChoices.choiceFor(index) === 'update')
           .length
+        // A reviewed draft is kept as reviewed, not converted again: its
+        // notice says so, so it never reads as if its repairs were replaced.
+        const lead = reusedResult ? 'Reviewed draft kept.' : 'Conversion complete.'
         if (scriptsToSave.length === 0) {
           const patch: Partial<EnterpriseArchiveImportQueueItem> = {
             status: 'converted',
@@ -3228,7 +3487,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             reviewOptionsIdentity: sourceOptionsIdentity,
             savedResultScripts: {}, queuedResultScripts: {},
             sourceSecretProjectId: sourceProjectId || '',
-            error: 'Conversion completed, but no executable script was produced. Review the generated artifact before saving.',
+            error: reusedResult
+              ? 'The reviewed draft has no executable script. Review the generated artifact before saving.'
+              : 'Conversion completed, but no executable script was produced. Review the generated artifact before saving.',
             notice: '',
           }
           conversionItemPatches.set(item.id, patch)
@@ -3236,7 +3497,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           failureCount += 1
           continue
         }
-        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings || conversionRequiresParameterizationReview || unreviewedEditedUpdates > 0) {
+        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings || unreviewedEditedUpdates > 0) {
           const patch: Partial<EnterpriseArchiveImportQueueItem> = {
             status: 'converted',
             result: conversionResult,
@@ -3246,16 +3507,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             sourceSecretProjectId: sourceProjectId || '',
             error: '',
             notice: conversionBlockedByProtocol
-              ? 'Conversion complete. Review the protocol gate before saving or promoting this archive.'
+              ? `${lead} Review the protocol gate before saving or promoting this archive.`
               : conversionBlockedByMigration
-                ? 'Conversion complete. Resolve migration readiness blockers before saving.'
+                ? `${lead} Resolve migration readiness blockers before saving.`
                 : conversionRequiresBrowserReplay
-                  ? 'Conversion complete. Run draft browser replay before saving this browser script.'
+                  ? `${lead} Run draft browser replay before saving this browser script.`
                   : conversionRequiresSecretBindings
-                  ? 'Conversion complete. Resolve the redacted credential bindings before saving.'
-                    : conversionRequiresParameterizationReview
-                      ? 'Conversion complete. Review parameterization suggestions before saving.'
-                      : `Conversion complete. ${unreviewedEditedUpdates === 1 ? 'A script imported before was' : `${unreviewedEditedUpdates} scripts imported before were`} changed in APEX since; under Imported before, choose Update existing or Create a copy, then save.`,
+                  ? `${lead} Resolve the redacted credential bindings before saving.`
+                    : `${lead} ${unreviewedEditedUpdates === 1 ? 'A script imported before was' : `${unreviewedEditedUpdates} scripts imported before were`} changed in APEX since; under Imported before, choose Update existing or Create a copy, then save.`,
           }
           conversionItemPatches.set(item.id, patch)
           updateImportItem(item.id, patch)
@@ -3275,7 +3534,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           savedResultScripts: {}, queuedResultScripts: {},
           sourceSecretProjectId: sourceProjectId || '',
           error: '',
-          notice: `Converted ${scriptsToSave.length} script${scriptsToSave.length === 1 ? '' : 's'}; waiting for the atomic batch save.`,
+          notice: `${reusedResult ? 'Reviewed' : 'Converted'} ${scriptsToSave.length} script${scriptsToSave.length === 1 ? '' : 's'}; waiting for the atomic batch save.`,
         }
         conversionItemPatches.set(item.id, patch)
         updateImportItem(item.id, patch)
@@ -3308,6 +3567,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const currentReadySaves = readyAtomicSaves.filter(({ item }) => requestIsCurrent(item))
     skippedCount += readyAtomicSaves.length - currentReadySaves.length
     if (operationIsCurrent() && currentReadySaves.length > 0) {
+      // An archive imported before updates its scripts as a new version, as
+      // its matches default to, or saves a copy where its review chose one;
+      // the retry of a lost response resends the same choice, whatever was
+      // chosen since.
+      const atomicUpdateTargets = retainedAtomicSave
+        ? retainedAtomicSave.updateTargets
+        : atomicSaveUpdateTargets(currentReadySaves.map(({ item, result, scripts }) => ({ itemId: item.id, result, scripts })))
       const operationKey = retainedAtomicSave?.operationKey ?? [
           currentReadySaves[0].item.id,
           sourceProjectId || '',
@@ -3328,23 +3594,6 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         .map(script => sourceProjectId
           ? { ...script, project_id: sourceProjectId }
           : script)
-      // An archive imported before updates its scripts as a new version, as
-      // its matches default to; the retry resends the same choice. Archives
-      // are matched one at a time, so two can name the same earlier script:
-      // the first updates it and the next saves a copy.
-      const targetedScriptIds = new Set<string>()
-      const flattenedUpdateTargets = currentReadySaves.flatMap(entry => {
-        const choices = reimportChoicesFor(entry.item.id, entry.result)
-        return entry.scripts.map((_script, index) => {
-          const target = choices.updateTargetFor(index)
-          if (!target || targetedScriptIds.has(target.script_id)) return null
-          targetedScriptIds.add(target.script_id)
-          return target
-        })
-      })
-      const atomicUpdateTargets = retainedAtomicSave
-        ? retainedAtomicSave.updateTargets
-        : flattenedUpdateTargets.some(Boolean) ? flattenedUpdateTargets : undefined
       // Publish the full retry scope before the request yields. Source/options
       // are locked for the physical request, and route invalidation preserves
       // this exact payload/identity until the promise settles.
@@ -3415,6 +3664,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           savedOffset += entry.scripts.length
           savedScripts.push(...entryScripts)
           successCount += 1
+          const savedVerb = reusedResults.has(entry.item.id) ? 'Saved' : 'Converted and saved'
           const patch: Partial<EnterpriseArchiveImportQueueItem> = {
             status: 'converted',
             result: entry.result,
@@ -3424,8 +3674,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             sourceSecretProjectId: sourceProjectId || '',
             error: '',
             notice: entryUpdates > 0
-              ? `Converted and saved ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch; ${entryUpdates === entryScripts.length ? (entryUpdates === 1 ? 'it updated the script imported before as a new version' : 'they updated the scripts imported before as new versions') : `${entryUpdates} updated scripts imported before as new versions`}.`
-              : `Converted and saved ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch.`,
+              ? `${savedVerb} ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch; ${entryUpdates === entryScripts.length ? (entryUpdates === 1 ? 'it updated the script imported before as a new version' : 'they updated the scripts imported before as new versions') : `${entryUpdates} updated scripts imported before as new versions`}.`
+              : `${savedVerb} ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch.`,
           }
           conversionItemPatches.set(entry.item.id, patch)
           updateImportItem(entry.item.id, patch)
@@ -3439,9 +3689,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           skippedCount += currentReadySaves.length
         } else {
           atomicSaveNeedsFreshDraft = enterpriseArchiveDraftNeedsRefresh(saveError)
-          if (atomicSaveNeedsFreshDraft) {
+          atomicSaveRefused = !atomicSaveNeedsFreshDraft && enterpriseArchiveSaveRefused(saveError)
+          atomicSaveTargetStale = atomicSaveRefused && enterpriseArchiveUpdateTargetStale(saveError)
+          if (atomicSaveNeedsFreshDraft || atomicSaveRefused) {
             // Do not leave the next Convert action pinned to a capability the
-            // server has explicitly said can no longer authorize a save.
+            // server has explicitly said can no longer authorize a save, or
+            // to a request it refused as sent.
             saveOperationIDsRef.current.delete(operationKey)
             if (retainedAtomicSaveRef.current?.operationId === operationID) {
               retainAtomicSave(null)
@@ -3449,9 +3702,79 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           } else {
             atomicSaveUnconfirmed = true
           }
-          failureCount += currentReadySaves.length
+          // The archive whose script to update changed: the refusal names its
+          // script's position in the batch, else every archive that updates one.
+          const staleScriptIndex = atomicSaveTargetStale && saveError instanceof ApiError ? (saveError.payload as { script_index?: unknown } | null | undefined)?.script_index : undefined
+          const staleIndex = typeof staleScriptIndex === 'number' ? staleScriptIndex : undefined
+          let entryOffset = 0
+          const staleItemIds = new Set(currentReadySaves.flatMap(entry => {
+            const start = entryOffset
+            entryOffset += entry.scripts.length
+            const updates = (atomicUpdateTargets ?? []).slice(start, entryOffset).some(Boolean)
+            return atomicSaveTargetStale && (staleIndex !== undefined ? staleIndex >= start && staleIndex < entryOffset : updates) ? [entry.item.id] : []
+          }))
+          // A reviewed draft is kept with its own Validate again; any other
+          // archive is validated again from Archive setup.
+          const staleReviewedDrafts = currentReadySaves.filter(entry => staleItemIds.has(entry.item.id) && reusedResults.has(entry.item.id)).length
+          staleTargetGuidance = enterpriseArchiveUpdateTargetStaleGuidance(staleReviewedDrafts, staleItemIds.size - staleReviewedDrafts, validateButtonLabel)
+          // The refusal does not name the draft it refused, and the server
+          // releases the others unused. A reviewed draft that has not expired
+          // keeps its repairs for the next save, unless it is the only one the
+          // refusal can be about, or none has expired (a retry would then be
+          // refused again).
+          const reusedSaves = atomicSaveNeedsFreshDraft ? currentReadySaves.filter(entry => reusedResults.has(entry.item.id)) : []
+          const expiredReusedSaves = reusedSaves.filter(entry => importDraftExpiryStatus(entry.result.import_draft_expires_at)?.expired)
+          const refusedReusedIds = new Set((reusedSaves.length > 1 && expiredReusedSaves.length > 0 ? expiredReusedSaves : reusedSaves).map(entry => entry.item.id))
+          refusedReusedCount = refusedReusedIds.size
+          keptReusedCount = reusedSaves.length - refusedReusedIds.size
+          failureCount += currentReadySaves.length - keptReusedCount
           for (const entry of currentReadySaves) {
-            const patch: Partial<EnterpriseArchiveImportQueueItem> = {
+            // A refused reviewed draft is never converted again: that would
+            // save a draft without its repairs. It fails visibly instead and
+            // keeps its review on screen; validating again starts over.
+            const patch: Partial<EnterpriseArchiveImportQueueItem> = refusedReusedIds.has(entry.item.id) ? {
+              status: 'failed',
+              result: entry.result,
+              reviewMode: 'validation',
+              reviewOptionsIdentity: sourceOptionsIdentity,
+              savedResultScripts: {}, queuedResultScripts: {},
+              sourceSecretProjectId: sourceProjectId || '',
+              error: REVIEWED_DRAFT_REFUSED_MESSAGE,
+              notice: '',
+            } : atomicSaveRefused ? {
+              // Refused as sent: the draft, its review and any repairs are
+              // kept, and the next save is a new request, built from the
+              // re-import choices it then has.
+              status: 'validated',
+              result: entry.result,
+              reviewMode: 'validation',
+              reviewOptionsIdentity: sourceOptionsIdentity,
+              savedResultScripts: {}, queuedResultScripts: {},
+              sourceSecretProjectId: sourceProjectId || '',
+              error: staleItemIds.has(entry.item.id)
+                ? ENTERPRISE_ARCHIVE_UPDATE_TARGET_STALE_MESSAGE
+                : atomicSaveTargetStale ? '' : getErrorMessage(saveError, 'Atomic batch save failed'),
+              notice: staleItemIds.has(entry.item.id)
+                ? enterpriseArchiveUpdateTargetStaleGuidance(reusedResults.has(entry.item.id) ? 1 : 0, reusedResults.has(entry.item.id) ? 0 : 1, validateButtonLabel)
+                : atomicSaveTargetStale
+                  // Save again passes only once every stale archive is a fresh
+                  // conversion, which the next save matches anew.
+                  ? staleReviewedDrafts > 0
+                    ? enterpriseArchiveStaleSiblingMessage(reusedResults.has(entry.item.id))
+                    : reusedResults.has(entry.item.id) ? REVIEWED_DRAFT_KEPT_MESSAGE : 'Another draft in this batch could not be saved, so nothing was saved. Save again to save this archive.'
+                  : 'APEX refused the atomic batch save, so nothing was saved. Resolve the problem it names, then save again; no individual script save will be attempted.',
+            } : atomicSaveNeedsFreshDraft && reusedResults.has(entry.item.id) ? {
+              // Another reviewed draft was refused: this one, its review and
+              // its repairs are kept, and the next save reuses it.
+              status: 'validated',
+              result: entry.result,
+              reviewMode: 'validation',
+              reviewOptionsIdentity: sourceOptionsIdentity,
+              savedResultScripts: {}, queuedResultScripts: {},
+              sourceSecretProjectId: sourceProjectId || '',
+              error: '',
+              notice: REVIEWED_DRAFT_KEPT_MESSAGE,
+            } : {
               // Preserve a retry path only for ambiguous outcomes. A definitive
               // expired-draft response needs a new conversion and attestation.
               status: 'validated',
@@ -3492,7 +3815,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         const patch = conversionItemPatches.get(item.id)
         return patch ? { ...item, ...patch } : item
       })
-      const savedNotice = `Converted and saved ${savedScripts.length} script${savedScripts.length === 1 ? '' : 's'} to the library${failureCount > 0 ? `; ${failureCount} archive${failureCount === 1 ? '' : 's'} failed` : ''}${skippedSuffix}.`
+      const everyReadySaveReused = currentReadySaves.every(entry => reusedResults.has(entry.item.id))
+      const savedNotice = `${everyReadySaveReused ? 'Saved' : 'Converted and saved'} ${savedScripts.length} script${savedScripts.length === 1 ? '' : 's'} to the library${failureCount > 0 ? `; ${failureCount} archive${failureCount === 1 ? '' : 's'} failed` : ''}${skippedSuffix}.`
       await publishSavedEnterpriseArchiveScripts(
         projectedItems,
         savedScripts,
@@ -3515,13 +3839,39 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       return
     }
 
-    if (atomicSaveNeedsFreshDraft) {
-      setNotice('The import draft is invalid or expired and could not be saved. Choose Convert again to generate a fresh draft; no individual script save will be attempted.')
+    if (atomicSaveRefused) {
+      setNotice(atomicSaveTargetStale
+        ? `${ENTERPRISE_ARCHIVE_UPDATE_TARGET_STALE_MESSAGE} ${staleTargetGuidance}`
+        : 'APEX refused the atomic batch save, so nothing was saved. Resolve the problem it names, then save again; no individual script save will be attempted.')
       return
     }
 
+    if (atomicSaveNeedsFreshDraft) {
+      // Each refused reviewed draft already says what to do on its own row;
+      // with only those refused, the summary below counts the batch.
+      const reconvertible = currentReadySaves.filter(entry => !reusedResults.has(entry.item.id)).length
+      if (reconvertible > 0) {
+        // Only the refused reviewed drafts need their repairs again; the ones
+        // kept are saved, repairs and all, with the fresh drafts.
+        const refused = refusedReusedCount === 1 ? 'archive and re-apply its repairs' : 'archives and re-apply their repairs'
+        const kept = keptReusedCount === 1 ? 'the reviewed draft kept with its repairs' : `the ${keptReusedCount} reviewed drafts kept with their repairs`
+        setNotice(reconvertible === currentReadySaves.length
+          ? 'The import draft is invalid or expired and could not be saved. Choose Convert again to generate a fresh draft; no individual script save will be attempted.'
+          : keptReusedCount > 0
+            ? `An invalid or expired import draft refused the batch, so nothing was saved. Choose Convert again to generate fresh drafts for archives without applied repairs and save ${kept}; choose Validate again on the refused repaired ${refused}. No individual script save will be attempted.`
+            : `The import drafts are invalid or expired and could not be saved. Choose Convert again to generate fresh drafts for archives without applied repairs; choose Validate again on the repaired ${refused}. No individual script save will be attempted.`)
+        return
+      }
+    }
+
     if (targetItems.length > 1) {
-      setNotice(`Converted ${successCount} of ${targetItems.length} enterprise script archive${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}${skippedSuffix}.`)
+      // A reviewed draft is saved as reviewed, never converted, and nothing
+      // was saved here: with one among the targets, the summary counts saves.
+      // The archives held for review were converted or kept, not saved.
+      const failedSuffix = failureCount > 0 ? `; ${failureCount} failed` : ''
+      setNotice(targetItems.some(item => reusedResults.has(item.id))
+        ? `Saved 0 of ${targetItems.length} enterprise script archives${successCount > 0 ? `; ${successCount} ${successCount === 1 ? 'needs' : 'need'} review before saving` : ''}${failedSuffix}${skippedSuffix}.`
+        : `Converted ${successCount} of ${targetItems.length} enterprise script archives${failedSuffix}${skippedSuffix}.`)
     }
   }
 
@@ -3853,10 +4203,6 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       setError('The atomic script save is unavailable until the active protocol and migration gates are resolved.')
       return
     }
-    if ((sourceResult.parameterization?.suggestions || []).length > 0) {
-      setError('Apply or dismiss the archive parameterization review before saving the generated scripts atomically.')
-      return
-    }
     if (pendingIndices.some(index => isBrowserImport(sourceScripts[index]))) {
       setError('Browser scripts require lane-specific replay evidence. Review and save each browser lane after replay validation.')
       return
@@ -3977,8 +4323,17 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         void discardSourceSecretSession(sourceProjectId, sourceResult.source_secret_session_id)
       }
     } catch (error: unknown) {
+      // A stale script to update is a definitive refusal: nothing was saved
+      // under this operation, so there is nothing to reconcile and the next
+      // save is a new request.
+      const targetStale = enterpriseArchiveUpdateTargetStale(error)
+      if (targetStale) saveOperationIDsRef.current.delete(operationKey)
       if (requestOwnsSourceItem()) {
-        setError(`${getErrorMessage(error, 'Failed to save the generated script batch')} No script was reported complete; retrying reuses the same atomic save operation.`)
+        // Worded by the controls the archive has: a kept reviewed draft has its own Validate again.
+        const reviewedDraft = enterpriseArchiveCanValidateAgain(importItemsRef.current.find(item => item.id === sourceItemId) ?? sourceItem)
+        setError(targetStale
+          ? `${ENTERPRISE_ARCHIVE_UPDATE_TARGET_STALE_MESSAGE} ${enterpriseArchiveUpdateTargetStaleGuidance(reviewedDraft ? 1 : 0, reviewedDraft ? 0 : 1, validateButtonLabel)}`
+          : `${getErrorMessage(error, 'Failed to save the generated script batch')} No script was reported complete; retrying reuses the same atomic save operation.`)
       }
     } finally {
       if (scriptSaveInFlightRef.current === saveScope) {
@@ -4195,7 +4550,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       secretBindingRequirements: secretBindingRequirementsForScript(nextResult.secret_binding_requirements, activeResultScriptIndex, parameterizedScript),
     }
     nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
-    updateImportItem(selectedItem.id, {
+    markReviewedDraftEdit(selectedItem.id, {
       result: nextResult,
       reviewGeneration: selectedItem.reviewGeneration + 1,
       replayValidationLoading: false,
@@ -4241,7 +4596,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       ),
     }
     nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
-    updateImportItem(selectedItem.id, {
+    markReviewedDraftEdit(selectedItem.id, {
       result: nextResult,
       reviewGeneration: selectedItem.reviewGeneration + 1,
       replayValidationLoading: false,
@@ -4493,7 +4848,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     <select value={selectedItem?.id || ''} disabled={sourceMutationLocked} onChange={event => selectEnterpriseQueueItem(event.target.value)}>
       {importItems.map(item => <option key={item.id} value={item.id}>
         {item.file.name} — {item.status === 'validated' || item.status === 'converted'
-          ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '')
+          ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '', inspectedReadinessFor)
           : enterpriseArchiveImportStatusLabel(item.status)}
       </option>)}
     </select>
@@ -4502,8 +4857,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   // Each step says where it stands: done, current, blocked, or still to come.
   const importStepper = (() => {
     const counted = Boolean(importedScript) && !repairCheckPending
-    const blockers = counted ? tabIssues.filter(issue => issue.blocking).length : 0
-    const reviewNotes = counted ? tabIssues.length - blockers : 0
+    const blockers = counted ? importCounts.blockers : 0
     const saved = Boolean(savedReviewScript)
     const queued = Boolean(selectedApprovalQueue)
     const saveBlocked = Boolean(result) && !saved && workingMode !== 'convert' && reviewSaveDisabled && Boolean(reviewSaveDisabledReason)
@@ -4512,7 +4866,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       {
         label: 'Review and resolve',
         state: !result ? 'upcoming' : saved || queued || workingMode === 'convert' ? 'done' : 'current',
-        detail: !result || saved || queued ? undefined : !counted ? 'checking' : blockers ? `${blockers} blocking` : reviewNotes ? `${reviewNotes} to review` : 'nothing to resolve',
+        detail: !result || saved || queued ? undefined : !counted ? 'checking' : blockers ? `${blockers} blocking` : importCounts.warnings ? countLabel(importCounts.warnings, 'warning') : importCounts.notes ? countLabel(importCounts.notes, 'review note') : 'nothing to resolve',
       },
       { label: 'Save script or review draft', state: saved || queued ? 'done' : workingMode === 'convert' ? 'current' : saveBlocked ? 'blocked' : 'upcoming', detail: queued ? 'queued for approval' : saveBlocked ? 'unavailable' : undefined },
       { label: 'Debug one iteration', state: queued || blockers > 0 ? 'blocked' : saved ? 'current' : 'upcoming', detail: queued ? 'approval pending' : blockers > 0 ? 'resolve blockers first' : undefined },
@@ -4597,7 +4951,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             <div className="lr-file-list" aria-label="Queued enterprise script archives">
               {visibleImportItems.map(item => {
                 const reviewOutcome = item.status === 'validated' || item.status === 'converted'
-                  ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '')
+                  ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '', inspectedReadinessFor)
                   : ''
                 return (
                 <div
@@ -4635,6 +4989,25 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                       {item.error && <small className="lr-file-row-message" role="alert">{item.error}</small>}
                     </span>
                   </button>
+                  {/* Validating the batch again keeps a reviewed draft; this
+                      starts that one archive over, refused, kept or held. A
+                      draft in a save APEX has not confirmed is saved first:
+                      validating it again would drop that save. */}
+                  {enterpriseArchiveCanValidateAgain(item) && !retainedAtomicSaveView?.entries.some(entry => entry.itemId === item.id) && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary lr-file-revalidate"
+                      disabled={sourceMutationLocked || operationBusy}
+                      aria-label={`Validate again: ${item.file.name}`}
+                      title="Validate this archive again. The repairs applied to its reviewed draft are discarded."
+                      onClick={event => {
+                        event.stopPropagation()
+                        void runReview('validate', options, undefined, [item.id])
+                      }}
+                    >
+                      Validate again
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-sm btn-ghost lr-file-remove"
@@ -4852,7 +5225,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               {workingMode === 'validate' ? <><span className="spinner" /> Validating…</> : validateButtonLabel}
             </button>
             {(queuedFileCount > 1 || reviewMode !== 'conversion') && !(result && reviewMode === 'validation' && !(saveBlockedByProtocolGate && !reviewArtifact)) && <button className="btn btn-secondary btn-lg" onClick={() => convertValidatedItems()} disabled={validatedFileCount === 0 || !allValidatedReviewsMatchOptions || operationBusy}>
-              {workingMode === 'convert' ? <><span className="spinner" /> {refreshingRemainingDrafts ? 'Converting remaining drafts…' : 'Converting and saving…'}</> : convertButtonLabel}
+              {workingMode === 'convert' ? <><span className="spinner" /> {refreshingRemainingDrafts ? 'Converting remaining drafts…' : savingReviewedDraftsOnly ? 'Saving…' : 'Converting and saving…'}</> : convertButtonLabel}
             </button>}
           </div>
           <p className="lr-subtitle">{conversionGateMessage}</p>
@@ -5005,6 +5378,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       {failedImportMessage && <div className="lr-error" role="alert">{failedImportMessage}</div>}
       {displayError && <div className="lr-error" role="alert">{displayError}</div>}
       {displayNotice && <div className="settings-notice">{displayNotice}</div>}
+      {unconfirmedSaveChoiceMessage && <div className="settings-notice">{unconfirmedSaveChoiceMessage}</div>}
       {!importedScript && importItems.some(item => ['validated', 'converted', 'failed'].includes(item.status)) && (
         <div className="lr-validation-review-navigation">{reviewProjectPicker}</div>
       )}
@@ -5113,23 +5487,25 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               </div>
             </div>
           )}
-          <div className="lr-tab-readiness" role="status">{importedScript && (repairCheckPending ? 'Checking repair requirements…' : (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review${reviewedTabIssueCount ? ` · ${reviewedTabIssueCount} reviewed` : ''}`; })())}</div>
+          <div className="lr-tab-readiness" role="status">{importedScript && (repairCheckPending ? 'Checking repair requirements…' : readinessSummaryText(importCounts))}</div>
           <div className="lr-validation-review-navigation" ref={reviewNavigationRef}>
           {reviewProjectPicker}
           <TabList className="lr-validation-review-tabs"
  role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
               {validationReviewTabs.map((tab) => {
                 // Unresolved grouped issues for this tab, named once in the tab's accessible name.
-                const issueCount = importedScript && !repairCheckPending && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id)
-                  ? tabIssues.filter(i => tab.id === 'overview' || (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length
+                const counted = Boolean(importedScript) && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id)
+                const issueCount = counted && !repairCheckPending
+                  ? tab.id === 'overview' ? unresolvedIssueCount(importCounts) : tabIssues.filter(i => (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length
                   : 0
+                const checkingCount = counted && repairCheckPending
                 return (
                 <button
                   key={tab.id}
                   id={`lr-validation-review-tab-${tab.id}`}
                   type="button"
                   role="tab"
-                  aria-label={issueCount > 0 ? `${tab.label}, ${issueCount} unresolved grouped issue${issueCount === 1 ? '' : 's'}` : tab.label}
+                  aria-label={checkingCount ? `${tab.label}, checking issues` : issueCount > 0 ? `${tab.label}, ${issueCount} unresolved grouped issue${issueCount === 1 ? '' : 's'}` : tab.label}
                   aria-selected={validationReviewTab === tab.id}
                   aria-controls="lr-validation-review-panel"
                   tabIndex={validationReviewTab === tab.id ? 0 : -1}
@@ -5153,7 +5529,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                       ?.focus()
                   }}
                 >
-                  {tab.label}{issueCount > 0 && <span className="lr-tab-count" aria-hidden="true">{issueCount}</span>}
+                  {tab.label}{checkingCount ? <span className="lr-tab-count" aria-hidden="true" title="Checking…">…</span> : issueCount > 0 && <span className="lr-tab-count" aria-hidden="true">{issueCount}</span>}
                 </button>
                 )
               })}
@@ -5189,7 +5565,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               <ImportReviewSectionHeader title="Credential setup" description={secretBindingRequirements.length ? "Manage project bindings and preserved values. The inventory below counts unique groups; replay issues are tracked separately above." : "No credential bindings were reported for this draft. Runtime credentials are verified when debugging starts."} />
               {!currentRepairReview && (replayPreflight?.missing_secrets?.length || 0) > 0 && <>
                 <ul>{replayPreflight?.missing_secrets?.map(name => <li key={name}><code>{name}</code>{configuredSecretNames?.preflight === replayPreflight && configuredSecretNames.names.has(name) ? ' · configured now' : ''}</li>)}</ul>
-                <p>Configure these exact names in the project's secrets, then validate again to refresh readiness.</p>
+                <p>Configure these exact names in the project's secrets. Debugging the saved script checks them again; validating the archive again would start a new review and discard repairs applied here.</p>
                 {projectId && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSecretsOpen(true)}>Open Secrets</button>}
                 {secretsOpen && projectId && <SharedAssetsDialog projectId={projectId} section="secrets" onClose={() => {
                   setSecretsOpen(false)
@@ -5236,7 +5612,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
-            importDraftExpiresAt={result.import_draft_expires_at}
+            // A draft in a save APEX has not confirmed is saved by resending
+            // that save, which APEX answers whether or not the draft has
+            // expired since: its expiry does not hold Save back.
+            importDraftExpiresAt={editorBlockedByUnconfirmedSave ? undefined : result.import_draft_expires_at}
             onSourceSecretSessionSettled={handleSourceSecretSessionSettled}
             credentialReviewRef={credentialReviewRef}
             saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert' || scriptSaveInProgress}
@@ -5265,7 +5644,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}
           >
-            {importedScript && <ImportGuidedRepair onCredentialTarget={setCredentialTarget} onReimport={() => { if (archiveSetupRef.current) { archiveSetupRef.current.open = true; archiveSetupRef.current.querySelector('summary')?.focus(); archiveSetupRef.current.scrollIntoView({ block: 'start' }) } }} categoryFocus={categoryFocus} onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={guidedRepairScope} onReviewedChange={ids => setReviewedRepairIssues({ scope: guidedRepairScope, ids })} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={tab => { setReturnToIssue(true); selectReviewSection(tab) }} onReview={review => setProtectedReview({ project: projectId || '', result: review })} inspectionPaused={guidedRepairInspectionPaused} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptHandled || !reviewMatchesCurrentOptions} disabledReason={selectedResultScriptHandled ? selectedApprovalQueue ? 'This draft is queued for approval. Resume the authoring session from Scripts.' : 'This draft has already been saved. Re-import the archive to preview allocation for a new draft.' : !reviewMatchesCurrentOptions ? 'Import options have changed. Validate the archive again before previewing allocation.' : 'Finish pending edits or wait for the current import operation to complete before previewing allocation.'} onViewSource={(path, finding) => {
+            {importedScript && <ImportGuidedRepair onCredentialTarget={setCredentialTarget} onReimport={() => { if (archiveSetupRef.current) { archiveSetupRef.current.open = true; archiveSetupRef.current.querySelector('summary')?.focus(); archiveSetupRef.current.scrollIntoView({ block: 'start' }) } }} validateAgain={selectedItem && enterpriseArchiveCanValidateAgain(selectedItem) && !editorBlockedByUnconfirmedSave ? { disabled: sourceMutationLocked || operationBusy, onValidate: () => { void runReview('validate', options, undefined, [selectedItem.id]) } } : undefined} unconfirmedSave={editorBlockedByUnconfirmedSave} categoryFocus={categoryFocus} onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={guidedRepairScope} onReviewedChange={ids => setReviewedRepairIssues({ scope: guidedRepairScope, ids })} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} issues={allTabIssues} inspection={currentRepairReview} regroup={regroupRepairResult} countsPending={repairCheckPending} onSection={tab => { setReturnToIssue(true); selectReviewSection(tab) }} onReview={review => setProtectedReview({ project: projectId || '', result: review })} inspectionPaused={guidedRepairInspectionPaused} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptHandled || !reviewMatchesCurrentOptions} disabledReason={selectedResultScriptHandled ? selectedApprovalQueue ? 'This draft is queued for approval. Resume the authoring session from Scripts.' : 'This draft has already been saved. Re-import the archive to preview allocation for a new draft.' : !reviewMatchesCurrentOptions ? 'Import options have changed. Validate the archive again before previewing allocation.' : 'Finish pending edits or wait for the current import operation to complete before previewing allocation.'} onViewSource={(path, finding) => {
               const mapping = sourceReview?.mappings?.find(entry => finding?.source_mapping_id ? entry.id === finding.source_mapping_id : path && entry.target_path === path)
               setReturnToIssue(true)
               setRepairSourceFocus(previous => ({ id: mapping?.id || '', file: finding?.source_file || '', revision: previous.revision + 1 }))
@@ -5273,9 +5652,17 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             }} onApplied={repaired => {
               if (!selectedItem || !result) return
               setProtectedReview({ project: projectId || '', result: repaired })
-              const nextScripts = resultScripts.map((entry, index) => index === selectedResultScriptIndex ? repaired.script : entry)
+              // The repair route names the repaired draft as the archive was
+              // detected; the lane keeps the name its review showed, which
+              // this batch made unique (uniquifyEnterpriseArchiveResultScriptNames),
+              // as do its requirements. The save's exact-repair check ignores
+              // the name.
+              const reviewedName = importedScript.name
+              const nextScripts = resultScripts.map((entry, index) => index === selectedResultScriptIndex ? { ...repaired.script, name: reviewedName } : entry)
+              // The repair re-discovers this one script, so the server numbers its requirements from 0.
+              const repairedRequirements = repaired.secret_binding_requirements.map(requirement => ({ ...requirement, script_index: selectedResultScriptIndex, script_name: reviewedName }))
               nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
-              updateImportItem(selectedItem.id, { result: { ...result, script: nextScripts[0], scripts: nextScripts, import_draft_expires_at: repaired.expires_at, fidelity_report: repaired.fidelity_report, secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, selectedResultScriptIndex, importedScript, repaired.secret_binding_requirements) }, replayValidationLoading: false, replayValidationError: '', replayValidationWarnings: [], replayValidationSession: null, replayReviewGeneration: -1, replayScriptIndex: -1, replayProjectId: '', notice: 'Repair applied. Requirements were refreshed from the protected draft.' })
+              markReviewedDraftEdit(selectedItem.id, { result: { ...result, script: nextScripts[0], scripts: nextScripts, import_draft_expires_at: repaired.expires_at, fidelity_report: repaired.fidelity_report, secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, selectedResultScriptIndex, importedScript, repairedRequirements) }, replayValidationLoading: false, replayValidationError: '', replayValidationWarnings: [], replayValidationSession: null, replayReviewGeneration: -1, replayScriptIndex: -1, replayProjectId: '', notice: 'Repair applied. Requirements were refreshed from the protected draft.' })
             }} />}
             <div
               className="lr-validation-review-overview"

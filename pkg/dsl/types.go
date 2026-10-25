@@ -1292,7 +1292,7 @@ func (control *ControlFlow) ActionBranches() []ControlActionBranch {
 	if control == nil {
 		return nil
 	}
-	branches := make([]ControlActionBranch, 0, 3+len(control.Cases)+len(control.Branches))
+	branches := make([]ControlActionBranch, 0, len(control.Cases))
 	if len(control.Steps) > 0 {
 		branches = append(branches, ControlActionBranch{Path: "steps", Actions: control.Steps})
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -32,10 +33,26 @@ func TestWorkerWindowsJobHoldsOnlyTheWorker(t *testing.T) {
 	a.closeDescriptorHook = func(d io.Closer) error {
 		if owner, ok := d.(*workerProcessCloseOwner); ok {
 			owner.process.mu.Lock()
-			mu.Lock()
-			accounted = windows.QueryInformationJobObject(owner.process.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) == nil
-			mu.Unlock()
+			job := owner.process.job
 			owner.process.mu.Unlock()
+			// The job may count the reaped worker for a moment; closeAfterWait
+			// waits that out the same way. A process that never leaves fails
+			// the test with its snapshot instead of hanging it.
+			var snapshot workerWindowsJobAccounting
+			stillActive := errors.New("the job still counts a process")
+			giveUp := time.Now().Add(30 * time.Second)
+			err := workerAwaitDrained(func() (uint32, error) {
+				if err := windows.QueryInformationJobObject(job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&snapshot)), uint32(unsafe.Sizeof(snapshot)), nil); err != nil {
+					return 0, err
+				}
+				if snapshot.ActiveProcesses != 0 && time.Now().After(giveUp) {
+					return snapshot.ActiveProcesses, stillActive
+				}
+				return snapshot.ActiveProcesses, nil
+			}, workerJobDrainWarnAfter, nil)
+			mu.Lock()
+			accounting, accounted = snapshot, err == nil || errors.Is(err, stillActive)
+			mu.Unlock()
 		}
 		return d.Close()
 	}

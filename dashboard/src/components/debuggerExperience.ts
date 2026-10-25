@@ -22,8 +22,13 @@ export function captureScript(script: ScriptDefinition, capture: DebugCapture = 
     ? { ...script.config.results?.message_detail, mode: 'errors' }
     : { include_resources: script.config.results?.message_detail?.include_resources, mode: 'sampled', sample_rate: 1, max_items: 100, max_item_bytes: 65536, max_total_bytes: 4194304 } } } }
 }
-export function executionLabel(replaying: boolean, session: ScriptDebugSession | null, report: BrowserReplayReport | null): string {
+/**
+ * @param starting the start request is still out: the controller has not
+ *   admitted a session yet, so nothing runs until it answers.
+ */
+export function executionLabel(replaying: boolean, session: ScriptDebugSession | null, report: BrowserReplayReport | null, starting = false): string {
   if (!replaying) return !report ? 'Ready' : report.stopped ? 'Stopped' : report.success ? 'Passed' : 'Failed'
+  if (starting && !session) return 'Checking replay readiness…'
   if (session?.status === 'stopped') return 'Stopping debugger'
   const action = session?.current_action
   const name = action?.action_name || 'next action'

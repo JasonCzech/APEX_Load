@@ -1,0 +1,659 @@
+[
+  {
+    "name": "select_all array publishes exact and lowercase slots, not the plain name",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "offers", "type": "request", "method": "GET", "target": "/offers", "extractors": [{"name": "C_Body", "source": "body", "type": "regex", "expression": "(.*)"}]},
+        {"name": "eval offers", "type": "source_json", "params": {"function": "lr_eval_json", "json_object": "offers", "buffer": "{{var.C_Body}}"}},
+        {"name": "offer ids", "type": "source_json", "params": {"function": "lr_json_get_values", "json_object": "offers", "value_param": "C_OfferIds", "query": "$.offers[*].id", "select_all": "Yes", "save_param": "C_OfferIds", "save_all": true}},
+        {"name": "use slots", "type": "request", "method": "GET", "target": "/offers/{{var.c_offerids_3}}?count={{var.c_offerids_count}}&first={{var.C_OfferIds_1}}"},
+        {"name": "use plain name", "type": "request", "method": "GET", "target": "/offers/{{var.c_offerids}}"},
+        {"name": "use folded slot", "type": "request", "method": "GET", "target": "/offers/{{var.C_OFFERIDS_2}}"}
+      ]
+    },
+    "expected": {"missing": ["C_OFFERIDS_2", "c_offerids"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "lr_json_get_values without SelectAll is a scalar whatever save_all says",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "eval", "type": "source_json", "params": {"function": "lr_eval_json", "json_object": "doc", "buffer": "{{var.body}}"}},
+        {"name": "name", "type": "source_json", "params": {"function": "lr_json_get_values", "json_object": "doc", "value_param": "C_Name", "query": "$.name", "save_all": true}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.C_Name}}/{{var.c_name}}/{{var.C_Name_1}}/{{var.C_Name_count}}"}
+      ]
+    },
+    "seeded": {"body": "{\"name\":\"n\"}"},
+    "expected": {"missing": ["C_Name_1", "C_Name_count"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "legacy Key=Value JSON args are read when json_object is empty",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "eval", "type": "source_json", "params": {"function": "lr_eval_json", "args": ["JsonObject=doc", "Buffer={{var.payload}}"]}},
+        {"name": "pick", "type": "source_json", "params": {"function": "lr_json_get_values", "args": ["JsonObject=doc", "ValueParam=Picked", "QueryString=$.items[{{var.index}}]", "SelectAll=no"]}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.picked}}/{{var.Picked}}"}
+      ]
+    },
+    "seeded": {"payload": "{}"},
+    "expected": {"missing": ["index"], "blocking": ["index"], "late_produced": []}
+  },
+  {
+    "name": "web_convert_param satisfies the exact and lowercase spellings only",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "convert", "type": "source_parameter", "params": {"function": "web_convert_param", "args": ["c_Token_URL", "SourceString={{var.token}}", "TargetEncoding=URL"], "save_param": "c_Token_URL", "source_string": "{{var.token}}"}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/a/{{var.c_token_url}}/{{var.c_Token_URL}}/{{var.C_TOKEN_URL}}"}
+      ]
+    },
+    "seeded": {"token": "t"},
+    "expected": {"missing": ["C_TOKEN_URL"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "a consumer before its extractor is missing and late produced",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "early menu", "type": "request", "method": "GET", "target": "/stores/{{var.C_StoreId}}"},
+        {"name": "stores", "type": "request", "method": "GET", "target": "/stores", "extractors": [{"name": "C_StoreId", "source": "body", "type": "jsonpath", "expression": "$.id"}]},
+        {"name": "menu", "type": "request", "method": "GET", "target": "/stores/{{var.C_StoreId}}/menu"}
+      ]
+    },
+    "expected": {"missing": ["C_StoreId"], "blocking": [], "late_produced": ["C_StoreId"]}
+  },
+  {
+    "name": "if without else does not promote; values from both branches do",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "maybe", "type": "control_if", "control": {"condition": {"left": "{{var.mode}}", "op": "eq", "right": "a"}, "steps": [
+          {"name": "then", "type": "request", "method": "GET", "target": "/then", "extractors": [{"name": "only_then", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ]}},
+        {"name": "either", "type": "control_if", "control": {"condition": {"left": "{{var.mode}}", "op": "eq", "right": "a"}, "steps": [
+          {"name": "then", "type": "request", "method": "GET", "target": "/then", "extractors": [{"name": "both", "source": "body", "type": "regex", "expression": "(.*)"}, {"name": "then_only", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ], "else": [
+          {"name": "else", "type": "request", "method": "GET", "target": "/else", "extractors": [{"name": "both", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ]}},
+        {"name": "after", "type": "request", "method": "GET", "target": "/{{var.only_then}}/{{var.both}}/{{var.then_only}}"}
+      ]
+    },
+    "seeded": {"mode": "a"},
+    "expected": {"missing": ["only_then", "then_only"], "blocking": [], "late_produced": ["only_then", "then_only"]}
+  },
+  {
+    "name": "switch without default does not promote; with a default it does",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "no default", "type": "control_switch", "control": {"cases": [
+          {"condition": {"left": "{{var.mode}}", "op": "eq", "right": "a"}, "steps": [{"name": "a", "type": "request", "method": "GET", "target": "/a", "extractors": [{"name": "picked", "source": "body", "type": "regex", "expression": "(.*)"}]}]},
+          {"condition": {"left": "{{var.mode}}", "op": "eq", "right": "b"}, "steps": [{"name": "b", "type": "request", "method": "GET", "target": "/b", "extractors": [{"name": "picked", "source": "body", "type": "regex", "expression": "(.*)"}]}]}
+        ]}},
+        {"name": "with default", "type": "control_switch", "control": {"cases": [
+          {"condition": {"left": "{{var.mode}}", "op": "eq", "right": "a"}, "steps": [{"name": "a", "type": "request", "method": "GET", "target": "/a", "extractors": [{"name": "chosen", "source": "body", "type": "regex", "expression": "(.*)"}]}]}
+        ], "default": [{"name": "fallback", "type": "request", "method": "GET", "target": "/z", "extractors": [{"name": "chosen", "source": "body", "type": "regex", "expression": "(.*)"}]}]}},
+        {"name": "after", "type": "request", "method": "GET", "target": "/{{var.picked}}/{{var.chosen}}"}
+      ]
+    },
+    "seeded": {"mode": "a"},
+    "expected": {"missing": ["picked"], "blocking": [], "late_produced": ["picked"]}
+  },
+  {
+    "name": "loops promote outputs only when an iteration is guaranteed and scope their locals",
+    "script": {
+      "protocol": "http",
+      "data_sources": [{"name": "rows", "type": "csv", "inline_data": "id\n1", "first_row_header": true}],
+      "actions": [
+        {"name": "fixed", "type": "control_loop", "control": {"count": 2, "steps": [
+          {"name": "counted", "type": "request", "method": "GET", "target": "/count/{{var.loop_index}}", "extractors": [{"name": "counted", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ]}},
+        {"name": "pre-test", "type": "control_loop", "control": {"condition": {"left": "{{var.more}}", "op": "eq", "right": "yes"}, "steps": [
+          {"name": "pretest", "type": "request", "method": "GET", "target": "/pre", "extractors": [{"name": "pretest", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ]}},
+        {"name": "post-test", "type": "control_loop", "control": {"condition": {"left": "{{var.more}}", "op": "eq", "right": "yes"}, "do_while": true, "steps": [
+          {"name": "posttest", "type": "request", "method": "GET", "target": "/post", "extractors": [{"name": "posttest", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ]}},
+        {"name": "rows", "type": "control_loop", "control": {"for_each": {"source": "rows", "var": "row"}, "steps": [
+          {"name": "per row", "type": "request", "method": "GET", "target": "/rows/{{var.row.id}}", "extractors": [{"name": "per_row", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ]}},
+        {"name": "zero", "type": "control_loop", "control": {"count": 0, "steps": [
+          {"name": "never", "type": "request", "method": "GET", "target": "/never", "extractors": [{"name": "never", "source": "body", "type": "regex", "expression": "(.*)"}]}
+        ]}},
+        {"name": "after", "type": "request", "method": "GET", "target": "/{{var.counted}}/{{var.pretest}}/{{var.posttest}}/{{var.per_row}}/{{var.never}}/{{var.loop_index}}/{{var.row.id}}"}
+      ]
+    },
+    "seeded": {"more": "yes"},
+    "expected": {"missing": ["loop_index", "never", "per_row", "pretest", "row.id"], "blocking": [], "late_produced": ["never", "per_row", "pretest"]}
+  },
+  {
+    "name": "a do_while condition is first read after a pass, so its body supplies it; a pre-test or for-each condition is read first",
+    "script": {
+      "protocol": "http",
+      "data_sources": [{"name": "rows", "type": "csv", "inline_data": "id\n1", "first_row_header": true}],
+      "actions": [
+        {"name": "poll", "type": "control_loop", "control": {"condition": {"left": "{{var.status}}", "op": "ne", "right": "done"}, "do_while": true, "max_iterations": 5, "steps": [
+          {"name": "status", "type": "request", "method": "GET", "target": "/status", "extractors": [{"name": "status", "source": "body", "type": "jsonpath", "expression": "$.status"}]}
+        ]}},
+        {"name": "pre-test", "type": "control_loop", "control": {"condition": {"left": "{{var.pending}}", "op": "eq", "right": "yes"}, "max_iterations": 5, "steps": [
+          {"name": "pending", "type": "request", "method": "GET", "target": "/pending", "extractors": [{"name": "pending", "source": "body", "type": "jsonpath", "expression": "$.pending"}]}
+        ]}},
+        {"name": "rows", "type": "control_loop", "control": {"for_each": {"source": "rows", "var": "row", "condition": {"left": "{{var.row_state}}", "op": "eq", "right": "open"}}, "do_while": true, "steps": [
+          {"name": "row state", "type": "request", "method": "GET", "target": "/rows/{{var.row.id}}", "extractors": [{"name": "row_state", "source": "body", "type": "jsonpath", "expression": "$.state"}]}
+        ]}}
+      ]
+    },
+    "expected": {"missing": ["pending", "row_state"], "blocking": [], "late_produced": ["pending", "row_state"]}
+  },
+  {
+    "name": "a for-each over an undeclared data source binds no row prefix",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "rows", "type": "control_loop", "control": {"for_each": {"source": "absent_rows", "var": "row"}, "steps": [
+          {"name": "per row", "type": "request", "method": "GET", "target": "/rows/{{var.row.id}}"}
+        ]}}
+      ]
+    },
+    "expected": {"missing": ["row.id"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "control_parallel isolates branches and publishes parallel.<branch>.<name>",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "lanes", "type": "control_parallel", "control": {"branches": [
+          {"name": "left", "steps": [{"name": "login", "type": "request", "method": "GET", "target": "/login", "extractors": [{"name": "token", "source": "body", "type": "jsonpath", "expression": "$.token"}]}]},
+          {"name": "right", "steps": [{"name": "peek", "type": "request", "method": "GET", "target": "/{{var.token}}/{{var.parallel.left.token}}"}]}
+        ]}},
+        {"name": "joined", "type": "request", "method": "GET", "target": "/{{var.parallel.left.token}}/{{var.token}}"}
+      ]
+    },
+    "expected": {"missing": ["parallel.left.token", "token"], "blocking": [], "late_produced": ["parallel.left.token"]}
+  },
+  {
+    "name": "a parallel join publishes extracted values, not source-step, OAuth or status writes",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "lanes", "type": "control_parallel", "control": {"branches": [
+          {"name": "b", "steps": [
+            {"name": "eval", "type": "source_json", "params": {"function": "lr_eval_json", "json_object": "doc", "buffer": "{\"id\":1}"}},
+            {"name": "id", "type": "source_json", "params": {"function": "lr_json_get_values", "json_object": "doc", "value_param": "C_Id", "query": "$.id"}},
+            {"name": "copy", "type": "source_parameter", "params": {"function": "lr_save_string", "args": ["x", "C_Copy"]}},
+            {"name": "token", "type": "http_oauth2_token", "target": "https://auth.example.test/token", "params": {"save_as": "Orders", "token_url": "https://auth.example.test/token", "grant_type": "client_credentials"}},
+            {"name": "status", "type": "source_message", "params": {"function": "lr_vuser_status_message", "format": "done", "status_message": true}},
+            {"name": "login", "type": "request", "method": "GET", "target": "/login", "extractors": [{"name": "C_Token", "source": "body", "type": "jsonpath", "expression": "$.token"}]},
+            {"name": "title", "type": "browser_evaluate_js", "target": "document.title"},
+            {"name": "calc", "type": "native_javascript", "params": {"source": "return {total: 1}", "result_prefix": "calc"}}
+          ]}
+        ]}},
+        {"name": "joined", "type": "request", "method": "GET", "target": "/{{var.parallel.b.C_Id}}/{{var.parallel.b.c_id}}/{{var.parallel.b.C_Copy}}/{{var.parallel.b.Orders}}/{{var.parallel.b.orders_token_type}}/{{var.parallel.b.vuser_status}}/{{var.parallel.b.C_Token}}/{{var.parallel.b.result}}/{{var.parallel.b.calc.total}}"}
+      ]
+    },
+    "expected": {"missing": ["parallel.b.C_Copy", "parallel.b.C_Id", "parallel.b.Orders", "parallel.b.c_id", "parallel.b.orders_token_type", "parallel.b.vuser_status"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "a parallel join republishes what a branch extracts again and a nested join, not a freed value",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "login", "type": "request", "method": "GET", "target": "/login", "extractors": [{"name": "session", "source": "body", "type": "jsonpath", "expression": "$.session"}]},
+        {"name": "lanes", "type": "control_parallel", "control": {"branches": [
+          {"name": "a", "steps": [
+            {"name": "refresh", "type": "request", "method": "GET", "target": "/refresh", "extractors": [{"name": "session", "source": "body", "type": "jsonpath", "expression": "$.session"}, {"name": "dropped", "source": "body", "type": "jsonpath", "expression": "$.dropped"}]},
+            {"name": "free", "type": "source_parameter", "params": {"function": "lr_free_parameter", "args": ["dropped"]}},
+            {"name": "inner", "type": "control_parallel", "control": {"branches": [
+              {"name": "deep", "steps": [{"name": "deep", "type": "request", "method": "GET", "target": "/deep", "extractors": [{"name": "leaf", "source": "body", "type": "jsonpath", "expression": "$.leaf"}]}]}
+            ]}}
+          ]},
+          {"name": "b", "steps": [{"name": "idle", "type": "request", "method": "GET", "target": "/idle"}]}
+        ]}},
+        {"name": "joined", "type": "request", "method": "GET", "target": "/{{var.session}}/{{var.parallel.a.session}}/{{var.parallel.b.session}}/{{var.parallel.a.dropped}}/{{var.parallel.a.parallel.deep.leaf}}"}
+      ]
+    },
+    "expected": {"missing": ["parallel.a.dropped", "parallel.b.session"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "a value a branch writes is late produced only for uses that branch can reach",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "lanes", "type": "control_parallel", "control": {"branches": [
+          {"name": "auth", "steps": [
+            {"name": "early", "type": "request", "method": "GET", "target": "/early/{{var.early}}"},
+            {"name": "login", "type": "request", "method": "GET", "target": "/login", "extractors": [{"name": "tok", "source": "body", "type": "jsonpath", "expression": "$.tok"}, {"name": "early", "source": "body", "type": "jsonpath", "expression": "$.early"}]}
+          ]},
+          {"name": "other", "steps": [
+            {"name": "peek", "type": "request", "method": "GET", "target": "/peek/{{var.tok}}/{{var.later}}"}
+          ]}
+        ]}},
+        {"name": "joined", "type": "request", "method": "GET", "target": "/{{var.tok}}"},
+        {"name": "doc", "type": "source_json", "params": {"function": "lr_eval_json", "json_object": "doc", "buffer": "{{var.tok}}"}},
+        {"name": "later", "type": "request", "method": "GET", "target": "/later", "extractors": [{"name": "later", "source": "body", "type": "jsonpath", "expression": "$.later"}]}
+      ]
+    },
+    "expected": {"missing": ["early", "later", "tok"], "blocking": ["tok"], "late_produced": ["early", "later"]}
+  },
+  {
+    "name": "http_sequence children run in order and wrapper extractors never execute",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "sequence", "type": "http_sequence", "method": "SEQUENCE", "target": "/", "extractors": [{"name": "wrapper_token", "source": "body", "type": "jsonpath", "expression": "$.token"}], "params": {"requests": [
+          {"name": "use early", "type": "GET", "method": "GET", "target": "/early/{{var.session}}"},
+          {"name": "login", "type": "POST", "method": "POST", "target": "/login", "extractors": [{"name": "session", "source": "body", "type": "jsonpath", "expression": "$.session"}]},
+          {"name": "use late", "type": "GET", "method": "GET", "target": "/late/{{var.session}}"}
+        ]}},
+        {"name": "after", "type": "request", "method": "GET", "target": "/{{var.session}}/{{var.wrapper_token}}"}
+      ]
+    },
+    "expected": {"missing": ["session", "wrapper_token"], "blocking": [], "late_produced": ["session"]}
+  },
+  {
+    "name": "an http_sequence wrapper sends nothing, so what an LR transaction copies from its first request is not read, but its attribution is",
+    "script": {
+      "protocol": "http",
+      "parameters": [{"name": "existing", "type": "list", "values": ["value"]}],
+      "actions": [
+        {"name": "checkout", "type": "http_sequence", "method": "SEQUENCE", "target": "/orders/{{var.order}}?region={{param.region}}", "headers": {"X-Trace": "{{var.trace}}"}, "header_list": [{"name": "X-Tenant", "value": "{{param.tenant}}"}], "body": "{{var.payload}}", "value": "{{param.value}}", "params": {"note": "{{param.note}}", "requests": [
+          {"name": "orders", "type": "GET", "method": "GET", "target": "/orders/{{var.existing}}?region={{param.existing}}"}
+        ]}, "metadata": {"source_transaction": "checkout", "note": "{{param.metadata_only}}"}},
+        {"name": "group", "type": "http_sequence", "method": "SEQUENCE", "target": "/{{var.copied}}", "attribution": {"hierarchy_path": "Checkout/{{var.title}}", "page_name": "{{param.page}}"}, "params": {"execution_mode": "concurrent", "requests": [
+          {"name": "title", "type": "GET", "method": "GET", "target": "/title"}
+        ]}}
+      ]
+    },
+    "expected": {"missing": ["page", "title"], "blocking": ["page"], "late_produced": [], "param_blocking": ["page"]}
+  },
+  {
+    "name": "extractors on a control wrapper never execute",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "loop", "type": "control_loop", "extractors": [{"name": "loop_wrapper", "source": "body", "type": "jsonpath", "expression": "$.token"}], "control": {"count": 1, "steps": [
+          {"name": "step", "type": "request", "method": "GET", "target": "/step"}
+        ]}},
+        {"name": "after", "type": "request", "method": "GET", "target": "/{{var.loop_wrapper}}"}
+      ]
+    },
+    "expected": {"missing": ["loop_wrapper"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "script parameters match any case in both namespaces",
+    "script": {
+      "protocol": "http",
+      "parameters": [{"name": "C_Foo", "type": "list", "values": ["a"]}],
+      "actions": [
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.c_foo}}/{{param.C_FOO}}/{{var.C_Foo}}"}
+      ]
+    },
+    "expected": {"missing": [], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "lr_free_parameter removes a saved value but not a declared parameter",
+    "script": {
+      "protocol": "http",
+      "parameters": [{"name": "Declared", "type": "list", "values": ["a"]}],
+      "actions": [
+        {"name": "save", "type": "source_parameter", "params": {"function": "lr_save_string", "args": ["ready", "Value"]}},
+        {"name": "free value", "type": "source_parameter", "params": {"function": "lr_free_parameter", "args": ["Value"]}},
+        {"name": "free declared", "type": "source_parameter", "params": {"function": "lr_free_parameter", "args": ["Declared"]}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.value}}/{{var.Value}}/{{var.declared}}"}
+      ]
+    },
+    "expected": {"missing": ["Value", "value"], "blocking": [], "late_produced": ["Value", "value"]}
+  },
+  {
+    "name": "protocol config references block and no producer can supply them",
+    "script": {
+      "protocol": "http",
+      "config": {"base_url": "https://{{var.host}}", "http": {"default_headers": {"X-Tenant": "{{var.tenant}}"}}},
+      "actions": [
+        {"name": "bootstrap", "type": "request", "method": "GET", "target": "https://bootstrap.example.test/host", "extractors": [{"name": "host", "source": "body", "type": "regex", "expression": "host=(\\S+)"}]},
+        {"name": "relative", "type": "request", "method": "GET", "target": "/orders"}
+      ]
+    },
+    "seeded": {"host": "api.example.test"},
+    "expected": {"missing": ["host", "tenant"], "blocking": ["host", "tenant"], "late_produced": [], "config_blocking": ["host", "tenant"]}
+  },
+  {
+    "name": "a name blocked by configuration or a param use says so even when a variable use is late",
+    "script": {
+      "protocol": "http",
+      "config": {"base_url": "https://{{var.host}}"},
+      "actions": [
+        {"name": "early", "type": "request", "method": "GET", "target": "https://bootstrap.example.test/{{var.host}}/{{var.region}}/{{param.region}}"},
+        {"name": "save host", "type": "source_parameter", "params": {"function": "lr_save_string", "args": ["api.example.test", "host"]}},
+        {"name": "save region", "type": "source_parameter", "params": {"function": "lr_save_string", "args": ["eu", "region"]}},
+        {"name": "relative", "type": "request", "method": "GET", "target": "/orders/{{var.region}}"}
+      ]
+    },
+    "expected": {"missing": ["host", "region"], "blocking": ["host", "region"], "late_produced": ["host", "region"], "param_blocking": ["region"], "config_blocking": ["host"]}
+  },
+  {
+    "name": "log-only steps and source snapshots are not reads",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "review", "type": "source_review", "params": {"function": "lr_save_searched_string", "args": ["{{var.never_read}}", "LB=a", "Found"]}},
+        {"name": "external", "type": "source_external", "params": {"args": ["{{var.external_only}}"]}},
+        {"name": "custom", "type": "custom_call", "params": {"args": ["{{var.custom_only}}"]}},
+        {"name": "database", "type": "loadrunner_database", "params": {"args": ["{{var.database_only}}"]}},
+        {"name": "copy", "type": "source_parameter", "params": {"function": "lr_save_string", "args": ["literal", "Copy"], "call_args": [{"name": "source_snapshot", "value": "{{var.evidence_only}}"}]}, "metadata": {"source_snippet": "{{var.evidence_only}}"}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.copy}}"}
+      ]
+    },
+    "expected": {"missing": [], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "transaction, timer, metric, runtime and rendezvous steps use their arguments literally, so they read nothing",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "start", "type": "source_transaction", "params": {"function": "lr_start_transaction", "args": ["{{var.TxName}}"]}},
+        {"name": "timer", "type": "loadrunner_timer", "params": {"function": "lr_start_timer", "args": ["{{var.TimerName}}"]}},
+        {"name": "metric", "type": "source_metric", "params": {"function": "lr_user_data_point", "args": ["m", "{{var.Value}}"], "call_args": [{"name": "value", "value": "atof(lr_eval_string(\"{{param.Value}}\"))"}]}},
+        {"name": "runtime", "type": "source_runtime", "params": {"function": "lr_exit", "args": ["{{var.ExitMode}}", "LR_PASS"]}},
+        {"name": "{{var.Meeting}}", "type": "rendezvous", "params": {"key": "{{param.Meeting}}", "count": 2}},
+        {"name": "end", "type": "loadrunner_transaction", "params": {"function": "lr_end_transaction", "args": ["{{var.TxName}}", "LR_AUTO"]}}
+      ]
+    },
+    "expected": {"missing": [], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "Kafka sends metadata as record headers, so a string value that is not provenance is a blocking read",
+    "script": {
+      "protocol": "kafka",
+      "actions": [
+        {"name": "produce", "type": "kafka_produce", "target": "orders", "body": "{}", "metadata": {"trace_id": "{{var.trace_id}}", "source_path": "{{var.provenance_path}}", "source_evidence": "{{var.evidence_only}} {{param.evidence_only}}", "Source_Node_Id": "{{var.node_id}}", "jmeter_thread": "{{var.jmeter_thread}}", "asyncapi_operation": "{{var.asyncapi_operation}}", "schema": {"subject": "{{var.nested_only}}"}}},
+        {"name": "ask", "type": "kafka_request_reply", "target": "quotes", "body": "{}", "metadata": {"tenant": "{{var.tenant}}"}},
+        {"name": "consume", "type": "kafka_consume", "target": "orders", "metadata": {"trace_id": "{{var.consumer_only}}"}}
+      ]
+    },
+    "expected": {"missing": ["tenant", "trace_id"], "blocking": ["tenant", "trace_id"], "late_produced": []}
+  },
+  {
+    "name": "JMS sends metadata as message properties, keeping the keys only Kafka filters",
+    "script": {
+      "protocol": "jms-solace",
+      "actions": [
+        {"name": "publish", "type": "jms_publish", "target": "orders", "body": "{}", "metadata": {"tenant": "{{var.tenant}}", "source_uid": "{{var.provenance_uid}}", "Source_Evidence": "{{var.evidence_only}}", "source_node_id": "{{var.node_id}}", "jmeter_thread": "{{var.jmeter_thread}}", "ASYNCAPI_channel": "{{var.asyncapi_channel}}"}},
+        {"name": "ask", "type": "jms_request_reply", "target": "quotes", "body": "{}", "metadata": {"reply_tenant": "{{var.reply_tenant}}"}},
+        {"name": "consume", "type": "jms_consume", "target": "orders", "metadata": {"tenant": "{{var.consumer_only}}"}}
+      ]
+    },
+    "expected": {"missing": ["jmeter_thread", "node_id", "reply_tenant", "tenant"], "blocking": ["jmeter_thread", "node_id", "reply_tenant", "tenant"], "late_produced": []}
+  },
+  {
+    "name": "an HTTP step's metadata is evidence, but replay refuses an undeclared param outside its import evidence keys",
+    "script": {
+      "protocol": "http",
+      "parameters": [{"name": "Declared", "type": "list", "values": ["a"]}],
+      "actions": [
+        {"name": "bound", "type": "request", "method": "POST", "target": "/orders", "body": "{{var.order}}", "metadata": {"source_evidence": "{{var.original_order}} {{param.evidence_only}} {{param.declared}}", "original_url": "/orders?r={{param.url_only}}", "note": "{{param.region}}", "raw": {"call": ["{{param.nested_region}}"], "source_evidence": "{{param.nested_region}}"}}},
+        {"name": "gate", "type": "control_if", "control": {"condition": {"left": "{{var.order}}", "op": "exists"}, "steps": [
+          {"name": "inner", "type": "request", "method": "GET", "target": "/orders/1", "metadata": {"raw_source": "{{var.inner_evidence}}"}}
+        ]}, "metadata": {"raw_source": "{{var.shell_evidence}} {{param.shell_only}}"}},
+        {"name": "sequence", "type": "http_sequence", "metadata": {"raw_source": "{{param.sequence_only}}"}, "params": {"requests": [
+          {"name": "child", "type": "request", "method": "GET", "target": "/child", "metadata": {"raw_source": "{{var.child_evidence}} {{param.child_region}}"}}
+        ]}}
+      ]
+    },
+    "expected": {"missing": ["child_region", "nested_region", "order", "region"], "blocking": ["child_region", "nested_region", "region"], "late_produced": [], "param_blocking": ["child_region", "nested_region", "region"]}
+  },
+  {
+    "name": "a request rebound to a declared parameter keeps its old reference as import evidence, which replay neither resolves nor refuses",
+    "script": {
+      "protocol": "http",
+      "parameters": [{"name": "existing", "type": "list", "values": ["value"]}],
+      "actions": [
+        {"name": "consumer", "type": "POST", "target": "https://example.test/", "body": "{{param.existing}}", "metadata": {"source_evidence": "{{param.missing}}", " Original_URL ": "https://example.test/{{param.missing}}?q={{var.missing}}", "source_step_id": {"raw": ["{{param.missing}}"]}}}
+      ]
+    },
+    "expected": {"missing": [], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "engine steps never send their metadata, so even a param there is evidence",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "cache", "type": "cache_clear", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "break", "type": "control_break", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "continue", "type": "control_continue", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "if", "type": "control_if", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "loop", "type": "control_loop", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "parallel", "type": "control_parallel", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "switch", "type": "control_switch", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "cookies", "type": "cookie_clear", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "cookie", "type": "cookie_set", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "custom", "type": "custom_call", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "error", "type": "error_message", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "async start", "type": "http_async_start", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "async stop", "type": "http_async_stop", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "close", "type": "http_connections_close", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "token", "type": "http_oauth2_token", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "sync", "type": "http_sync", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "table", "type": "live_table", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "native", "type": "native_javascript", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "meet", "type": "rendezvous", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "review", "type": "review_required", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "database", "type": "source_database", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "external", "type": "source_external", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "json", "type": "source_json", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "message", "type": "source_message", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "metric", "type": "source_metric", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "parameter", "type": "loadrunner_parameter", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "source review", "type": "source_review", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "runtime", "type": "source_runtime", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "secret", "type": "source_secret", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "timer", "type": "source_timer", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "transaction", "type": "source_transaction", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "verification", "type": "source_verification", "metadata": {"raw_source": "{{param.engine_only}}"}},
+        {"name": "xml", "type": "source_xml", "metadata": {"raw_source": "{{param.engine_only}}"}}
+      ]
+    },
+    "expected": {"missing": [], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "an undeclared param blocks even on HTTP and a variable write does not supply it",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "save", "type": "source_parameter", "params": {"function": "lr_save_string", "args": ["eu", "Region"]}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{param.Region}}/{{param.tenant}}/{{var.region}}"}
+      ]
+    },
+    "expected": {"missing": ["Region", "tenant"], "blocking": ["Region", "tenant"], "late_produced": [], "param_blocking": ["Region", "tenant"]}
+  },
+  {
+    "name": "a JSON buffer blocks while HTTP keeps placeholders",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "store", "type": "request", "method": "GET", "target": "/stores/{{var.store}}"},
+        {"name": "eval", "type": "source_json", "params": {"function": "lr_eval_json", "json_object": "doc", "buffer": "{{var.document}}"}}
+      ]
+    },
+    "expected": {"missing": ["document", "store"], "blocking": ["document"], "late_produced": []}
+  },
+  {
+    "name": "SOAP requests run through the HTTP adapter, so they keep placeholders except in a JSON helper",
+    "script": {
+      "protocol": "soap",
+      "actions": [
+        {"name": "call", "type": "request", "method": "POST", "target": "/OrderService/{{var.service}}", "headers": {"SOAPAction": "{{var.operation}}"}, "body": "<GetOrder><id>{{var.order_id}}</id></GetOrder>"},
+        {"name": "eval", "type": "source_json", "params": {"function": "lr_eval_json", "json_object": "doc", "buffer": "{{var.document}}"}}
+      ]
+    },
+    "expected": {"missing": ["document", "operation", "order_id", "service"], "blocking": ["document"], "late_produced": []}
+  },
+  {
+    "name": "Java HTTP keeps a target or header placeholder through the HTTP adapter",
+    "script": {
+      "protocol": "java_http",
+      "config": {"java_http": {"codec": "java_serialized_object_base64"}},
+      "actions": [
+        {"name": "invoke", "type": "request", "method": "POST", "target": "/invoker/{{var.bean}}", "headers": {"X-Session": "{{var.session}}"}, "body": "b3BhcXVlLWphdmEtb2JqZWN0"}
+      ]
+    },
+    "expected": {"missing": ["bean", "session"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "a Java HTTP body is decoded as base64, so a placeholder in its stored text blocks",
+    "script": {
+      "protocol": "java_http",
+      "config": {"java_http": {"codec": "java_serialized_object_base64"}},
+      "actions": [
+        {"name": "invoke", "type": "request", "method": "POST", "target": "/invoker/{{var.bean}}", "body": "{{var.serialized}}"},
+        {"name": "again", "type": "request", "method": "POST", "target": "/invoker", "body": "{{var.bean}}"}
+      ]
+    },
+    "expected": {"missing": ["bean", "serialized"], "blocking": ["bean", "serialized"], "late_produced": []}
+  },
+  {
+    "name": "a Java HTTP body stored as base64 is re-encoded with its placeholder, so a reference inside it does not block",
+    "script": {
+      "protocol": "java_http",
+      "config": {"java_http": {"codec": "java_serialized_object_base64"}},
+      "actions": [
+        {"name": "invoke", "type": "request", "method": "POST", "target": "/invoker", "body": "c2VyOnt7dmFyLm9yZGVyX3JlZn19", "body_encoding": "base64"}
+      ]
+    },
+    "expected": {"missing": ["order_ref"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "other protocols block every missing reference",
+    "script": {
+      "protocol": "grpc",
+      "actions": [
+        {"name": "call", "type": "grpc_unary", "target": "orders.Orders/Get", "body": "{\"id\":\"{{var.order_id}}\"}"}
+      ]
+    },
+    "expected": {"missing": ["order_id"], "blocking": ["order_id"], "late_produced": []}
+  },
+  {
+    "name": "the protocol family is matched without case",
+    "script": {
+      "protocol": " HTTP ",
+      "actions": [
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.order_id}}"}
+      ]
+    },
+    "expected": {"missing": ["order_id"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "an encoded body is decoded before analysis",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "encoded", "type": "request", "method": "POST", "target": "/orders", "body": "eyJyZXF1ZXN0X2lkIjoie3t2YXIucmVxdWVzdF9pZH19In0=", "body_encoding": "base64"}
+      ]
+    },
+    "expected": {"missing": ["request_id"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "positional source writers publish exact and lowercase names",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "stamp", "type": "source_parameter", "params": {"function": "web_save_timestamp_param", "args": ["Tstamp"]}},
+        {"name": "length", "type": "source_parameter", "params": {"function": "web_save_param_length", "args": ["C_Body", "Base=Decimal"]}},
+        {"name": "timestamp", "type": "source_parameter", "params": {"function": "lr_save_timestamp"}},
+        {"name": "who", "type": "loadrunner_parameter", "params": {"function": "lr_whoami"}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.tstamp}}/{{var.Tstamp}}/{{var.C_Body_Length}}/{{var.c_body_length}}/{{var.timestamp}}/{{var.vuser_id}}/{{var.vuser_group}}/{{var.C_BODY_LENGTH}}"}
+      ]
+    },
+    "expected": {"missing": ["C_BODY_LENGTH"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "positional fallbacks without a SaveParam publish and read nothing",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "search", "type": "source_parameter", "params": {"function": "lr_save_searched_string", "args": ["{{var.body}}", "LB=a", "RB=b", "Found"]}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.found}}/{{var.Found}}"}
+      ]
+    },
+    "expected": {"missing": ["Found", "found"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "an OAuth token step publishes the token family in both spellings",
+    "script": {
+      "protocol": "http",
+      "init": [
+        {"name": "token", "type": "http_oauth2_token", "target": "https://auth.example.test/token", "params": {"save_as": "Orders", "token_url": "https://auth.example.test/token", "grant_type": "client_credentials"}}
+      ],
+      "actions": [
+        {"name": "orders", "type": "request", "method": "GET", "target": "/orders/{{var.orders_instance_url}}/{{var.Orders_token_type}}/{{var.orders_expires_at}}/{{var.ORDERS}}", "auth": {"type": "bearer", "token": "{{var.orders}}"}}
+      ]
+    },
+    "expected": {"missing": ["ORDERS"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "result prefixes count after their step and native JavaScript reads only inputs",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "before", "type": "request", "method": "GET", "target": "/jobs/{{var.job.status}}"},
+        {"name": "lease", "type": "live_table", "params": {"alias": "jobs", "operation": "lease", "result_prefix": "job"}},
+        {"name": "calc", "type": "native_javascript", "params": {"source": "return {total: '{{var.not_a_read}}'}", "inputs": {"order": "{{var.order_id}}"}, "result_prefix": "calc"}},
+        {"name": "after", "type": "request", "method": "GET", "target": "/jobs/{{var.job.values.id}}/{{var.calc.total}}"}
+      ]
+    },
+    "seeded": {"order_id": "o-1"},
+    "expected": {"missing": ["job.status"], "blocking": [], "late_produced": ["job.status"]}
+  },
+  {
+    "name": "a status message publishes vuser_status under its exact name only",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "status", "type": "source_message", "params": {"function": "lr_vuser_status_message", "format": "done", "status_message": true}},
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.vuser_status}}/{{var.VUSER_STATUS}}"}
+      ]
+    },
+    "expected": {"missing": ["VUSER_STATUS"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "a save-all extractor publishes slots and a count, not the name",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "list", "type": "request", "method": "GET", "target": "/items", "extractors": [{"name": "items", "source": "body", "type": "regex", "expression": "id=(\\d+)", "mode": "all"}]},
+        {"name": "use", "type": "request", "method": "GET", "target": "/items/{{var.items_2}}?n={{var.items_count}}&all={{var.items}}"}
+      ]
+    },
+    "expected": {"missing": ["items"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "replay seeds are exact names",
+    "script": {
+      "protocol": "http",
+      "actions": [
+        {"name": "use", "type": "request", "method": "GET", "target": "/{{var.session}}/{{var.Session}}"}
+      ]
+    },
+    "seeded": {"session": "abc"},
+    "expected": {"missing": ["Session"], "blocking": [], "late_produced": []}
+  },
+  {
+    "name": "init runs before actions and teardown after them",
+    "script": {
+      "protocol": "http",
+      "init": [
+        {"name": "login", "type": "request", "method": "GET", "target": "/login/{{var.late_init}}", "extractors": [{"name": "token", "source": "body", "type": "jsonpath", "expression": "$.token"}]}
+      ],
+      "actions": [
+        {"name": "work", "type": "request", "method": "GET", "target": "/work/{{var.token}}", "extractors": [{"name": "late_init", "source": "body", "type": "jsonpath", "expression": "$.next"}]},
+        {"name": "browser title", "type": "browser_evaluate_js", "target": "document.title"}
+      ],
+      "teardown": [
+        {"name": "logout", "type": "request", "method": "GET", "target": "/logout/{{var.token}}/{{var.result}}"}
+      ]
+    },
+    "expected": {"missing": ["late_init"], "blocking": [], "late_produced": ["late_init"]}
+  }
+]
