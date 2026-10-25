@@ -216,6 +216,50 @@ esac
 	}
 }
 
+// TestBuildDesktopLocalToleratesWailsVersionBanner guards against the exit-141
+// regression: real `wails version` prints a sponsor banner after the version,
+// and a first-line pipeline (sed q) under pipefail failed the build on SIGPIPE.
+// The banner here exceeds a pipe buffer so the old pipeline fails every time.
+func TestBuildDesktopLocalToleratesWailsVersionBanner(t *testing.T) {
+	toolDir := t.TempDir()
+	writeExecutable(t, filepath.Join(toolDir, "wails"), `#!/bin/sh
+if [ "${1:-}" = "version" ]; then
+  printf '%s\n' v2.16.0
+  i=0
+  while [ "$i" -lt 4096 ]; do
+    printf '%s\n' 'If Wails is useful to you or your company, please consider sponsoring the project'
+    i=$((i + 1))
+  done
+fi
+`)
+	writeExecutable(t, filepath.Join(toolDir, "go"), `#!/bin/sh
+if [ "${1:-}" != "env" ]; then exit 2; fi
+case "${2:-}" in
+  GOOS) printf '%s\n' "$FAKE_GOOS" ;;
+  GOARCH) printf '%s\n' "$FAKE_GOARCH" ;;
+  *) exit 2 ;;
+esac
+`)
+	writeExecutable(t, filepath.Join(toolDir, "node"), "#!/bin/sh\nprintf '%s\\n' v22.12.0\n")
+	for _, tool := range []string{"npm", "pkg-config"} {
+		writeExecutable(t, filepath.Join(toolDir, tool), "#!/bin/sh\nexit 0\n")
+	}
+	writeFakeMakensis(t, toolDir)
+
+	cmd := exec.Command("/bin/bash", "../scripts/build-desktop-local.sh", "--check")
+	cmd.Env = append(os.Environ(),
+		"PATH="+toolDir+string(os.PathListSeparator)+"/usr/bin:/bin",
+		"FAKE_GOOS="+runtime.GOOS,
+		"FAKE_GOARCH="+runtime.GOARCH,
+		"WAILS_PLATFORM="+runtime.GOOS+"/"+runtime.GOARCH,
+		"APEXLOAD_WAILS_BIN="+filepath.Join(toolDir, "wails"),
+		"WAILS=",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("wails version banner broke the preflight: %v\n%s", err, output)
+	}
+}
+
 func TestBuildDesktopLocalInstallWailsRepairsMismatchedCLI(t *testing.T) {
 	toolDir := t.TempDir()
 	goBinDir := t.TempDir()
