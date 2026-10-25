@@ -464,7 +464,10 @@ func (s *Service) validateLiveRunMutationLocked(testID string, token []byte, now
 	return nil
 }
 
-func (s *Service) retainRunSupervisionDrainLocked(testID string, assignment assignedTest) {
+// retainRunSupervisionDrainLocked charges a detached test's reserved VUsers,
+// prepared Java host spare included, until its executions exit. It returns the
+// amount charged, which the stop releases exactly.
+func (s *Service) retainRunSupervisionDrainLocked(testID string, assignment assignedTest) int32 {
 	if !emptyRunSupervisionTokenHash(assignment.runSupervisionTokenHash) {
 		s.addRunSupervisionTombstoneLocked(runSupervisionTombstoneKey{
 			testID: testID, generation: assignment.executionGeneration, tokenHash: assignment.runSupervisionTokenHash,
@@ -478,15 +481,31 @@ func (s *Service) retainRunSupervisionDrainLocked(testID string, assignment assi
 		}
 		lease.state = pb.RunSupervisionState_RUN_SUPERVISION_STATE_STOPPING
 	}
-	s.runSupervisionDrainingVUsers += int64(reservedAssignmentVUsers(assignment))
+	charged := reservedAssignmentVUsers(assignment)
+	s.runSupervisionDrainingVUsers += int64(charged)
+	return charged
 }
 
-func (s *Service) releaseRunSupervisionDrain(stop detachedFencedTest) {
+// releaseRunSupervisionCapacity returns a drained stop's VUsers to capacity.
+// Its executions have exited, so, as at natural completion, heartbeats stop
+// counting them before archive finalization and the terminal batch; a
+// heartbeat after the terminal batch would otherwise report active VUsers for
+// a generator with no active tests.
+func (s *Service) releaseRunSupervisionCapacity(stop detachedFencedTest) {
 	s.mu.Lock()
 	s.runSupervisionDrainingVUsers -= int64(stop.capacityDrainVUsers)
 	if s.runSupervisionDrainingVUsers < 0 {
 		s.runSupervisionDrainingVUsers = 0
 	}
+	s.mu.Unlock()
+}
+
+// releaseRunSupervisionDrain ends a drained stop's supervision after its
+// terminal batch is published. The lease, when one exists, keeps the restart
+// fence armed until then, so a crash before the terminal batch still restarts
+// fail-closed.
+func (s *Service) releaseRunSupervisionDrain(stop detachedFencedTest) {
+	s.mu.Lock()
 	if lease := s.runSupervisions[stop.testID]; lease != nil &&
 		lease.generation == stop.assignment.executionGeneration &&
 		sameRunSupervisionTokenHash(lease.tokenHash, stop.assignment.runSupervisionTokenHash) {

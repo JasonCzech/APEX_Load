@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  ApiResponseTooLargeError,
   DEV_VIEW_STORAGE_KEY,
   DESKTOP_CAPABILITY_SESSION_KEY,
   API_ORIGIN,
@@ -603,6 +604,13 @@ describe('bounded paired response envelopes', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(requestWithResponse('/scripts/script-1', { maxResponseBytes: 5, timeoutMs: 100 })).rejects.toThrow('approved size limit')
     expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('maxResponseBytes')
+  })
+  it('names an oversized body as too large, with the limit it passed, so a caller can say so', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"large":"0123456789"}', { headers: { 'Content-Type': 'application/json' } })))
+    const refusal = await requestWithResponse('/scripts/script-1', { maxResponseBytes: 5, timeoutMs: 100 }).catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(ApiResponseTooLargeError)
+    expect(refusal).not.toBeInstanceOf(ApiError)
+    expect((refusal as ApiResponseTooLargeError).limitBytes).toBe(5)
   })
   it('bounds body decoding even when headers arrive but the native body never settles', async () => {
     vi.useFakeTimers()

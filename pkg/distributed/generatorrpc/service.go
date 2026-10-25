@@ -102,6 +102,16 @@ type assignedTest struct {
 	// groupTransactions and groupAggregates; every batch built from the
 	// assignment carries it, so a re-sent window is recognizable.
 	metricsCollection uint64
+
+	// terminalCause is set by the first lifecycle transition that removes the
+	// assignment, under s.mu, and reported only with a COMPLETE outcome.
+	terminalCause pb.RunTerminalCause
+	// Each group that finishes records whether its engine reached the run's
+	// duration deadline. deadlineDuration is the shortest logical duration,
+	// in DurationAdjustment terms, a finished group's engine ran to.
+	executionsEndedEarly bool
+	deadlineReached      bool
+	deadlineDuration     time.Duration
 }
 
 const defaultAssignmentStageTTL = 2 * time.Minute
@@ -1256,9 +1266,11 @@ func (s *Service) finishStoppedTestWithState(testID string, assignment assignedT
 		finalState = "FAILED"
 	}
 	finalError = strings.TrimSpace(finalError)
+	outcome := assignmentTerminalOutcome(assignment, finalState)
 	batch := s.metricsBatchForAssignment(testID, assignment, finalState, finalError)
 	if writer != nil {
 		_ = writer.setTerminalMetrics(batch)
+		writer.setTerminalOutcome(outcome)
 		// Every execution has drained, but the outcome is not durable yet.
 		// Retain this explicit phase for subscribers/reconnects so the final
 		// collection is not mistaken for a stalled running generator while
@@ -1272,10 +1284,11 @@ func (s *Service) finishStoppedTestWithState(testID string, assignment assignedT
 				finalError += "; "
 			}
 			finalError += "archive finalization failed: " + err.Error()
+			outcome = terminalOutcome{}
 		}
 	}
 	batch = s.metricsBatchForAssignment(testID, assignment, finalState, finalError)
-	s.publishTerminalMetrics(batch)
+	s.publishTerminalMetrics(batch, outcome)
 	if archiveFinalized {
 		s.maybeDisarmRunSupervisionRestartFence(assignment.executionGeneration)
 	}
@@ -1541,6 +1554,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		sharedJavaAdmitted := s.activeSharedJavaVusersLocked() + sharedJavaPending
 		podCapacity := s.podCapacitySnapshotLocked()
 		javaOccupancyMode := s.heartbeatJavaVuserOccupancyModeLocked()
+		activeTestIDs := s.activeTestIDsLocked()
 		s.mu.RUnlock()
 		stats := generatorStatsFromResources(s.collectResources(), active)
 		supportedProtocols, compatibleFeatures, runtimeCapacities := runtimeAdvertisementWithCapacities(
@@ -1549,7 +1563,6 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]int64{"java_vuser": persistentJavaReserved, sharedJVMAdmittedKey: sharedJavaAdmitted, sharedJVMPendingKey: sharedJavaPending},
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
-		activeTestIDs := s.activeTestIDs()
 		compatibleFeatures = append(compatibleFeatures, FeatureLiveTablesV1, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1, FeatureJointEvidenceV4, FeatureThroughputCapV1)
 		compatibleFeatures = append(compatibleFeatures, dsl.FeatureDistributedRendezvousV1, protocol.FeatureNativeDataServicesV1)
 		if engine.NativeJavaScriptAvailable() {
@@ -1571,10 +1584,14 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		// placement heartbeat can arrive between one run's clock probes, and
 		// re-anchoring then would move that run's stamps under the offset its
 		// last probe measured.
+		// Recheck under the lock: a test assigned since the snapshot above
+		// must not have its clock moved.
 		wallNow := time.Now()
-		if len(activeTestIDs) == 0 {
+		s.mu.RLock()
+		if len(s.assignments) == 0 {
 			generatorPublishedClock.reanchor(wallNow)
 		}
+		s.mu.RUnlock()
 		generatorNow := generatorPublishedClock.at(wallNow)
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,
@@ -1868,10 +1885,9 @@ func collectSystemResourcesSafely(collect func() *engine.SystemResources) (resou
 	return collect()
 }
 
-func (s *Service) activeTestIDs() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+// activeTestIDsLocked lists the assigned tests. Service.mu must be held, so a
+// heartbeat reads them in the same snapshot as its VUser and capacity counts.
+func (s *Service) activeTestIDsLocked() []string {
 	ids := make([]string, 0, len(s.assignments))
 	for id := range s.assignments {
 		ids = append(ids, id)
@@ -2335,8 +2351,8 @@ func (s *Service) metricsBatchIsCurrentLocked(batch *pb.MetricsBatch) bool {
 	return state == want
 }
 
-func (s *Service) publishTerminalMetrics(batch *pb.MetricsBatch) {
-	s.metricsBroker.publishTerminal(batch)
+func (s *Service) publishTerminalMetrics(batch *pb.MetricsBatch, outcome terminalOutcome) {
+	s.metricsBroker.publishTerminalOutcome(batch, outcome, time.Now())
 }
 
 func (s *Service) terminalGenerationLocked(testID string) (uint64, bool) {
@@ -2659,6 +2675,7 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 		stops := s.detachFencedTestsLocked([]string{testID}, assignment.executionGeneration, false)
 		s.mu.Unlock()
 		if len(stops) > 0 {
+			markTimerTerminalCause(&stops[0].assignment, requireTimerOwnership)
 			stops[0].finalState = "COMPLETE"
 			stops[0].escalationReason = durationEscalationReason
 			s.startDetachedRunDrain(stops[0], true)
@@ -2667,6 +2684,7 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 	}
 	if ok {
 		s.markStoppingLocked(testID, assignment.executionGeneration)
+		markTimerTerminalCause(&assignment, requireTimerOwnership)
 		s.clearTestExecutionLeaseLocked(testID)
 		s.clearRunSupervisionLocked(testID)
 		releaseAssignmentRuntimeResources(assignment)
@@ -2685,6 +2703,19 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 		defer s.archiveManager.finalizerDone()
 	}
 	s.finishStoppedTest(testID, assignment, writer)
+}
+
+// markTimerTerminalCause records the cause of a completion-timer expiry. The
+// timer is armed only without engine execution (WithExecution unset) and keeps
+// running through a pause, so it proves the duration ran out only for a
+// committed, unpaused assignment whose own timer fired.
+func markTimerTerminalCause(assignment *assignedTest, timerOwned bool) {
+	if !timerOwned || !assignment.committed || assignment.paused {
+		assignment.terminalCause = pb.RunTerminalCause_RUN_TERMINAL_CAUSE_UNSPECIFIED
+		return
+	}
+	assignment.terminalCause = pb.RunTerminalCause_RUN_TERMINAL_CAUSE_DURATION_ELAPSED
+	assignment.deadlineReached, assignment.deadlineDuration = true, assignedTestDuration(*assignment)
 }
 
 func (s *Service) completeExecutionCallbacks(testID string, groupName string, exec *groupExecution, err error) {
@@ -3160,6 +3191,9 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 	if execs, ok := s.executions[testID]; ok {
 		if current := execs[groupName]; current != nil {
 			terminalRedaction = current.redactionConfig
+			if err == nil {
+				recordExecutionDeadline(&assignment, current)
+			}
 		}
 		delete(execs, groupName)
 		if err != nil {
@@ -3193,6 +3227,7 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 		return
 	}
 	s.markStoppingLocked(testID, assignment.executionGeneration)
+	assignment.terminalCause = executionsTerminalCause(assignment)
 	s.clearTestExecutionLeaseLocked(testID)
 	s.clearRunSupervisionLocked(testID)
 	releaseAssignmentRuntimeResources(assignment)
@@ -3215,6 +3250,38 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 		defer s.archiveManager.finalizerDone()
 	}
 	s.finishStoppedTestWithState(testID, assignment, writer, finalState, finalError)
+}
+
+// recordExecutionDeadline folds one group that finished without error into its
+// assignment's terminal cause: the run's duration ran out only if every group's
+// engine reached its deadline. The logical duration adds back the offset of a
+// group staged late, as duration controls do, and the shortest one is kept.
+func recordExecutionDeadline(assignment *assignedTest, execution *groupExecution) {
+	var target time.Duration
+	reached := false
+	if execution.engine != nil {
+		target, reached = execution.engine.DurationDeadline()
+	}
+	foldExecutionDeadline(assignment, target+execution.durationOffset, reached)
+}
+
+func foldExecutionDeadline(assignment *assignedTest, logical time.Duration, reached bool) {
+	if !reached {
+		assignment.executionsEndedEarly = true
+		return
+	}
+	if !assignment.deadlineReached || logical < assignment.deadlineDuration {
+		assignment.deadlineDuration = logical
+	}
+	assignment.deadlineReached = true
+}
+
+// executionsTerminalCause is the cause once the last group finished.
+func executionsTerminalCause(assignment assignedTest) pb.RunTerminalCause {
+	if assignment.executionsEndedEarly || !assignment.deadlineReached {
+		return pb.RunTerminalCause_RUN_TERMINAL_CAUSE_EXECUTIONS_ENDED_EARLY
+	}
+	return pb.RunTerminalCause_RUN_TERMINAL_CAUSE_DURATION_ELAPSED
 }
 
 const maxGeneratorTerminalErrorBytes = 16 << 10

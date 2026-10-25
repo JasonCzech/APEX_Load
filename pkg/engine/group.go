@@ -161,6 +161,11 @@ type MultiGroupEngine struct {
 	readyCh                 chan struct{}
 	readyOnce               sync.Once
 
+	// durationDeadline is baseTargetDuration when the duration deadline closed
+	// admission; durationDeadlineReached reports that it did. Both under mu.
+	durationDeadline        time.Duration
+	durationDeadlineReached bool
+
 	// Dynamic control state
 	mu                     sync.Mutex
 	scaleMu                sync.Mutex
@@ -815,6 +820,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	mge.initialRampInProgress = false
 	mge.baseTargetDuration = mge.duration
 	mge.targetDuration = mge.duration
+	mge.durationDeadline, mge.durationDeadlineReached = 0, false
 	mge.mockNamespace = newRuntimeMockNamespace()
 	mge.scalingOpen = false
 	mge.activeReserved = 0
@@ -898,6 +904,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	mge.mu.Lock()
 	expiredBeforeBaseline := mge.terminationMode != dsl.TerminationIterations && !mge.paused && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration
 	if expiredBeforeBaseline {
+		mge.markDurationDeadlineLocked()
 		mge.browserSourcePhaseLocked(false)
 		mge.controlsReady = false
 		mge.scalingOpen = false
@@ -946,6 +953,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 					mge.mu.Unlock()
 					continue
 				}
+				mge.markDurationDeadlineLocked()
 				mge.scalingOpen = false
 				mge.browserSourcePhaseLocked(false)
 				mge.controlsReady = false
@@ -991,6 +999,8 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	}
 	mge.mu.Lock()
 	if (mge.terminationMode != dsl.TerminationIterations && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration) || mge.launchCtx.Err() != nil {
+		// Recorded only while the launch is open, so only the deadline.
+		mge.markDurationDeadlineLocked()
 		mge.browserSourcePhaseLocked(false)
 		mge.controlsReady = false
 		mge.scalingOpen = false
@@ -3290,6 +3300,28 @@ func (mge *MultiGroupEngine) GetTargetDuration() time.Duration {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 	return mge.targetDuration
+}
+
+// DurationDeadline reports whether the run's duration deadline closed load
+// admission, and the operator-controlled duration then in effect. A run whose
+// launch closed first for any other reason (a stop, cancellation, iteration
+// termination or an execution goal) reports false, even if the deadline then
+// passed while it drained. The deadline closes duration controls, so the
+// reported duration is the one the run actually ran to.
+func (mge *MultiGroupEngine) DurationDeadline() (time.Duration, bool) {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	return mge.durationDeadline, mge.durationDeadlineReached
+}
+
+// markDurationDeadlineLocked records that the duration deadline closed load
+// admission. A launch already closed by a stop, including one latched before
+// the run, or by an execution goal ended the run first, so it is not recorded.
+func (mge *MultiGroupEngine) markDurationDeadlineLocked() {
+	if mge.launchCtx == nil || mge.launchCtx.Err() != nil {
+		return
+	}
+	mge.durationDeadline, mge.durationDeadlineReached = mge.baseTargetDuration, true
 }
 
 // GetBaseTargetDuration returns the operator-controlled duration without pause

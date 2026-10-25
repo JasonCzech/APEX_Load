@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type NativePipeline struct {
 	attempts           map[*workerAttempt]struct{}
 	parentIO           map[*NativeIOLease]struct{}
 	released           bool
+	releaseTimedOut    bool
 	pendingPublication *NativePublicationLease
 	pendingQuiescence  *NativeQuiescenceLease
 	quiescenceStarted  bool
@@ -193,14 +195,31 @@ func (p *NativePipeline) Release() error {
 	p.released = true
 	p.cancel()
 	done := p.done
+	// A pending publication or quiescence holds the pipeline on purpose until
+	// the reconciler resolves it, which no wait here can shorten. A pipeline
+	// still held after one full wait is stuck: the reconciler's later releases
+	// keep the short wait and stay quiet, as the first timeout said why.
+	short := p.pendingPublication != nil || p.pendingQuiescence != nil || p.releaseTimedOut
 	p.mu.Unlock()
 	p.retainReleaseContinuation()
-	timer := time.NewTimer(time.Second)
+	wait := workerReleaseWait()
+	if short {
+		wait = min(wait, time.Second)
+	}
+	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
 	case <-done:
 		return nil
 	case <-timer.C:
+		if short {
+			return errWorkerOwnership
+		}
+		p.mu.Lock()
+		p.releaseTimedOut = true
+		attempts, parentIO, publication, quiescence, monitorRunning, stagingClean := len(p.attempts), len(p.parentIO), p.pendingPublication != nil, p.pendingQuiescence != nil, p.monitorDone != nil && !p.monitorStopped, p.stagingClean
+		p.mu.Unlock()
+		slog.Warn("native worker ownership unresolved", "cause", "pipeline_release_timeout", "attempts", attempts, "parent_io", parentIO, "publication_pending", publication, "quiescence_pending", quiescence, "monitor_running", monitorRunning, "staging_clean", stagingClean, "waited", wait)
 		return errWorkerOwnership
 	}
 }

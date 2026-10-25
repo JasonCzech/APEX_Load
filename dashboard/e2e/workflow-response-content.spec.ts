@@ -383,16 +383,22 @@ test('incomplete recorder response source remains a visible execution blocker th
     expect(validation.preflight).toMatchObject({ valid: false, checks: expect.arrayContaining([
       expect.objectContaining({ id: 'review_gates', status: 'fail', detail: expect.stringContaining('import_review_required') }),
     ]) })
-    const failedCheck = readiness.locator('.replay-preflight-check.fail').filter({ hasText: 'import_review_required' })
+    // The failed review-gate check lists each gate by what it asks for.
+    const failedCheck = readiness.locator('.replay-preflight-check.fail').filter({ has: page.getByRole('list', { name: 'Review gates that block replay', exact: true }) })
     await expect(failedCheck).toBeVisible()
+    await expect(failedCheck.getByRole('button', { name: /^Review imported behavior Actions › 01 - GET partial$/ })).toBeVisible()
     await screenshot(page, info, 'response-content-reopened-blocker.png', failedCheck)
     await readiness.locator('summary').first().click()
-    const attemptedRun = mutation(page, 'POST', `/api/v1/scripts/${id}/debug/sessions`)
-    await page.locator('.topbar-debug-action-run').click()
-    const rejectedRun = await attemptedRun
+    // The editor knows the server refuses this start, so Debug opens the
+    // blocker in Author instead of starting a run.
+    await expect(page.locator('.topbar-debug-action-run')).toHaveCount(0)
+    const resolve = page.locator('.topbar-debug-action-blocker')
+    await expect(resolve).toHaveAccessibleName(/^Resolve \d+ blockers? that refuse replay$/)
+    await resolve.click()
+    await expect(page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Author', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    const rejectedRun = await page.context().request.post(`/api/v1/scripts/${id}/debug/sessions`, { data: {} })
     expect(rejectedRun.status()).toBe(400)
     expect((await rejectedRun.json()).error).toContain('import_review_required')
-    await expect(page.locator('.editor-toast.error').filter({ hasText: 'import_review_required' }).first()).toBeVisible()
     const rejectedStoredReplay = await page.context().request.post(`/api/v1/scripts/${id}/replay`, { data: { project_id: workspace.projectId } })
     expect(rejectedStoredReplay.status()).toBe(400)
     expect((await rejectedStoredReplay.json()).error).toContain('import_review_required')

@@ -21,6 +21,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -308,7 +309,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		WaitFor:                      toProtocolWaitCondition(action.WaitFor, vu),
 		Sync:                         toProtocolBrowserSyncPolicy(action.Sync, vu),
 		Capture:                      toProtocolCaptureOptions(action.Capture),
-		Metadata:                     vu.interpolateAnyMap(action.Metadata),
+		Metadata:                     vu.interpolateActionMetadata(action.Metadata),
 		HierarchyPath:                resolvedAttributionHierarchy(action.Attribution, vu),
 		PageName:                     resolvedAttributionPage(action.Attribution, vu),
 		Extractors:                   toProtocolExtractors(action.Extractors, vu),
@@ -1032,6 +1033,55 @@ func (vu *VUser) interpolateAnyMap(m map[string]any) map[string]any {
 		out[k] = vu.interpolateAny(m[k])
 	}
 	return out
+}
+
+// interpolateActionMetadata interpolates an action's metadata except its import
+// evidence (messaging.MetadataKeyIsEvidence), which keeps the source text it
+// recorded. No send step delivers evidence and nothing interpolates it; it is
+// read only as static attribution: the source_step_id, source_profile and
+// source_path a result or replay event reports
+// (applyProtocolResultSourceMetadata, applyReplaySourceMetadata), the run
+// archive's hierarchy fallback to source_path, and the browser self-heal
+// identity of a step. A reference a guided repair left there therefore
+// neither resolves nor refuses replay
+// (actionContainsUnresolvedParameterExceptBody), and a legacy source_path that
+// holds a template is reported verbatim rather than resolved.
+func (vu *VUser) interpolateActionMetadata(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for _, k := range vu.interpolationKeys(m) {
+		if messaging.MetadataKeyIsEvidence(k) {
+			out[k] = cloneMetadataEvidence(m[k])
+			continue
+		}
+		out[k] = vu.interpolateAny(m[k])
+	}
+	return out
+}
+
+// cloneMetadataEvidence copies the containers interpolateAny would rebuild, so
+// a resolved action never shares them with the script.
+func cloneMetadataEvidence(value any) any {
+	switch typed := value.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		out := make([]any, len(typed))
+		for i := range typed {
+			out[i] = cloneMetadataEvidence(typed[i])
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for k, v := range typed {
+			out[k] = cloneMetadataEvidence(v)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func (vu *VUser) interpolateAnyMapWithSecrets(m map[string]any) (map[string]any, map[string]any) {

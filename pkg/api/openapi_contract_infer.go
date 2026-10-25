@@ -450,6 +450,8 @@ var explicitRouteContractTypes = map[string]struct {
 	"POST /api/v1/scripts/import/settings":        {requestType: "ImportSettingsRequest", responseTypes: map[int]string{http.StatusOK: "ImportSettingsResponse"}},
 	"POST /api/v1/scripts/import/repairs/preview": {requestType: "ImportRepairRequest", responseTypes: map[int]string{http.StatusOK: "ImportRepairResponse"}},
 	"POST /api/v1/scripts/import/repairs/apply":   {requestType: "ImportRepairRequest", responseTypes: map[int]string{http.StatusOK: "ImportRepairResponse"}},
+	"POST /api/v1/scripts/{id}/repairs/preview":   {requestType: "ScriptRepairRequest", responseTypes: map[int]string{http.StatusOK: "ScriptRepairResponse"}},
+	"POST /api/v1/scripts/{id}/repairs/apply":     {requestType: "ScriptRepairRequest", responseTypes: map[int]string{http.StatusOK: "ScriptRepairResponse"}},
 	"POST /api/v1/scripts/secret-bindings/apply": {
 		requestType: "applySecretBindingsRequest",
 	},

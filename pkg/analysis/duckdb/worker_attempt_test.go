@@ -101,6 +101,7 @@ func TestWorkerAttemptRefusesUnknownOrChangedInputAndRetainsImmutableManifest(t 
 	}
 }
 func TestWorkerAttemptCannotReleaseBeforeReapOrWhileOutputReaderOwnsDescriptor(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	t.Run("unreaped", func(t *testing.T) {
 		a, admission := workerRuntimeTestAttempt(t, context.Background())
 		a.started = true

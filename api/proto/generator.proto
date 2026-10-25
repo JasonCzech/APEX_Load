@@ -481,12 +481,31 @@ enum RunAdoptionOutcome {
   RUN_ADOPTION_OUTCOME_UNKNOWN_TEST = 5;
 }
 
+// RunTerminalCause is why a generator ended a run COMPLETE. The first
+// lifecycle transition that removes the assignment decides it. Older
+// generators, and archives they finalized, report UNSPECIFIED.
+enum RunTerminalCause {
+  RUN_TERMINAL_CAUSE_UNSPECIFIED = 0;
+  // A controller's StopTest ended the run, including a stop of staged work.
+  RUN_TERMINAL_CAUSE_CONTROLLER_STOP = 1;
+  // Every group's engine reached the run's duration deadline.
+  RUN_TERMINAL_CAUSE_DURATION_ELAPSED = 2;
+  // The executions ended without error before a duration deadline, for
+  // example on iteration termination.
+  RUN_TERMINAL_CAUSE_EXECUTIONS_ENDED_EARLY = 3;
+}
+
 message RunAdoptionResult {
   string test_id = 1;
   RunAdoptionOutcome outcome = 2;
   string detail = 3;
   // Terminal lifecycle state reported for ALREADY_COMPLETED/ALREADY_STOPPED.
   string terminal_state = 4;
+  // Set only for a COMPLETE terminal state.
+  RunTerminalCause terminal_cause = 5;
+  // The run's logical duration target, in DurationAdjustment.target_duration
+  // terms, that the engines ran to when the cause is DURATION_ELAPSED.
+  google.protobuf.Duration completed_logical_duration = 6;
 }
 
 message ExecutionEpochAck {

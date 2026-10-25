@@ -354,11 +354,21 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 	case string:
 		return p.projectString(typed, ctx), nil
 	default:
-		if isSensitiveKey(ctx.key) && !isSecretReferenceKey(ctx.key) {
+		if isSensitiveKey(ctx.key) && !isSecretReferenceKey(ctx.key) && !isSecretGatedCount(ctx.key, value) {
 			return credential.Redacted, nil
 		}
 		return value, nil
 	}
+}
+
+// isSecretGatedCount reports a number under secret_gated: the import fidelity
+// report's count of secret-gated payloads, not secret material. Masked, it
+// reads as a kept credential with script-wide context to every later save of
+// a credential-preserving import. Any other value under that key, text above
+// all, is masked like every secret-named value.
+func isSecretGatedCount(key string, value any) bool {
+	_, number := value.(json.Number)
+	return number && normalizeName(key) == "secretgated"
 }
 
 func validCredentialTargetLocators(value any) bool {

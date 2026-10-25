@@ -4,7 +4,7 @@ import { LIVE_TABLE_SPEC } from './catalogActionFormFixture'
 import type { ScriptSaveOptions, StoredScript } from '../types/storedContent'
 // @vitest-environment jsdom
 
-import { act, Suspense, useState, type ComponentProps } from 'react'
+import { act, Suspense, useState, type ComponentProps, type ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,6 +20,7 @@ import { formatSOAPFaultSummary } from './soapFaultUtils'
 import RealScriptEditor from './ScriptEditor'
 import { authoringFixture, savedAuthoringFixture } from '../test/scriptAuthoringFixtures'
 import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
+import { buildLocalReplayPreflight } from './replayPreflightUtils'
 
 const { downloadTextFileMock } = vi.hoisted(() => ({
   downloadTextFileMock: vi.fn(),
@@ -65,6 +66,8 @@ const apiMock = {
   // Keyed creates reach the createScript mock; intent tests assert the key.
   createScriptKeyed: vi.fn(async (...args: [script: unknown, projectId?: string, folderId?: string | null, key?: string]) => ({ kind: 'created' as const, resource: await apiMock.createScript(args[0], args[1], args[2]) })),
   updateScript: vi.fn(),
+  previewScriptRepair: vi.fn(),
+  applyScriptRepair: vi.fn(),
   downloadScript: vi.fn(),
   createAuthoringSession: vi.fn(),
   validateScript: vi.fn(),
@@ -882,10 +885,12 @@ describe('ScriptEditor', () => {
 
     expect(apiMock.getScriptSecretStatus).toHaveBeenCalledWith('script-1')
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
+    // A known missing secret refuses replay: Debug names it and opens it
+    // instead of starting a run the controller refuses.
     const blockedRunButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.dataset.tooltip || button.title).includes('Configure missing project secret before running'))
-    expect(blockedRunButton?.disabled).toBe(true)
-    expect((blockedRunButton?.dataset.tooltip || blockedRunButton?.title)).toContain('LOGIN_TOKEN')
+      .find(button => button.textContent?.includes('Resolve 1 blocker'))
+    expect(blockedRunButton?.disabled).toBe(false)
+    expect((blockedRunButton?.dataset.tooltip || blockedRunButton?.title)).toContain('Configure project secret: LOGIN_TOKEN')
     expect(container.textContent).toContain('Configure missing project secret: LOGIN_TOKEN.')
     expect(container.textContent).toContain('Needs attention')
 
@@ -953,10 +958,60 @@ describe('ScriptEditor', () => {
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['RAW_JSON_TOKEN'])
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
     const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.dataset.tooltip || button.title).includes('Configure missing project secret before running'))
-    expect(runButton?.disabled).toBe(true)
-    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('RAW_JSON_TOKEN')
+      .find(button => button.textContent?.includes('Resolve 1 blocker'))
+    expect(runButton?.disabled).toBe(false)
+    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('Configure project secret: RAW_JSON_TOKEN')
     expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
+  })
+
+  it('takes an unsaved draft\'s missing project secret to Save & configure secrets, and never saves it from a start or its row', async () => {
+    const secretScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{ ...initialScript.actions[0], headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }],
+    }
+    const onSave = vi.fn()
+    const frames = new Map<number, FrameRequestCallback>()
+    let nextFrame = 0
+    const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+    const runFrames = async () => { await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) }) }
+    try {
+      await act(async () => {
+        root.render(<KeyboardShortcutProvider><ScriptEditor initialScript={secretScript} initiallyDirty projectId="project-1" onSave={onSave} /></KeyboardShortcutProvider>)
+      })
+      await flushReact()
+      const configure = container.querySelector<HTMLButtonElement>('.script-secret-banner button')
+      expect(configure?.textContent).toBe('Save & configure secrets')
+      // The editor's Debug action, now "Resolve 1 blocker".
+      const resolve = Array.from(container.querySelectorAll<HTMLButtonElement>('.script-ide-quick-actions button')).find(button => button.textContent?.includes('Resolve 1 blocker'))
+      expect(resolve).toBeTruthy()
+      await act(async () => { resolve!.click() })
+      await flushReact()
+      await runFrames()
+      expect(apiMock.createScriptKeyed).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(configure)
+      // F5 goes the same way.
+      await act(async () => { configure!.blur() })
+      await act(async () => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5', bubbles: true })) })
+      await flushReact()
+      await runFrames()
+      expect(document.activeElement).toBe(configure)
+      // So does its Author Problems row.
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.click() })
+      const row = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Configure project secret: LOGIN_TOKEN'))
+      expect(row).toBeTruthy()
+      await act(async () => { configure!.blur(); row!.click() })
+      await flushReact()
+      await runFrames()
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(document.activeElement).toBe(configure)
+    } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+    expect(apiMock.createScriptKeyed).not.toHaveBeenCalled()
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+    expect(onSave).not.toHaveBeenCalled()
+    expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
+    expect(document.body.textContent).not.toContain('Secret Bindings')
   })
 
   it('treats a fresh missing project status as authoritative over persisted configured status', async () => {
@@ -1001,9 +1056,14 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
     const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.dataset.tooltip || button.title).includes('Configure missing project secret before running'))
-    expect(runButton?.disabled).toBe(true)
-    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('LOGIN_TOKEN')
+      .find(button => button.textContent?.includes('Resolve 1 blocker'))
+    expect(runButton?.disabled).toBe(false)
+    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('Configure project secret: LOGIN_TOKEN')
+    // Resolving it opens the script's secret bindings; nothing starts.
+    await act(async () => { runButton?.click() })
+    await flushReact()
+    expect(document.body.textContent).toContain('Secret Bindings · Checkout Flow')
+    expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
   })
 
   it('reports a created dedicated secret when the later editor save fails', async () => {
@@ -5014,6 +5074,47 @@ describe('ScriptEditor', () => {
     expect(titles.indexOf('Choose supported TLS settings')).toBe(0)
     expect(titles).toContain('Bearer authentication is enabled without a token value.')
     expect(titles).toContain('Missing value: c_storeid')
+  })
+
+  it('titles a value set too late as the import does, from the draft\'s own check and from the server\'s', async () => {
+    // Store cart uses cart_id before Create cart extracts it.
+    const lateScript: ScriptDefinition = { ...initialScript, actions: [
+      { ...initialScript.actions[0], name: 'Store cart', target: '/store/{{var.cart_id}}/cart', extractors: [] },
+      { ...initialScript.actions[0], name: 'Create cart', target: '/cart', extractors: [{ name: 'cart_id', source: 'body', type: 'json_path', expression: '$.cart_id' }] },
+      { ...initialScript.actions[0], name: 'Region', target: '/region/{{var.region}}', extractors: [] },
+    ] }
+    const authorProblems = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    const openProblems = async () => {
+      await act(async () => { authorProblems().click() })
+      return Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).map(button => button.textContent || '')
+    }
+    const closeProblems = async () => { await act(async () => { (document.querySelector('[role="dialog"] button[aria-label="Close"]') as HTMLButtonElement | null)?.click() }) }
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={lateScript} projectId="project-1" />) })
+    await flushReact()
+
+    // The draft's local check: a step sets cart_id, only after its use.
+    let rows = await openProblems()
+    expect(rows.find(row => row.includes('Check producer order: cart_id'))).toContain('so replay can send the placeholder text')
+    expect(rows.some(row => row.includes('Missing value: cart_id'))).toBe(false)
+    expect(rows.some(row => row.includes('Missing value: region'))).toBe(true)
+    await closeProblems()
+
+    // The server's check of the saved copy reports cart_id as refusing replay.
+    apiMock.validateScript.mockResolvedValueOnce({
+      script_id: 'script-1', valid: true, issues: [], warnings: [],
+      preflight: {
+        valid: false, action_count: 3, expected_action_count: 3, data_source_count: 0, parameter_count: 1,
+        missing_variables: ['cart_id', 'region'], blocking_variables: ['cart_id'], placeholder_variables: ['region'], late_produced_variables: ['cart_id'],
+        required_secrets: [], missing_secrets: [], issues: [], warnings: [], checks: [],
+      },
+    })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(apiMock.validateScript).toHaveBeenCalledWith('script-1')
+    rows = await openProblems()
+    expect(rows.find(row => row.includes('Check producer order: cart_id'))).toContain('and replay refuses to run without it')
+    expect(rows.some(row => row.includes('Unresolved value: cart_id') || row.includes('Missing value: cart_id'))).toBe(false)
+    expect(rows.some(row => row.includes('Missing value: region'))).toBe(true)
   })
 
   it('lets the latest problem repair focus its target without an earlier selection focus taking ownership', async () => {
@@ -12315,5 +12416,1201 @@ describe('ScriptEditor', () => {
     expect(principalInput).toBeDefined()
     expect(tokenInput).toBeDefined()
     expect(container.textContent).toContain('Preserve binary responses as base64 text')
+  })
+
+  describe('debug start gate', () => {
+    const tlsGate = (index: number) => ({
+      name: `web_set_sockets_option_${index}`, type: 'source_review', target: 'web_set_sockets_option',
+      metadata: { execution_blocker: 'legacy_tls_replacement', source_function: 'web_set_sockets_option', source_file: 'vuser_init.c', source_line: index + 3 },
+    })
+    const gateMessage = (index: number) => `init[${index}] "web_set_sockets_option_${index}": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved`
+    const warmUp = { name: 'Warm up', type: 'GET', method: 'GET', target: '/warm' }
+    const gatedScript = { ...initialScript, init: [tlsGate(0), warmUp, tlsGate(2)] } as ScriptDefinition
+    // The same steps, with the gates only the controller knows about.
+    const ungatedScript = { ...initialScript, init: [{ ...tlsGate(0), metadata: {} }, warmUp, { ...tlsGate(2), metadata: {} }] } as ScriptDefinition
+    const legacyRefusal = () => new ApiError(`script replay is blocked: ${gateMessage(0)}; ${gateMessage(2)}`, 400, { error: `script replay is blocked: ${gateMessage(0)}; ${gateMessage(2)}` })
+    const withTopbar = (editor: ReactNode) => <TopbarContributionProvider><TopbarContributionHarness />{editor}</TopbarContributionProvider>
+    const topbarDebug = () => container.querySelector<HTMLButtonElement>('[data-testid="topbar-contribution"] .topbar-debug-action')!
+    const issueChip = () => Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .topbar-meta-chip')).find(chip => /\d+ issues?$/.test(chip.textContent || ''))?.textContent
+    const authorProblems = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.textContent
+    const selectionPath = () => container.querySelector('.inspector-selection-path small')?.textContent
+    const notice = () => container.querySelector('.editor-toast.blocked[role="status"]')
+
+    it('turns Debug into "Resolve 2 blockers" that walks the gated steps and never starts', async () => {
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={gatedScript} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      expect(topbarDebug().disabled).toBe(false)
+      expect(topbarDebug().title).toBe('Choose supported TLS settings and 1 more. Debug and test runs refuse this script until it is resolved.')
+      expect(topbarDebug().classList.contains('topbar-debug-action-blocker')).toBe(true)
+      await act(async () => { topbarDebug().click() })
+      await flushReact()
+      expect(Array.from(container.querySelectorAll('[data-testid="topbar-contribution"] .mode-chip')).find(chip => chip.textContent?.trim() === 'Author')?.classList.contains('active')).toBe(true)
+      expect(selectionPath()).toContain('init[0]')
+      await act(async () => { topbarDebug().click() })
+      await flushReact()
+      expect(selectionPath()).toContain('init[2]')
+      // The More menu offers the same walk.
+      await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="More actions for script editor"]')!.click() })
+      await act(async () => { findButtonByText(container, 'Resolve blockers (2)')!.click() })
+      await flushReact()
+      expect(selectionPath()).toContain('init[0]')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('labels the editor\'s own Debug action the same way', async () => {
+      await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={gatedScript} projectId="project-1" />) })
+      await flushReact()
+      const quick = Array.from(container.querySelectorAll<HTMLButtonElement>('.script-ide-quick-actions button')).find(button => button.textContent?.includes('Resolve 2 blockers'))
+      expect(quick?.disabled).toBe(false)
+      await act(async () => { quick!.click() })
+      await flushReact()
+      expect(selectionPath()).toContain('init[0]')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('opens an Author Problems blocker row on its step with the repair focused, as Resolve does', async () => {
+      await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={gatedScript} projectId="project-1" />) })
+      await flushReact()
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrame = 0
+      const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+      const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+      const runFrames = async () => { await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) }) }
+      const blockerRow = (source: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find(button => button.textContent?.includes('Choose supported TLS settings') && button.textContent.includes(source))
+      try {
+        await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.click() })
+        // The second gate, so the walk Resolve starts from is not what lands here.
+        const row = blockerRow('web_set_sockets_option_2')
+        expect(row).toBeTruthy()
+        await act(async () => { row!.focus(); row!.click() })
+        await flushReact()
+        await runFrames()
+      } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+      const panel = container.querySelector<HTMLElement>('[data-blocker-repair]')
+      expect(selectionPath()).toContain('init[2]')
+      expect(panel?.textContent).toContain('Choose supported TLS settings')
+      expect(document.activeElement).toBe(panel?.querySelector('select[aria-label="Repair operation"]'))
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('opens a blocker on F5, and keeps F10, Step and Run to selected action from starting', async () => {
+      await act(async () => { root.render(<KeyboardShortcutProvider><ScriptEditor scriptId="script-1" initialScript={gatedScript} projectId="project-1" /></KeyboardShortcutProvider>) })
+      await flushReact()
+      await act(async () => { findOpenDebuggerButton(container)!.click() })
+      const reason = 'Resolve 2 blockers before debugging.'
+      const stepControls = Array.from(container.querySelectorAll<HTMLButtonElement>('.script-ide-quick-actions button')).filter(button => (button.dataset.tooltip || button.title) === reason)
+      expect(stepControls.map(button => button.querySelector('span:last-child')?.textContent)).toEqual(['Step', 'Step Over', 'Finish Loop'])
+      expect(stepControls.every(button => button.disabled)).toBe(true)
+      const runTo = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Run to selected action')!
+      expect(runTo.disabled).toBe(true)
+      expect(runTo.dataset.tooltip || runTo.title).toBe(reason)
+      await act(async () => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', bubbles: true })) })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+      await act(async () => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5', bubbles: true })) })
+      await flushReact()
+      expect(container.querySelector('[aria-label="Script Debugger"]')).toBeNull()
+      expect(selectionPath()).toContain('init[0]')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('starts a script whose only problems are placeholder values and authoring checks', async () => {
+      const script: ScriptDefinition = { ...initialScript, actions: [
+        { ...initialScript.actions[0], name: 'Store cart', method: 'POST', target: '/store/{{var.c_storeid}}/cart' },
+        // An authoring check the browser runs on its own never refuses a start.
+        { ...initialScript.actions[0], name: 'Unfinished', target: '' },
+      ] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(authorProblems()).toBe('Author Problems (2)')
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows the gates a refusal names once each, with no error row, and no run', async () => {
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(legacyRefusal())
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      const before = Number(/^\d+/.exec(issueChip() || '0')?.[0] || 0)
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      // The two gates the controller named, and nothing for the refusal itself.
+      expect(issueChip()).toBe(`${before + 2} issues`)
+      expect(container.querySelector('.editor-toast.error')).toBeNull()
+      expect(container.querySelector('.replay-live-badge')?.textContent).not.toBe('Running')
+      expect(notice()?.textContent).toContain('Debug did not start: 2 problems block replay — Choose supported TLS settings (Init › web_set_sockets_option_0); Choose supported TLS settings (Init › web_set_sockets_option_2).')
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      await act(async () => { findButtonByText(container, `Author Problems (${authorProblems()?.match(/\d+/)?.[0]})`)!.click() })
+      const dialogText = document.querySelector('[role="dialog"]')?.textContent || ''
+      expect(dialogText).not.toContain('script replay is blocked')
+      expect(dialogText.match(/Choose supported TLS settings/g)).toHaveLength(2)
+      await act(async () => { topbarDebug().click() })
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the counts when the saved copy, not the edited draft, refused the start, and asks for a save', async () => {
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(legacyRefusal())
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="topbar-contribution"] input[aria-label="Script name"]')!, 'Checkout Flow edited') })
+      await flushReact()
+      const before = issueChip()
+      const problemsBefore = authorProblems()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      // The refusal's paths describe the saved copy, not this draft: nothing is added.
+      expect(issueChip()).toBe(before)
+      expect(authorProblems()).toBe(problemsBefore)
+      expect(container.querySelector('.editor-toast.error')).toBeNull()
+      expect(container.querySelector('.replay-live-badge')?.textContent).not.toBe('Running')
+      expect(notice()?.textContent).toContain('Debug did not start: the saved script still has 2 problems that block replay. Save your changes, then debug.')
+      expect(topbarDebug().textContent).toBe('Save and debug')
+      // The run's lifecycle records why nothing ran.
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(tab => tab.textContent === 'Timeline')!.click() })
+      expect(container.querySelector('.debugger-timeline')?.textContent).toContain('Debug did not start')
+    })
+
+    it('counts a saved copy\'s gate with two codes as two blockers when asking for a save', async () => {
+      const twoCodes = 'init[0] "web_set_sockets_option_0": execution blocker restored_body_required, request_body_xml_json_content_type_mismatch blocks replay until the imported behavior is resolved'
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError(`script replay is blocked: ${twoCodes}`, 400, { error: `script replay is blocked: ${twoCodes}` }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="topbar-contribution"] input[aria-label="Script name"]')!, 'Checkout Flow edited') })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(notice()?.textContent).toContain('Debug did not start: the saved script still has 2 problems that block replay. Save your changes, then debug.')
+      expect(topbarDebug().textContent).toBe('Save and debug')
+      expect(topbarDebug().title).toBe('Your changes are not saved; the saved script still has 2 blockers. Save them, then debug.')
+    })
+
+    it('uses the saved copy\'s preflight from a structured refusal while the draft is unchanged', async () => {
+      const storedPreflight = { ...buildLocalReplayPreflight(gatedScript), required_secrets: [], missing_secrets: [] }
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError(`script replay is blocked: ${gateMessage(0)}; ${gateMessage(2)}`, 400, {
+        error: `script replay is blocked: ${gateMessage(0)}; ${gateMessage(2)}`, code: 'script_replay_blocked', gate_scope: 'stored_script', issues: [gateMessage(0), gateMessage(2)], preflight: storedPreflight,
+      }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      const gates = () => Array.from(findReadinessCard(container)?.querySelectorAll('.replay-preflight-gates li') || []).map(item => item.textContent)
+      expect(gates()).toEqual(['Choose supported TLS settingsInit › web_set_sockets_option_0', 'Choose supported TLS settingsInit › web_set_sockets_option_2'])
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      // An edit makes it describe another document: the draft's own checks
+      // return, and the saved copy still needs saving over.
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="topbar-contribution"] input[aria-label="Script name"]')!, 'Checkout Flow edited') })
+      await flushReact()
+      expect(gates()).toEqual([])
+      expect(topbarDebug().textContent).toBe('Save and debug')
+    })
+
+    it('keeps the counts when a started run brings the server\'s matching preflight', async () => {
+      const script: ScriptDefinition = { ...initialScript, actions: [{ ...initialScript.actions[0], name: 'Store cart', method: 'POST', target: '/store/{{var.c_storeid}}/cart' }] }
+      apiMock.startScriptDebugSession.mockResolvedValueOnce({ ...debugSessionResponse({ group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', success: true, events: [] }), preflight: { ...buildLocalReplayPreflight(script), valid: true } })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      const before = issueChip()
+      expect(before).toBe('1 issue')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(issueChip()).toBe(before)
+    })
+
+    it('saves a draft whose saved copy is still gated, then starts it', async () => {
+      const pair = authoringFixture(gatedScript)
+      const repaired = { ...pair.projection.script, init: [{ ...tlsGate(0), metadata: {} }, warmUp, { ...tlsGate(2), metadata: {} }] } as ScriptDefinition
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialRetainedDraft={repaired} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Save and debug')
+      expect(topbarDebug().title).toBe('Your changes are not saved; the saved script still has 2 blockers. Save them, then debug.')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      await flushReact()
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(apiMock.updateScript.mock.invocationCallOrder[0]).toBeLessThan(apiMock.startScriptDebugSession.mock.invocationCallOrder[0])
+    })
+
+    it('saves first, rather than resolving, when the unsaved draft supplies a value a step\'s review code still names, then starts', async () => {
+      const consumer = (target: string) => ({ ...initialScript.actions[0], name: 'Confirm', method: 'POST', target, metadata: { execution_blockers: ['missing_producer:sid'] } })
+      const pair = authoringFixture({ ...initialScript, actions: [consumer('/confirm/{{var.sid}}'), consumer('/receipt/{{var.sid}}')] } as ScriptDefinition)
+      // The draft declares sid; both steps keep the code the import stamped until a save re-evaluates it.
+      const supplied = { ...pair.projection.script, parameters: [{ name: 'sid', type: 'list', values: ['s-1'], update: 'once', selection: 'sequential' }] } as ScriptDefinition
+      // The server re-evaluates the codes on save, and the supplied value clears them.
+      apiMock.updateScript.mockImplementationOnce(async (id: string, script: ScriptDefinition) => savedAuthoringFixture({ ...script, actions: script.actions.map(action => ({ ...action, metadata: {} })) }, id))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialRetainedDraft={supplied} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Save and debug')
+      expect(topbarDebug().title).toBe('Your changes are not saved; the saved script still has 1 blocker. Save them, then debug.')
+      // One row for the value, saying what clears it, not a missing value per step.
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+      const rows = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy')).map(copy => copy.textContent || '')
+      expect(rows.filter(row => row.includes('sid'))).toEqual([expect.stringContaining('Save to update the import review for sid')])
+      expect(rows.join(' ')).toContain('The draft now supplies sid, but 2 steps still carry the import review codes that name it missing. Saving re-evaluates their review codes.')
+      expect(rows.join(' ')).not.toContain('Missing value: sid')
+      await act(async () => { findButtonByText(document.body, 'Close')!.click() })
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      await flushReact()
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(apiMock.updateScript.mock.invocationCallOrder[0]).toBeLessThan(apiMock.startScriptDebugSession.mock.invocationCallOrder[0])
+    })
+
+    it('starts the saved script after the page echoes its save', async () => {
+      const pair = authoringFixture(gatedScript)
+      const repaired = { ...pair.projection.script, init: [{ ...tlsGate(0), metadata: {} }, warmUp, { ...tlsGate(2), metadata: {} }] } as ScriptDefinition
+      // The page hands the editor the saved copy back, as a new object.
+      const onSave = vi.fn((saved: StoredScript) => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={saved.authoring_projection!.script} initialAuthoring={{ projection: saved.authoring_projection!, etag: `"script-authoring-v1:${saved.content_revision}"` }} projectId="project-1" onSave={onSave} />)) })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialRetainedDraft={repaired} projectId="project-1" onSave={onSave} />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Save and debug')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      await flushReact()
+      expect(onSave).toHaveBeenCalledTimes(1)
+      // The run starts in this editor, so a page hosting it keeps it open.
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-1' }), { keepAuthoringOpen: true })
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('starts nothing when the editor moved to another script while the save ran', async () => {
+      const pair = authoringFixture(gatedScript)
+      const repaired = { ...pair.projection.script, init: [{ ...tlsGate(0), metadata: {} }, warmUp, { ...tlsGate(2), metadata: {} }] } as ScriptDefinition
+      let finishSave!: (saved: StoredScript) => void
+      apiMock.updateScript.mockReturnValueOnce(new Promise(resolve => { finishSave = resolve }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialRetainedDraft={repaired} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+      // Another script, clean and ready to debug, opens in the same editor.
+      const other = { ...initialScript, id: 'script-2', name: 'Other flow' } as ScriptDefinition
+      const otherPair = authoringFixture(other, 'script-2', 'project-1')
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-2" initialScript={otherPair.projection.script} initialAuthoring={otherPair} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      await act(async () => { finishSave(savedAuthoringFixture(repaired)) })
+      await flushReact()
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('starts nothing when Save and debug queues a Java Vuser draft for approval, and keeps its notice', async () => {
+      const javaScript: ScriptDefinition = { ...initialScript, protocol: 'java_vuser', name: 'Java Checkout Flow', actions: [{ name: 'Java action', type: 'java_vuser_run', target: '', params: { method: 'action' } }] }
+      apiMock.createAuthoringSession.mockResolvedValueOnce({
+        id: 'java-authoring-session-1', source: 'manual', name: 'Java Checkout Flow', status: 'reviewing',
+        created_at: '2026-05-17T00:00:00Z', updated_at: '2026-05-17T00:00:00Z', last_accessed_at: '2026-05-17T00:00:00Z',
+      })
+      // The controller's older refusal names the saved copy's gates, so the editor asks for a save.
+      apiMock.startDraftScriptDebugSession.mockRejectedValue(legacyRefusal())
+      const onApprovalQueued = vi.fn()
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" onApprovalQueued={onApprovalQueued} />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(topbarDebug().textContent).toBe('Save and debug')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      await flushReact()
+      expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
+      expect(onApprovalQueued).toHaveBeenCalledTimes(1)
+      // No library script exists to debug: no start the server refuses.
+      expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('Java Vuser draft "Java Checkout Flow" queued for approval.')
+    })
+
+    // The saved copy also sends OLD_TOKEN, which the draft no longer uses: the
+    // save changes which project secrets the script needs, so the start waits
+    // for their status. Each status check answers when the test says so.
+    const secretHeaders = (script: ScriptDefinition, names: string[]) => ({ ...script, actions: [{ ...script.actions[0], headers: Object.fromEntries(names.map(name => [`X-${name}`, `{{secret.${name}}}`])) }] }) as ScriptDefinition
+    const savedSecretStatus = (names: string[]) => ({
+      script_id: 'script-1', project_id: 'project-1', required: names, configured: names, missing: [],
+      secrets: names.map(name => ({ name, configured: true })),
+      capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false },
+    })
+    const renderSecretChangingSave = async () => {
+      const pair = authoringFixture(secretHeaders(gatedScript, ['LOGIN_TOKEN', 'OLD_TOKEN']))
+      const repaired = secretHeaders({ ...pair.projection.script, init: [{ ...tlsGate(0), metadata: {} }, warmUp, { ...tlsGate(2), metadata: {} }] } as ScriptDefinition, ['LOGIN_TOKEN'])
+      const answers: Array<(configured: boolean | 'unavailable') => void> = []
+      apiMock.getScriptSecretStatus.mockResolvedValue(savedSecretStatus(['LOGIN_TOKEN', 'OLD_TOKEN']))
+      apiMock.getProjectSecretStatuses.mockImplementation((projectId: string, names: string[]) => new Promise((resolve, reject) => {
+        answers.push(configured => configured === 'unavailable'
+          ? reject(new Error('Secret status is unavailable'))
+          : resolve({ project_id: projectId, capabilities: savedSecretStatus([]).capabilities, secrets: names.map(name => ({ name, configured })) }))
+      }))
+      apiMock.updateScript.mockImplementation(async (id: string, script: ScriptDefinition) => {
+        apiMock.getScriptSecretStatus.mockResolvedValue(savedSecretStatus(['LOGIN_TOKEN']))
+        return savedAuthoringFixture(script, id)
+      })
+      const answerAll = async (configured: boolean | 'unavailable') => {
+        await act(async () => { answers.splice(0).forEach(answer => answer(configured)) })
+        await flushReact()
+      }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialRetainedDraft={repaired} projectId="project-1" />)) })
+      await flushReact()
+      await answerAll(true)
+      expect(topbarDebug().textContent).toBe('Save and debug')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      await flushReact()
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+      expect(apiMock.getProjectSecretStatuses).toHaveBeenLastCalledWith('project-1', ['LOGIN_TOKEN'])
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+      return answerAll
+    }
+
+    it('starts a save that changed the secrets the script needs once their status is known, once', async () => {
+      const answerAll = await renderSecretChangingSave()
+      await answerAll(true)
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('drops that start when the secret status cannot be checked', async () => {
+      const answerAll = await renderSecretChangingSave()
+      await answerAll('unavailable')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+      // The retry is the author's: its answer starts nothing by itself.
+      const retry = findButtonByText(container, 'Retry credential check')
+      expect(retry).toBeTruthy()
+      await act(async () => { retry!.click() })
+      await answerAll(true)
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('drops that start when the draft is edited while the secret status is checked', async () => {
+      const answerAll = await renderSecretChangingSave()
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="topbar-contribution"] input[aria-label="Script name"]')!, 'Checkout Flow edited') })
+      await answerAll(true)
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('waits and says why, instead of offering a save, while the editor is held for reconciliation', async () => {
+      // The retained draft removed the gates; the saved copy still has them,
+      // and the editor cannot save over it until its baseline is reviewed.
+      await act(async () => { root.render(<KeyboardShortcutProvider>{withTopbar(<ScriptEditor scriptId="script-1" initialScript={gatedScript} initialAuthoring={null} initialRetainedDraft={ungatedScript} initialRetainedNeedsReview projectId="project-1" />)}</KeyboardShortcutProvider>) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(true)
+      expect(topbarDebug().title).toBe('Load and review the current version of the script before saving and debugging.')
+      await act(async () => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5', bubbles: true })) })
+      await flushReact()
+      expect(apiMock.updateScript).not.toHaveBeenCalled()
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    // A request that sends {{var.token}}, and the server's view of it: blocking
+    // without session variables, ready with token supplied.
+    const tokenScript: ScriptDefinition = { ...initialScript, actions: [{ ...initialScript.actions[0], name: 'Store cart', target: '/cart', headers: { Authorization: 'Bearer {{var.token}}' } }] }
+    const tokenBlocked = { ...buildLocalReplayPreflight(tokenScript), valid: false, missing_variables: ['token'], blocking_variables: ['token'], placeholder_variables: [], required_secrets: [], missing_secrets: [] }
+    const tokenReady = { ...buildLocalReplayPreflight(tokenScript, { token: 'abc' }), required_secrets: [], missing_secrets: [] }
+    const modeChip = (label: string) => Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .mode-chip')).find(chip => chip.textContent?.trim() === label)!
+    const setSessionVariables = async (text: string) => {
+      await act(async () => { modeChip('Debug').click() })
+      const options = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))!
+      if (options.getAttribute('aria-expanded') !== 'true') await act(async () => { options.click() })
+      await act(async () => { changeTextareaValue(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Session Variables JSON"]')!, text) })
+      await flushReact()
+    }
+
+    it('rechecks a clean saved script as a draft with its session variables, so a value they supply does not refuse Debug', async () => {
+      apiMock.validateScript.mockResolvedValue({ script_id: 'script-1', valid: true, issues: [], warnings: [], preflight: tokenBlocked })
+      apiMock.validateDraftScript.mockResolvedValue({ script_id: '', valid: true, issues: [], warnings: [], preflight: tokenReady })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={tokenScript} projectId="project-1" />)) })
+      await flushReact()
+      await setSessionVariables('{"token": "abc"}')
+      await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.click(); await Promise.resolve() })
+      await flushReact()
+      // The stored check judges without session variables; a start would not.
+      expect(apiMock.validateScript).not.toHaveBeenCalled()
+      expect(apiMock.validateDraftScript).toHaveBeenCalledWith(expect.objectContaining({ name: tokenScript.name }), 'project-1', undefined, { token: 'abc' }, { fingerprint: expect.any(String) })
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+    })
+
+    it('stops holding a refused start\'s values against the draft once the session variables supply them', async () => {
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('script replay is not ready', 400, { error: 'script replay is not ready', preflight: tokenBlocked }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={tokenScript} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      // The refusal was judged without token; with it, the draft starts again.
+      await setSessionVariables('{"token": "abc"}')
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+    })
+
+    it('stops trusting a finished run\'s preflight once an edit adds a blocker', async () => {
+      const script: ScriptDefinition = { ...initialScript, actions: [{ ...initialScript.actions[0], name: 'Store cart', target: '/cart' }] }
+      const runPreflight = { ...buildLocalReplayPreflight(script), valid: true, required_secrets: [], missing_secrets: [] }
+      apiMock.startScriptDebugSession.mockResolvedValueOnce({
+        ...debugSessionResponse({ group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', success: true, events: [] }, { preflight: runPreflight }),
+        preflight: runPreflight,
+      })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(topbarDebug().textContent).toBe('Debug again')
+      // An undeclared {{param.*}} refuses replay; the run's preflight predates it.
+      await act(async () => { modeChip('Author').click() })
+      await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Store cart"]')!.click() })
+      await flushReact()
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('.action-editor-panel input[data-author-field="target"]')!, '/cart/{{param.tenant}}') })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens a gated request inside a transaction on its own repair, from Resolve and from its row', async () => {
+      const filler = (name: string) => ({ ...initialScript.actions[0], name, target: `/${name.toLowerCase()}` })
+      const script: ScriptDefinition = { ...initialScript, actions: [filler('Home'), filler('Browse'), filler('Cart'), {
+        name: 'Checkout_Txn', type: 'http_sequence', method: 'SEQUENCE', target: '/checkout',
+        params: { requests: [
+          { name: 'Begin', type: 'GET', method: 'GET', target: '/begin' },
+          { name: 'Confirm', type: 'POST', method: 'POST', target: '/confirm/{{var.sid}}', metadata: { execution_blockers: ['missing_producer:sid'] } },
+        ] },
+      }] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrame = 0
+      const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+      const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+      const runFrames = async () => { await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) }) }
+      const panel = () => container.querySelector<HTMLElement>('[data-blocker-repair]')
+      try {
+        await act(async () => { topbarDebug().click() })
+        await flushReact()
+        await runFrames()
+        // The request, not the transaction wrapping it, which has no blocker.
+        expect(selectionPath()).toContain('actions[3].params.requests[1]')
+        expect(panel()?.querySelector('h4')?.textContent).toBe('This step blocks replay')
+        // Its Author Problems row opens the same step.
+        await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Home"]')!.click() })
+        await flushReact()
+        expect(panel()).toBeNull()
+        await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.click() })
+        const row = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('sid'))
+        expect(row).toBeTruthy()
+        await act(async () => { row!.click() })
+        await flushReact()
+        await runFrames()
+      } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+      expect(selectionPath()).toContain('actions[3].params.requests[1]')
+      expect(panel()?.querySelector('h4')?.textContent).toBe('This step blocks replay')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('sends an unsaved draft opened from the import review back there for a protected body, and a saved script to import its source again', async () => {
+      const masked = { name: 'Submit', type: 'POST', method: 'POST', target: '/submit', body: '****', metadata: { execution_blockers: ['restored_body_required'] } }
+      const script: ScriptDefinition = { ...initialScript, actions: [...initialScript.actions, masked] }
+      const fromReview = 'A protected request body can be restored only while importing: return to the import review to supply the protected body.'
+      const reimport = 'A protected request body can be restored only while importing: import the source again to restore it.'
+      const panel = () => container.querySelector<HTMLElement>('[data-blocker-repair]')
+      const problemRow = async () => {
+        await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+        const row = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy')).find(copy => copy.textContent?.includes('Restore protected request body'))?.textContent || ''
+        await act(async () => { findButtonByText(document.body, 'Close')!.click() })
+        return row
+      }
+      const openBlockedStep = async () => {
+        expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+        await act(async () => { topbarDebug().click() })
+        await flushReact()
+        expect(selectionPath()).toContain(`actions[${script.actions.length - 1}]`)
+      }
+
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={script} projectId="project-1" returnTarget={{ label: 'Back to converted script', onReturn: vi.fn() }} />)) })
+      await flushReact()
+      const draftRow = await problemRow()
+      expect(draftRow).toContain(fromReview)
+      expect(draftRow).not.toContain(reimport)
+      await openBlockedStep()
+      expect(panel()?.querySelector('.script-blocker-repair-reasons p')?.textContent).toContain(fromReview)
+      expect(panel()?.querySelector('.script-blocker-repair-note')?.textContent).toBe('Needs the body repair in the import review.')
+
+      // Saved, it has no import review behind it.
+      await act(async () => { root.unmount() })
+      root = createRoot(container)
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(await problemRow()).toContain(reimport)
+      await openBlockedStep()
+      expect(panel()?.querySelector('.script-blocker-repair-reasons p')?.textContent).toContain(reimport)
+      expect(panel()?.querySelector('.script-blocker-repair-note')?.textContent).toBe('Needs a source change or re-import.')
+    })
+
+    it('lists two alike gates in one transaction apart, and Resolve reaches each request', async () => {
+      const filler = (name: string) => ({ ...initialScript.actions[0], name, target: `/${name.toLowerCase()}` })
+      const masked = (name: string) => ({ name, type: 'POST', method: 'POST', target: `/${name.toLowerCase()}`, body: '****', metadata: { execution_blockers: ['restored_body_required'] } })
+      const script: ScriptDefinition = { ...initialScript, actions: [filler('Home'), filler('Browse'), filler('Cart'), {
+        name: 'Checkout_Txn', type: 'http_sequence', method: 'SEQUENCE', target: '/checkout',
+        params: { requests: [masked('Begin'), masked('Confirm')] },
+      }] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      // Each request is its own row, named by the request it sits on.
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+      const rows = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy')).filter(copy => copy.textContent?.includes('Restore protected request body'))
+      expect(rows.map(row => row.querySelector('small')?.textContent)).toEqual(['Actions › Checkout_Txn › Begin', 'Actions › Checkout_Txn › Confirm'])
+      expect(issueChip()).toBe(`${/\d+/.exec(authorProblems() || '')?.[0]} issues`)
+      await act(async () => { document.querySelector<HTMLButtonElement>('[role="dialog"] .issue-details-header button')!.click() })
+      await act(async () => { topbarDebug().click() })
+      await flushReact()
+      expect(selectionPath()).toContain('actions[3].params.requests[0]')
+      await act(async () => { topbarDebug().click() })
+      await flushReact()
+      expect(selectionPath()).toContain('actions[3].params.requests[1]')
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('lists a refused start\'s static issue once, as the editor\'s own check, and Resolve opens it', async () => {
+      const script: ScriptDefinition = { ...initialScript, actions: [{ ...initialScript.actions[0], name: 'Login', target: '' }] }
+      const refused = { ...buildLocalReplayPreflight(script), valid: false, issues: ['actions[0] "Login": missing target'], required_secrets: [], missing_secrets: [] }
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('script replay is not ready', 400, { error: 'script replay is not ready', preflight: refused }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      const before = authorProblems()
+      // Authoring checks alone never refuse a start.
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      // The controller's words for it are the same problem as the check's.
+      expect(authorProblems()).toBe(before)
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+      const errors = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy strong')).map(title => title.textContent)
+      expect(errors.filter(title => /target/i.test(title || ''))).toEqual(['Action target is required for this protocol step.'])
+      await act(async () => { document.querySelector<HTMLButtonElement>('[role="dialog"] .issue-details-header button')!.click() })
+      // The server refuses it until it is fixed, so Debug says so and opens that check.
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      expect(notice()?.textContent).toContain('Debug did not start: 1 problem blocks replay — Action target is required for this protocol step (Actions › Login).')
+      await act(async () => { topbarDebug().click() })
+      await flushReact()
+      expect(selectionPath()).toContain('actions[0]')
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the step a Checks & readiness gate names, not a row for the step enclosing it', async () => {
+      const filler = (name: string) => ({ ...initialScript.actions[0], name, target: `/${name.toLowerCase()}` })
+      const script: ScriptDefinition = { ...initialScript, actions: [filler('Home'), filler('Browse'), filler('Cart'), {
+        name: 'Checkout_Txn', type: 'http_sequence', method: 'SEQUENCE', target: '/checkout', metadata: { execution_blocker: 'import_review_required' },
+        params: { requests: [
+          { name: 'Begin', type: 'GET', method: 'GET', target: '/begin' },
+          { name: 'Confirm', type: 'POST', method: 'POST', target: '/confirm/{{param.tenant}}', metadata: { execution_blockers: ['missing_producer:tenant'] } },
+        ] },
+      }] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      // The request's gate folds into the tenant row, titled as Author
+      // Problems titles it; the transaction's own gate has a row whose path
+      // starts the request's.
+      const gate = (name: string) => Array.from(findReadinessCard(container)?.querySelectorAll<HTMLButtonElement>('.replay-preflight-gates button') || []).find(button => button.textContent?.includes(name))
+      expect(gate('Review imported behavior')).toBeTruthy()
+      await act(async () => { gate('Unresolved value: tenant')!.click() })
+      await flushReact()
+      expect(selectionPath()).toContain('actions[3].params.requests[1]')
+    })
+
+    it('locates two alike gates on one transaction\'s requests apart in Checks & readiness, as Author Problems does', async () => {
+      const request = (name: string, target: string) => ({ name, type: 'GET', method: 'GET', target, metadata: { execution_blockers: ['legacy_tls_replacement'] } })
+      const script: ScriptDefinition = { ...initialScript, actions: [initialScript.actions[0], initialScript.actions[0], {
+        name: 'Login', type: 'http_sequence', method: 'SEQUENCE', target: '/login',
+        params: { requests: [request('Request A', '/login/a'), request('Request B', '/login/b')] },
+      }] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      const gates = () => Array.from(findReadinessCard(container)?.querySelectorAll<HTMLButtonElement>('.replay-preflight-gates button') || [])
+      expect(gates().map(button => [button.querySelector('strong')?.textContent, button.querySelector('small')?.textContent])).toEqual([
+        ['Choose supported TLS settings', 'Actions › Login › Request A'],
+        ['Choose supported TLS settings', 'Actions › Login › Request B'],
+      ])
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+      const sources = Array.from(document.querySelectorAll('[role="dialog"] button')).map(button => button.textContent || '').filter(text => text.includes('Choose supported TLS settings'))
+      expect(sources.map(text => /Actions › Login › Request [AB]/.exec(text)?.[0])).toEqual(['Actions › Login › Request A', 'Actions › Login › Request B'])
+    })
+
+    it('lists a request gated by two codes as two problems in Checks & readiness, as Debug and Author Problems count it', async () => {
+      const script: ScriptDefinition = { ...initialScript, actions: [initialScript.actions[0], {
+        name: 'Submit order', type: 'POST', method: 'POST', target: '/orders', body: '<order/>',
+        metadata: { execution_blockers: ['request_body_xml_json_content_type_mismatch', 'restored_body_required'] },
+      }] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      const gates = () => Array.from(findReadinessCard(container)?.querySelectorAll<HTMLButtonElement>('.replay-preflight-gates button') || [])
+      expect(gates().map(button => button.querySelector('strong')?.textContent)).toEqual(['Body is XML but Content-Type declares JSON', 'Restore protected request body'])
+      await act(async () => { gates()[1].click() })
+      await flushReact()
+      expect(selectionPath()).toContain('actions[1]')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('words a value the server says configuration blocks as configuration, in the refusal and in Author Problems', async () => {
+      // The draft sends {{var.host}} as placeholder text before a step sets
+      // it; the controller also finds it in configuration, which no step can supply.
+      const script: ScriptDefinition = { ...initialScript, actions: [
+        { ...initialScript.actions[0], name: 'Store cart', target: '/cart?h={{var.host}}' },
+        { name: 'Set host', type: 'source_parameter', target: '', params: { function: 'lr_save_string', args: ['shop.example.test', 'host'] } },
+      ] }
+      const refused = { ...buildLocalReplayPreflight(script), valid: false, blocking_variables: ['host'], placeholder_variables: [], late_produced_variables: ['host'], config_blocking_variables: ['host'], required_secrets: [], missing_secrets: [] }
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('script replay is not ready', 400, { error: 'script replay is not ready', preflight: refused }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      // Moving the producer cannot clear it, so it is not a producer-order problem.
+      expect(notice()?.textContent).toContain('Debug did not start: 1 problem blocks replay — Replace configuration reference: host.')
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+      const dialogText = document.querySelector('[role="dialog"]')?.textContent || ''
+      expect(dialogText).toContain('Protocol configuration references host. Configuration is applied before any step runs, so replay refuses it. Replace the reference with a literal configuration value.')
+      expect(dialogText).not.toContain('Check producer order: host')
+    })
+
+    it('says why a start refused only for a project secret the controller could not resolve did not start, and keeps Debug available', async () => {
+      const script: ScriptDefinition = { ...initialScript, actions: [{ ...initialScript.actions[0], headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }] }
+      // The project reads the secret as configured; the controller could not
+      // resolve its value (its provider failed), so it refused the start.
+      apiMock.getProjectSecretStatuses.mockImplementation(async (projectId: string, names: string[]) => ({
+        project_id: projectId,
+        capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false },
+        secrets: names.map(name => ({ name, configured: true })),
+      }))
+      const refused = { ...buildLocalReplayPreflight(script), valid: false, required_secrets: ['LOGIN_TOKEN'], missing_secrets: ['LOGIN_TOKEN'] }
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('script replay is not ready', 400, { error: 'script replay is not ready', preflight: refused }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(container.querySelector('.editor-toast.error')).toBeNull()
+      // The editor lists no blocker for it, so the refusal's own line says
+      // what refused the start; Debug stays available for a retry.
+      expect(notice()?.textContent).toBe('Debug did not start: 1 problem blocks replay — Configure project secret: LOGIN_TOKEN.')
+      expect(notice()?.querySelector('button')).toBeNull()
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+    })
+
+    it('opens a configuration reference where it is replaced, in Runtime Settings, not a step that uses the name', async () => {
+      const script: ScriptDefinition = { ...initialScript, config: { ...initialScript.config, base_url: 'https://{{var.host}}' }, actions: [
+        { ...initialScript.actions[0], name: 'Store cart', target: '/cart?h={{var.host}}' },
+        { name: 'Set host', type: 'source_parameter', target: '', params: { function: 'lr_save_string', args: ['shop.example.test', 'host'] } },
+      ] }
+      const refused = { ...buildLocalReplayPreflight(script), valid: false, blocking_variables: ['host'], placeholder_variables: [], late_produced_variables: ['host'], config_blocking_variables: ['host'], required_secrets: [], missing_secrets: [] }
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('script replay is not ready', 400, { error: 'script replay is not ready', preflight: refused }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await act(async () => { modeChip('Author').click() })
+      await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Set host"]')!.click() })
+      await flushReact()
+      expect(selectionPath()).toContain('actions[1]')
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrame = 0
+      const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+      const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+      try {
+        await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+        const row = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Replace configuration reference: host'))
+        expect(row).toBeTruthy()
+        await act(async () => { row!.click() })
+        await flushReact()
+        await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) })
+      } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+      expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(container.querySelector('[data-author-field="base_url"]'))
+      // Not "Store cart", whose use of host is only a placeholder.
+      expect(selectionPath()).toContain('actions[1]')
+    })
+
+    it('opens a configuration reference in Runtime Settings when a gated step also uses the name', async () => {
+      // The step's own gate on host is evidence of the configuration
+      // reference, as the importer groups it: no step repair supplies configuration.
+      const script: ScriptDefinition = { ...initialScript, config: { ...initialScript.config, base_url: 'https://{{var.host}}' }, actions: [
+        { ...initialScript.actions[0], name: 'Store cart', target: '/cart?h={{var.host}}', metadata: { execution_blockers: ['missing_producer:host'] } },
+        { ...initialScript.actions[0], name: 'Browse', target: '/browse' },
+      ] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await act(async () => { modeChip('Author').click() })
+      await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Browse"]')!.click() })
+      await flushReact()
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrame = 0
+      const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+      const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+      const runFrames = async () => { await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) }) }
+      const baseUrl = () => container.querySelector('[data-author-field="base_url"]')
+      try {
+        await act(async () => { topbarDebug().click() })
+        await flushReact()
+        await runFrames()
+        expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
+        expect(document.activeElement).toBe(baseUrl())
+        expect(container.querySelector('[data-blocker-repair]')).toBeNull()
+        expect(selectionPath()).toContain('actions[1]')
+        // Its Author Problems row says where it is fixed, not the step, and opens the same place.
+        await act(async () => { findCenterTab(container, 'Action editor')!.click() })
+        expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('false')
+        await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+        const row = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Replace configuration reference: host'))
+        expect(row?.querySelector('small')?.textContent).toBe('Replay readiness')
+        await act(async () => { row!.click() })
+        await flushReact()
+        await runFrames()
+        expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
+        expect(document.activeElement).toBe(baseUrl())
+        // Checks & readiness lists the step's gate under the value, and opens it the same way.
+        await act(async () => { findCenterTab(container, 'Action editor')!.click() })
+        const gate = findReadinessCard(container)?.querySelector<HTMLButtonElement>('.replay-preflight-gates li button')
+        expect(gate?.textContent).toContain('Replace configuration reference: host')
+        await act(async () => { gate!.click() })
+        await flushReact()
+        await runFrames()
+      } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+      expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
+      expect(container.querySelector('[data-blocker-repair]')).toBeNull()
+      expect(selectionPath()).toContain('actions[1]')
+    })
+
+    it('opens a configuration reference in Runtime Settings from a gate with another code too, and the other code on its step', async () => {
+      // The step's gate names host and a TLS replacement: two rows in Checks
+      // & readiness, each opening its own problem, whichever code comes first.
+      const script: ScriptDefinition = { ...initialScript, config: { ...initialScript.config, base_url: 'https://{{var.host}}' }, actions: [
+        { ...initialScript.actions[0], name: 'Store cart', target: '/cart?h={{var.host}}', metadata: { execution_blockers: ['missing_producer:host', 'legacy_tls_replacement'] } },
+        { ...initialScript.actions[0], name: 'Browse', target: '/browse' },
+      ] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      await act(async () => { modeChip('Author').click() })
+      await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Browse"]')!.click() })
+      await flushReact()
+      const gate = (title: string) => Array.from(findReadinessCard(container)?.querySelectorAll<HTMLButtonElement>('.replay-preflight-gates li button') || []).find(button => button.querySelector('strong')?.textContent === title)
+      expect(gate('Replace configuration reference: host')).toBeTruthy()
+      expect(gate('Choose supported TLS settings')).toBeTruthy()
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrame = 0
+      const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+      const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+      try {
+        await act(async () => { gate('Replace configuration reference: host')!.click() })
+        await flushReact()
+        await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) })
+      } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+      expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(container.querySelector('[data-author-field="base_url"]'))
+      expect(container.querySelector('[data-blocker-repair]')).toBeNull()
+      expect(selectionPath()).toContain('actions[1]')
+
+      // The TLS code's row opens its own step.
+      await act(async () => { findCenterTab(container, 'Action editor')!.click() })
+      await act(async () => { gate('Choose supported TLS settings')!.click() })
+      await flushReact()
+      expect(findCenterTab(container, 'Runtime Settings')?.getAttribute('aria-selected')).toBe('false')
+      expect(selectionPath()).toContain('actions[0]')
+    })
+
+    it('never counts an import fidelity blocker from a recheck as a replay blocker', async () => {
+      apiMock.validateScript.mockResolvedValueOnce({
+        script_id: 'script-1', valid: false, warnings: [],
+        issues: ['import fidelity blocker: Imported script is marked not promotable to executable.'],
+        preflight: { ...buildLocalReplayPreflight(initialScript), required_secrets: [], missing_secrets: [] },
+      })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.validateScript).toHaveBeenCalledTimes(1)
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+      const chip = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .topbar-meta-chip')).find(item => /issues?$/.test(item.textContent || ''))
+      expect(chip?.dataset.tone).toBe('warning')
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+      const note = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy')).find(copy => copy.textContent?.includes('Import review: Imported script is marked not promotable to executable.'))
+      expect(note?.textContent).toContain('Promotion and load-test launch hold this imported script for review. Debug runs are not refused for it.')
+    })
+
+    it('shows a recheck that fails only for import review folds as "Needs review", and any static issue as "Checks failed"', async () => {
+      const fold = 'import fidelity blocker: Imported script needs import review before promotion: conditional_producer:c_storeid.'
+      const recheck = (issues: string[]) => apiMock.validateScript.mockResolvedValueOnce({
+        script_id: 'script-1', valid: false, warnings: [], issues,
+        preflight: { ...buildLocalReplayPreflight(initialScript), required_secrets: [], missing_secrets: [] },
+      })
+      const checkedChip = () => Array.from(container.querySelectorAll<HTMLElement>('.script-status-chip')).find(chip => /^(Unchecked|Recheck|Checked|Needs review|Checks failed):/.test(chip.textContent || ''))!
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)) })
+      await flushReact()
+
+      recheck([fold])
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect(topbarDebug().disabled).toBe(false)
+      expect(checkedChip().classList.contains('warn')).toBe(true)
+      expect(checkedChip().classList.contains('bad')).toBe(false)
+      expect(checkedChip().textContent?.startsWith('Needs review:')).toBe(true)
+      expect(checkedChip().title).toBe('Validation evidence: needs import review before promotion; debug runs are not refused for it. Checks & readiness has the details.')
+      expect(findReadinessCard(container)?.textContent).toContain('Validation evidence: needs import review before promotion.')
+
+      // A static issue beside the fold is a failed check.
+      recheck([fold, 'actions[0] "Login": missing target'])
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.validateScript).toHaveBeenCalledTimes(2)
+      expect(checkedChip().classList.contains('bad')).toBe(true)
+      expect(checkedChip().textContent?.startsWith('Checks failed:')).toBe(true)
+      expect(checkedChip().title).toBe('Validation evidence: needs changes. Checks & readiness has the details.')
+      expect(findReadinessCard(container)?.textContent).toContain('Validation evidence: needs changes.')
+    })
+
+    it('headlines a recheck that fails only for import review folds as a review in Checks & readiness, and any static issue as a failed check', async () => {
+      const fold = 'import fidelity blocker: Imported script needs import review before promotion: conditional_producer:c_storeid.'
+      const missingTarget = 'actions[0] "Login": missing target'
+      const recheck = (issues: string[]) => apiMock.validateScript.mockResolvedValueOnce({
+        script_id: 'script-1', valid: false, warnings: [], issues,
+        preflight: { ...buildLocalReplayPreflight(initialScript), required_secrets: [], missing_secrets: [] },
+      })
+      const message = () => findReadinessCard(container)!.querySelector<HTMLElement>('.readiness-validation-message')!
+      const listed = () => Array.from(message().querySelectorAll('li')).map(item => item.textContent)
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)) })
+      await flushReact()
+
+      recheck([fold])
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect(message().classList.contains('warning')).toBe(true)
+      expect(message().classList.contains('error')).toBe(false)
+      expect(message().querySelector('strong')?.textContent).toBe('Needs import review before promotion. Debug runs are not refused for it.')
+      expect(listed()).toEqual(['Import review: Check producer order: c_storeid'])
+      expect(findReadinessCard(container)?.textContent).not.toContain('Script validation failed.')
+
+      // A static issue beside the fold is a failed check, headlined as one.
+      recheck([fold, missingTarget])
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.validateScript).toHaveBeenCalledTimes(2)
+      expect(message().classList.contains('error')).toBe(true)
+      expect(message().querySelector('strong')?.textContent).toBe('Script validation failed.')
+      expect(listed()).toEqual([fold, missingTarget])
+    })
+
+    it('lists a gate a recheck folds into its issues once, as a blocker, and keeps other folds as import review notes', async () => {
+      const trailing = 'One or more response contributors or one-shot headers occur after the final request and cannot be bound faithfully.'
+      apiMock.validateScript.mockResolvedValueOnce({
+        script_id: 'script-1', valid: false, warnings: [],
+        issues: ['import fidelity blocker: legacy_tls_replacement at init[0]', 'import fidelity blocker: legacy_tls_replacement at init[2]', `import fidelity blocker: ${trailing}`],
+        preflight: { ...buildLocalReplayPreflight(gatedScript), required_secrets: [], missing_secrets: [] },
+      })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={gatedScript} projectId="project-1" />)) })
+      await flushReact()
+      const before = { chip: issueChip(), problems: authorProblems() }
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.validateScript).toHaveBeenCalledTimes(1)
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      // Only the trailing-contributor sentence is new: the TLS folds are the two gates.
+      const count = (text?: string | null) => Number(/(\d+)/.exec(text || '')?.[1])
+      expect(count(issueChip())).toBe(count(before.chip) + 1)
+      expect(count(authorProblems())).toBe(count(before.problems) + 1)
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+      const copies = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy')).map(copy => copy.textContent || '')
+      expect(copies.filter(copy => copy.includes('Choose supported TLS settings'))).toHaveLength(2)
+      expect(copies.filter(copy => copy.includes('Import review:'))).toEqual([expect.stringContaining(`Import review: ${trailing}`)])
+      expect(copies.some(copy => copy.includes('Import review: legacy_tls_replacement'))).toBe(false)
+      await act(async () => { document.querySelector<HTMLButtonElement>('[role="dialog"] .issue-details-header button')!.click() })
+      // The TLS folds are gates that refuse a debug run: neither the status
+      // chip nor Checks & readiness says debug runs are not refused, and
+      // Checks & readiness, like Author Problems, lists only the new fold.
+      const checkedChip = Array.from(container.querySelectorAll<HTMLElement>('.script-status-chip')).find(chip => chip.textContent?.startsWith('Needs review:'))
+      expect(checkedChip?.title).toBe('Validation evidence: needs import review before promotion. Checks & readiness has the details.')
+      const message = findReadinessCard(container)!.querySelector<HTMLElement>('.readiness-validation-message')!
+      expect(message.querySelector('strong')?.textContent).toBe('Needs import review before promotion.')
+      expect(Array.from(message.querySelectorAll('li')).map(item => item.textContent)).toEqual([`Import review: ${trailing}`])
+    })
+
+    it('lists the review codes a held import report names once, by the codes the draft does not carry, as one review note', async () => {
+      // The draft's step carries missing_producer:cart; the saved report also names a code it no longer carries.
+      const reviewedScript = { ...initialScript, actions: [{ ...initialScript.actions[0], metadata: { review_reasons: ['missing_producer:cart'] } }] } as ScriptDefinition
+      const recheck = (codes: string) => apiMock.validateScript.mockResolvedValueOnce({
+        script_id: 'script-1', valid: false, warnings: [],
+        issues: [`import fidelity blocker: Imported script needs import review before promotion: ${codes}.`],
+        preflight: { ...buildLocalReplayPreflight(reviewedScript), required_secrets: [], missing_secrets: [] },
+      })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={reviewedScript} projectId="project-1" />)) })
+      await flushReact()
+      const count = (text?: string | null) => Number(/(\d+)/.exec(text || '')?.[1] || 0)
+      const before = { chip: count(issueChip()), problems: count(authorProblems()) }
+      const reviewNotes = async () => {
+        await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
+        const copies = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy')).map(copy => copy.textContent || '')
+        await act(async () => { findButtonByText(document.body, 'Close')!.click() })
+        return copies.filter(copy => copy.includes('import review') || copy.includes('Import review'))
+      }
+
+      // Every code it names is one the draft carries: nothing new is listed.
+      recheck('missing_producer:cart')
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect({ chip: count(issueChip()), problems: count(authorProblems()) }).toEqual(before)
+      expect(await reviewNotes()).toEqual([])
+
+      // One code it no longer carries is one review note that names only that
+      // code and says "import review" once; every count adds that one note.
+      recheck('conditional_producer:store, missing_producer:cart')
+      await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.validateScript).toHaveBeenCalledTimes(2)
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+      expect({ chip: count(issueChip()), problems: count(authorProblems()) }).toEqual({ chip: before.chip + 1, problems: before.problems + 1 })
+      expect(await reviewNotes()).toEqual([
+        'Import review: Check producer order: storePromotion and load-test launch hold this imported script for review of conditional_producer:store. Debug runs are not refused for it.Import review',
+      ])
+    })
+
+    it('shows a start as starting, not running, until the controller admits a session', async () => {
+      let resolveStart!: (value: unknown) => void
+      apiMock.startScriptDebugSession.mockReturnValueOnce(new Promise(resolve => { resolveStart = resolve }))
+      await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />) })
+      await flushReact()
+      await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+      expect(container.querySelector('.replay-live-badge')?.textContent).toBe('Starting')
+      expect(container.querySelector('.debugger-live-strip-text strong')?.textContent).toBe('Checking replay readiness…')
+      expect(findWorkspaceTab(container, 'Debug')?.dataset.debugStatus).toBe('Starting')
+      expect(findButtonByTitle(container, 'Pause')).toBeUndefined()
+      expect(findButtonByTitle(container, 'Step over the current block (run the rest of it, pause after)')).toBeUndefined()
+      expect(findButtonByTitle(container, 'Stop debugger')).toBeDefined()
+      await act(async () => { resolveStart(debugSessionResponse({ group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', success: true, events: [] })) })
+      await flushReact()
+      expect(container.querySelector('.replay-live-badge')?.textContent).toBe('Running')
+      expect(findButtonByTitle(container, 'Pause')).toBeDefined()
+    })
+
+    it('repairs the saved copy from the blocked step and adopts it, so Debug starts again', async () => {
+      const pair = authoringFixture(gatedScript, 'script-1', 'project-1')
+      const repairedStep = (index: number) => ({ ...tlsGate(index), metadata: { source_function: 'web_set_sockets_option', source_file: 'vuser_init.c', source_line: index + 3, migration_change: 'legacy TLS replaced by TLS 1.2-1.3' } })
+      const repairedScript = { ...pair.projection.script, config: { ...pair.projection.script.config, http: { ...pair.projection.script.config.http, tls: { min_version: '1.2', max_version: '1.3' } } }, init: [repairedStep(0), warmUp, repairedStep(2)] } as ScriptDefinition
+      const stored = savedAuthoringFixture(repairedScript, 'script-1', 'project-1', 'b')
+      const outcome = { script_id: 'script-1', content_revision: pair.projection.content_revision, findings: [], readiness: { replay_ready: true, promotion_ready: false }, secret_binding_requirements: [], fidelity_report: {} }
+      const evaluation = { ...outcome, script: repairedScript, before: pair.projection.script }
+      apiMock.previewScriptRepair.mockResolvedValueOnce(evaluation)
+      // The apply receipt, like the server's, has no before/after scripts:
+      // the saved copy and its validation are all the editor adopts.
+      apiMock.applyScriptRepair.mockResolvedValueOnce({ ...outcome, stored, validation: {
+        script_id: 'script-1', valid: true, issues: [], warnings: [], validated_content_revision: stored.content_revision,
+        preflight: { ...buildLocalReplayPreflight(stored.script!), required_secrets: [], missing_secrets: [] },
+      } })
+      // The page hands the editor the saved copy back, as it does on the Scripts page.
+      const onSave = vi.fn((saved: StoredScript) => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={saved.authoring_projection!.script} initialAuthoring={{ projection: saved.authoring_projection!, etag: `"script-authoring-v1:${saved.content_revision}"` }} projectId="project-1" onSave={onSave} />)) })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" onSave={onSave} />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      const before = Number(/^\d+/.exec(issueChip() || '0')?.[0] || 0)
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrame = 0
+      const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+      const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+      try {
+        await act(async () => { topbarDebug().click() })
+        await flushReact()
+        await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) })
+      } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+      // The blocked step says why and offers the import's repair, focused.
+      const panel = () => container.querySelector<HTMLElement>('[data-blocker-repair]')
+      expect(selectionPath()).toContain('init[0]')
+      expect(panel()?.textContent).toContain('Choose supported TLS settings')
+      expect(panel()?.textContent).toContain('Source vuser_init.c:3')
+      expect(document.activeElement).toBe(panel()?.querySelector('select[aria-label="Repair operation"]'))
+      await act(async () => { findButtonByText(panel()!, 'Preview repair')!.click() })
+      await flushReact()
+      expect(apiMock.previewScriptRepair).toHaveBeenCalledWith('script-1', { finding: 'legacy_tls_replacement', action_path: 'init[0]', operation: { type: 'select_tls', tls_min: '1.2', tls_max: '1.3' } }, pair, 'project-1')
+      await act(async () => { findButtonByText(panel()!, 'Apply reviewed repair')!.click() })
+      await flushReact()
+      expect(apiMock.applyScriptRepair).toHaveBeenCalledTimes(1)
+      expect(apiMock.applyScriptRepair.mock.calls[0][2]).toEqual(pair)
+      // The repaired copy is the editor's saved state: nothing to save, no gate left.
+      expect(container.querySelector('.script-status-chip')?.textContent).toContain('Saved')
+      expect(container.querySelector('.script-status-chip')?.textContent).not.toContain('Unsaved')
+      // The apply's validation of the repaired revision is the current check,
+      // and the outcome stays said, through the page's echo of the save.
+      await flushReact()
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(Array.from(container.querySelectorAll('.script-status-chip')).some(chip => chip.textContent?.startsWith('Checked:'))).toBe(true)
+      expect(container.querySelector('.editor-toast.success')?.textContent).toBe('Repair applied and saved to the script.')
+      expect(panel()).toBeNull()
+      // The panel that held focus is gone: the step's heading takes it, and
+      // the editor's own live region says what happened.
+      expect(document.activeElement).toBe(container.querySelector('[data-inspector-focus]'))
+      expect(container.querySelector('[data-repair-announcement]')?.textContent).toBe('Repair applied and saved to the script.')
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+      expect(issueChip()).toBe(`${before - 2} issue${before - 2 === 1 ? '' : 's'}`)
+      expect(container.querySelector('.editor-toast.error')).toBeNull()
+      // Other blockers may remain to repair, so a page hosting the editor keeps it open.
+      expect(onSave).toHaveBeenCalledWith(stored, { keepAuthoringOpen: true })
+      expect(apiMock.updateScript).not.toHaveBeenCalled()
+      await act(async () => { findButtonByText(container, `Author Problems (${before - 2})`)!.click() })
+      expect(document.querySelector('[role="dialog"]')?.textContent || '').not.toContain('Current operation')
+      // The next start runs against the repaired revision.
+      await act(async () => { (document.querySelector('[role="dialog"] button[aria-label="Close"]') as HTMLButtonElement | null)?.click() })
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('moves focus to the next blocker\'s repair after a repair, and announces it in the editor\'s own live region', async () => {
+      const proxyStep = { name: 'Proxy login', type: 'GET', method: 'GET', target: '/proxy', metadata: { execution_blocker: 'encrypted_proxy_password', source_file: 'Action.c', source_line: 4 } }
+      const script = { ...initialScript, init: [tlsGate(0), warmUp], actions: [...initialScript.actions, proxyStep] } as ScriptDefinition
+      const pair = authoringFixture(script, 'script-1', 'project-1')
+      const repairedScript = { ...pair.projection.script, config: { ...pair.projection.script.config, http: { ...pair.projection.script.config.http, tls: { min_version: '1.2', max_version: '1.3' } } }, init: [{ ...tlsGate(0), metadata: { source_function: 'web_set_sockets_option', migration_change: 'legacy TLS replaced by TLS 1.2-1.3' } }, warmUp] } as ScriptDefinition
+      const stored = savedAuthoringFixture(repairedScript, 'script-1', 'project-1', 'b')
+      const outcome = { script_id: 'script-1', content_revision: pair.projection.content_revision, findings: [], readiness: { replay_ready: false, promotion_ready: false }, secret_binding_requirements: [], fidelity_report: {} }
+      apiMock.previewScriptRepair.mockResolvedValueOnce({ ...outcome, script: repairedScript, before: pair.projection.script })
+      apiMock.applyScriptRepair.mockResolvedValueOnce({ ...outcome, stored, validation: {
+        script_id: 'script-1', valid: true, issues: [], warnings: [], validated_content_revision: stored.content_revision,
+        preflight: { ...buildLocalReplayPreflight(stored.script!), required_secrets: [], missing_secrets: [] },
+      } })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      const announcement = () => container.querySelector('[data-repair-announcement]')
+      // The region is the editor's, there before any repair.
+      expect(announcement()?.getAttribute('role')).toBe('status')
+      expect(announcement()?.textContent).toBe('')
+      const panel = () => container.querySelector<HTMLElement>('[data-blocker-repair]')
+      const frames = new Map<number, FrameRequestCallback>()
+      let nextFrame = 0
+      const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { const id = ++nextFrame; frames.set(id, callback); return id })
+      const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+      const runFrames = async () => { await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) }) }
+      try {
+        await act(async () => { modeChip('Author').click() })
+        await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="web_set_sockets_option_0"]')!.click() })
+        await flushReact()
+        expect(selectionPath()).toContain('init[0]')
+        await act(async () => { findButtonByText(panel()!, 'Preview repair')!.click() })
+        await flushReact()
+        await act(async () => { findButtonByText(panel()!, 'Apply reviewed repair')!.click() })
+        await flushReact()
+        await runFrames()
+      } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+      expect(apiMock.applyScriptRepair).toHaveBeenCalledTimes(1)
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      // Not left on the page: on the repair of the blocker still in the way.
+      expect(selectionPath()).toContain(`actions[${script.actions.length - 1}]`)
+      expect(panel()?.textContent).toContain('Replace encrypted proxy password')
+      expect(document.activeElement).toBe(panel()?.querySelector('select[aria-label="Repair operation"]'))
+      expect(document.activeElement).not.toBe(document.body)
+      expect(announcement()?.textContent).toBe('Repair applied and saved to the script.')
+    })
+
+    it('checks a repaired copy again with the session variables instead of adopting the apply\'s check without them', async () => {
+      const pair = authoringFixture(gatedScript, 'script-1', 'project-1')
+      const repairedStep = (index: number) => ({ ...tlsGate(index), metadata: { source_function: 'web_set_sockets_option', migration_change: 'legacy TLS replaced by TLS 1.2-1.3' } })
+      const repairedScript = { ...pair.projection.script, init: [repairedStep(0), warmUp, repairedStep(2)] } as ScriptDefinition
+      const stored = savedAuthoringFixture(repairedScript, 'script-1', 'project-1', 'b')
+      const outcome = { script_id: 'script-1', content_revision: pair.projection.content_revision, findings: [], readiness: { replay_ready: true, promotion_ready: false }, secret_binding_requirements: [], fidelity_report: {} }
+      const evaluation = { ...outcome, script: repairedScript, before: pair.projection.script }
+      apiMock.previewScriptRepair.mockResolvedValueOnce(evaluation)
+      // The apply receipt, like the server's, has no before/after scripts:
+      // the saved copy and its validation are all the editor adopts.
+      apiMock.applyScriptRepair.mockResolvedValueOnce({ ...outcome, stored, validation: {
+        script_id: 'script-1', valid: true, issues: [], warnings: [], validated_content_revision: stored.content_revision,
+        preflight: { ...buildLocalReplayPreflight(stored.script!), required_secrets: [], missing_secrets: [] },
+      } })
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" />)) })
+      await flushReact()
+      await setSessionVariables('{"token": "abc"}')
+      await act(async () => { modeChip('Author').click() })
+      await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="web_set_sockets_option_0"]')!.click() })
+      await flushReact()
+      const panel = () => container.querySelector<HTMLElement>('[data-blocker-repair]')!
+      await act(async () => { findButtonByText(panel(), 'Preview repair')!.click() })
+      await flushReact()
+      await act(async () => { findButtonByText(panel(), 'Apply reviewed repair')!.click() })
+      await flushReact()
+      await flushReact()
+      expect(apiMock.applyScriptRepair).toHaveBeenCalledTimes(1)
+      // The repaired copy is checked as a start would judge it, with token.
+      expect(apiMock.validateScript).not.toHaveBeenCalled()
+      expect(apiMock.validateDraftScript).toHaveBeenCalledWith(expect.objectContaining({ init: [expect.objectContaining({ name: 'web_set_sockets_option_0' }), expect.anything(), expect.anything()] }), 'project-1', undefined, { token: 'abc' }, { fingerprint: expect.any(String) })
+      // That check keeps the notice: once the step has no blocker the panel
+      // is gone, and the notice is the only confirmation of the save.
+      expect(container.querySelector('.editor-toast.success')?.textContent).toBe('Repair applied and saved to the script.')
+    })
+
+    it('repairs only a clean editor, and saves first when asked', async () => {
+      const pair = authoringFixture(gatedScript, 'script-1', 'project-1')
+      apiMock.previewScriptRepair.mockResolvedValueOnce({ script_id: 'script-1', content_revision: pair.projection.content_revision, script: pair.projection.script, before: pair.projection.script, findings: [], readiness: { replay_ready: true, promotion_ready: false }, secret_binding_requirements: [], fidelity_report: {} })
+      const onSave = vi.fn()
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} projectId="project-1" onSave={onSave} />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click() })
+      await flushReact()
+      const panel = () => container.querySelector<HTMLElement>('[data-blocker-repair]')!
+      await act(async () => { findButtonByText(panel(), 'Preview repair')!.click() })
+      await flushReact()
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="topbar-contribution"] input[aria-label="Script name"]')!, 'Checkout Flow edited') })
+      await flushReact()
+      expect(panel().querySelector('[role="note"]')?.textContent).toContain('Save or discard your changes first.')
+      // The saved copy is read at this editor's step path, which an edit may
+      // have moved: neither a new preview nor the pending apply runs.
+      expect(findButtonByText(panel(), 'Preview repair')!.disabled).toBe(true)
+      expect(findButtonByText(panel(), 'Apply reviewed repair')!.disabled).toBe(true)
+      await act(async () => { findButtonByText(panel(), 'Save changes')!.click() })
+      await flushReact()
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+      expect(apiMock.applyScriptRepair).not.toHaveBeenCalled()
+      // The save is a step on the way to the repair, so a page hosting the
+      // editor (the scenario's Review script) keeps it open.
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(onSave.mock.calls[0][1]).toEqual(expect.objectContaining({ keepAuthoringOpen: true }))
+    })
+
+    it('counts run failures apart from the script\'s problems on the Problems tab', async () => {
+      apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+        group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', success: false,
+        events: [{ phase: 'action', action_index: 0, action_name: 'Login', action_type: 'POST', target: '/login', success: false, error_message: 'HTTP 500', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 5 }],
+      }))
+      const script: ScriptDefinition = { ...initialScript, actions: [...initialScript.actions, { ...initialScript.actions[0], name: 'Store cart', target: '/store/{{var.c_storeid}}/cart' }] }
+      await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />) })
+      await flushReact()
+      await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+      await flushReact()
+      const tab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+      expect(tab.textContent).toBe('Problems 1 · 1 failed')
+      expect(tab.getAttribute('aria-label')).toBe('Problems: 1 script issue, 1 failed execution')
+    })
   })
 })

@@ -6,6 +6,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -39,10 +40,34 @@ func ScriptImportPromotionBlockers(script *dsl.Script) []string {
 		return UniqueSortedStrings(blockers)
 	}
 	if len(reportBlockers) == 0 {
-		reportBlockers = []string{"Imported script is marked not promotable to executable."}
+		reportBlockers = []string{unnamedPromotionBlocker(report.Warnings)}
 	}
 	return UniqueSortedStrings(append(blockers, reportBlockers...))
 }
+
+// unnamedPromotionBlocker states why a blocked report that names no blocker
+// holds promotion. A guided repair keeps a report blocked while review codes
+// remain, and lists them as its warnings, so a launch refusal names them
+// rather than only saying the script is held. A converter report's warnings
+// are free text that can quote the source, and a credential-preserving import
+// stores them unmasked, so only review-code entries are ever quoted.
+func unnamedPromotionBlocker(warnings []string) string {
+	named := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		if warning = strings.TrimSpace(warning); promotionReviewCode.MatchString(warning) {
+			named = append(named, warning)
+		}
+	}
+	if named = UniqueSortedStrings(named); len(named) > 0 {
+		return "Imported script needs import review before promotion: " + strings.Join(named, ", ") + "."
+	}
+	return "Imported script is marked not promotable to executable."
+}
+
+// promotionReviewCode matches an import review finding code, such as
+// import_review_required or missing_producer:<name>. Converter sentences, and
+// the quoted source text a warning may hold, never match.
+var promotionReviewCode = regexp.MustCompile(`^[a-z][a-z0-9_]*(:\S+)?$`)
 
 func JavaVuserHasCombinedImportReviewMarker(script *dsl.Script) bool {
 	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {

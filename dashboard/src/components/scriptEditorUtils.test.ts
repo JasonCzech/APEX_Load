@@ -20,11 +20,13 @@ import {
   inferDelimiter,
   isDefiniteReplayStartRejection,
   parseInlineData,
+  parseReplayStartRefusal,
   parseReplayVariablesText,
   resolveJsonStringSelection,
   stringifyInlineData,
 } from './scriptEditorUtils'
-import { type ScriptDefinition } from '../types/scripts'
+import { type ReplayPreflight, type ScriptDefinition } from '../types/scripts'
+import { ApiError } from '../hooks/apiClient'
 
 describe('downloadTextFile', () => {
   it('returns the shared save outcome instead of dropping the promise', async () => {
@@ -201,6 +203,40 @@ describe('scriptEditorUtils replay handoff helpers', () => {
     expect(isDefiniteReplayStartRejection({ status: 503 })).toBe(false)
     expect(isDefiniteReplayStartRejection({ status: 409 })).toBe(true)
     expect(isDefiniteReplayStartRejection({ status: 422 })).toBe(true)
+  })
+
+  describe('parseReplayStartRefusal', () => {
+    const gate = (index: number) => `init[${index}] "web_set_sockets_option_${index}": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved`
+    const preflight: ReplayPreflight = { valid: false, action_count: 3, expected_action_count: 3, data_source_count: 0, parameter_count: 0, issues: [gate(0), gate(2)] }
+    const blockedText = `script replay is blocked: ${gate(0)}; ${gate(2)}`
+
+    it('reads the stored-script gate refusal with its gates and the saved copy\'s preflight', () => {
+      const refusal = parseReplayStartRefusal(new ApiError(blockedText, 400, { error: blockedText, code: 'script_replay_blocked', gate_scope: 'stored_script', issues: [gate(0), gate(2)], preflight }))
+      expect(refusal).toEqual({ status: 400, message: blockedText, preflight, gateIssues: [gate(0), gate(2)], warnings: [], gateScope: 'stored_script' })
+    })
+
+    it('reads a request-time readiness refusal by its preflight', () => {
+      const refusal = parseReplayStartRefusal(new ApiError('Bad Request', 400, { script_id: 'script-1', valid: false, issues: ['Script name is required.'], warnings: ['w'], preflight }))
+      expect(refusal).toMatchObject({ status: 400, preflight, gateIssues: [], warnings: ['w'], gateScope: 'request' })
+    })
+
+    it('reads the session start\'s 409 gate refusal as judging the request', () => {
+      const refusal = parseReplayStartRefusal(new ApiError(blockedText, 409, { error: blockedText, code: 'script_replay_blocked', issues: [gate(0)] }))
+      expect(refusal).toEqual({ status: 409, message: blockedText, gateIssues: [gate(0)], warnings: [], gateScope: 'request' })
+    })
+
+    it('splits an older controller\'s bare stored-gate text into its gates', () => {
+      const refusal = parseReplayStartRefusal(new ApiError(blockedText, 400, { error: blockedText }))
+      expect(refusal).toEqual({ status: 400, message: blockedText, gateIssues: [gate(0), gate(2)], warnings: [], gateScope: 'stored_script' })
+    })
+
+    it('leaves transport failures, timeouts, server errors and unrelated rejections as errors', () => {
+      expect(parseReplayStartRefusal(new TypeError('network connection closed'))).toBeNull()
+      expect(parseReplayStartRefusal(new ApiError(blockedText, 503, { error: blockedText, preflight }))).toBeNull()
+      expect(parseReplayStartRefusal(new ApiError('request timed out', 408, { preflight }))).toBeNull()
+      expect(parseReplayStartRefusal(new ApiError('invalid replay options', 422, { error: 'invalid replay options' }))).toBeNull()
+      expect(parseReplayStartRefusal(null)).toBeNull()
+    })
   })
 
   it('parses replay variables text into string values', () => {

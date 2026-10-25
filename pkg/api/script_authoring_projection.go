@@ -252,6 +252,27 @@ func (tr *TestRunner) UpdateScriptAuthoringDurable(id string, script *dsl.Script
 	return tr.updateScriptDurableInProject(id, script, expected.ProjectID, time.Time{}, "", "", time.Time{}, false, "", &expected)
 }
 
+// UpdateScriptGuidedRepairDurable persists a guided repair derived from the
+// exact durable revision expected names, keeping the in-lock content CAS,
+// Java approval checks and refkey bump of an authoring save. trustedImport is
+// for an already credential-preserving prior only: the repair route has
+// confined the change to the transport fields its operation owns, and the CAS
+// pins the write to the prior that check read. A trusted write on an ordinary
+// script would stamp the preserve policy, so every other script takes the
+// ordinary authoring write. An ordinary repair arrives without its dependency
+// codes, and that write stamps them again once its binding gate has passed
+// (savedImportEvaluationRefresh).
+func (tr *TestRunner) UpdateScriptGuidedRepairDurable(id string, script *dsl.Script, expected storage.ScriptAuthoringPrecondition, sourceProfile string, trustedImport bool) (*StoredScript, bool, error) {
+	if !storage.ValidScriptContentRevision(expected.ContentRevision) {
+		return nil, false, storage.ErrScriptAuthoringInvalidRevision
+	}
+	var refresh *savedImportEvaluationRefresh
+	if !trustedImport {
+		refresh = &savedImportEvaluationRefresh{dependencyCodesOnly: true}
+	}
+	return tr.updateScriptDurableInProjectRefreshing(id, script, expected.ProjectID, time.Time{}, "", "", time.Time{}, trustedImport, sourceProfile, refresh, &expected)
+}
+
 // Ordinary creation accepts a primary ID, never a display alias. This early
 // check avoids credential/source work; the final create-only insert remains
 // authoritative when another writer races it.

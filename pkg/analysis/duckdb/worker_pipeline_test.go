@@ -30,6 +30,7 @@ func TestNativePublicationLeaseCannotResurrectReleasedAdmission(t *testing.T) {
 	}
 }
 func TestNativePublicationLeaseSingleOwnerRetainsCapacityThroughUnknownOutcome(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	lease, err := p.RetainPublication()
 	if err != nil {
@@ -87,6 +88,7 @@ func TestNativePipelineProfilesKeepApprovedSmallerBudgets(t *testing.T) {
 	}
 }
 func TestNativePipelineRetainsBlockedStagingReaderAndCleansBeforeAdmissionRelease(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	p.monitorDone = make(chan struct{})
 	directory := filepath.Join(t.TempDir(), "owned-stage")
@@ -161,6 +163,7 @@ func TestNativePipelineWatchdogCancelsBeforeNativeLaunch(t *testing.T) {
 }
 
 func TestNativeParentIOFenceBlocksPublicationAndRelease(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	lease, err := p.AcquireIO()
 	if err != nil {
@@ -190,10 +193,46 @@ func TestNativeParentIOFenceBlocksPublicationAndRelease(t *testing.T) {
 	}
 }
 
+// The reconciler retries a stuck pipeline every sweep. Only the first release
+// waits the full window; later ones keep the short wait, so one stuck
+// pipeline does not hold the sweep up each time.
+func TestNativeStuckPipelineReleaseWaitsInFullOnce(t *testing.T) {
+	workerReleaseWaitOverride.Store(int64(3 * time.Second))
+	t.Cleanup(func() { workerReleaseWaitOverride.Store(0) })
+	p, released := workerPipelineTestFixture(t)
+	lease, err := p.AcquireIO()
+	if err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	if err := p.Release(); !errors.Is(err, errWorkerOwnership) {
+		t.Fatal("unjoined I/O released", err)
+	}
+	if first := time.Since(began); first < 3*time.Second {
+		t.Fatalf("first release returned after %s, before its 3s window", first)
+	}
+	began = time.Now()
+	if err := p.Release(); !errors.Is(err, errWorkerOwnership) {
+		t.Fatal("unjoined I/O released on retry", err)
+	}
+	if retry := time.Since(began); retry > 2500*time.Millisecond {
+		t.Fatalf("retried release waited %s, want the short wait", retry)
+	}
+	lease.Joined()
+	deadline := time.Now().Add(2 * time.Second)
+	for released.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("joined I/O did not release the stuck pipeline")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 type workerCloseFaultOwner struct{ calls int }
 
 func (owner *workerCloseFaultOwner) Close() error { owner.calls++; return errWorkerOwnership }
 func TestNativeIOCloseFaultRetainsExactPhysicalOwner(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	lease, err := p.AcquireIO()
 	if err != nil {
@@ -235,6 +274,7 @@ func (owner *workerBlockingCloseOwner) Close() error {
 	return nil
 }
 func TestNativeIOBlockedCloseRetainsExactOwnerUntilActualCallback(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	lease, err := p.AcquireIO()
 	if err != nil {
@@ -276,6 +316,7 @@ type workerPipelinePanicCloser struct{ calls atomic.Int32 }
 
 func (c *workerPipelinePanicCloser) Close() error { c.calls.Add(1); panic("unknown physical outcome") }
 func TestNativeIOPanickingCloseKeepsExactOwnerAndAdmission(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	p, released := workerPipelineTestFixture(t)
 	lease, err := p.AcquireIO()
 	if err != nil {

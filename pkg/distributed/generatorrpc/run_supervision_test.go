@@ -818,6 +818,112 @@ func TestDetachedRunRetainsLeaseAndCapacityUntilExactDoneBarrier(t *testing.T) {
 	}
 }
 
+// A controller that sees the terminal batch and then heartbeats must find the
+// drained VUsers released, while the lease (and the restart fence it keeps
+// armed) holds until the terminal batch is retained.
+func TestDetachedRunReleasesCapacityBeforeTerminalBatch(t *testing.T) {
+	service := newIsolatedService(t, 10, WithRunSupervisionRequired(60*time.Second, 5*time.Second))
+	service.runSupervisionHardGrace = time.Second
+	token := supervisionTestToken(10)
+	done := make(chan struct{})
+	service.mu.Lock()
+	service.assignments["run"] = assignedTest{
+		testID: "run", committed: true, vuserCount: 3,
+		runSupervisionTokenHash: runSupervisionTokenHash(token),
+		groups:                  map[string]int32{"group": 3}, activeGroups: map[string]int32{"group": 3},
+	}
+	service.executions["run"] = map[string]*groupExecution{
+		"group": {groupName: "group", done: done, cancel: func() {}},
+	}
+	service.runSupervisions["run"] = &runSupervisionLease{
+		tokenHash: runSupervisionTokenHash(token), deadline: time.Now().Add(time.Minute),
+		state: pb.RunSupervisionState_RUN_SUPERVISION_STATE_ACTIVE,
+	}
+	service.mu.Unlock()
+
+	stops := service.detachFencedTests([]string{"run"}, 0, false)
+	if len(stops) != 1 {
+		t.Fatalf("detached tests = %d, want 1", len(stops))
+	}
+	// Hold the terminal batch back so the state a heartbeat would read before
+	// it is published can be observed.
+	service.metricsBroker.publishMu.Lock()
+	published := false
+	defer func() {
+		if !published {
+			service.metricsBroker.publishMu.Unlock()
+		}
+	}()
+	result := service.startDetachedRunDrain(stops[0], false)
+	close(done)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		service.mu.RLock()
+		active, available := service.activeVUsersLocked(), service.availableCapacityLocked()
+		_, leaseHeld := service.runSupervisions["run"]
+		service.mu.RUnlock()
+		if active == 0 && available == 10 {
+			if !leaseHeld {
+				t.Fatal("lease released before the terminal batch was published")
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("before the terminal batch: active vusers = %d, available = %d, want 0 and 10", active, available)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case err := <-result:
+		t.Fatalf("drain finished while the terminal batch was held: %v", err)
+	default:
+	}
+
+	service.metricsBroker.publishMu.Unlock()
+	published = true
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("finish detached run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain did not finish after the terminal batch was released")
+	}
+	service.mu.RLock()
+	_, leaseRetained := service.runSupervisions["run"]
+	service.mu.RUnlock()
+	if leaseRetained {
+		t.Fatal("completed drain retained its lease")
+	}
+}
+
+// A fenced stop charges a prepared Java host's spare along with its VUsers,
+// so it must release both, or the spare stays counted for the process's life.
+func TestFencedDetachReleasesPreparedJavaSpare(t *testing.T) {
+	service := newIsolatedService(t, 10)
+	done := make(chan struct{})
+	close(done)
+	service.mu.Lock()
+	service.assignments["run"] = assignedTest{
+		testID: "run", committed: true, vuserCount: 3,
+		groups: map[string]int32{"group": 3}, activeGroups: map[string]int32{"group": 3},
+		groupJavaHostPrepared: map[string]int32{"group": 5},
+	}
+	service.executions["run"] = map[string]*groupExecution{
+		"group": {groupName: "group", done: done, cancel: func() {}},
+	}
+	service.mu.Unlock()
+
+	service.FailTest("run", "failed")
+	service.mu.RLock()
+	draining, active, available := service.runSupervisionDrainingVUsers, service.activeVUsersLocked(), service.availableCapacityLocked()
+	service.mu.RUnlock()
+	if draining != 0 || active != 0 || available != 10 {
+		t.Fatalf("after the stop: draining = %d, active = %d, available = %d, want 0, 0 and 10", draining, active, available)
+	}
+}
+
 func TestExpiredRunLeaseRejectsPauseScaleAndDurationAtomically(t *testing.T) {
 	service := newIsolatedService(t, 10, WithRunSupervisionRequired(60*time.Second, 5*time.Second))
 	token := supervisionTestToken(9)
