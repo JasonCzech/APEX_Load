@@ -758,7 +758,7 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 	persistentJavaDrainToken := service.reserveAssignmentJavaDrainLocked(assignment)
 	releaseAssignmentRuntimeResources(assignment)
 	service.clearTestExecutionLeaseLocked(testID)
-	service.retainRunSupervisionDrainLocked(testID, assignment)
+	drainVUsers := service.retainRunSupervisionDrainLocked(testID, assignment)
 	delete(service.assignments, testID)
 	service.stopCompletionTimerLocked(testID)
 	coordinator.stopStageTimerLocked(testID)
@@ -778,7 +778,7 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 		acknowledged:             true,
 		pendingVUsers:            assignment.vuserCount,
 		persistentJavaDrainToken: persistentJavaDrainToken,
-		capacityDrainVUsers:      reservedAssignmentVUsers(assignment),
+		capacityDrainVUsers:      drainVUsers,
 		writer:                   writer,
 		trackedFinalizer:         trackedFinalizer,
 		graceful:                 request.GetGraceful(),
