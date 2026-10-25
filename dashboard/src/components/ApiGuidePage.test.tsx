@@ -44,19 +44,22 @@ describe('Help documentation', () => {
   it('makes operator code examples keyboard-focusable with an accessible name', async () => {
     await navigate('#/docs?guide=user-guide&article=dsl-operator-guide')
     await render()
-    const examples = Array.from(container.querySelectorAll<HTMLElement>('pre[role="region"][aria-label="json code example"]'))
+    const examples = Array.from(container.querySelectorAll<HTMLElement>('[role="region"][aria-label="json code example"]'))
     expect(examples).toHaveLength(5)
     for (const example of examples) {
       expect(example.tabIndex).toBe(0)
       example.focus()
       expect(document.activeElement).toBe(example)
-      expect(() => JSON.parse(example.textContent!)).not.toThrow()
+      expect(example.querySelector('.cm-editor')).not.toBeNull()
+      expect(() => JSON.parse(example.dataset.code!)).not.toThrow()
     }
   })
   it('preserves MCP and authentication aliases inside API & Automation', async () => {
     await render({ activePage: 'mcp' })
     expect(container.textContent).toContain('MCP setup')
     expect(container.textContent).toContain('.venv/bin/python')
+    const shellExample = container.querySelector('.markdown-code-editor[data-language="bash"]')
+    expect(shellExample?.querySelector('.cm-content span')).not.toBeNull()
     expect(container.querySelector('nav[aria-label="Help areas"] a[aria-current="page"]')?.textContent).toBe('API & Automation')
     await navigate('#/docs?guide=authentication')
     expect(container.querySelector('.help-article-header h2')?.textContent).toBe('API authentication')

@@ -23,9 +23,8 @@
   cursor: pointer;
 }
 
-/* The shell reserves the 64px icon rail in the page layout. The sidebar itself
- * is positioned inside it, so expanding to 240px overlays the page rather than
- * pushing the main content right. */
+/* Reserve layout space for the icon rail or the expanded sidebar so the main
+ * content moves with it instead of sitting underneath the panel. */
 .sidebar-shell {
   position: relative;
   flex: 0 0 64px;
@@ -33,6 +32,12 @@
   height: 100%;
   min-height: 0;
   z-index: 100;
+  transition: width 0.2s ease, flex-basis 0.2s ease;
+}
+
+.sidebar-shell.overlay-open {
+  flex-basis: 240px;
+  width: 240px;
 }
 
 .sidebar-shell > .sidebar {
@@ -792,6 +797,12 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 
 /* Responsive */
 @media (max-width: 768px) {
+  .sidebar-shell,
+  .sidebar-shell.overlay-open {
+    flex-basis: 64px;
+    width: 64px;
+  }
+
   .sidebar {
     width: 64px;
     flex-basis: 64px;

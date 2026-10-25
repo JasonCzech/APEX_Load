@@ -1213,7 +1213,7 @@ describe('Sidebar', () => {
   const navButton = (label: string) => container.querySelector<HTMLButtonElement>(`.sidebar-nav button[aria-label="${label}"]`)
   const tooltipText = () => document.querySelector('[role="tooltip"]')?.textContent ?? null
 
-  it('starts as the collapsed icon rail and opens over the page instead of pushing it', async () => {
+  it('starts as the collapsed icon rail and reserves space when expanded', async () => {
     await act(async () => {
       root.render(<Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" />)
     })
@@ -1226,8 +1226,17 @@ describe('Sidebar', () => {
 
     expect(container.querySelector('.sidebar.collapsed')).toBeNull()
     expect(container.querySelector('.sidebar-shell')?.classList.contains('overlay-open')).toBe(true)
-    // The shell, not the sidebar, owns the layout slot, so the page keeps its position.
+    // The shell owns the expanded layout slot, shifting the adjacent main content right.
     expect(container.querySelector('.sidebar-shell > aside.sidebar')).not.toBeNull()
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync('src/components/Sidebar.css', 'utf8') as string
+    const expandedRule = css.match(/\.sidebar-shell\.overlay-open \{([\s\S]*?)\n\}/)?.[1] || ''
+    const mobileRule = css.slice(css.indexOf('@media (max-width: 768px)'))
+    expect(expandedRule).toContain('flex-basis: 240px;')
+    expect(expandedRule).toContain('width: 240px;')
+    expect(mobileRule).toContain('.sidebar-shell.overlay-open')
+    expect(mobileRule).toContain('flex-basis: 64px;')
   })
 
   it('closes the expanded overlay on an outside click, Escape, and navigation', async () => {

@@ -1,8 +1,15 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
+import { xml } from '@codemirror/lang-xml'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { reportClientError } from '../utils/clientErrorReporting'
 import { markdownPlainText, parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
 import { declaresErDiagram, loadMermaidErDiagram } from './mermaidErDiagramLoader'
+import { apexCodeMirrorTheme } from './codeMirrorTheme'
+import { yamlSyntaxHighlighting } from './yamlSyntaxHighlighting'
+import { guideCodeHighlighting, guideCodeLanguage } from './guideCodeLanguage'
 
 // The ER diagram renderer and its parser load only for a document that has
 // an erDiagram block. Until then, and if the chunk cannot load (reported like
@@ -260,12 +267,32 @@ function MarkdownTableWrap({ label, children }: { label: string; children: React
 
 function CopyCodeBlock({ code, language }: { code: string; language: string }) {
   const [status, setStatus] = useState('')
+  const extensions = useMemo(() => [
+    apexCodeMirrorTheme,
+    guideCodeHighlighting,
+    ...(language === 'json' || language === 'jsonc' ? [json()] :
+      language === 'xml' || language === 'html' ? [xml()] :
+        language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts' ? [javascript({ typescript: language === 'typescript' || language === 'ts' })] :
+          language === 'yaml' || language === 'yml' ? [xml(), yamlSyntaxHighlighting] :
+            [guideCodeLanguage(language)]),
+  ], [language])
   return <div className="help-code-example">
     <div className="help-code-toolbar"><span>{language || 'Example'}</span><button className="btn btn-secondary btn-sm" type="button" onClick={async () => {
       const copied = await copyTextToClipboard(code)
       setStatus(copied ? 'Copied' : 'Copy unavailable. Select the example and copy manually.')
     }}>Copy example</button></div>
-    <pre className="markdown-code-block" tabIndex={0} role="region" aria-label={language ? `${language} code example` : 'Code example'}><code data-language={language || undefined}>{code}</code></pre>
+    {language === 'mermaid'
+      ? <pre className="markdown-code-block" tabIndex={0} role="region" aria-label={`${language} code example`}><code data-language={language}>{code}</code></pre>
+      : <div className="markdown-code-block markdown-code-editor" tabIndex={0} role="region" aria-label={language ? `${language} code example` : 'Code example'} data-language={language || undefined} data-code={code}>
+        <CodeMirror
+          value={code}
+          extensions={extensions}
+          editable={false}
+          readOnly
+          theme="none"
+          basicSetup={false}
+        />
+      </div>}
     <span role="status">{status}</span>
   </div>
 }
