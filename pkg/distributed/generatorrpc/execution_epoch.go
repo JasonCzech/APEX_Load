@@ -376,7 +376,7 @@ func (s *Service) detachFencedTestsLocked(testIDs []string, maximumGeneration ui
 		persistentJavaDrainToken := s.reserveAssignmentJavaDrainLocked(assignment)
 		releaseAssignmentRuntimeResources(assignment)
 		s.clearTestExecutionLeaseLocked(testID)
-		s.retainRunSupervisionDrainLocked(testID, assignment)
+		drainVUsers := s.retainRunSupervisionDrainLocked(testID, assignment)
 		delete(s.assignments, testID)
 		s.stopCompletionTimerLocked(testID)
 		s.stopStageTimerLocked(testID)
@@ -401,7 +401,7 @@ func (s *Service) detachFencedTestsLocked(testIDs []string, maximumGeneration ui
 			trackedFinalizer:         writer != nil && s.archiveManager.addFinalizer(),
 			trackedExecutionFence:    trackExecutionEpochFence,
 			persistentJavaDrainToken: persistentJavaDrainToken,
-			capacityDrainVUsers:      assignment.vuserCount,
+			capacityDrainVUsers:      drainVUsers,
 		})
 	}
 	return stops
@@ -418,6 +418,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 		defer s.completeDetachedExecutionFence()
 	}
 	s.releaseStopDrain(stop.persistentJavaDrainToken)
+	s.releaseRunSupervisionCapacity(stop)
 	s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 	_, finalError := s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
 	s.releaseRunSupervisionDrain(stop)

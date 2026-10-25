@@ -1541,6 +1541,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		sharedJavaAdmitted := s.activeSharedJavaVusersLocked() + sharedJavaPending
 		podCapacity := s.podCapacitySnapshotLocked()
 		javaOccupancyMode := s.heartbeatJavaVuserOccupancyModeLocked()
+		activeTestIDs := s.activeTestIDsLocked()
 		s.mu.RUnlock()
 		stats := generatorStatsFromResources(s.collectResources(), active)
 		supportedProtocols, compatibleFeatures, runtimeCapacities := runtimeAdvertisementWithCapacities(
@@ -1549,7 +1550,6 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]int64{"java_vuser": persistentJavaReserved, sharedJVMAdmittedKey: sharedJavaAdmitted, sharedJVMPendingKey: sharedJavaPending},
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
-		activeTestIDs := s.activeTestIDs()
 		compatibleFeatures = append(compatibleFeatures, FeatureLiveTablesV1, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1, FeatureJointEvidenceV4, FeatureThroughputCapV1)
 		compatibleFeatures = append(compatibleFeatures, dsl.FeatureDistributedRendezvousV1, protocol.FeatureNativeDataServicesV1)
 		if engine.NativeJavaScriptAvailable() {
@@ -1571,10 +1571,14 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		// placement heartbeat can arrive between one run's clock probes, and
 		// re-anchoring then would move that run's stamps under the offset its
 		// last probe measured.
+		// Recheck under the lock: a test assigned since the snapshot above
+		// must not have its clock moved.
 		wallNow := time.Now()
-		if len(activeTestIDs) == 0 {
+		s.mu.RLock()
+		if len(s.assignments) == 0 {
 			generatorPublishedClock.reanchor(wallNow)
 		}
+		s.mu.RUnlock()
 		generatorNow := generatorPublishedClock.at(wallNow)
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,
@@ -1868,10 +1872,9 @@ func collectSystemResourcesSafely(collect func() *engine.SystemResources) (resou
 	return collect()
 }
 
-func (s *Service) activeTestIDs() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+// activeTestIDsLocked lists the assigned tests. Service.mu must be held, so a
+// heartbeat reads them in the same snapshot as its VUser and capacity counts.
+func (s *Service) activeTestIDsLocked() []string {
 	ids := make([]string, 0, len(s.assignments))
 	for id := range s.assignments {
 		ids = append(ids, id)
