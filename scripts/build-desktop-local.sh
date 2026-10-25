@@ -126,13 +126,23 @@ wails_bin() {
   go_installed_wails_bin
 }
 
+# `wails version` prints a multi-line sponsor banner after the version. Piping
+# it into a reader that stops after line one (sed q, head -1) races SIGPIPE,
+# which pipefail turns into exit 141, so capture the whole output first.
+wails_cli_version() {
+  local output
+  output="$("$1" version 2>/dev/null || true)"
+  output="${output%%$'\n'*}"
+  printf '%s\n' "${output//[[:space:]]/}"
+}
+
 missing=0
 
 # Wails CLI
 WAILS="$(wails_bin || true)"
 installed_wails=""
 if [[ -n "${WAILS}" ]]; then
-  installed_wails="$("${WAILS}" version 2>/dev/null | sed -n '1{s/[[:space:]]//g;p;q;}')"
+  installed_wails="$(wails_cli_version "${WAILS}")"
 fi
 if [[ "${INSTALL_WAILS}" -eq 1 && ( -z "${WAILS}" || "${installed_wails}" != "${WAILS_VERSION}" ) ]]; then
   log "Installing Wails CLI ${WAILS_VERSION}..."
@@ -142,7 +152,7 @@ if [[ "${INSTALL_WAILS}" -eq 1 && ( -z "${WAILS}" || "${installed_wails}" != "${
   WAILS="$(go_installed_wails_bin || true)"
   installed_wails=""
   if [[ -n "${WAILS}" ]]; then
-    installed_wails="$("${WAILS}" version 2>/dev/null | sed -n '1{s/[[:space:]]//g;p;q;}')"
+    installed_wails="$(wails_cli_version "${WAILS}")"
   fi
 fi
 if [[ -z "${WAILS}" ]]; then
