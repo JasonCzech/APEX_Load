@@ -82,6 +82,9 @@ func (tr *TestRunner) liveTableArchiveSummaries(testID string) []RunArchiveLiveT
 		}
 		out = append(out, item)
 	}
+	for _, record := range run.unrestored {
+		out = append(out, RunArchiveLiveTableSummary{TableID: record.ID, Alias: record.Alias, Profile: record.Profile, Durability: record.Durability, State: "unavailable"})
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Alias < out[j].Alias })
 	return out
 }

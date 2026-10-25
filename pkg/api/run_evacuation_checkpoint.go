@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -63,22 +64,39 @@ const (
 	runEvacuationPhaseReplacementRestarting = "replacement_restarting"
 )
 
+// runEvacuationReadableOverride, when set, lowers the newest journal version
+// this release reads; every version check below refuses a newer one, as an
+// older release refuses a version it does not know. Only tests set it, to read
+// a journal as an older release would; it is atomic because fixture
+// goroutines read journals while a test sets it.
+var runEvacuationReadableOverride atomic.Int32
+
+// runEvacuationReadableVersion is the newest journal version this release
+// reads.
+func runEvacuationReadableVersion() int {
+	if override := runEvacuationReadableOverride.Load(); override > 0 {
+		return int(override)
+	}
+	return runEvacuationRestartCheckpointVersion
+}
+
 func supportedRunEvacuationCheckpointVersion(version int) bool {
-	return version == runEvacuationCheckpointVersion || rollbackRunEvacuationCheckpointVersion(version) || version == runEvacuationRestartCheckpointVersion
+	return version <= runEvacuationReadableVersion() &&
+		(version == runEvacuationCheckpointVersion || rollbackRunEvacuationCheckpointVersion(version) || version == runEvacuationRestartCheckpointVersion)
 }
 
 // rollbackRunEvacuationCheckpointVersion reports whether a journal records the
 // capacity a successor needs to roll a prepared or staged evacuation back.
 // Version 5 is a superset of version 4.
 func rollbackRunEvacuationCheckpointVersion(version int) bool {
-	return version == runEvacuationRollbackCheckpointVersion || version == runEvacuationRollForwardCheckpointVersion
+	return version <= runEvacuationReadableVersion() && (version == runEvacuationRollbackCheckpointVersion || version == runEvacuationRollForwardCheckpointVersion)
 }
 
 // rollForwardRunEvacuationCheckpointVersion reports whether a journal records
 // the staged timing and the replacement_committing intent. Version 6 is a
 // superset of version 5; it is never rolled back.
 func rollForwardRunEvacuationCheckpointVersion(version int) bool {
-	return version == runEvacuationRollForwardCheckpointVersion || version == runEvacuationRestartCheckpointVersion
+	return version <= runEvacuationReadableVersion() && (version == runEvacuationRollForwardCheckpointVersion || version == runEvacuationRestartCheckpointVersion)
 }
 
 type runEvacuationCheckpoint struct {

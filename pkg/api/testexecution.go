@@ -2707,6 +2707,11 @@ func (tr *TestRunner) reloadAndReconcile() error {
 	if err != nil {
 		return fmt.Errorf("reload active tests: %w", err)
 	}
+	// Live tables a lost term of this process left behind can never be used
+	// again; free their budget before Phase A restores any under this term.
+	if term, termErr := tr.captureExecutionLeaseTerm(); termErr == nil {
+		tr.releaseLostTermLiveTables(term)
+	}
 	if adoptedEarly {
 		if err := tr.adoptOrphanedRuns(); err != nil {
 			return fmt.Errorf("adopt orphaned runs: %w", err)

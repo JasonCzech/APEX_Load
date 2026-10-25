@@ -506,6 +506,14 @@ message RunAdoptionResult {
   // The run's logical duration target, in DurationAdjustment.target_duration
   // terms, that the engines ran to when the cause is DURATION_ELAPSED.
   google.protobuf.Duration completed_logical_duration = 6;
+  // finalizing is set when the run's assignment is already removed and every
+  // one of its executions has ended, but its terminal outcome is not yet
+  // published (archive finalization). The outcome keeps the value it had
+  // before this field (ALREADY_STOPPED or UNKNOWN_TEST), so an older
+  // controller is unaffected. A newer controller re-queries with a claim of
+  // the same generation, within a bounded wait, for the published outcome.
+  // Older generators never set it.
+  bool finalizing = 7;
 }
 
 message ExecutionEpochAck {

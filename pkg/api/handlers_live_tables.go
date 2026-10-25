@@ -86,6 +86,11 @@ func (s *Server) handleListLiveTables(w http.ResponseWriter, r *http.Request) {
 			}
 			views = append(views, liveTableView{ID: rt.record.ID, Alias: rt.binding.Alias, Profile: rt.binding.LiveOptions.Profile, Durability: rt.binding.LiveOptions.Durability, State: state, Stats: &stats, Finalization: finalization})
 		}
+		// Tables a finalize-only restore could not restore keep only their
+		// storage record, which stays as their own term left it.
+		for _, record := range run.unrestored {
+			views = append(views, liveTableView{ID: record.ID, Alias: record.Alias, Profile: record.Profile, Durability: record.Durability, State: "unavailable"})
+		}
 		run.mu.RUnlock()
 	} else if hasLiveDataPools(test.DataPools) {
 		state, _, err := s.runner.liveStore()

@@ -399,6 +399,10 @@ type TestRunner struct {
 	// live-table finalization's ownership check and the finalization itself.
 	// Production leaves it nil.
 	afterLiveTableFinalizeCheck func()
+	// beforeLiveTableRestoreRegistration is a deterministic test barrier
+	// between a restore's reads and its registration of the tables.
+	// Production leaves it nil.
+	beforeLiveTableRestoreRegistration func()
 	// runAdoptionDoneGeneration is the durable execution generation whose
 	// acquire-time run adoption (Phase A) has finished. The generator epoch
 	// keeper waits for it instead of for the whole reconcile.

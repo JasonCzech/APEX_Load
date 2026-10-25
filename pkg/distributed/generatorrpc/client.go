@@ -547,6 +547,11 @@ type RunAdoptionResult struct {
 	// cause is DURATION_ELAPSED.
 	TerminalCause     pb.RunTerminalCause
 	CompletedDuration time.Duration
+	// Finalizing reports that the run's executions all ended and its
+	// assignment is gone, but its terminal outcome is not yet published.
+	// Outcome then keeps its earlier value (ALREADY_STOPPED or UNKNOWN_TEST).
+	// Older generators never set it.
+	Finalizing bool
 }
 
 type Heartbeat struct {
@@ -1008,6 +1013,7 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 			TestID: adoption.GetTestId(), Outcome: adoption.GetOutcome(),
 			Detail: adoption.GetDetail(), TerminalState: adoption.GetTerminalState(),
 			TerminalCause: adoption.GetTerminalCause(), CompletedDuration: completed,
+			Finalizing: adoption.GetFinalizing(),
 		})
 	}
 	if testID != "" && !ack.GetTestLeaseAccepted() {

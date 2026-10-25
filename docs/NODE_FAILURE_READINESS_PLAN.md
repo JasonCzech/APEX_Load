@@ -610,6 +610,14 @@ bounded by its journaled duration. Version 6 journals keep every step
 resumable or fail-closed across a further leader change; an unreachable old
 replacement, an ineligible workload or no spare capacity still holds the run
 `STOPPING` ([record](qa/reviews/roadmap-evacuation-replacement-restart-2026-10-24/README.md)).
+A participant that finished while its generator still finalized the archive
+is now flagged as finalizing in the adoption answer, and the successor waits
+boundedly for the published outcome instead of holding the run; live tables a
+lost lease term of the same process left in memory are released, and the new
+term finalizes them durably when it ends the run. Capability mismatch, missing
+spare capacity, a stop during a roll-forward, a pause across a second leader
+change and older-controller refusal of version 4 to 6 journals (simulated by
+lowering the journal version checks) are exercised locally ([record](qa/reviews/roadmap-evacuation-completion-2026-10-25/README.md)).
 None of these paths is qualified on a deployed cluster.
 
 A committed-replacement worker-loss trial exposed a terminal recovery blocker.

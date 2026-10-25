@@ -293,16 +293,16 @@ Round 13 was the last cycle: by agreement, review stopped once a round found no 
 ## Remaining
 
 - **Review.** Rounds 1 to 13 have run; see Review. Round 13's Low items stay open (below).
-- **Live tables the new term never restores.** Phase A restores a run's live tables only for an adoption candidate. A run the new term holds fail-closed, or whose checkpoint it cannot decode, keeps the lost term's in-memory tables registered: the new term's terminal writer for it (attestation or fence recovery) is refused by the owner check, nothing finalizes those tables durably, and their memory and budget stay counted until the process restarts. Neither a terminal writer nor a recovery retry of an ended term retries them any more. Durable finalization of live tables for runs not adopted after a failover predates this slice; it is not addressed here.
+- **Live tables the new term never restores.** Phase A restores a run's live tables only for an adoption candidate. A run the new term holds fail-closed, or whose checkpoint it cannot decode, keeps the lost term's in-memory tables registered: the new term's terminal writer for it (attestation or fence recovery) is refused by the owner check, nothing finalizes those tables durably, and their memory and budget stay counted until the process restarts. Neither a terminal writer nor a recovery retry of an ended term retries them any more. Durable finalization of live tables for runs not adopted after a failover predates this slice; it is not addressed here. Resolved on 2026-10-25 by the [evacuation completion slice](../roadmap-evacuation-completion-2026-10-25/README.md): a new term releases the lost term's tables from memory and budget as it acquires the lease, and its terminal writer for such a run restores the durable tables under its own term and finalizes them. Tables kept only in memory are released, not finalized.
 - **Deployed qualification.** REC-A's exit still requires failure injection on a deployed cluster at every journal boundary, worker or node partition, late old-owner return and independent target counters. These tests use fake and in-process generators.
-- **REC-A exit cases untested at this phase:**
-  - a capability mismatch between the replacement and the run;
-  - no spare capacity at the `replacement_committing` or `rolling_forward` phase;
+- **REC-A exit cases untested at this phase.** Updated 2026-10-25: items marked resolved are exercised locally by the [evacuation completion slice](../roadmap-evacuation-completion-2026-10-25/README.md).
+  - a capability mismatch between the replacement and the run (resolved 2026-10-25);
+  - no spare capacity at the `replacement_committing` or `rolling_forward` phase (resolved 2026-10-25);
   - the run's own deadline elapsing before the successor on a deployed cluster (exercised only with fake generators in the `staged`, `rolling_back`, `replacement_committing` and `rolling_forward` phases and an in-process replacement, not the `prepared` phase or an in-process survivor or source, since the [generator terminal cause slice](../roadmap-generator-terminal-cause-2026-10-24/README.md));
-  - a stop requested while the roll-forward runs;
+  - a stop requested while the roll-forward runs (resolved 2026-10-25: refused until admission opens, then it owns the installed run);
   - a worker or node partition;
-  - rolling-version refusal by older controllers during an upgrade;
-  - pause at the `rolling_forward` phase across a second leader change.
+  - rolling-version refusal by older controllers during an upgrade (resolved 2026-10-25, simulated by lowering the journal version checks rather than by running an older release);
+  - pause at the `rolling_forward` phase across a second leader change (resolved 2026-10-25).
 - **Not covered.**
   - a restart of a missing replacement for the eligible HTTP workload. Updated 2026-10-24: covered behind `APEXLOAD_EVACUATION_REPLACEMENT_RESTART` by the [replacement restart slice](../roadmap-evacuation-replacement-restart-2026-10-24/README.md); a roll-forward whose replacement was not adopted and provably runs nothing then restarts its share instead of holding the run;
   - replay of work whose replacement never committed: such a run is held `STOPPING` unless that restart is enabled and its proofs hold.

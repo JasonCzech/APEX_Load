@@ -335,6 +335,10 @@ type distributedExecutionBackend struct {
 	// means clockProbeInterval() (30 s by default). Tests shorten it before
 	// starting a run.
 	clockProbeInterval time.Duration
+	// runAdoptionFinalizingWait bounds a successor's wait for a run whose
+	// generator still finalizes its terminal outcome; zero means
+	// defaultRunAdoptionFinalizingWait. Tests shorten it.
+	runAdoptionFinalizingWait time.Duration
 }
 
 func (*distributedExecutionBackend) requiresInitialRampReadinessProbe() {}
