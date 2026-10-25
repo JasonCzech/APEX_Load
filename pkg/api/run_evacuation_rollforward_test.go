@@ -696,6 +696,7 @@ func TestRollingForwardJournalRejectsContradictions(t *testing.T) {
 		"intent of another owner": func(g *runEvacuationCheckpoint) {
 			g.RollForwardCheckpoint.PendingAdoptions[len(g.RollForwardCheckpoint.PendingAdoptions)-1].OwnerID = "other"
 		},
+		"completed replacement": func(g *runEvacuationCheckpoint) { g.RollForwardCheckpoint.CompletedTargets = []string{"gen-b"} },
 	} {
 		t.Run("rolling_forward/"+name, func(t *testing.T) {
 			var g runEvacuationCheckpoint

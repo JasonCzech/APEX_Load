@@ -20,7 +20,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -81,10 +83,11 @@ type restartRecorder struct {
 	accepted     []uint64
 	caps         []generatorrpc.ThroughputCap
 	beforeAssign func()
-	// assigned and supervised record each AssignWork and ClaimRunSupervision
-	// with whether the generator accepted it.
+	// assigned, supervised and committed record each AssignWork,
+	// ClaimRunSupervision and CommitWork with its outcome.
 	assigned   []restartCall
 	supervised []restartCall
+	committed  []restartCall
 	// refuseSupervision makes the generator refuse the restart's supervision.
 	refuseSupervision bool
 	// beforeSupervision runs when a restart claims the staged replacement's
@@ -94,16 +97,33 @@ type restartRecorder struct {
 	afterCommit       func()
 }
 
-// restartCall is one generation-fenced call and whether it was accepted.
+// restartCall is one generation-fenced call and its outcome: an error, or an
+// answer with the generator's refusal message.
 type restartCall struct {
 	generation uint64
 	accepted   bool
+	err        error
+	message    string
 }
 
-func (r *restartRecorder) calls() (assigned, supervised []restartCall) {
+// refusedByGenerator reports a call the generator itself turned down: a gRPC
+// status from the generator, or an answer that declines with a message. A
+// transport failure or a cancelled call is not a refusal.
+func (c restartCall) refusedByGenerator() bool {
+	if c.accepted {
+		return false
+	}
+	if c.err == nil {
+		return strings.TrimSpace(c.message) != ""
+	}
+	code := status.Code(c.err)
+	return code != codes.Unknown && code != codes.Unavailable && code != codes.DeadlineExceeded && code != codes.Canceled
+}
+
+func (r *restartRecorder) calls() (assigned, supervised, committed []restartCall) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return slices.Clone(r.assigned), slices.Clone(r.supervised)
+	return slices.Clone(r.assigned), slices.Clone(r.supervised), slices.Clone(r.committed)
 }
 
 func (r *restartRecorder) hook(pick func(*restartRecorder) func()) {
@@ -137,10 +157,12 @@ func (r *restartRecorder) acceptedCommits() []uint64 {
 }
 
 func (r *restartRecorder) recordCommit(generation uint64, result generatorrpc.WorkCommitResult, err error) {
-	if err == nil && result.Accepted {
-		r.mu.Lock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	accepted := err == nil && result.Accepted
+	r.committed = append(r.committed, restartCall{generation: generation, accepted: accepted, err: err, message: result.ErrorMessage})
+	if accepted {
 		r.accepted = append(r.accepted, generation)
-		r.mu.Unlock()
 	}
 }
 
@@ -166,7 +188,7 @@ func (c *restartRecordingClient) AssignWork(ctx context.Context, assignment gene
 	c.recorder.mu.Unlock()
 	result, err := c.Client.AssignWork(ctx, assignment)
 	c.recorder.mu.Lock()
-	c.recorder.assigned = append(c.recorder.assigned, restartCall{generation: assignment.ExecutionGeneration, accepted: err == nil && result.Accepted})
+	c.recorder.assigned = append(c.recorder.assigned, restartCall{generation: assignment.ExecutionGeneration, accepted: err == nil && result.Accepted, err: err, message: result.ErrorMessage})
 	c.recorder.mu.Unlock()
 	return result, err
 }
@@ -181,7 +203,7 @@ func (c *restartRecordingClient) ClaimRunSupervision(ctx context.Context, claim 
 		result, err = c.Client.ClaimRunSupervision(ctx, claim)
 	}
 	c.recorder.mu.Lock()
-	c.recorder.supervised = append(c.recorder.supervised, restartCall{generation: claim.ExecutionGeneration, accepted: err == nil && result.Accepted})
+	c.recorder.supervised = append(c.recorder.supervised, restartCall{generation: claim.ExecutionGeneration, accepted: err == nil && result.Accepted, err: err, message: result.ErrorMessage})
 	c.recorder.mu.Unlock()
 	return result, err
 }
@@ -818,18 +840,23 @@ func TestEvacuationRestartRefusalsHoldTheRun(t *testing.T) {
 				if c.phase == runEvacuationPhaseStaged {
 					// The staging was rolled back: the staged assignment was
 					// accepted, and a commit of it is now refused.
-					if assigned, _ := spare.recorder.calls(); len(assigned) != 1 || !assigned[0].accepted || assigned[0].generation != generation {
+					if assigned, _, _ := spare.recorder.calls(); len(assigned) != 1 || !assigned[0].accepted || assigned[0].generation != generation {
 						t.Fatalf("restart assignments = %+v", assigned)
 					}
 					token := f.test.remoteRunSupervisionToken
 					owner, _ := f.tr.leadership.executionLeaseTerm()
 					commitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					// A still-staged assignment would take this supervision and commit.
-					_, _ = spare.client.ClaimRunSupervision(commitCtx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: generation, Token: token[:], RequestedTTL: time.Minute, ExecutionLeaseOwnerID: owner})
-					commit, err := spare.client.CommitWorkSupervisedAt(commitCtx, f.test.ID, generation, time.Now().Add(500*time.Millisecond), token[:])
+					claim, claimErr := spare.client.ClaimRunSupervision(commitCtx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: generation, Token: token[:], RequestedTTL: time.Minute, ExecutionLeaseOwnerID: owner})
+					commit, commitErr := spare.client.CommitWorkSupervisedAt(commitCtx, f.test.ID, generation, time.Now().Add(500*time.Millisecond), token[:])
 					cancel()
-					if err == nil && commit.Accepted {
-						t.Fatal("the rolled-back staged replacement accepted a commit")
+					for name, call := range map[string]restartCall{
+						"supervision claim": {accepted: claimErr == nil && claim.Accepted, err: claimErr, message: claim.ErrorMessage},
+						"commit":            {accepted: commitErr == nil && commit.Accepted, err: commitErr, message: commit.ErrorMessage},
+					} {
+						if !call.refusedByGenerator() {
+							t.Fatalf("the rolled-back staged replacement's answer to a %s = %+v, want a refusal", name, call)
+						}
 					}
 					guard, _ := f.durableGuard(t)
 					if guard.Source != "gen-b" || guard.SourceAbsentAt.IsZero() || guard.Generation != generation || guard.NextShards["ga"][0].Target != "gen-d" {
@@ -924,7 +951,16 @@ func TestEvacuationRestartAcrossAnotherLeaderChange(t *testing.T) {
 			if paused {
 				pausedFor = 30 * time.Second
 			}
-			f, first := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{paused: paused}, pausedFor: pausedFor})
+			// At one boundary the survivor is an in-process generator, so the
+			// first successor's late stop meets a real generation fence.
+			var survivor *restartGenerator
+			var hooks []func(*evacuationRollbackFixture)
+			if boundary == "before the new replacement committed" {
+				t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+				survivor = newRestartGenerator(t, "gen-c", 10, true)
+				hooks = append(hooks, func(f *evacuationRollbackFixture) { f.runSurvivorShareOn(t, survivor) })
+			}
+			f, first := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{paused: paused}, pausedFor: pausedFor}, hooks...)
 			second := newRestartGenerator(t, "gen-e", 10, true)
 			f.extra["gen-e"] = second.dial
 			f.handOver(t, "restart-first-successor")
@@ -1089,15 +1125,23 @@ func TestEvacuationRestartAcrossAnotherLeaderChange(t *testing.T) {
 				t.Fatalf("restart offset %s after a %s pause, want about %s", restarted.DurationOffset, pausedFor, rollForwardStagedElapsed)
 			}
 			// Never a duplicate start: what the first successor staged was
-			// drained by the second's claim before the share moved on, so a
-			// commit of it under the first successor's term is refused.
-			if journal.Phase != runEvacuationPhaseReplacementRestarting {
+			// drained by the second's claim before the share moved on, so its
+			// supervision and a commit of it under the first successor's term
+			// are refused by the generator. After the restart journal began the
+			// replacement never held the assignment, so a commit there would
+			// prove nothing; the late AssignWork below covers that boundary.
+			if journal.Phase != runEvacuationPhaseReplacementRestarting && journal.Phase != runEvacuationPhasePrepared {
 				commitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_, _ = replaced.client.ClaimRunSupervision(commitCtx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: firstGeneration, Token: firstToken[:], RequestedTTL: time.Minute, ExecutionLeaseOwnerID: firstOwner})
-				commit, err := replaced.client.CommitWorkSupervisedAt(commitCtx, f.test.ID, firstGeneration, time.Now().Add(500*time.Millisecond), firstToken[:])
+				claim, claimErr := replaced.client.ClaimRunSupervision(commitCtx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: firstGeneration, Token: firstToken[:], RequestedTTL: time.Minute, ExecutionLeaseOwnerID: firstOwner})
+				commit, commitErr := replaced.client.CommitWorkSupervisedAt(commitCtx, f.test.ID, firstGeneration, time.Now().Add(500*time.Millisecond), firstToken[:])
 				cancel()
-				if err == nil && commit.Accepted {
-					t.Fatal("the drained replacement accepted the first successor's commit")
+				for name, call := range map[string]restartCall{
+					"supervision claim": {accepted: claimErr == nil && claim.Accepted, err: claimErr, message: claim.ErrorMessage},
+					"commit":            {accepted: commitErr == nil && commit.Accepted, err: commitErr, message: commit.ErrorMessage},
+				} {
+					if !call.refusedByGenerator() {
+						t.Fatalf("the drained replacement's answer to the first successor's %s = %+v, want a refusal", name, call)
+					}
 				}
 			}
 			checkpoint, present, err := decodeRunContinuityCheckpoint(f.test.continuityCheckpoint)
@@ -1111,7 +1155,25 @@ func TestEvacuationRestartAcrossAnotherLeaderChange(t *testing.T) {
 			// changes and generator commands of the older term are refused.
 			_, before := f.durableGuard(t)
 			ledgerBefore := f.ledger(t)
+			assignedBefore, supervisedBefore, committedBefore := replaced.recorder.calls()
+			survivorStopsBefore := len(f.survivorGen.stopGenerations())
 			returnLate()
+			// Every stop the first successor sent its survivor on the way out
+			// carried its own, older generation, which the survivor's adoption
+			// by the second successor fenced.
+			for _, stopped := range f.survivorGen.stopGenerations()[survivorStopsBefore:] {
+				if stopped != firstGeneration {
+					t.Fatalf("a late stop reached the survivor at generation %d, want only %d", stopped, firstGeneration)
+				}
+			}
+			if survivor != nil {
+				// The real survivor refused that stop and still runs its share.
+				if got := survivor.service.ActiveVUsers(); got != 3 {
+					t.Fatalf("survivor active VUsers after the late return = %d, want 3", got)
+				}
+			} else if boundary != "after the restart intent" && boundary != "after the survivors were adopted" && len(f.survivorGen.stopGenerations()) == survivorStopsBefore {
+				t.Fatal("the first successor sent its survivor no late stop")
+			}
 			if _, after := f.durableGuard(t); after != before {
 				t.Fatal("the first successor's late return changed the checkpoint")
 			}
@@ -1131,24 +1193,34 @@ func TestEvacuationRestartAcrossAnotherLeaderChange(t *testing.T) {
 				t.Fatalf("the abandoned replacement accepted a commit at generations %v", accepted)
 			}
 			// The call each first successor was parked in is sent when it
-			// returns, and refused at its older generation.
-			assigned, supervised := replaced.recorder.calls()
-			lateCalls := assigned
+			// returns, and the generator refuses every call it makes at its
+			// older generation.
+			assigned, supervised, committed := replaced.recorder.calls()
+			var lateCalls []restartCall
 			switch boundary {
 			case "after the restart journal began":
+				lateCalls = assigned[len(assignedBefore):]
 			case "after the new replacement was staged", "after the restart fenced its source":
-				lateCalls = supervised
-			default:
-				lateCalls = nil
+				lateCalls = supervised[len(supervisedBefore):]
+			case "before the new replacement committed":
+				lateCalls = committed[len(committedBefore):]
 			}
-			if lateCalls != nil {
-				last := lateCalls[len(lateCalls)-1]
-				if last.generation != firstGeneration || last.accepted {
-					t.Fatalf("the first successor's late call = %+v, want one refused at %d", lateCalls, firstGeneration)
+			if journal.Phase != runEvacuationPhaseReplacementRestarting {
+				refused := 0
+				for _, call := range lateCalls {
+					if call.generation != firstGeneration {
+						continue
+					}
+					if !call.refusedByGenerator() || !lateCallRefusalNamesGeneration(call) {
+						t.Fatalf("the generator's answer to the first successor's late call = %+v, want a refusal of its generation", call)
+					}
+					refused++
+				}
+				if refused == 0 {
+					t.Fatalf("the first successor sent no late call at %d: %+v", firstGeneration, lateCalls)
 				}
 			}
 			waitForActiveVUsers(t, replacement.service, 5)
-			waitForActiveVUsers(t, replaced.service, 0)
 		})
 	}
 }
@@ -1377,6 +1449,7 @@ func TestRestartJournalRejectsContradictions(t *testing.T) {
 		"intent of another owner": func(g *runEvacuationCheckpoint) {
 			g.RestartCheckpoint.PendingAdoptions[len(g.RestartCheckpoint.PendingAdoptions)-1].OwnerID = "other"
 		},
+		"completed old replacement": func(g *runEvacuationCheckpoint) { g.RestartCheckpoint.CompletedTargets = []string{"gen-b"} },
 	} {
 		t.Run("replacement_restarting/"+name, func(t *testing.T) {
 			g := encodedJournal(t, raw)
@@ -1607,33 +1680,7 @@ func TestEvacuationRestartResumesThroughPhaseB(t *testing.T) {
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	survivor := newRestartGenerator(t, "gen-c", 10, false)
 	f, spare := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{noCapacity: true}}, func(f *evacuationRollbackFixture) {
-		// The lost leader ran the survivor's share with a 500 ms start barrier.
-		client := survivor.client
-		if _, err := client.ClaimExecutionEpoch(ctx, f.oldGen, f.oldOwner, time.Minute); err != nil {
-			t.Fatalf("lost leader epoch claim: %v", err)
-		}
-		f.test.Groups[1].ScriptID, f.test.Groups[1].script = f.test.Groups[0].ScriptID, f.test.Groups[0].script
-		content, hash, _, err := generatorrpc.PrepareDistributedScript(f.test.Groups[1].script)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := client.DistributeScript(ctx, generatorrpc.Script{ID: "restart-script", ExecutionGeneration: f.oldGen, Content: content, ContentHash: hash}); err != nil {
-			t.Fatalf("distribute script: %v", err)
-		}
-		if assign, err := client.AssignWork(ctx, generatorrpc.Assignment{
-			TestID: f.test.ID, GroupName: "gc", ScriptID: "restart-script", ExpectedScriptHash: hash, VUserCount: 3, ExecutionGeneration: f.oldGen,
-			TargetDuration: rollForwardStagedElapsed + rollForwardStagedRemaining, RunSupervisionToken: f.token, AdoptionGrace: 30 * time.Second,
-		}); err != nil || !assign.Accepted {
-			t.Fatalf("assign survivor = (%+v, %v)", assign, err)
-		}
-		if claim, err := client.ClaimRunSupervision(ctx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: f.oldGen, Token: f.token, RequestedTTL: time.Minute, ExecutionLeaseOwnerID: f.oldOwner}); err != nil || !claim.Accepted {
-			t.Fatalf("survivor supervision = (%+v, %v)", claim, err)
-		}
-		if commit, err := client.CommitWorkSupervisedAt(ctx, f.test.ID, f.oldGen, time.Now().Add(500*time.Millisecond), f.token); err != nil || !commit.Accepted {
-			t.Fatalf("survivor commit = (%+v, %v)", commit, err)
-		}
-		waitForActiveVUsers(t, survivor.service, 3)
-		f.extra["gen-c"] = survivor.dial
+		f.runSurvivorShareOn(t, survivor)
 	})
 	f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED
 	owner, generation := f.tr.leadership.executionLeaseTerm()
@@ -1781,9 +1828,11 @@ func (f *evacuationRollbackFixture) endResumedRun(t *testing.T, generation uint6
 }
 
 // stopRunnerRuntimes ends every runtime a runner installed before the test's
-// store closes. Metrics consumers check their lifecycle context after a failed
-// receive and write nothing once it is cancelled; the supervision keeper is
-// joined; leases, schedules and clocks stop with the run's context.
+// store closes. It joins the supervision keeper. Metrics consumers have no done
+// signal: cancelling their lifecycle ends their streams, and a consumer that
+// sees a receive fail after the cancellation returns without writing, but one
+// already past that check can still process one batch it had received. Leases,
+// schedules and clocks stop with the run's context.
 func stopRunnerRuntimes(t *testing.T, tr *TestRunner) {
 	t.Helper()
 	tr.mu.Lock()
@@ -2068,4 +2117,53 @@ func TestEvacuationRestartHandsTheNewReplacementToARacingStop(t *testing.T) {
 	if assignments, _ := spare.recorder.snapshot(); len(assignments) != 1 {
 		t.Fatalf("restart assignments = %+v", assignments)
 	}
+}
+
+// lateCallRefusalNamesGeneration reports a refusal that rests on the call's
+// older execution generation or the generator's fenced state for the run.
+func lateCallRefusalNamesGeneration(call restartCall) bool {
+	text := strings.ToLower(call.message)
+	if call.err != nil {
+		text = strings.ToLower(status.Convert(call.err).Message())
+	}
+	for _, reason := range []string{"generation", "fenced"} {
+		if strings.Contains(text, reason) {
+			return true
+		}
+	}
+	return false
+}
+
+// runSurvivorShareOn has the lost leader run the survivor's share (gc, 3
+// VUsers) on an in-process generator with a 500 ms start barrier, and serves
+// gen-c from it.
+func (f *evacuationRollbackFixture) runSurvivorShareOn(t *testing.T, survivor *restartGenerator) {
+	t.Helper()
+	ctx := context.Background()
+	client := survivor.client
+	if _, err := client.ClaimExecutionEpoch(ctx, f.oldGen, f.oldOwner, time.Minute); err != nil {
+		t.Fatalf("lost leader epoch claim: %v", err)
+	}
+	f.test.Groups[1].ScriptID, f.test.Groups[1].script = f.test.Groups[0].ScriptID, f.test.Groups[0].script
+	content, hash, _, err := generatorrpc.PrepareDistributedScript(f.test.Groups[1].script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.DistributeScript(ctx, generatorrpc.Script{ID: "restart-script", ExecutionGeneration: f.oldGen, Content: content, ContentHash: hash}); err != nil {
+		t.Fatalf("distribute script: %v", err)
+	}
+	if assign, err := client.AssignWork(ctx, generatorrpc.Assignment{
+		TestID: f.test.ID, GroupName: "gc", ScriptID: "restart-script", ExpectedScriptHash: hash, VUserCount: 3, ExecutionGeneration: f.oldGen,
+		TargetDuration: rollForwardStagedElapsed + rollForwardStagedRemaining, RunSupervisionToken: f.token, AdoptionGrace: 30 * time.Second,
+	}); err != nil || !assign.Accepted {
+		t.Fatalf("assign survivor = (%+v, %v)", assign, err)
+	}
+	if claim, err := client.ClaimRunSupervision(ctx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: f.oldGen, Token: f.token, RequestedTTL: time.Minute, ExecutionLeaseOwnerID: f.oldOwner}); err != nil || !claim.Accepted {
+		t.Fatalf("survivor supervision = (%+v, %v)", claim, err)
+	}
+	if commit, err := client.CommitWorkSupervisedAt(ctx, f.test.ID, f.oldGen, time.Now().Add(500*time.Millisecond), f.token); err != nil || !commit.Accepted {
+		t.Fatalf("survivor commit = (%+v, %v)", commit, err)
+	}
+	waitForActiveVUsers(t, survivor.service, 3)
+	f.extra["gen-c"] = survivor.dial
 }

@@ -229,7 +229,9 @@ func validRestartCheckpoint(guard runEvacuationCheckpoint) bool {
 	if checkpoint == nil || checkpoint.Version != runContinuityCheckpointVersion || checkpoint.ExecutionGeneration != guard.Generation ||
 		checkpoint.ExecutionLeaseOwnerID != guard.OwnerID || !reflect.DeepEqual(checkpoint.RunSupervisionToken, guard.Prior.RunSupervisionToken) ||
 		!reflect.DeepEqual(checkpoint.Shards, guard.NextShards) || !slices.Equal(checkpoint.ArchiveTargets, runEvacuationArchiveTargets(guard, checkpoint.ArchiveTargets)) ||
-		len(checkpoint.PendingAdoptions) == 0 {
+		// Phase A skips claiming the planned checkpoint's completed targets, so
+		// they must be exactly those the prior lineage proved.
+		!slices.Equal(checkpoint.CompletedTargets, guard.Prior.CompletedTargets) || len(checkpoint.PendingAdoptions) == 0 {
 		return false
 	}
 	last := checkpoint.PendingAdoptions[len(checkpoint.PendingAdoptions)-1]
