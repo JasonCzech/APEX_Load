@@ -87,6 +87,8 @@ export interface ScriptSaveOptions {
   laterEdits?: boolean
   /** The source the editor was opened from took the save (an archive review), and the editor returned there. */
   returnedToSource?: boolean
+  /** The editor goes on working on the saved script (a guided repair, Save and debug): a page hosting it keeps it open. */
+  keepAuthoringOpen?: boolean
   configureSecrets?: boolean
   retainedDraft?: ScriptDefinition
   retainedJsonText?: string

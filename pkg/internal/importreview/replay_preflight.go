@@ -13,22 +13,36 @@ import (
 )
 
 type ReplayPreflight struct {
-	Valid                bool                   `json:"valid"`
-	ActionCount          int                    `json:"action_count"`
-	ExpectedActionCount  int                    `json:"expected_action_count"`
-	DataSourceCount      int                    `json:"data_source_count"`
-	ParameterCount       int                    `json:"parameter_count"`
-	BrowserRequired      bool                   `json:"browser_required"`
-	MissingVariables     []string               `json:"missing_variables,omitempty"`
-	BlockingVariables    []string               `json:"blocking_variables,omitempty"`
-	PlaceholderVariables []string               `json:"placeholder_variables,omitempty"`
-	DataSourceIssues     []string               `json:"data_source_issues,omitempty"`
-	RequiredSecrets      []string               `json:"required_secrets,omitempty"`
-	MissingSecrets       []string               `json:"missing_secrets,omitempty"`
-	RuntimePrerequisites []string               `json:"runtime_prerequisites,omitempty"`
-	Issues               []string               `json:"issues,omitempty"`
-	Warnings             []string               `json:"warnings,omitempty"`
-	Checks               []ReplayPreflightCheck `json:"checks,omitempty"`
+	Valid                bool     `json:"valid"`
+	ActionCount          int      `json:"action_count"`
+	ExpectedActionCount  int      `json:"expected_action_count"`
+	DataSourceCount      int      `json:"data_source_count"`
+	ParameterCount       int      `json:"parameter_count"`
+	BrowserRequired      bool     `json:"browser_required"`
+	MissingVariables     []string `json:"missing_variables,omitempty"`
+	BlockingVariables    []string `json:"blocking_variables,omitempty"`
+	PlaceholderVariables []string `json:"placeholder_variables,omitempty"`
+	// LateProducedVariables are missing variables that a step of the script
+	// does write, only not on every path before their use: the producer is
+	// out of order or conditional, not absent.
+	LateProducedVariables []string `json:"late_produced_variables,omitempty"`
+	// ParamBlockingVariables and ConfigBlockingVariables are the blocking
+	// variables that an undeclared {{param.*}} use or a protocol configuration
+	// reference blocks. No step can supply them, so a client words their fix
+	// (declare a parameter, write a literal configuration value) apart from
+	// producer order, even where an unrelated use of the name is late. A
+	// computed preflight always sends both, empty when none, so a client can
+	// trust them without analyzing the script; omitzero drops only the nil
+	// lists of a preflight an older controller stamped without them.
+	ParamBlockingVariables  []string               `json:"param_blocking_variables,omitzero"`
+	ConfigBlockingVariables []string               `json:"config_blocking_variables,omitzero"`
+	DataSourceIssues        []string               `json:"data_source_issues,omitempty"`
+	RequiredSecrets         []string               `json:"required_secrets,omitempty"`
+	MissingSecrets          []string               `json:"missing_secrets,omitempty"`
+	RuntimePrerequisites    []string               `json:"runtime_prerequisites,omitempty"`
+	Issues                  []string               `json:"issues,omitempty"`
+	Warnings                []string               `json:"warnings,omitempty"`
+	Checks                  []ReplayPreflightCheck `json:"checks,omitempty"`
 }
 
 type ReplayPreflightCheck struct {
@@ -68,10 +82,14 @@ func BuildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 	// placeholder text. They split MissingVariables so a client can list each
 	// one without parsing the checks' display text.
 	preflight.BlockingVariables = append([]string(nil), readiness.Blocking...)
-	// HTTP replay keeps a missing variable as its placeholder text, and the
-	// request that sends it warns, as the load-test runtime does. Only
-	// references with no placeholder fallback refuse replay; an importer that
-	// must never send a placeholder stamps an execution gate instead.
+	preflight.LateProducedVariables = append([]string(nil), readiness.LateProduced...)
+	preflight.ParamBlockingVariables = append([]string{}, readiness.ParamBlocking...)
+	preflight.ConfigBlockingVariables = append([]string{}, readiness.ConfigBlocking...)
+	// HTTP replay, and SOAP and Java HTTP replay through the same adapter,
+	// keeps a missing variable as its placeholder text, and the request that
+	// sends it warns, as the load-test runtime does. Only references with no
+	// placeholder fallback refuse replay; an importer that must never send a
+	// placeholder stamps an execution gate instead.
 	if placeholders := ReplayPlaceholderVariables(readiness); len(placeholders) > 0 {
 		preflight.PlaceholderVariables = placeholders
 		preflight.Warnings = append(preflight.Warnings, "variable(s) with no seed or preceding extractor are sent as placeholder text: "+strings.Join(placeholders, ", "))
@@ -207,6 +225,11 @@ func CloneReplayPreflight(preflight *ReplayPreflight) *ReplayPreflight {
 	cloned.MissingVariables = append([]string(nil), preflight.MissingVariables...)
 	cloned.BlockingVariables = append([]string(nil), preflight.BlockingVariables...)
 	cloned.PlaceholderVariables = append([]string(nil), preflight.PlaceholderVariables...)
+	cloned.LateProducedVariables = append([]string(nil), preflight.LateProducedVariables...)
+	// A computed preflight's empty kinds stay non-nil, so the clone still
+	// sends them; an older stamp's nil kinds stay nil.
+	cloned.ParamBlockingVariables = cloneKindList(preflight.ParamBlockingVariables)
+	cloned.ConfigBlockingVariables = cloneKindList(preflight.ConfigBlockingVariables)
 	cloned.DataSourceIssues = append([]string(nil), preflight.DataSourceIssues...)
 	cloned.RequiredSecrets = append([]string(nil), preflight.RequiredSecrets...)
 	cloned.MissingSecrets = append([]string(nil), preflight.MissingSecrets...)
@@ -215,6 +238,13 @@ func CloneReplayPreflight(preflight *ReplayPreflight) *ReplayPreflight {
 	cloned.Warnings = append([]string(nil), preflight.Warnings...)
 	cloned.Checks = append([]ReplayPreflightCheck(nil), preflight.Checks...)
 	return &cloned
+}
+
+func cloneKindList(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	return append(make([]string, 0, len(values)), values...)
 }
 
 func ReplayActionDefinitionCount(script *dsl.Script) int {
@@ -422,7 +452,7 @@ func ReplayPhaseActions(script *dsl.Script) []dsl.Action {
 	if script == nil {
 		return nil
 	}
-	actions := make([]dsl.Action, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
+	actions := make([]dsl.Action, 0, len(script.Actions))
 	actions = append(actions, script.Init...)
 	actions = append(actions, script.Actions...)
 	actions = append(actions, script.Teardown...)

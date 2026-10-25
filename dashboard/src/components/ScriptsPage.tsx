@@ -572,7 +572,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     acceptSavedScript(...args)
     const options = args[3]
     const source = args[4] === undefined ? authoringState.draftReturnTarget : args[4]
-    const keepAuthoringOpen = options?.laterEdits || options?.configureSecrets || source?.subView === 'import'
+    const keepAuthoringOpen = options?.laterEdits || options?.configureSecrets || options?.keepAuthoringOpen || source?.subView === 'import'
     if (keepAuthoringOpen) onScriptSaved?.(args[0], { keepAuthoringOpen: true })
     else onScriptSaved?.(args[0])
   }, [acceptSavedScript, authoringState.draftReturnTarget, onScriptSaved])

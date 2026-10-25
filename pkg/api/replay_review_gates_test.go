@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func TestValidateScriptForReplayBlocksNativeBrunoReviewMetadata(t *testing.T) {
@@ -435,6 +439,11 @@ func TestStoredReplayEndpointsCannotReplaceReviewGatedScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	gateErr := storedScriptReplayGateError(stored.Script)
+	if gateErr == nil {
+		t.Fatal("stored script has no replay gate")
+	}
+	wantIssues := replayReviewGateIssues(stored.Script)
 	tests := []struct {
 		name   string
 		path   string
@@ -458,6 +467,150 @@ func TestStoredReplayEndpointsCannotReplaceReviewGatedScript(t *testing.T) {
 			}
 			if !strings.Contains(resp.Body.String(), "review-required action blocks replay until review metadata is removed") {
 				t.Fatalf("body = %s, want stored-script review gate", resp.Body.String())
+			}
+			// The refusal names each gate of the saved copy and carries its
+			// replay preflight, so an editor lists what to resolve; the
+			// message older clients show is unchanged.
+			var refusal struct {
+				Error     string           `json:"error"`
+				Code      string           `json:"code"`
+				GateScope string           `json:"gate_scope"`
+				Issues    []string         `json:"issues"`
+				Preflight *ReplayPreflight `json:"preflight"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &refusal); err != nil {
+				t.Fatalf("decode refusal: %v body=%s", err, resp.Body.String())
+			}
+			if refusal.Error != gateErr.Error() {
+				t.Fatalf("error = %q, want unchanged %q", refusal.Error, gateErr.Error())
+			}
+			if refusal.Code != "script_replay_blocked" || refusal.GateScope != "stored_script" {
+				t.Fatalf("code=%q gate_scope=%q, want script_replay_blocked/stored_script", refusal.Code, refusal.GateScope)
+			}
+			if len(refusal.Issues) != 1 || !slices.Equal(refusal.Issues, wantIssues) {
+				t.Fatalf("issues = %#v, want the stored gate %#v", refusal.Issues, wantIssues)
+			}
+			if refusal.Preflight == nil || refusal.Preflight.Valid {
+				t.Fatalf("preflight = %+v, want the saved copy's invalid preflight", refusal.Preflight)
+			}
+			if !slices.Contains(refusal.Preflight.Issues, wantIssues[0]) {
+				t.Fatalf("preflight issues = %#v, want the stored gate", refusal.Preflight.Issues)
+			}
+			for _, check := range refusal.Preflight.Checks {
+				if check.ID == "review_gates" && check.Status != "fail" {
+					t.Fatalf("review_gates check = %+v, want fail", check)
+				}
+			}
+		})
+	}
+}
+
+// A stored-gate refusal that is not a review-gate block keeps the plain error
+// body it always had.
+func TestWriteStoredScriptReplayGateFallsBackToPlainError(t *testing.T) {
+	server := &Server{runner: NewTestRunner(1, NewHub(), nil)}
+	resp := httptest.NewRecorder()
+
+	server.writeStoredScriptReplayGate(resp, plainHTTPScript("plain"), errors.New("stored script cannot replay"))
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body) != 1 || body["error"] != "stored script cannot replay" {
+		t.Fatalf("body = %s, want only the plain error", resp.Body.String())
+	}
+}
+
+// storedGateIssueShape is the execution-blocker gate as the script editor
+// parses it (parseReviewGateIssue in
+// dashboard/src/components/replayReadinessIssues.ts): the step path, its
+// quoted name, then the blocker sentence.
+var storedGateIssueShape = regexp.MustCompile(`^(?:init|actions|teardown)\[\d+\](\S*)(?: ".*?")?: execution blocker (.+) blocks (\S+) until the imported behavior is resolved$`)
+
+// A gate quotes its step's name as stored, and a name is never a secret
+// binding, so a non-preserving import keeps a credential in it as recorded.
+// GET masks a credential parameter in a name, and the refusal's message
+// scrubs that and a bare token alike. Every stored-script start that refuses
+// the saved copy scrubs the name wherever else its body repeats the gate, and
+// each gate still reads as the editor parses it: scrubbing a whole gate would
+// redact its codes along with a credential parameter in the name.
+func TestStoredScriptReplayGateRefusalScrubsGateLabels(t *testing.T) {
+	const code = "unsupported_dynamic_value"
+	for _, fixture := range []struct {
+		name      string
+		secret    string
+		label     string
+		getMasked bool
+	}{
+		{name: "credential parameter", secret: "synthetic-reset-token-7f3a9c", label: "GET /reset?token=synthetic-reset-token-7f3a9c", getMasked: true},
+		{name: "bare token", secret: "eyJzdWIiOiJzeW50aGV0aWMtcmVzZXQifQ", label: "GET /reset/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMtcmVzZXQifQ.c3ludGhldGljLXNpZ25hdHVyZQ"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			runner := NewTestRunner(1, NewHub(), nil)
+			script := plainHTTPScript("stored-gate-label")
+			script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "har"}}
+			script.Actions[0].Name = fixture.label
+			script.Actions[0].Metadata = map[string]any{"execution_blocker": code}
+			stored := runner.StoreScript(script)
+			server := &Server{runner: runner}
+			if isCredentialPreservingImport(stored.Script) || stored.Script.Actions[0].Name != fixture.label {
+				t.Fatalf("fixture = %q (credential-preserving %v), want a non-preserving import keeping the name as recorded", stored.Script.Actions[0].Name, isCredentialPreservingImport(stored.Script))
+			}
+			if masked := maskScriptSecrets(stored.Script); masked == nil || strings.Contains(masked.Actions[0].Name, fixture.secret) != !fixture.getMasked {
+				t.Fatalf("GET projection of the name = %+v, want masked=%v", masked, fixture.getMasked)
+			}
+			if gateErr := storedScriptReplayGateError(stored.Script); gateErr == nil || strings.Contains(scrub.Value(gateErr.Error(), scrub.Policy{}), fixture.secret) {
+				t.Fatalf("stored gate = %v, want a gate whose scrubbed message hides the name's credential", gateErr)
+			}
+
+			for _, route := range []struct {
+				name   string
+				path   string
+				handle func(http.ResponseWriter, *http.Request)
+			}{
+				{name: "script debug", path: "/api/v1/scripts/" + stored.ID + "/debug/sessions", handle: server.handleStartScriptDebugScript},
+				{name: "classic replay", path: "/api/v1/scripts/" + stored.ID + "/replay", handle: server.handleReplayScript},
+				{name: "browser replay", path: "/api/v1/scripts/" + stored.ID + "/browser-replay/sessions", handle: server.handleStartBrowserReplayScript},
+				{name: "replay session", path: "/api/v1/scripts/" + stored.ID + "/replay/sessions", handle: server.handleStartReplaySessionScript},
+			} {
+				t.Run(route.name, func(t *testing.T) {
+					req := httptest.NewRequest(http.MethodPost, route.path, nil)
+					req.SetPathValue("id", stored.ID)
+					resp := httptest.NewRecorder()
+
+					route.handle(resp, req)
+
+					if resp.Code != http.StatusBadRequest {
+						t.Fatalf("status = %d body=%s, want 400", resp.Code, resp.Body.String())
+					}
+					if strings.Contains(resp.Body.String(), fixture.secret) {
+						t.Fatalf("refusal discloses the credential in the stored step name: %s", resp.Body.String())
+					}
+					var refusal struct {
+						Error     string           `json:"error"`
+						Issues    []string         `json:"issues"`
+						Preflight *ReplayPreflight `json:"preflight"`
+					}
+					if err := json.Unmarshal(resp.Body.Bytes(), &refusal); err != nil {
+						t.Fatalf("decode refusal: %v body=%s", err, resp.Body.String())
+					}
+					if len(refusal.Issues) != 1 || !strings.HasPrefix(refusal.Issues[0], "actions[0] ") || !strings.Contains(refusal.Issues[0], "execution blocker "+code) {
+						t.Fatalf("issues = %#v, want the actions[0] gate naming %s", refusal.Issues, code)
+					}
+					if match := storedGateIssueShape.FindStringSubmatch(refusal.Issues[0]); match == nil || match[1] != "" || match[2] != code || match[3] != "replay" {
+						t.Fatalf("gate %q does not parse as the editor reads it", refusal.Issues[0])
+					}
+					if !strings.HasPrefix(refusal.Issues[0], `actions[0] "GET /reset`) {
+						t.Fatalf("gate %q, want it to quote the scrubbed step name", refusal.Issues[0])
+					}
+					if refusal.Preflight == nil || !slices.Contains(refusal.Preflight.Issues, refusal.Issues[0]) || replayPreflightCheckStatus(refusal.Preflight, "review_gates") != "fail" {
+						t.Fatalf("preflight = %+v, want it to list the scrubbed gate", refusal.Preflight)
+					}
+				})
 			}
 		})
 	}

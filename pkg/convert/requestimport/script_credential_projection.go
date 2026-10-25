@@ -1315,7 +1315,15 @@ func provenVariableReferencesForSurface(
 			referenced[name] = struct{}{}
 		}
 	} else if ref.Request != nil {
-		if payload, err := json.Marshal(ref.Request); err == nil {
+		// Like actionVariableReferences, metadata is evidence, not a read:
+		// readiness never reports it missing, so it must not count as proven.
+		request := make(map[string]any, len(ref.Request))
+		for key, value := range ref.Request {
+			if key != "metadata" {
+				request[key] = value
+			}
+		}
+		if payload, err := json.Marshal(request); err == nil {
 			collectVariableReferences(string(payload), referenced)
 		}
 		body, encoding, _, valid := enterpriseSurfaceBody(ref)

@@ -1101,10 +1101,32 @@ func ProjectScriptNode(value any, ctx ScriptProjectionContext) any {
 	case string:
 		return ProjectScriptString(typed, ctx)
 	default:
-		if IsSensitiveScriptKey(ctx.key) && !IsSecretReferenceKey(ctx.key) {
+		if IsSensitiveScriptKey(ctx.key) && !IsSecretReferenceKey(ctx.key) && !isSecretGatedCount(ctx.key, value) {
 			return MaskedScriptSecret
 		}
 		return value
+	}
+}
+
+// isSecretGatedCount reports a number under secret_gated: the import fidelity
+// report's count of secret-gated payloads, not secret material. Masked, it
+// reads as a kept credential with script-wide context to every later save of
+// a credential-preserving import. Any other value under that key, text above
+// all, is masked like every secret-named value.
+func isSecretGatedCount(key string, value any) bool {
+	if NormalizeScriptFieldName(key) != "secretgated" || value == nil {
+		return false
+	}
+	if _, number := value.(json.Number); number {
+		return true
+	}
+	switch reflect.ValueOf(value).Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
 	}
 }
 

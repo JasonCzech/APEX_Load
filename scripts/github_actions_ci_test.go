@@ -980,7 +980,7 @@ func TestPostgresSuitesAreNotSilentlyFiltered(t *testing.T) {
 				t.Fatal(err)
 			}
 			command := regexp.MustCompile(`go test -tags postgres_integration[^\n]+`).FindString(string(data))
-			if !strings.Contains(command, "./pkg/storage ./pkg/api") || !strings.Contains(command, "-timeout=20m") || strings.Contains(command, "-run") || strings.Contains(command, "-skip") {
+			if !strings.Contains(command, "./pkg/storage ./pkg/api") || !strings.Contains(command, "-timeout=35m") || strings.Contains(command, "-run") || strings.Contains(command, "-skip") {
 				t.Fatalf("PostgreSQL lane must run both full active suites with a deadline: %q", command)
 			}
 			if strings.HasSuffix(path, ".yml") {
@@ -990,8 +990,8 @@ func TestPostgresSuitesAreNotSilentlyFiltered(t *testing.T) {
 					t.Fatal("PostgreSQL job is missing its wall-clock budget")
 				}
 				minutes, _ := strconv.Atoi(limit[1])
-				if minutes < 50 {
-					t.Fatal("job deadline cannot fit two sequential 20-minute suites plus build/setup")
+				if minutes < 80 {
+					t.Fatal("job deadline cannot fit two sequential 35-minute suites plus build/setup")
 				}
 			}
 		})

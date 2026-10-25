@@ -121,3 +121,34 @@
 
 .replay-preflight-check.fail { grid-column: 1 / -1; }
 .replay-preflight-alerts span { overflow-wrap: anywhere; max-width: 100%; }
+
+.replay-preflight-gates {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-preflight-gates li > strong,
+.replay-preflight-gates li > .btn {
+  font-size: 13px;
+}
+
+.replay-preflight-gates .btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+
+.replay-preflight-gates small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

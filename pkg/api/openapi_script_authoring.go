@@ -62,6 +62,60 @@ func applyScriptAuthoringContract(route discoveredRoute, contract *inferredRoute
 			}
 		}
 	}
+	if (route.Path == "/api/v1/scripts/{id}/repairs/preview" || route.Path == "/api/v1/scripts/{id}/repairs/apply") && route.Method == http.MethodPost {
+		description := "Required. Exactly one quoted strong script-authoring-v1:<content_revision> tag obtained with view=authoring; the repair is computed from that exact revision. Missing tags return 428, stale tags 412, and weak, list, wildcard or malformed tags 400."
+		found := false
+		for i := range contract.HeaderParameters {
+			if strings.EqualFold(contract.HeaderParameters[i].Name, "If-Match") {
+				contract.HeaderParameters[i].Description = description
+				contract.HeaderParameters[i].Required = true
+				contract.HeaderParameters[i].Schema = oasParamSchema{Type: "string"}
+				found = true
+			}
+		}
+		if !found {
+			contract.HeaderParameters = append(contract.HeaderParameters, oasParameter{Name: "If-Match", In: "header", Description: description, Required: true, Schema: oasParamSchema{Type: "string"}})
+		}
+		if route.Path == "/api/v1/scripts/{id}/repairs/apply" {
+			response := contract.Responses["200"]
+			response.Description = "The repair persisted as a conditioned save. stored carries the new content_revision and authoring projection; validation describes that revision. The preview's script and before are omitted, so the script appears only in stored, as in a save's response."
+			if response.Headers == nil {
+				response.Headers = map[string]oasHeader{}
+			}
+			response.Headers["X-APEX-Script-Save-Mode"] = oasHeader{Description: "Always conditioned: a repair is bound to the If-Match revision.", Schema: oasParamSchema{Type: "string", Enum: []string{"conditioned"}}}
+			contract.Responses["200"] = response
+		}
+		// The before/after comparison belongs to the preview; apply returns
+		// the persisted script once, in stored.
+		if media, ok := contract.Responses["200"].Content["application/json"]; ok {
+			for field, description := range map[string]string{
+				"before": "Preview only: the disclosure-safe script the repair was computed from. Omitted by apply.",
+				"script": "Preview only: the disclosure-safe repaired script. Omitted by apply, which returns the persisted script in stored.",
+			} {
+				if property, exists := media.Schema.Properties[field]; exists {
+					property.Description = description
+					media.Schema.Properties[field] = property
+				}
+			}
+		}
+		// A fixed code tells the lasting capability gap apart from a transient
+		// failure, which writeError masks; it carries no persistence detail.
+		response503 := contract.Responses["503"]
+		response503.Description = "Service unavailable. script_revisions_unavailable means this controller keeps no script content revisions, so it cannot repair saved scripts; retrying does not help. Any other 503 is transient and retains the normal error/ref body; after an apply the repair may already have committed, so reload before retrying."
+		response503.Content = map[string]oasMediaType{"application/json": {Schema: oasSchema{
+			Type: "object", Properties: map[string]oasSchema{
+				"error": {Type: "string"}, "ref": {Type: "string"},
+				"code": {Type: "string", Enum: []string{scriptRevisionsUnavailableCode}},
+			}, Required: []string{"error"},
+		}}}
+		contract.Responses["503"] = response503
+		for _, status := range []int{400, 404, 409, 412, 422, 428, 503} {
+			key := strconv.Itoa(status)
+			if _, exists := contract.Responses[key]; !exists {
+				contract.Responses[key] = oasResponse{Description: http.StatusText(status), Content: map[string]oasMediaType{"application/json": {Schema: oasSchema{Type: "object", Properties: map[string]oasSchema{"error": {Type: "string"}}, Required: []string{"error"}}}}}
+			}
+		}
+	}
 	if route.Path == "/api/v1/scripts/{id}" && route.Method == http.MethodPut {
 		description := "Exactly one quoted strong script-authoring-v1:<content_revision> tag obtained with view=authoring. Weak, list, wildcard, malformed and unsupported-version tags fail. Missing tags remain audited legacy saves unless this project's authoring.require_script_save_if_match policy requires them. Stale authored content or placement returns 412; missing required tags return 428."
 		found := false

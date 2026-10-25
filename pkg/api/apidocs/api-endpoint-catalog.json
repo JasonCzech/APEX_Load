@@ -5997,6 +5997,26 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/{id}/repairs/apply",
+      "operationId": "handleApplyScriptRepair",
+      "summary": "Apply Script Repair",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/repairs/preview",
+      "operationId": "handlePreviewScriptRepair",
+      "summary": "Preview Script Repair",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/{id}/replay",
       "operationId": "handleReplayScript",
       "summary": "Replay Script",

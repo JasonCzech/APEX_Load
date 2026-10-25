@@ -1,7 +1,7 @@
 import { authoringFixture } from '../test/scriptAuthoringFixtures'
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -82,7 +82,7 @@ vi.mock('../hooks/useProject', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean; retainedDraft?: unknown }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
+  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string; script?: unknown }, options?: { laterEdits?: boolean; configureSecrets?: boolean; keepAuthoringOpen?: boolean; retainedDraft?: unknown }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
     <div data-testid="script-editor" data-retained-guards={returnTarget?.retainedGuardIds?.join(',') ?? ''}>
       {returnTarget && <button onClick={returnTarget.onReturn}>{returnTarget.label}</button>}
       {/* Save changes in the prompt on the way back: the editor saves, then the return goes ahead. */}
@@ -93,6 +93,8 @@ vi.mock('./ScriptEditor', () => ({
       <span>script-id:{scriptId || 'none'}</span>
       <span>initially-dirty:{initiallyDirty ? 'yes' : 'no'}</span>
       <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' })}>mock-save</button>
+      {/* A guided repair, or Save and debug: the editor goes on with the saved script. */}
+      <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }, { keepAuthoringOpen: true })}>mock-save-keep-open</button>
       <button onClick={onClose}>mock-close</button>
     </div>
   ),
@@ -3078,6 +3080,44 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:Loaded Script')
     expect(container.textContent).toContain('script-id:script-42')
+  })
+
+  it('keeps a hosting page\'s editor open when the editor goes on with the saved script, as after a guided repair or Save and debug', async () => {
+    apiMock.getScript.mockResolvedValue({
+      script: { id: 'script-42', name: 'Loaded Script', version: '2.0.0', protocol: 'http', config: { base_url: 'https://loaded.example.com' }, actions: [] },
+    })
+    const onScriptSaved = vi.fn()
+    // A scenario's "Review script" host closes the editor on a save unless
+    // the page says to keep it open.
+    function ReviewHost() {
+      const [reviewing, setReviewing] = useState(true)
+      return reviewing
+        ? <ScriptsPage initialMode="edit" initialEditId="script-42" onScriptSaved={(script, handoff) => { onScriptSaved(script, handoff); if (!handoff?.keepAuthoringOpen) setReviewing(false) }} />
+        : <p>Scenario draft</p>
+    }
+    const clickExactly = async (label: string) => {
+      const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === label)
+      expect(button).toBeTruthy()
+      await act(async () => { button!.click() })
+      await flushPromises()
+    }
+    const editorOpen = () => vi.waitFor(() => expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull(), { timeout: 5000 })
+    await act(async () => { root.render(<ReviewHost />) })
+    await flushPromises()
+    await editorOpen()
+
+    await clickExactly('mock-save-keep-open')
+    expect(onScriptSaved).toHaveBeenCalledTimes(1)
+    expect(onScriptSaved).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'saved-script-1' }), { keepAuthoringOpen: true })
+    expect(container.textContent).not.toContain('Scenario draft')
+    await editorOpen()
+
+    // A plain save hands the script back, and the host closes the editor.
+    await clickExactly('mock-save')
+    expect(onScriptSaved).toHaveBeenCalledTimes(2)
+    expect(onScriptSaved).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'saved-script-1' }), undefined)
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.textContent).toContain('Scenario draft')
   })
 })
 

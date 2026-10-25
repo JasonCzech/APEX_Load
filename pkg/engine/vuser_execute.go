@@ -15,6 +15,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 	apptelemetry "github.com/jasonczech/apexload/pkg/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -773,11 +774,20 @@ func actionContainsUnresolvedParameterExceptBody(action *protocol.Action, skipRe
 			}
 		}
 	}
-	for _, values := range []map[string]any{action.Params, action.RedactedParams, action.Metadata} {
+	for _, values := range []map[string]any{action.Params, action.RedactedParams} {
 		for key, item := range values {
 			if containsUnresolvedParamToken(key) || anyValueContainsUnresolvedParam(item) {
 				return true
 			}
+		}
+	}
+	for key, item := range action.Metadata {
+		// Import evidence keeps the source text it recorded and is never
+		// sent (interpolateActionMetadata), so an old reference there is not
+		// an unresolved value. The key is checked only when the value holds
+		// one, which keeps the common path allocation-free.
+		if containsUnresolvedParamToken(key) || anyValueContainsUnresolvedParam(item) && !messaging.MetadataKeyIsEvidence(key) {
+			return true
 		}
 	}
 	if action.WaitFor != nil && anyStringContainsUnresolvedParam(action.WaitFor.Type, action.WaitFor.Value) {

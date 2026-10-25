@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import {
   buildLocalReplayPreflight,
   reconcileReplayPreflightSecretStatus,
+  replayBlockingKinds,
   replayPreflightStatusLabel,
+  replayReviewGateIssues,
+  withRefusedReviewGates,
 } from './replayPreflightUtils'
+
+interface ReadinessParityCase {
+  name: string
+  script: ScriptDefinition
+  preflight: ReplayPreflight
+}
+
+// Synthetic enterprise drafts and the preflight the server builds for each
+// (pkg/internal/importreview TestReadinessParityFixtureIsFresh writes them).
+async function readinessParityCases(): Promise<ReadinessParityCase[]> {
+  // @ts-expect-error Vitest runs in Node, while the dashboard app intentionally omits Node types.
+  const { readFileSync } = await import('node:fs')
+  return JSON.parse(readFileSync(new URL('../../../pkg/internal/importreview/testdata/readiness_parity.json', import.meta.url), 'utf8') as string)
+}
 
 const baseScript: ScriptDefinition = {
   name: 'API Smoke',
@@ -531,8 +548,10 @@ describe('buildLocalReplayPreflight', () => {
 
     expect(preflight.action_count).toBe(4)
     expect(preflight.expected_action_count).toBe(5)
-    expect(preflight.missing_variables).toEqual(['sku'])
-    expect(preflight.missing_variables).not.toContain('cart_id')
+    // As on the server: the loop body inside the then-branch sees cart_id, but
+    // the else-branch never sets it, so Checkout may run without it.
+    expect(preflight.missing_variables).toEqual(['cart_id', 'sku'])
+    expect(preflight.late_produced_variables).toEqual(['cart_id'])
   })
 
 	it('walks control_switch conditions, branches, review gates, and replay counts', () => {
@@ -763,4 +782,167 @@ describe('buildLocalReplayPreflight', () => {
     expect(preflight.checks?.find(check => check.id === 'runtime')).toMatchObject({ status: 'warn' })
   })
 
+  it('counts source-step outputs as producers, as the server does', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [
+        { name: 'Offers', type: 'GET', method: 'GET', target: '/offers', extractors: [{ name: 'C_Body', source: 'body', type: 'regex', expression: '(.*)' }] },
+        { name: 'Eval offers', type: 'source_json', target: '', params: { function: 'lr_eval_json', json_object: 'offers', buffer: '{{var.C_Body}}' } },
+        { name: 'Offer ids', type: 'source_json', target: '', params: { function: 'lr_json_get_values', json_object: 'offers', value_param: 'C_OfferIds', query: '$.offers[*].id', select_all: 'Yes', save_all: true } },
+        { name: 'Encode token', type: 'source_parameter', target: '', params: { function: 'web_convert_param', args: ['c_Token_URL', 'SourceString={{var.C_Body}}', 'TargetEncoding=URL'], save_param: 'c_Token_URL', source_string: '{{var.C_Body}}' } },
+        {
+          name: 'Copy',
+          type: 'source_parameter',
+          target: '',
+          // The imported call is evidence: neither the snapshot nor the metadata is read.
+          params: { function: 'lr_save_string', args: ['literal', 'Copy'], call_args: [{ name: 'source_snapshot', value: '{{var.evidence_only}}' }] },
+          metadata: { source_snippet: '{{var.evidence_only}}' },
+        },
+        {
+          name: 'Use',
+          type: 'GET',
+          method: 'GET',
+          target: '/offers/{{var.c_offerids_3}}?n={{var.C_OfferIds_count}}&t={{var.c_token_url}}&c={{var.copy}}&all={{var.c_offerids}}',
+        },
+      ],
+    })
+
+    // A SelectAll value publishes slots and a count, not the plain name.
+    expect(preflight.missing_variables).toEqual(['c_offerids'])
+    expect(preflight.placeholder_variables).toEqual(['c_offerids'])
+    expect(preflight.late_produced_variables).toEqual([])
+  })
+
+  it('blocks an undeclared parameter even where HTTP keeps variable placeholders', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      parameters: [{ name: 'Store', type: 'list', values: ['1'] }],
+      actions: [{ name: 'Store', type: 'GET', method: 'GET', target: '/{{param.store}}/{{param.region}}/{{var.STORE}}' }],
+    })
+    expect(preflight.valid).toBe(false)
+    expect(preflight.missing_variables).toEqual(['region'])
+    expect(preflight.blocking_variables).toEqual(['region'])
+    expect(preflight.param_blocking_variables).toEqual(['region'])
+    expect(preflight.config_blocking_variables).toEqual([])
+  })
+
+  it('lists the blocking values a configuration reference blocks apart from producer order', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      config: { base_url: 'https://{{var.host}}' },
+      actions: [
+        { name: 'Early', type: 'GET', method: 'GET', target: 'https://bootstrap.example.com/{{var.host}}' },
+        { name: 'Save host', type: 'source_parameter', target: '', params: { function: 'lr_save_string', args: ['api.example.com', 'host'] } },
+        { name: 'Relative', type: 'GET', method: 'GET', target: '/profile' },
+      ],
+    })
+    expect(preflight.blocking_variables).toEqual(['host'])
+    expect(preflight.late_produced_variables).toEqual(['host'])
+    expect(preflight.config_blocking_variables).toEqual(['host'])
+    expect(preflight.param_blocking_variables).toEqual([])
+  })
+
+  it('matches the server preflight for each readiness parity draft', async () => {
+    const cases = await readinessParityCases()
+    expect(cases.length).toBeGreaterThan(0)
+    const facts = (preflight: ReplayPreflight) => ({
+      missing_variables: preflight.missing_variables || [],
+      blocking_variables: preflight.blocking_variables || [],
+      placeholder_variables: preflight.placeholder_variables || [],
+      late_produced_variables: preflight.late_produced_variables || [],
+      param_blocking_variables: preflight.param_blocking_variables || [],
+      config_blocking_variables: preflight.config_blocking_variables || [],
+      issues: preflight.issues || [],
+    })
+    // The server lists why a value blocks for a parameter and a configuration draft.
+    expect(cases.flatMap(parity => parity.preflight.param_blocking_variables || [])).not.toEqual([])
+    expect(cases.flatMap(parity => parity.preflight.config_blocking_variables || [])).not.toEqual([])
+    for (const parity of cases) {
+      expect({ name: parity.name, ...facts(buildLocalReplayPreflight(parity.script)) }).toEqual({ name: parity.name, ...facts(parity.preflight) })
+    }
+  })
+})
+
+describe('replayBlockingKinds', () => {
+  const script: ScriptDefinition = {
+    ...baseScript,
+    config: { base_url: 'https://{{var.host}}' },
+    actions: [{ name: 'Use', type: 'GET', method: 'GET', target: '/{{param.region}}' }],
+  }
+
+  it('trusts a current controller\'s lists, even when both are empty', () => {
+    // The script would make region and host blocking kinds; the server's empty lists win.
+    expect(replayBlockingKinds({ blocking_variables: ['host', 'region'], param_blocking_variables: [], config_blocking_variables: [] }, script))
+      .toEqual({ param: new Set(), config: new Set() })
+    expect(replayBlockingKinds({ blocking_variables: ['host', 'region'], config_blocking_variables: ['host'] }, script))
+      .toEqual({ param: new Set(), config: new Set(['host']) })
+  })
+
+  it('derives the kinds from the script for an older stamp that omits or nulls the lists', () => {
+    const derived = { param: new Set(['region']), config: new Set(['host']) }
+    expect(replayBlockingKinds({ blocking_variables: ['host', 'region'] }, script)).toEqual(derived)
+    const nulled = { blocking_variables: ['host', 'region'], param_blocking_variables: null, config_blocking_variables: null } as unknown as ReplayPreflight
+    expect(replayBlockingKinds(nulled, script)).toEqual(derived)
+    expect(replayBlockingKinds(nulled)).toEqual({ param: new Set(), config: new Set() })
+  })
+
+  it('matches the kinds every computed parity preflight sends', async () => {
+    for (const parity of await readinessParityCases()) {
+      expect(Array.isArray(parity.preflight.param_blocking_variables) && Array.isArray(parity.preflight.config_blocking_variables)).toBe(true)
+      const local = buildLocalReplayPreflight(parity.script)
+      expect(replayBlockingKinds(parity.preflight, parity.script)).toEqual(replayBlockingKinds(local))
+    }
+  })
+})
+
+describe('replayReviewGateIssues', () => {
+  const browserScript: ScriptDefinition = {
+    name: 'Browser gates',
+    version: '1.0',
+    protocol: 'browser',
+    config: { base_url: 'https://app.example.com', browser: { review_policy: { allow_reviewed_javascript: false, allow_review_required: false } } },
+    actions: [
+      { name: 'Evaluate', type: 'browser_evaluate_js', target: 'document.title', metadata: { review_gate: 'javascript' } },
+      { name: 'Review me', type: 'browser_click', target: '#go', metadata: { review_required: true } },
+      { name: 'Legacy TLS', type: 'source_review', target: 'web_set_sockets_option', metadata: { execution_blocker: 'legacy_tls_replacement' } },
+      { name: 'Bruno', type: 'browser_navigate', target: '/', metadata: { review_gate: 'bruno_missing_variables' } },
+    ],
+  }
+
+  it('leaves out the browser review policy gates the server waives for a saved script, keeping the durable ones', () => {
+    const all = replayReviewGateIssues(browserScript)
+    expect(all).toEqual(expect.arrayContaining([
+      'actions[0] "Evaluate": review-gated JavaScript requires config.browser.review_policy.allow_reviewed_javascript=true before replay',
+      'actions[1] "Review me": review-required action requires config.browser.review_policy.allow_review_required=true before replay',
+    ]))
+    expect(replayReviewGateIssues(browserScript, { enforceBrowserPolicy: false })).toEqual([
+      'actions[2] "Legacy TLS": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved',
+      'actions[3] "Bruno": review-required action blocks replay until review metadata is removed',
+    ])
+    // The preflight's own gates are the enforced set.
+    expect(buildLocalReplayPreflight(browserScript).issues).toEqual(all)
+  })
+})
+
+describe('withRefusedReviewGates', () => {
+  const tls = (index: number) => `init[${index}] "web_set_sockets_option_${index}": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved`
+  const ready: ReplayPreflight = {
+    valid: true, action_count: 1, expected_action_count: 1, data_source_count: 0, parameter_count: 0, issues: [],
+    checks: [{ id: 'review_gates', label: 'Review gates', status: 'pass', detail: 'No review-gated actions block replay.' }],
+  }
+
+  it('adds the gates a refusal named, failing the review gates check', () => {
+    const refused = withRefusedReviewGates(ready, [tls(0), tls(2)])
+    expect(refused.valid).toBe(false)
+    expect(refused.issues).toEqual([tls(0), tls(2)])
+    expect(refused.checks).toEqual([{ id: 'review_gates', label: 'Review gates', status: 'fail', detail: `${tls(0)}; ${tls(2)}` }])
+  })
+
+  it('lists a gate the preflight already lists once', () => {
+    const local: ReplayPreflight = { ...ready, valid: false, issues: [tls(0)], checks: [{ id: 'review_gates', label: 'Review gates', status: 'fail', detail: tls(0) }] }
+    expect(withRefusedReviewGates(local, [tls(0)])).toBe(local)
+    const merged = withRefusedReviewGates(local, [` ${tls(0)}`, tls(2)])
+    expect(merged.issues).toEqual([tls(0), tls(2)])
+    expect(merged.checks?.[0].detail).toBe(`${tls(0)}; ${tls(2)}`)
+  })
 })
