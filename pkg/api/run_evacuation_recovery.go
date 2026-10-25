@@ -107,14 +107,31 @@ func interruptedEvacuationTargets(raw, testID string) (runEvacuationCheckpoint, 
 			return runEvacuationCheckpoint{}, nil, errors.New("source-fenced evacuation has contradictory progress")
 		}
 	case runEvacuationPhaseReplacementCommitted:
-		if guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) || guard.SourceFencedAt.IsZero() || guard.ReplacementCommittedAt.IsZero() {
+		if guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) || guard.SourceFencedAt.IsZero() || guard.ReplacementCommittedAt.IsZero() ||
+			(guard.Version == runEvacuationRollForwardCheckpointVersion && guard.CommittingAt.IsZero()) {
 			return runEvacuationCheckpoint{}, nil, errors.New("committed evacuation has contradictory progress")
+		}
+	case runEvacuationPhaseReplacementCommitting:
+		// CommitWork may or may not have reached the replacement. The source
+		// was positively fenced first.
+		if guard.Version != runEvacuationRollForwardCheckpointVersion || guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) ||
+			guard.SourceFencedAt.IsZero() || guard.CommittingAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() || guard.RollForwardGeneration != 0 || guard.RollForwardCheckpoint != nil {
+			return runEvacuationCheckpoint{}, nil, errors.New("committing evacuation has contradictory progress")
+		}
+	case runEvacuationPhaseRollingForward:
+		// A successor recorded its intent to adopt the next topology. The source
+		// stays fenced; the survivors and the replacement are participants.
+		if guard.Version != runEvacuationRollForwardCheckpointVersion || guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) ||
+			guard.SourceFencedAt.IsZero() || guard.CommittingAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() ||
+			guard.RollForwardGeneration <= guard.Generation || guard.RollForwardOwnerID == "" || guard.RollForwardStartedAt.IsZero() || guard.RollbackGeneration != 0 ||
+			!validRollForwardCheckpoint(guard) {
+			return runEvacuationCheckpoint{}, nil, errors.New("rolling-forward evacuation has contradictory progress")
 		}
 	case runEvacuationPhaseRollingBack:
 		// A successor recorded its rollback intent from prepared or staged. The
 		// source was never fenced, so it and the replacement stay participants.
 		staged := !guard.StagedAt.IsZero()
-		if guard.Version != runEvacuationRollbackCheckpointVersion || guard.RollbackGeneration <= guard.Generation || guard.RollbackOwnerID == "" || guard.RollbackStartedAt.IsZero() ||
+		if !rollbackRunEvacuationCheckpointVersion(guard.Version) || guard.RollbackGeneration <= guard.Generation || guard.RollbackOwnerID == "" || guard.RollbackStartedAt.IsZero() ||
 			(staged && !slices.Equal(guard.StagedTargets, replacements)) || (!staged && len(guard.StagedTargets) != 0) || !guard.SourceFencedAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() {
 			return runEvacuationCheckpoint{}, nil, errors.New("rolling-back evacuation has contradictory progress")
 		}
@@ -140,7 +157,8 @@ func interruptedEvacuationTargets(raw, testID string) (runEvacuationCheckpoint, 
 	// SourceFencedAt is published only after a forced StopTest ACK or a
 	// conservative run/process lease-expiry fence. Once durable, the old source
 	// need not reappear to prove an already-fenced assignment has stopped.
-	sourceAlreadyFenced := guard.Phase == runEvacuationPhaseSourceFenced || guard.Phase == runEvacuationPhaseReplacementCommitted
+	sourceAlreadyFenced := guard.Phase == runEvacuationPhaseSourceFenced || guard.Phase == runEvacuationPhaseReplacementCommitted ||
+		guard.Phase == runEvacuationPhaseReplacementCommitting || guard.Phase == runEvacuationPhaseRollingForward
 	targetSet := make(map[string]struct{})
 	if !sourceAlreadyFenced {
 		targetSet[guard.Source] = struct{}{}
@@ -255,10 +273,10 @@ func (tr *TestRunner) recoverInterruptedRunEvacuation(test *ManagedTest) error {
 	if generation <= guard.Generation {
 		return fmt.Errorf("successor generation %d does not fence evacuation generation %d", generation, guard.Generation)
 	}
-	if guard.Phase == runEvacuationPhaseRollingBack && generation <= guard.RollbackGeneration {
-		// That term may have adopted the prior topology. Its own epoch claim
-		// cannot drain assignments it adopted; only a newer term fences them.
-		return fmt.Errorf("successor generation %d does not fence evacuation rollback generation %d", generation, guard.RollbackGeneration)
+	if successor := guard.successorGeneration(); successor > 0 && generation <= successor {
+		// That term may have adopted the prior or next topology. Its own epoch
+		// claim cannot drain assignments it adopted; only a newer term fences them.
+		return fmt.Errorf("successor generation %d does not fence evacuation recovery generation %d", generation, successor)
 	}
 	ctx, cancel := context.WithDeadline(context.Background(), minTime(deadline, time.Now().Add(runAdoptionClaimBudget)))
 	defer cancel()
@@ -422,8 +440,8 @@ func (tr *TestRunner) resumeInterruptedRunEvacuations() {
 				slog.Warn("interrupted evacuation cannot be fenced automatically; a system administrator can attest that its generators stopped (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "error", err)
 				continue
 			}
-			if generation, _, _, claimErr := tr.generatorExecutionClaim(); guard.Phase == runEvacuationPhaseRollingBack && (claimErr != nil || generation <= guard.RollbackGeneration) {
-				slog.Warn("a failed evacuation rollback waits for a newer controller term or an administrator attestation (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "rollback_generation", guard.RollbackGeneration)
+			if generation, _, _, claimErr := tr.generatorExecutionClaim(); guard.successorGeneration() > 0 && (claimErr != nil || generation <= guard.successorGeneration()) {
+				slog.Warn("a failed evacuation rollback or roll-forward waits for a newer controller term or an administrator attestation (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "recovery_generation", guard.successorGeneration())
 				continue
 			}
 		}

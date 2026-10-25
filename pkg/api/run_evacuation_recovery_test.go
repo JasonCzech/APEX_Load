@@ -77,7 +77,7 @@ func TestInterruptedEvacuationRecoveryRequiresEveryProcessFence(t *testing.T) {
 				t.Fatal(err)
 			}
 			if phase != runEvacuationPhasePrepared {
-				guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+				guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -296,7 +296,7 @@ func TestInterruptedEvacuationRecoveryUsesDurableSourceFenceAfterSourceDisappear
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"}, runEvacuationStagedTiming{})
 	if err != nil {
 		t.Fatal(err)
 	}

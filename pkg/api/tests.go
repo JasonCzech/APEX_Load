@@ -1607,6 +1607,7 @@ func (tr *TestRunner) DeleteTestDurable(id string) (bool, error) {
 	}
 	tr.forgetRunSnapshotWriteStateLocked(id)
 	tr.removeRefKeyLocked(test.RefKey)
+	tr.forgetEvacuationHold(id)
 	delete(tr.tests, id)
 	tr.phaseLogs.Delete(id)
 	delete(tr.archives, id)

@@ -652,14 +652,7 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 		// Reconciliation closes only table data. It neither resumes generators
 		// nor bypasses the existing positive generator-stop proof. FAILED keeps
 		// reusable pools unchanged while preserving output for explicit recovery.
-		cleanupErr := tr.finalizeLiveTables(ctx, test, "FAILED")
-		if cleanupErr != nil {
-			tr.enqueueTerminalRetry("live-tables:"+test.ID, "live table recovery finalization", func() error {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-				return tr.finalizeLiveTables(cleanupCtx, test, "FAILED")
-			})
-		}
+		cleanupErr := tr.finalizeRecoveredLiveTables(ctx, test, run)
 		if interruptedFinalization {
 			return errors.Join(errLiveTableFinalizationInterrupted, continuationErr, cleanupErr)
 		}
@@ -669,11 +662,17 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 }
 
 func (tr *TestRunner) finalizeLiveTables(ctx context.Context, test *ManagedTest, terminalStatuses ...string) error {
+	return tr.finalizeRunLiveTables(ctx, test, tr.liveRun(test.ID), terminalStatuses...)
+}
+
+// finalizeRunLiveTables finalizes exactly the given tables, never whatever a
+// later lookup by run ID finds: tables another term restored for the run in
+// the meantime are not the caller's.
+func (tr *TestRunner) finalizeRunLiveTables(ctx context.Context, test *ManagedTest, run *runLiveTables, terminalStatuses ...string) error {
 	terminalStatus := test.Status
 	if len(terminalStatuses) > 0 {
 		terminalStatus = terminalStatuses[0]
 	}
-	run := tr.liveRun(test.ID)
 	if run == nil {
 		return nil
 	}
@@ -870,18 +869,67 @@ func (tr *TestRunner) originalLiveSeed(ctx context.Context, sourceID, projectID,
 	return manifest, errors.New("original live seed is unavailable in this project")
 }
 
+// liveTablesFinalizableBy reports whether a terminal writer holding test may
+// finalize the run's live tables, which are keyed by run ID: only a writer of
+// the term that holds them. A goroutine of a lost lease term may still hold the
+// run's old object and must not finalize tables a newer term restored. A
+// writer whose object was replaced within the same term, by a reload, still
+// finalizes them, since no other writer will.
+func (tr *TestRunner) liveTablesFinalizableBy(run *runLiveTables, test *ManagedTest) bool {
+	if !tr.durableExecutionFence {
+		return true
+	}
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	if test.executionFence != "" {
+		return test.executionFence == run.term.ownerID
+	}
+	return tr.tests[test.ID] == test
+}
+
 func (tr *TestRunner) finishLiveTables(test *ManagedTest, finalStatus string) {
-	if tr.liveRun(test.ID) == nil {
+	run := tr.liveRun(test.ID)
+	if run == nil || !tr.liveTablesFinalizableBy(run, test) {
 		return
 	}
-	finish := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		return tr.finalizeLiveTables(ctx, test, finalStatus)
-	}
+	finish := tr.liveTableFinalizer(test, run, finalStatus)
 	if err := finish(); err != nil {
 		// Finalization status remains separately visible and retryable. A pool
 		// conflict must not discard the run's performance evidence.
-		tr.enqueueTerminalRetry("live-tables:"+test.ID, "live table finalization", finish)
+		tr.enqueueTerminalRetry(liveTableRetryKey(test.ID, run), "live table finalization", finish)
 	}
+}
+
+// finalizeRecoveredLiveTables closes tables a restore found already closing,
+// and retries a failure like any other finalization.
+func (tr *TestRunner) finalizeRecoveredLiveTables(ctx context.Context, test *ManagedTest, run *runLiveTables) error {
+	err := tr.finalizeRunLiveTables(ctx, test, run, "FAILED")
+	if err != nil {
+		tr.enqueueTerminalRetry(liveTableRetryKey(test.ID, run), "live table recovery finalization", tr.liveTableFinalizer(test, run, "FAILED"))
+	}
+	return err
+}
+
+// liveTableFinalizer finalizes exactly run with status. A newer term may have
+// restored the run's tables since; they are not this caller's to finalize.
+// Tables of an ended term can never be finalized here again, so a retry ends
+// rather than loops.
+func (tr *TestRunner) liveTableFinalizer(test *ManagedTest, run *runLiveTables, status string) func() error {
+	return func() error {
+		if tr.liveRun(test.ID) != run || !tr.executionLeaseTermLocallyCurrent(run.term) {
+			return nil
+		}
+		if tr.afterLiveTableFinalizeCheck != nil {
+			tr.afterLiveTableFinalizeCheck()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		return tr.finalizeRunLiveTables(ctx, test, run, status)
+	}
+}
+
+// liveTableRetryKey keys a live-table finalization retry by run and term, so
+// a retry left by an earlier term never takes the slot of the current one.
+func liveTableRetryKey(testID string, run *runLiveTables) string {
+	return "live-tables:" + testID + "/" + run.term.ownerID
 }

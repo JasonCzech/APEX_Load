@@ -675,7 +675,8 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 		staleRuntimeHandle := sameIdentity && !liveLocally && !pendingStopProof && (existing.cancel != nil || existing.executionCtx != nil)
 		passiveOperationInFlight := sameIdentity && existing.passiveOperationToken != ""
 		priorEpochPassiveFence := sameIdentity && passiveExecutionFenceReleasable(existing) && existing.executionFence != "" && existing.executionFence != executionFenceAtStart
-		reuseReplicaState := sameIdentity && !staleRuntimeHandle && !passiveOperationInFlight && !priorEpochPassiveFence
+		lostTermFence := sameIdentity && lostTermExecutionFence(existing, executionFenceAtStart)
+		reuseReplicaState := sameIdentity && !staleRuntimeHandle && !passiveOperationInFlight && !priorEpochPassiveFence && !lostTermFence
 		retryHydration := reuseReplicaState && (existing.runtimeHydrationError != "" || existing.runtimeSnapshotRepairRequired)
 		tr.mu.RUnlock()
 		if liveLocally || passiveOperationInFlight {
@@ -728,9 +729,10 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 			continue
 		}
 		priorEpochPassiveFence = currentOK && sameStoredTestIdentity(current, record) && passiveExecutionFenceReleasable(current) && current.executionFence != "" && current.executionFence != executionFenceAtStart
+		lostTermFence = currentOK && sameStoredTestIdentity(current, record) && lostTermExecutionFence(current, executionFenceAtStart)
 		pendingStopProof = currentOK && sameStoredTestIdentity(current, record) && tr.pendingStopProofHandleForExecutionEpoch(current, executionFenceAtStart)
 		if currentOK && sameStoredTestIdentity(current, record) &&
-			((current.cancel == nil && current.executionCtx == nil) || pendingStopProof) && !priorEpochPassiveFence {
+			((current.cancel == nil && current.executionCtx == nil) || pendingStopProof) && !priorEpochPassiveFence && !lostTermFence {
 			oldRefKey := current.RefKey
 			// A stop-proof worker owns this same-term runtime even after it
 			// cancels local renewal. ListTests may have read the row before
@@ -738,8 +740,17 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 			// preserve that newer local safety state while refreshing the
 			// durable row's other fields on the same object.
 			status, stopReason, checkpoint := current.Status, current.Error, current.continuityCheckpoint
+			// An interrupted-evacuation hold may also have written STOPPING in
+			// this term after ListTests read the row RUNNING or PAUSED under the
+			// same journal. Keep that newer hold: STOPPING never returns to
+			// running. A STOPPING that was never written in this term, such as
+			// an uncertain evacuation whose save failed, follows the row.
+			heldEvacuation := status == "STOPPING" && strings.HasPrefix(stopReason, uncertainEvacuationReasonPrefix) &&
+				executionFenceAtStart != "" && current.evacuationHoldOwner == executionFenceAtStart &&
+				(managedTest.Status == "RUNNING" || managedTest.Status == "PAUSED") &&
+				checkpoint == managedTest.continuityCheckpoint && interruptedRunEvacuation(checkpoint)
 			applyStoredManagedTestSnapshot(current, managedTest)
-			if pendingStopProof && !isTerminalTestStatus(managedTest.Status) {
+			if (pendingStopProof || heldEvacuation) && !isTerminalTestStatus(managedTest.Status) {
 				current.Status, current.Error = status, stopReason
 				setContinuityCheckpointLocked(current, checkpoint)
 			}
@@ -810,6 +821,7 @@ func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 		if tr.storedHistoryCache != nil {
 			tr.storedHistoryCache.deleteTest(id)
 		}
+		tr.forgetEvacuationHold(id)
 		delete(tr.tests, id)
 		tr.phaseLogs.Delete(id)
 		tr.mu.Unlock()
@@ -822,6 +834,18 @@ func liveTestRuntimeForExecutionEpoch(test *ManagedTest, requireFence bool, exec
 		return false
 	}
 	return !requireFence || (executionFence != "" && test.executionFence == executionFence)
+}
+
+// lostTermExecutionFence reports an active run object with no runtime that is
+// still fenced to a lease term this process lost. A reload replaces such an
+// object: a goroutine of the lost term may still hold it, and must not write
+// under the new term once the new term claims the run. The fresh object is
+// claimed normally, by adoption, a hold, recovery or an attestation. A terminal
+// run needs no fence and keeps its object, so a lease change does not
+// re-hydrate every finished run.
+func lostTermExecutionFence(test *ManagedTest, executionFence string) bool {
+	return test != nil && executionFence != "" && test.cancel == nil && test.executionCtx == nil &&
+		test.executionFence != "" && test.executionFence != executionFence && !isTerminalTestStatus(test.Status)
 }
 
 // A canceled STOPPING runtime is still owned by same-term teardown or adoption
@@ -952,6 +976,9 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		newError := test.Error
 		if newError == "" {
 			newError = "generator evacuation state is uncertain: controller ownership changed before source and replacement cleanup was proven"
+			if runEvacuationReplacementNeverCommitted(test.continuityCheckpoint) {
+				newError = "generator evacuation state is uncertain: controller ownership changed after the source was fenced and before the replacement received CommitWork; the replacement never committed, so the evacuated VUsers stopped with the source"
+			}
 		}
 		if test.Status == "STOPPING" && test.Error == newError {
 			return nil
@@ -1890,6 +1917,7 @@ func (tr *TestRunner) forgetProject(projectID string) {
 		if test != nil && normalizeProjectID(test.ProjectID) == projectID {
 			tr.removeRefKeyLocked(test.RefKey)
 			tr.forgetRunSnapshotWriteStateLocked(id)
+			tr.forgetEvacuationHold(id)
 			delete(tr.tests, id)
 			tr.phaseLogs.Delete(id)
 			delete(tr.archives, id)
