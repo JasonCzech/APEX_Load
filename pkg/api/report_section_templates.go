@@ -532,6 +532,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
     {{end}}
   </tbody>
 </table>
+{{range .Failovers}}{{with .RestartNote}}<p class="section-copy">{{.}}.</p>{{end}}{{end}}
 {{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
 {{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
 {{end}}

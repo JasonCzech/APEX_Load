@@ -979,6 +979,9 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 			if runEvacuationReplacementNeverCommitted(test.continuityCheckpoint) {
 				newError = "generator evacuation state is uncertain: controller ownership changed after the source was fenced and before the replacement received CommitWork; the replacement never committed, so the evacuated VUsers stopped with the source"
 			}
+			if refusal := tr.evacuationRestartRefusal(test, test.continuityCheckpoint); refusal != "" {
+				newError += "; the moved share was not restarted: " + refusal
+			}
 		}
 		if test.Status == "STOPPING" && test.Error == newError {
 			return nil

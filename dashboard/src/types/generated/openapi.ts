@@ -38860,6 +38860,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -47355,6 +47357,8 @@ export interface operations {
                 "generation": number;
                 "last_observed_at"?: (string) | null;
                 "prior_generation": number;
+                "restarted_groups"?: Array<string>;
+                "restarted_vusers"?: number;
               }>;
               "policy": string;
             }) | null;
@@ -72517,6 +72521,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -75688,6 +75694,8 @@ export interface operations {
                 "generation": number;
                 "last_observed_at"?: (string) | null;
                 "prior_generation": number;
+                "restarted_groups"?: Array<string>;
+                "restarted_vusers"?: number;
               }>;
               "policy": string;
             }) | null;
@@ -81526,6 +81534,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -90449,6 +90459,8 @@ export interface operations {
                 "generation": number;
                 "last_observed_at"?: (string) | null;
                 "prior_generation": number;
+                "restarted_groups"?: Array<string>;
+                "restarted_vusers"?: number;
               }>;
               "policy": string;
             }) | null;
@@ -113634,6 +113646,8 @@ export interface operations {
                 "generation": number;
                 "last_observed_at"?: (string) | null;
                 "prior_generation": number;
+                "restarted_groups"?: Array<string>;
+                "restarted_vusers"?: number;
               }>;
               "policy": string;
             }) | null;
@@ -131273,6 +131287,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -133664,6 +133680,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -136055,6 +136073,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -138446,6 +138466,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -140837,6 +140859,8 @@ export interface operations {
                   "generation": number;
                   "last_observed_at"?: (string) | null;
                   "prior_generation": number;
+                  "restarted_groups"?: Array<string>;
+                  "restarted_vusers"?: number;
                 }>;
                 "policy": string;
               }) | null;
@@ -145597,6 +145621,8 @@ export interface operations {
                 "generation": number;
                 "last_observed_at"?: (string) | null;
                 "prior_generation": number;
+                "restarted_groups"?: Array<string>;
+                "restarted_vusers"?: number;
               }>;
               "policy": string;
             }) | null;
@@ -173064,6 +173090,8 @@ export interface operations {
                 "generation": number;
                 "last_observed_at"?: (string) | null;
                 "prior_generation": number;
+                "restarted_groups"?: Array<string>;
+                "restarted_vusers"?: number;
               }>;
               "policy": string;
             }) | null;

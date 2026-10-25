@@ -95035,6 +95035,13 @@ paths:
                                 prior_generation:
                                   type: integer
                                   format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
+                                  type: integer
+                                  format: int64
                               required:
                                 - adopted_at
                                 - adopted_generators
@@ -102530,6 +102537,13 @@ paths:
                                 prior_generation:
                                   type: integer
                                   format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
+                                  type: integer
+                                  format: int64
                               required:
                                 - adopted_at
                                 - adopted_generators
@@ -110018,6 +110032,13 @@ paths:
                                   format: date-time
                                   nullable: true
                                 prior_generation:
+                                  type: integer
+                                  format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
                                   type: integer
                                   format: int64
                               required:
@@ -117522,6 +117543,13 @@ paths:
                                 prior_generation:
                                   type: integer
                                   format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
+                                  type: integer
+                                  format: int64
                               required:
                                 - adopted_at
                                 - adopted_generators
@@ -125022,6 +125050,13 @@ paths:
                                   format: date-time
                                   nullable: true
                                 prior_generation:
+                                  type: integer
+                                  format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
                                   type: integer
                                   format: int64
                               required:
@@ -132526,6 +132561,13 @@ paths:
                                 prior_generation:
                                   type: integer
                                   format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
+                                  type: integer
+                                  format: int64
                               required:
                                 - adopted_at
                                 - adopted_generators
@@ -140026,6 +140068,13 @@ paths:
                                   format: date-time
                                   nullable: true
                                 prior_generation:
+                                  type: integer
+                                  format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
                                   type: integer
                                   format: int64
                               required:
@@ -364935,6 +364984,13 @@ paths:
                             prior_generation:
                               type: integer
                               format: int64
+                            restarted_groups:
+                              type: array
+                              items:
+                                type: string
+                            restarted_vusers:
+                              type: integer
+                              format: int64
                           required:
                             - adopted_at
                             - adopted_generators
@@ -382522,6 +382578,13 @@ paths:
                               format: date-time
                               nullable: true
                             prior_generation:
+                              type: integer
+                              format: int64
+                            restarted_groups:
+                              type: array
+                              items:
+                                type: string
+                            restarted_vusers:
                               type: integer
                               format: int64
                           required:
@@ -400533,6 +400596,13 @@ paths:
                               format: date-time
                               nullable: true
                             prior_generation:
+                              type: integer
+                              format: int64
+                            restarted_groups:
+                              type: array
+                              items:
+                                type: string
+                            restarted_vusers:
                               type: integer
                               format: int64
                           required:
@@ -420118,6 +420188,13 @@ paths:
                                 prior_generation:
                                   type: integer
                                   format: int64
+                                restarted_groups:
+                                  type: array
+                                  items:
+                                    type: string
+                                restarted_vusers:
+                                  type: integer
+                                  format: int64
                               required:
                                 - adopted_at
                                 - adopted_generators
@@ -438015,6 +438092,13 @@ paths:
                             prior_generation:
                               type: integer
                               format: int64
+                            restarted_groups:
+                              type: array
+                              items:
+                                type: string
+                            restarted_vusers:
+                              type: integer
+                              format: int64
                           required:
                             - adopted_at
                             - adopted_generators
@@ -455439,6 +455523,13 @@ paths:
                               format: date-time
                               nullable: true
                             prior_generation:
+                              type: integer
+                              format: int64
+                            restarted_groups:
+                              type: array
+                              items:
+                                type: string
+                            restarted_vusers:
                               type: integer
                               format: int64
                           required:
@@ -478929,6 +479020,13 @@ paths:
                               format: date-time
                               nullable: true
                             prior_generation:
+                              type: integer
+                              format: int64
+                            restarted_groups:
+                              type: array
+                              items:
+                                type: string
+                            restarted_vusers:
                               type: integer
                               format: int64
                           required:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -120,6 +121,23 @@ func newRollbackGeneratorClient(outcome pb.RunAdoptionOutcome, incarnation strin
 	return client
 }
 
+// A survivor is probed for load while the restart picks a replacement; the
+// fake has no heartbeat, which leaves it without capacity evidence.
+func (c *rollbackGeneratorClient) OpenHeartbeat(context.Context) (*generatorrpc.HeartbeatStream, error) {
+	return nil, errors.New("fake generator has no heartbeat")
+}
+
+// ClaimRunSupervision accepts the successor's supervision of an adopted
+// survivor, as a generator that kept the run does.
+func (c *rollbackGeneratorClient) ClaimRunSupervision(_ context.Context, claim generatorrpc.RunSupervisionClaim) (generatorrpc.RunSupervisionResult, error) {
+	return generatorrpc.RunSupervisionResult{Accepted: true, ContractVersion: generatorrpc.RunSupervisionContractV1, CurrentGeneration: claim.ExecutionGeneration, GrantedTTL: time.Minute, ExpiresAt: time.Now().Add(time.Minute)}, nil
+}
+
+// GetArchiveArtifact has nothing to serve: a fake generator kept no archive.
+func (c *rollbackGeneratorClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
+	return nil, errors.New("fake generator has no archive")
+}
+
 func (c *rollbackGeneratorClient) ClaimExecutionEpochWithAdoptions(ctx context.Context, generation uint64, owner string, ttl time.Duration, adoptions []generatorrpc.RunAdoption) (generatorrpc.ExecutionEpochResult, error) {
 	c.mu.Lock()
 	c.claims = append(c.claims, append([]generatorrpc.RunAdoption(nil), adoptions...))
@@ -158,6 +176,12 @@ type evacuationRollbackFixture struct {
 	survivorGen *rollbackGeneratorClient
 	replacement generatorClient
 	token       []byte
+	// extra serves further fleet targets, such as a restart's new
+	// replacement; each call returns a fresh client.
+	extra map[string]func() (generatorClient, error)
+	// backendTimeout bounds each generator RPC (default 1 s, enough for
+	// fakes; in-process generators under load need more).
+	backendTimeout time.Duration
 }
 
 var rollbackBudget = protocol.CapacityVector{CPUCores: 1, MemoryMB: 100, NetworkMbps: 100, VUsers: 10}
@@ -249,7 +273,21 @@ func (f *evacuationRollbackFixture) handOver(t *testing.T, name string) (string,
 	successor := newExecutionLeadership(f.store, name)
 	successor.tick()
 	f.tr.leadership = successor
-	f.tr.execution = newDistributedExecutionBackend([]string{"gen-a", "gen-b", "gen-c"}, time.Second, func(_ context.Context, target string) (generatorClient, error) {
+	targets := []string{"gen-a", "gen-b", "gen-c"}
+	for target := range f.extra {
+		if !slices.Contains(targets[:3], target) {
+			targets = append(targets, target)
+		}
+	}
+	slices.Sort(targets[3:])
+	timeout := f.backendTimeout
+	if timeout == 0 {
+		timeout = time.Second
+	}
+	f.tr.execution = newDistributedExecutionBackend(targets, timeout, func(_ context.Context, target string) (generatorClient, error) {
+		if dial := f.extra[target]; dial != nil {
+			return dial()
+		}
 		switch target {
 		case "gen-a":
 			return f.sourceGen, nil

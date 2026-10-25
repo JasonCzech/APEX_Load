@@ -70,7 +70,7 @@ Status: implemented behind an opt-in. Qualified locally only. Thirteen review ro
 ## Invariants
 
 - **Old and replacement never run concurrently.** The source was positively fenced before `replacement_committing` was written, it is never adopted, and it is excluded from every later participant set. A late predecessor write fails the lease-held compare-and-swap, and generators refuse its generation and token once the successor adopted the run.
-- **No replayed initialization.** Adoption moves existing executions only. A replacement that never committed is drained, not restarted.
+- **No replayed initialization.** Adoption moves existing executions only. A replacement that never committed is drained, not restarted. Updated 2026-10-24: with `APEXLOAD_EVACUATION_REPLACEMENT_RESTART`, its share is then restarted fresh on another generator ([replacement restart](../roadmap-evacuation-replacement-restart-2026-10-24/README.md)); adoption itself still never restarts work.
 - **No resurrected stopped run.** A `STOPPING` run is not eligible.
 - **No extended duration.** The successor sends the journaled target, which never exceeds the staged duration, before the journal is replaced.
 - **Pause is preserved.** The durable pause state must equal the staged one.
@@ -304,11 +304,11 @@ Round 13 was the last cycle: by agreement, review stopped once a round found no 
   - rolling-version refusal by older controllers during an upgrade;
   - pause at the `rolling_forward` phase across a second leader change.
 - **Not covered.**
-  - a restart of a missing replacement for the eligible HTTP workload;
-  - replay of work whose replacement never committed: such a run is held `STOPPING`.
+  - a restart of a missing replacement for the eligible HTTP workload. Updated 2026-10-24: covered behind `APEXLOAD_EVACUATION_REPLACEMENT_RESTART` by the [replacement restart slice](../roadmap-evacuation-replacement-restart-2026-10-24/README.md); a roll-forward whose replacement was not adopted and provably runs nothing then restarts its share instead of holding the run;
+  - replay of work whose replacement never committed: such a run is held `STOPPING` unless that restart is enabled and its proofs hold.
 - **Duration during the gap.** Between `CommitWork` and the successor's adjustment, the replacement runs on its staged duration. In its own logical clock it never exceeds the configured duration, but if the gap outlasts the fleet deadline it can run up to the staging time past it before the adjustment ends it.
 - **Completion is ambiguous.** Resolved on 2026-10-24 for causes reported by current generators by the [generator terminal cause slice](../roadmap-generator-terminal-cause-2026-10-24/README.md): a participant whose generator reports that its duration ran out, at no less than the durable expectation, no longer holds the run, and a naturally completed replacement rolls forward. A completion from an older generator, an older archive or a pruned tombstone, a controller stop, executions that ended early, or a shorter duration still holds the run for attestation.
-- **A failed roll-forward** leaves the run `STOPPING`, holding its capacity and timeslot, until a newer term fences it or an administrator attests that its generators stopped. That includes a replacement that never committed.
+- **A failed roll-forward** leaves the run `STOPPING`, holding its capacity and timeslot, until a newer term fences it or an administrator attests that its generators stopped. That includes a replacement that never committed, unless the [replacement restart](../roadmap-evacuation-replacement-restart-2026-10-24/README.md) is enabled and proves it runs nothing, in which case its share is restarted instead.
 - **Write failures.** A failed `STOPPING` write in `failRunEvacuationRecovery` is retried in the background by the hold registry's retry. `TestEvacuationRollForwardHoldsCompletedReplacement` shows the stops are still sent and the next term holds the run, and `TestInterruptedRunEvacuationHoldRetry` covers the background retry.
 - **Removal paths.** `forgetEvacuationHold` is called where a run is removed (`tests.go`, `persistence.go`, `timeslot_reservation.go`), but only the function itself is tested, not each call site. Those calls only free the entry sooner: `persist` already drops a hold whose run object is no longer registered (`tr.tests[test.ID] != test`), which ends the retry.
 - **A claim refused in a current term** retries with backoff up to one second until the fence is released, the term ends, the run becomes terminal, its journal is gone, the run is removed or the runner shuts down. No production path is known to produce such a fence once the reload and Phase A have cleared lost-term fences; the subtest sets one directly.

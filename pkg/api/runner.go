@@ -382,6 +382,11 @@ type TestRunner struct {
 	// forward once its replacement may have received CommitWork. Off until
 	// that recovery is qualified for a deployment.
 	evacuationRollForwardRecovery bool
+	// evacuationReplacementRestart, with both settings above, writes version 6
+	// journals and lets a successor restart the moved share of an evacuation
+	// whose replacement provably never committed or stopped, for the eligible
+	// stateless-HTTP workload. Off until that recovery is qualified.
+	evacuationReplacementRestart bool
 	// evacuationHolds is each run's latest interrupted-evacuation hold; the
 	// run's single background hold retry (evacuationHoldRetrying) writes it.
 	evacuationHoldsMu      sync.Mutex

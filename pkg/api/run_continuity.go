@@ -72,6 +72,10 @@ type RunFailover struct {
 	GapSeconds          float64    `json:"gap_seconds,omitempty"`
 	AdoptedGenerators   int        `json:"adopted_generators"`
 	CompletedGenerators int        `json:"completed_generators,omitempty"`
+	// RestartedVUsers of RestartedGroups lost their evacuation replacement
+	// during the failover and were started again, fresh, on a new one.
+	RestartedVUsers int      `json:"restarted_vusers,omitempty"`
+	RestartedGroups []string `json:"restarted_groups,omitempty"`
 }
 
 // RunContinuityStatus is the public HA continuity state of a run.
@@ -251,15 +255,7 @@ func (tr *TestRunner) writeRunContinuity(ctx context.Context, test *ManagedTest,
 	testID := test.ID
 	expected := test.continuityCheckpoint
 	failovers := append([]RunFailover(nil), test.continuityFailovers...)
-	var completedTargets, archiveTargets []string
-	for target, state := range test.remoteTargetStates {
-		if strings.EqualFold(state, "complete") || strings.EqualFold(state, "completed") {
-			completedTargets = append(completedTargets, target)
-		}
-	}
-	for target := range test.remoteArchiveClientsByTarget {
-		archiveTargets = append(archiveTargets, target)
-	}
+	completedTargets, archiveTargets := runtimeRetiredTargetsLocked(test)
 	pinnedSecrets := test.pinnedSecrets.snapshot()
 	tr.mu.RUnlock()
 	if policy != failoverPolicyContinue {
@@ -294,35 +290,10 @@ func (tr *TestRunner) writeRunContinuity(ctx context.Context, test *ManagedTest,
 	if !ok {
 		return errors.New("test store cannot persist checkpoints")
 	}
-	sealed, err := sealRunSupervisionToken(ctx, tr.continuityKeyWrapper, testID, generation, token)
+	previous, _, _ := decodeRunContinuityCheckpoint(expected)
+	checkpoint, err := tr.sealRunContinuityCheckpoint(ctx, testID, generation, leaseOwnerID, token, shards, failovers, completedTargets, archiveTargets, pinnedSecrets, previous)
 	if err != nil {
-		return fmt.Errorf("seal run supervision token: %w", err)
-	}
-	var pinnedCiphertext string
-	var pinnedKey *keywrap.WrappedKey
-	if pinnedSecrets != nil {
-		pinnedCiphertext, pinnedKey, err = sealRunPinnedSecrets(ctx, tr.continuityKeyWrapper, testID, pinnedSecrets)
-		if err != nil {
-			return fmt.Errorf("seal run secrets: %w", err)
-		}
-	} else if previous, present, decodeErr := decodeRunContinuityCheckpoint(expected); decodeErr == nil && present {
-		pinnedCiphertext, pinnedKey = previous.PinnedSecretCiphertext, previous.PinnedSecretKey
-	}
-	checkpoint := runContinuityCheckpoint{
-		Version:                runContinuityCheckpointVersion,
-		ExecutionGeneration:    generation,
-		ExecutionLeaseOwnerID:  leaseOwnerID,
-		RunSupervisionToken:    sealed,
-		PinnedSecretCiphertext: pinnedCiphertext,
-		PinnedSecretKey:        pinnedKey,
-		Shards:                 make(map[string][]GeneratorShardSummary, len(shards)),
-		ArmedAt:                time.Now().UTC(),
-		Failovers:              failovers,
-		CompletedTargets:       completedTargets,
-		ArchiveTargets:         archiveTargets,
-	}
-	for group, groupShards := range shards {
-		checkpoint.Shards[group] = cloneGeneratorShardSummaries(groupShards)
+		return err
 	}
 	encoded, err := json.Marshal(checkpoint)
 	if err != nil {
@@ -351,6 +322,54 @@ func (tr *TestRunner) writeRunContinuity(ctx context.Context, test *ManagedTest,
 	tr.mu.Unlock()
 	slog.Info("run continuity armed", "test_id", testID, "execution_generation", generation, "adoption_implemented", runAdoptionImplemented)
 	return nil
+}
+
+// runtimeRetiredTargetsLocked lists the runtime's completed participants and
+// its retired generators kept for archive collection. The caller holds tr.mu.
+func runtimeRetiredTargetsLocked(test *ManagedTest) (completedTargets, archiveTargets []string) {
+	for target, state := range test.remoteTargetStates {
+		if strings.EqualFold(state, "complete") || strings.EqualFold(state, "completed") {
+			completedTargets = append(completedTargets, target)
+		}
+	}
+	for target := range test.remoteArchiveClientsByTarget {
+		archiveTargets = append(archiveTargets, target)
+	}
+	return completedTargets, archiveTargets
+}
+
+// sealRunContinuityCheckpoint builds the adoption checkpoint of a runtime under
+// generation: the sealed token, the run's pinned secrets (or those of previous
+// when none are held in memory), its topology and its retired participants.
+func (tr *TestRunner) sealRunContinuityCheckpoint(ctx context.Context, testID string, generation uint64, leaseOwnerID string, token []byte, shards map[string][]GeneratorShardSummary, failovers []RunFailover, completedTargets, archiveTargets []string, pinnedSecrets map[int]map[string]string, previous runContinuityCheckpoint) (runContinuityCheckpoint, error) {
+	sealed, err := sealRunSupervisionToken(ctx, tr.continuityKeyWrapper, testID, generation, token)
+	if err != nil {
+		return runContinuityCheckpoint{}, fmt.Errorf("seal run supervision token: %w", err)
+	}
+	pinnedCiphertext, pinnedKey := previous.PinnedSecretCiphertext, previous.PinnedSecretKey
+	if pinnedSecrets != nil {
+		pinnedCiphertext, pinnedKey, err = sealRunPinnedSecrets(ctx, tr.continuityKeyWrapper, testID, pinnedSecrets)
+		if err != nil {
+			return runContinuityCheckpoint{}, fmt.Errorf("seal run secrets: %w", err)
+		}
+	}
+	checkpoint := runContinuityCheckpoint{
+		Version:                runContinuityCheckpointVersion,
+		ExecutionGeneration:    generation,
+		ExecutionLeaseOwnerID:  leaseOwnerID,
+		RunSupervisionToken:    sealed,
+		PinnedSecretCiphertext: pinnedCiphertext,
+		PinnedSecretKey:        pinnedKey,
+		Shards:                 make(map[string][]GeneratorShardSummary, len(shards)),
+		ArmedAt:                time.Now().UTC(),
+		Failovers:              failovers,
+		CompletedTargets:       completedTargets,
+		ArchiveTargets:         archiveTargets,
+	}
+	for group, groupShards := range shards {
+		checkpoint.Shards[group] = cloneGeneratorShardSummaries(groupShards)
+	}
+	return checkpoint, nil
 }
 
 // archivedRunContinuity is the continuity record written into a finished
@@ -385,6 +404,28 @@ func controllerFailoverComparisonWarning(status *RunContinuityStatus) string {
 	if status == nil || len(status.Failovers) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("Survived %d controller failover(s) with %.0f s unobserved by the controller; archive completeness requires separate verification, and stage, traffic-profile and goal control held their last value during each gap",
+	warning := fmt.Sprintf("Survived %d controller failover(s) with %.0f s unobserved by the controller; archive completeness requires separate verification, and stage, traffic-profile and goal control held their last value during each gap",
 		len(status.Failovers), failoverGapTotalSeconds(status))
+	for _, failover := range status.Failovers {
+		if note := restartedShareNote(failover); note != "" {
+			warning += "; " + note
+		}
+	}
+	return warning
+}
+
+// RestartNote is restartedShareNote for the report templates.
+func (failover RunFailover) RestartNote() string {
+	return restartedShareNote(failover)
+}
+
+// restartedShareNote says which VUsers a failover restarted fresh because the
+// replacement an interrupted evacuation moved them to no longer ran them, or
+// returns "" when it restarted none.
+func restartedShareNote(failover RunFailover) string {
+	if failover.RestartedVUsers <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d VUsers of %s lost their evacuation replacement and were restarted fresh on a new generator, so their share stopped for the gap and its in-flight work was lost",
+		failover.RestartedVUsers, strings.Join(failover.RestartedGroups, ", "))
 }

@@ -931,8 +931,12 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			*lines = append(*lines, fmt.Sprintf("Recorded %s. Archive source coverage and measurement completeness are reported separately. Unobserved controller time: %.1f s.", reportCountNoun(int64(len(continuity.Failovers)), "controller failover", "controller failovers"), failoverGapTotalSeconds(continuity)))
 			for _, failover := range continuity.Failovers {
-				*lines = append(*lines, fmt.Sprintf("- %s: generation %d -> %d, gap %.1f s, %s adopted, %d finished during the gap",
-					formatReportDateTime(failover.AdoptedAt), failover.PriorGeneration, failover.Generation, failover.GapSeconds, reportCountNoun(int64(failover.AdoptedGenerators), "load generator", "load generators"), failover.CompletedGenerators))
+				line := fmt.Sprintf("- %s: generation %d -> %d, gap %.1f s, %s adopted, %d finished during the gap",
+					formatReportDateTime(failover.AdoptedAt), failover.PriorGeneration, failover.Generation, failover.GapSeconds, reportCountNoun(int64(failover.AdoptedGenerators), "load generator", "load generators"), failover.CompletedGenerators)
+				if note := restartedShareNote(failover); note != "" {
+					line += "; " + note
+				}
+				*lines = append(*lines, line)
 			}
 			*lines = append(*lines, "")
 		},
@@ -962,6 +966,14 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					{"completed_generators", fmt.Sprint(failover.CompletedGenerators)},
 				} {
 					if err := write("controller_failover", key, row[0], row[1]); err != nil {
+						return err
+					}
+				}
+				if failover.RestartedVUsers > 0 {
+					if err := write("controller_failover", key, "restarted_vusers", fmt.Sprint(failover.RestartedVUsers)); err != nil {
+						return err
+					}
+					if err := write("controller_failover", key, "restarted_groups", strings.Join(failover.RestartedGroups, "; ")); err != nil {
 						return err
 					}
 				}

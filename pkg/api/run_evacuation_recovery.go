@@ -93,6 +93,13 @@ func interruptedEvacuationTargets(raw, testID string) (runEvacuationCheckpoint, 
 	if err != nil {
 		return runEvacuationCheckpoint{}, nil, err
 	}
+	// Restart fields belong to version 6 alone, and a restart's intent to its
+	// own phase.
+	restarting := guard.RestartGeneration != 0 || guard.RestartOwnerID != "" || !guard.RestartStartedAt.IsZero() || guard.RestartCheckpoint != nil
+	if (guard.Version != runEvacuationRestartCheckpointVersion && (restarting || guard.RestartTargetDuration != 0 || !guard.SourceAbsentAt.IsZero() || len(guard.RestartExcluded) != 0)) ||
+		(restarting != (guard.Phase == runEvacuationPhaseReplacementRestarting)) || guard.RestartTargetDuration < 0 {
+		return runEvacuationCheckpoint{}, nil, errors.New("evacuation journal has contradictory restart progress")
+	}
 	switch guard.Phase {
 	case runEvacuationPhasePrepared:
 		if !guard.StagedAt.IsZero() || len(guard.StagedTargets) != 0 || !guard.SourceFencedAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() {
@@ -108,24 +115,37 @@ func interruptedEvacuationTargets(raw, testID string) (runEvacuationCheckpoint, 
 		}
 	case runEvacuationPhaseReplacementCommitted:
 		if guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) || guard.SourceFencedAt.IsZero() || guard.ReplacementCommittedAt.IsZero() ||
-			(guard.Version == runEvacuationRollForwardCheckpointVersion && guard.CommittingAt.IsZero()) {
+			(rollForwardRunEvacuationCheckpointVersion(guard.Version) && guard.CommittingAt.IsZero()) {
 			return runEvacuationCheckpoint{}, nil, errors.New("committed evacuation has contradictory progress")
 		}
 	case runEvacuationPhaseReplacementCommitting:
 		// CommitWork may or may not have reached the replacement. The source
 		// was positively fenced first.
-		if guard.Version != runEvacuationRollForwardCheckpointVersion || guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) ||
+		if !rollForwardRunEvacuationCheckpointVersion(guard.Version) || guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) ||
 			guard.SourceFencedAt.IsZero() || guard.CommittingAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() || guard.RollForwardGeneration != 0 || guard.RollForwardCheckpoint != nil {
 			return runEvacuationCheckpoint{}, nil, errors.New("committing evacuation has contradictory progress")
 		}
 	case runEvacuationPhaseRollingForward:
 		// A successor recorded its intent to adopt the next topology. The source
 		// stays fenced; the survivors and the replacement are participants.
-		if guard.Version != runEvacuationRollForwardCheckpointVersion || guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) ||
+		if !rollForwardRunEvacuationCheckpointVersion(guard.Version) || guard.StagedAt.IsZero() || !slices.Equal(guard.StagedTargets, replacements) ||
 			guard.SourceFencedAt.IsZero() || guard.CommittingAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() ||
 			guard.RollForwardGeneration <= guard.Generation || guard.RollForwardOwnerID == "" || guard.RollForwardStartedAt.IsZero() || guard.RollbackGeneration != 0 ||
 			!validRollForwardCheckpoint(guard) {
 			return runEvacuationCheckpoint{}, nil, errors.New("rolling-forward evacuation has contradictory progress")
+		}
+	case runEvacuationPhaseReplacementRestarting:
+		// A successor recorded its intent to restart the moved share. The
+		// interrupted evacuation's source was fenced, or is a restart's source
+		// proven absent; its replacement never committed, or its epoch claim
+		// proved it no longer runs. The survivors and the replacement are
+		// participants until the restart's own journal replaces this one.
+		staged := !guard.StagedAt.IsZero()
+		if guard.Version != runEvacuationRestartCheckpointVersion || (staged && !slices.Equal(guard.StagedTargets, replacements)) || (!staged && len(guard.StagedTargets) != 0) ||
+			(guard.SourceFencedAt.IsZero() && guard.SourceAbsentAt.IsZero()) || !guard.ReplacementCommittedAt.IsZero() ||
+			guard.RestartGeneration <= guard.Generation || guard.RestartOwnerID == "" || guard.RestartStartedAt.IsZero() || guard.RestartTargetDuration <= 0 ||
+			guard.RollbackGeneration != 0 || guard.RollForwardGeneration != 0 || guard.RollForwardCheckpoint != nil || !validRestartCheckpoint(guard) {
+			return runEvacuationCheckpoint{}, nil, errors.New("restarting evacuation has contradictory progress")
 		}
 	case runEvacuationPhaseRollingBack:
 		// A successor recorded its rollback intent from prepared or staged. The
@@ -158,7 +178,8 @@ func interruptedEvacuationTargets(raw, testID string) (runEvacuationCheckpoint, 
 	// conservative run/process lease-expiry fence. Once durable, the old source
 	// need not reappear to prove an already-fenced assignment has stopped.
 	sourceAlreadyFenced := guard.Phase == runEvacuationPhaseSourceFenced || guard.Phase == runEvacuationPhaseReplacementCommitted ||
-		guard.Phase == runEvacuationPhaseReplacementCommitting || guard.Phase == runEvacuationPhaseRollingForward
+		guard.Phase == runEvacuationPhaseReplacementCommitting || guard.Phase == runEvacuationPhaseRollingForward ||
+		(guard.Phase == runEvacuationPhaseReplacementRestarting && !guard.SourceFencedAt.IsZero())
 	targetSet := make(map[string]struct{})
 	if !sourceAlreadyFenced {
 		targetSet[guard.Source] = struct{}{}
@@ -441,7 +462,13 @@ func (tr *TestRunner) resumeInterruptedRunEvacuations() {
 				continue
 			}
 			if generation, _, _, claimErr := tr.generatorExecutionClaim(); guard.successorGeneration() > 0 && (claimErr != nil || generation <= guard.successorGeneration()) {
-				slog.Warn("a failed evacuation rollback or roll-forward waits for a newer controller term or an administrator attestation (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "recovery_generation", guard.successorGeneration())
+				slog.Warn("a failed evacuation rollback, roll-forward or restart waits for a newer controller term or an administrator attestation (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "recovery_generation", guard.successorGeneration())
+				continue
+			} else if claimErr == nil && generation <= guard.Generation {
+				// An evacuation journal of this term, such as a restart's that
+				// could not finish: only a newer term fences what this term
+				// adopted and staged.
+				slog.Warn("a failed evacuation restart waits for a newer controller term or an administrator attestation (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "evacuation_generation", guard.Generation)
 				continue
 			}
 		}

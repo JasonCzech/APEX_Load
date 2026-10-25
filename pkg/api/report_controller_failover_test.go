@@ -60,6 +60,22 @@ func TestControllerFailoverReportSectionRendersAllFormats(t *testing.T) {
 		t.Errorf("CSV rows = %v", csv)
 	}
 
+	// A failover that restarted a missing evacuation replacement says so in
+	// every format.
+	html, pdf, csv = render(&RunContinuityStatus{Policy: "continue", Failovers: []RunFailover{
+		{PriorGeneration: 1, Generation: 2, AdoptedAt: adopted, GapSeconds: 12, AdoptedGenerators: 1, RestartedVUsers: 5, RestartedGroups: []string{"Store_Browse", "Store_Cart"}},
+	}})
+	const restarted = "5 VUsers of Store_Browse, Store_Cart lost their evacuation replacement and were restarted fresh on a new generator"
+	if !strings.Contains(html, restarted) || !strings.Contains(pdf, restarted) {
+		t.Errorf("restarted share missing: html=%q pdf=%q", html, pdf)
+	}
+	if csv["controller_failover/1/restarted_vusers"] != "5" || csv["controller_failover/1/restarted_groups"] != "Store_Browse; Store_Cart" {
+		t.Errorf("restarted share CSV rows = %v", csv)
+	}
+	if got := controllerFailoverComparisonWarning(&RunContinuityStatus{Failovers: []RunFailover{{RestartedVUsers: 5, RestartedGroups: []string{"Store_Browse"}}}}); !strings.Contains(got, "5 VUsers of Store_Browse lost their evacuation replacement") {
+		t.Errorf("comparison warning = %q", got)
+	}
+
 	html, pdf, csv = render(nil)
 	if !strings.Contains(html, "No controller failover occurred") || !strings.Contains(pdf, "No controller failover occurred") || csv["controller_failover//failovers"] != "0" {
 		t.Errorf("no-failover rendering: html=%q pdf=%q csv=%v", html, pdf, csv)

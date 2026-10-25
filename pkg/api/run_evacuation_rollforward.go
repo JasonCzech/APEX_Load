@@ -51,6 +51,11 @@ func (tr *TestRunner) evacuationRollForwardGuard(test *ManagedTest, raw string) 
 	if err != nil {
 		return runEvacuationCheckpoint{}, nil, false
 	}
+	// A version 6 journal is a restart's; only a term that may restart again
+	// finishes it.
+	if guard.Version == runEvacuationRestartCheckpointVersion && !tr.evacuationReplacementRestart {
+		return runEvacuationCheckpoint{}, nil, false
+	}
 	// The replacement was staged in the run's pause state. A pause or resume
 	// since then cannot have reached it.
 	if paused := test.Status == "PAUSED" || test.PausedAt != nil; paused != guard.StagedPaused {
@@ -70,7 +75,7 @@ func runEvacuationRollForwardPlan(raw, testID string) (runEvacuationCheckpoint, 
 	if err != nil {
 		return runEvacuationCheckpoint{}, nil, err
 	}
-	if guard.Version != runEvacuationRollForwardCheckpointVersion {
+	if !rollForwardRunEvacuationCheckpointVersion(guard.Version) {
 		return runEvacuationCheckpoint{}, nil, errors.New("evacuation journal predates successor roll-forward")
 	}
 	switch guard.Phase {
@@ -110,12 +115,12 @@ func runEvacuationRollForwardPlan(raw, testID string) (runEvacuationCheckpoint, 
 	return guard, replacements, nil
 }
 
-// runEvacuationReplacementNeverCommitted reports a version 5 journal held at
-// source_fenced: its leader writes replacement_committing before sending
+// runEvacuationReplacementNeverCommitted reports a version 5 or 6 journal held
+// at source_fenced: its leader writes replacement_committing before sending
 // CommitWork, so no replacement can have crossed its start barrier.
 func runEvacuationReplacementNeverCommitted(raw string) bool {
 	var guard runEvacuationCheckpoint
-	return json.Unmarshal([]byte(raw), &guard) == nil && guard.Version == runEvacuationRollForwardCheckpointVersion && guard.Phase == runEvacuationPhaseSourceFenced
+	return json.Unmarshal([]byte(raw), &guard) == nil && rollForwardRunEvacuationCheckpointVersion(guard.Version) && guard.Phase == runEvacuationPhaseSourceFenced
 }
 
 // runEvacuationSurvivorsUnchanged refuses a journal that changed any surviving
@@ -187,11 +192,7 @@ func runEvacuationRollForwardCheckpoint(guard runEvacuationCheckpoint) runContin
 	checkpoint := guard.Prior
 	checkpoint.Shards = cloneGroupShardMap(guard.NextShards)
 	checkpoint.CompletedTargets = slices.Clone(checkpoint.CompletedTargets)
-	checkpoint.ArchiveTargets = slices.Clone(checkpoint.ArchiveTargets)
-	if !slices.Contains(checkpoint.ArchiveTargets, guard.Source) {
-		checkpoint.ArchiveTargets = append(checkpoint.ArchiveTargets, guard.Source)
-		slices.Sort(checkpoint.ArchiveTargets)
-	}
+	checkpoint.ArchiveTargets = runEvacuationArchiveTargets(guard, checkpoint.ArchiveTargets)
 	checkpoint.PendingAdoptions = slices.Clone(checkpoint.PendingAdoptions)
 	checkpoint.ArmedAt = time.Now().UTC()
 	return checkpoint
@@ -204,7 +205,7 @@ func validRollForwardCheckpoint(guard runEvacuationCheckpoint) bool {
 	checkpoint := guard.RollForwardCheckpoint
 	if checkpoint == nil || checkpoint.Version != runContinuityCheckpointVersion || checkpoint.ExecutionGeneration != guard.Generation ||
 		checkpoint.ExecutionLeaseOwnerID != guard.OwnerID || !reflect.DeepEqual(checkpoint.RunSupervisionToken, guard.Prior.RunSupervisionToken) ||
-		!reflect.DeepEqual(checkpoint.Shards, guard.NextShards) || !slices.Contains(checkpoint.ArchiveTargets, guard.Source) || len(checkpoint.PendingAdoptions) == 0 {
+		!reflect.DeepEqual(checkpoint.Shards, guard.NextShards) || !slices.Equal(checkpoint.ArchiveTargets, runEvacuationArchiveTargets(guard, checkpoint.ArchiveTargets)) || len(checkpoint.PendingAdoptions) == 0 {
 		return false
 	}
 	last := checkpoint.PendingAdoptions[len(checkpoint.PendingAdoptions)-1]
@@ -302,6 +303,8 @@ func (tr *TestRunner) completeRunEvacuationRollForward(ctx context.Context, b *d
 	// a later successor need not ask its generator, which may have pruned the
 	// outcome, again.
 	candidate.checkpoint = withRunEvacuationNaturalCompletions(candidate.checkpoint, natural)
+	// A restart's own journal moved a share; its lineage records that.
+	candidate.checkpoint = withRunEvacuationRestartRecorded(candidate.checkpoint, guard)
 	encoded, err := json.Marshal(candidate.checkpoint)
 	if err == nil {
 		err = tr.swapRunContinuityCheckpoint(candidate.test, rollForward.raw, string(encoded), owner)
