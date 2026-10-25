@@ -205,7 +205,10 @@ func validRollForwardCheckpoint(guard runEvacuationCheckpoint) bool {
 	checkpoint := guard.RollForwardCheckpoint
 	if checkpoint == nil || checkpoint.Version != runContinuityCheckpointVersion || checkpoint.ExecutionGeneration != guard.Generation ||
 		checkpoint.ExecutionLeaseOwnerID != guard.OwnerID || !reflect.DeepEqual(checkpoint.RunSupervisionToken, guard.Prior.RunSupervisionToken) ||
-		!reflect.DeepEqual(checkpoint.Shards, guard.NextShards) || !slices.Equal(checkpoint.ArchiveTargets, runEvacuationArchiveTargets(guard, checkpoint.ArchiveTargets)) || len(checkpoint.PendingAdoptions) == 0 {
+		!reflect.DeepEqual(checkpoint.Shards, guard.NextShards) || !slices.Equal(checkpoint.ArchiveTargets, runEvacuationArchiveTargets(guard, checkpoint.ArchiveTargets)) ||
+		// Phase A skips claiming the planned completed targets; the intent is
+		// planned before the claim, so they are exactly the prior lineage's.
+		!slices.Equal(checkpoint.CompletedTargets, guard.Prior.CompletedTargets) || len(checkpoint.PendingAdoptions) == 0 {
 		return false
 	}
 	last := checkpoint.PendingAdoptions[len(checkpoint.PendingAdoptions)-1]
