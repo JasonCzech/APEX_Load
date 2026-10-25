@@ -40,6 +40,11 @@ describe('EntityDiagram in Markdown', () => {
   })
   const render = async (source: string, copyExamples = true) => {
     await act(async () => root.render(<MarkdownRenderer source={source} copyExamples={copyExamples} />))
+    // The diagram renderer loads on first use; let that load settle.
+    await act(async () => {
+      await import('./MermaidErDiagram')
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
   }
 
   it('draws a Mermaid erDiagram as a labelled diagram instead of code', async () => {
@@ -84,6 +89,13 @@ describe('EntityDiagram in Markdown', () => {
     expect(nodes).toHaveLength(2)
     expect(nodes.every(node => !node.classList.contains('is-stub'))).toBe(true)
     expect(nodes.map(node => node.querySelector('.entity-diagram-header')?.tagName.toLowerCase())).toEqual(['rect', 'rect'])
+  })
+
+  it('keeps an erDiagram it cannot parse as copyable source', async () => {
+    await render('```mermaid\nerDiagram\n    tests {\n        not an attribute\n    }\n```')
+    expect(container.querySelector('figure.entity-diagram')).toBeNull()
+    expect(container.querySelector('pre code')?.textContent).toBe('erDiagram\n    tests {\n        not an attribute\n    }')
+    expect(container.querySelector('.help-code-toolbar button')?.textContent).toBe('Copy example')
   })
 
   it('keeps other Mermaid diagrams as copyable source', async () => {
