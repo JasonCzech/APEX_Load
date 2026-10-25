@@ -210,8 +210,8 @@ Gates on the reviewed code (`dd88b5f54`):
 
 - **Failure injection.** REC-A's exit still requires failure injection at every journal boundary, worker or node partition, late old-owner return, and independent target counters. These tests use fake generators.
 - **Not covered.**
-  - a restart of a missing replacement for the eligible HTTP workload;
-  - replay of source-fenced work.
+  - a restart of a missing replacement for the eligible HTTP workload. Updated 2026-10-24: covered behind a further opt-in by the [replacement restart slice](../roadmap-evacuation-replacement-restart-2026-10-24/README.md), which restarts the moved share of a `source_fenced` journal on a new replacement;
+  - replay of source-fenced work, beyond that restart.
 - **Drain before release is not proven against a real generator.** That the replacement's epoch claim drains its staged assignment before the capacity release is accepted rests on the generator's existing epoch semantics. These tests use fake generators that accept every release.
 - **The same-leader journal restore** (`restoreRunEvacuationPriorCheckpoint`) and the abandoned marker are tested directly. Inside `evacuateGenerator`, these have no integration test:
   - the four call sites;

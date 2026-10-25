@@ -220,8 +220,9 @@ func (tr *TestRunner) failRunEvacuationRollback(b *distributedExecutionBackend, 
 }
 
 // failRunEvacuationRecovery holds the run under its journal for a failed
-// rollback or roll-forward (action), then force-stops what this term adopted
-// with the rotated token, adding any unacknowledged stop to the held reason.
+// rollback, roll-forward or restart (action), then cancels any runtime this
+// term installed and force-stops what this term adopted with the rotated
+// token, adding any unacknowledged stop to the held reason.
 func (tr *TestRunner) failRunEvacuationRecovery(b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted map[string]generatorClient, clients []map[string]generatorClient, generation uint64, owner, action string, problems []string) {
 	test := candidate.test
 	defer tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: owner, generation: generation})
@@ -245,6 +246,17 @@ func (tr *TestRunner) failRunEvacuationRecovery(b *distributedExecutionBackend, 
 	slog.Warn("evacuation recovery failed; the run stays STOPPING until its generators are fenced", "test_id", test.ID, "action", action, "execution_generation", generation, "problems", strings.Join(problems, "; "))
 	hold := tr.newInterruptedRunEvacuationHold(test, executionLeaseTerm{ownerID: owner, generation: generation})
 	hold.hold(detail + strings.Join(problems, "; "))
+	// A runtime this term installed, as a restart does before it runs, stops
+	// renewing the run's leases and supervision once the run is held.
+	tr.mu.Lock()
+	var cancel context.CancelFunc
+	if tr.tests[test.ID] == test {
+		cancel = test.cancel
+	}
+	tr.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	targets := make([]string, 0, len(adopted))
 	for target := range adopted {
 		targets = append(targets, target)

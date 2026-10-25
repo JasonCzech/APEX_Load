@@ -47,6 +47,10 @@ type rollForwardOptions struct {
 	// prior lineage, before the evacuation began.
 	priorCompletedSurvivor bool
 	commitTarget           time.Duration
+	// noSurvivor leaves the source as the run's only participant.
+	noSurvivor bool
+	// secondMovedGroup puts a second group, gb (3 VUsers), on the source.
+	secondMovedGroup bool
 }
 
 // newEvacuationRollForwardFixture journals an evacuation of gen-a to gen-b that
@@ -80,8 +84,19 @@ func newEvacuationRollForwardFixture(t *testing.T, opts rollForwardOptions, befo
 		"ga": {{Group: "ga", Target: "gen-a", VUsers: 5, ShardCount: 1}},
 		"gc": {{Group: "gc", Target: "gen-c", VUsers: 3, ShardCount: 1}},
 	}
+	if opts.noSurvivor {
+		test.Groups = test.Groups[:1]
+		delete(previous, "gc")
+	}
+	if opts.secondMovedGroup {
+		test.Groups = append(test.Groups, TestGroup{Name: "gb", Protocol: "http", VUsers: 3})
+		previous["gb"] = []GeneratorShardSummary{{Group: "gb", Target: "gen-a", VUsers: 3, ShardCount: 1}}
+	}
 	next := cloneGroupShardMap(previous)
 	next["ga"][0].Target = "gen-b"
+	if opts.secondMovedGroup {
+		next["gb"][0].Target = "gen-b"
+	}
 	if opts.priorCompletedSurvivor {
 		test.remoteTargetStates = map[string]string{"gen-c": "complete"}
 	}
@@ -91,8 +106,10 @@ func newEvacuationRollForwardFixture(t *testing.T, opts rollForwardOptions, befo
 	if !opts.noCapacity {
 		f.source = storage.PodCapacityReservation{ReservationID: "attempt", Revision: 1, Target: "gen-a", TestID: test.ID, Incarnation: "pod-a", Generation: generation, State: "committed", ModelVersion: protocol.CapacityReservationModel, Budget: rollbackBudget, Demand: rollbackDemand, GroupPeaks: map[string]int32{"ga": 5}, GroupDemands: map[string]protocol.CapacityVector{"ga": rollbackDemand}}
 		reserveCommitted(t, store, f.source, owner, generation)
-		survivor := storage.PodCapacityReservation{ReservationID: "attempt", Revision: 1, Target: "gen-c", TestID: test.ID, Incarnation: "pod-c", Generation: generation, State: "committed", ModelVersion: protocol.CapacityReservationModel, Budget: rollbackBudget, Demand: rollbackDemand, GroupPeaks: map[string]int32{"gc": 3}, GroupDemands: map[string]protocol.CapacityVector{"gc": rollbackDemand}}
-		reserveCommitted(t, store, survivor, owner, generation)
+		if !opts.noSurvivor {
+			survivor := storage.PodCapacityReservation{ReservationID: "attempt", Revision: 1, Target: "gen-c", TestID: test.ID, Incarnation: "pod-c", Generation: generation, State: "committed", ModelVersion: protocol.CapacityReservationModel, Budget: rollbackBudget, Demand: rollbackDemand, GroupPeaks: map[string]int32{"gc": 3}, GroupDemands: map[string]protocol.CapacityVector{"gc": rollbackDemand}}
+			reserveCommitted(t, store, survivor, owner, generation)
+		}
 		if opts.standby {
 			idle := storage.PodCapacityReservation{ReservationID: "spare", Revision: 3, Target: "gen-b", TestID: test.ID, Incarnation: "pod-b", Generation: generation, State: "committed", ModelVersion: protocol.CapacityReservationModel, Budget: rollbackBudget, Demand: rollbackBudget, Dedicated: true}
 			reserveCommitted(t, store, idle, owner, generation)

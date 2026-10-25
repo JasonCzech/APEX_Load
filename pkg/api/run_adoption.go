@@ -74,6 +74,10 @@ type adoptedRunResume struct {
 	// failure for Phase B to apply (archive publication needs admission).
 	secured       bool
 	secureFailure string
+	// restart, when set, is a missing evacuation replacement Phase B restarts
+	// before the run resumes; restarted lists the replacements that took it.
+	restart   *adoptedRunRestart
+	restarted []string
 }
 
 func (tr *TestRunner) runAdoptionEnabled() bool {
@@ -114,8 +118,11 @@ func (tr *TestRunner) isRunAdoptionCandidate(test *ManagedTest) bool {
 	if _, _, rollback := tr.evacuationRollbackGuard(test, test.continuityCheckpoint); rollback {
 		return true
 	}
-	_, _, rollForward := tr.evacuationRollForwardGuard(test, test.continuityCheckpoint)
-	return rollForward
+	if _, _, rollForward := tr.evacuationRollForwardGuard(test, test.continuityCheckpoint); rollForward {
+		return true
+	}
+	_, restartErr := tr.evacuationRestartGuard(test, test.continuityCheckpoint)
+	return restartErr == nil
 }
 
 // awaitRunAdoptionReconcile holds the generator epoch keeper until generation's
@@ -175,6 +182,9 @@ type runAdoptionCandidate struct {
 	// rollForward is set when the run moves on to the next topology of an
 	// evacuation interrupted once its replacement may have been committed.
 	rollForward *runEvacuationRollForward
+	// restart is set when the run's moved share is restarted on a new
+	// replacement because its old replacement no longer runs it.
+	restart *runEvacuationRestart
 }
 
 type runAdoptionTargetResult struct {
@@ -242,6 +252,10 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		if guard, replacements, ok := tr.evacuationRollForwardGuard(test, raw); ok {
 			rollForward = &runEvacuationRollForward{guard: guard, raw: raw, replacements: replacements}
 		}
+		var restart *runEvacuationRestart
+		if plan, restartErr := tr.evacuationRestartGuard(test, raw); restartErr == nil {
+			restart = &plan
+		}
 		tr.mu.RUnlock()
 		if _, committed := committedRunEvacuationCheckpoint(raw, test.ID); committed {
 			promoted, promoteErr := tr.promoteCommittedRunEvacuationCheckpoint(ctx, test, raw, generation, ownerID)
@@ -258,6 +272,10 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		if rollForward != nil {
 			// The next topology, under the predecessor's lineage.
 			checkpoint, decodeErr = runEvacuationRollForwardCheckpoint(rollForward.guard), nil
+		}
+		if restart != nil {
+			// The next topology, its missing share still on the old replacement.
+			checkpoint, decodeErr = runEvacuationRestartCheckpoint(restart.guard, restart.missing), nil
 		}
 		if decodeErr == nil && (checkpoint.PinnedSecretCiphertext != "" || checkpoint.PinnedSecretKey != nil) {
 			values, openErr := openRunPinnedSecrets(ctx, tr.continuityKeyWrapper, test.ID,
@@ -298,7 +316,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				tr.holdInterruptedRunEvacuation(test, executionLeaseTerm{ownerID: ownerID, generation: generation}, fmt.Sprintf("controller failover could not use the evacuation journal's prior checkpoint (%v)", decodeErr))
 				continue
 			}
-			if rollForward != nil {
+			if rollForward != nil || restart != nil {
 				tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
 				tr.holdInterruptedRunEvacuation(test, executionLeaseTerm{ownerID: ownerID, generation: generation}, fmt.Sprintf("controller failover could not use the evacuation journal's next checkpoint (%v)", decodeErr))
 				continue
@@ -334,6 +352,15 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			}
 			rollForward.guard, rollForward.raw = guard, rolling
 			candidate.rollForward = rollForward
+		} else if restart != nil {
+			// The intent stays inside the journal until the restart's own
+			// journal replaces it; any later reader still finds the share.
+			guard, restarting, restartErr := tr.persistRunEvacuationRestartIntent(test, raw, restart.guard, candidate.checkpoint, generation, ownerID, restart.target)
+			if restartErr != nil {
+				return fmt.Errorf("persist evacuation restart intent for %s: %w", test.ID, restartErr)
+			}
+			restart.guard, restart.raw = guard, restarting
+			candidate.restart = restart
 		} else if err := tr.persistRunAdoptionIntent(test, raw, candidate.checkpoint, ownerID); err != nil {
 			return fmt.Errorf("persist adoption intent for %s: %w", test.ID, err)
 		}
@@ -351,6 +378,13 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				if _, exists := byTarget[target]; !exists {
 					byTarget[target] = nil
 				}
+			}
+		}
+		if restart != nil && !restart.guard.SourceAbsentAt.IsZero() && restart.guard.SourceFencedAt.IsZero() {
+			// A restart's own source, proven absent by an earlier term, is
+			// claimed without the run as well.
+			if _, exists := byTarget[restart.guard.Source]; !exists {
+				byTarget[restart.guard.Source] = nil
 			}
 		}
 		candidates = append(candidates, candidate)
@@ -374,6 +408,11 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		// completions holds what each generator that reported a completed run
 		// said about it; prior completed targets were not asked.
 		completions := make(map[string]generatorrpc.RunAdoptionResult)
+		// refused holds a replacement's answer when its claim adopted nothing;
+		// replacementProblems holds what that means for a roll-forward unless
+		// the run restarts the replacement's share instead.
+		refused := make(map[string]generatorrpc.RunAdoptionResult)
+		var replacementProblems []string
 		reachable := make(map[string]generatorClient)
 		problems := make([]string, 0)
 		unreachableGenerator := false
@@ -391,9 +430,17 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				continue
 			}
 			result := results[target]
+			// The restart judges its old replacement's answer itself.
+			missing := candidate.restart != nil && target == candidate.restart.missing
 			if result.err != nil {
 				unreachableGenerator = true
-				problems = append(problems, fmt.Sprintf("%s: %v", target, result.err))
+				switch {
+				case missing:
+				case candidate.rollForward != nil && slices.Contains(candidate.rollForward.replacements, target):
+					replacementProblems = append(replacementProblems, fmt.Sprintf("%s: %v", target, result.err))
+				default:
+					problems = append(problems, fmt.Sprintf("%s: %v", target, result.err))
+				}
 				continue
 			}
 			// Each run owns its transport handle: completing one run must not
@@ -406,6 +453,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			reachable[target] = client
 			outcome, reported := result.outcomes[candidate.test.ID]
 			switch {
+			case !reported && missing:
 			case !reported:
 				problems = append(problems, target+": generator did not report the run")
 			case outcome.Outcome == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED:
@@ -419,7 +467,16 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				if outcome.TerminalState != "" {
 					detail = strings.TrimSpace(detail + " (" + outcome.TerminalState + ")")
 				}
-				problems = append(problems, fmt.Sprintf("%s: %s %s", target, strings.TrimPrefix(outcome.Outcome.String(), "RUN_ADOPTION_OUTCOME_"), detail))
+				problem := fmt.Sprintf("%s: %s %s", target, strings.TrimPrefix(outcome.Outcome.String(), "RUN_ADOPTION_OUTCOME_"), detail)
+				switch {
+				case missing:
+					refused[target] = outcome
+				case candidate.rollForward != nil && slices.Contains(candidate.rollForward.replacements, target):
+					refused[target] = outcome
+					replacementProblems = append(replacementProblems, problem)
+				default:
+					problems = append(problems, problem)
+				}
 			}
 		}
 		archives := make(map[string]generatorClient, len(candidate.checkpoint.ArchiveTargets))
@@ -486,7 +543,26 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				}
 				capacityClients[target] = result.client
 			}
+			if candidate.rollForward != nil && len(problems) == 0 {
+				// A replacement the claim proved runs nothing of the run has its
+				// share restarted instead, when the setting allows it.
+				plan, refusal := tr.runEvacuationRestartFallback(candidate, results, adopted, completed, completions, refused)
+				if plan != nil {
+					planned := runEvacuationRestartCheckpoint(plan.guard, plan.missing)
+					guard, restarting, restartErr := tr.persistRunEvacuationRestartIntent(candidate.test, plan.raw, plan.guard, planned, generation, ownerID, plan.target)
+					if restartErr != nil {
+						problems = append(problems, "record evacuation restart intent: "+restartErr.Error())
+					} else {
+						plan.guard, plan.raw = guard, restarting
+						candidate.restart, candidate.rollForward, candidate.checkpoint = plan, nil, planned
+						replacementProblems = nil
+					}
+				} else if refusal != "" {
+					replacementProblems = append(replacementProblems, refusal)
+				}
+			}
 			if candidate.rollForward != nil {
+				problems = append(problems, replacementProblems...)
 				// Until the journal is replaced, a panic must keep the
 				// roll-forward's fail-closed handling, as for a rollback.
 				journalKept := true
@@ -511,6 +587,40 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 					tr.failRunEvacuationRollForward(b, candidate, adopted, []map[string]generatorClient{reachable, archives}, generation, ownerID, problems)
 					return
 				}
+			} else if candidate.restart != nil {
+				// Until the run is installed under its intent, a panic must keep
+				// the restart's fail-closed handling, as for a roll-forward.
+				intentKept := true
+				defer func() {
+					if intentKept {
+						if recovered := recover(); recovered != nil {
+							slog.Error("evacuation restart panicked", "test_id", candidate.test.ID, "panic", recovered)
+							tr.failRunEvacuationRecovery(b, candidate, adopted, []map[string]generatorClient{reachable, archives}, generation, ownerID, runEvacuationRestartAction,
+								append(problems, fmt.Sprintf("internal error while preparing the restart (%v)", recovered)))
+						}
+					}
+				}()
+				if len(problems) == 0 {
+					problems = append(problems, tr.prepareRunEvacuationRestart(ctx, candidate, results, reachable, adopted, completed, completions, refused, capacityClients, generation, ownerID)...)
+				}
+				if len(problems) > 0 {
+					intentKept = false
+					tr.failRunEvacuationRecovery(b, candidate, adopted, []map[string]generatorClient{reachable, archives}, generation, ownerID, runEvacuationRestartAction, problems)
+					return
+				}
+				// The old replacement takes no part in the run any more. It keeps
+				// an archive only when CommitWork may have reached it.
+				missing := candidate.restart.missing
+				delete(completed, missing)
+				if slices.Contains(candidate.checkpoint.ArchiveTargets, missing) {
+					archives[missing] = reachable[missing]
+				} else {
+					_ = reachable[missing].Close()
+				}
+				delete(reachable, missing)
+				tr.installAdoptedRun(b, candidate, adopted, completed, archives, generation, ownerID)
+				intentKept = false
+				return
 			} else if len(problems) == 0 {
 				if err := tr.adoptPodCapacity(ctx, candidate.test.ID, capacityClients, generation, ownerID); err != nil {
 					problems = append(problems, "capacity ownership transfer: "+err.Error())
@@ -700,6 +810,9 @@ func (tr *TestRunner) isolateRunAdoption(b *distributedExecutionBackend, test *M
 			var guard runEvacuationCheckpoint
 			if json.Unmarshal([]byte(raw), &guard) == nil && guard.Phase == runEvacuationPhaseRollingForward {
 				action = "rolling the evacuation forward"
+			}
+			if guard.Phase == runEvacuationPhaseReplacementRestarting || !guard.SourceAbsentAt.IsZero() {
+				action = "restarting the evacuation's missing replacement"
 			}
 			tr.dropRunRendezvous(test.ID, executionLeaseTerm{ownerID: ownerID, generation: generation})
 			tr.holdInterruptedRunEvacuation(test, executionLeaseTerm{ownerID: ownerID, generation: generation}, fmt.Sprintf("controller failover: internal error while %s (%v)", action, recovered))
@@ -912,6 +1025,14 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 			adopted: cloneClientMap(adopted), completed: cloneClientMap(completed),
 			adoptedAt: adoptedAt,
 		}
+		if restart := candidate.restart; restart != nil {
+			if test.adoptedResume.adopted == nil {
+				test.adoptedResume.adopted = make(map[string]generatorClient)
+			}
+			// The intent carries the targets never to place the share on.
+			excluded := runEvacuationRestartExcluded(restart.guard, candidate.checkpoint)
+			test.adoptedResume.restart = &adoptedRunRestart{missing: restart.missing, target: restart.target, excluded: excluded}
+		}
 	}
 	tr.mu.Unlock()
 	if err != nil {
@@ -925,7 +1046,10 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 		return
 	}
 	// Re-arm under the new term so a second failover can adopt the run again.
-	tr.armRunContinuity(context.Background(), test, generation, ownerID, candidate.newToken[:], candidate.checkpoint.Shards)
+	// A restart keeps its intent until its own journal replaces it.
+	if candidate.restart == nil {
+		tr.armRunContinuity(context.Background(), test, generation, ownerID, candidate.newToken[:], candidate.checkpoint.Shards)
+	}
 	slog.Info("run adopted after controller failover", "test_id", test.ID, "execution_generation", generation,
 		"prior_generation", candidate.checkpoint.ExecutionGeneration, "adopted_generators", len(adopted), "completed_generators", len(completed))
 }
@@ -1370,6 +1494,9 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		}
 		return
 	}
+	if resume.restart != nil && !tr.restartEvacuationReplacement(b, test, resume, executionCtx, token) {
+		return
+	}
 	if len(resume.adopted) == 0 {
 		// Every generator finished its share during the gap: finalize from the
 		// retained generator archives.
@@ -1393,7 +1520,12 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	liveShards := cloneGroupShardMap(test.remoteGroupShards)
 	tr.mu.RUnlock()
 	lifecycleCtx, lifecycleCancel := tr.executionOperationContext(context.Background())
-	if err := tr.openLiveTableChannels(lifecycleCtx, test.ID, resume.generation, token[:], liveShards, resume.adopted); err != nil {
+	// A restarted replacement opened its live table channels when it was staged.
+	liveTableClients := cloneClientMap(resume.adopted)
+	for _, target := range resume.restarted {
+		delete(liveTableClients, target)
+	}
+	if err := tr.openLiveTableChannels(lifecycleCtx, test.ID, resume.generation, token[:], liveShards, liveTableClients); err != nil {
 		lifecycleCancel()
 		fail(err.Error())
 		return
@@ -1466,6 +1598,11 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 
+	if len(resume.restarted) > 0 {
+		// A restarted share was assigned uncapped; send every goal share again,
+		// as an evacuation does.
+		tr.resyncGoalThroughputCaps(test.ID)
+	}
 	tr.retainRunRendezvousUntil(lifecycleCtx, test.ID, rendezvousTerm)
 	rendezvousTransferred = true
 	tr.broadcastEvent("test_adopted", eventSnapshot)

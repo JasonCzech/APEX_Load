@@ -149,6 +149,16 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 // expiry as proof that an unreachable source stopped. Only the internal stream-
 // loss path may opt into that recovery after establishing a per-test fence.
 func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *ManagedTest, target string, dryRun bool, allowLostSourceLeaseFence bool) ([]GeneratorEvacuationImpact, error) {
+	return b.evacuateGeneratorFor(tr, test, target, dryRun, allowLostSourceLeaseFence, nil)
+}
+
+// evacuateGeneratorFor is evacuateGenerator; a non-nil restart moves the
+// missing share of a successor's interrupted evacuation from target, an old
+// replacement this term's epoch claim proved holds no live assignment, onto a
+// new replacement. The source is then not stopped, the moved share never runs
+// past restart.target, the run's retired targets are never chosen, and the
+// replacement's metrics stream is left to the caller.
+func (b *distributedExecutionBackend) evacuateGeneratorFor(tr *TestRunner, test *ManagedTest, target string, dryRun bool, allowLostSourceLeaseFence bool, restart *runEvacuationRestartMode) ([]GeneratorEvacuationImpact, error) {
 	b.evacuationMu.Lock()
 	defer b.evacuationMu.Unlock()
 	target = strings.TrimSpace(target)
@@ -189,6 +199,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	startPaused := status == "PAUSED" || test.PausedAt != nil
 	evacuationNow := time.Now()
 	remainingDuration, steadyElapsed, preBaselineRemaining := distributedEvacuationTiming(test, evacuationNow)
+	remainingDuration = restart.remaining(remainingDuration, steadyElapsed)
 	groups := append([]TestGroup(nil), test.Groups...)
 	shardsByGroup := cloneGroupShardMap(test.remoteGroupShards)
 	clientsByTarget := cloneClientMap(test.remoteClientsByTarget)
@@ -197,6 +208,13 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	states := make(map[string]string, len(test.remoteTargetStates))
 	for key, value := range test.remoteTargetStates {
 		states[key] = value
+	}
+	if restart != nil {
+		// A retired source or old replacement keeps its archive for this run
+		// and is never given its work again.
+		for _, retired := range restart.excluded {
+			states[retired] = remoteTargetStateEvacuated
+		}
 	}
 	tr.mu.RUnlock()
 	defer clear(runSupervisionToken)
@@ -231,7 +249,11 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		return nil, nil
 	}
 	if len(clientsByTarget) == 0 {
-		return nil, fmt.Errorf("distributed remote clients are not initialized")
+		if restart == nil {
+			return nil, fmt.Errorf("distributed remote clients are not initialized")
+		}
+		// A restart may have no survivor: its source alone held the run.
+		clientsByTarget = make(map[string]generatorClient)
 	}
 	currentGeneration, executionLeaseOwnerID, claimDeadline, claimErr := tr.generatorExecutionClaim()
 	if claimErr != nil || currentGeneration != executionGeneration {
@@ -299,6 +321,9 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 
 	nextByGroup := cloneGroupShardMap(shardsByGroup)
+	// A restart moves every moved group to one replacement, so that its
+	// journal, its proof and its fail-closed paths cover a single generator.
+	restartTarget, restartPlaced := "", 0
 	impacts := make([]GeneratorEvacuationImpact, 0)
 	var refused []string
 	for groupName, shards := range shardsByGroup {
@@ -367,8 +392,15 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			if _, alreadyParticipates := runParticipantTargets[candidate]; alreadyParticipates {
 				continue
 			}
+			needed := evacuated
+			if restart != nil && restartTarget != "" {
+				if candidate != restartTarget {
+					continue
+				}
+				needed += restartPlaced
+			}
 			snapshot := standbyEvacuationLoad(loadByTarget[candidate], standbys[candidate], testID, executionGeneration)
-			if !snapshot.HeartbeatOK || snapshot.AvailableCapacity < int32(evacuated) {
+			if !snapshot.HeartbeatOK || snapshot.AvailableCapacity < int32(needed) {
 				continue
 			}
 			if groupRequiresJavaVuserPhaseLifecycle(group) &&
@@ -387,9 +419,16 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		if replacementTarget == "" {
 			impact.Refused = true
 			impact.RefusalReason = "no healthy generator with sufficient capacity is available that does not already participate in this run"
+			if restart != nil && restartTarget != "" {
+				impact.RefusalReason = fmt.Sprintf("the restart's replacement %s cannot also take this group, and a restart moves every moved group to one generator", restartTarget)
+			}
 			refused = append(refused, fmt.Sprintf("%s: %s", groupName, impact.RefusalReason))
 			impacts = append(impacts, impact)
 			continue
+		}
+		if restart != nil {
+			restartTarget = replacementTarget
+			restartPlaced += evacuated
 		}
 		nextShards := make([]GeneratorShardSummary, 0, len(shards))
 		for _, shard := range shards {
@@ -406,6 +445,11 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	if len(impacts) == 0 {
 		closeDialedClients()
 		return nil, nil
+	}
+	if restart != nil && len(refused) > 0 {
+		// A restart reserves nothing it cannot use, and its hold names why.
+		closeDialedClients()
+		return impacts, fmt.Errorf("generator evacuation refused: %s", strings.Join(refused, "; "))
 	}
 	podClaims, podErr := tr.reservePodEvacuation(executionCtx, b, testID, target, nextByGroup, clientsByTarget, dryRun, standbys)
 	podCommitted := false
@@ -441,7 +485,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			capacityJournal.preImages = append(capacityJournal.preImages, standby)
 		}
 	}
-	evacuationGuard, guardErr := tr.beginRunEvacuationCheckpoint(executionCtx, test, executionGeneration, executionLeaseOwnerID, target, runSupervisionToken, shardsByGroup, nextByGroup, capacityJournal)
+	evacuationGuard, guardErr := tr.beginRunEvacuationCheckpointFor(executionCtx, test, executionGeneration, executionLeaseOwnerID, target, runSupervisionToken, shardsByGroup, nextByGroup, capacityJournal, restart)
 	if guardErr != nil {
 		closeDialedClients()
 		return impacts, fmt.Errorf("persist evacuation intent before replacement staging: %w", guardErr)
@@ -476,7 +520,13 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		tr.restoreRunEvacuationPriorCheckpoint(test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
 	}
 
-	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target, runSupervisionToken)
+	metricsParent := remoteLifecycleCtx
+	if restart != nil {
+		// The successor opens the restarted replacement's metrics stream with
+		// its survivors' once the run resumes.
+		metricsParent = nil
+	}
+	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, metricsParent, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target, runSupervisionToken)
 	if err != nil {
 		var uncertain *distributedEvacuationUncertainError
 		if errors.As(err, &uncertain) {
@@ -628,6 +678,11 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		// after the stop attempt remains the conservative positive fence.
 		b.fenceTestExecutionLease(test, target)
 	}
+	if restart != nil {
+		// This term's epoch claim already proved the old replacement holds no
+		// live assignment for the run; there is nothing left to stop.
+		goto sourceFenced
+	}
 
 	// The source must be positively fenced before its replacement topology is
 	// advertised. A timeout is ambiguous: the stop may have applied, so neither
@@ -773,7 +828,8 @@ sourceFenced:
 	}
 	tr.mu.RLock()
 	commitCurrent := tr.tests[testID] == test && distributedControlCommitCurrentLocked(tr, test, status, controlGeneration)
-	refreshedRemaining, _, _ := distributedEvacuationTiming(test, time.Now())
+	refreshedRemaining, refreshedElapsed, _ := distributedEvacuationTiming(test, time.Now())
+	refreshedRemaining = restart.remaining(refreshedRemaining, refreshedElapsed)
 	tr.mu.RUnlock()
 	if !commitCurrent {
 		closeUntouchedDialedClients(touchedTargets)
@@ -936,6 +992,11 @@ sourceFenced:
 	// replacement from now.
 	evacuatedAt := time.Now()
 	telemetrySourceLedgerLocked(test).retire(target, evacuatedAt)
+	if restart != nil {
+		// The checkpoint written below records that this failover restarted
+		// the share, so a later archive says so.
+		recordRunEvacuationRestartLocked(test, impacts)
+	}
 	for candidate, client := range dialedClients {
 		if len(newlyAssigned[candidate]) == 0 {
 			unusedDialedClients = append(unusedDialedClients, client)
@@ -1498,6 +1559,10 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 			// and could duplicate VUser IDs and partitioned data consumption.
 			return fail(fmt.Errorf("evacuation topology attempted an in-place adjustment for group %s on %s", groupName, shard.Target))
 		}
+	}
+	if metricsParent == nil {
+		// The caller opens the replacement's metrics stream itself.
+		return openedStreams, newlyAssigned, touchedTargets, rollback, nil
 	}
 	stagedStreams, streamErr := b.openEvacuationMetricsStreams(metricsParent, testID, executionGeneration, newlyAssigned, clients, streams)
 	for target, stream := range stagedStreams {

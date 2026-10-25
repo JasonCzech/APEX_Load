@@ -31,6 +31,13 @@ const runEvacuationRollbackCheckpointVersion = 4
 // that recovery is enabled as well; older peers cannot decode it.
 const runEvacuationRollForwardCheckpointVersion = 5
 
+// Version 6 extends version 5 for the missing-replacement restart. Only a
+// successor writes it: a replacement_restarting intent before its epoch claim,
+// and the journal of the restart itself, whose source is the old replacement
+// that claim proved holds no live assignment (SourceAbsentAt). Older peers
+// cannot decode it.
+const runEvacuationRestartCheckpointVersion = 6
+
 const (
 	runEvacuationPhasePrepared             = "prepared"
 	runEvacuationPhaseStaged               = "staged"
@@ -49,10 +56,15 @@ const (
 	// replacement is adopted, its duration applied and its capacity committed,
 	// every later reader keeps the journal.
 	runEvacuationPhaseRollingForward = "rolling_forward"
+	// runEvacuationPhaseReplacementRestarting records a successor's intent to
+	// restart the moved share on a new replacement, before any generator sees
+	// its rotated token. The journal stays until the restart's own journal
+	// replaces it, so every later reader can still find the missing share.
+	runEvacuationPhaseReplacementRestarting = "replacement_restarting"
 )
 
 func supportedRunEvacuationCheckpointVersion(version int) bool {
-	return version == runEvacuationCheckpointVersion || rollbackRunEvacuationCheckpointVersion(version)
+	return version == runEvacuationCheckpointVersion || rollbackRunEvacuationCheckpointVersion(version) || version == runEvacuationRestartCheckpointVersion
 }
 
 // rollbackRunEvacuationCheckpointVersion reports whether a journal records the
@@ -60,6 +72,13 @@ func supportedRunEvacuationCheckpointVersion(version int) bool {
 // Version 5 is a superset of version 4.
 func rollbackRunEvacuationCheckpointVersion(version int) bool {
 	return version == runEvacuationRollbackCheckpointVersion || version == runEvacuationRollForwardCheckpointVersion
+}
+
+// rollForwardRunEvacuationCheckpointVersion reports whether a journal records
+// the staged timing and the replacement_committing intent. Version 6 is a
+// superset of version 5; it is never rolled back.
+func rollForwardRunEvacuationCheckpointVersion(version int) bool {
+	return version == runEvacuationRollForwardCheckpointVersion || version == runEvacuationRestartCheckpointVersion
 }
 
 type runEvacuationCheckpoint struct {
@@ -110,6 +129,25 @@ type runEvacuationCheckpoint struct {
 	RollForwardOwnerID    string                   `json:"roll_forward_owner_id,omitempty"`
 	RollForwardStartedAt  time.Time                `json:"roll_forward_started_at,omitempty,omitzero"`
 	RollForwardCheckpoint *runContinuityCheckpoint `json:"roll_forward_checkpoint,omitempty"`
+	// RestartGeneration is the newest successor term that may have adopted
+	// the survivors to restart the moved share under this journal, and
+	// RestartCheckpoint its planned adoption intent (phase
+	// replacement_restarting, version 6). Prior is unchanged.
+	RestartGeneration uint64                   `json:"restart_generation,omitempty"`
+	RestartOwnerID    string                   `json:"restart_owner_id,omitempty"`
+	RestartStartedAt  time.Time                `json:"restart_started_at,omitempty,omitzero"`
+	RestartCheckpoint *runContinuityCheckpoint `json:"restart_checkpoint,omitempty"`
+	// RestartTargetDuration is the logical duration the moved share may run to
+	// at most, carried from the interrupted evacuation's journal (version 6).
+	RestartTargetDuration time.Duration `json:"restart_target_duration,omitempty"`
+	// RestartExcluded are the targets a restart must never give the share:
+	// the run's retired generators and the sources of earlier restarts
+	// (version 6).
+	RestartExcluded []string `json:"restart_excluded,omitempty"`
+	// SourceAbsentAt marks the journal of a restart: its source is an old
+	// replacement that the successor's epoch claim proved holds no live
+	// assignment for the run, so it is not stopped again (version 6).
+	SourceAbsentAt time.Time `json:"source_absent_at,omitempty,omitzero"`
 }
 
 // runEvacuationStagedTiming is what AssignWork staged each replacement with.
@@ -123,7 +161,7 @@ type runEvacuationStagedTiming struct {
 // topology under this journal. That term's own epoch claim does not drain
 // what it adopted, so only a newer term can fence it.
 func (guard runEvacuationCheckpoint) successorGeneration() uint64 {
-	return max(guard.RollbackGeneration, guard.RollForwardGeneration)
+	return max(guard.RollbackGeneration, guard.RollForwardGeneration, guard.RestartGeneration)
 }
 
 // runEvacuationCapacity is the capacity journal of one evacuation attempt.
@@ -136,11 +174,22 @@ type runEvacuationCapacity struct {
 // The opaque returned guard binds completion to this exact durable intent. An
 // unsuccessful evacuation leaves it in place, conservatively disabling adoption.
 func (tr *TestRunner) beginRunEvacuationCheckpoint(ctx context.Context, test *ManagedTest, generation uint64, owner, source string, token []byte, previous, next map[string][]GeneratorShardSummary, capacity runEvacuationCapacity) (string, error) {
+	return tr.beginRunEvacuationCheckpointFor(ctx, test, generation, owner, source, token, previous, next, capacity, nil)
+}
+
+// beginRunEvacuationCheckpointFor begins an evacuation journal. A restart
+// begins from this term's replacement_restarting journal instead of an armed
+// checkpoint: its prior is this runtime's checkpoint under generation, and the
+// journal is version 6 with its source recorded absent.
+func (tr *TestRunner) beginRunEvacuationCheckpointFor(ctx context.Context, test *ManagedTest, generation uint64, owner, source string, token []byte, previous, next map[string][]GeneratorShardSummary, capacity runEvacuationCapacity, restart *runEvacuationRestartMode) (string, error) {
 	tr.mu.RLock()
 	policy := effectiveFailoverPolicy(test.Assignment)
 	expected := test.continuityCheckpoint
 	failovers := append([]RunFailover(nil), test.continuityFailovers...)
 	tr.mu.RUnlock()
+	if restart != nil {
+		return tr.beginRunEvacuationRestartCheckpoint(ctx, test, expected, generation, owner, source, token, previous, next, capacity, *restart)
+	}
 	if policy != failoverPolicyContinue || (!tr.runAdoptionEnabled() && expected == "") {
 		return "", nil
 	}
@@ -267,7 +316,7 @@ func (tr *TestRunner) markRunEvacuationStaged(ctx context.Context, test *Managed
 		guard.Phase = runEvacuationPhaseStaged
 		guard.StagedAt = time.Now().UTC()
 		guard.StagedTargets = actual
-		if guard.Version == runEvacuationRollForwardCheckpointVersion {
+		if rollForwardRunEvacuationCheckpointVersion(guard.Version) {
 			guard.StagedSteadyElapsed, guard.StagedRemaining, guard.StagedPaused = timing.steadyElapsed, timing.remaining, timing.paused
 		}
 		return nil
@@ -330,12 +379,12 @@ func (tr *TestRunner) markRunEvacuationSourceFenced(ctx context.Context, test *M
 	})
 }
 
-// markRunEvacuationReplacementCommitting records, in a version 5 journal, that
+// markRunEvacuationReplacementCommitting records, in a version 5 or 6 journal, that
 // CommitWork is about to be sent and the logical duration the replacement is
 // then shortened to. A failed write means CommitWork is never sent. Older
 // journals are returned unchanged.
 func (tr *TestRunner) markRunEvacuationReplacementCommitting(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner string, target time.Duration) (string, error) {
-	if runEvacuationCheckpointVersionOf(raw) != runEvacuationRollForwardCheckpointVersion {
+	if !rollForwardRunEvacuationCheckpointVersion(runEvacuationCheckpointVersionOf(raw)) {
 		return raw, nil
 	}
 	return tr.advanceRunEvacuationCheckpoint(ctx, test, raw, generation, owner, runEvacuationPhaseSourceFenced, func(guard *runEvacuationCheckpoint) error {
@@ -363,12 +412,12 @@ func (tr *TestRunner) markRunEvacuationReplacementCommitting(ctx context.Context
 // source_fenced.
 func (tr *TestRunner) markRunEvacuationReplacementCommitted(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner string) (string, error) {
 	phase := runEvacuationPhaseSourceFenced
-	if runEvacuationCheckpointVersionOf(raw) == runEvacuationRollForwardCheckpointVersion {
+	if rollForwardRunEvacuationCheckpointVersion(runEvacuationCheckpointVersionOf(raw)) {
 		phase = runEvacuationPhaseReplacementCommitting
 	}
 	return tr.advanceRunEvacuationCheckpoint(ctx, test, raw, generation, owner, phase, func(guard *runEvacuationCheckpoint) error {
 		if guard.StagedAt.IsZero() || len(guard.StagedTargets) == 0 || guard.SourceFencedAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() ||
-			(guard.Version == runEvacuationRollForwardCheckpointVersion && guard.CommittingAt.IsZero()) {
+			(rollForwardRunEvacuationCheckpointVersion(guard.Version) && guard.CommittingAt.IsZero()) {
 			return errors.New("evacuation replacement commit lacks durable source fence")
 		}
 		expected, err := runEvacuationReplacementTargets(*guard)
@@ -486,7 +535,7 @@ func validateRunEvacuationCompletion(raw, testID string, generation uint64, owne
 		return fmt.Errorf("decode evacuation checkpoint: %w", err)
 	}
 	if !supportedRunEvacuationCheckpointVersion(guard.Version) || guard.TestID != testID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhaseReplacementCommitted || guard.StagedAt.IsZero() || len(guard.StagedTargets) == 0 || guard.SourceFencedAt.IsZero() || guard.ReplacementCommittedAt.IsZero() || !reflect.DeepEqual(guard.NextShards, shards) ||
-		(guard.Version == runEvacuationRollForwardCheckpointVersion && guard.CommittingAt.IsZero()) {
+		(rollForwardRunEvacuationCheckpointVersion(guard.Version) && guard.CommittingAt.IsZero()) {
 		return errors.New("evacuation completion does not match durable intent")
 	}
 	expected, err := runEvacuationReplacementTargets(guard)
@@ -536,11 +585,8 @@ func (tr *TestRunner) promoteCommittedRunEvacuationCheckpoint(ctx context.Contex
 	prior := guard.Prior
 	prior.Shards = cloneGroupShardMap(guard.NextShards)
 	prior.CompletedTargets = append([]string(nil), prior.CompletedTargets...)
-	prior.ArchiveTargets = append([]string(nil), prior.ArchiveTargets...)
-	if !slices.Contains(prior.ArchiveTargets, guard.Source) {
-		prior.ArchiveTargets = append(prior.ArchiveTargets, guard.Source)
-		slices.Sort(prior.ArchiveTargets)
-	}
+	prior.ArchiveTargets = runEvacuationArchiveTargets(guard, prior.ArchiveTargets)
+	prior = withRunEvacuationRestartRecorded(prior, guard)
 	prior.ArmedAt = time.Now().UTC()
 	encoded, err := json.Marshal(prior)
 	if err != nil {
@@ -570,6 +616,18 @@ func (tr *TestRunner) promoteCommittedRunEvacuationCheckpoint(ctx context.Contex
 	}
 	setContinuityCheckpointLocked(test, string(encoded))
 	return string(encoded), nil
+}
+
+// runEvacuationArchiveTargets returns archive with the evacuated source added
+// for archive collection only. A restart's absent source never ran under its
+// journal: it is kept only when the archive already lists it.
+func runEvacuationArchiveTargets(guard runEvacuationCheckpoint, archive []string) []string {
+	targets := slices.Clone(archive)
+	if guard.SourceAbsentAt.IsZero() && !slices.Contains(targets, guard.Source) {
+		targets = append(targets, guard.Source)
+		slices.Sort(targets)
+	}
+	return targets
 }
 
 func interruptedRunEvacuation(raw string) bool {
