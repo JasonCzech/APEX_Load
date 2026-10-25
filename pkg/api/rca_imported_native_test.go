@@ -339,11 +339,30 @@ func TestRCAImportedReadsFailOnlyWhenBusyAndUnread(t *testing.T) {
 		t.Fatalf("busy before any read: %v", err)
 	}
 
+	// A real native read can take five seconds or more on a Windows runner,
+	// where each worker launches a fresh copy of this test binary, and both
+	// cases below spend their whole budget after the first read: a busy slot
+	// is retried, or a slow read waits, until it runs out. So the real reads
+	// happen once, under a budget they never reach, and each case's first read
+	// replays them.
+	var realMu sync.Mutex
+	realPoints := map[string][]analysis.MetricPoint{}
+	rcaQueryImportedDataset = func(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
+		points, err := original(ctx, in, query)
+		realMu.Lock()
+		realPoints[in.ID] = points
+		realMu.Unlock()
+		return points, err
+	}
+	if series, limitations, err = read(2 * time.Minute); err != nil || len(series) != 2 {
+		t.Fatalf("real reads: %+v %+v %v", series, limitations, err)
+	}
+
 	calls := 0
 	rcaQueryImportedDataset = func(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
 		calls++
 		if calls == 1 {
-			return original(ctx, in, query)
+			return realPoints[in.ID], nil
 		}
 		return nil, errAnalyticalAdmissionUnavailable
 	}
@@ -356,7 +375,7 @@ func TestRCAImportedReadsFailOnlyWhenBusyAndUnread(t *testing.T) {
 	rcaQueryImportedDataset = func(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
 		calls++
 		if calls == 1 {
-			return original(ctx, in, query)
+			return realPoints[in.ID], nil
 		}
 		<-ctx.Done()
 		return nil, ctx.Err()

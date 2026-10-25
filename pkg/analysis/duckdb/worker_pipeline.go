@@ -340,6 +340,9 @@ func (p *NativePipeline) watchResources(parent string, probe func(*NativeIOLease
 			}
 			lease.Joined()
 			if err != nil {
+				// The pipeline's later steps fail with a fixed error of their own,
+				// such as ownership unresolved; only this says the monitor ended it.
+				slog.Warn("native pipeline stopped by its resource monitor", "error", err, "child_active", active)
 				p.mu.Lock()
 				p.resourceErr = errWorkerResourceLimit
 				p.cancel()
