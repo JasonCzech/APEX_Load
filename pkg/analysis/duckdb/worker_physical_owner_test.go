@@ -21,6 +21,7 @@ func workerWaitPhysicalRelease(t *testing.T, a *workerAttempt) {
 }
 
 func TestWorkerPanickingDescriptorCloseRetainsExactFileAndAdmission(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	a, admission := workerRuntimeTestAttempt(t, context.Background())
 	file, err := a.root.Open(a.bootstrap.Handles[0].RelativeName)
 	if err != nil {
@@ -72,6 +73,7 @@ func TestWorkerPanickingDescriptorCloseRetainsExactFileAndAdmission(t *testing.T
 }
 
 func TestWorkerFailedParentFileCloseRetainsExactOwnerAndScratch(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	a, admission := workerRuntimeTestAttempt(t, context.Background())
 	file, err := a.root.Open("input-0.parquet")
 	if err != nil { // The manifest's approved input name is authoritative.
@@ -223,6 +225,7 @@ func TestWorkerApprovedExecutableSnapshotSurvivesOriginalPathReplacement(t *test
 }
 
 func TestWorkerFailedOutputReaderCloseRetainsExactReaderAndFile(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	a, admission := workerRuntimeTestAttempt(t, context.Background())
 	a.started = true
 	a.reaped = true
@@ -305,6 +308,7 @@ func TestWorkerReleaseRetriesTransientScratchRemovalWithinWaiter(t *testing.T) {
 }
 
 func TestWorkerReleaseCallbackCannotTrapLifecycleMutex(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	a, admission := workerRuntimeTestAttempt(t, context.Background())
 	entered, resume := make(chan struct{}), make(chan struct{})
 	var resumeOnce sync.Once
@@ -337,4 +341,12 @@ func TestWorkerReleaseCallbackCannotTrapLifecycleMutex(t *testing.T) {
 	}
 	unblock()
 	workerWaitPhysicalRelease(t, a)
+}
+
+// shortenWorkerReleaseWait lets a test that holds cleanup back on purpose see
+// release report it unresolved without waiting the full proof window.
+func shortenWorkerReleaseWait(t testing.TB) {
+	t.Helper()
+	workerReleaseWaitOverride.Store(int64(time.Second))
+	t.Cleanup(func() { workerReleaseWaitOverride.Store(0) })
 }

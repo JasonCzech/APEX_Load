@@ -13,6 +13,7 @@ import (
 )
 
 func TestWorkerQuotaWalkRetainsFailedDirectoryCloseAndCharge(t *testing.T) {
+	shortenWorkerReleaseWait(t)
 	a, admission := workerRuntimeTestAttempt(t, context.Background())
 	var failed atomic.Pointer[os.File]
 	a.mu.Lock()

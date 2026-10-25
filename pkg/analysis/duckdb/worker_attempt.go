@@ -42,6 +42,7 @@ type workerAttempt struct {
 	cleanupOnce                            sync.Once
 	cleanupDone                            chan struct{}
 	physicalWake                           chan struct{}
+	cleanupRemoveErr                       error
 	preparationCancel                      context.CancelFunc
 }
 
