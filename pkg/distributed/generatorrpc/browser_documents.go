@@ -14,6 +14,11 @@ const FeatureBrowserDocumentEvidenceV2 = "browser_document_evidence_v2"
 const FeatureBrowserInteractionEvidenceV1 = "browser_interaction_evidence_v1"
 const FeatureBrowserInteractionEvidenceV2 = dsl.FeatureBrowserInteractionEvidenceV2
 const FeatureBrowserInteractionEvidenceV3 = "browser_interaction_evidence_v3"
+const FeatureBrowserNativeHARV1 = dsl.FeatureBrowserNativeHARV1
+
+// browserInstanceFeatures resolves a browser runtime instance's advertised
+// features; tests replace it to exercise an unsupported-platform runtime.
+var browserInstanceFeatures = browserRuntimeFeatures
 
 // browserRuntimeFeatures are the features a browser runtime instance
 // advertises, read the same way when the generator advertises them and when
@@ -22,6 +27,9 @@ const FeatureBrowserInteractionEvidenceV3 = "browser_interaction_evidence_v3"
 // part of this generator's engine and browser protocol alike.
 func browserRuntimeFeatures(instance protocol.Protocol) []string {
 	features := []string{dsl.FeatureBrowserSessionIdentitiesV1, dsl.FeatureBrowserSalesforceJWTV1}
+	if har, ok := instance.(protocol.BrowserNativeHARSupportProvider); ok && har.SupportsBrowserNativeHAR() {
+		features = append(features, FeatureBrowserNativeHARV1)
+	}
 	if _, ok := instance.(protocol.BrowserDocumentEvidenceProvider); ok {
 		features = append(features, FeatureBrowserDocumentEvidenceV2)
 		if _, ok := instance.(protocol.BrowserDocumentReceiptEvidenceProvider); ok {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -40,7 +39,8 @@ func readHARHost() (harHost, error) {
 }
 
 // harProcessStart reads a process's start time (clock ticks after boot) from
-// /proc; found is false when no such process exists.
+// /proc; found is false when no such process exists or when it has exited into
+// a zombie ('Z') or dead ('X', 'x') state.
 func harProcessStart(pid int) (string, bool, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if errors.Is(err, os.ErrNotExist) {
@@ -49,18 +49,5 @@ func harProcessStart(pid int) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	// The command name is parenthesized and may hold spaces; fields
-	// resume after its last ')', starting at field 3 (state).
-	end := strings.LastIndexByte(string(data), ')')
-	if end < 0 {
-		return "", false, errors.New("malformed process stat")
-	}
-	fields := strings.Fields(string(data[end+1:]))
-	if len(fields) < 20 {
-		return "", false, errors.New("malformed process stat")
-	}
-	if _, err := strconv.ParseUint(fields[19], 10, 64); err != nil {
-		return "", false, err
-	}
-	return fields[19], true, nil
+	return parseLinuxProcStatStart(data)
 }

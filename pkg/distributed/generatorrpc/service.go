@@ -1794,7 +1794,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 			}
 		}
 		if normalized == "browser" {
-			features = append(features, browserRuntimeFeatures(instance)...)
+			features = append(features, browserInstanceFeatures(instance)...)
 		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)

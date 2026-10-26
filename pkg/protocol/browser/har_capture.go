@@ -245,6 +245,8 @@ func (b *Browser) closeOwnedOversizedHARContext(owner *harCaptureOwner, expected
 	browserContext := b.pwContext
 	if owner == nil {
 		b.pwContext = nil
+	} else {
+		owner.upgradeFinish(b.shouldKeepHARLocked(), b.runtimeTextRedactor)
 	}
 	b.mu.Unlock()
 	if overflow {
@@ -348,6 +350,13 @@ func (b *Browser) finalizeHARCapture() string {
 	return path
 }
 
+func (b *Browser) shouldKeepHARLocked() bool {
+	return b.harCapturePolicy == HARCaptureAlways ||
+		b.harCapturePolicy == HARCaptureOnError && b.harErrorSeen ||
+		b.harCapturePolicy == HARCaptureOnSLABreach && b.harSLABreachSeen ||
+		b.harCapturePolicy == HARCaptureManual && b.harManualSeen
+}
+
 func (b *Browser) finalizeHARCaptureContext(ctx context.Context) (string, error) {
 	b.mu.Lock()
 	owner := b.harOwner
@@ -355,11 +364,14 @@ func (b *Browser) finalizeHARCaptureContext(ctx context.Context) (string, error)
 		b.mu.Unlock()
 		return "", nil
 	}
-	keep := b.harCapturePolicy == HARCaptureAlways || b.harCapturePolicy == HARCaptureOnError && b.harErrorSeen || b.harCapturePolicy == HARCaptureOnSLABreach && b.harSLABreachSeen || b.harCapturePolicy == HARCaptureManual && b.harManualSeen
+	keep := b.shouldKeepHARLocked()
 	redactor := b.runtimeTextRedactor
 	b.mu.Unlock()
 	owner.startFinish(keep, redactor)
 	path, err := owner.waitFinish(ctx)
+	b.mu.Lock()
+	keep = keep || b.shouldKeepHARLocked()
+	b.mu.Unlock()
 	if keep && err != nil {
 		b.reportHARFinalizationFailure(owner, err)
 	}

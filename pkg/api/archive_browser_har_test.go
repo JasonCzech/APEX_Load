@@ -124,6 +124,9 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 	if err := os.RemoveAll(record.ArchivePath); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.RemoveAll(filepath.Join(resolveArchiveRoot(), "_collection")); err != nil {
+		t.Fatal(err)
+	}
 	a.mu.Lock()
 	secondPath := a.artifacts["browser_har_"+second+".har"]
 	a.mu.Unlock()
@@ -215,8 +218,10 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 func TestCachedArchiveSourceLeavesHARsUnavailable(t *testing.T) {
 	tr, store, run, backend := collectionCacheFixture(t, "a", "lost")
 	lost := run.remoteClientsByTarget["lost"].(*archiveStreamingFakeClient)
-	declareFakeHAR(t, lost, strings.Repeat("5", 32), `{"log":{"entries":[5]}}`, 1, "")
-	declareFakeHAR(t, lost, strings.Repeat("6", 32), `{"log":{"entries":[6]}}`, 2, "")
+	// Declare HARs larger than the 1 MiB collection cache run limit so
+	// required files are cached while optional HARs are skipped best-effort.
+	declareFakeHAR(t, lost, strings.Repeat("5", 32), `{"log":{"entries":["`+strings.Repeat("5", 1100<<10)+`"]}}`, 1, "")
+	declareFakeHAR(t, lost, strings.Repeat("6", 32), `{"log":{"entries":["`+strings.Repeat("6", 1100<<10)+`"]}}`, 2, "")
 	// The first attempt caches source "lost", then fails on a missing
 	// required source; the retry serves "lost" from the cache only.
 	missing := run.remoteClientsByTarget["a"]
@@ -239,6 +244,131 @@ func TestCachedArchiveSourceLeavesHARsUnavailable(t *testing.T) {
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil || len(manifest.BrowserHARArtifacts) != 0 || manifest.BrowserHAROmitted[harOmittedSourceUnavailable] != 2 {
 		t.Fatalf("cached-only HARs %+v %v", manifest.BrowserHAROmitted, err)
+	}
+}
+
+func TestCachedArchiveSourceRetainsOptionalHARsAndInteractionsAndCleansUp(t *testing.T) {
+	tr, store, run, backend := collectionCacheFixture(t, "a", "lost")
+	lost := run.remoteClientsByTarget["lost"].(*archiveStreamingFakeClient)
+	firstGen := strings.Repeat("7", 32)
+	secondGen := strings.Repeat("8", 32)
+	// firstGen and the interactions sidecar fit within the 1 MiB collection
+	// cache run limit; secondGen (1.1 MiB) exceeds the remaining budget and is
+	// skipped best-effort without failing cache.save.
+	declareFakeHAR(t, lost, firstGen, `{"log":{"entries":[7]}}`, 1, "")
+	declareFakeHAR(t, lost, secondGen, `{"log":{"entries":["`+strings.Repeat("8", 1100<<10)+`"]}}`, 2, "")
+	declareFakeInteractions(t, lost, firstGen, 2, 0)
+
+	missingA := run.remoteClientsByTarget["a"]
+	delete(run.remoteClientsByTarget, "a")
+	if _, err := backend.stageRemoteArchive(tr, run, "FAILED", "", time.Now(), true); err == nil {
+		t.Fatal("a missing required source was accepted")
+	}
+
+	// Verify SQL ReceiptSHA256 and Bytes cover only required files so cross-pod
+	// HA controllers with different free disk space never drift.
+	intent, err := store.GetRunArchiveCollection(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, ok := intent.CachedSources["lost"]
+	if !ok {
+		t.Fatal("expected lost source to be anchored in SQL")
+	}
+	cacheDir := filepath.Join(resolveArchiveRoot(), "_collection", run.ID, intent.IntentToken, sha256BytesHex([]byte("lost")), anchor.ReceiptSHA256)
+	receiptBytes, err := os.ReadFile(filepath.Join(cacheDir, "receipt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha256BytesHex(receiptBytes) != anchor.ReceiptSHA256 {
+		t.Fatalf("SQL ReceiptSHA256 = %s, want %s", anchor.ReceiptSHA256, sha256BytesHex(receiptBytes))
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, collectionOptionalReceiptFileName)); err != nil {
+		t.Fatalf("expected optional_receipt.json in cache dir: %v", err)
+	}
+
+	// Case 1: When "lost" is still reachable on retry, the uncached secondGen
+	// HAR falls back to the live generator while firstGen and interactions
+	// serve from the collection cache.
+	row, err := store.GetTest(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveRetryRunner := NewTestRunner(1, nil, nil)
+	liveRetryRunner.testStore, liveRetryRunner.archiveStore = store, store
+	liveRestored := managedTestFromRecord(row)
+	liveRestored.remoteClientsByTarget = map[string]generatorClient{"a": missingA, "lost": lost}
+	liveRecord, err := backend.stageRemoteArchive(liveRetryRunner, liveRestored, "FAILED", "", time.Now(), true)
+	if err != nil || liveRecord == nil {
+		t.Fatalf("live fallback retry: %v", err)
+	}
+	liveManifest, err := loadRunArchiveManifestFromRecord(liveRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(liveManifest.BrowserHARArtifacts) != 2 || len(liveManifest.BrowserHAROmitted) != 0 {
+		t.Fatalf("live fallback HARs = %d omitted = %v, want 2 and empty", len(liveManifest.BrowserHARArtifacts), liveManifest.BrowserHAROmitted)
+	}
+	if err := os.RemoveAll(liveRecord.ArchivePath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Case 2: When "lost" is unreachable on HA retry, the cached firstGen HAR
+	// and interactions sidecar are recovered from _collection, and the uncached
+	// secondGen HAR is counted as source_unavailable (never transfer_failed).
+	ended := time.Now().UTC()
+	restarted := NewTestRunner(1, nil, nil)
+	restarted.testStore, restarted.archiveStore = store, store
+	restored := managedTestFromRecord(row)
+	restored.remoteClientsByTarget = map[string]generatorClient{"a": missingA}
+	record, err := backend.stageRemoteArchive(restarted, restored, "FAILED", "", ended, true)
+	if err != nil || record == nil {
+		t.Fatalf("cached HA retry: %v", err)
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.BrowserHARArtifacts) != 1 || manifest.BrowserHARArtifacts[0].SourceGeneration != firstGen {
+		t.Fatalf("cached HA retry HARs = %+v, want [firstGen]", manifest.BrowserHARArtifacts)
+	}
+	if manifest.BrowserHAROmitted[harOmittedSourceUnavailable] != 1 || manifest.BrowserHAROmitted[harOmittedTransfer] != 0 {
+		t.Fatalf("cached HA retry omitted = %+v, want source_unavailable=1 and transfer_failed=0", manifest.BrowserHAROmitted)
+	}
+	if manifest.BrowserInteractionsFile != browserInteractionsFileName || manifest.BrowserInteractionRecordCount != 2 {
+		t.Fatalf("cached HA retry interactions = (%q, %d), want (%q, 2)", manifest.BrowserInteractionsFile, manifest.BrowserInteractionRecordCount, browserInteractionsFileName)
+	}
+
+	// Verify cleanup validates optional_receipt.json + optional payloads and
+	// retires the _collection directories cleanly after archive publication.
+	cache, err := restarted.openCollectionSourceCache(context.Background(), restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cachedSource, err := cache.load(context.Background(), "lost")
+	if err != nil || cachedSource == nil {
+		cache.close()
+		t.Fatalf("cache.load(lost) = (%v, %v)", cachedSource, err)
+	}
+	if err := verifyCollectionCacheForCleanup(context.Background(), cachedSource); err != nil {
+		cachedSource.close()
+		cache.close()
+		t.Fatalf("verifyCollectionCacheForCleanup failed: %v", err)
+	}
+	cachedSource.close()
+	cache.close()
+
+	if _, err := store.UpdateTestStatusIfActive(run.ID, "FAILED", &ended, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.finalizeRunArchiveDurably(context.Background(), restored, record, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.retirePublishedCollectionCaches(context.Background()); err != nil {
+		t.Fatalf("retirePublishedCollectionCaches: %v", err)
+	}
+	if _, err := os.Stat(cacheDir); !os.IsNotExist(err) {
+		t.Fatalf("expected retired collection cache directory %s to be removed, got %v", cacheDir, err)
 	}
 }
 

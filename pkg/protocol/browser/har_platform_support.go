@@ -26,3 +26,7 @@ var harPlatformUnsupportedLogged sync.Once
 // (reporting har_platform_unsupported) and nothing creates or cleans a HAR
 // directory's staging.
 func NativeHARSupported() bool { return nativeHARSupported() }
+
+// SupportsBrowserNativeHAR reports whether this generator platform can own and
+// transfer native HAR artifacts.
+func (b *Browser) SupportsBrowserNativeHAR() bool { return NativeHARSupported() }
