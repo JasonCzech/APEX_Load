@@ -40,7 +40,7 @@ func analysisObjectSize(ctx context.Context, key string, limit int64) (retSize i
 		}
 		return attributes.Size, nil
 	}
-	root, err := os.OpenRoot(filepath.Join(backend.LocalRoot, "_analysis"))
+	root, err := os.OpenRoot(analysisArtifactDirectory(backend))
 	if err != nil {
 		return 0, err
 	}

@@ -3,9 +3,8 @@ package browser
 import (
 	"errors"
 	"os"
-	"strconv"
-	"strings"
-	"sync"
+
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 )
 
 // Crash reclamation (D4). A generation whose generator was killed never
@@ -42,18 +41,19 @@ type harProcessIdentity struct {
 // harHost is the machine, boot and PID namespace this process runs in.
 type harHost struct{ machine, boot, namespace string }
 
-var (
-	harHostOnce sync.Once
-	harHostSelf harHost
-	harHostErr  error
-)
-
 func currentHARHost() (harHost, error) {
-	harHostOnce.Do(func() { harHostSelf, harHostErr = readHARHost() })
-	return harHostSelf, harHostErr
+	host, err := procidentity.CurrentHost()
+	if err != nil {
+		return harHost{}, err
+	}
+	return harHost{machine: host.Machine, boot: host.Boot, namespace: host.Namespace}, nil
 }
 
-var errHARProcessUnavailable = errors.New("process identity is unavailable on this platform")
+var errHARProcessUnavailable = procidentity.ErrUnavailable
+
+// harProcessStart reads a process's start time on this host; found is false
+// when no such process exists.
+func harProcessStart(pid int) (string, bool, error) { return procidentity.ProcessStart(pid) }
 
 // harProcessIdentityOf identifies a process of this host by PID.
 func harProcessIdentityOf(role string, pid int) (harProcessIdentity, error) {
@@ -92,22 +92,7 @@ func harWriterProcesses() []harProcessIdentity {
 // harProcessGone reports whether a recorded process provably no longer
 // exists. Anything this host cannot decide is not gone.
 func harProcessGone(host harHost, id harProcessIdentity, start func(int) (string, bool, error)) bool {
-	if id.Boot == "" || id.Namespace == "" || id.PID <= 0 || id.Start == "" {
-		return false
-	}
-	if id.Boot != host.boot {
-		// Every process of an earlier boot of this machine has ended; a
-		// boot of another or an unidentified machine proves nothing.
-		return id.Machine != "" && id.Machine == host.machine
-	}
-	if id.Namespace != host.namespace {
-		return false
-	}
-	current, found, err := start(id.PID)
-	if err != nil {
-		return false
-	}
-	return !found || current != id.Start
+	return procidentity.Gone(procidentity.Host{Machine: host.machine, Boot: host.boot, Namespace: host.namespace}, procidentity.Identity{Machine: id.Machine, Boot: id.Boot, Namespace: id.Namespace, PID: id.PID, Start: id.Start}, start)
 }
 
 // harProcessesGone reports whether every recorded process, a generator and
@@ -125,29 +110,4 @@ func harProcessesGone(processes []harProcessIdentity) bool {
 		roles[p.Role] = true
 	}
 	return roles[harProcessGenerator]
-}
-
-// parseLinuxProcStatStart parses a Linux /proc/<pid>/stat record and returns
-// its start time (field 22, clock ticks after boot). Processes in zombie ('Z')
-// or dead ('X', 'x') states have already exited the kernel and closed all file
-// descriptors, so found is false once a well-formed stat record is verified.
-func parseLinuxProcStatStart(data []byte) (string, bool, error) {
-	// The command name is parenthesized and may hold spaces or ')'; fields
-	// resume after its last ')', starting at field 3 (state).
-	end := strings.LastIndexByte(string(data), ')')
-	if end < 0 {
-		return "", false, errors.New("malformed process stat")
-	}
-	fields := strings.Fields(string(data[end+1:]))
-	if len(fields) < 20 {
-		return "", false, errors.New("malformed process stat")
-	}
-	if _, err := strconv.ParseUint(fields[19], 10, 64); err != nil {
-		return "", false, err
-	}
-	switch fields[0] {
-	case "Z", "X", "x":
-		return "", false, nil
-	}
-	return fields[19], true, nil
 }

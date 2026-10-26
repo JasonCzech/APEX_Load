@@ -5,7 +5,7 @@ This record covers the `BE-B1` (`be-b1-linux-har-crash`) slice for Linux `/proc/
 ## Scope Delivered
 
 1. **Linux `/proc/<pid>/stat` Zombie and Dead State Handling**:
-   - Extracted [`parseLinuxProcStatStart`](../../../../pkg/protocol/browser/har_process_identity.go) and wired [`harProcessStart`](../../../../pkg/protocol/browser/har_process_identity_linux.go) to delegate to it.
+   - Extracted `parseLinuxProcStatStart` and wired `harProcessStart` to delegate to it. After the NA-C writer-ownership slice moved process identity to `pkg/internal/procidentity`, it lives on as [`procidentity.ParseLinuxStatStart`](../../../../pkg/internal/procidentity/procidentity_stat.go), used by `processStart`.
    - After verifying a well-formed `/proc/<pid>/stat` line (closing `')'` delimiter, at least 20 post-`comm` fields, and unsigned 64-bit `starttime` at field 22), processes in state `'Z'` (zombie), `'X'` (dead), or `'x'` (dead) return `("", false, nil)`.
    - When `generator` runs as PID 1 of a Linux container without `--init` ([Dockerfile.browser-generator](../../../../Dockerfile.browser-generator)), a killed child's orphaned Playwright Node driver is reparented to PID 1 and transitions to state `'Z'` once its stdin-EOF graceful shutdown completes; treating `'Z'` as exited prevents reclamation from deadlocking while preserving fail-closed behavior on malformed `/proc/<pid>/stat` records.
 2. **Authoritative Linux CI Gate**:

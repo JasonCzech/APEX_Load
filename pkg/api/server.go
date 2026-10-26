@@ -363,6 +363,11 @@ type Server struct {
 	evaluationJobsOnce sync.Once
 	evaluationJobs     *leasedJobRunner[storage.EvaluationJob]
 	evaluationCancel   context.CancelFunc
+
+	// analysisWriterOwnership overrides this controller's process identity and
+	// exit judge (analysis_writer_ownership.go); nil uses the real process.
+	analysisWriterOwnership atomic.Pointer[analysisWriterOwnershipRuntime]
+	analysisWriterCursor    analysisWriterInventoryCursor
 }
 
 // ServerConfig configures API server startup behavior and integrations.

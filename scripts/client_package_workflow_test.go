@@ -2,10 +2,15 @@ package scripts_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestClientPackageWorkflowKeepsReleaseCredentialsIsolated(t *testing.T) {
@@ -190,6 +195,10 @@ func TestClientPackageWorkflowValidatesOnPullRequests(t *testing.T) {
 		"owned Add/Remove Programs registration survived uninstall",
 		"name: Smoke-test Linux package registration",
 		"go test -count=1 ./pkg/internal/diskspace",
+		"go test -count=1 -v ./pkg/internal/winfs\n          go test -count=1 -v ./pkg/internal/procidentity ./pkg/internal/localfs",
+		// The native step, unconditional on every leg, from its name through the
+		// process identity and local-filesystem tests.
+		"- name: Native analytics contracts and controller build\n        shell: bash\n        env:\n          CGO_ENABLED: '1'\n        run: |\n          set -euo pipefail\n          # The native worker suite outlasts go test's 10-minute default on slower\n          # hosted runners. It refuses work when memory runs low, so pkg/api (a\n          # multi-gigabyte compile) gets its own run instead of sharing the machine,\n          # and none on a runner too small to compile it.\n          go test -timeout 30m -tags analytics_duckdb ./pkg/analysis/... -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'\n          # The process identity/exit proof and local-filesystem probe behind\n          # native writer ownership, on every desktop platform (darwin has no\n          # other lane for them).\n          go test -count=1 -v ./pkg/internal/procidentity ./pkg/internal/localfs\n",
 		"TestStageArchiveDownload",
 		"TestGeneratorArchiveWriterEnforcesByteAndFreeSpaceBounds",
 		"go build -trimpath ./cmd/...",
@@ -318,5 +327,207 @@ func TestDesktopBuildProducesPlatformInstallMetadata(t *testing.T) {
 	}
 	if !strings.Contains(string(verifierRaw), `manifest_schema" == 1 || "$manifest_schema" == 2`) {
 		t.Fatal("release verifier cannot consume legacy schema-v1 releases")
+	}
+}
+
+// The desktop matrix job's native-analytics step runs the process identity
+// and local-filesystem tests on every leg, so neither the job nor the step
+// may carry a condition or a failure allowance, wherever in the step the key
+// is written (a text pin cannot see one after the step's last run line).
+func TestDesktopNativeAnalyticsStepRunsUnconditionallyOnEveryLeg(t *testing.T) {
+	content, err := os.ReadFile("../.github/workflows/desktop.yml")
+	if err != nil {
+		t.Fatalf("read desktop workflow: %v", err)
+	}
+	if err = checkUnconditionalDesktopNativeStep(content); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// desktopNativeLegs are the desktop matrix's operating systems; the native
+// step must run on each of them.
+var desktopNativeLegs = []string{"macos-latest", "ubuntu-24.04", "ubuntu-24.04-arm", "windows-latest"}
+
+const desktopNativeIdentityTests = "go test -count=1 -v ./pkg/internal/procidentity ./pkg/internal/localfs"
+
+func checkUnconditionalDesktopNativeStep(content []byte) error {
+	var workflow struct {
+		Jobs map[string]map[string]any `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(content, &workflow); err != nil {
+		return fmt.Errorf("parse desktop workflow: %w", err)
+	}
+	job, ok := workflow.Jobs["desktop"]
+	if !ok {
+		return errors.New("desktop workflow has no desktop job")
+	}
+	for _, key := range []string{"if", "continue-on-error"} {
+		if _, present := job[key]; present {
+			return fmt.Errorf("desktop job carries %q", key)
+		}
+	}
+	// Each leg runs on its own matrix OS, so the legs below are the runners.
+	if runsOn, _ := job["runs-on"].(string); runsOn != "${{ matrix.os }}" {
+		return fmt.Errorf("desktop job runs-on %q, want ${{ matrix.os }}", job["runs-on"])
+	}
+	strategy, _ := job["strategy"].(map[string]any)
+	matrix, _ := strategy["matrix"].(map[string]any)
+	// Only an include list: an exclude (or a cross-product axis) could drop a
+	// leg the include list still names.
+	for key := range matrix {
+		if key != "include" {
+			return fmt.Errorf("desktop matrix carries %q", key)
+		}
+	}
+	include, _ := matrix["include"].([]any)
+	legs := []string{}
+	for _, raw := range include {
+		leg, _ := raw.(map[string]any)
+		name, _ := leg["os"].(string)
+		legs = append(legs, name)
+	}
+	slices.Sort(legs)
+	if !slices.Equal(legs, desktopNativeLegs) {
+		return fmt.Errorf("desktop matrix legs %v, want %v", legs, desktopNativeLegs)
+	}
+	steps, _ := job["steps"].([]any)
+	found := 0
+	for _, raw := range steps {
+		step, _ := raw.(map[string]any)
+		if step["name"] != "Native analytics contracts and controller build" {
+			continue
+		}
+		found++
+		for _, key := range []string{"if", "continue-on-error"} {
+			if _, present := step[key]; present {
+				return fmt.Errorf("native analytics step carries %q", key)
+			}
+		}
+		run, _ := step["run"].(string)
+		if err := checkDesktopNativeIdentityCommand(run); err != nil {
+			return err
+		}
+	}
+	if found != 1 {
+		return fmt.Errorf("desktop job has %d native analytics steps, want 1", found)
+	}
+	return nil
+}
+
+// checkDesktopNativeIdentityCommand requires the step's script to start in
+// strict mode and to reach the exact identity command line (not commented
+// out, not followed by "|| true"). Before that line it allows only comments
+// and plain go test commands, so nothing (an exit 0, a set +e, a trap, an if)
+// can skip the command or swallow its failure.
+func checkDesktopNativeIdentityCommand(run string) error {
+	strict := false
+	for _, raw := range strings.Split(run, "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case line == desktopNativeIdentityTests:
+			if !strict {
+				return errors.New("native analytics step does not start in strict mode (set -euo pipefail)")
+			}
+			return nil
+		case line == "" || strings.HasPrefix(line, "#"):
+		case !strict:
+			if line != "set -euo pipefail" {
+				return errors.New("native analytics step does not start in strict mode (set -euo pipefail)")
+			}
+			strict = true
+		case !plainGoTest(line):
+			return fmt.Errorf("native analytics step runs %q before the identity tests", line)
+		}
+	}
+	return errors.New("native analytics step does not run the identity and filesystem tests exactly")
+}
+
+// plainGoTest reports whether a script line is one go test command: outside
+// its single-quoted arguments (a -run pattern) it has no shell operator,
+// redirection, substitution, double quote or backslash (a trailing one would
+// join the next line, the identity command, onto it). With those banned a
+// separate exit or set command cannot follow on the same line.
+func plainGoTest(line string) bool {
+	if !strings.HasPrefix(line, "go test ") {
+		return false
+	}
+	parts := strings.Split(line, "'")
+	if len(parts)%2 == 0 {
+		return false // an unterminated quote
+	}
+	for i := 0; i < len(parts); i += 2 {
+		if strings.ContainsAny(parts[i], "|&;`$<>()\"\\") {
+			return false
+		}
+	}
+	return true
+}
+
+// The parser check catches a condition or failure allowance on the job or on
+// the step (after its name, or after the step's last key, before the next
+// step), a missing or excluded matrix leg, a duplicated step, a weakened
+// command line and anything before it that could skip it; each refusal
+// names what it caught, so a parse failure cannot pass for a catch.
+func TestDesktopNativeAnalyticsStepCheckCatchesConditions(t *testing.T) {
+	content, err := os.ReadFile("../.github/workflows/desktop.yml")
+	if err != nil {
+		t.Fatalf("read desktop workflow: %v", err)
+	}
+	workflow := string(content)
+	if err = checkUnconditionalDesktopNativeStep(content); err != nil {
+		t.Fatal(err)
+	}
+	// The desktop matrix job's step is the first of the two steps with this
+	// header; the recording-agent job has the other.
+	header := "      - name: Native analytics contracts and controller build\n        shell: bash\n"
+	headerAt := strings.Index(workflow, header)
+	if headerAt < 0 {
+		t.Fatal("unexpected desktop workflow layout for the mutation check")
+	}
+	nextStep := strings.Index(workflow[headerAt+len(header):], "\n      - name: ")
+	jobAt := strings.Index(workflow, "\n  desktop:\n")
+	runLine := "          " + desktopNativeIdentityTests + "\n"
+	if nextStep < 0 || jobAt < 0 || !strings.Contains(workflow[headerAt:], runLine) {
+		t.Fatal("unexpected desktop workflow layout for the mutation check")
+	}
+	afterStep := headerAt + len(header) + nextStep + 1
+	afterName := func(line string) string {
+		return workflow[:headerAt] + "      - name: Native analytics contracts and controller build\n" + line + "        shell: bash\n" + workflow[headerAt+len(header):]
+	}
+	jobLine := jobAt + len("\n  desktop:\n")
+	// inStep replaces the command line inside the native step only (the
+	// Windows HAR step runs the same packages earlier in the file).
+	inStep := func(replacement string) string {
+		return workflow[:headerAt] + strings.Replace(workflow[headerAt:], runLine, replacement, 1)
+	}
+	for name, c := range map[string]struct{ mutated, want string }{
+		"if after the name":                {afterName("        if: runner.os == 'Linux'\n"), `"if"`},
+		"if after the step":                {workflow[:afterStep] + "        if: runner.os == 'Linux'\n" + workflow[afterStep:], `"if"`},
+		"continue-on-error after the name": {afterName("        continue-on-error: true\n"), `"continue-on-error"`},
+		"continue-on-error after the step": {workflow[:afterStep] + "        continue-on-error: true\n" + workflow[afterStep:], `"continue-on-error"`},
+		"if on the job":                    {workflow[:jobLine] + "    if: false\n" + workflow[jobLine:], `desktop job carries "if"`},
+		"continue-on-error on the job":     {workflow[:jobLine] + "    continue-on-error: true\n" + workflow[jobLine:], `desktop job carries "continue-on-error"`},
+		"Windows leg dropped":              {strings.Replace(workflow, "            os: windows-latest\n", "            os: ubuntu-22.04\n", 1), "desktop matrix legs"},
+		"command commented out":            {inStep("          # " + desktopNativeIdentityTests + "\n"), "before the identity tests"},
+		"command made infallible":          {inStep("          " + desktopNativeIdentityTests + " || true\n"), `|| true" before the identity tests`},
+		"exit 0 before the command":        {inStep("          exit 0\n" + runLine), `"exit 0" before the identity tests`},
+		"set +e before the command":        {inStep("          set +e\n" + runLine), `"set +e" before the identity tests`},
+		"strict mode dropped":              {workflow[:headerAt] + strings.Replace(workflow[headerAt:], "          set -euo pipefail\n", "", 1), "strict mode"},
+		"matrix exclude":                   {strings.Replace(workflow, "        include:\n", "        exclude:\n          - os: windows-latest\n        include:\n", 1), `desktop matrix carries "exclude"`},
+		"set +e after a go test":           {inStep("          go test ./pkg/analysis; set +e\n" + runLine), `"go test ./pkg/analysis; set +e" before the identity tests`},
+		"set +e after a go test with &&":   {inStep("          go test ./pkg/analysis && set +e\n" + runLine), `"go test ./pkg/analysis && set +e" before the identity tests`},
+		"unterminated quote":               {inStep("          go test ./pkg/analysis -run 'Test\n" + runLine), `"go test ./pkg/analysis -run 'Test" before the identity tests`},
+		"line continuation":                {inStep("          go test ./pkg/analysis -args \\\n" + runLine), `-args \\" before the identity tests`},
+		"command before strict mode":       {workflow[:headerAt] + strings.Replace(workflow[headerAt:], "          set -euo pipefail\n", runLine+"          set -euo pipefail\n", 1), "strict mode"},
+		"runs-on changed":                  {strings.Replace(workflow, "    runs-on: ${{ matrix.os }}\n", "    runs-on: ubuntu-24.04\n", 1), "desktop job runs-on"},
+		"step duplicated":                  {workflow[:afterStep] + workflow[headerAt:afterStep] + workflow[afterStep:], "2 native analytics steps"},
+	} {
+		if c.mutated == workflow {
+			t.Errorf("%s: the mutation did not apply", name)
+			continue
+		}
+		if err := checkUnconditionalDesktopNativeStep([]byte(c.mutated)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s was not caught by name: %v", name, err)
+		}
 	}
 }

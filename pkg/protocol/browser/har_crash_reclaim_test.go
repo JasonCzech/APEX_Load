@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -561,12 +562,12 @@ func TestParseLinuxProcStatStartTreatsZombieAndDeadStatesAsExited(t *testing.T) 
 	}
 
 	for _, state := range []string{"R", "S", "D", "T"} {
-		got, found, err := parseLinuxProcStatStart(statLine("node (playwright)", state, "987654"))
+		got, found, err := procidentity.ParseLinuxStatStart(statLine("node (playwright)", state, "987654"))
 		if err != nil || !found || got != "987654" {
 			t.Fatalf("live state %q: got=(%q, %v, %v), want (987654, true, nil)", state, got, found, err)
 		}
 		if harProcessGone(host, id, func(int) (string, bool, error) {
-			return parseLinuxProcStatStart(statLine("node (playwright)", state, "987654"))
+			return procidentity.ParseLinuxStatStart(statLine("node (playwright)", state, "987654"))
 		}) {
 			t.Fatalf("live state %q reported harProcessGone = true", state)
 		}
@@ -577,12 +578,12 @@ func TestParseLinuxProcStatStartTreatsZombieAndDeadStatesAsExited(t *testing.T) 
 	// zombie when it exits on stdin EOF. parseLinuxProcStatStart must treat
 	// 'Z', 'X', and 'x' as exited (found = false, err = nil).
 	for _, exitedState := range []string{"Z", "X", "x"} {
-		got, found, err := parseLinuxProcStatStart(statLine("node (playwright)", exitedState, "987654"))
+		got, found, err := procidentity.ParseLinuxStatStart(statLine("node (playwright)", exitedState, "987654"))
 		if err != nil || found || got != "" {
 			t.Fatalf("exited state %q: got=(%q, %v, %v), want (\"\", false, nil)", exitedState, got, found, err)
 		}
 		if !harProcessGone(host, id, func(int) (string, bool, error) {
-			return parseLinuxProcStatStart(statLine("node (playwright)", exitedState, "987654"))
+			return procidentity.ParseLinuxStatStart(statLine("node (playwright)", exitedState, "987654"))
 		}) {
 			t.Fatalf("exited state %q reported harProcessGone = false", exitedState)
 		}
@@ -596,12 +597,12 @@ func TestParseLinuxProcStatStartTreatsZombieAndDeadStatesAsExited(t *testing.T) 
 		statLine("node", "Z", "not-a-uint"),
 		statLine("node", "S", "-1"),
 	} {
-		_, found, err := parseLinuxProcStatStart(malformed)
+		_, found, err := procidentity.ParseLinuxStatStart(malformed)
 		if err == nil || found {
 			t.Fatalf("malformed stat %q: found=%v err=%v, want false and non-nil error", string(malformed), found, err)
 		}
 		if harProcessGone(host, id, func(int) (string, bool, error) {
-			return parseLinuxProcStatStart(malformed)
+			return procidentity.ParseLinuxStatStart(malformed)
 		}) {
 			t.Fatalf("malformed stat %q reported harProcessGone = true", string(malformed))
 		}

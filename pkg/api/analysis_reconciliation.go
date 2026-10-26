@@ -316,9 +316,12 @@ func (s *Server) startNativeAnalysisReconciliation() {
 	s.launchBackground(func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-		for {
+		for tick := 0; ; tick++ {
 			s.reconcileNativeAnalysisOnce(s.startupContext)
 			s.reconcileAnalysisUploadWritersOnce(s.startupContext)
+			if tick%analysisWriterSweepEvery == 0 {
+				s.reconcileAnalysisWriterIncarnationsOnce(s.startupContext)
+			}
 			select {
 			case <-s.startupContext.Done():
 				return

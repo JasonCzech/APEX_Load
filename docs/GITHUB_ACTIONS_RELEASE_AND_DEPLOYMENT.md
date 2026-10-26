@@ -503,6 +503,20 @@ choose an uploader for consumer repositories.
 - Provision `apexload-ci-unprivileged` as an ephemeral, one-job GHES runner
   pool for trusted same-repository CI. Give it no runner-local credentials or
   persistent caches and limit egress to reviewed source/tool/module mirrors.
+  The analytics writer-ownership tests additionally require, on Linux:
+  - `TMPDIR` on a local allow-listed filesystem (ext4, XFS, Btrfs, overlayfs,
+    tmpfs or another type in `pkg/internal/localfs`), not on NFS, SMB, FUSE,
+    virtiofs or a rootless FUSE overlay. Only the locality tests depend on the
+    probe's answer (`TestIsLocalOnTheTemporaryDirectory`, and the API tests
+    `NetworkFilesystemIsNotLocal` and
+    `ArtifactDirectoryIsNeverCreatedByTheJudge`);
+  - the job's own process identity: a `/proc` mounted for the job's own PID
+    namespace (`/proc/self` names the job's own PID), with
+    `/proc/sys/kernel/random/boot_id`, `/proc/self/ns/pid` and, on kernels
+    with time namespaces, `/proc/self/ns/time` readable. `pkg/internal/procidentity`,
+    `TestAnalysisWriterOwnershipRealProcessExitAndColdReplica` and
+    `TestAnalysisWriterOwnershipDefaultRuntimeIsTheRealProcess` fail without
+    it.
 - Restrict every trusted self-hosted runner group to explicitly selected
   workflows pinned to protected branches, protected tags, or reviewed SHAs.
   Do not grant those groups generic repository access or access from pull

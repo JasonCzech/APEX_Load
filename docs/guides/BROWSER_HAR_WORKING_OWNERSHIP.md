@@ -159,18 +159,33 @@ counts as no writer.
 Cleanup reclaims such a generation through the same retirement ledger only
 when its owner lease is free and every recorded process provably no longer
 exists: the same identified machine has booted again since, or, within this
-boot and PID namespace, no live process has that PID with that start time (on
-Linux a well-formed `/proc/<pid>/stat` record in zombie `Z` or dead `X`/`x`
-state has already exited the kernel and closed its descriptors, so an orphaned
-Playwright driver reparented to a PID-1 generator container without `--init`
-counts as exited once its stdin-EOF flush finishes). Without
+boot, on the same machine identity and in the same PID namespace, no live
+process has that PID with that start time. A boot value two hosts share (the
+Windows boot counter, VMs cloned from a memory snapshot) therefore never lets
+one host's process table answer for another's. On Linux the PID namespace
+includes the time namespace when the kernel has one, because process start
+times are counted in it, and a well-formed `/proc/<pid>/stat` record in zombie
+`Z` or dead `X`/`x` state has already exited the kernel and closed its
+descriptors, so an orphaned Playwright driver reparented to a PID-1 generator
+container without `--init` counts as exited once its stdin-EOF flush
+finishes. Without
 `writer-entered.json` no native writer ever had the working path, so the
 generator's exit is enough. A live process, a reused PID with a different
 start time, a lookup error, an identity recorded on another machine, an
 unidentified machine's earlier boot or another PID namespace (another
 container sharing the volume) never proves an exit, and neither does a
 writer that entered with no recorded identity; those generations keep the
-writer-joined rule. Pruning re-checks the identities while it holds the lease.
+writer-joined rule. On Linux a missing `/proc/<pid>` entry proves an exit only
+when `kill(pid, 0)` also reports no such process, because `hidepid` or
+`ProtectProc` hides other users' live processes; a `/proc` that does not
+describe the process's own PID namespace leaves every identity undecidable.
+Identities recorded by an earlier binary hold the PID namespace alone; on a
+kernel with time namespaces they no longer match within the same boot, so
+their generations stay until the machine reboots or they are removed by hand,
+never reclaimed early.
+Pruning re-checks the identities while it holds the lease. The same identity
+and exit proof (`pkg/internal/procidentity`) also retires native analytics
+writers whose controller exited.
 
 Every new browser context sweeps its HAR directory, and a generator sweeps
 the default directory (the system temporary directory) once at start. A
@@ -548,7 +563,10 @@ A process is proven gone when `OpenProcess` finds no such process, or the
 process has exited. An exited process whose handle someone still holds still
 answers `OpenProcess`, and counts as exited. Machines cloned from one image
 can share a `MachineGuid`, so, as on Linux, hosts sharing a HAR directory
-must differ in host name.
+must differ in host name. Because `BootId` is a small counter other machines
+share, the identity requires both `MachineGuid` and the host name: without
+either no identity is recorded and crash reclamation is disabled, and even
+within one boot value a recorded process is judged only on its own machine.
 
 Inside a Windows container (`ContainerType` set under
 `HKLM\SYSTEM\CurrentControlSet\Control`) the process IDs and the boot belong to

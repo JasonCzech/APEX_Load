@@ -35,9 +35,108 @@ redirecting its SQL or artifact namespace. After all writers are proven closed,
 delete joins the complete owned dataset namespace, including accepted opaque
 chunk keys and closed abandoned object/temporary siblings, before returning
 success. Uploads from the legacy writer path lack this proof: DELETE returns
-pending status 503, retains their bytes and keeps the cleanup job. Qualified
-process-restart, HA and remote-backend recovery remain open. See the
+pending status 503, retains their bytes and keeps the cleanup job. See the
 [upload and deletion review](qa/reviews/feature-completion-native-upload-2026-10-04/README.md).
+
+**Controller restart.** Each normalization attempt and upload
+chunk writer records the controller process that writes its artifacts before
+any I/O. When that process dies, a controller that can judge it proves the
+exit: one in the same PID namespace on the same machine and boot, or one on
+the same identified machine after a reboot. Each replica's sweep covers about
+400 outstanding generations a minute, so the work is retired within about a
+minute per 400 outstanding generations, or at once when the upload is retried
+at the blocked offset. An interrupted normalization becomes `failed` ("the
+controller running it exited"), and committing again starts a fresh attempt;
+an interrupted upload chunk is retried by the client. With a filesystem backend
+whose artifact directory (`<archive root>/_analysis`, judged through its links
+and mount points) is on a local filesystem, the exited writer's own objects are
+then cleaned up and DELETE completes. The local filesystems are an allowlist:
+
+- Linux: ext2/3/4, XFS, Btrfs, F2FS, bcachefs, ZFS, tmpfs, ramfs and overlayfs;
+- macOS: APFS or HFS on a mount flagged local;
+- Windows: a fixed drive formatted NTFS or ReFS (not a UNC path, and not
+  reached through a link or junction to a share).
+
+Everything else gets the remote treatment: S3, Azure Blob and GCS, a network
+or user-space filesystem (NFS, SMB/CIFS, EFS, Azure Files, Ceph, GlusterFS,
+9p, virtiofs, FUSE such as rclone or blobfuse, WinFsp on Windows), and any
+unlisted local filesystem (vfat, exFAT, ntfs3, MS-DOS, removable or RAM
+drives). A write the dead process had already issued may still land there, so
+its objects are retained and the dataset stays deletion-pending. Only the
+`_analysis` directory itself is judged: do not mount another filesystem below
+it. A probe that fails judges nothing that sweep and is retried.
+
+**The artifact directory is never created by the judge.** Writers create
+`_analysis` on their first artifact write (an upload chunk, a normalization
+output or a monitor artifact), as they always have; the exit scope (the sweep
+and an upload retry's exit proof), DELETE and cleanup never do. While
+`_analysis` is missing no exit is judged. So on a fresh filesystem backend
+where nothing has been written yet, an upload writer that died before its first
+write stays owned:
+
+- the client's retry of that offset answers 409 "upload cursor was not
+  committed; reload durable cursor", and the controller logs, at most every 10
+  minutes, a warning naming the missing directory and the workaround;
+- while the import is still `uploading`, only a retry of that offset judges the
+  writer; the sweep reaches it only once DELETE has queued the dataset's
+  cleanup;
+- DELETE answers 503 `analysis_dataset_deletion_pending` with
+  `unproven_writers: 1`, `retryable: true` and `Retry-After: 60`.
+
+Any later write, of any dataset or monitor, creates `_analysis`, and the writer
+is then judged at the client's next retry of that offset or, after DELETE, at
+the next sweep (about a minute). To unblock it without waiting for another
+write, create `<archive root>/_analysis` on the mounted archive volume, mode
+0700, owned by the user the controller runs as.
+
+**Start the controller only after the archive volume is mounted.** A path
+alone does not say which volume it names: after a reboot an NFS, SMB or EFS
+archive share can be unmounted while its mount point exists on the local disk.
+Two existing behaviours, which this release does not change, then act on the
+wrong disk: a writer creates `_analysis` on the local mount point and writes
+its artifacts there, and cleanup treats a missing `_analysis` as nothing left
+to delete, so a dataset whose bytes stay on the share can be reported deleted.
+
+This recovery reaches only a successor in the dead controller's own PID
+namespace: a process restarted in place under systemd, launchd, a service
+manager or the desktop app. The Helm chart (no `shareProcessNamespace`) and
+docker compose restart the controller in a new container, which is a new PID
+namespace, so those deployments get no restart recovery yet. Neither does HA
+takeover by a replica on another host, or macOS after a reboot (macOS records
+no machine identity): that work stays owned. A replaced Kubernetes pod on
+another node can judge its predecessor only when its host name and machine
+ID both match (a baked machine-id with a fixed host name), which the machine
+identity requirement below forbids for distinct hosts; on the same node it
+never can, because it runs in a new PID namespace.
+
+**Machine identity requirement.** Every host that shares the SQL store must
+have its own machine identity: on Linux a distinct `/etc/machine-id` (only
+recorded together with the host name, so a host without one records no
+machine identity at all), on Windows a distinct `MachineGuid` and host name.
+Otherwise one host can take another's live writer for its own exited process:
+- containers built with a baked `/etc/machine-id` and given a fixed host name
+  (compose `hostname:`, a pod `spec.hostname`, a StatefulSet) on two nodes read
+  as an earlier boot of the same machine, so each judges the other's writers
+  exited;
+- VMs cloned from one memory snapshot share the boot and PID namespace: with
+  the same host name, or without a machine-id, they share a machine identity;
+- macOS clones (from one memory snapshot) share their boot session and record
+  no machine identity.
+
+A pending DELETE answers 503 with code `analysis_dataset_deletion_pending`
+and counts: `unproven_writers` (recorded where this host can judge them, so
+it may settle them: it does unless their PID has since been reused by a
+process this host cannot inspect, such as another user's under `hidepid`),
+`unjudgeable_writers` (recorded where this host cannot judge them: another
+machine, or another boot or PID namespace of this one), `unrecorded_writers` (journalled before writer incarnations,
+by a controller with no process identity, or rewritten by an older
+controller), `remote_commits_unproven` and `legacy_writers`. `retryable` is
+true while some writer may still resolve; `Retry-After` is set only while this
+host may settle one. Repeating DELETE re-reads this status without
+re-queuing cleanup. Restart recovery across containers and HA replicas, and
+an intervention path for legacy writers, unproven remote commits and writers
+whose host is gone, remain open. See the
+[writer ownership review](qa/reviews/roadmap-native-writer-ownership-2026-10-25/README.md).
 
 Rejected measurements fail publication by default; the import's error then names the file, the measure, how many rows were rejected and the first zero-based source row ordinals. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
 
@@ -402,12 +501,15 @@ reserves. Controller and worker RSS, container usage and disk headroom remain
 separate safeguards; the engine setting is not a total native-memory bound.
 Cancellation deadlines do not release an unresolved process, descriptor or
 publication owner. The watchdog retains uncertainty until actual closure and
-SQL acknowledgement; platform hard containment and restart qualification remain
-separate gates. Concurrent requests receive explicit busy, resource,
+SQL acknowledgement; platform hard containment and the native worker's
+restart qualification (its heavy-work reservation and private staging after a
+controller crash) remain separate gates. Concurrent requests receive explicit busy, resource,
 cancellation or size-limit errors. SQLite/PostgreSQL schema 33 records exact
 attempt ownership, sealed publication and cleanup. Process-local retry records
 bind the immutable SQL and artifact namespaces and retain ambiguous outcomes;
-they are not proof of cross-process or cross-host writer termination.
+they are not proof of cross-process or cross-host writer termination. A
+controller's recorded process identity and a same-host exit judgement are
+(see Controller restart above); a lease expiry never is.
 
 The requested **10 GB compressed-input benchmark was skipped at the user's
 direction**. No 10 GB duration, peak RSS, spill-volume or telemetry-lag result is
