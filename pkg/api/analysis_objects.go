@@ -58,7 +58,7 @@ func analysisObjectWrite(ctx context.Context, key string, input io.Reader) (retD
 		}
 		return hex.EncodeToString(hash.Sum(nil)), nil
 	}
-	rootPath := filepath.Join(backend.LocalRoot, "_analysis")
+	rootPath := analysisArtifactDirectory(backend)
 	if err := os.MkdirAll(rootPath, 0700); err != nil {
 		return "", err
 	}
@@ -153,7 +153,7 @@ func analysisObjectRead(ctx context.Context, key string, output io.Writer, maxBy
 			return "", err
 		}
 	} else {
-		root, err := os.OpenRoot(filepath.Join(backend.LocalRoot, "_analysis"))
+		root, err := os.OpenRoot(analysisArtifactDirectory(backend))
 		if err != nil {
 			return "", err
 		}

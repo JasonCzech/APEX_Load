@@ -1,6 +1,6 @@
 //go:build windows
 
-package browser
+package procidentity
 
 import (
 	"errors"
@@ -12,34 +12,27 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// harContainerTypeKey holds ContainerType inside a Windows container: its
+// containerTypeKey holds ContainerType inside a Windows container: its
 // process IDs and boot belong to the container, so crash reclamation is
 // disabled there.
-const harContainerTypeKey = `SYSTEM\CurrentControlSet\Control`
+const containerTypeKey = `SYSTEM\CurrentControlSet\Control`
 
-func readHARHost() (harHost, error) {
-	if containerized, err := harInWindowsContainer(); err != nil || containerized {
-		return harHost{}, errors.Join(err, errors.New("crash reclamation is disabled inside a Windows container"))
+func readHost() (Host, error) {
+	if containerized, err := inWindowsContainer(); err != nil || containerized {
+		return Host{}, errors.Join(err, errors.New("crash reclamation is disabled inside a Windows container"))
 	}
-	boot, err := harWindowsBootID()
+	boot, err := windowsBootID()
 	if err != nil {
-		return harHost{}, err
+		return Host{}, err
 	}
-	// MachineGuid alone is shared by machines cloned from one image; paired
-	// with the physical DNS host name, as Linux pairs machine-id with the
-	// host name, an earlier boot proves a process gone only on the same host.
-	host := harHost{boot: boot, namespace: "windows"}
-	if guid, err := harRegistryString(`SOFTWARE\Microsoft\Cryptography`, "MachineGuid"); err == nil && guid != "" {
-		if name, err := harPhysicalDNSHostName(); err == nil && name != "" {
-			host.machine = guid + "@" + name
-		}
-	}
-	return host, nil
+	guid, guidErr := registryString(`SOFTWARE\Microsoft\Cryptography`, "MachineGuid")
+	name, nameErr := physicalDNSHostName()
+	return composeWindowsHost(boot, guid, guidErr, name, nameErr)
 }
 
-// harWindowsBootID is the kernel's boot sequence number, which increments
+// windowsBootID is the kernel's boot sequence number, which increments
 // at every boot.
-func harWindowsBootID() (string, error) {
+func windowsBootID() (string, error) {
 	key, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters`, registry.QUERY_VALUE|registry.WOW64_64KEY)
 	if err != nil {
 		return "", fmt.Errorf("boot identity is unavailable: %w", err)
@@ -52,8 +45,8 @@ func harWindowsBootID() (string, error) {
 	return strconv.FormatUint(boot, 10), nil
 }
 
-func harInWindowsContainer() (bool, error) {
-	key, err := registry.OpenKey(registry.LOCAL_MACHINE, harContainerTypeKey, registry.QUERY_VALUE|registry.WOW64_64KEY)
+func inWindowsContainer() (bool, error) {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, containerTypeKey, registry.QUERY_VALUE|registry.WOW64_64KEY)
 	if err != nil {
 		return false, err
 	}
@@ -65,7 +58,7 @@ func harInWindowsContainer() (bool, error) {
 	return err == nil, err
 }
 
-func harRegistryString(path, name string) (string, error) {
+func registryString(path, name string) (string, error) {
 	key, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE|registry.WOW64_64KEY)
 	if err != nil {
 		return "", err
@@ -75,7 +68,7 @@ func harRegistryString(path, name string) (string, error) {
 	return strings.TrimSpace(value), err
 }
 
-func harPhysicalDNSHostName() (string, error) {
+func physicalDNSHostName() (string, error) {
 	size := uint32(256)
 	for range 2 {
 		buffer := make([]uint16, size)
@@ -90,11 +83,11 @@ func harPhysicalDNSHostName() (string, error) {
 	return "", errors.New("host name is unavailable")
 }
 
-// harProcessStart reads a process's creation time (100 ns ticks since
+// processStart reads a process's creation time (100 ns ticks since
 // 1601); found is false when no such process exists or it has exited (an
 // exited process whose handle another holder keeps open still answers
 // OpenProcess).
-func harProcessStart(pid int) (string, bool, error) {
+func processStart(pid int) (string, bool, error) {
 	if pid <= 0 || uint64(pid) > uint64(^uint32(0)) {
 		return "", false, errors.New("invalid process ID")
 	}

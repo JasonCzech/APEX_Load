@@ -13,6 +13,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/elastic"
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -267,6 +268,15 @@ func (o *sqliteStoreOverlay) AnalysisDatasetCleanupReady(a0 context.Context, a1 
 		return fake.AnalysisDatasetCleanupReady(a0, a1, a2)
 	}
 	return o.base().AnalysisDatasetCleanupReady(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) AnalysisDatasetCleanupStatus(a0 context.Context, a1 string, a2 string, a3 func(procidentity.Identity) bool) (storage.AnalysisDatasetCleanupStatus, error) {
+	if fake, ok := o.fake.(interface {
+		AnalysisDatasetCleanupStatus(context.Context, string, string, func(procidentity.Identity) bool) (storage.AnalysisDatasetCleanupStatus, error)
+	}); ok {
+		return fake.AnalysisDatasetCleanupStatus(a0, a1, a2, a3)
+	}
+	return o.base().AnalysisDatasetCleanupStatus(a0, a1, a2, a3)
 }
 
 func (o *sqliteStoreOverlay) AnalysisUploadWriterCleanupPlan(a0 context.Context, a1 storage.AnalysisCleanupJob) (storage.AnalysisAttemptCleanupPlan, error) {
@@ -4330,6 +4340,15 @@ func (o *sqliteStoreOverlay) ListAnalysisImports(a0 string, a1 int, a2 int) ([]s
 	return o.base().ListAnalysisImports(a0, a1, a2)
 }
 
+func (o *sqliteStoreOverlay) ListAnalysisWriterOwnershipCandidates(a0 context.Context, a1 string, a2 int) ([]storage.AnalysisWriterCandidate, string, error) {
+	if fake, ok := o.fake.(interface {
+		ListAnalysisWriterOwnershipCandidates(context.Context, string, int) ([]storage.AnalysisWriterCandidate, string, error)
+	}); ok {
+		return fake.ListAnalysisWriterOwnershipCandidates(a0, a1, a2)
+	}
+	return o.base().ListAnalysisWriterOwnershipCandidates(a0, a1, a2)
+}
+
 func (o *sqliteStoreOverlay) ListAppDynamicsConnections(a0 string) ([]*storage.AppDynamicsConnection, error) {
 	if fake, ok := o.fake.(interface {
 		ListAppDynamicsConnections(string) ([]*storage.AppDynamicsConnection, error)
@@ -6272,6 +6291,33 @@ func (o *sqliteStoreOverlay) ResolveExecutionPlanScheduleOccurrenceIfLeaseTermHe
 		return fake.ResolveExecutionPlanScheduleOccurrenceIfLeaseTermHeld(a0, a1, a2, a3, a4, a5, a6)
 	}
 	return o.base().ResolveExecutionPlanScheduleOccurrenceIfLeaseTermHeld(a0, a1, a2, a3, a4, a5, a6)
+}
+
+func (o *sqliteStoreOverlay) ResolveExitedAnalysisAttempt(a0 context.Context, a1 string, a2 string, a3 storage.AnalysisWriterExitScope) (storage.AnalysisWriterExitOutcome, error) {
+	if fake, ok := o.fake.(interface {
+		ResolveExitedAnalysisAttempt(context.Context, string, string, storage.AnalysisWriterExitScope) (storage.AnalysisWriterExitOutcome, error)
+	}); ok {
+		return fake.ResolveExitedAnalysisAttempt(a0, a1, a2, a3)
+	}
+	return o.base().ResolveExitedAnalysisAttempt(a0, a1, a2, a3)
+}
+
+func (o *sqliteStoreOverlay) ResolveExitedAnalysisUploadCursor(a0 context.Context, a1 storage.AnalysisUploadRequest, a2 storage.AnalysisWriterExitScope) (int, error) {
+	if fake, ok := o.fake.(interface {
+		ResolveExitedAnalysisUploadCursor(context.Context, storage.AnalysisUploadRequest, storage.AnalysisWriterExitScope) (int, error)
+	}); ok {
+		return fake.ResolveExitedAnalysisUploadCursor(a0, a1, a2)
+	}
+	return o.base().ResolveExitedAnalysisUploadCursor(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) ResolveExitedAnalysisUploadWriter(a0 context.Context, a1 string, a2 string, a3 storage.AnalysisWriterExitScope) (storage.AnalysisWriterExitOutcome, error) {
+	if fake, ok := o.fake.(interface {
+		ResolveExitedAnalysisUploadWriter(context.Context, string, string, storage.AnalysisWriterExitScope) (storage.AnalysisWriterExitOutcome, error)
+	}); ok {
+		return fake.ResolveExitedAnalysisUploadWriter(a0, a1, a2, a3)
+	}
+	return o.base().ResolveExitedAnalysisUploadWriter(a0, a1, a2, a3)
 }
 
 func (o *sqliteStoreOverlay) ResolveRunMonitorBindings(a0 string, a1 string, a2 string) (*storage.MonitorBindings, error) {

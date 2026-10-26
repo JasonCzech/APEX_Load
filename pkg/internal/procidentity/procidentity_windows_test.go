@@ -1,6 +1,6 @@
 //go:build windows
 
-package browser
+package procidentity
 
 import (
 	"os"
@@ -13,37 +13,37 @@ import (
 
 // The host is this machine's MachineGuid paired with its physical DNS host
 // name, the kernel's boot sequence number and the "windows" namespace.
-func TestWindowsHARHostIdentity(t *testing.T) {
-	host, err := readHARHost()
+func TestWindowsHostIdentity(t *testing.T) {
+	host, err := readHost()
 	if err != nil {
-		t.Fatalf("readHARHost: %v", err)
+		t.Fatalf("readHost: %v", err)
 	}
-	if host.namespace != "windows" {
-		t.Fatalf("namespace %q", host.namespace)
+	if host.Namespace != "windows" {
+		t.Fatalf("namespace %q", host.Namespace)
 	}
-	if _, err := strconv.ParseUint(host.boot, 10, 64); err != nil {
-		t.Fatalf("boot %q: %v", host.boot, err)
+	if _, err := strconv.ParseUint(host.Boot, 10, 64); err != nil {
+		t.Fatalf("boot %q: %v", host.Boot, err)
 	}
-	guid, _, found := strings.Cut(host.machine, "@")
-	if !found || guid == "" || strings.TrimPrefix(host.machine, guid+"@") == "" {
-		t.Fatalf("machine %q is not MachineGuid@host", host.machine)
+	guid, _, found := strings.Cut(host.Machine, "@")
+	if !found || guid == "" || strings.TrimPrefix(host.Machine, guid+"@") == "" {
+		t.Fatalf("machine %q is not MachineGuid@host", host.Machine)
 	}
-	if containerized, err := harInWindowsContainer(); err != nil || containerized {
+	if containerized, err := inWindowsContainer(); err != nil || containerized {
 		t.Fatalf("the runner reads as a container: %v %v", containerized, err)
 	}
 }
 
 // A live process has a creation time; one that exited is not found, whether
 // or not its handle is still held elsewhere; an unused PID is not found.
-func TestWindowsHARProcessStart(t *testing.T) {
-	start, found, err := harProcessStart(os.Getpid())
+func TestWindowsProcessStart(t *testing.T) {
+	start, found, err := processStart(os.Getpid())
 	if err != nil || !found {
 		t.Fatalf("this process: %q %v %v", start, found, err)
 	}
 	if _, err := strconv.ParseUint(start, 10, 64); err != nil {
 		t.Fatalf("creation time %q: %v", start, err)
 	}
-	again, _, _ := harProcessStart(os.Getpid())
+	again, _, _ := processStart(os.Getpid())
 	if again != start {
 		t.Fatalf("the creation time changed: %s -> %s", start, again)
 	}
@@ -55,21 +55,21 @@ func TestWindowsHARProcessStart(t *testing.T) {
 	// Until Wait the child's handle is held, so the exited process still
 	// answers OpenProcess: WAIT_OBJECT_0 must count as gone.
 	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		if _, found, err := harProcessStart(pid); err == nil && !found {
+		if _, found, err := processStart(pid); err == nil && !found {
 			break
 		}
 	}
-	if _, found, err := harProcessStart(pid); err != nil || found {
+	if _, found, err := processStart(pid); err != nil || found {
 		t.Fatalf("an exited child with a held handle: found=%v err=%v", found, err)
 	}
 	_ = child.Wait()
-	if _, found, err := harProcessStart(pid); err != nil || found {
+	if _, found, err := processStart(pid); err != nil || found {
 		t.Fatalf("a reaped child: found=%v err=%v", found, err)
 	}
-	if _, found, err := harProcessStart(0x7ffffff0); err != nil || found {
+	if _, found, err := processStart(0x7ffffff0); err != nil || found {
 		t.Fatalf("an unused PID: found=%v err=%v", found, err)
 	}
-	if _, _, err := harProcessStart(0); err == nil {
+	if _, _, err := processStart(0); err == nil {
 		t.Fatal("PID 0 was accepted")
 	}
 }

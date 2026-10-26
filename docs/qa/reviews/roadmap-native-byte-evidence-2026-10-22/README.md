@@ -112,4 +112,4 @@ They also found these, all fixed in code or docs:
 - **gRPC and WebSocket byte semantics.**
 - **Throughput by arrival time.** Requests are bucketed by start.
 - **Unlabelled byte counts.** The archive's dataset CSV export, transaction SLA byte rules and the transaction drill-down still read byte counts without the evidence label.
-- **The rest of NA-C:** saved-panel revisions and pins, streaming CLI workflows and durable physical-writer ownership.
+- **The rest of NA-C:** saved-panel revisions and pins, streaming CLI workflows, and the physical-writer ownership left open by the [writer ownership slice](../roadmap-native-writer-ownership-2026-10-25/README.md).

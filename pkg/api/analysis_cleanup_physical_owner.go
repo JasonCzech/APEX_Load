@@ -246,7 +246,7 @@ func deleteAnalysisObjectPhysical(ctx context.Context, backend archiveBackendRun
 	}
 	return runAnalysisCleanupPhysical(ctx, backend, "object", key, func(ctx context.Context, o *analysisCleanupPhysicalOwner, ops analysisCleanupPhysicalOps) error {
 		if backend.Backend == archiveBackendFilesystem {
-			root, err := ops.openRoot(filepath.Join(backend.LocalRoot, "_analysis"))
+			root, err := ops.openRoot(analysisArtifactDirectory(backend))
 			if root != nil {
 				o.track(root)
 			}
@@ -286,7 +286,7 @@ func deleteAnalysisNamespacePhysical(ctx context.Context, backend archiveBackend
 	}
 	return runAnalysisCleanupPhysical(ctx, backend, "namespace", prefix, func(ctx context.Context, o *analysisCleanupPhysicalOwner, ops analysisCleanupPhysicalOps) error {
 		if backend.Backend == archiveBackendFilesystem {
-			root, err := ops.openRoot(filepath.Join(backend.LocalRoot, "_analysis"))
+			root, err := ops.openRoot(analysisArtifactDirectory(backend))
 			if root != nil {
 				o.track(root)
 			}

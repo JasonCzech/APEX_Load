@@ -159,7 +159,14 @@ func (s *Server) runAnalysisUploadChunk(ctx context.Context, writers storage.Ana
 		owner.finish(nil, err)
 		return
 	}
-	intent, err := writers.BeginAnalysisUploadWriter(ctx, storage.AnalysisUploadRequest{ProjectID: in.ProjectID, ImportID: in.ID, FileID: file.ID, Revision: in.Revision, Offset: offset, Bytes: int64(len(data)), SHA256: digest})
+	// Begin durably records this process as the writer before any I/O. A writer
+	// of an exited controller that still blocks this offset is retired first
+	// when this host can prove the exit; otherwise the offset stays owned.
+	request := storage.AnalysisUploadRequest{ProjectID: in.ProjectID, ImportID: in.ID, FileID: file.ID, Revision: in.Revision, Offset: offset, Bytes: int64(len(data)), SHA256: digest}
+	intent, err := writers.BeginAnalysisUploadWriter(s.bindAnalysisWriterIncarnation(ctx), request)
+	if intent == nil && errors.Is(err, storage.ErrAnalysisUploadInFlight) && s.resolveExitedAnalysisUploadOffset(ctx, request) {
+		intent, err = writers.BeginAnalysisUploadWriter(s.bindAnalysisWriterIncarnation(ctx), request)
+	}
 	if intent != nil {
 		owner.setIntent(intent)
 	}

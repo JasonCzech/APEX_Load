@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 )
 
 const AnalysisUploadWriterVersion = 1
@@ -35,6 +36,11 @@ type AnalysisUploadWriter struct {
 	PhysicallyClosed                       bool
 	AppliedRevision, Uploaded              int64
 	Rejection                              string
+	// Incarnation is the controller process that performs this writer's
+	// artifact write, recorded at Begin before any I/O. Termination records a
+	// proven exit of that process (see analysis_writer_ownership.go).
+	Incarnation *procidentity.Identity     `json:",omitempty"`
+	Termination *AnalysisWriterTermination `json:",omitempty"`
 }
 type AnalysisUploadRequest struct {
 	ProjectID, ImportID, FileID string
@@ -64,6 +70,13 @@ func analysisUploadValidate(w *AnalysisUploadWriter) error {
 		}
 	}
 	if w.ObjectKey != analysisUploadObjectKey(*w) || w.TemporaryKey != analysisAttemptKey(w.ProjectID, w.ImportID, "upload-"+w.ID+".tmp") {
+		return ErrAnalysisAuthority
+	}
+	if w.Incarnation != nil && !analysisWriterIdentityValid(*w.Incarnation) {
+		return ErrAnalysisAuthority
+	}
+	// A proven exit only ever abandons; a filesystem proof is also closure.
+	if w.Termination != nil && (w.State != "abandoned" || !analysisWriterTerminationValid(w.Termination, w.Incarnation) || !w.Termination.RemoteCommitUnproven && !w.PhysicallyClosed) {
 		return ErrAnalysisAuthority
 	}
 	switch w.State {
@@ -188,7 +201,10 @@ func (s *SQLiteStore) BeginAnalysisUploadWriter(ctx context.Context, req Analysi
 			rows.Close()
 			return nil, ErrAnalysisAuthority
 		}
-		if !old.PhysicallyClosed || old.State == "pending" {
+		// A writer whose controller provably exited can no longer write
+		// through this cursor: a late remote commit could land only at its
+		// own unique key, which the cursor never references.
+		if old.State == "pending" || !old.PhysicallyClosed && old.Termination == nil {
 			blocked = true
 		}
 	}
@@ -210,7 +226,7 @@ func (s *SQLiteStore) BeginAnalysisUploadWriter(ctx context.Context, req Analysi
 	if err != nil {
 		return nil, err
 	}
-	w := &AnalysisUploadWriter{ID: uuid.NewString(), ProjectID: req.ProjectID, ImportID: req.ImportID, FileID: req.FileID, Revision: req.Revision, Offset: req.Offset, Bytes: req.Bytes, SHA256: req.SHA256, State: "pending", CreatedAt: now}
+	w := &AnalysisUploadWriter{ID: uuid.NewString(), ProjectID: req.ProjectID, ImportID: req.ImportID, FileID: req.FileID, Revision: req.Revision, Offset: req.Offset, Bytes: req.Bytes, SHA256: req.SHA256, State: "pending", CreatedAt: now, Incarnation: analysisWriterIncarnationFrom(ctx)}
 	w.ObjectKey = analysisUploadObjectKey(*w)
 	w.TemporaryKey = analysisAttemptKey(w.ProjectID, w.ImportID, "upload-"+w.ID+".tmp")
 	if err = analysisUploadWrite(ctx, tx, w, true); err != nil {
@@ -410,39 +426,46 @@ func analysisUploadQueueImportTx(tx *storeTx, project, id string) error {
 	}
 	return nil
 }
-func analysisUploadQuiescedTx(ctx context.Context, tx *storeTx, project, id string) (bool, error) {
+
+// analysisUploadUnprovenTx counts, by reason, the import's upload writers
+// without physical closure (see AnalysisDatasetCleanupStatus).
+func analysisUploadUnprovenTx(ctx context.Context, tx *storeTx, project, id string, here func(procidentity.Identity) bool, status *AnalysisDatasetCleanupStatus) error {
 	rows, err := tx.QueryContext(ctx, `SELECT id,file_id,chunk_offset,payload FROM analysis_upload_writers WHERE project_id=? AND import_id=?`, project, id)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer rows.Close()
 	count := 0
-	ready := true
 	for rows.Next() {
 		count++
 		if count > analysisUploadMaxWriters {
-			return false, ErrAnalysisAuthority
+			return ErrAnalysisAuthority
 		}
 		var rowID, fileID, raw string
 		var offset int64
 		var w AnalysisUploadWriter
 		if err = rows.Scan(&rowID, &fileID, &offset, &raw); err != nil {
-			return false, err
+			return err
 		}
 		if len(raw) > 4096 || json.Unmarshal([]byte(raw), &w) != nil || w.ID != rowID || w.FileID != fileID || w.Offset != offset || w.ProjectID != project || w.ImportID != id || analysisUploadValidate(&w) != nil {
-			return false, ErrAnalysisAuthority
+			return ErrAnalysisAuthority
 		}
-		if !w.PhysicallyClosed || w.State == "pending" {
-			ready = false
+		if w.PhysicallyClosed && w.State != "pending" {
+			continue
+		}
+		switch {
+		case w.Incarnation == nil:
+			status.UnrecordedWriters++
+		case w.Termination != nil && w.Termination.RemoteCommitUnproven:
+			status.RemoteCommitsUnproven++
+		default:
+			status.countUnproven(here, *w.Incarnation)
 		}
 	}
 	if err = rows.Err(); err != nil {
-		return false, err
+		return err
 	}
-	if err = rows.Close(); err != nil {
-		return false, err
-	}
-	return ready, nil
+	return rows.Close()
 }
 func (s *SQLiteStore) AnalysisUploadWriterCleanupPlan(ctx context.Context, job AnalysisCleanupJob) (AnalysisAttemptCleanupPlan, error) {
 	result := AnalysisAttemptCleanupPlan{Blocked: true}

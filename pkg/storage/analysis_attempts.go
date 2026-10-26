@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 )
 
 var ErrAnalysisAuthority = errors.New("analytical attempt authority lost")
@@ -38,6 +39,11 @@ type AnalysisAttempt struct {
 	LegacyWriterUnknown      bool            `json:"legacy_writer_unknown,omitempty"`
 	WritersQuiesced          bool            `json:"writers_quiesced"`
 	CleanupQueued            bool            `json:"cleanup_queued"`
+	// Incarnation is the controller process that performs this attempt's
+	// artifact writes, recorded at Claim before any I/O. Termination records a
+	// proven exit of that process (see analysis_writer_ownership.go).
+	Incarnation *procidentity.Identity     `json:"incarnation,omitempty"`
+	Termination *AnalysisWriterTermination `json:"termination,omitempty"`
 }
 type AnalysisAttemptPublication struct {
 	Import    AnalysisImport
@@ -319,7 +325,7 @@ func (s *SQLiteStore) ClaimAnalysisImportAttempt(ctx context.Context, id, projec
 		return nil, nil, err
 	}
 	oldOwner, oldState := in.Owner, in.State
-	a := &AnalysisAttempt{PartitionManifestVersion: analysis.PartitionManifestVersion, ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: revision + 1, InputDigest: inputDigest, CreatedAt: now, AbsoluteExpiry: now.Add(16 * time.Minute), Normalized: []string{}, Rejections: []string{}}
+	a := &AnalysisAttempt{PartitionManifestVersion: analysis.PartitionManifestVersion, ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: revision + 1, InputDigest: inputDigest, CreatedAt: now, AbsoluteExpiry: now.Add(16 * time.Minute), Normalized: []string{}, Rejections: []string{}, Incarnation: analysisWriterIncarnationFrom(ctx)}
 	for i := range in.Files {
 		for j := range in.Mapping.Measures {
 			a.Normalized = append(a.Normalized, analysisAttemptKey(project, id, fmt.Sprintf("normalized-%s-part-%04d-%02d.parquet", a.ID, i, j)))

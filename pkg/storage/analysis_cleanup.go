@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 )
 
 type AnalysisCleanupJob struct {
@@ -190,80 +191,151 @@ func queueAnalysisImportAttemptsCleanupTx(tx *storeTx, project, id string) error
 	return nil
 }
 
+// AnalysisDatasetCleanupStatus explains why a revoked dataset's namespace is
+// still retained. Each unproven generation is counted once, by its reason:
+//   - LegacyWriters: a legacy writer with no journalled plan (a pre-journal
+//     upload, an unknown legacy owner, an output no journal plans). Only an
+//     explicit intervention can prove its removal safe.
+//   - UnrecordedWriters: a journalled generation without a recorded writer
+//     process (minted before writer incarnations, by a controller with no
+//     process identity, or rewritten by an older controller). Only its own
+//     process can still close it.
+//   - RemoteCommitsUnproven: its controller provably exited, but a remote
+//     object store may still apply a commit it had sent. Only an explicit
+//     intervention can prove its removal safe.
+//   - UnprovenWriters: its writer was recorded where the asking host can
+//     judge it (procidentity.Judgeable), so it may settle: it closes, or that
+//     host proves its exit at a later sweep, unless its PID has been reused
+//     by a process the host cannot inspect (another user's under hidepid).
+//   - UnjudgeableWriters: its writer was recorded where the asking host cannot
+//     judge it: another machine, or another boot or PID namespace of this one.
+//     It resolves only if it is still running and closes, or a controller
+//     that can judge it proves its exit; a restarted container or a replaced
+//     pod with a new host name never can.
+type AnalysisDatasetCleanupStatus struct {
+	Ready                 bool
+	Live                  bool
+	LegacyWriters         int
+	UnrecordedWriters     int
+	RemoteCommitsUnproven int
+	UnprovenWriters       int
+	UnjudgeableWriters    int
+}
+
+// Resolvable reports whether a pending deletion may still complete without
+// an intervention: some writer may yet close or be proven exited.
+func (s AnalysisDatasetCleanupStatus) Resolvable() bool {
+	return s.UnprovenWriters > 0 || s.UnjudgeableWriters > 0 || s.UnrecordedWriters > 0
+}
+
+// ResolvesHere reports whether the asking host itself will settle a writer:
+// it closes, or this host proves its exit.
+func (s AnalysisDatasetCleanupStatus) ResolvesHere() bool {
+	return s.UnprovenWriters > 0
+}
+
+// countUnproven classifies a recorded, unproven writer by whether here can
+// judge it; a nil here counts every one as judgeable.
+func (s *AnalysisDatasetCleanupStatus) countUnproven(here func(procidentity.Identity) bool, incarnation procidentity.Identity) {
+	if here != nil && !here(incarnation) {
+		s.UnjudgeableWriters++
+		return
+	}
+	s.UnprovenWriters++
+}
+
 // A whole namespace can be removed only after every retained attempt has its
 // parent-issued physical seal. Unknown legacy failed plans remain retained.
 func (s *SQLiteStore) AnalysisDatasetCleanupReady(ctx context.Context, project, id string) (bool, error) {
+	status, err := s.AnalysisDatasetCleanupStatus(ctx, project, id, nil)
+	return status.Ready, err
+}
+
+// AnalysisDatasetCleanupStatus reads a revoked dataset's retention reasons.
+// here reports whether the asking host can judge a recorded writer.
+func (s *SQLiteStore) AnalysisDatasetCleanupStatus(ctx context.Context, project, id string, here func(procidentity.Identity) bool) (AnalysisDatasetCleanupStatus, error) {
+	var status AnalysisDatasetCleanupStatus
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, err
+		return status, err
 	}
 	defer tx.Rollback()
 	if _, err = lockProjectForOwnedMutation(tx, project); err != nil {
 		var present int
 		if e := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects WHERE id=?`, project).Scan(&present); e != nil || present != 0 {
-			return false, ErrAnalysisPublicationUnknown
+			return status, ErrAnalysisPublicationUnknown
 		}
 	}
 	in, err := analysisAttemptLoad(ctx, tx, id, project)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return false, err
+		return status, err
 	}
 	if in != nil && in.State != "cancelled" && in.State != "deleting" && in.State != "deleted" {
-		return false, nil
+		status.Live = true
+		return status, nil
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT payload FROM analysis_attempt_journal WHERE project_id=? AND import_id=?`, project, id)
 	if err != nil {
-		return false, err
+		return status, err
 	}
 	defer rows.Close()
 	count := 0
-	ready := true
 	known := map[string]bool{}
 	for rows.Next() {
 		count++
 		if count > 4096 {
-			return false, ErrAnalysisAuthority
+			return AnalysisDatasetCleanupStatus{}, ErrAnalysisAuthority
 		}
 		var body string
 		if err = rows.Scan(&body); err != nil {
-			return false, err
+			return AnalysisDatasetCleanupStatus{}, err
 		}
 		var a AnalysisAttempt
 		if json.Unmarshal([]byte(body), &a) != nil || a.ProjectID != project || a.ImportID != id {
-			return false, ErrAnalysisAuthority
+			return AnalysisDatasetCleanupStatus{}, ErrAnalysisAuthority
 		}
 		if !a.WritersQuiesced {
-			ready = false
+			switch {
+			case a.LegacyWriterUnknown:
+				status.LegacyWriters++
+			case a.Incarnation == nil:
+				status.UnrecordedWriters++
+			case a.Termination != nil && a.Termination.RemoteCommitUnproven:
+				status.RemoteCommitsUnproven++
+			default:
+				status.countUnproven(here, *a.Incarnation)
+			}
 		}
 		for _, key := range append(append(append([]string{}, a.Normalized...), a.Rejections...), a.Obsolete...) {
 			if !analysisAttemptOwnedOutputKey(project, id, key) {
-				return false, ErrAnalysisAuthority
+				return AnalysisDatasetCleanupStatus{}, ErrAnalysisAuthority
 			}
 			known[key] = true
 		}
 	}
 	if err = rows.Err(); err != nil {
-		return false, err
+		return AnalysisDatasetCleanupStatus{}, err
 	}
 	if err = rows.Close(); err != nil {
-		return false, err
+		return AnalysisDatasetCleanupStatus{}, err
 	}
 	if in != nil {
 		for _, key := range append(append(append([]string{}, in.Normalized...), in.RejectionArtifacts...), in.ObsoleteObjects...) {
 			if !known[key] {
-				ready = false
+				// An output no journal plans has no recorded writer at all.
+				status.LegacyWriters++
+				break
 			}
 		}
 	}
-	uploadReady, uploadErr := analysisUploadQuiescedTx(ctx, tx, project, id)
-	if uploadErr != nil {
-		return false, uploadErr
+	if err = analysisUploadUnprovenTx(ctx, tx, project, id, here, &status); err != nil {
+		return AnalysisDatasetCleanupStatus{}, err
 	}
-	ready = ready && uploadReady
 	if tx.Commit() != nil {
-		return false, ErrAnalysisPublicationUnknown
+		return AnalysisDatasetCleanupStatus{}, ErrAnalysisPublicationUnknown
 	}
-	return ready, nil
+	status.Ready = status.LegacyWriters == 0 && status.UnrecordedWriters == 0 && status.RemoteCommitsUnproven == 0 && status.UnprovenWriters == 0 && status.UnjudgeableWriters == 0
+	return status, nil
 }
 
 // A blocked physical owner remains pending, but is moved out of the first page

@@ -22,6 +22,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/collectoragent"
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -273,28 +274,38 @@ func (s *Server) handleAnalysisImport(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 		return
 	}
-	if in.State == "ready" || in.State == "deleting" {
-		in.State = "deleting"
-	} else {
-		in.State = "cancelled"
-	}
-	saved, err := store.SaveAnalysisImport(*in, in.Revision)
-	if err != nil {
-		writeError(w, 409, err.Error())
-		return
+	// A repeated DELETE of an already revoked import only re-reads its
+	// cleanup status and retries physical deletion: saving again would re-queue
+	// every cleanup job and push its next attempt later each time.
+	saved := in
+	if in.State != "cancelled" && in.State != "deleting" {
+		if in.State == "ready" {
+			in.State = "deleting"
+		} else {
+			in.State = "cancelled"
+		}
+		var err error
+		if saved, err = store.SaveAnalysisImport(*in, in.Revision); err != nil {
+			writeError(w, 409, err.Error())
+			return
+		}
 	}
 	// Cancellation invalidates the worker's revision immediately. Repeating
 	// DELETE retries any physical cleanup interrupted by a storage outage.
 	cleanup, ok := s.store.(interface {
-		AnalysisDatasetCleanupReady(context.Context, string, string) (bool, error)
+		AnalysisDatasetCleanupStatus(context.Context, string, string, func(procidentity.Identity) bool) (storage.AnalysisDatasetCleanupStatus, error)
 	})
 	if !ok {
 		writeError(w, 503, "dataset cleanup ownership unavailable")
 		return
 	}
-	ready, readyErr := cleanup.AnalysisDatasetCleanupReady(r.Context(), saved.ProjectID, saved.ID)
-	if readyErr != nil || !ready {
+	status, statusErr := cleanup.AnalysisDatasetCleanupStatus(r.Context(), saved.ProjectID, saved.ID, s.analysisWriterHere())
+	if statusErr != nil {
 		writeError(w, 503, "dataset cleanup pending physical writer completion")
+		return
+	}
+	if !status.Ready {
+		writeAnalysisDeletionPending(w, saved, status)
 		return
 	}
 	if err = deleteAnalysisObjects(r.Context(), saved); err != nil {
@@ -687,7 +698,9 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "analytical admission unavailable")
 		return
 	}
-	claimed, _, err := attempts.ClaimAnalysisImportAttempt(r.Context(), in.ID, in.ProjectID, in.Revision, time.Minute)
+	// The claim durably records this process as the attempt's artifact writer
+	// before any I/O, so a successor can later prove its exit.
+	claimed, _, err := attempts.ClaimAnalysisImportAttempt(s.bindAnalysisWriterIncarnation(r.Context()), in.ID, in.ProjectID, in.Revision, time.Minute)
 	if err != nil {
 		stop()
 		_ = closeNativeAnalysisPipeline(pipeline, dir)
