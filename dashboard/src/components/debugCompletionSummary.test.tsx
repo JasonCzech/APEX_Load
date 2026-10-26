@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 import { describe, expect, it, vi } from 'vitest'
 import { debugCompletionKey, debugSummaryModel, useDebugCompletionSummary, type DebugCompletionSnapshot } from './debugCompletionModel'
+import { captureDebugTransactionDefinitions } from './debugTransactionModel'
 import type { BrowserReplayReport, ScriptDebugSession } from '../types/replay'
 
 function fixture(): DebugCompletionSnapshot {
@@ -52,6 +53,7 @@ describe('debug completion summary', () => {
   })
   it('opens once, freezes the completed snapshot, and opens again for a new run', async () => {
     const { session, report } = fixture(); const onComplete = vi.fn()
+    const transactions = captureDebugTransactionDefinitions({ name: 'Original', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Original transaction', type: 'http_sequence', target: '', params: { requests: [{ name: 'Child', target: '/' }] } }] })
     let snapshot: DebugCompletionSnapshot | null = null
     function Harness(props: Parameters<typeof useDebugCompletionSummary>[0]) { snapshot = useDebugCompletionSummary(props); return null }
     const root = createRoot(document.createElement('div'))
@@ -59,11 +61,13 @@ describe('debug completion summary', () => {
     try {
       render({ session, report, running: true, scriptName: 'Original', draft: true, onComplete })
       expect(snapshot).toBeNull()
-      render({ session, report, running: false, scriptName: 'Original', draft: true, onComplete })
+      render({ session, report, running: false, scriptName: 'Original', draft: true, transactions, onComplete })
       expect(onComplete).toHaveBeenCalledTimes(1)
       render({ session: { ...session }, report: { ...report! }, running: false, scriptName: 'Edited', draft: true, onComplete })
       expect(onComplete).toHaveBeenCalledTimes(1)
       expect((snapshot as DebugCompletionSnapshot | null)?.scriptName).toBe('Original')
+      transactions[0].name = 'Edited transaction'
+      expect((snapshot as DebugCompletionSnapshot | null)?.transactions?.[0].name).toBe('Original transaction')
       render({ session: { ...session, id: 'run-2' }, report: { ...report!, replay_session_id: 'run-2' }, running: false, scriptName: 'Edited', draft: true, onComplete })
       expect(onComplete).toHaveBeenCalledTimes(2)
     } finally { act(() => root.unmount()) }
@@ -97,5 +101,36 @@ describe('debug summary page', () => {
       expect(container.textContent).not.toContain('Expected 200, got 500')
       expect(button('Inspect Checkout')).toBeUndefined()
     } finally { act(() => root.unmount()); container.remove() }
+  })
+})
+
+
+describe('debug summary transaction table', () => {
+  it('expands parent rows, preserves exact timestamps, links evidence, and hides withheld rows', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    const run = fixture()
+    run.transactions = captureDebugTransactionDefinitions({ name: 'Checkout script', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Checkout', type: 'http_sequence', target: '', params: { requests: [{ name: 'Pay', target: '/pay' }] } }] })
+    run.report!.events = [{ ...run.report!.events[1], action_index: 0, request_index: 0, event_index: 0 }]
+    const inspect = vi.fn(), container = document.createElement('div'), root = createRoot(container)
+    const render = (unavailable = false) => act(() => root.render(<Summary snapshot={run} stale={false} unavailable={unavailable} onReturn={vi.fn()} onDebugAgain={vi.fn()} onSelectEvent={inspect} onDownloadHAR={vi.fn()} />))
+    try {
+      render()
+      const table = container.querySelector('table')!
+      expect(table.textContent).toContain('Duration (ms)')
+      expect(table.textContent).not.toContain('Pay')
+      const expand = table.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+      expect(expand.getAttribute('aria-expanded')).toBe('false')
+      act(() => expand.click())
+      expect(table.textContent).toContain('Pay')
+      expect(expand.getAttribute('aria-expanded')).toBe('true')
+      expect(table.querySelector('time')?.getAttribute('datetime')).toBe(run.report!.events[0].started_at)
+      const child = [...table.querySelectorAll('tr')].find(row => row.textContent?.includes('Pay'))!
+      act(() => child.querySelector<HTMLButtonElement>('button')!.click())
+      expect(inspect).toHaveBeenCalledWith(0)
+      act(() => expand.click())
+      expect(table.textContent).not.toContain('Pay')
+      render(true)
+      expect(container.querySelector('[aria-label="Transaction details"]')).toBeNull()
+    } finally { act(() => root.unmount()) }
   })
 })

@@ -49,3 +49,20 @@ func TestReplaySyntheticHARDeduplicatesIdentitiesAndPreservesRepeatedRequests(t 
 		t.Fatal("export kept an earlier request observation")
 	}
 }
+
+func TestReplayHARFiltersFollowedBrowserRedirectsWithoutLosingFinalRedirect(t *testing.T) {
+	now := time.Now()
+	a := protocol.NetworkEntry{URL: "https://example.test/a", Method: "GET", StatusCode: 307, BrowserEvidence: &protocol.BrowserResourceEvidence{SourceGeneration: "g", RequestID: "a"}}
+	b := protocol.NetworkEntry{URL: "https://example.test/b", Method: "GET", StatusCode: 302, BrowserEvidence: &protocol.BrowserResourceEvidence{SourceGeneration: "g", RequestID: "b", RedirectFromRequestID: "a", RedirectHop: 1}}
+	for _, keep := range []bool{false, true} {
+		var out bytes.Buffer
+		summary, err := WriteReplaySyntheticHARWithOptions([]engine.ReplayActionEvent{{StartedAt: now, Network: []protocol.NetworkEntry{a, b}}}, &out, &protocol.ReplayHAROptions{Redirects: keep})
+		want := int64(1)
+		if keep {
+			want = 2
+		}
+		if err != nil || summary.Entries != want {
+			t.Fatalf("%+v %v", summary, err)
+		}
+	}
+}

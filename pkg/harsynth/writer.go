@@ -3,7 +3,7 @@
 // without native capture. It writes only what the evidence holds. An optional
 // timing phase the evidence lacks is HAR's -1; the required send, wait and
 // receive and content.size, which HAR 1.2 requires to be non-negative, are 0
-// and named in the entry's unavailable_fields. Content is never written, and
+// and named in the entry's unavailable_fields. Content is omitted unless a debug run opts in, and
 // every value that is not a direct measurement is labelled where it appears. Each
 // entry passes through the same scrubber as a native HAR before it is written.
 package harsynth
@@ -35,7 +35,7 @@ const (
 	AlgorithmVersion = 1
 	SchemaVersion    = "1.2"
 	Fidelity         = "synthetic"
-	// BodyPolicy: request and response bodies are never written.
+	// BodyPolicy is the default; debug exports can opt into retained text bodies.
 	BodyPolicy = "omitted"
 
 	// MaxEntries and MaxBytes match the native per-HAR limits.
@@ -105,10 +105,12 @@ type Entry struct {
 	PageURL       string
 	BrowserEngine string
 	Network       protocol.NetworkEntry
+	Options       *protocol.ReplayHAROptions
 }
 
 // Metadata describes where the entries came from.
 type Metadata struct {
+	HAROptions  *protocol.ReplayHAROptions
 	CaptureMode string
 	// CreatorVersion is the HAR's creator version; empty means the algorithm
 	// version.
@@ -204,6 +206,7 @@ func (w *Writer) Add(e Entry) error {
 		w.omitted[OmittedEntryLimit]++
 		return nil
 	}
+	e.Options = w.meta.HAROptions
 	entry, reason := buildEntry(e, w.meta.Policy)
 	if reason != "" {
 		w.omitted[reason]++
@@ -280,6 +283,12 @@ func (w *Writer) Close() (Summary, error) {
 	if w.meta.NativeHARCoverageUnknown > 0 {
 		block["native_har_coverage_unknown"] = w.meta.NativeHARCoverageUnknown
 	}
+	if w.meta.HAROptions != nil {
+		block["capture_options"] = w.meta.HAROptions
+		if w.meta.HAROptions.Bodies != "none" && w.meta.HAROptions.Bodies != "" {
+			block["body_policy"] = w.meta.HAROptions.Bodies
+		}
+	}
 	raw, _ := json.Marshal(block)
 	if _, err := w.out.WriteString(`],"_apexloadSensitivity":"` + scrub.SensitivityScrubbed + `","_apexload":` + string(raw) + `}}`); err != nil {
 		return Summary{}, err
@@ -292,6 +301,11 @@ func (w *Writer) Close() (Summary, error) {
 
 func (w *Writer) omittedFields() []string {
 	fields := append([]string(nil), OmittedFields...)
+	if o := w.meta.HAROptions; o != nil {
+		fields = slices.DeleteFunc(fields, func(f string) bool {
+			return o.KeepBody(true) && f == "request.postData" || o.KeepBody(false) && (f == "response.content.text" || f == "response.content.size") || o.Timings && f == "timings.send"
+		})
+	}
 	for _, field := range w.meta.ExtraOmittedFields {
 		if field = cleanText(field, 128); field != "" && !slices.Contains(fields, field) {
 			fields = append(fields, field)
@@ -305,7 +319,12 @@ type harNameValue struct {
 	Value string `json:"value"`
 }
 
+type harPostData struct {
+	MimeType string `json:"mimeType"`
+	Text     string `json:"text"`
+}
 type harRequest struct {
+	PostData    *harPostData   `json:"postData,omitempty"`
 	Method      string         `json:"method"`
 	URL         string         `json:"url"`
 	HTTPVersion string         `json:"httpVersion"`
@@ -317,8 +336,9 @@ type harRequest struct {
 }
 
 type harContent struct {
-	Size     int64  `json:"size"`
-	MimeType string `json:"mimeType"`
+	Text     *string `json:"text,omitempty"`
+	Size     int64   `json:"size"`
+	MimeType string  `json:"mimeType"`
 }
 
 type harResponse struct {
@@ -344,15 +364,17 @@ type harTimings struct {
 }
 
 type harEntryEvidence struct {
-	StartedSource string `json:"started_source"`
-	TimeSource    string `json:"time_source"`
-	RequestID     string `json:"request_id,omitempty"`
-	ActionName    string `json:"action_name,omitempty"`
-	PageURL       string `json:"page_url,omitempty"`
-	ResourceType  string `json:"resource_type,omitempty"`
-	FailureKind   string `json:"failure_kind,omitempty"`
-	State         string `json:"state,omitempty"`
-	TimingSource  string `json:"timing_source,omitempty"`
+	RequestBodyState  string `json:"request_body_state,omitempty"`
+	ResponseBodyState string `json:"response_body_state,omitempty"`
+	StartedSource     string `json:"started_source"`
+	TimeSource        string `json:"time_source"`
+	RequestID         string `json:"request_id,omitempty"`
+	ActionName        string `json:"action_name,omitempty"`
+	PageURL           string `json:"page_url,omitempty"`
+	ResourceType      string `json:"resource_type,omitempty"`
+	FailureKind       string `json:"failure_kind,omitempty"`
+	State             string `json:"state,omitempty"`
+	TimingSource      string `json:"timing_source,omitempty"`
 	// WaitIncludesSend: the evidence measures request start to response start
 	// as one phase, written as wait with send unavailable.
 	WaitIncludesSend bool `json:"wait_includes_send,omitempty"`
@@ -408,6 +430,9 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 	evidence := n.BrowserEvidence
 	var out harEntry
 	switch {
+	case n.HAR != nil && !n.HAR.StartedAt.IsZero():
+		out.StartedDateTime = n.HAR.StartedAt.UTC().Format(time.RFC3339Nano)
+		out.Evidence.StartedSource = StartedRequestStart
 	case evidence != nil && evidence.EpochStartMS != nil && validEpochMS(*evidence.EpochStartMS):
 		// Whole milliseconds plus the fraction to the microsecond: float
 		// nanoseconds would print representation noise as precision.
@@ -425,9 +450,27 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 	// required non-negative, so an unmeasured one is 0 and named in
 	// unavailable_fields.
 	out.Timings = harTimings{Blocked: -1, DNS: -1, Connect: -1, SSL: -1}
-	waitMeasured, receiveMeasured := false, false
+	waitMeasured, receiveMeasured, sendMeasured := false, false, false
+	phases := []protocol.BrowserResourcePhase{}
 	if evidence != nil {
-		for _, phase := range evidence.Phases {
+		phases = evidence.Phases
+	}
+	if n.HAR != nil && len(n.HAR.Phases) > 0 {
+		phases = n.HAR.Phases
+	}
+	if e.Options != nil && !e.Options.Timings {
+		phases = nil
+	}
+	for _, phase := range phases {
+		if phase.Name == "send" {
+			if duration, ok := phaseDuration(phase); ok {
+				out.Timings.Send = duration
+				sendMeasured = true
+			}
+		}
+	}
+	{
+		for _, phase := range phases {
 			duration, ok := phaseDuration(phase)
 			if !ok {
 				continue
@@ -441,16 +484,18 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 				out.Timings.SSL = duration
 			case "request_wait":
 				out.Timings.Wait, waitMeasured = duration, true
-				out.Evidence.WaitIncludesSend = true
+				out.Evidence.WaitIncludesSend = !sendMeasured
 			case "response":
 				out.Timings.Receive, receiveMeasured = duration, true
 			}
 		}
+	}
+	if evidence != nil {
 		out.Evidence.RequestID = cleanText(evidence.RequestID, 128)
 		out.Evidence.State = cleanText(evidence.State, 32)
 		out.Evidence.TimingSource = cleanText(evidence.TimingSource, 64)
 	}
-	total, measured := 0.0, waitMeasured || receiveMeasured
+	total, measured := out.Timings.Send, sendMeasured || waitMeasured || receiveMeasured
 	if waitMeasured {
 		total += out.Timings.Wait
 	}
@@ -476,7 +521,9 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 	default:
 		out.Evidence.TimeSource = TimeUnavailable
 	}
-	out.Evidence.UnavailableFields = append(out.Evidence.UnavailableFields, "timings.send")
+	if !sendMeasured {
+		out.Evidence.UnavailableFields = append(out.Evidence.UnavailableFields, "timings.send")
+	}
 	if !waitMeasured {
 		out.Evidence.UnavailableFields = append(out.Evidence.UnavailableFields, "timings.wait")
 	}
@@ -492,6 +539,34 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 	}
 	if value := headerValue(n.ResponseHeaders, "content-type"); value != "" {
 		out.Response.Content.MimeType = value
+	}
+	if n.HAR != nil && e.Options != nil {
+		if e.Options.KeepBody(true) {
+			out.Evidence.RequestBodyState = "unavailable"
+			if b := n.HAR.RequestBody; b != nil {
+				out.Evidence.RequestBodyState = b.State
+				if b.State == "retained" {
+					out.Request.PostData = &harPostData{MimeType: b.MimeType, Text: b.Text}
+				}
+			}
+		}
+		if e.Options.KeepBody(false) {
+			out.Evidence.ResponseBodyState = "unavailable"
+			if b := n.HAR.ResponseBody; b != nil {
+				out.Evidence.ResponseBodyState = b.State
+				if b.State == "retained" {
+					text := b.Text
+					out.Response.Content.Text = &text
+					if b.SizeBytes != nil {
+						out.Response.Content.Size = *b.SizeBytes
+					}
+					out.Response.Content.MimeType = b.MimeType
+					if b.SizeBytes != nil {
+						out.Evidence.UnavailableFields = slices.DeleteFunc(out.Evidence.UnavailableFields, func(f string) bool { return f == "response.content.size" })
+					}
+				}
+			}
+		}
 	}
 	if value := headerValue(n.ResponseHeaders, "location"); value != "" {
 		out.Response.RedirectURL = value

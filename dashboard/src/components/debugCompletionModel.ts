@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import type { DebugTransactionDefinition } from './debugTransactionModel'
 import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugSession } from '../types/replay'
 
 export interface DebugCompletionSnapshot {
+  transactions?: DebugTransactionDefinition[]
   key: string
   scriptName: string
   draft: boolean
@@ -27,9 +29,9 @@ export function debugCompletionKey(session: ScriptDebugSession | null, report: B
   return `${session.id}:${session.session_incarnation || session.started_at || ''}`
 }
 
-export function useDebugCompletionSummary({ session, report, running, scriptName, draft, onComplete }: {
+export function useDebugCompletionSummary({ session, report, running, scriptName, draft, transactions, onComplete }: {
   session: ScriptDebugSession | null; report: BrowserReplayReport | null; running: boolean
-  scriptName: string; draft: boolean; onComplete: () => void
+  scriptName: string; draft: boolean; transactions?: DebugTransactionDefinition[]; onComplete: () => void
 }) {
   const seen = useRef(new Set<string>())
   const [snapshot, setSnapshot] = useState<DebugCompletionSnapshot | null>(null)
@@ -37,9 +39,9 @@ export function useDebugCompletionSummary({ session, report, running, scriptName
     const key = debugCompletionKey(session, report, running)
     if (!key || !session || seen.current.has(key)) return
     seen.current.add(key)
-    setSnapshot(structuredClone({ key, session, report: report || session.report || null, scriptName, draft }))
+    setSnapshot(structuredClone({ key, session, report: report || session.report || null, scriptName, draft, transactions }))
     onComplete()
-  }, [session, report, running, scriptName, draft, onComplete])
+  }, [session, report, running, scriptName, draft, transactions, onComplete])
   return snapshot
 }
 

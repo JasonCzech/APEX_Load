@@ -27,7 +27,7 @@ describe('isolated replay seed contract', () => {
   it('excludes inline seed values from persistent named profiles', () => {
     const profile = safeProfile('isolated', { ...DEFAULT_REPLAY_OPTIONS, liveTableSeedsText: JSON.stringify([seed]) })
     expect(JSON.stringify(profile)).not.toContain('liveTableSeedsText')
-    expect(JSON.stringify(profile)).not.toContain('one')
+    expect(JSON.stringify(profile)).not.toContain(JSON.stringify(seed.rows[0].values.id))
   })
 })
 

@@ -63,6 +63,7 @@ func CloneEngineReplayRuntimeProfile(profile *engine.ReplayRuntimeProfile) engin
 		return engine.ReplayRuntimeProfile{}
 	}
 	cloned := *profile
+	cloned.HAROptions = profile.HAROptions.Clone()
 	if profile.Headless != nil {
 		headless := *profile.Headless
 		cloned.Headless = &headless

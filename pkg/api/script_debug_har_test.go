@@ -162,3 +162,33 @@ func TestScriptDebugHARAccessMaskPreservesOtherResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestScriptDebugHAROptionsValidation(t *testing.T) {
+	for _, options := range []string{`{"bodies":"invalid"}`, `{"max_body_bytes":1048577}`, `{"max_total_body_bytes":-1}`} {
+		server := NewServer(ServerConfig{})
+		request := httptest.NewRequest("POST", "/api/v1/scripts/replay/sessions", strings.NewReader(`{"runtime_profile":{"har_options":`+options+`},"script":{"name":"HAR","version":"1.0","protocol":"http","actions":[]}}`))
+		request.Header.Set("Content-Type", "application/json")
+		reply := httptest.NewRecorder()
+		server.mux.ServeHTTP(reply, request)
+		if reply.Code != http.StatusBadRequest || !strings.Contains(reply.Body.String(), "HAR") {
+			t.Fatalf("%d %s", reply.Code, reply.Body.String())
+		}
+	}
+}
+func TestScriptDebugHAROptionsMetadataAndExport(t *testing.T) {
+	manager := NewScriptDebugManager(NewHub())
+	session := retainedDebugHARSession()
+	options, _ := (protocol.ReplayHAROptions{Bodies: "response", Redirects: true, Timings: true}).Normalize()
+	session.RuntimeProfile.HAROptions = &options
+	session.FinalReport.Events[0].Network[0].HAR = protocol.NewReplayHARExchange()
+	session.FinalReport.Events[0].Network[0].HAR.ResponseBody = &protocol.ReplayHARBody{State: "retained", Text: `{"visible":"response","password":"private-password"}`, MimeType: "application/json"}
+	manager.sessions[session.ID] = session
+	raw, info, ok := manager.ExportHARForProject(session.ID, "")
+	if !ok || !info.Available || info.Options == nil || info.Options.MaxBodyBytes != 65536 || !strings.Contains(string(raw), "response") || strings.Contains(string(raw), "private-password") {
+		t.Fatalf("%+v %s", info, raw)
+	}
+	info.Options.Bodies = "none"
+	if session.RuntimeProfile.HAROptions.Bodies != "response" {
+		t.Fatal("options alias")
+	}
+}
