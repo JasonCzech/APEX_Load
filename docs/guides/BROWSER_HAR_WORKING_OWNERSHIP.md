@@ -228,9 +228,15 @@ change cleanup authority, or turn optional evidence loss into a failed run.
 Capture policies that intentionally discard a HAR do not report capture loss.
 Replay durability and its fallback disclosure remain separate below.
 
-At finalization the controller fetches each declared HAR from the live
-generator, never from the collection cache, so a source served only from
-the cache (its generator gone) has its HARs `source_unavailable`. The fetch is
+At finalization the controller fetches each declared HAR from the collection
+source cache when `optional_receipt.json` retained it within the collection
+cache's byte and disk-space bounds, falling back to the live generator when
+reachable; a HAR from a lost generator that was not cached in `_collection` is
+counted as `source_unavailable`. Optional HARs and raw interactions are written
+into `_collection` as a best-effort pass after required source files succeed,
+recording optional digests in `optional_receipt.json` so the SQL
+`ReceiptSHA256` anchor for `receipt.json` never diverges across HA pods with
+different free disk space. The fetch is
 charged to the run's transfer reservation, whose writer refuses to go below
 the controller's free-space floor, with its own allowance (a refused HAR is
 `transfer_failed`); HAR fetches share that floor with the other sources'
