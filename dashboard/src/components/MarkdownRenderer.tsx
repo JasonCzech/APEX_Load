@@ -1,16 +1,9 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import CodeMirror from '@uiw/react-codemirror'
-import { javascript } from '@codemirror/lang-javascript'
-import { json } from '@codemirror/lang-json'
-import { xml } from '@codemirror/lang-xml'
-import { EditorView } from '@codemirror/view'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { reportClientError } from '../utils/clientErrorReporting'
 import { markdownPlainText, parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
 import { declaresErDiagram, loadMermaidErDiagram } from './mermaidErDiagramLoader'
-import { apexCodeMirrorTheme } from './codeMirrorTheme'
-import { yamlSyntaxHighlighting } from './yamlSyntaxHighlighting'
-import { guideCodeHighlighting, guideCodeLanguage } from './guideCodeLanguage'
+import { highlightsCode, loadHelpCodeView } from './helpCodeViewLoader'
 
 // The ER diagram renderer and its parser load only for a document that has
 // an erDiagram block. Until then, and if the chunk cannot load (reported like
@@ -22,6 +15,18 @@ const MermaidErDiagram = lazy(() => loadMermaidErDiagram().catch((error: unknown
 }))
 function MermaidSource({ fallback }: { fallback: ReactNode }) {
   return <>{fallback}</>
+}
+
+// Copyable examples highlight in a CodeMirror view that loads with the first
+// one, so pages that only render Markdown never load the editor. Until then,
+// and if the chunk cannot load (reported like any other lazy surface), the
+// example shows its plain source.
+const HelpCodeView = lazy(() => loadHelpCodeView().catch((error: unknown) => {
+  reportClientError('render', error)
+  return { default: PlainCodeView }
+}))
+function PlainCodeView({ code }: { code: string; language?: string; label?: string }) {
+  return <pre className="help-code-plain"><code>{code}</code></pre>
 }
 
 type MarkdownHeadingBlock = Extract<MarkdownBlock, { kind: 'heading' }>
@@ -269,33 +274,17 @@ function MarkdownTableWrap({ label, children }: { label: string; children: React
 function CopyCodeBlock({ code, language }: { code: string; language: string }) {
   const [status, setStatus] = useState('')
   const label = language ? `${language} code example` : 'Code example'
-  const extensions = useMemo(() => [
-    apexCodeMirrorTheme,
-    guideCodeHighlighting,
-    // CodeMirror's content is a read-only textbox, which needs a name of its own.
-    EditorView.contentAttributes.of({ 'aria-label': label }),
-    ...(language === 'json' || language === 'jsonc' ? [json()] :
-      language === 'xml' || language === 'html' ? [xml()] :
-        language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts' ? [javascript({ typescript: language === 'typescript' || language === 'ts' })] :
-          language === 'yaml' || language === 'yml' ? [xml(), yamlSyntaxHighlighting] :
-            [guideCodeLanguage(language)]),
-  ], [label, language])
   return <div className="help-code-example">
     <div className="help-code-toolbar"><span>{language || 'Example'}</span><button className="btn btn-secondary btn-sm" type="button" onClick={async () => {
       const copied = await copyTextToClipboard(code)
       setStatus(copied ? 'Copied' : 'Copy unavailable. Select the example and copy manually.')
     }}>Copy example</button></div>
-    {language === 'mermaid'
+    {!highlightsCode(language)
       ? <pre className="markdown-code-block" tabIndex={0} role="region" aria-label={`${language} code example`}><code data-language={language}>{code}</code></pre>
       : <div className="markdown-code-block markdown-code-editor" tabIndex={0} role="region" aria-label={label} data-language={language || undefined} data-code={code}>
-        <CodeMirror
-          value={code}
-          extensions={extensions}
-          editable={false}
-          readOnly
-          theme="none"
-          basicSetup={false}
-        />
+        <Suspense fallback={<PlainCodeView code={code} />}>
+          <HelpCodeView code={code} language={language} label={label} />
+        </Suspense>
       </div>}
     <span role="status">{status}</span>
   </div>

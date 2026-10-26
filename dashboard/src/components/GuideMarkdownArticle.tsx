@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import MarkdownRenderer, { MarkdownLabel } from './MarkdownRenderer'
 import { containsErDiagram, loadMermaidErDiagram } from './mermaidErDiagramLoader'
+import { containsHighlightedCode, loadHelpCodeView } from './helpCodeViewLoader'
 import { markdownPlainText, parseMarkdown, type MarkdownBlock } from './repositoryGuideMarkdown'
 
 type Props = {
@@ -42,33 +43,54 @@ export const FOLLOW_MAX_MS = 10_000
 // and each diagram lays out again once it measures its width. Keep the
 // destination aligned as the article above it changes height, until focus
 // leaves it, the page scrolls other than by this alignment (screen-reader
-// browsing fires no key events), or the layout has settled.
-function followDestination(article: HTMLElement, scroller: HTMLElement | null, target: HTMLElement): () => void {
-  if (typeof ResizeObserver === 'undefined') return () => {}
+// browsing fires no key events), or the layout has settled. A layout that
+// settles only once `loaded` does (the code view, whose off-screen lines
+// CodeMirror sizes by estimate) is not idle before then, though the overall
+// cap still applies.
+type Follow = { stop: () => void; realign: () => void }
+function followDestination(article: HTMLElement, scroller: HTMLElement | null, target: HTMLElement, loaded?: Promise<unknown>): Follow | undefined {
+  if (typeof ResizeObserver === 'undefined') return undefined
   let alignedTop = scroller?.scrollTop
   let idle: ReturnType<typeof setTimeout> | undefined
+  let waiting = Boolean(loaded)
+  let stopped = false
+  const armIdle = () => {
+    clearTimeout(idle)
+    if (!waiting) idle = setTimeout(stop, FOLLOW_IDLE_MS)
+  }
   const stop = () => {
+    stopped = true
     observer.disconnect()
     scroller?.removeEventListener('scroll', onScroll)
     clearTimeout(idle)
     clearTimeout(cap)
   }
   const onScroll = () => { if (scroller && scroller.scrollTop !== alignedTop) stop() }
+  // Every alignment, the follow's own or another's (a taller toolbar), records
+  // where it left the page, so it is not taken for the reader's scroll.
+  const realign = () => {
+    target.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+    if (!stopped) alignedTop = scroller?.scrollTop
+  }
   const observer = new ResizeObserver(() => {
     if (article.ownerDocument.activeElement !== target) {
       stop()
       return
     }
-    target.scrollIntoView?.({ block: 'start', behavior: 'instant' })
-    alignedTop = scroller?.scrollTop
-    clearTimeout(idle)
-    idle = setTimeout(stop, FOLLOW_IDLE_MS)
+    realign()
+    armIdle()
   })
   const cap = setTimeout(stop, FOLLOW_MAX_MS)
-  idle = setTimeout(stop, FOLLOW_IDLE_MS)
+  armIdle()
+  // A view that fails to load settles the layout as surely as one that loads.
+  const release = () => {
+    waiting = false
+    if (!stopped) armIdle()
+  }
+  void loaded?.then(release, release)
   observer.observe(article)
   scroller?.addEventListener('scroll', onScroll, { passive: true })
-  return stop
+  return { stop, realign }
 }
 
 export default function GuideMarkdownArticle({ source, blocks: providedBlocks, className, section, sectionHref, resolveLink }: Props) {
@@ -81,19 +103,27 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
   const href = (id: string) => sectionHref?.(id) || `#${id}`
   const ref = useRef<HTMLDivElement>(null)
   const waitsForDiagrams = Boolean(section) && containsErDiagram(bodyBlocks)
+  // Code examples show their plain source in the highlighted view's box until
+  // it loads, so a deep link does not wait for them; it follows them, in case
+  // highlighting still changes the layout.
+  const followsCode = Boolean(section) && containsHighlightedCode(bodyBlocks)
+  const followsLazyBlocks = waitsForDiagrams || followsCode
   useEffect(() => {
     const container = ref.current
     if (!container) return
     // Use the actual toolbar height, including wrapping/zoom, rather than a fixed offset.
     const scroller = container.closest<HTMLElement>('.main-content')
     const toolbar = scroller?.querySelector<HTMLElement>('.main-topbar')
+    let follow: Follow | undefined
     const updateOffset = () => {
       container.style.setProperty('--help-scroll-offset', `${(toolbar?.offsetHeight || 80) + 32}px`)
       // Access and deployment controls may arrive after the first anchor jump.
-      // Re-align the focused destination when that makes the toolbar taller.
+      // Re-align the focused destination when that makes the toolbar taller,
+      // through the follow while there is one.
       const focused = container.ownerDocument.activeElement as HTMLElement | null
       if (section && focused?.id === section && toolbar && focused.getBoundingClientRect().top < toolbar.getBoundingClientRect().bottom + 24) {
-        focused.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+        if (follow) follow.realign()
+        else focused.scrollIntoView?.({ block: 'start', behavior: 'instant' })
       }
     }
     updateOffset()
@@ -101,16 +131,16 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
     if (toolbar) observer?.observe(toolbar)
     let cancelled = false
     let frame = 0
-    let stopFollowing = () => {}
-    // While a deep link waits for its diagrams, and while it follows them,
-    // the reader may scroll or move focus; from then on the page is theirs.
+    // While a deep link waits for its diagrams, and while it follows them or
+    // code examples, the reader may scroll or move focus; from then on the
+    // page is theirs.
     let readerActed = false
     const onIntent = () => {
       readerActed = true
-      stopFollowing()
+      follow?.stop()
     }
     const document = container.ownerDocument
-    if (waitsForDiagrams) for (const type of READER_INTENTS) document.addEventListener(type, onIntent, { capture: true, passive: true })
+    if (followsLazyBlocks) for (const type of READER_INTENTS) document.addEventListener(type, onIntent, { capture: true, passive: true })
     const jump = () => {
       frame = requestAnimationFrame(() => {
         if (readerActed) return
@@ -118,7 +148,7 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
         if (target) {
           target.scrollIntoView?.({ block: 'start', behavior: 'instant' })
           target.focus({ preventScroll: true })
-          if (waitsForDiagrams) stopFollowing = followDestination(container, scroller, target)
+          if (followsLazyBlocks) follow = followDestination(container, scroller, target, followsCode ? loadHelpCodeView() : undefined)
         } else if (scroller) {
           scroller.scrollTop = 0
         }
@@ -132,10 +162,10 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
       cancelled = true
       cancelAnimationFrame(frame)
       observer?.disconnect()
-      stopFollowing()
+      follow?.stop()
       for (const type of READER_INTENTS) document.removeEventListener(type, onIntent, true)
     }
-  }, [source, section, providedBlocks, waitsForDiagrams])
+  }, [source, section, providedBlocks, waitsForDiagrams, followsCode, followsLazyBlocks])
   const link = (heading: Heading) => <a href={href(heading.id)} aria-current={section === heading.id ? 'location' : undefined}><MarkdownLabel text={heading.text} /></a>
   return <div ref={ref} className={['guide-markdown-article', className].filter(Boolean).join(' ')} data-table-pagination="off">
     {headings.length > 1 && <nav className="help-article-toc" aria-label="On this page">

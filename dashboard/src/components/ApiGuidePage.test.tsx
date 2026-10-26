@@ -2,6 +2,7 @@
 import { act, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { loadHelpCodeView } from './helpCodeViewLoader'
 import { helpArticles, loadHelpSource } from '../helpContent'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
@@ -46,6 +47,9 @@ describe('Help documentation', () => {
     await render()
     const examples = Array.from(container.querySelectorAll<HTMLElement>('[role="region"][aria-label="json code example"]'))
     expect(examples).toHaveLength(5)
+    // The highlighted views load lazily; the plain source shows until then.
+    await act(async () => { await loadHelpCodeView() })
+    expect(examples.every(example => example.querySelector('.cm-editor'))).toBe(true)
     for (const example of examples) {
       expect(example.tabIndex).toBe(0)
       example.focus()
@@ -59,6 +63,7 @@ describe('Help documentation', () => {
     expect(container.textContent).toContain('MCP setup')
     expect(container.textContent).toContain('.venv/bin/python')
     const shellExample = container.querySelector('.markdown-code-editor[data-language="bash"]')
+    await act(async () => { await loadHelpCodeView() })
     expect(shellExample?.querySelector('.cm-content span')).not.toBeNull()
     expect(container.querySelector('nav[aria-label="Help areas"] a[aria-current="page"]')?.textContent).toBe('API & Automation')
     await navigate('#/docs?guide=authentication')
