@@ -3,6 +3,8 @@ package browser
 import (
 	"errors"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -123,4 +125,29 @@ func harProcessesGone(processes []harProcessIdentity) bool {
 		roles[p.Role] = true
 	}
 	return roles[harProcessGenerator]
+}
+
+// parseLinuxProcStatStart parses a Linux /proc/<pid>/stat record and returns
+// its start time (field 22, clock ticks after boot). Processes in zombie ('Z')
+// or dead ('X', 'x') states have already exited the kernel and closed all file
+// descriptors, so found is false once a well-formed stat record is verified.
+func parseLinuxProcStatStart(data []byte) (string, bool, error) {
+	// The command name is parenthesized and may hold spaces or ')'; fields
+	// resume after its last ')', starting at field 3 (state).
+	end := strings.LastIndexByte(string(data), ')')
+	if end < 0 {
+		return "", false, errors.New("malformed process stat")
+	}
+	fields := strings.Fields(string(data[end+1:]))
+	if len(fields) < 20 {
+		return "", false, errors.New("malformed process stat")
+	}
+	if _, err := strconv.ParseUint(fields[19], 10, 64); err != nil {
+		return "", false, err
+	}
+	switch fields[0] {
+	case "Z", "X", "x":
+		return "", false, nil
+	}
+	return fields[19], true, nil
 }

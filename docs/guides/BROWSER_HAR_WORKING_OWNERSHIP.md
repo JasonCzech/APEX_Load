@@ -68,8 +68,9 @@ is preserved and reported as unproven. Once every writer and worker has joined,
 raw retirement can still proceed under its separately bounded namespace wait,
 even when capture publication was refused. An artifact already qualified and
 published within the deadline stays valid during later retirement or retries.
-These finalization guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md).
-Native Linux/Windows crash qualification remains pending.
+These finalization guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md),
+and native [Linux](../qa/reviews/roadmap-browser-linux-har-crash-2026-10-26/README.md) and
+[Windows](../qa/reviews/windows-native-har-2026-10-16/README.md) crash qualification are recorded separately.
 
 ### Outstanding request limit
 
@@ -158,7 +159,11 @@ counts as no writer.
 Cleanup reclaims such a generation through the same retirement ledger only
 when its owner lease is free and every recorded process provably no longer
 exists: the same identified machine has booted again since, or, within this
-boot and PID namespace, no process has that PID with that start time. Without
+boot and PID namespace, no live process has that PID with that start time (on
+Linux a well-formed `/proc/<pid>/stat` record in zombie `Z` or dead `X`/`x`
+state has already exited the kernel and closed its descriptors, so an orphaned
+Playwright driver reparented to a PID-1 generator container without `--init`
+counts as exited once its stdin-EOF flush finishes). Without
 `writer-entered.json` no native writer ever had the working path, so the
 generator's exit is enough. A live process, a reused PID with a different
 start time, a lookup error, an identity recorded on another machine, an
@@ -378,12 +383,12 @@ administrator) access to the project.
   `/api/v1/scripts/{id}/browser-replay/sessions`) records a native HAR when
   asked with `record_har: true`; recording sets both capture aliases to
   `always`, overriding a script's own capture policy. It is opt-in because a
-  recording runs under the same limits as a load run's: past 100 MiB or
-  100,000 entries, or when the memory watchdog picks it, the browser context
-  is closed and the replay fails, and an owner that cannot be created fails
-  the replay's start. Where native HAR capture is not supported (see the
-  platform paragraph below), `record_har: true` is refused with 422 and the
-  replay does not start. Without it a replay records only when the script's own
+  recording runs under the same limits as a load run's: past 100 MiB,
+  100,000 entries, or 1,024 outstanding issued requests, or when the memory
+  watchdog picks it, the browser context is closed and the replay fails, and an
+  owner that cannot be created fails the replay's start. Where native HAR
+  capture is not supported (see the platform paragraph below), `record_har: true`
+  is refused with 422 and the replay does not start. Without it a replay records only when the script's own
   capture policy does (and serves that HAR as its native one); otherwise it
   serves the synthetic HAR built from its network entries. The Script
   Editor's debugger runs replays as script debug sessions, which offer no
@@ -594,7 +599,8 @@ with 422 before it starts. The coordinated local runtime acceptance host is
 macOS, where the ownership, crash-reclamation and real-driver tests run;
 results are recorded separately in the QA bundle. CI runs the same suites,
 real-driver crash test included, on Linux (the race lane, with Chromium and
-WebKit) and on Windows (the Windows leg of `desktop.yml`, recorded in the
+WebKit, recorded in the [Linux record](../qa/reviews/roadmap-browser-linux-har-crash-2026-10-26/README.md))
+and on Windows (the Windows leg of `desktop.yml`, recorded in the
 [Windows record](../qa/reviews/windows-native-har-2026-10-16/README.md)). The
 filesystems and peer processes must honor the existing descriptor-lock
 contract. Only scrubbed, completed HARs leave a generator; raw working files
