@@ -301,3 +301,90 @@ test('failures-only debugger capture preserves fetched resource evidence', async
     capturePageGate = undefined
   }
 })
+
+test('debug completion summary opens once, links failures, downloads retained HAR and reruns', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
+    name: 'Debug_summary_checkout', version: '1.0', protocol: 'http', config: { base_url: targetURL },
+    actions: [
+      { name: 'Get customer', type: 'request', method: 'GET', target: '/customer' },
+      { name: 'Check order', type: 'request', method: 'GET', target: '/order', assertions: [{ type: 'status_code', expected: 201 }] },
+    ],
+  } } })))
+  await page.setViewportSize({ width: 1500, height: 1000 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  await page.getByRole('button', { name: 'Debug options (0)', exact: true }).click()
+  const options = page.getByRole('region', { name: 'Session Overrides' })
+  await options.getByRole('checkbox', { name: 'Break on failure', exact: true }).uncheck()
+  await options.getByRole('button', { name: 'Done', exact: true }).click()
+  await page.locator('.topbar-debug-action-run').click()
+  const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
+  await expect(summary).toBeVisible()
+  await expect(summary.getByRole('status')).toContainText('Failed')
+  await expect(summary).toContainText('Debug_summary_checkout')
+  await expect(summary).toContainText('Check order')
+  await expect(summary).toContainText('HTTP 200')
+  await expect(summary.getByRole('heading', { name: 'Debug summary' })).toBeFocused()
+  const downloadPromise = page.waitForEvent('download')
+  await summary.getByRole('button', { name: 'Download HAR', exact: true }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/\.har$/)
+  const path = await download.path()
+  expect(path).toBeTruthy()
+  const raw = await readFile(path!, 'utf8')
+  const har = JSON.parse(raw)
+  expect(har.log.version).toBe('1.2')
+  expect(har.log.entries).toHaveLength(2)
+  await summary.getByRole('button', { name: 'Inspect Check order' }).click()
+  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  // Periodic session refreshes must not take the selected evidence tab away.
+  await page.waitForTimeout(1800)
+  await expect(summary).toBeHidden()
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click()
+  await summary.getByRole('button', { name: 'Debug again', exact: true }).click()
+  await expect(summary).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('debug-summary-desktop.png') })
+  await page.setViewportSize({ width: 900, height: 850 })
+  await expect(summary.getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Restart in step mode', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Paused before: Get customer' })).toBeVisible()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await expect(summary).toBeVisible()
+  await expect(summary.getByRole('status')).toContainText('Stopped')
+  await expect(summary).toContainText('No network traffic was retained')
+  await expect(summary.getByRole('button', { name: 'Download HAR', exact: true })).toHaveCount(0)
+})
+
+
+test('browser debug completion summary exports observed page and resource requests', async ({ page }) => {
+  test.setTimeout(90_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request, workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
+    name: 'Browser_debug_summary', version: '1.0', protocol: 'browser',
+    config: { browser: { engine: 'chromium', device_profile: 'desktop_1080p', headless: true } },
+    actions: [{ name: 'Open page', type: 'browser_navigate', target: `${targetURL}/capture-page` }],
+  } } })))
+  await page.setViewportSize({ width: 1500, height: 1000 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  await page.locator('.topbar-debug-action-run').click()
+  const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
+  await expect(summary).toBeVisible({ timeout: 60_000 })
+  await expect(summary.getByRole('status')).toContainText('Passed')
+  const downloadPromise = page.waitForEvent('download')
+  await summary.getByRole('button', { name: 'Download HAR', exact: true }).click()
+  const download = await downloadPromise
+  const file = await download.path(); expect(file).toBeTruthy()
+  const har = JSON.parse(await readFile(file!, 'utf8'))
+  const urls = har.log.entries.map((entry: { request: { url: string } }) => entry.request.url)
+  expect(urls).toContain(`${targetURL}/capture-page`)
+  expect(urls).toContain(`${targetURL}/capture-resource`)
+  await summary.getByRole('button', { name: 'Return to debugger', exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Browser Replay', exact: true })).toHaveAttribute('aria-selected', 'true')
+})

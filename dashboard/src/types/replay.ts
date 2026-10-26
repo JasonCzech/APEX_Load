@@ -374,7 +374,16 @@ export interface ScriptDebugRuntimeState {
   snapshot: ReplayRuntimeSnapshot | null
 }
 
+export interface ScriptDebugHARAvailability {
+  eligible: boolean
+  available: boolean
+  retained_request_count: number
+  reason?: string
+  limitations: string
+}
+
 export interface ScriptDebugSession {
+  har?: ScriptDebugHARAvailability
   session_incarnation?: string
   state_revision?: string
   runtime_state?: ScriptDebugRuntimeState

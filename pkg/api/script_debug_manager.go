@@ -80,6 +80,7 @@ type ScriptDebugSession struct {
 	StateRevision              string                      `json:"state_revision"`
 	RuntimeState               ScriptDebugRuntimeState     `json:"runtime_state"`
 	RuntimeEvidenceUnavailable bool                        `json:"runtime_evidence_unavailable,omitempty"`
+	HAR                        ScriptDebugHARAvailability  `json:"har"`
 	ID                         string                      `json:"id"`
 	Mode                       string                      `json:"mode,omitempty"`
 	ScriptID                   string                      `json:"script_id,omitempty"`
@@ -456,8 +457,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 			RunID:           session.RunID,
 			ContinueOnError: &continueOnError,
 			DebugController: scriptDebugController{manager: m, session: session},
-			// Debug sessions offer no HAR: one the script's own capture policy
-			// recorded is retired rather than left in the HAR directory.
+			// Native captures are retired; debug HAR exports use retained observations.
 			DiscardHAR: retireReplayHARArtifacts,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				m.handleReplayProgress(ctx, session, event)
@@ -1712,6 +1712,7 @@ func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 	runtimeState := s.runtimeStateLocked()
 	clone := &ScriptDebugSession{
 		SessionIncarnation:         s.SessionIncarnation,
+		HAR:                        scriptDebugHARAvailability(s),
 		StateRevision:              runtimeState.StateRevision,
 		RuntimeState:               runtimeState,
 		ID:                         s.ID,

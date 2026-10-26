@@ -156,6 +156,9 @@ export async function expectDebugOutcome(page: Page, outcome: 'passed' | 'failed
   const badge = page.locator('.debug-session-bar .replay-live-badge').filter({ hasText: outcome === 'passed' ? /^Passed$/ : /^Failed$/ })
   const chip = page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: outcome === 'passed' ? /^Debugged/ : /^Debug failed/ })
   await expect(badge.or(chip).first()).toBeVisible()
+  // Completion opens the summary; callers of this helper continue inspecting evidence.
+  const returnToDebugger = page.getByRole('button', { name: 'Return to debugger', exact: true })
+  if (await returnToDebugger.isVisible()) await returnToDebugger.click()
 }
 
 export function mutation(page: Page, method: string, path: string) {

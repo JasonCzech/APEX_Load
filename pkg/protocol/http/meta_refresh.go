@@ -170,6 +170,9 @@ func (h *HTTP) followMetaRefresh(ctx context.Context, action *protocol.Action, r
 	if err != nil {
 		return fail(err)
 	}
+	if h.captureReplayNetwork {
+		final.NetworkEntries = append(result.NetworkEntries, final.NetworkEntries...)
+	}
 	mergeMetaRefreshPage(final, result)
 	final.ProtocolEvidence = buildHTTPProtocolEvidence(action, final)
 	return final, true
@@ -257,6 +260,7 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		cacheContentURLsOnly:       h.cacheContentURLsOnly,
 		cacheCheckNewerVersions:    h.cacheCheckNewerVersions,
 		captureCorrelationEvidence: h.captureCorrelationEvidence,
+		captureReplayNetwork:       h.captureReplayNetwork,
 	}
 	if h.resources != nil {
 		r := *h.resources

@@ -63469,7 +63469,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": string;
         };
       };
       "401": {
@@ -63483,6 +63483,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -63505,7 +63510,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": string;
         };
       };
       "401": {
@@ -63519,6 +63524,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -90176,6 +90186,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -90905,6 +90922,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -113910,6 +113934,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -114644,6 +114675,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -155595,6 +155633,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -156329,6 +156374,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -166526,6 +166578,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -168162,6 +168221,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -169799,6 +169865,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -171435,6 +171508,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -172294,6 +172374,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -173037,6 +173124,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -174618,6 +174712,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -175347,6 +175448,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -191497,6 +191605,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -192240,6 +192355,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -192983,6 +193105,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -193726,6 +193855,13 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{

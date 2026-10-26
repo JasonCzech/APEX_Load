@@ -1,0 +1,11 @@
+.debug-completion-summary { padding: 24px; overflow: auto; height: 100%; box-sizing: border-box; }
+.debug-summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.debug-summary-heading h2 { margin: 0; }
+.debug-summary-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.debug-summary-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; }
+.debug-summary-facts dt { color: var(--text-secondary); font-size: 12px; }
+.debug-summary-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.debug-summary-issues { list-style: none; padding: 0; }
+.debug-summary-issues li { padding: 16px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.debug-summary-issues p { white-space: pre-wrap; }
+.debug-summary-issues button { margin-left: 12px; }

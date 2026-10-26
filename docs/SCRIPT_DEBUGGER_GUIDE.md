@@ -40,6 +40,22 @@ A pause request while an action is executing remains unavailable until the engin
 
 **Recent runs** retains up to five completed runs in the current editor session, with protocol-appropriate evidence. Pin a comparison baseline to inspect differences in outcomes, assertions, resolved requests, responses, variables and configuration. This is temporary editor history; use **Export session** before closing. The export includes the captured run controls and retained evidence; seed-variable names are exported without their original input values.
 
+## Completion summary
+
+When a debug run completes, fails, or stops, **Summary** opens in the main debug
+workspace. It shows the run outcome, source revision, elapsed time, retained action
+counts, errors, and warnings. **Inspect** opens a failed action's evidence;
+**Return to debugger** restores the evidence view, and **Debug again** checks the
+current draft. Editing the script leaves the completed snapshot intact and marks
+it as results from an earlier draft. Dropped or truncated evidence is identified.
+
+HTTP and browser scripts offer **Download HAR** when the session retains network
+requests. This is a redacted HAR 1.2 derived from observed traffic; bodies,
+intermediate redirects, and detailed timings may be unavailable. Refused actions
+and cache hits do not become dispatched requests. Failed and stopped runs can
+still export retained traffic. Summary downloads follow existing debug-session
+retention and project access; download evidence before the session expires.
+
 ## Routes
 
 Use `/api/v1/replay/sessions/{session_id}` for session reads and transport controls; it is the canonical route family. The older `/api/v1/script-debug/sessions/{session_id}` routes are still registered but marked deprecated in `swagger.yaml`. Browser replay canary sessions still use `/api/v1/browser-replay/sessions/{session_id}`.

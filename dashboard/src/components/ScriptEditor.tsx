@@ -1,3 +1,6 @@
+import DebugCompletionSummary from './DebugCompletionSummary'
+import { useDebugCompletionSummary } from './debugCompletionModel'
+import { downloadBlob } from '../utils/fileUtils'
 import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { nativeJavaScriptTemplate } from './nativeServicesModel'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
@@ -1335,6 +1338,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const descriptors: CenterWorkbenchTabDescriptor[] = [
       { id: ACTION_LIST_TAB_ID, label: 'Action editor', title: 'Action editor', closeable: false },
       { id: SCRIPT_JSON_TAB_ID, label: 'DSL', title: 'DSL', closeable: false },
+      { id: 'debug-summary', label: 'Summary', title: 'Debug run summary', closeable: false },
       ...(isBrowserScript ? [{ id: BROWSER_REPLAY_TAB_ID, label: 'Browser Replay', title: 'Browser Replay Cockpit', closeable: false }] : []),
       { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings', closeable: false },
       { id: 'parameter-data', label: 'Parameters', title: 'Parameters', closeable: false },
@@ -1466,7 +1470,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [availableCenterTabIds])
   useEffect(() => {
     if (workspaceTab === 'debug' && isBrowserScript && (centerTabsState.activeTabId === ACTION_LIST_TAB_ID || DEBUG_HIDDEN_CENTER_TABS.has(centerTabsState.activeTabId))) openCenterTab(BROWSER_REPLAY_TAB_ID)
-    if (workspaceTab === 'author' && centerTabsState.activeTabId === BROWSER_REPLAY_TAB_ID) openCenterTab(ACTION_LIST_TAB_ID)
+    if (workspaceTab === 'author' && (centerTabsState.activeTabId === BROWSER_REPLAY_TAB_ID || centerTabsState.activeTabId === 'debug-summary')) openCenterTab(ACTION_LIST_TAB_ID)
   }, [centerTabsState.activeTabId, isBrowserScript, openCenterTab, workspaceTab])
   useEffect(() => {
     if (centerTabsHydratedKey !== centerTabsStorageKey) return
@@ -3498,7 +3502,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const nextDocument = workspaceDocuments.current[nextTab]
       || (nextTab === 'debug' && isBrowserScript ? BROWSER_REPLAY_TAB_ID : ACTION_LIST_TAB_ID)
     setWorkspaceTab(nextTab)
-    openCenterTab(nextDocument === BROWSER_REPLAY_TAB_ID && nextTab === 'author' ? ACTION_LIST_TAB_ID : nextDocument)
+    openCenterTab((nextDocument === BROWSER_REPLAY_TAB_ID || nextDocument === 'debug-summary') && nextTab === 'author' ? ACTION_LIST_TAB_ID : nextDocument)
     if (nextTab === 'debug') {
       setDebuggerTab('request')
     }
@@ -3510,6 +3514,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [activateWorkspaceTab, setDebuggerSettingsOpen])
 
   const currentRunRef = useRef<Omit<DebugRunRecord, 'report'> | null>(null)
+  const showDebugSummary = useCallback(() => { setWorkspaceTab('debug'); setDebugDetailCollapsed(true); openCenterTab('debug-summary') }, [openCenterTab, setDebugDetailCollapsed])
+  const debugCompletionSnapshot = useDebugCompletionSummary({
+    session: browserReplaySession, report: replayReport, running: replaying,
+    scriptName: currentRunRef.current?.scriptName || script.name,
+    draft: currentRunRef.current?.draft || false,
+    onComplete: showDebugSummary,
+  })
   const [retainedDebugRunHistory, setDebugRunHistory] = useState<DebugRunRecord[]>([])
   const debugRunHistory = useMemo(() => retainedDebugRunHistory.map(record =>
     runtimeEvidenceUnavailable(record.report) || (runtimeVariablesUnavailable &&
@@ -3615,7 +3626,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         ...(replayOptions.afterFailure !== 'test-run' ? { continue_on_error: replayOptions.afterFailure === 'continue' } : {}),
       }
       currentRunRef.current = {
-        id: replaySessionId, options: structuredClone({ ...replayOptions, startPaused, liveTableSeedsText: undefined }), breakpoints: structuredClone(payload.breakpoints),
+        id: replaySessionId, scriptName: currentScript.name, options: structuredClone({ ...replayOptions, startPaused, liveTableSeedsText: undefined }), breakpoints: structuredClone(payload.breakpoints),
         target: currentScript.config.base_url || 'Action-specific targets', draft: scriptEditorDirty, dataSourceCount: currentScript.data_sources?.length || 0,
         failurePolicy: debugContinuesAfterFailure(replayOptions, currentScript) ? 'Continue on error' : 'Stop on error',
         inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),
@@ -7032,6 +7043,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setRevalidateAfterEdit(count => count + 1)
   }
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
+    if (tabId === 'debug-summary') {
+      if (!debugCompletionSnapshot || debugCompletionSnapshot.session.id !== (activeReplaySessionId || replayReport?.replay_session_id || browserReplaySession?.id)) return <p className="debug-completion-summary">Complete a debug run to view its summary.</p>
+      const returnToDebugger = () => {
+        openCenterTab(isBrowserScript ? BROWSER_REPLAY_TAB_ID : ACTION_LIST_TAB_ID)
+        setDebugDetailCollapsed(false)
+      }
+      return <DebugCompletionSummary key={debugCompletionSnapshot.key}
+        snapshot={debugCompletionSnapshot} stale={!replayEvidenceMatchesCurrentDraft}
+        unavailable={runtimeVariablesUnavailable}
+        onReturn={returnToDebugger}
+        onDebugAgain={() => { returnToDebugger(); void handleReplay() }}
+        onSelectEvent={index => { returnToDebugger(); setDebuggerTab('request'); setExpandedReplayEvent(index) }}
+        onDownloadHAR={async () => {
+          const content = await api.exportScriptDebugSession(debugCompletionSnapshot.session.id, 'har')
+          if (!(content instanceof Blob)) throw new Error('HAR export returned an invalid response.')
+          await downloadBlob(content, `script-debug-${sanitizeDownloadName(debugCompletionSnapshot.session.id, 'run')}.har`)
+        }}
+      />
+    }
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
       return (
         <ScriptBrowserEvidence
@@ -7114,7 +7144,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
     const workbenchTabs = mode === 'debug'
       ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Action evidence', title: 'Action evidence' } : tab)
-      : visibleCenterTabs.filter(tab => tab.id !== BROWSER_REPLAY_TAB_ID)
+      : visibleCenterTabs.filter(tab => tab.id !== BROWSER_REPLAY_TAB_ID && tab.id !== 'debug-summary')
     const fallbackTabs = centerTabDescriptors.filter(tab => mode !== 'debug' || !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
     return (
       <CenterTabbedPane

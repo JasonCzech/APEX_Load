@@ -377,6 +377,13 @@ async function flushReact() {
   })
 }
 
+// These legacy cases inspect action evidence after completion. The completion
+// summary itself is covered by its component tests and the browser workflow.
+async function returnToDebugger(root: ParentNode) {
+  const button = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(candidate => candidate.textContent === 'Return to debugger')
+  if (button) await act(async () => { button.click() })
+}
+
 function findDebuggerRunButton(root: ParentNode, title = 'Run Replay') {
   return findButtonByTitle(root, title)
 }
@@ -3079,6 +3086,7 @@ describe('ScriptEditor', () => {
     })
     await flushReact()
 
+    await returnToDebugger(container)
     expect(container.textContent).toContain('Could not check whether this script has a stored baseline')
     expect(container.textContent).not.toContain('No stored baseline for this script')
   })
@@ -6677,6 +6685,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    await returnToDebugger(container)
     const diagnoseButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent === 'Diagnose correlations')
     expect(diagnoseButton).toBeDefined()
@@ -6737,6 +6746,7 @@ describe('ScriptEditor', () => {
     expect(debugOutlineRow(container, 'First evidence')?.querySelector('.script-outline-status.pass')).not.toBeNull()
     expect(debugOutlineRow(container, 'Failed evidence')?.querySelector('.script-outline-status.fail')).not.toBeNull()
     expect(debugOutlineRow(container, 'Failed evidence')?.getAttribute('aria-label')).toContain('Failed')
+    await returnToDebugger(container)
     const resources = container.querySelector('[aria-label="Captured resources"]')
     if (privacy) {
       expect(resources).toBeNull()
@@ -6998,6 +7008,7 @@ describe('ScriptEditor', () => {
     apiMock.startScriptDebugSession.mockResolvedValueOnce({ ...debugSessionResponse(terminal), replay_session_id: 'debug-session-2', debug_session_id: 'debug-session-2', session: { ...debugSessionResponse({ ...terminal, replay_session_id: 'debug-session-2' }).session, ...unavailableRuntimeMetadata('debug-session-2', 'completed', '3') } })
     await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
     await flushReact()
+    await returnToDebugger(container)
     expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
     expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).not.toContain('stale-final-value')
     await act(async () => { const select = container.querySelector('[aria-label="Variable watches"] select') as HTMLSelectElement; select.value = 'retained'; select.dispatchEvent(new Event('change', { bubbles: true })) })
@@ -7013,6 +7024,7 @@ describe('ScriptEditor', () => {
     await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
     await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
     await flushReact()
+    await returnToDebugger(container)
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Variables')!.click())
     const watches = container.querySelector('[aria-label="Variable watches"]')
     expect(watches?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
@@ -9565,6 +9577,7 @@ describe('ScriptEditor', () => {
         }),
       }),
     }))
+    await returnToDebugger(container)
     expect(findCenterTab(container, 'Browser Replay')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-browser-evidence')).not.toBeNull()
     expect(container.querySelector('.selected-evidence-header')?.textContent).toContain('Search Results')
@@ -10012,6 +10025,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    await returnToDebugger(container)
     expect(container.querySelector('.replay-failure-pin')).toBeNull() // selected failure already shows the diagnosis
     expect(container.textContent).toContain('Auth Session')
     expect(container.textContent).toContain('Refresh session setup')
@@ -11734,6 +11748,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    await returnToDebugger(container)
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalled()
     expect(container.textContent).toContain('SOAP Fault')
     expect(container.textContent).toContain('SOAP 1.2')
@@ -11892,6 +11907,7 @@ describe('ScriptEditor', () => {
       })
     }
 
+    await returnToDebugger(container)
     expect(container.textContent).toContain('Protocol Evidence')
     expect(container.textContent).toContain('database / db_query / failed / sqlite')
     expect(container.textContent).toContain('row_count')
@@ -11974,6 +11990,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    await returnToDebugger(container)
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalled()
     expect(container.textContent).toContain('Page URL')
     expect(container.textContent).toContain('https://shop.example.com/catalog')
@@ -12100,6 +12117,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    await returnToDebugger(container)
     expect(container.textContent).toContain('Page URL')
     expect(container.textContent).toContain('https://shop.example.com/catalog')
     expect(container.textContent).toContain('Page Title')

@@ -718,6 +718,18 @@ describe('useScriptApi import wrappers', () => {
     expect(apiFetch).toHaveBeenCalledWith('/replay/sessions/debug-1/export?format=log')
   })
 
+  it('shows the server reason when a HAR is unavailable', async () => {
+    ;(apiFetch as Mock).mockResolvedValueOnce({ ok: false, statusText: 'Conflict', json: vi.fn().mockResolvedValue({ error: 'Runtime evidence unavailable.' }) })
+    await expect(api.exportScriptDebugSession('debug-1', 'har')).rejects.toThrow('Runtime evidence unavailable.')
+  })
+
+  it('downloads debug HAR from the replay alias as a blob', async () => {
+    const blob = new Blob(['{"log":{"version":"1.2","entries":[]}}'], { type: 'application/json' })
+    ;(apiFetch as Mock).mockResolvedValueOnce({ ok: true, blob: vi.fn().mockResolvedValue(blob) })
+    await expect(api.exportScriptDebugSession('debug-1', 'har')).resolves.toBe(blob)
+    expect(apiFetch).toHaveBeenCalledWith('/replay/sessions/debug-1/export?format=har')
+  })
+
   it('keeps data-pool exports as blobs instead of materializing a second text copy', async () => {
     const blob = new Blob(['customer_id,region\nC-1,east\n'], { type: 'text/csv' })
     const readBlob = vi.fn().mockResolvedValue(blob)

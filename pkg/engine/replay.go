@@ -466,6 +466,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if captureCorrelationEvidence {
 		protoConfig[protocol.CorrelationEvidenceCaptureConfigKey] = true
 	}
+	if opts.DebugController != nil {
+		protoConfig[protocol.ReplayNetworkCaptureConfigKey] = true
+	}
 	_, harProvider := proto.(protocol.BrowserHARArtifactProvider)
 	recordsHAR := harProvider && opts.RecordHAR
 	// A caller that handles HARs is handed whatever the browser published,

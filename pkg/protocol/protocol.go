@@ -902,6 +902,8 @@ const (
 	// Replay alone is not sufficient to enable raw exchange capture: the engine
 	// sets this only when a private pre-scrub correlation observer is present.
 	CorrelationEvidenceCaptureConfigKey = "apexload_internal_capture_correlation_evidence"
+	// ReplayNetworkCaptureConfigKey enables bounded HTTP observations for interactive debugging.
+	ReplayNetworkCaptureConfigKey = "apexload_internal_capture_replay_network"
 	// MaxCorrelationEvidenceBytes bounds the aggregate private request/response
 	// exchange before it is copied into replay-only correlation evidence.
 	MaxCorrelationEvidenceBytes = 12 << 20

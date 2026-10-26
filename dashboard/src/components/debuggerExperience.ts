@@ -4,6 +4,7 @@ import type { ReplayOptionsState } from './scriptEditorState'
 
 export type DebugCapture = 'diagnostic' | 'errors' | 'script'
 export interface DebugRunRecord {
+  scriptName?: string
   id: string
   report: BrowserReplayReport
   options: ReplayOptionsState

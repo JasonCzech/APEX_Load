@@ -87,6 +87,7 @@ type HTTP struct {
 	cacheContentURLsOnly       bool
 	cacheCheckNewerVersions    bool
 	resources                  *resourceFetcher
+	captureReplayNetwork       bool
 	captureCorrelationEvidence bool
 	// page is the virtual user's HTML page context, shared with the
 	// per-version clones; nil unless the script has HTML-mode steps.
@@ -179,6 +180,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.authDelay = boundedHTTPTimeout(config, "challenge_delay_ms")
 	h.baseURL, _ = config["base_url"].(string)
 	h.captureCorrelationEvidence, _ = config[protocol.CorrelationEvidenceCaptureConfigKey].(bool)
+	h.captureReplayNetwork, _ = config[protocol.ReplayNetworkCaptureConfigKey].(bool)
 	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
 	h.traceparentEnabled = parseTraceparentEnabled(config)
@@ -759,6 +761,22 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if !cacheHit {
 		var err error
 		resp, err = client.Do(req)
+		if h.captureReplayNetwork {
+			// Record only dispatched exchanges, before cache revalidation or
+			// meta-refresh can replace the response. Timings and bodies are omitted.
+			observed := req
+			if resp != nil && resp.Request != nil {
+				observed = resp.Request
+			}
+			entry := protocol.NetworkEntry{URL: observed.URL.String(), Method: observed.Method}
+			if resp != nil {
+				entry.StatusCode = resp.StatusCode
+			}
+			if err != nil {
+				entry.FailureKind = "transport"
+			}
+			result.NetworkEntries = append(result.NetworkEntries, entry)
+		}
 		if err != nil {
 			result.Duration = time.Since(result.StartTime)
 			reused, rCount, rDur := applyTraceTelemetry()

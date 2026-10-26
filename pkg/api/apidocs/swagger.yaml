@@ -148161,6 +148161,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -148817,6 +148836,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -150302,6 +150322,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -150958,6 +150997,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -151021,7 +151061,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: string
         "401":
           description: Authentication required or invalid.
           content:
@@ -151036,6 +151076,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -152503,6 +152549,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -153159,6 +153224,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -154650,6 +154716,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -155306,6 +155391,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -156791,6 +156877,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -157447,6 +157552,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -158937,6 +159043,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -159593,6 +159718,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -161084,6 +161210,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -161740,6 +161885,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -203312,6 +203458,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -203968,6 +204133,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -205454,6 +205620,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -206110,6 +206295,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -206174,7 +206360,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: string
         "401":
           description: Authentication required or invalid.
           content:
@@ -206189,6 +206375,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -207657,6 +207849,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -208313,6 +208524,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -209805,6 +210017,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -210461,6 +210692,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -211947,6 +212179,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -212603,6 +212854,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -214094,6 +214346,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -214750,6 +215021,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -216242,6 +216514,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -216898,6 +217189,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -244134,6 +244426,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -244790,6 +245101,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -262756,6 +263068,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -263412,6 +263743,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -296988,6 +297320,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -297644,6 +297995,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -348921,6 +349273,25 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -349577,6 +349948,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
