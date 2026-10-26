@@ -864,3 +864,8 @@
   max-width: 100%;
   height: auto;
 }
+
+.run-report-timeline-time-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 12px 0; }
+.run-report-timeline-time-form label { display: grid; gap: 4px; font-size: 13px; }
+.run-report-timeline-time-form input, .run-report-timeline-time-form select { width: 100%; min-height: 34px; padding: 6px 8px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; }
+.run-report-timeline-time-form p { flex-basis: 100%; margin: 0; font-size: 12px; overflow-wrap: anywhere; }
