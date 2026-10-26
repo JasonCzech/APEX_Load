@@ -15,7 +15,9 @@ const reported = vi.hoisted(() => vi.fn())
 vi.mock('../utils/clientErrorReporting', async importOriginal => ({ ...await importOriginal<typeof import('../utils/clientErrorReporting')>(), reportClientError: reported }))
 vi.mock('./HelpCodeView', async () => {
   chunk.started++
-  await chunk.ready
+  // Bounded, so a renderer that imports the view statically fails this file
+  // instead of hanging its import.
+  await Promise.race([chunk.ready, new Promise(resolve => setTimeout(resolve, 5_000))])
   chunk.rejected = true
   throw new Error('code view chunk unavailable')
 })

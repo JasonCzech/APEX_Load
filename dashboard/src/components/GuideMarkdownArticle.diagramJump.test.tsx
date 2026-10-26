@@ -128,17 +128,19 @@ it('jumps to the section of an article without diagrams at once, without loading
   expect(codeLoader.calls).toBe(0)
 })
 
-it('jumps to a section below code examples only once their highlighted view has loaded', async () => {
+it('jumps to a section below code examples at once, and keeps it aligned while their highlighted view loads', async () => {
   const codeArticle = ['# Guide', '## Setup', '```json', '{ "a": 1 }', '```', '## Limits', 'Text.'].join('\n')
   await render(codeArticle, 'limits')
-  await runFrames()
-  // The example and the deep link both wait for the code view; no diagram renderer loads.
-  expect(codeLoader.calls).toBe(2)
+  // Only the example loads the code view; the deep link does not wait for it,
+  // and no diagram renderer loads.
+  expect(codeLoader.calls).toBe(1)
   expect(loader.calls).toBe(0)
   // The example shows its plain source in the same region until then.
   expect(scroller.querySelector('.markdown-code-editor .help-code-plain code')?.textContent).toBe('{ "a": 1 }')
-  expect(scrolled).toEqual([])
-  expect(document.activeElement?.id).not.toBe('limits')
+  await runFrames()
+  expect(scrolled).toEqual(['limits'])
+  expect(document.activeElement?.id).toBe('limits')
+  scrolled.length = 0
 
   await act(async () => {
     for (const release of codeLoader.pending.splice(0)) release()
@@ -148,9 +150,9 @@ it('jumps to a section below code examples only once their highlighted view has 
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
   expect(scroller.querySelector('.markdown-code-editor .cm-editor')).not.toBeNull()
   expect(scroller.querySelector('.help-code-plain')).toBeNull()
-  await runFrames()
+  // If the view changes the article's layout, the destination stays aligned.
+  notifyResize()
   expect(scrolled).toEqual(['limits'])
-  expect(document.activeElement?.id).toBe('limits')
 })
 
 it('jumps to a section below ER diagrams only once they have drawn, and keeps it aligned until the reader acts', async () => {
