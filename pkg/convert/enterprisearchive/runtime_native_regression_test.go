@@ -167,13 +167,13 @@ UseCustomAgent=1
 func TestParseRuntimeCfgRejectsUnknownTLSVersionWithPartialReview(t *testing.T) {
 	files := map[string]string{
 		"default.cfg": `[SSL]
-SSLVersion=SSL3
+SSLVersion=TLS-next
 `,
 	}
 	cfgName, rc := resolveRuntimeConfig(files, nil)
 	config := rc.ToScriptConfig()
 	if config.HTTP.TLS.MinVersion != "" || config.HTTP.TLS.MaxVersion != "" {
-		t.Fatalf("TLS config = %#v, want APEX defaults for unsupported SSL3", config.HTTP.TLS)
+		t.Fatalf("TLS config = %#v, want APEX defaults for unsupported TLS-next", config.HTTP.TLS)
 	}
 
 	sections := selectedRuntimeSections(collectRuntimeSections(files), cfgName, rc)
@@ -182,7 +182,7 @@ SSLVersion=SSL3
 	if entry.Status != RuntimeSettingStatusPartial {
 		t.Fatalf("tls parity = %#v, want partial", entry)
 	}
-	if !strings.Contains(entry.Notes, `SSL3`) || len(entry.RuntimeFiles) != 1 || entry.RuntimeFiles[0] != "default.cfg" {
+	if !strings.Contains(entry.Notes, `TLS-next`) || len(entry.RuntimeFiles) != 1 || entry.RuntimeFiles[0] != "default.cfg" {
 		t.Fatalf("tls parity = %#v, want raw value and cfg provenance", entry)
 	}
 }

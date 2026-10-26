@@ -723,6 +723,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			supportMode := SourceFunctionSupportExecutable
 			mappingStatus := "converted"
 			mappingNotes := "Mapped from source runtime control."
+			if warning := stringMapValue(details, "migration_warning", ""); warning != "" {
+				mappingNotes = warning
+				result.Warnings = append(result.Warnings, warning)
+			}
 			if partial, _ := details["mapping_partial"].(bool); partial {
 				supportMode = SourceFunctionSupportReviewOnly
 				mappingStatus = "review_only"

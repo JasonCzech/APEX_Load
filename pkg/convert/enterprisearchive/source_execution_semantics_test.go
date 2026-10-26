@@ -142,22 +142,22 @@ func TestUnknownSourceTLSVersionUsesDefaultsAndRequiresReview(t *testing.T) {
 	result := convertSourceExecutionFixture(t, `
 Action()
 {
-	web_set_sockets_option("SSL_VERSION", "SSL3");
+	web_set_sockets_option("SSL_VERSION", "TLS-next");
 	web_url("request", "URL=https://example.test/", LAST);
 	return 0;
 }`)
 
 	if result.Script.Config.HTTP.TLS.MinVersion != "" || result.Script.Config.HTTP.TLS.MaxVersion != "" {
-		t.Fatalf("TLS config = %#v, want defaults for unsupported SSL3", result.Script.Config.HTTP.TLS)
+		t.Fatalf("TLS config = %#v, want defaults for unsupported TLS-next", result.Script.Config.HTTP.TLS)
 	}
 	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_set_sockets_option", SourceFunctionSupportReviewOnly)
-	if !strings.Contains(strings.Join(result.Warnings, "\n"), "SSL3") {
-		t.Fatalf("warnings = %#v, want unsupported SSL3 review evidence", result.Warnings)
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "TLS-next") {
+		t.Fatalf("warnings = %#v, want unsupported TLS-next review evidence", result.Warnings)
 	}
 
 	key := "web_set_sockets_option.SSL_VERSION"
-	if runtimeAdditionalAttributeIsNativelyMapped(result.Script.Config, key, "SSL3") {
-		t.Fatal("unsupported SSL3 compatibility attribute was classified as natively executed")
+	if runtimeAdditionalAttributeIsNativelyMapped(result.Script.Config, key, "TLS-next") {
+		t.Fatal("unsupported TLS-next compatibility attribute was classified as natively executed")
 	}
 }
 

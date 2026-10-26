@@ -20,12 +20,12 @@ import (
 
 // savedEvaluationArchiveAction requests the cart with {CartId} before the
 // home response that saves it, so the import stamps conditional_producer on
-// the cart, and has two legacy SSL settings whose TLS gates block the
+// the cart, and has two unsupported TLS settings whose gates block the
 // fidelity report until a repair. header, when set, is a literal header the
 // conversion keeps on "orders".
 func savedEvaluationArchiveAction(header string) string {
 	var action strings.Builder
-	action.WriteString("Action()\n{\n\tweb_set_sockets_option(\"SSL_VERSION\", \"2&3\");\n")
+	action.WriteString("Action()\n{\n\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-next\");\n")
 	if header != "" {
 		action.WriteString("\tweb_add_header(\"Authorization\", \"" + header + "\");\n")
 	}
@@ -62,7 +62,7 @@ func saveRepairedEvaluationArchive(t *testing.T, header string) (*Server, *stora
 	}
 	gates := executionGatePaths(saved, "legacy_tls_replacement")
 	if len(gates) != 2 {
-		t.Fatalf("saved TLS gates = %v, want one per legacy SSL setting", gates)
+		t.Fatalf("saved TLS gates = %v, want one per unsupported TLS setting", gates)
 	}
 	_, tag := requireAuthoringAPIProjection(t, server, saved.ID)
 	decodeScriptRepair(t, scriptRepairCall(t, server, saved.ID, "apply", selectTLSRepair(gates[0]), tag))

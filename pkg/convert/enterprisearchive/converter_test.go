@@ -847,7 +847,7 @@ Action()
 // listing both can show the requirement once. A guided repair clears only the
 // gate's codes, and the covered warning must survive it.
 func TestConvertLegacyTLSGateCoversItsWarning(t *testing.T) {
-	for _, value := range []string{"2&3", "AUTO"} {
+	for _, value := range []string{"TLS-next", "AUTO"} {
 		t.Run(value, func(t *testing.T) {
 			parsed, err := ParseActionFile("Action.c", `
 Action()

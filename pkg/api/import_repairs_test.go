@@ -859,7 +859,7 @@ func TestImportRepairRestampedPreflightResolvesProjectSecrets(t *testing.T) {
 	assertSecrets("protected candidate", persisted, configured, false)
 }
 
-// An archive with two legacy SSL settings in vuser_init: one select_tls apply
+// An archive with two unsupported TLS settings in vuser_init: one select_tls apply
 // clears both gates, the restamped candidate validates, and the repaired
 // draft saves as reviewed.
 func TestImportRepairSelectTLSOnValidatedArchiveSavesRepairedDraft(t *testing.T) {
@@ -872,7 +872,7 @@ func TestImportRepairSelectTLSOnValidatedArchiveSavesRepairedDraft(t *testing.T)
 	writer := zip.NewWriter(&archive)
 	for name, content := range map[string]string{
 		"TLSRepair.usr": "[General]\nType=Web\n[Actions]\nvuser_init=vuser_init.c\nAction=Action.c\nvuser_end=vuser_end.c\n",
-		"vuser_init.c":  "vuser_init()\n{\n\tweb_set_sockets_option(\"SSL_VERSION\", \"2&3\");\n\tweb_url(\"home\", \"URL=https://example.test/\", \"Resource=0\", LAST);\n\tweb_set_sockets_option(\"SSL_VERSION\", \"AUTO\");\n\treturn 0;\n}\n",
+		"vuser_init.c":  "vuser_init()\n{\n\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-next\");\n\tweb_url(\"home\", \"URL=https://example.test/\", \"Resource=0\", LAST);\n\tweb_set_sockets_option(\"SSL_VERSION\", \"AUTO\");\n\treturn 0;\n}\n",
 		// The credential makes the draft a protected candidate, as guided
 		// repair requires.
 		"Action.c":    "Action()\n{\n\tweb_add_header(\"Authorization\", \"Bearer tls-repair-synthetic-token\");\n\tweb_url(\"orders\", \"URL=https://example.test/orders\", \"Resource=0\", LAST);\n\treturn 0;\n}\n",
@@ -916,7 +916,7 @@ func TestImportRepairSelectTLSOnValidatedArchiveSavesRepairedDraft(t *testing.T)
 		return nil
 	})
 	if len(gates) != 2 {
-		t.Fatalf("TLS gates = %v, want one per legacy SSL setting", gates)
+		t.Fatalf("TLS gates = %v, want one per unsupported TLS setting", gates)
 	}
 	if prior := preservedReplayPreflight(&review.Script); prior == nil || prior.Valid {
 		t.Fatalf("validated preflight = %+v, want the TLS gates to block replay", prior)
