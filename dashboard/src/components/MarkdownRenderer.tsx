@@ -3,6 +3,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { xml } from '@codemirror/lang-xml'
+import { EditorView } from '@codemirror/view'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { reportClientError } from '../utils/clientErrorReporting'
 import { markdownPlainText, parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
@@ -267,15 +268,18 @@ function MarkdownTableWrap({ label, children }: { label: string; children: React
 
 function CopyCodeBlock({ code, language }: { code: string; language: string }) {
   const [status, setStatus] = useState('')
+  const label = language ? `${language} code example` : 'Code example'
   const extensions = useMemo(() => [
     apexCodeMirrorTheme,
     guideCodeHighlighting,
+    // CodeMirror's content is a read-only textbox, which needs a name of its own.
+    EditorView.contentAttributes.of({ 'aria-label': label }),
     ...(language === 'json' || language === 'jsonc' ? [json()] :
       language === 'xml' || language === 'html' ? [xml()] :
         language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts' ? [javascript({ typescript: language === 'typescript' || language === 'ts' })] :
           language === 'yaml' || language === 'yml' ? [xml(), yamlSyntaxHighlighting] :
             [guideCodeLanguage(language)]),
-  ], [language])
+  ], [label, language])
   return <div className="help-code-example">
     <div className="help-code-toolbar"><span>{language || 'Example'}</span><button className="btn btn-secondary btn-sm" type="button" onClick={async () => {
       const copied = await copyTextToClipboard(code)
@@ -283,7 +287,7 @@ function CopyCodeBlock({ code, language }: { code: string; language: string }) {
     }}>Copy example</button></div>
     {language === 'mermaid'
       ? <pre className="markdown-code-block" tabIndex={0} role="region" aria-label={`${language} code example`}><code data-language={language}>{code}</code></pre>
-      : <div className="markdown-code-block markdown-code-editor" tabIndex={0} role="region" aria-label={language ? `${language} code example` : 'Code example'} data-language={language || undefined} data-code={code}>
+      : <div className="markdown-code-block markdown-code-editor" tabIndex={0} role="region" aria-label={label} data-language={language || undefined} data-code={code}>
         <CodeMirror
           value={code}
           extensions={extensions}

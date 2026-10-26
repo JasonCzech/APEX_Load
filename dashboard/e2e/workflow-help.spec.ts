@@ -1,5 +1,5 @@
 import axe from 'axe-core'
-import type { BrowserContext } from '@playwright/test'
+import type { BrowserContext, Locator } from '@playwright/test'
 import { test as workflowTest, expect, login } from './support/workflow'
 
 const localAuth = process.env.APEXLOAD_E2E_PROFILE === 'local-auth'
@@ -17,6 +17,27 @@ const test = workflowTest.extend<Record<never, never>, { helpAuthState: HelpAuth
   }, { scope: 'worker' }],
   storageState: async ({ helpAuthState }, provide) => { await provide(helpAuthState) },
 })
+
+// Help draws each code example in a read-only CodeMirror view and keeps its
+// source in data-code, the text "Copy example" copies. CodeMirror renders only
+// the lines within about a screen of the viewport, so with the example's top
+// in view the rendered lines must be the source's lines from the first one on;
+// the source is returned only then.
+async function shownCodeExample(example: Locator) {
+  await expect(example.locator('.cm-content')).toBeVisible()
+  await example.evaluate((element: HTMLElement) => element.scrollIntoView({ block: 'start' }))
+  let code = ''
+  await expect(async () => {
+    const rendered = await example.evaluate((element: HTMLElement) => ({
+      code: element.dataset.code ?? '',
+      shown: Array.from(element.querySelectorAll('.cm-line'), line => line.textContent ?? ''),
+    }))
+    expect(rendered.shown.length, 'rendered example lines').toBeGreaterThan(0)
+    expect(rendered.shown, "the rendered lines start the example's source").toEqual(rendered.code.split('\n').slice(0, rendered.shown.length))
+    code = rendered.code
+  }).toPass({ timeout: 5_000 })
+  return code
+}
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.addInitScript({ content: axe.source })
@@ -28,9 +49,9 @@ test('Help tasks, search and section links survive navigation and validate the f
   const areas = page.getByRole('navigation', { name: 'Help areas' })
   await expect(areas.getByRole('link')).toHaveCount(5)
   await expect(areas.getByRole('link', { name: 'Getting Started', exact: true })).toHaveAttribute('aria-current', 'page')
-  const example = await page.locator('.help-code-example').filter({ has: page.locator('code[data-language="json"]') }).locator('code').textContent()
-  // Validate the exact text shown to the reader against the real controller contract.
-  const response = await page.request.post('/api/v1/scripts/validate', { data: JSON.parse(example!) })
+  const example = await shownCodeExample(page.locator('.help-code-example .markdown-code-editor[data-language="json"]'))
+  // Validate the copied example, checked against what CodeMirror rendered, against the real controller contract.
+  const response = await page.request.post('/api/v1/scripts/validate', { data: JSON.parse(example) })
   expect(response.ok()).toBe(true)
   const validation = await response.json()
   expect(validation.valid, JSON.stringify(validation)).toBe(true)
@@ -75,14 +96,14 @@ test('DSL operators can discover the guide, validate its example, and follow ref
   await expect(page.locator('#understand-how-one-user-runs')).toBeFocused()
 
   await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Walk through a complete HTTP example', exact: true }).click()
-  const examples = page.locator('.help-code-example code[data-language="json"]')
-  const script = JSON.parse((await examples.first().textContent())!)
+  const examples = page.locator('.help-code-example .markdown-code-editor[data-language="json"]')
+  const script = JSON.parse(await shownCodeExample(examples.first()))
   const response = await page.request.post('/api/v1/scripts/validate', { data: { script } })
   expect(response.ok()).toBe(true)
   const validation = await response.json()
   expect(validation.valid, JSON.stringify(validation)).toBe(true)
   // Validate the documented control-flow fragment in its stated execution context.
-  const loop = JSON.parse((await examples.last().textContent())!)
+  const loop = JSON.parse(await shownCodeExample(examples.last()))
   const loopResponse = await page.request.post('/api/v1/scripts/validate', { data: { script: { ...script, actions: [...script.actions, loop] } } })
   expect(loopResponse.ok()).toBe(true)
   const loopValidation = await loopResponse.json()
