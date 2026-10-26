@@ -713,8 +713,12 @@ func (b *Browser) recordNetworkTask(task browserNetworkTask) {
 	var nativeSizes *playwright.RequestSizesResult
 	if sizes, err := request.Sizes(); err == nil && sizes != nil {
 		nativeSizes = sizes
-		bytesReceived = int64(sizes.ResponseHeadersSize + sizes.ResponseBodySize)
-		rawBytes := int64(sizes.RequestHeadersSize + sizes.RequestBodySize + sizes.ResponseHeadersSize + sizes.ResponseBodySize)
+		respHeaders := max(sizes.ResponseHeadersSize, 0)
+		respBody := max(sizes.ResponseBodySize, 0)
+		reqHeaders := max(sizes.RequestHeadersSize, 0)
+		reqBody := max(sizes.RequestBodySize, 0)
+		bytesReceived = int64(respHeaders + respBody)
+		rawBytes := int64(reqHeaders + reqBody + respHeaders + respBody)
 		b.noteHARBytes(rawBytes*2, task.generation)
 	}
 	durationMs := requestDurationMs(request.Timing())
@@ -932,17 +936,22 @@ func browserRequestBody(request playwright.Request) (string, string, bool) {
 			return "", "", false
 		}
 		if len(text) > browserNetworkBodyCaptureLimitBytes {
-			return text[:browserNetworkBodyCaptureLimitBytes], "", true
+			return boundedtext.TruncateUTF8(text, browserNetworkBodyCaptureLimitBytes), "", true
 		}
 		return text, "", false
 	}
-	truncated := false
-	if len(body) > browserNetworkBodyCaptureLimitBytes {
-		body = body[:browserNetworkBodyCaptureLimitBytes]
-		truncated = true
-	}
 	if utf8.Valid(body) {
-		return string(body), "", truncated
+		if len(body) > browserNetworkBodyCaptureLimitBytes {
+			window := browserNetworkBodyCaptureLimitBytes + min(utf8.UTFMax, len(body)-browserNetworkBodyCaptureLimitBytes)
+			return boundedtext.TruncateUTF8(string(body[:window]), browserNetworkBodyCaptureLimitBytes), "", true
+		}
+		return string(body), "", false
+	}
+	truncated := false
+	const maxRawBinaryBodyBytes = browserNetworkBodyCaptureLimitBytes * 3 / 4
+	if len(body) > maxRawBinaryBodyBytes {
+		body = body[:maxRawBinaryBodyBytes]
+		truncated = true
 	}
 	return base64.StdEncoding.EncodeToString(body), "base64", truncated
 }

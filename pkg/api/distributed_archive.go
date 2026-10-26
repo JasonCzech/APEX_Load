@@ -710,20 +710,21 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 				}
 			}
 			bundle, missing, err := b.fetchRemoteArchiveBundleTargetForSource(ctx, client, test.ID, target, sourceIdentities[target], index, transferStageRoot, requireAll, budget)
-			if cache != nil && cached == nil && err == nil && !missing {
-				err = cache.save(ctx, bundle)
-			}
-			// Optional evidence comes from the live generator, never the
-			// cache; a source that stalls one fetch is not asked for more.
-			live := &optionalEvidenceSource{}
-			if clients[target] != nil {
-				live.client = clients[target]
+			// Optional evidence uses cached optional files when present and
+			// falls back to the live generator when reachable; a source that
+			// stalls one live fetch is not asked for more.
+			live := &optionalEvidenceSource{
+				client: clients[target],
+				cached: cached,
 			}
 			if err == nil && !missing && len(bundle.manifest.BrowserHARArtifacts) > 0 {
 				bundle.hars, bundle.harOmitted = fetchRemoteHARArtifacts(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserHARArtifacts, harBudget, harTransfer)
 			}
 			if err == nil && !missing && bundle.manifest.BrowserInteractionsArtifact != nil {
 				bundle.interactions, bundle.interactionsUnavailable = fetchRemoteInteractions(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserInteractionsArtifact, bundle.manifest.BrowserInteractionRecordCount, interactionsTransfer)
+			}
+			if cache != nil && cached == nil && err == nil && !missing {
+				err = cache.save(ctx, bundle)
 			}
 			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}
 		}(index, target)

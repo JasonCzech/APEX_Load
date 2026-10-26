@@ -140,6 +140,13 @@ describe('timelineOverlayBands', () => {
     ], data)
     expect(bands.map(b => [b.overlay.id, b.x1, b.x2])).toEqual([['span', 't3', 't6'], ['step', 't2', undefined]])
   })
+  it('uses distinct numeric coordinates when formatted clock labels repeat', () => {
+    const repeated = data.map(point => ({ ...point, time: 'same clock label' }))
+    const bands = timelineOverlayBands([
+      { id: 'span', kind: 'anomaly', start: at('2026-10-05T12:00:30Z'), end: at('2026-10-05T12:01:00Z'), label: 'span', tone: 'danger' },
+    ], repeated, point => point.timestampMs!)
+    expect(bands.map(b => [b.x1, b.x2])).toEqual([[data[3].timestampMs, data[6].timestampMs]])
+  })
   it('leaves out what lies outside the samples and cuts spans at the edges', () => {
     const bands = timelineOverlayBands([
       { id: 'before', kind: 'phase', start: at('2026-10-05T11:00:00Z'), label: 'before', tone: 'muted' },

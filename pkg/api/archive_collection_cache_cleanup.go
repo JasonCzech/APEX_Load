@@ -407,7 +407,7 @@ func verifyCollectionCacheForCleanup(ctx context.Context, source *cachedArchiveS
 	if err != nil {
 		return err
 	}
-	entries, readErr := directory.ReadDir(6)
+	entries, readErr := directory.ReadDir(maxCollectionCacheDirectoryEntries + 1)
 	_ = directory.Close()
 	if readErr != nil && readErr != io.EOF {
 		return readErr
@@ -415,6 +415,12 @@ func verifyCollectionCacheForCleanup(ctx context.Context, source *cachedArchiveS
 	expected := map[string]bool{"receipt.json": true}
 	for _, descriptor := range source.receipt.Files {
 		expected[descriptor.Name] = true
+	}
+	if source.hasOptionalReceipt {
+		expected[collectionOptionalReceiptFileName] = true
+		for _, descriptor := range source.optionalFiles {
+			expected[descriptor.Name] = true
+		}
 	}
 	if len(entries) != len(expected) {
 		return errors.New("collection cache contains unexpected files")
@@ -424,7 +430,8 @@ func verifyCollectionCacheForCleanup(ctx context.Context, source *cachedArchiveS
 			return errors.New("collection cache contains unexpected entries")
 		}
 	}
-	for _, descriptor := range source.receipt.Files {
+	allDescriptors := append(append([]collectionCachedFile(nil), source.receipt.Files...), source.optionalFiles...)
+	for _, descriptor := range allDescriptors {
 		file, info, err := openArchiveArtifactForReadAt(source.root, descriptor.Name)
 		if err != nil {
 			return err

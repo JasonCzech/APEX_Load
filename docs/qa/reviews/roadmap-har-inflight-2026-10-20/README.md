@@ -1,6 +1,6 @@
 # Native HAR outstanding-request limit — 2026-10-20
 
-This [BE-A / BE-3 slice](../../../ROADMAP_IMPLEMENTATION_SPEC.md#be-a--stable-authored-identity-and-qualified-document-evidence) closes an active native HAR context when its synchronous request callback observes more than 256 outstanding issued requests. Browser-queued requests count. The existing exact-owner close monitor performs closure, marks affected document observations censored and exposes `har_in_flight` as a resource failure. It does not add routing or change cache behavior.
+This [BE-A / BE-3 slice](../../../ROADMAP_IMPLEMENTATION_SPEC.md#be-a--stable-authored-identity-and-qualified-document-evidence) closes an active native HAR context when its synchronous request callback observes more than 1,024 outstanding issued requests. Browser-queued requests count. The existing exact-owner close monitor performs closure, marks affected document observations censored and exposes `har_in_flight` as a resource failure. It does not add routing or change cache behavior.
 
 This is overflow-triggered closure, not a scheduler or a guarantee that no callback arrives after the limit is crossed. The 512-entry request-identity inventory remains a separate bound. Completed sequential requests release their count; non-recording contexts retain their prior limits. Cancellation and overflow join the same native writer. A caller deadline cannot remove its working file or release its reservation before physical join; the existing shared 30-second finalization deadline is unchanged.
 

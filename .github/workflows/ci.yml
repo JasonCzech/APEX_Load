@@ -387,6 +387,18 @@ jobs:
         if: matrix.lane == 'race'
         run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEX(OwnedHAR|LoadState|RequestTiming|NavigationCommit)'
 
+      # Native HAR ownership on Linux (docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md):
+      # require the full HAR ownership, crash-reclamation and replay HAR suites
+      # against real Chromium and WebKit.
+      - name: Native HAR ownership (Linux)
+        if: matrix.lane == 'race'
+        env:
+          APEXLOAD_BROWSER_TESTS: require
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -v -timeout=30m ./pkg/protocol/browser -run 'HAR'
+          go test -count=1 -v -timeout=30m ./pkg/api -run 'HAR|BrowserReplay'
+
       # The race detector's larger frames leave some parked stacks at 16 KB,
       # so the 8 KB parked-stack bound is checked in a normal build.
       - name: Require parked VUser stacks to shrink to 8 KB

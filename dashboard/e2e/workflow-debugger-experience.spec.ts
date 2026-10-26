@@ -29,6 +29,7 @@ test.beforeAll(async () => {
       res.end(JSON.stringify({ lines: Array.from({ length: 40 }, (_, index) => `Retained response line ${index + 1}`), tail: 'last-retained-response-value' }))
       return
     }
+    if (req.url === '/timing-total') await new Promise(resolve => setTimeout(resolve, 30))
     res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ customer: 'debug-customer', path: req.url, message: 'diagnostic evidence' }))
   })
   await new Promise<void>(resolve => target.listen(0, '127.0.0.1', resolve))
@@ -479,7 +480,7 @@ test('summary expands transaction timings, nested pages and debugger evidence', 
         { name: 'Get customer', method: 'GET', target: '/customer' },
         { name: 'Check order', method: 'GET', target: '/order', assertions: [{ type: 'status_code', expected: 201 }] },
       ] },
-    }, marker('Cart', true, true), marker('Checkout', true), marker('Receipt'), { name: 'Finish', type: 'request', method: 'GET', target: '/finish' }, marker('Receipt', true)],
+    }, marker('Totals', false, true), { name: 'Calculate totals', type: 'request', method: 'GET', target: '/timing-total' }, marker('Totals', true, true), { ...marker('Cart', true, true), think_time: { type: 'fixed', mean_ms: 120 }, think_time_after: true }, marker('Checkout', true), marker('Receipt'), { name: 'Finish', type: 'request', method: 'GET', target: '/finish' }, marker('Receipt', true)],
   } } })))
   await page.setViewportSize({ width: 1800, height: 1200 })
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
@@ -488,6 +489,7 @@ test('summary expands transaction timings, nested pages and debugger evidence', 
   await page.getByRole('button', { name: /^Debug options \(/ }).click()
   const options = page.getByRole('region', { name: 'Session Overrides' })
   await options.getByRole('checkbox', { name: 'Break on failure', exact: true }).uncheck()
+  await options.getByRole('checkbox', { name: 'Ignore think time', exact: true }).uncheck()
   await options.getByRole('combobox', { name: 'After a failure', exact: true }).selectOption('continue')
   await options.getByRole('button', { name: 'Done', exact: true }).click()
   await page.locator('.topbar-debug-action-run').click()
@@ -495,7 +497,7 @@ test('summary expands transaction timings, nested pages and debugger evidence', 
   await expect(summary).toBeVisible()
   await expect(summary.getByRole('status')).toContainText('Failed')
   const table = summary.getByRole('table', { name: 'Transactions from the completed debug run' })
-  await expect(table.getByRole('columnheader', { name: 'Duration (ms)', exact: true })).toBeVisible()
+  await expect(table.getByRole('columnheader', { name: 'Elapsed time (ms)', exact: true })).toBeVisible()
   const row = (name: string) => table.getByRole('row').filter({ has: page.getByRole('rowheader').filter({ hasText: name }) })
   await expect(row('Setup')).toContainText('Passed')
   await expect(row('Checkout')).toContainText('Failed')
@@ -504,11 +506,25 @@ test('summary expands transaction timings, nested pages and debugger evidence', 
   const expandCheckout = table.getByRole('button', { name: 'Expand Checkout', exact: true })
   await expandCheckout.focus(); await expandCheckout.press('Enter')
   await expect(table.getByRole('button', { name: 'Collapse Checkout', exact: true })).toHaveAttribute('aria-expanded', 'true')
+  // Both subtransactions declare Checkout as their parent, even while overlapping.
+  await expect(row('Totals')).toContainText('Passed')
   await table.getByRole('button', { name: 'Expand Cart', exact: true }).press('Space')
   await table.getByRole('button', { name: 'Expand Cart page', exact: true }).click()
   await expect(row('Cart page')).toContainText('Failed')
   await expect(row('Get customer')).toContainText('Passed')
   await expect(row('Check order')).toContainText('Failed')
+  await expect(row('Check order')).toContainText('Action time:')
+  await expect(row('Totals')).toContainText('Passed')
+  await expect(row('Receipt')).toContainText('Passed')
+  await expect(summary.locator('.table-pagination-toolbar')).toHaveCount(0)
+  const breakdown = table.getByRole('note', { name: 'Timing breakdown for Checkout', exact: true })
+  await expect(breakdown).toContainText('outside child spans')
+  const outside = (await breakdown.innerText()).match(/([\d,.]+) ms outside child spans/)
+  expect(outside).not.toBeNull()
+  expect(Number(outside![1].replaceAll(',', ''))).toBeGreaterThanOrEqual(100)
+  const overlap = (await breakdown.innerText()).match(/([\d,.]+) ms counted more than once/)
+  expect(overlap).not.toBeNull()
+  expect(Number(overlap![1].replaceAll(',', ''))).toBeGreaterThanOrEqual(20)
   await expect(row('Checkout').locator('time')).toHaveCount(2)
   await expect(row('Check order').locator('time')).toHaveCount(2)
   await expect(row('Check order').getByRole('cell').nth(4)).toContainText('ms')

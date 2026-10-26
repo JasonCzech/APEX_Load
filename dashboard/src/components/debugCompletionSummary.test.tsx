@@ -116,12 +116,15 @@ describe('debug summary transaction table', () => {
     try {
       render()
       const table = container.querySelector('table')!
-      expect(table.textContent).toContain('Duration (ms)')
+      expect(table.textContent).toContain('Elapsed time (ms)')
+      expect(table.getAttribute('data-table-pagination')).toBe('off')
       expect(table.textContent).not.toContain('Pay')
       const expand = table.querySelector<HTMLButtonElement>('button[aria-expanded]')!
       expect(expand.getAttribute('aria-expanded')).toBe('false')
       act(() => expand.click())
       expect(table.textContent).toContain('Pay')
+      expect(table.querySelector('[aria-label="Timing breakdown for Checkout"]')?.textContent).toContain('outside child spans')
+      expect(table.textContent).toContain('Action time:')
       expect(expand.getAttribute('aria-expanded')).toBe('true')
       expect(table.querySelector('time')?.getAttribute('datetime')).toBe(run.report!.events[0].started_at)
       const child = [...table.querySelectorAll('tr')].find(row => row.textContent?.includes('Pay'))!

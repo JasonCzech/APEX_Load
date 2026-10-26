@@ -66,6 +66,8 @@ type harCaptureOwner struct {
 	descriptorErr                              error
 	closeDone, finishDone                      chan struct{}
 	closeErr, finishErr                        error
+	keep                                       bool
+	redactor                                   protocol.TextRedactor
 	retired                                    bool
 	runtimeJoinOnce                            sync.Once
 	runtimeDone                                chan struct{}
@@ -466,7 +468,19 @@ func (o *harCaptureOwner) recordRuntimeError(err error) {
 	}
 }
 
+func (o *harCaptureOwner) upgradeFinish(keep bool, redactor protocol.TextRedactor) {
+	o.mu.Lock()
+	if keep {
+		o.keep = true
+	}
+	if redactor != nil && o.redactor == nil {
+		o.redactor = redactor
+	}
+	o.mu.Unlock()
+}
+
 func (o *harCaptureOwner) startFinish(keep bool, redactor protocol.TextRedactor) {
+	o.upgradeFinish(keep, redactor)
 	o.startFinalizationBudget()
 	o.finishOnce.Do(func() {
 		o.startClose()
@@ -506,7 +520,10 @@ func (o *harCaptureOwner) startFinish(keep bool, redactor protocol.TextRedactor)
 				o.mu.Unlock()
 			}
 			if err == nil {
-				err = o.finalizeJoined(keep, redactor)
+				o.mu.Lock()
+				finalKeep, finalRedactor := o.keep, o.redactor
+				o.mu.Unlock()
+				err = o.finalizeJoined(finalKeep, finalRedactor)
 			}
 			completed = true
 		}()

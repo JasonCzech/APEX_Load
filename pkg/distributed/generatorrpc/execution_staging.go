@@ -1140,7 +1140,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			// not its capabilities (browserRuntimeFeatures).
 			advertised := capabilities.Features
 			if strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
-				advertised = append(append([]string(nil), advertised...), browserRuntimeFeatures(instance)...)
+				advertised = append(append([]string(nil), advertised...), browserInstanceFeatures(instance)...)
 			}
 			if hasCapabilities && !capabilities.Available {
 				return nil, status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)

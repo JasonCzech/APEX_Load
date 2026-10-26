@@ -39,14 +39,25 @@ func groupRequestsBrowserDocumentCapture(group TestGroup) bool {
 	return group.BrowserDocumentCaptureRequested
 }
 
+func groupRequestsBrowserHARCapture(group TestGroup) bool {
+	if group.script != nil {
+		return dsl.BrowserHARCaptureRequested(group.script)
+	}
+	return group.browserHARCaptureRequested
+}
+
 func requiredBrowserFeaturesForGroup(group TestGroup) []string {
 	if group.script != nil {
 		return dsl.RequiredBrowserRuntimeFeatures(group.script)
 	}
+	var features []string
 	if group.BrowserDocumentCaptureRequested {
-		return []string{dsl.FeatureBrowserDocumentEvidenceV2}
+		features = append(features, dsl.FeatureBrowserDocumentEvidenceV2)
 	}
-	return nil
+	if group.browserHARCaptureRequested {
+		features = append(features, dsl.FeatureBrowserNativeHARV1)
+	}
+	return features
 }
 
 type strictBrowserDocumentRecord protocol.BrowserDocumentEvidence

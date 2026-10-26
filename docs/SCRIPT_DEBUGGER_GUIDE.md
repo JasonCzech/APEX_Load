@@ -50,10 +50,25 @@ current draft. Editing the script leaves the completed snapshot intact and marks
 it as results from an earlier draft. Dropped or truncated evidence is identified.
 
 The **Transactions** table lists the transactions defined in the run's script,
-with pass/fail status, phase, start time, end time, and duration. Expand a parent
+with pass/fail status, phase, start time, end time, and elapsed time. Expand a parent
 to inspect subtransactions, page requests, and repeated executions; **Inspect**
-opens the corresponding debugger evidence. Transaction groups use elapsed spans
-(including pauses and think time), while individual steps use recorded durations.
+opens the corresponding debugger evidence. The elapsed-time column consistently
+uses retained start/end timestamps, preserving sub-millisecond precision during
+calculation. Steps also show their recorded action time separately.
+Elapsed time includes debugger pauses, think time, and work between children;
+it is not the engine's transaction response-time metric.
+
+A parent's elapsed time need not equal the sum of its children: gaps contribute
+time outside children, while concurrent/overlapping child spans must be counted
+once. Expanding a parent shows the reconciliation: child elapsed spans minus
+duplicate time from overlapping children plus time outside child spans equals
+parent elapsed time.
+Only immediate children are counted, avoiding nested double counting. Subtransactions
+use their declared parent, including overlapping siblings. Repeated
+executions include the elapsed gaps between executions. Displayed values are
+rounded, so small rounding differences can remain. The breakdown is withheld
+when retained timing is incomplete.
+
 An unfinished transaction has no end time or duration. Manually reported
 transactions without captured boundaries leave their timing blank. Transactions with no
 execution evidence are marked **Not run**, or **Not observed** when evidence was

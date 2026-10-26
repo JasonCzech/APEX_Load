@@ -15,12 +15,11 @@ export interface TimelineOverlay {
   ref?: string
 }
 
-// TimelineOverlayBand is an overlay placed on the timeline's categorical
-// axis: x1 (and x2 for a span) are the time labels of the samples it covers.
-export interface TimelineOverlayBand {
+// Coordinates use sample labels by default, or timestamps for a numeric axis.
+export interface TimelineOverlayBand<T extends string | number = string> {
   overlay: TimelineOverlay
-  x1: string
-  x2?: string
+  x1: T
+  x2?: T
 }
 
 // timelineOverlayBands places overlays on the visible samples. A sample
@@ -29,16 +28,18 @@ export interface TimelineOverlayBand {
 // way the root-cause timeline lines them up. An overlay outside the visible
 // samples is left out rather than pinned to an edge; a span that reaches
 // past either edge is cut to it.
-export function timelineOverlayBands(overlays: TimelineOverlay[] | undefined, data: MetricsHistoryPoint[]): TimelineOverlayBand[] {
+export function timelineOverlayBands(overlays: TimelineOverlay[] | undefined, data: MetricsHistoryPoint[]): TimelineOverlayBand[]
+export function timelineOverlayBands<T extends string | number>(overlays: TimelineOverlay[] | undefined, data: MetricsHistoryPoint[], coordinate: (point: MetricsHistoryPoint) => T): TimelineOverlayBand<T>[]
+export function timelineOverlayBands(overlays: TimelineOverlay[] | undefined, data: MetricsHistoryPoint[], coordinate: (point: MetricsHistoryPoint) => string | number = point => point.time): TimelineOverlayBand<string | number>[] {
   const sampled = data.filter(point => typeof point.timestampMs === 'number' && Number.isFinite(point.timestampMs))
   if (!overlays?.length || !sampled.length) return []
   const ends = sampled.map(point => point.timestampMs as number)
   const gaps = ends.slice(1).map((end, i) => end - ends[i]).filter(gap => gap > 0).sort((a, b) => a - b)
   const interval = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0
-  const starts = sampled.map(point => ({ time: point.time, at: (point.timestampMs as number) - interval }))
+  const starts = sampled.map(point => ({ coordinate: coordinate(point), at: (point.timestampMs as number) - interval }))
   const first = starts[0].at
   const last = starts[starts.length - 1].at + interval
-  const nearest = (at: number) => starts.reduce((best, point) => (Math.abs(point.at - at) < Math.abs(best.at - at) ? point : best)).time
+  const nearest = (at: number) => starts.reduce((best, point) => (Math.abs(point.at - at) < Math.abs(best.at - at) ? point : best)).coordinate
   return overlays.flatMap(overlay => {
     const end = overlay.end ?? overlay.start
     if (!Number.isFinite(overlay.start) || !Number.isFinite(end) || end < first || overlay.start > last) return []

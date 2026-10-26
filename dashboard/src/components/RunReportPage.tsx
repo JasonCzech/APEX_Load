@@ -733,7 +733,7 @@ export default function RunReportPage({
         {area === 'Performance' && hasArchive && <>
           {/* KPI values wait for the report: "—" would read as a measured gap. */}
           {report && <RunReportKpiScorecard kpis={kpis} />}
-          <SynchronizedTimeline key={testId} runId={testId} baselineId={effectiveCompareId} data={timelineHistory} annotations={timelineAnnotations} overlays={timelineOverlays} onOverlaySelect={selectTimelineOverlay} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
+          <SynchronizedTimeline startedAt={test.started_at} key={testId} runId={testId} baselineId={effectiveCompareId} data={timelineHistory} annotations={timelineAnnotations} overlays={timelineOverlays} onOverlaySelect={selectTimelineOverlay} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
           <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
           {(report?.transaction_response_time_sla_results?.length ?? 0) > 0 ? (
             <TransactionResponseTimeSLATable

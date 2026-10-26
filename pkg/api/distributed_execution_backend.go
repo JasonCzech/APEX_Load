@@ -1308,6 +1308,17 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			}
 		}
 	}
+	for _, group := range test.Groups {
+		if !groupRequestsBrowserHARCapture(group) {
+			continue
+		}
+		for _, shard := range peakGroupShards[group.Name] {
+			if shard.Target != "" && !protocol.RuntimeFeaturesSatisfy(loadByTarget[shard.Target].CompatibleFeatures, generatorrpc.FeatureBrowserNativeHARV1) {
+				failStartup("generator does not support browser_native_har_v1: " + shard.Target)
+				return
+			}
+		}
+	}
 	if podSettings.CapacityPlanning.PodReservationsEnabled {
 		podClaims, err = tr.reservePodPlacement(executionCtx, test, loadByTarget, peakGroupShards, clientsByTarget, executionGeneration, executionLeaseOwnerID)
 		if err != nil {
@@ -1504,11 +1515,16 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			failStartup(planErr.Error())
 			return
 		}
+		requireNativeHAR := dsl.BrowserHARCaptureRequested(group.script)
 		for i := range plans {
 			plans[i].jointEvidence = generatorAcceptsJointEvidence(loadByTarget[plans[i].target].CompatibleFeatures)
 			plans[i].throughputCap = generatorAcceptsThroughputCap(loadByTarget[plans[i].target].CompatibleFeatures)
 			if len(liveBindingsJSON) > 0 && !stringSliceContainsEqualFold(loadByTarget[plans[i].target].CompatibleFeatures, generatorrpc.FeatureLiveTablesV1) {
 				failStartup("generator does not support live_tables_v1: " + plans[i].target)
+				return
+			}
+			if requireNativeHAR && !protocol.RuntimeFeaturesSatisfy(loadByTarget[plans[i].target].CompatibleFeatures, generatorrpc.FeatureBrowserNativeHARV1) {
+				failStartup("generator does not support browser_native_har_v1: " + plans[i].target)
 				return
 			}
 		}
@@ -1539,6 +1555,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				ContentHash:         contentHash,
 			},
 			generatorrpc.Assignment{PrepareOnly: test.preparationID != "",
+				RequireBrowserNativeHAR:           requireNativeHAR,
 				BrowserAuthoredDefinition:         group.browserAuthoredDefinition,
 				BrowserInteractionEvidenceVersion: requestedBrowserInteractionVersion(group.script),
 				PreferBrowserOutcomeClocks:        true,

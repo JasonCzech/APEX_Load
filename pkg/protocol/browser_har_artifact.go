@@ -37,3 +37,9 @@ type BrowserHARArtifact struct {
 type BrowserHARArtifactProvider interface {
 	TakeBrowserHARArtifacts() []BrowserHARArtifact
 }
+
+// BrowserNativeHARSupportProvider reports whether a browser runtime instance
+// can own and publish native HAR capture on this platform.
+type BrowserNativeHARSupportProvider interface {
+	SupportsBrowserNativeHAR() bool
+}
