@@ -133,8 +133,9 @@ by a controller with no process identity, or rewritten by an older
 controller), `remote_commits_unproven` and `legacy_writers`. `retryable` is
 true while some writer may still resolve; `Retry-After` is set only while this
 host may settle one. Repeating DELETE re-reads this status without
-re-queuing cleanup. Legacy writers, unproven remote commits and writers whose
-host is gone have no analysis intervention path yet. See the
+re-queuing cleanup. Restart recovery across containers and HA replicas, and
+an intervention path for legacy writers, unproven remote commits and writers
+whose host is gone, remain open. See the
 [writer ownership review](qa/reviews/roadmap-native-writer-ownership-2026-10-25/README.md).
 
 Rejected measurements fail publication by default; the import's error then names the file, the measure, how many rows were rejected and the first zero-based source row ordinals. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
