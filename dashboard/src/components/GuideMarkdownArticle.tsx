@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import MarkdownRenderer, { MarkdownLabel } from './MarkdownRenderer'
 import { containsErDiagram, loadMermaidErDiagram } from './mermaidErDiagramLoader'
+import { containsHighlightedCode, loadHelpCodeView } from './helpCodeViewLoader'
 import { markdownPlainText, parseMarkdown, type MarkdownBlock } from './repositoryGuideMarkdown'
 
 type Props = {
@@ -81,6 +82,8 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
   const href = (id: string) => sectionHref?.(id) || `#${id}`
   const ref = useRef<HTMLDivElement>(null)
   const waitsForDiagrams = Boolean(section) && containsErDiagram(bodyBlocks)
+  const waitsForCode = Boolean(section) && containsHighlightedCode(bodyBlocks)
+  const waitsForLazyBlocks = waitsForDiagrams || waitsForCode
   useEffect(() => {
     const container = ref.current
     if (!container) return
@@ -102,15 +105,16 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
     let cancelled = false
     let frame = 0
     let stopFollowing = () => {}
-    // While a deep link waits for its diagrams, and while it follows them,
-    // the reader may scroll or move focus; from then on the page is theirs.
+    // While a deep link waits for its diagrams or code examples, and while it
+    // follows them, the reader may scroll or move focus; from then on the page
+    // is theirs.
     let readerActed = false
     const onIntent = () => {
       readerActed = true
       stopFollowing()
     }
     const document = container.ownerDocument
-    if (waitsForDiagrams) for (const type of READER_INTENTS) document.addEventListener(type, onIntent, { capture: true, passive: true })
+    if (waitsForLazyBlocks) for (const type of READER_INTENTS) document.addEventListener(type, onIntent, { capture: true, passive: true })
     const jump = () => {
       frame = requestAnimationFrame(() => {
         if (readerActed) return
@@ -118,16 +122,21 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
         if (target) {
           target.scrollIntoView?.({ block: 'start', behavior: 'instant' })
           target.focus({ preventScroll: true })
-          if (waitsForDiagrams) stopFollowing = followDestination(container, scroller, target)
+          if (waitsForLazyBlocks) stopFollowing = followDestination(container, scroller, target)
         } else if (scroller) {
           scroller.scrollTop = 0
         }
       })
     }
-    // ER diagrams show their shorter source until the renderer loads, so a
-    // deep link into an article with diagrams jumps once it has (or failed).
-    if (waitsForDiagrams) void loadMermaidErDiagram().catch(() => undefined).then(() => { if (!cancelled && !readerActed) jump() })
-    else jump()
+    // ER diagrams show their shorter source, and code examples their plain
+    // source, until their views load, so a deep link into an article with
+    // either jumps once those have loaded (or failed).
+    if (waitsForLazyBlocks) {
+      void Promise.all([
+        waitsForDiagrams ? loadMermaidErDiagram().catch(() => undefined) : undefined,
+        waitsForCode ? loadHelpCodeView().catch(() => undefined) : undefined,
+      ]).then(() => { if (!cancelled && !readerActed) jump() })
+    } else jump()
     return () => {
       cancelled = true
       cancelAnimationFrame(frame)
@@ -135,7 +144,7 @@ export default function GuideMarkdownArticle({ source, blocks: providedBlocks, c
       stopFollowing()
       for (const type of READER_INTENTS) document.removeEventListener(type, onIntent, true)
     }
-  }, [source, section, providedBlocks, waitsForDiagrams])
+  }, [source, section, providedBlocks, waitsForDiagrams, waitsForCode, waitsForLazyBlocks])
   const link = (heading: Heading) => <a href={href(heading.id)} aria-current={section === heading.id ? 'location' : undefined}><MarkdownLabel text={heading.text} /></a>
   return <div ref={ref} className={['guide-markdown-article', className].filter(Boolean).join(' ')} data-table-pagination="off">
     {headings.length > 1 && <nav className="help-article-toc" aria-label="On this page">

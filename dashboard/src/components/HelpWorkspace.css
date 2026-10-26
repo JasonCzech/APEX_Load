@@ -60,6 +60,9 @@
 .help-workspace .markdown-code-editor .cm-scroller { overflow: visible; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; line-height: 1.5; }
 .help-workspace .markdown-code-editor .cm-line { padding: 0; }
 .help-workspace .markdown-code-editor .cm-focused { outline: none; }
+/* The plain source shown until the highlighted view loads takes the view's
+ * box, so the example does not change size when it arrives. */
+.help-workspace .markdown-code-editor .help-code-plain { margin: 0; padding: 0; border: 0; background: transparent; color: var(--text-primary); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; white-space: pre; }
 .help-workspace :is(.markdown-code-block, .markdown-table-wrap):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .help-code-example { min-width: 0; margin: 18px 0; }
 .help-code-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }

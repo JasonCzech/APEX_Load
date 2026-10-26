@@ -19,6 +19,18 @@ vi.mock('./mermaidErDiagramLoader', async importOriginal => {
     },
   }
 })
+// The same for the highlighted code view.
+const codeLoader = vi.hoisted(() => ({ calls: 0, pending: [] as Array<() => void> }))
+vi.mock('./helpCodeViewLoader', async importOriginal => {
+  const actual = await importOriginal<typeof import('./helpCodeViewLoader')>()
+  return {
+    ...actual,
+    loadHelpCodeView: () => {
+      codeLoader.calls++
+      return new Promise(resolve => codeLoader.pending.push(() => resolve(actual.loadHelpCodeView())))
+    },
+  }
+})
 
 const DIAGRAM_ARTICLE = [
   '# Data model',
@@ -58,6 +70,8 @@ beforeEach(() => {
   scrolled = []
   loader.calls = 0
   loader.pending.length = 0
+  codeLoader.calls = 0
+  codeLoader.pending.length = 0
   FakeResizeObserver.live.clear()
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++nextFrame, callback); return nextFrame })
   vi.stubGlobal('cancelAnimationFrame', (handle: number) => { frames.delete(handle) })
@@ -111,6 +125,32 @@ it('jumps to the section of an article without diagrams at once, without loading
   expect(scrolled).toEqual(['limits'])
   expect(document.activeElement?.id).toBe('limits')
   expect(loader.calls).toBe(0)
+  expect(codeLoader.calls).toBe(0)
+})
+
+it('jumps to a section below code examples only once their highlighted view has loaded', async () => {
+  const codeArticle = ['# Guide', '## Setup', '```json', '{ "a": 1 }', '```', '## Limits', 'Text.'].join('\n')
+  await render(codeArticle, 'limits')
+  await runFrames()
+  // The example and the deep link both wait for the code view; no diagram renderer loads.
+  expect(codeLoader.calls).toBe(2)
+  expect(loader.calls).toBe(0)
+  // The example shows its plain source in the same region until then.
+  expect(scroller.querySelector('.markdown-code-editor .help-code-plain code')?.textContent).toBe('{ "a": 1 }')
+  expect(scrolled).toEqual([])
+  expect(document.activeElement?.id).not.toBe('limits')
+
+  await act(async () => {
+    for (const release of codeLoader.pending.splice(0)) release()
+    await import('./HelpCodeView')
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(scroller.querySelector('.markdown-code-editor .cm-editor')).not.toBeNull()
+  expect(scroller.querySelector('.help-code-plain')).toBeNull()
+  await runFrames()
+  expect(scrolled).toEqual(['limits'])
+  expect(document.activeElement?.id).toBe('limits')
 })
 
 it('jumps to a section below ER diagrams only once they have drawn, and keeps it aligned until the reader acts', async () => {
