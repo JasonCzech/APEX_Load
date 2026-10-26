@@ -815,7 +815,7 @@ func TestStoredScriptRepairOnSavedArchiveImportAppliesDependencyRepair(t *testin
 	assertSourceReviewQuotesMaskedCredential(t, stored, guidedTLSRepairCredential)
 	gates := executionGatePaths(stored, "legacy_tls_replacement")
 	if len(gates) != 2 {
-		t.Fatalf("saved TLS gates = %v, want one per legacy SSL setting", gates)
+		t.Fatalf("saved TLS gates = %v, want one per unsupported TLS setting", gates)
 	}
 
 	_, tag := requireAuthoringAPIProjection(t, server, stored.ID)

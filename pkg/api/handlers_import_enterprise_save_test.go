@@ -828,10 +828,10 @@ func namedActionIndex(t *testing.T, script *dsl.Script, name string) int {
 // which guided repair requires.
 const guidedTLSRepairCredential = "Bearer guided-repair-synthetic-token"
 
-// guidedTLSRepairAction has two legacy SSL settings, so validation stamps two
+// guidedTLSRepairAction has two unsupported TLS settings, so validation stamps two
 // legacy_tls_replacement gates that one select_tls apply resolves.
 var guidedTLSRepairAction = "Action()\n{\n" +
-	"\tweb_set_sockets_option(\"SSL_VERSION\", \"2&3\");\n" +
+	"\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-next\");\n" +
 	"\tweb_add_header(\"Authorization\", \"" + guidedTLSRepairCredential + "\");\n" +
 	"\tweb_url(\"orders\", \"URL=https://example.test/orders\", \"Resource=0\", LAST);\n" +
 	"\tweb_set_sockets_option(\"SSL_VERSION\", \"AUTO\");\n" +
@@ -898,7 +898,7 @@ func validateAndRepairGuidedTLSArchiveWithStore(t *testing.T, store *storage.SQL
 		}
 	}
 	if len(gates) != 2 {
-		t.Fatalf("validation TLS findings at %v, want one per legacy SSL setting; findings %+v", gates, findings)
+		t.Fatalf("validation TLS findings at %v, want one per unsupported TLS setting; findings %+v", gates, findings)
 	}
 	token := importDraftAttestationToken(validatedScript)
 	if !strings.HasPrefix(token, importDraftProtectedTokenPrefix) {

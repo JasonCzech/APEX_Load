@@ -170,7 +170,7 @@ var sourceRTSSupportDefinitions = append(append(nativeArchiveRuntimeDefinitions(
 			Concept: "TLS or SSL version",
 			Fields:  []string{"config.http.tls.min_version", "config.http.tls.max_version"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "APEX Load maps a recognized source SSL or TLS version onto an exact HTTP client TLS version range; unsupported values retain APEX defaults and require review.",
+			Notes:   "APEX Load maps recognized TLS versions exactly; legacy SSL selections are replaced with TLS 1.3 with a migration warning. Other unsupported values retain APEX defaults and require review.",
 		},
 		matchers: []runtimeSettingMatcher{
 			matcher([]string{"SSL", "Security"}, []string{"SSLVersion", "TLSVersion"}),
@@ -1117,8 +1117,8 @@ func hasCompatibilityOnlyAdditionalAttributes(config dsl.ScriptConfig) bool {
 func runtimeAdditionalAttributeIsNativelyMapped(config dsl.ScriptConfig, key, value string) bool {
 	switch normalizeRuntimeAttributeKey(key) {
 	case "web_set_sockets_option.ssl_version", "web_set_sockets_option.tls_version":
-		mapped := mapSSLVersion(value)
-		return tlsVersionsEquivalent(config.HTTP.TLS.MinVersion, mapped) &&
+		mapped, exact := mapSSLVersionExact(value)
+		return exact && tlsVersionsEquivalent(config.HTTP.TLS.MinVersion, mapped) &&
 			tlsVersionsEquivalent(config.HTTP.TLS.MaxVersion, mapped)
 	case "web_set_sockets_option.close_keepalive_connections", "web_set_sockets_option.close_keep_alive_connections":
 		closeConnections, ok := parseSourceBool(value)

@@ -365,7 +365,7 @@ func parseRuntimeTLSSettings(rc *RuntimeConfig, sections map[string]map[string]s
 			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 				ID: "tls", Area: "Security",
 				sourceKey: "tlsversion",
-				Notes:     fmt.Sprintf("Unsupported SSL/TLS version %q; leaving APEX TLS defaults unchanged and requiring review.", rc.SSLVersion),
+				Notes:     sourceTLSMigrationWarning(rc.SSLVersion),
 			})
 		}
 	}
@@ -4573,8 +4573,28 @@ func cloneStringMap(values map[string]string) map[string]string {
 
 // mapSSLVersion converts source SSL version identifiers to standard version strings.
 func mapSSLVersion(v string) string {
+	if isLegacySSLVersion(v) {
+		return "1.3"
+	}
 	mapped, _ := mapSSLVersionExact(v)
 	return mapped
+}
+
+// isLegacySSLVersion recognizes legacy protocol selections, not the SSL setting name.
+func isLegacySSLVersion(v string) bool {
+	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(v), " ", "")) {
+	case "ssl", "2", "3", "2&3", "ssl2", "ssl3", "sslv2", "sslv3", "ssl2.0", "ssl3.0", "sslv2.0", "sslv3.0", "ssl2&3":
+		return true
+	default:
+		return false
+	}
+}
+
+func sourceTLSMigrationWarning(v string) string {
+	if isLegacySSLVersion(v) {
+		return fmt.Sprintf("Legacy SSL version %q was replaced with TLS 1.3; replay requires a TLS 1.3-capable endpoint and does not reproduce the original SSL handshake.", v)
+	}
+	return fmt.Sprintf("Unsupported SSL/TLS version %q; leaving APEX TLS defaults unchanged and requiring review.", v)
 }
 
 func mapSSLVersionExact(v string) (string, bool) {
