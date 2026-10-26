@@ -141,10 +141,18 @@ func (s *Service) adoptRunLocked(generation uint64, adoption *pb.RunAdoption, re
 			}
 			return finished
 		}
+		outcome, detail := pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_UNKNOWN_TEST, "no assignment or retained outcome for this run"
 		if s.hasRunSupervisionTombstoneLocked(runSupervisionTombstoneKey{testID: testID, generation: prior, tokenHash: priorHash}) {
-			return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, "the run's supervision already expired")
+			outcome, detail = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, "the run's supervision already expired"
 		}
-		return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_UNKNOWN_TEST, "no assignment or retained outcome for this run")
+		if s.runFinalizingLocked(testID, prior, priorHash) {
+			// The outcome keeps its earlier value for older controllers; the
+			// flag says every execution ended and the outcome is on its way.
+			finalizing := result(outcome, "the run's executions ended and its terminal outcome is still being finalized")
+			finalizing.Finalizing = true
+			return finalizing
+		}
+		return result(outcome, detail)
 	}
 	if assignment.executionGeneration != prior {
 		return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED, fmt.Sprintf("the run belongs to generation %d, not %d", assignment.executionGeneration, prior))

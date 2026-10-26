@@ -235,6 +235,10 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 	if err != nil {
 		return err
 	}
+	// Tables a lost term of this process left registered are never used
+	// again. Release them before any restore below, so a candidate's restore
+	// does not count them, and a run held without one keeps none in memory.
+	tr.releaseLostTermLiveTables(executionLeaseTerm{ownerID: ownerID, generation: generation})
 	ctx, cancel := context.WithDeadline(context.Background(), minTime(leaseDeadline, time.Now().Add(runAdoptionClaimBudget)))
 	defer cancel()
 
@@ -853,7 +857,8 @@ func (b *distributedExecutionBackend) claimRunAdoptions(ctx context.Context, byT
 		workers.Add(1)
 		slots <- struct{}{}
 		go func() {
-			defer func() { <-slots }()
+			var releaseSlot sync.Once
+			defer releaseSlot.Do(func() { <-slots })
 			defer workers.Done()
 			result := runAdoptionTargetResult{}
 			dialCtx, dialCancel := context.WithTimeout(ctx, b.timeout)
@@ -876,6 +881,12 @@ func (b *distributedExecutionBackend) claimRunAdoptions(ctx context.Context, byT
 					err = fmt.Errorf("generator predates run adoption")
 				}
 				if err == nil {
+					// A run whose outcome is still being finalized gets a
+					// bounded wait for it, so it is judged on what it was. The
+					// wait gives up its slot: other generators' first claims,
+					// which carry their adoptions, must not queue behind it.
+					releaseSlot.Do(func() { <-slots })
+					claim = b.awaitFinalizingRunAdoptions(ctx, client, claim, adoptions, generation, ownerID, leaseDeadline)
 					result.outcomes = make(map[string]generatorrpc.RunAdoptionResult, len(claim.Adoptions))
 					for _, outcome := range claim.Adoptions {
 						result.outcomes[outcome.TestID] = outcome

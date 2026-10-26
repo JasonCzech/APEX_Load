@@ -822,6 +822,8 @@ type Service struct {
 	scriptCache                          *scriptCacheManager
 	assignments                          map[string]assignedTest
 	podCapacityClaims                    map[string]*pb.PodCapacityClaim
+	finalizingRuns                       map[string]finalizingRun
+	archiveFinalizationGate              func(testID string)
 	podCapacityIncarnation               string
 	executions                           map[string]map[string]*groupExecution
 	persistentJavaDrains                 map[uint64]javaVuserCapacityDrain
@@ -947,6 +949,16 @@ func WithExecution() ServiceOption {
 func WithClock(now func() time.Time) ServiceOption {
 	return func(s *Service) {
 		s.now = now
+	}
+}
+
+// WithArchiveFinalizationGate calls gate with a finished run's test ID once its
+// executions all ended and it is marked finalizing, before its archive is
+// finalized and its terminal outcome published. Tests use it to hold that
+// window open; production generators leave it unset.
+func WithArchiveFinalizationGate(gate func(testID string)) ServiceOption {
+	return func(s *Service) {
+		s.archiveFinalizationGate = gate
 	}
 }
 
@@ -1257,8 +1269,18 @@ func (s *Service) finishStoppedTest(testID string, assignment assignedTest, writ
 	return s.finishStoppedTestWithState(testID, assignment, writer, "COMPLETE", "")
 }
 
+// finishStoppedTestWithState runs only after the assignment was removed and
+// every one of its executions ended; each caller guarantees both. Until the
+// terminal outcome is published the run is therefore marked finalizing.
 func (s *Service) finishStoppedTestWithState(testID string, assignment assignedTest, writer *archiveRecorder, finalState string, finalError string) (string, string) {
 	defer s.completeStoppingTest(testID, assignment.executionGeneration)
+	s.mu.Lock()
+	s.markRunFinalizingLocked(testID, assignment)
+	gate := s.archiveFinalizationGate
+	s.mu.Unlock()
+	if gate != nil {
+		gate(testID)
+	}
 	archiveFinalized := true
 	assignment = s.lifecycleCoordinator.finish(assignment)
 	finalState = strings.ToUpper(strings.TrimSpace(finalState))
@@ -3310,6 +3332,7 @@ func (s *Service) markStoppingLocked(testID string, generation uint64) *stopComp
 func (s *Service) completeStoppingTest(testID string, generation uint64) {
 	s.mu.Lock()
 	s.lifecycleCoordinator.completeStopping(testID, generation)
+	s.clearRunFinalizingLocked(testID, generation)
 	s.mu.Unlock()
 }
 

@@ -195,6 +195,13 @@ func rollForwardLedgerRow(t *testing.T, store *storage.SQLiteStore, testID, targ
 // replaced by the plain checkpoint.
 func (f *evacuationRollbackFixture) assertRolledForward(t *testing.T, owner string, generation uint64, target time.Duration) {
 	t.Helper()
+	f.assertRolledForwardWithStatus(t, owner, generation, target, "RUNNING")
+}
+
+// assertRolledForwardWithStatus is assertRolledForward for a run whose durable
+// status is status.
+func (f *evacuationRollbackFixture) assertRolledForwardWithStatus(t *testing.T, owner string, generation uint64, target time.Duration, status string) {
+	t.Helper()
 	resume := f.test.adoptedResume
 	if resume == nil || resume.finishStatus != "" || resume.adopted["gen-b"] == nil || resume.adopted["gen-c"] == nil || resume.adopted["gen-a"] != nil {
 		t.Fatalf("next topology not adopted: %+v", resume)
@@ -223,7 +230,7 @@ func (f *evacuationRollbackFixture) assertRolledForward(t *testing.T, owner stri
 		t.Fatalf("survivor duration changed: %+v", survivor)
 	}
 	record, err := f.store.GetTest(f.test.ID)
-	if err != nil || record.Status != "RUNNING" || strings.HasPrefix(record.Error, uncertainEvacuationReasonPrefix) {
+	if err != nil || record.Status != status || strings.HasPrefix(record.Error, uncertainEvacuationReasonPrefix) {
 		t.Fatalf("durable run = %+v, %v", record, err)
 	}
 	checkpoint, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
