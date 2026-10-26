@@ -20,14 +20,14 @@ vi.mock('./mermaidErDiagramLoader', async importOriginal => {
   }
 })
 // The same for the highlighted code view.
-const codeLoader = vi.hoisted(() => ({ calls: 0, pending: [] as Array<() => void> }))
+const codeLoader = vi.hoisted(() => ({ calls: 0, fail: false, pending: [] as Array<() => void> }))
 vi.mock('./helpCodeViewLoader', async importOriginal => {
   const actual = await importOriginal<typeof import('./helpCodeViewLoader')>()
   return {
     ...actual,
     loadHelpCodeView: () => {
       codeLoader.calls++
-      return new Promise(resolve => codeLoader.pending.push(() => resolve(actual.loadHelpCodeView())))
+      return new Promise((resolve, reject) => codeLoader.pending.push(() => codeLoader.fail ? reject(new Error('code view chunk unavailable')) : resolve(actual.loadHelpCodeView())))
     },
   }
 })
@@ -50,10 +50,10 @@ class FakeResizeObserver {
   observe(element: Element) { FakeResizeObserver.live.set(this, element) }
   disconnect() { FakeResizeObserver.live.delete(this) }
 }
-// Reports a size change of the Help article to whatever still observes it.
-const notifyResize = () => {
-  for (const [observer, element] of FakeResizeObserver.live) {
-    if (element.classList.contains('guide-markdown-article')) observer.callback([], observer as unknown as ResizeObserver)
+// Reports a size change of the Help article (or the toolbar) to whatever still observes it.
+const notifyResize = (className = 'guide-markdown-article') => {
+  for (const [observer, element] of Array.from(FakeResizeObserver.live)) {
+    if (element.classList.contains(className)) observer.callback([], observer as unknown as ResizeObserver)
   }
 }
 
@@ -71,6 +71,7 @@ beforeEach(() => {
   loader.calls = 0
   loader.pending.length = 0
   codeLoader.calls = 0
+  codeLoader.fail = false
   codeLoader.pending.length = 0
   FakeResizeObserver.live.clear()
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++nextFrame, callback); return nextFrame })
@@ -80,8 +81,13 @@ beforeEach(() => {
   scroller = document.createElement('div')
   scroller.className = 'main-content'
   Object.defineProperty(scroller, 'scrollTop', { configurable: true, writable: true, value: 0 })
+  // The toolbar sits beside the page content, as in the app shell.
+  const toolbar = document.createElement('div')
+  toolbar.className = 'main-topbar'
+  const page = document.createElement('div')
+  scroller.append(toolbar, page)
   document.body.append(scroller)
-  root = createRoot(scroller)
+  root = createRoot(page)
 })
 afterEach(async () => {
   await act(async () => root.unmount())
@@ -128,11 +134,19 @@ it('jumps to the section of an article without diagrams at once, without loading
   expect(codeLoader.calls).toBe(0)
 })
 
+const CODE_ARTICLE = ['# Guide', '## Setup', '```json', '{ "a": 1 }', '```', '## Limits', 'Text.'].join('\n')
+// Settles every pending wait for the code view, and React's reveal of it.
+const releaseCodeView = async () => {
+  await act(async () => {
+    for (const release of codeLoader.pending.splice(0)) release()
+    await import('./HelpCodeView')
+    await Promise.resolve()
+  })
+}
+
 it('jumps to a section below code examples at once, and keeps it aligned while their highlighted view loads', async () => {
-  const codeArticle = ['# Guide', '## Setup', '```json', '{ "a": 1 }', '```', '## Limits', 'Text.'].join('\n')
-  await render(codeArticle, 'limits')
-  // Only the example loads the code view; the deep link does not wait for it,
-  // and no diagram renderer loads.
+  await render(CODE_ARTICLE, 'limits')
+  // Only the example loads the code view before the jump; no diagram renderer loads.
   expect(codeLoader.calls).toBe(1)
   expect(loader.calls).toBe(0)
   // The example shows its plain source in the same region until then.
@@ -140,19 +154,91 @@ it('jumps to a section below code examples at once, and keeps it aligned while t
   await runFrames()
   expect(scrolled).toEqual(['limits'])
   expect(document.activeElement?.id).toBe('limits')
+  // The follow waits for the code view too.
+  expect(codeLoader.calls).toBe(2)
   scrolled.length = 0
 
-  await act(async () => {
-    for (const release of codeLoader.pending.splice(0)) release()
-    await import('./HelpCodeView')
-    await new Promise(resolve => setTimeout(resolve, 0))
-  })
+  await releaseCodeView()
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
   expect(scroller.querySelector('.markdown-code-editor .cm-editor')).not.toBeNull()
   expect(scroller.querySelector('.help-code-plain')).toBeNull()
   // If the view changes the article's layout, the destination stays aligned.
   notifyResize()
   expect(scrolled).toEqual(['limits'])
+})
+
+it('keeps following code examples past the idle period until their view has loaded, then settles', async () => {
+  // Every step below stays inside the overall cap, so only the idle period can end the follow.
+  expect(4 * FOLLOW_IDLE_MS + FOLLOW_IDLE_MS + 1).toBeLessThan(FOLLOW_MAX_MS)
+  await render(CODE_ARTICLE, 'limits')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  await runFrames()
+  scrolled.length = 0
+  // A slow chunk: long past the idle period, and with layout changes meanwhile,
+  // the destination is still followed.
+  vi.advanceTimersByTime(FOLLOW_IDLE_MS * 2)
+  notifyResize()
+  expect(scrolled).toEqual(['limits'])
+  vi.advanceTimersByTime(FOLLOW_IDLE_MS * 2)
+  notifyResize()
+  expect(scrolled).toEqual(['limits', 'limits'])
+  // Once the view has loaded, the layout counts as settled after the idle
+  // period, with no further change needed to start it.
+  await releaseCodeView()
+  vi.advanceTimersByTime(FOLLOW_IDLE_MS + 1)
+  notifyResize()
+  expect(scrolled).toHaveLength(2)
+})
+
+it('settles the follow one idle period after the code view fails to load', async () => {
+  expect(2 * FOLLOW_IDLE_MS + FOLLOW_IDLE_MS + 1).toBeLessThan(FOLLOW_MAX_MS)
+  codeLoader.fail = true
+  await render(CODE_ARTICLE, 'limits')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  await runFrames()
+  scrolled.length = 0
+  vi.advanceTimersByTime(FOLLOW_IDLE_MS * 2)
+  notifyResize()
+  expect(scrolled).toEqual(['limits'])
+  await act(async () => {
+    for (const release of codeLoader.pending.splice(0)) release()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+  vi.advanceTimersByTime(FOLLOW_IDLE_MS + 1)
+  notifyResize()
+  expect(scrolled).toEqual(['limits'])
+})
+
+it('keeps following after a taller toolbar re-aligns the destination', async () => {
+  await render(CODE_ARTICLE, 'limits')
+  await runFrames()
+  expect(document.activeElement?.id).toBe('limits')
+  scrolled.length = 0
+  // The toolbar grows: the page re-aligns the destination, which moves the scroller.
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value(this: HTMLElement) { scrolled.push(this.id); scroller.scrollTop = 48 } })
+  notifyResize('main-topbar')
+  expect(scrolled).toEqual(['limits'])
+  scroller.dispatchEvent(new Event('scroll'))
+  // That scroll is the page's own, not the reader's: the follow goes on.
+  notifyResize()
+  expect(scrolled).toEqual(['limits', 'limits'])
+  await releaseCodeView()
+})
+
+it('stops following code examples whose view never loads at the overall cap', async () => {
+  await render(CODE_ARTICLE, 'limits')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  await runFrames()
+  scrolled.length = 0
+  vi.advanceTimersByTime(FOLLOW_MAX_MS - 1)
+  notifyResize()
+  expect(scrolled).toEqual(['limits'])
+  vi.advanceTimersByTime(2)
+  notifyResize()
+  expect(scrolled).toEqual(['limits'])
+  vi.useRealTimers()
+  await releaseCodeView()
 })
 
 it('jumps to a section below ER diagrams only once they have drawn, and keeps it aligned until the reader acts', async () => {
@@ -228,7 +314,8 @@ it('stops following once the page scrolls other than by the alignment', async ()
   scroller.dispatchEvent(new Event('scroll'))
   notifyResize()
   expect(scrolled).toEqual(['github-integration'])
-  expect(FakeResizeObserver.live.size).toBe(1) // only the diagram's own observer
+  // Nothing follows the article any more; the diagram and the toolbar keep their own observers.
+  expect(Array.from(FakeResizeObserver.live.values()).filter(element => element.classList.contains('guide-markdown-article'))).toHaveLength(0)
 })
 
 it('stops following once the layout has settled, and after the overall cap', async () => {
