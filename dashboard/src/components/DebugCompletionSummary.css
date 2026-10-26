@@ -27,3 +27,5 @@
 .debug-transaction-status.passed { color: var(--success-text, var(--success)); }
 .debug-transaction-status.failed { color: var(--danger-text, var(--danger)); }
 .debug-transaction-status.muted { color: var(--text-secondary); }
+
+.debug-transaction-table td.debug-transaction-breakdown { font-size: 12px; color: var(--text-secondary); background: var(--bg-secondary); }

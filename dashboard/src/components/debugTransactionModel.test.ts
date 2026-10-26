@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captureDebugTransactionDefinitions, debugTransactionRows } from './debugTransactionModel'
+import { captureDebugTransactionDefinitions, debugTransactionRows, debugTransactionTimingBreakdown } from './debugTransactionModel'
 import type { DebugCompletionSnapshot } from './debugCompletionModel'
 import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
@@ -35,6 +35,22 @@ describe('debug transaction breakdown', () => {
     expect(rows.map(row => [row.name, row.status, row.durationMs, row.eventIndex])).toEqual([['First', 'Passed', 60, 4], ['Second', 'Passed', 60, 6]])
     expect(rows[1].children.map(row => row.name)).toEqual(['Shared page', 'Second page'])
   })
+  it.each([false, true])('uses the declared parent for overlapping sibling subtransactions (earlier end first: %s)', earlierEndFirst => {
+    const endings = earlierEndFirst ? [marker('One', true, true), marker('Two', true, true)] : [marker('Two', true, true), marker('One', true, true)]
+    const source = script([marker('Parent'), marker('One', false, true), marker('Two', false, true), ...endings, marker('Parent', true)])
+    const [row] = debugTransactionRows(snapshot(source, [event(0, 0, 0), event(1, 10, 10), event(2, 20, 20), event(3, 60, 60), event(4, 80, 80), event(5, 100, 100)]))
+    expect(row.children.map(child => child.name)).toEqual(['One', 'Two'])
+    expect(row.children.every(child => child.children.length === 0 && child.status === 'Passed')).toBe(true)
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 110, overlapMs: 40, outsideChildrenMs: 30, parentElapsedMs: 100 })
+  })
+  it('keeps an explicitly nested subtransaction under its declared parent', () => {
+    const inner = { ...marker('Inner', false, true), params: { function: 'lr_start_sub_transaction', args: ['Inner', 'Outer'] } }
+    const source = script([marker('Parent'), marker('Outer', false, true), inner, marker('Inner', true, true), marker('Outer', true, true), marker('Parent', true)])
+    const [row] = debugTransactionRows(snapshot(source, [event(0, 0, 0), event(1, 10, 10), event(2, 20, 20), event(3, 60, 60), event(4, 80, 80), event(5, 100, 100)]))
+    expect(row.children.map(child => child.name)).toEqual(['Outer'])
+    expect(row.children[0].children.map(child => child.name)).toEqual(['Inner'])
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 70, overlapMs: 0, outsideChildrenMs: 30, parentElapsedMs: 100 })
+  })
   it('marks missing completion and unexecuted transactions without inventing end times', () => {
     const source = script([marker('Open'), request('Page'), marker('Open', true), marker('Later'), request('Later page'), marker('Later', true)])
     const run = snapshot(source, [event(0, 0, 0), event(1, 10, 30)], { status: 'stopped' })
@@ -52,6 +68,7 @@ describe('debug transaction breakdown', () => {
     expect(transaction.children[0].children[0].eventIndex).toBe(1)
     expect(transaction.children[1].children[0].eventIndex).toBe(4)
     expect(transaction.children[0].children[0].key).not.toBe(transaction.children[1].children[0].key)
+    expect(debugTransactionTimingBreakdown(transaction)).toEqual({ childSpanTotalMs: 100, overlapMs: 0, outsideChildrenMs: 50, parentElapsedMs: 150 })
   })
   it('uses elapsed span for concurrent requests, handles legacy request indices, and deduplicates evidence', () => {
     const source = script([{ name: 'Parallel page', type: 'http_sequence', target: '', params: { requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }])
@@ -60,6 +77,52 @@ describe('debug transaction breakdown', () => {
     const [row] = debugTransactionRows(snapshot(source, [first, second, first]))
     expect(row).toMatchObject({ name: 'Parallel page', status: 'Passed', durationMs: 70 })
     expect(row.children.map(child => child.durationMs)).toEqual([50, 60])
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 110, overlapMs: 40, outsideChildrenMs: 0, parentElapsedMs: 70 })
+  })
+  it('preserves sub-millisecond elapsed spans and separates protocol action measurements', () => {
+    const source = script([marker('Parent'), request('Page'), marker('Parent', true)])
+    const run = snapshot(source, [event(0, 0, 0, { started_at: '2026-10-26T12:00:00.000100000Z' }), event(1, 0, 0, { started_at: '2026-10-26T12:00:00.000200000Z', completed_at: '2026-10-26T12:00:00.000600000Z', duration_ms: 0.25 }), event(2, 0, 0, { completed_at: '2026-10-26T12:00:00.000900000Z' })])
+    const [row] = debugTransactionRows(run)
+    expect(row.durationMs).toBe(0.8)
+    expect(row.children[0]).toMatchObject({ durationMs: 0.4, recordedDurationMs: 0.25 })
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 0.4, overlapMs: 0, outsideChildrenMs: 0.4, parentElapsedMs: 0.8 })
+  })
+  it('uses high precision when ordering concurrent boundaries within one millisecond', () => {
+    const source = script([{ name: 'Page', type: 'http_sequence', target: '', params: { requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }])
+    const [row] = debugTransactionRows(snapshot(source, [event(0, 0, 0, { event_index: 0, request_index: 0, started_at: '2026-10-26T08:00:00.000300-04:00', completed_at: '2026-10-26T08:00:00.000900-04:00' }), event(0, 0, 0, { event_id: 'second', event_index: 1, request_index: 1, started_at: '2026-10-26T12:00:00.000100Z', completed_at: '2026-10-26T12:00:00.000700Z' })]))
+    expect(row.durationMs).toBe(0.8)
+    expect(row.startedAt).toBe('2026-10-26T12:00:00.000100Z')
+    expect(row.completedAt).toBe('2026-10-26T08:00:00.000900-04:00')
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 1.2, overlapMs: 0.4, outsideChildrenMs: 0, parentElapsedMs: 0.8 })
+  })
+  it('accounts for gaps before, between, and after child subtransactions once', () => {
+    const source = script([marker('Parent'), marker('One', false, true), marker('One', true, true), marker('Two', false, true), marker('Two', true, true), marker('Parent', true)])
+    const [row] = debugTransactionRows(snapshot(source, [event(0, 0, 0), event(1, 10, 10), event(2, 30, 30), event(3, 50, 50), event(4, 80, 80), event(5, 100, 100)]))
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 50, overlapMs: 0, outsideChildrenMs: 50, parentElapsedMs: 100 })
+  })
+  it('does not double count nested grandchildren or three overlapping siblings', () => {
+    const source = script([{ name: 'Page', type: 'http_sequence', target: '', params: { requests: [{ name: 'A', target: '/1' }, { name: 'B', target: '/2' }, { name: 'C', target: '/3' }] } }])
+    const [row] = debugTransactionRows(snapshot(source, [event(0, 0, 100, { event_index: 0, request_index: 0 }), event(0, 10, 90, { event_index: 1, request_index: 1 }), event(0, 20, 80, { event_index: 2, request_index: 2 })]))
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 240, overlapMs: 140, outsideChildrenMs: 0, parentElapsedMs: 100 })
+    row.children[0].children = [{ ...row.children[1], children: [] }]
+    expect(debugTransactionTimingBreakdown(row)?.childSpanTotalMs).toBe(240)
+  })
+  it('excludes unexecuted branches from child coverage without treating them as missing evidence', () => {
+    const source = script([marker('Parent'), { name: 'Unused branch', type: 'control_if', target: '', control: { condition: { expr: 'false' }, steps: [request('Unused')] } }, marker('Parent', true)])
+    const [row] = debugTransactionRows(snapshot(source, [event(0, 0, 0), event(2, 40, 40)]))
+    expect(row.children[0].status).toBe('Not run')
+    expect(debugTransactionTimingBreakdown(row)).toEqual({ childSpanTotalMs: 0, overlapMs: 0, outsideChildrenMs: 40, parentElapsedMs: 40 })
+  })
+  it('withholds accounting when timing is missing, incomplete, or outside the parent', () => {
+    const source = script([marker('Parent'), request('Child'), marker('Parent', true)])
+    const run = snapshot(source, [event(0, 0, 0), event(1, 10, 30), event(2, 40, 40)])
+    const [row] = debugTransactionRows(run)
+    row.children[0].completedAt = null
+    expect(debugTransactionTimingBreakdown(row)).toBeNull()
+    row.children[0].completedAt = new Date(50).toISOString()
+    expect(debugTransactionTimingBreakdown(row)).toBeNull()
+    run.report!.dropped_event_count = 1
+    expect(debugTransactionTimingBreakdown(debugTransactionRows(run)[0])).toBeNull()
   })
   it('does not derive a full page duration from partially retained timestamps', () => {
     const source = script([{ name: 'Page', type: 'http_sequence', target: '', params: { requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }])
