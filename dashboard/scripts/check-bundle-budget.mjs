@@ -80,11 +80,23 @@ const mib = (value) => value * 1024 * 1024
 // The JS aggregate limits move to 9.0 MiB raw and 2.6 MiB gzip (4.3% and
 // 4.8% headroom). Per-asset, CSS and every route/startup guard stay as they
 // were.
+//
+// 2026-10-26 per-asset recalibration. Main's script debugger work
+// (819563141 completion summary and retained HAR downloads, 746c34f6a HAR
+// capture controls and transaction breakdowns) grows the lazily loaded
+// ScriptEditor chunk from 788 KiB to 808.25 KiB raw (218.30 KiB gzip),
+// past the 800 KiB per-asset limit; a build of main alone measures the same.
+// The growth is the editor's own deferred debugger, not startup cost: the
+// chunk stays off every route's static graph. The merged build (7ad740fde)
+// measures JS 8.73 MiB / 2.52 MiB gzip, CSS 1013 KiB / 184 KiB gzip,
+// Scripts route 230.59 KiB and Test execution route 420.41 KiB. The JS
+// per-asset limits move to 850 KiB raw and 230 KiB gzip (5.2% and 5.4%
+// headroom). Aggregates, CSS and every route/startup guard stay as they were.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
-    maxAssetBytes: kib(800),
-    maxAssetGzipBytes: kib(220),
+    maxAssetBytes: kib(850),
+    maxAssetGzipBytes: kib(230),
     maxTotalBytes: mib(9),
     maxTotalGzipBytes: mib(2.6),
   }),

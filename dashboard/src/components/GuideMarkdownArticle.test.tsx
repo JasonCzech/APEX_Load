@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { loadHelpCodeView } from './helpCodeViewLoader'
 import GuideMarkdownArticle from './GuideMarkdownArticle'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -34,6 +35,8 @@ describe('GuideMarkdownArticle', () => {
     expect(container.querySelector('p')?.textContent).toBe('Visible text.')
     const example = container.querySelector<HTMLElement>('.markdown-code-editor')
     expect(example?.dataset.code).toBe('<!-- kept -->')
+    // The highlighted view loads lazily; the plain source shows until then.
+    await act(async () => { await loadHelpCodeView() })
     expect(example?.querySelector('.cm-content span')).not.toBeNull()
   })
 
