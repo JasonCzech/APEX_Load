@@ -1479,6 +1479,7 @@ func trimTerminalManagedTestRuntime(test *ManagedTest) {
 		}
 		if group.script != nil {
 			group.BrowserDocumentCaptureRequested = dsl.BrowserDocumentCaptureRequested(group.script)
+			group.browserHARCaptureRequested = dsl.BrowserHARCaptureRequested(group.script)
 		}
 		group.script = nil
 		group.baseScript = nil

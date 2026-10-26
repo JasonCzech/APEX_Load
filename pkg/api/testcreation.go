@@ -322,6 +322,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 			requiredRuntimeFeature:          groupRequiredRuntimeFeature(group),
 			requiredRuntimeFeatureKnown:     true,
 			BrowserDocumentCaptureRequested: groupRequestsBrowserDocumentCapture(group),
+			browserHARCaptureRequested:      groupRequestsBrowserHARCapture(group),
 		}
 	}
 	return &ManagedTest{

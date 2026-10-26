@@ -287,13 +287,19 @@ export omits HARs (`safe_export`); an editor's `?include=har` export keeps
 them (see [Downloads and exports](#downloads-and-exports)). The transfer is
 pulled by the controller, as the run's other archive artifacts are, rather
 than pushed by the generator: generators host the gRPC server in both
-connectivity modes. The transfer advertises no capability of its own, so
-mixed versions degrade silently: a generator older than this declares no
-HARs and its run archive does not record that HARs were captured, and a
-controller older than this never fetches or acknowledges a newer generator's
-HARs, which then remain only in that generator's own archive until its
-retention. Run controllers and generators of the same release when HARs
-matter.
+connectivity modes. Generators on platforms where native HAR capture is
+qualified (`browser.NativeHARSupported()`) advertise `browser_native_har_v1`;
+unsupported platforms omit it. When a browser script requests HAR capture
+(`always`, `on_error`, `on_sla_breach`, or `manual`, after resolving
+`har_capture_policy` over `har_capture`), the controller requires
+`browser_native_har_v1` at placement, pre-assignment, `AssignWork`, and shard
+evacuation, refusing older or unsupported-platform peers before any session
+preflight or target HTTP request is sent. Scripts with HAR capture `off` do not
+require `browser_native_har_v1` and continue to run across mixed peers. A
+controller older than native HAR transfer still neither requires
+`browser_native_har_v1` nor fetches or acknowledges a newer generator's HARs,
+which then remain only in that generator's own archive until its retention; run
+controllers of at least this release when HARs matter.
 
 ## Synthetic HAR
 

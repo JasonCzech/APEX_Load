@@ -978,7 +978,11 @@ type TestGroup struct {
 	currentVUsers   int
 	// Frozen execution intent survives terminal compaction and durable run snapshots.
 	BrowserDocumentCaptureRequested bool `json:"browser_document_capture_requested,omitempty"`
-	script                          *dsl.Script
+	// browserHARCaptureRequested is internal frozen execution intent used to
+	// preserve browser_native_har_v1 across lightweight snapshots and terminal
+	// runtime compaction without changing the public TestGroup JSON schema.
+	browserHARCaptureRequested bool
+	script                     *dsl.Script
 	// scheduleOverriddenScriptIterations is the script-sourced per-VUser
 	// iteration cap that applyScheduleIterationAuthority removed from the
 	// compiled script because the scenario schedule owns run length (0 = none).

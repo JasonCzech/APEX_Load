@@ -219,6 +219,8 @@ func TestManagedTestCapacitySnapshotPreservesEveryRequiredFeature(t *testing.T) 
 		{"Kafka seek and EOS", &dsl.Script{Protocol: "kafka", Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{ConsumerTransactions: true}}, Actions: []dsl.Action{{Type: "kafka_seek"}}}, []string{"kafka_real_seek_v1", "kafka_consumer_transactions_v1"}},
 		{"browser documents", &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{CaptureDocumentMetrics: boolPointer(true)}}}, []string{dsl.FeatureBrowserDocumentEvidenceV2}},
 		{"browser interactions", &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{CaptureInteractions: boolPointer(true)}}}, []string{dsl.FeatureBrowserInteractionEvidenceV2}},
+		{"browser native HAR", &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{HARCapture: "on_error"}}}, []string{dsl.FeatureBrowserNativeHARV1}},
+		{"browser HAR policy override off", &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{HARCapture: "always", HARCapturePolicy: "off"}}}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

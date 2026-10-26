@@ -49,10 +49,21 @@ func (c *Client) observeBrowserInteractionVersion(pong *pb.HeartbeatPong) {
 		}
 	}
 	c.connection.browserOriginalSource = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserOriginalSourceV1+"+"+FeaturePreparationV1)
+	c.connection.browserNativeHAR = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserNativeHARV1)
 	c.connection.browserInteractionV2 = available
 	c.connection.browserInteractionV3 = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserInteractionEvidenceV3+"+"+FeatureBrowserInteractionEvidenceV2+"+"+FeaturePreparationV1)
 	c.connection.browserInteractionObserved = time.Now()
 	c.connection.mu.Unlock()
+}
+
+func (c *Client) browserNativeHARNegotiated() bool {
+	if c.connection == nil {
+		return false
+	}
+	c.connection.mu.Lock()
+	defer c.connection.mu.Unlock()
+	age := time.Since(c.connection.browserInteractionObserved)
+	return c.connection.browserNativeHAR && age >= 0 && age <= 30*time.Second
 }
 
 func (c *Client) browserInteractionVersionNegotiated() bool {

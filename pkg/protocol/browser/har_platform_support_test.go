@@ -34,6 +34,13 @@ func TestNativeHARSupportedMatchesPlatform(t *testing.T) {
 	if got := NativeHARSupported(); got != want {
 		t.Fatalf("NativeHARSupported() on %s = %v, want %v", runtime.GOOS, got, want)
 	}
+	if got := (&Browser{}).SupportsBrowserNativeHAR(); got != want {
+		t.Fatalf("SupportsBrowserNativeHAR() on %s = %v, want %v", runtime.GOOS, got, want)
+	}
+	withNativeHARUnsupported(t)
+	if (&Browser{}).SupportsBrowserNativeHAR() {
+		t.Fatal("SupportsBrowserNativeHAR() remained true on an unsupported platform")
+	}
 }
 
 // Without native HAR support a HAR-recording session runs without a HAR,
