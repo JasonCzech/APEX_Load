@@ -38,12 +38,73 @@ type rollbackGeneratorClient struct {
 	rejectAdjust bool
 	// drainingReleases refuses that many capacity releases as still draining.
 	drainingReleases int
+	// finalizing answers that many adoption claims as a generator whose run
+	// is still finalizing its terminal outcome: the earlier outcome
+	// finalizingAs (ALREADY_STOPPED unless set) with the flag. Later claims
+	// read the configured outcome.
+	finalizing   int
+	finalizingAs pb.RunAdoptionOutcome
+	// adjustErr fails every duration adjustment, as a generator without the
+	// duration control does; noAdoptionSupport answers claims as a
+	// generator that predates run adoption.
+	adjustErr         error
+	noAdoptionSupport bool
+	// allowGraceful accepts graceful stops, recorded in gracefulStops, as an
+	// operator's stop of an installed run sends them.
+	allowGraceful bool
+	gracefulStops []uint64
+	// claimGenerations records the generation of every epoch claim.
+	claimGenerations []uint64
+	// lineage, once set (trackLineage), makes the fake check each adoption's
+	// proof chain as a generator does: an adoption is accepted only when the
+	// generation and token the run is held under appear in it, and the run
+	// then moves to the claimed generation and new token.
+	lineage *adoptionLineage
+}
+
+type adoptionLineage struct {
+	generation uint64
+	token      []byte
+}
+
+// trackLineage starts checking proof chains against the run held under
+// generation and token.
+func (c *rollbackGeneratorClient) trackLineage(generation uint64, token []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lineage = &adoptionLineage{generation: generation, token: append([]byte(nil), token...)}
+}
+
+// adoptLineageLocked answers one adoption against the held lineage.
+func (c *rollbackGeneratorClient) adoptLineageLocked(generation uint64, adoption generatorrpc.RunAdoption) pb.RunAdoptionOutcome {
+	held := c.lineage
+	if generation == held.generation && string(adoption.NewToken) == string(held.token) {
+		return pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED
+	}
+	proofs := append([]generatorrpc.RunAdoptionProof{{Generation: adoption.PriorGeneration, Token: adoption.PriorToken}}, adoption.PriorProofs...)
+	for _, proof := range proofs {
+		if proof.Generation == held.generation && string(proof.Token) == string(held.token) && generation > held.generation {
+			c.lineage = &adoptionLineage{generation: generation, token: append([]byte(nil), adoption.NewToken...)}
+			return pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED
+		}
+	}
+	return pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED
+}
+
+// claimedGenerations returns the generation of every epoch claim.
+func (c *rollbackGeneratorClient) claimedGenerations() []uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]uint64(nil), c.claimGenerations...)
 }
 
 func (c *rollbackGeneratorClient) AdjustDuration(_ context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.adjustments = append(c.adjustments, adjustment)
+	if c.adjustErr != nil {
+		return generatorrpc.DurationResult{}, c.adjustErr
+	}
 	if c.rejectAdjust {
 		return generatorrpc.DurationResult{}, nil
 	}
@@ -62,6 +123,11 @@ func (c *rollbackGeneratorClient) StopTestAtGenerationWithToken(_ context.Contex
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if graceful && c.allowGraceful {
+		c.gracefulStops = append(c.gracefulStops, generation)
+		c.stopTokens = append(c.stopTokens, append([]byte(nil), token...))
+		return generatorrpc.StopResult{Acknowledged: true}, nil
+	}
 	if graceful {
 		return generatorrpc.StopResult{}, errors.New("rollback failure must force-stop")
 	}
@@ -141,11 +207,47 @@ func (c *rollbackGeneratorClient) GetArchiveArtifact(context.Context, generatorr
 func (c *rollbackGeneratorClient) ClaimExecutionEpochWithAdoptions(ctx context.Context, generation uint64, owner string, ttl time.Duration, adoptions []generatorrpc.RunAdoption) (generatorrpc.ExecutionEpochResult, error) {
 	c.mu.Lock()
 	c.claims = append(c.claims, append([]generatorrpc.RunAdoption(nil), adoptions...))
+	c.claimGenerations = append(c.claimGenerations, generation)
+	finalizing := c.finalizing > 0 && len(adoptions) > 0
+	if finalizing {
+		c.finalizing--
+	}
+	earlier := c.finalizingAs
+	noAdoption := c.noAdoptionSupport
 	c.mu.Unlock()
 	if c.onClaim != nil {
 		c.onClaim()
 	}
-	return c.adoptionFakeClient.ClaimExecutionEpochWithAdoptions(ctx, generation, owner, ttl, adoptions)
+	result, err := c.adoptionFakeClient.ClaimExecutionEpochWithAdoptions(ctx, generation, owner, ttl, adoptions)
+	if noAdoption {
+		result.AdoptionSupported, result.Adoptions = false, nil
+	}
+	c.mu.Lock()
+	if c.lineage != nil {
+		for index := range result.Adoptions {
+			if result.Adoptions[index].Outcome == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED {
+				result.Adoptions[index].Outcome = c.adoptLineageLocked(generation, adoptions[index])
+			}
+		}
+	}
+	c.mu.Unlock()
+	if finalizing {
+		if earlier == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_UNSPECIFIED {
+			earlier = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED
+		}
+		for index := range result.Adoptions {
+			result.Adoptions[index] = generatorrpc.RunAdoptionResult{TestID: result.Adoptions[index].TestID, Outcome: earlier,
+				Detail: "the run's executions ended and its terminal outcome is still being finalized", Finalizing: true}
+		}
+	}
+	return result, err
+}
+
+// claimCount reports how many epoch claims this generator received.
+func (c *rollbackGeneratorClient) claimCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.claims)
 }
 
 func (c *rollbackGeneratorClient) ClaimExecutionEpoch(ctx context.Context, generation uint64, owner string, ttl time.Duration) (generatorrpc.ExecutionEpochResult, error) {

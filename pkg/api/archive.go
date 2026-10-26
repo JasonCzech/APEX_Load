@@ -1221,6 +1221,7 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 	copy(cloned, groups)
 	for i := range cloned {
 		cloned[i].BrowserDocumentCaptureRequested = groupRequestsBrowserDocumentCapture(groups[i])
+		cloned[i].browserHARCaptureRequested = groupRequestsBrowserHARCapture(groups[i])
 		cloned[i].EffectiveEndAt = cloneTimePtr(groups[i].EffectiveEndAt)
 		cloned[i].EndedAt = cloneTimePtr(groups[i].EndedAt)
 		cloned[i].Stages = cloneLoadStages(groups[i].Stages)

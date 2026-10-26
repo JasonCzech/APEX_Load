@@ -54,7 +54,10 @@
 .help-workspace .markdown-code-block { max-width: 100%; margin: 0; overflow-x: auto; }
 .help-workspace .markdown-code-editor .cm-editor { background: transparent; color: var(--text-primary); font-size: 13px; }
 .help-workspace .markdown-code-editor .cm-content { padding: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-.help-workspace .markdown-code-editor .cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; line-height: 1.5; }
+/* The focusable example region scrolls a long line, not CodeMirror's own
+ * scroller: a read-only view takes no focus, so only the region can be
+ * scrolled from the keyboard. */
+.help-workspace .markdown-code-editor .cm-scroller { overflow: visible; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; line-height: 1.5; }
 .help-workspace .markdown-code-editor .cm-line { padding: 0; }
 .help-workspace .markdown-code-editor .cm-focused { outline: none; }
 .help-workspace :is(.markdown-code-block, .markdown-table-wrap):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }

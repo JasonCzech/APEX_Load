@@ -68,8 +68,9 @@ is preserved and reported as unproven. Once every writer and worker has joined,
 raw retirement can still proceed under its separately bounded namespace wait,
 even when capture publication was refused. An artifact already qualified and
 published within the deadline stays valid during later retirement or retries.
-These finalization guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md).
-Native Linux/Windows crash qualification remains pending.
+These finalization guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md),
+and native [Linux](../qa/reviews/roadmap-browser-linux-har-crash-2026-10-26/README.md) and
+[Windows](../qa/reviews/windows-native-har-2026-10-16/README.md) crash qualification are recorded separately.
 
 ### Outstanding request limit
 
@@ -158,12 +159,16 @@ counts as no writer.
 Cleanup reclaims such a generation through the same retirement ledger only
 when its owner lease is free and every recorded process provably no longer
 exists: the same identified machine has booted again since, or, within this
-boot, on the same machine identity and in the same PID namespace, no process
-has that PID with that start time. A boot value two hosts share (the Windows
-boot counter, VMs cloned from a memory snapshot) therefore never lets one
-host's process table answer for another's. On Linux the PID namespace
+boot, on the same machine identity and in the same PID namespace, no live
+process has that PID with that start time. A boot value two hosts share (the
+Windows boot counter, VMs cloned from a memory snapshot) therefore never lets
+one host's process table answer for another's. On Linux the PID namespace
 includes the time namespace when the kernel has one, because process start
-times are counted in it. Without
+times are counted in it, and a well-formed `/proc/<pid>/stat` record in zombie
+`Z` or dead `X`/`x` state has already exited the kernel and closed its
+descriptors, so an orphaned Playwright driver reparented to a PID-1 generator
+container without `--init` counts as exited once its stdin-EOF flush
+finishes. Without
 `writer-entered.json` no native writer ever had the working path, so the
 generator's exit is enough. A live process, a reused PID with a different
 start time, a lookup error, an identity recorded on another machine, an
@@ -238,9 +243,15 @@ change cleanup authority, or turn optional evidence loss into a failed run.
 Capture policies that intentionally discard a HAR do not report capture loss.
 Replay durability and its fallback disclosure remain separate below.
 
-At finalization the controller fetches each declared HAR from the live
-generator, never from the collection cache, so a source served only from
-the cache (its generator gone) has its HARs `source_unavailable`. The fetch is
+At finalization the controller fetches each declared HAR from the collection
+source cache when `optional_receipt.json` retained it within the collection
+cache's byte and disk-space bounds, falling back to the live generator when
+reachable; a HAR from a lost generator that was not cached in `_collection` is
+counted as `source_unavailable`. Optional HARs and raw interactions are written
+into `_collection` as a best-effort pass after required source files succeed,
+recording optional digests in `optional_receipt.json` so the SQL
+`ReceiptSHA256` anchor for `receipt.json` never diverges across HA pods with
+different free disk space. The fetch is
 charged to the run's transfer reservation, whose writer refuses to go below
 the controller's free-space floor, with its own allowance (a refused HAR is
 `transfer_failed`); HAR fetches share that floor with the other sources'
@@ -302,13 +313,19 @@ export omits HARs (`safe_export`); an editor's `?include=har` export keeps
 them (see [Downloads and exports](#downloads-and-exports)). The transfer is
 pulled by the controller, as the run's other archive artifacts are, rather
 than pushed by the generator: generators host the gRPC server in both
-connectivity modes. The transfer advertises no capability of its own, so
-mixed versions degrade silently: a generator older than this declares no
-HARs and its run archive does not record that HARs were captured, and a
-controller older than this never fetches or acknowledges a newer generator's
-HARs, which then remain only in that generator's own archive until its
-retention. Run controllers and generators of the same release when HARs
-matter.
+connectivity modes. Generators on platforms where native HAR capture is
+qualified (`browser.NativeHARSupported()`) advertise `browser_native_har_v1`;
+unsupported platforms omit it. When a browser script requests HAR capture
+(`always`, `on_error`, `on_sla_breach`, or `manual`, after resolving
+`har_capture_policy` over `har_capture`), the controller requires
+`browser_native_har_v1` at placement, pre-assignment, `AssignWork`, and shard
+evacuation, refusing older or unsupported-platform peers before any session
+preflight or target HTTP request is sent. Scripts with HAR capture `off` do not
+require `browser_native_har_v1` and continue to run across mixed peers. A
+controller older than native HAR transfer still neither requires
+`browser_native_har_v1` nor fetches or acknowledges a newer generator's HARs,
+which then remain only in that generator's own archive until its retention; run
+controllers of at least this release when HARs matter.
 
 ## Synthetic HAR
 
@@ -387,12 +404,12 @@ administrator) access to the project.
   `/api/v1/scripts/{id}/browser-replay/sessions`) records a native HAR when
   asked with `record_har: true`; recording sets both capture aliases to
   `always`, overriding a script's own capture policy. It is opt-in because a
-  recording runs under the same limits as a load run's: past 100 MiB or
-  100,000 entries, or when the memory watchdog picks it, the browser context
-  is closed and the replay fails, and an owner that cannot be created fails
-  the replay's start. Where native HAR capture is not supported (see the
-  platform paragraph below), `record_har: true` is refused with 422 and the
-  replay does not start. Without it a replay records only when the script's own
+  recording runs under the same limits as a load run's: past 100 MiB,
+  100,000 entries, or 1,024 outstanding issued requests, or when the memory
+  watchdog picks it, the browser context is closed and the replay fails, and an
+  owner that cannot be created fails the replay's start. Where native HAR
+  capture is not supported (see the platform paragraph below), `record_har: true`
+  is refused with 422 and the replay does not start. Without it a replay records only when the script's own
   capture policy does (and serves that HAR as its native one); otherwise it
   serves the synthetic HAR built from its network entries. The Script
   Editor's debugger runs replays as script debug sessions, which offer no
@@ -606,7 +623,8 @@ with 422 before it starts. The coordinated local runtime acceptance host is
 macOS, where the ownership, crash-reclamation and real-driver tests run;
 results are recorded separately in the QA bundle. CI runs the same suites,
 real-driver crash test included, on Linux (the race lane, with Chromium and
-WebKit) and on Windows (the Windows leg of `desktop.yml`, recorded in the
+WebKit, recorded in the [Linux record](../qa/reviews/roadmap-browser-linux-har-crash-2026-10-26/README.md))
+and on Windows (the Windows leg of `desktop.yml`, recorded in the
 [Windows record](../qa/reviews/windows-native-har-2026-10-16/README.md)). The
 filesystems and peer processes must honor the existing descriptor-lock
 contract. Only scrubbed, completed HARs leave a generator; raw working files

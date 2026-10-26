@@ -63469,7 +63469,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": string;
         };
       };
       "401": {
@@ -63483,6 +63483,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -63505,7 +63510,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": string;
         };
       };
       "401": {
@@ -63519,6 +63524,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -66706,6 +66716,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -67083,6 +67094,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -67122,6 +67134,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -69301,6 +69320,18 @@ export interface operations {
                 "bytes_received"?: number;
                 "duration_ms"?: number;
                 "failure_kind"?: string;
+                "har"?: ({
+                  "id"?: string;
+                  "phases"?: Array<{
+                    "end_ms"?: (number) | null;
+                    "name": string;
+                    "start_ms"?: (number) | null;
+                    "unavailable_reason"?: string;
+                  }>;
+                  "request_body"?: (Record<string, unknown>) | null;
+                  "response_body"?: (Record<string, unknown>) | null;
+                  "started_at": string;
+                }) | null;
                 "method"?: string;
                 "request_body"?: string;
                 "request_body_encoding"?: string;
@@ -89928,6 +89959,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -90176,6 +90208,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -90318,6 +90364,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -90358,6 +90405,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -90657,6 +90711,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -90905,6 +90960,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -91047,6 +91116,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -91087,6 +91157,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -112859,6 +112936,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -113236,6 +113314,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -113275,6 +113354,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -113662,6 +113748,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -113910,6 +113997,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -114052,6 +114153,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -114092,6 +114194,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -114396,6 +114505,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -114644,6 +114754,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -114786,6 +114910,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -114826,6 +114951,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -123651,6 +123783,28 @@ export interface operations {
             "bytes_received"?: number;
             "duration_ms"?: number;
             "failure_kind"?: string;
+            "har"?: ({
+              "id"?: string;
+              "phases"?: Array<{
+                "end_ms"?: (number) | null;
+                "name"?: string;
+                "start_ms"?: (number) | null;
+                "unavailable_reason"?: string;
+              }>;
+              "request_body"?: ({
+                "mime_type"?: string;
+                "size_bytes"?: (number) | null;
+                "state"?: string;
+                "text"?: string;
+              }) | null;
+              "response_body"?: ({
+                "mime_type"?: string;
+                "size_bytes"?: (number) | null;
+                "state"?: string;
+                "text"?: string;
+              }) | null;
+              "started_at"?: string;
+            }) | null;
             "method"?: string;
             "request_body"?: string;
             "request_body_encoding"?: string;
@@ -154544,6 +154698,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -154921,6 +155076,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -154960,6 +155116,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -155347,6 +155510,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -155595,6 +155759,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -155737,6 +155915,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -155777,6 +155956,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -156081,6 +156267,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -156329,6 +156516,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -156471,6 +156672,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -156511,6 +156713,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -163023,6 +163232,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -163400,6 +163610,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -163439,6 +163650,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -164565,6 +164783,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -164942,6 +165161,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -164981,6 +165201,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -165281,6 +165508,13 @@ export interface operations {
             "experience_canary"?: boolean;
             "failure_policy"?: string;
             "har_capture_policy"?: string;
+            "har_options"?: ({
+              "bodies"?: string;
+              "max_body_bytes"?: number;
+              "max_total_body_bytes"?: number;
+              "redirects"?: boolean;
+              "timings"?: boolean;
+            }) | null;
             "headless"?: (boolean) | null;
             "ignore_think_time"?: boolean;
             "log_level"?: string;
@@ -166278,6 +166512,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -166526,6 +166761,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -166668,6 +166917,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -166708,6 +166958,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -166917,6 +167174,13 @@ export interface operations {
             "experience_canary"?: boolean;
             "failure_policy"?: string;
             "har_capture_policy"?: string;
+            "har_options"?: ({
+              "bodies"?: string;
+              "max_body_bytes"?: number;
+              "max_total_body_bytes"?: number;
+              "redirects"?: boolean;
+              "timings"?: boolean;
+            }) | null;
             "headless"?: (boolean) | null;
             "ignore_think_time"?: boolean;
             "log_level"?: string;
@@ -167914,6 +168178,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -168162,6 +168427,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -168304,6 +168583,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -168344,6 +168624,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -168554,6 +168841,13 @@ export interface operations {
             "experience_canary"?: boolean;
             "failure_policy"?: string;
             "har_capture_policy"?: string;
+            "har_options"?: ({
+              "bodies"?: string;
+              "max_body_bytes"?: number;
+              "max_total_body_bytes"?: number;
+              "redirects"?: boolean;
+              "timings"?: boolean;
+            }) | null;
             "headless"?: (boolean) | null;
             "ignore_think_time"?: boolean;
             "log_level"?: string;
@@ -169551,6 +169845,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -169799,6 +170094,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -169941,6 +170250,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -169981,6 +170291,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -170190,6 +170507,13 @@ export interface operations {
             "experience_canary"?: boolean;
             "failure_policy"?: string;
             "har_capture_policy"?: string;
+            "har_options"?: ({
+              "bodies"?: string;
+              "max_body_bytes"?: number;
+              "max_total_body_bytes"?: number;
+              "redirects"?: boolean;
+              "timings"?: boolean;
+            }) | null;
             "headless"?: (boolean) | null;
             "ignore_think_time"?: boolean;
             "log_level"?: string;
@@ -171187,6 +171511,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -171435,6 +171760,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -171577,6 +171916,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -171617,6 +171957,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -172046,6 +172393,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -172294,6 +172642,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -172436,6 +172798,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -172476,6 +172839,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -172789,6 +173159,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -173037,6 +173408,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -173179,6 +173564,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -173219,6 +173605,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -173523,6 +173916,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -173900,6 +174294,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -173939,6 +174334,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -174370,6 +174772,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -174618,6 +175021,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -174760,6 +175177,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -174800,6 +175218,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -175099,6 +175524,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -175347,6 +175773,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -175489,6 +175929,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -175529,6 +175970,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -191249,6 +191697,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -191497,6 +191946,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -191639,6 +192102,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -191679,6 +192143,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -191992,6 +192463,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -192240,6 +192712,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -192382,6 +192868,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -192422,6 +192909,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -192735,6 +193229,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -192983,6 +193478,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -193125,6 +193634,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -193165,6 +193675,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -193478,6 +193995,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -193726,6 +194244,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "group": string;
+              "har": {
+                "available": boolean;
+                "eligible": boolean;
+                "limitations": string;
+                "options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
+                "reason"?: string;
+                "retained_request_count": number;
+              };
               "id": string;
               "log_level": string;
               "logs"?: Array<{
@@ -193868,6 +194400,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -193908,6 +194441,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
@@ -199128,6 +199668,7 @@ export interface operations {
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
+                  "har"?: (Record<string, unknown>) | null;
                   "method"?: string;
                   "request_body"?: string;
                   "request_body_encoding"?: string;
@@ -199505,6 +200046,7 @@ export interface operations {
                   "experience_canary"?: boolean;
                   "failure_policy"?: string;
                   "har_capture_policy"?: string;
+                  "har_options"?: (Record<string, unknown>) | null;
                   "headless"?: (boolean) | null;
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
@@ -199544,6 +200086,13 @@ export interface operations {
                 "experience_canary"?: boolean;
                 "failure_policy"?: string;
                 "har_capture_policy"?: string;
+                "har_options"?: ({
+                  "bodies": string;
+                  "max_body_bytes": number;
+                  "max_total_body_bytes": number;
+                  "redirects": boolean;
+                  "timings": boolean;
+                }) | null;
                 "headless"?: (boolean) | null;
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;

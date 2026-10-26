@@ -2864,8 +2864,16 @@ type RunAdoptionResult struct {
 	// The run's logical duration target, in DurationAdjustment.target_duration
 	// terms, that the engines ran to when the cause is DURATION_ELAPSED.
 	CompletedLogicalDuration *durationpb.Duration `protobuf:"bytes,6,opt,name=completed_logical_duration,json=completedLogicalDuration,proto3" json:"completed_logical_duration,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// finalizing is set when the run's assignment is already removed and every
+	// one of its executions has ended, but its terminal outcome is not yet
+	// published (archive finalization). The outcome keeps the value it had
+	// before this field (ALREADY_STOPPED or UNKNOWN_TEST), so an older
+	// controller is unaffected. A newer controller re-queries with a claim of
+	// the same generation, within a bounded wait, for the published outcome.
+	// Older generators never set it.
+	Finalizing    bool `protobuf:"varint,7,opt,name=finalizing,proto3" json:"finalizing,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RunAdoptionResult) Reset() {
@@ -2938,6 +2946,13 @@ func (x *RunAdoptionResult) GetCompletedLogicalDuration() *durationpb.Duration {
 		return x.CompletedLogicalDuration
 	}
 	return nil
+}
+
+func (x *RunAdoptionResult) GetFinalizing() bool {
+	if x != nil {
+		return x.Finalizing
+	}
+	return false
 }
 
 type ExecutionEpochAck struct {
@@ -9606,14 +9621,17 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10prior_generation\x18\x02 \x01(\x04R\x0fpriorGeneration\x12=\n" +
 	"\x1bprior_run_supervision_token\x18\x03 \x01(\fR\x18priorRunSupervisionToken\x129\n" +
 	"\x19new_run_supervision_token\x18\x04 \x01(\fR\x16newRunSupervisionToken\x12@\n" +
-	"\fprior_proofs\x18\x05 \x03(\v2\x1d.apexload.v1.RunAdoptionProofR\vpriorProofs\"\xc5\x02\n" +
+	"\fprior_proofs\x18\x05 \x03(\v2\x1d.apexload.v1.RunAdoptionProofR\vpriorProofs\"\xe5\x02\n" +
 	"\x11RunAdoptionResult\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x129\n" +
 	"\aoutcome\x18\x02 \x01(\x0e2\x1f.apexload.v1.RunAdoptionOutcomeR\aoutcome\x12\x16\n" +
 	"\x06detail\x18\x03 \x01(\tR\x06detail\x12%\n" +
 	"\x0eterminal_state\x18\x04 \x01(\tR\rterminalState\x12D\n" +
 	"\x0eterminal_cause\x18\x05 \x01(\x0e2\x1d.apexload.v1.RunTerminalCauseR\rterminalCause\x12W\n" +
-	"\x1acompleted_logical_duration\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\x18completedLogicalDuration\"\xcd\x02\n" +
+	"\x1acompleted_logical_duration\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\x18completedLogicalDuration\x12\x1e\n" +
+	"\n" +
+	"finalizing\x18\a \x01(\bR\n" +
+	"finalizing\"\xcd\x02\n" +
 	"\x11ExecutionEpochAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12-\n" +
 	"\x12current_generation\x18\x02 \x01(\x04R\x11currentGeneration\x12+\n" +

@@ -132,9 +132,9 @@ type stagedRemoteHAR struct {
 	path  string
 }
 
-// fetchRemoteHARArtifacts fetches a source's declared HARs from its live
-// generator client into dir. The collection cache never holds HARs, so a
-// source served from it, or without a client, has its HARs unavailable.
+// fetchRemoteHARArtifacts fetches a source's declared HARs from its cached
+// optional evidence or live generator client into dir. A HAR that was neither
+// cached nor reachable on a live generator is omitted as source_unavailable.
 //
 // transfer charges the bytes to the run's transfer reservation, whose writer
 // refuses to go below the controller's free-space floor, so optional evidence
@@ -148,11 +148,11 @@ func fetchRemoteHARArtifacts(ctx context.Context, source *optionalEvidenceSource
 			omitted[harOmittedInvalid]++
 			continue
 		}
-		if source == nil || source.client == nil {
+		if !source.canFetch(entry.Name) {
 			omitted[harOmittedSourceUnavailable]++
 			continue
 		}
-		if source.stalled {
+		if (source.cached == nil || !source.cached.hasOptional(entry.Name)) && source.stalled {
 			omitted[harOmittedTransfer]++
 			continue
 		}
@@ -178,7 +178,11 @@ func fetchRemoteHARArtifacts(ctx context.Context, source *optionalEvidenceSource
 			_ = os.Remove(path)
 			transfer.release(entry.Bytes)
 			budget.release(entry.Bytes)
-			omitted[harOmittedTransfer]++
+			if errors.Is(err, errOptionalEvidenceSourceUnavailable) {
+				omitted[harOmittedSourceUnavailable]++
+			} else {
+				omitted[harOmittedTransfer]++
+			}
 			continue
 		}
 		entry.SourceIdentity = sourceIdentity
@@ -194,17 +198,49 @@ var optionalEvidenceFetchTimeout = func(bytes int64) time.Duration {
 	return 30*time.Second + time.Duration(max(bytes, 0)>>20)*time.Second
 }
 
-// optionalEvidenceSource is one generator's live client for its optional
-// evidence (HARs, then the interactions sidecar). Once a fetch from it runs
-// out its own deadline, the source's remaining optional artifacts are not
-// fetched (each is transfer_failed): every one would wait out another
+var errOptionalEvidenceSourceUnavailable = errors.New("optional evidence source is unavailable")
+
+// optionalEvidenceSource serves one generator's optional evidence (HARs, then
+// the interactions sidecar) from the collection source cache when present,
+// falling back to the live generator client when reachable. Once a live fetch
+// runs out its own deadline, the source's remaining live optional artifacts
+// are not fetched (each is transfer_failed): every one would wait out another
 // deadline, and one stalled source must not use up the staging attempt.
 type optionalEvidenceSource struct {
 	client  archiveArtifactClient
+	cached  *cachedArchiveSource
 	stalled bool
 }
 
+func (s *optionalEvidenceSource) canFetch(name string) bool {
+	if s == nil {
+		return false
+	}
+	if s.cached != nil && s.cached.hasOptional(name) {
+		return true
+	}
+	return s.client != nil
+}
+
 func (s *optionalEvidenceSource) fetch(ctx context.Context, testID, name, sourceIdentity, path string, size int64, budget *remoteArchiveTransferBudget) (int64, error) {
+	if s == nil {
+		return 0, errOptionalEvidenceSourceUnavailable
+	}
+	if s.cached != nil && s.cached.hasOptional(name) {
+		fetchCtx, cancel := context.WithTimeout(ctx, optionalEvidenceFetchTimeout(size))
+		copied, err := fetchRemoteArchiveArtifactFileForSource(fetchCtx, s.cached, testID, name, sourceIdentity, path, size, budget)
+		cancel()
+		if err == nil || s.client == nil {
+			return copied, err
+		}
+		_ = os.Remove(path)
+	}
+	if s.client == nil {
+		return 0, errOptionalEvidenceSourceUnavailable
+	}
+	if s.stalled {
+		return 0, context.DeadlineExceeded
+	}
 	fetchCtx, cancel := context.WithTimeout(ctx, optionalEvidenceFetchTimeout(size))
 	defer cancel()
 	copied, err := fetchRemoteArchiveArtifactFileForSource(fetchCtx, s.client, testID, name, sourceIdentity, path, size, budget)

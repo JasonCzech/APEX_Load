@@ -399,6 +399,10 @@ type TestRunner struct {
 	// live-table finalization's ownership check and the finalization itself.
 	// Production leaves it nil.
 	afterLiveTableFinalizeCheck func()
+	// beforeLiveTableRestoreRegistration is a deterministic test barrier
+	// between a restore's reads and its registration of the tables.
+	// Production leaves it nil.
+	beforeLiveTableRestoreRegistration func()
 	// runAdoptionDoneGeneration is the durable execution generation whose
 	// acquire-time run adoption (Phase A) has finished. The generator epoch
 	// keeper waits for it instead of for the whole reconcile.
@@ -974,7 +978,11 @@ type TestGroup struct {
 	currentVUsers   int
 	// Frozen execution intent survives terminal compaction and durable run snapshots.
 	BrowserDocumentCaptureRequested bool `json:"browser_document_capture_requested,omitempty"`
-	script                          *dsl.Script
+	// browserHARCaptureRequested is internal frozen execution intent used to
+	// preserve browser_native_har_v1 across lightweight snapshots and terminal
+	// runtime compaction without changing the public TestGroup JSON schema.
+	browserHARCaptureRequested bool
+	script                     *dsl.Script
 	// scheduleOverriddenScriptIterations is the script-sourced per-VUser
 	// iteration cap that applyScheduleIterationAuthority removed from the
 	// compiled script because the scenario schedule owns run length (0 = none).

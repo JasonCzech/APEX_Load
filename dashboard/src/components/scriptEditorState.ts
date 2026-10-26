@@ -56,6 +56,11 @@ export interface ParameterCandidate {
 export interface ReplayOptionsState {
   liveTableSeedsText?: string
   capture?: 'diagnostic' | 'errors' | 'script'
+  harBodies?: 'none' | 'request' | 'response' | 'both'
+  harRedirects?: boolean
+  harTimings?: boolean
+  harMaxBodyBytes?: number
+  harMaxTotalBodyBytes?: number
   groupName: string
   ignoreThinkTime: boolean
   startPaused: boolean
@@ -161,6 +166,7 @@ export type ScriptEditorEvent =
 
 export const DEFAULT_REPLAY_OPTIONS: ReplayOptionsState = {
   capture: 'diagnostic',
+  harBodies: 'none', harRedirects: true, harTimings: true, harMaxBodyBytes: 65536, harMaxTotalBodyBytes: 4194304,
   groupName: '',
   ignoreThinkTime: true,
   startPaused: false,

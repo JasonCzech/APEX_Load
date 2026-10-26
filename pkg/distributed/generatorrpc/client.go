@@ -35,6 +35,7 @@ const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 type Assignment struct {
 	// PreferBrowserOutcomeClocks upgrades implicit controller requests only after fresh capability negotiation.
 	PreferBrowserOutcomeClocks        bool
+	RequireBrowserNativeHAR           bool
 	BrowserAuthoredDefinition         protocol.BrowserAuthoredDefinition
 	BrowserDocumentProofVersion       uint32
 	PreferBrowserDocumentProof        bool
@@ -547,6 +548,11 @@ type RunAdoptionResult struct {
 	// cause is DURATION_ELAPSED.
 	TerminalCause     pb.RunTerminalCause
 	CompletedDuration time.Duration
+	// Finalizing reports that the run's executions all ended and its
+	// assignment is gone, but its terminal outcome is not yet published.
+	// Outcome then keeps its earlier value (ALREADY_STOPPED or UNKNOWN_TEST).
+	// Older generators never set it.
+	Finalizing bool
 }
 
 type Heartbeat struct {
@@ -712,6 +718,7 @@ type Client struct {
 type sharedClientConnection struct {
 	browserDocumentProof       uint32
 	browserOriginalSource      bool
+	browserNativeHAR           bool
 	browserInteractionV2       bool
 	browserInteractionV3       bool
 	browserInteractionObserved time.Time
@@ -1008,6 +1015,7 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 			TestID: adoption.GetTestId(), Outcome: adoption.GetOutcome(),
 			Detail: adoption.GetDetail(), TerminalState: adoption.GetTerminalState(),
 			TerminalCause: adoption.GetTerminalCause(), CompletedDuration: completed,
+			Finalizing: adoption.GetFinalizing(),
 		})
 	}
 	if testID != "" && !ack.GetTestLeaseAccepted() {
@@ -1057,6 +1065,9 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 			return AssignmentResult{}, fmt.Errorf("browser_interaction_v2_capability_not_negotiated")
 		}
 		request.PrepareOnly = true
+	}
+	if assignment.RequireBrowserNativeHAR && !c.browserNativeHARNegotiated() {
+		return AssignmentResult{}, fmt.Errorf("browser_native_har_v1_capability_not_negotiated")
 	}
 	if err := validateJavaHostSelection(request); err != nil {
 		return AssignmentResult{}, err

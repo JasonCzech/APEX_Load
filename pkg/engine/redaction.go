@@ -997,6 +997,17 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 		} else {
 			entries[i].BrowserEvidence = nil
 		}
+		if har := entries[i].HAR.Clone(); har != nil {
+			for _, body := range []*protocol.ReplayHARBody{har.RequestBody, har.ResponseBody} {
+				if body != nil {
+					body.MimeType = scrubSensitiveTextWithConfig(body.MimeType, config)
+				}
+				if body != nil && body.State == "retained" {
+					body.Text = scrub.BodyText(scrubSensitiveTextWithConfig(body.Text, config))
+				}
+			}
+			entries[i].HAR = har
+		}
 		entries[i].URL = scrubSensitiveTextWithConfig(entries[i].URL, config)
 		entries[i].RequestHeaders = scrubSensitiveHeaders(entries[i].RequestHeaders, config)
 		entries[i].RequestBody = scrubSensitiveTextWithConfig(entries[i].RequestBody, config)

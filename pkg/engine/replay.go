@@ -259,16 +259,17 @@ type ReplayActionEvent struct {
 }
 
 type ReplayRuntimeProfile struct {
-	Name             string `json:"name,omitempty"`
-	CaptureMode      string `json:"capture_mode,omitempty"`
-	LogLevel         string `json:"log_level,omitempty"`
-	IgnoreThinkTime  bool   `json:"ignore_think_time,omitempty"`
-	BrowserEngine    string `json:"browser_engine,omitempty"`
-	DeviceProfile    string `json:"device_profile,omitempty"`
-	Headless         *bool  `json:"headless,omitempty"`
-	FailurePolicy    string `json:"failure_policy,omitempty"`
-	ExperienceCanary bool   `json:"experience_canary,omitempty"`
-	HARCapturePolicy string `json:"har_capture_policy,omitempty"`
+	HAROptions       *protocol.ReplayHAROptions `json:"har_options,omitempty"`
+	Name             string                     `json:"name,omitempty"`
+	CaptureMode      string                     `json:"capture_mode,omitempty"`
+	LogLevel         string                     `json:"log_level,omitempty"`
+	IgnoreThinkTime  bool                       `json:"ignore_think_time,omitempty"`
+	BrowserEngine    string                     `json:"browser_engine,omitempty"`
+	DeviceProfile    string                     `json:"device_profile,omitempty"`
+	Headless         *bool                      `json:"headless,omitempty"`
+	FailurePolicy    string                     `json:"failure_policy,omitempty"`
+	ExperienceCanary bool                       `json:"experience_canary,omitempty"`
+	HARCapturePolicy string                     `json:"har_capture_policy,omitempty"`
 }
 
 type ReplayArtifactManifest struct {
@@ -465,6 +466,16 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	}
 	if captureCorrelationEvidence {
 		protoConfig[protocol.CorrelationEvidenceCaptureConfigKey] = true
+	}
+	if opts.DebugController != nil {
+		protoConfig[protocol.ReplayNetworkCaptureConfigKey] = true
+		if opts.RuntimeProfile != nil && opts.RuntimeProfile.HAROptions != nil {
+			capture, err := protocol.NewReplayHARCapture(*opts.RuntimeProfile.HAROptions)
+			if err != nil {
+				return nil, err
+			}
+			protoConfig[protocol.ReplayHARCaptureConfigKey] = capture
+		}
 	}
 	_, harProvider := proto.(protocol.BrowserHARArtifactProvider)
 	recordsHAR := harProvider && opts.RecordHAR

@@ -21,9 +21,9 @@ export interface ReportKpi {
   percentileQuality?: string
 }
 
-export interface TimelineBreachWindow {
-  start: string
-  end: string
+export interface TimelineBreachWindow<T extends string | number = string> {
+  start: T
+  end: T
 }
 
 export interface BaselineDelta {
@@ -281,27 +281,29 @@ export function alignBaselineTimeline(current: MetricsHistoryPoint[], baseline: 
   })
 }
 
-export function buildBreachWindows(history: MetricsHistoryPoint[], p95SlaMs?: number, maxErrorPct?: number): TimelineBreachWindow[] {
-  const windows: TimelineBreachWindow[] = []
-  let activeStart: string | undefined
-  let activeEnd: string | undefined
+export function buildBreachWindows(history: MetricsHistoryPoint[], p95SlaMs?: number, maxErrorPct?: number): TimelineBreachWindow[]
+export function buildBreachWindows<T extends string | number>(history: MetricsHistoryPoint[], p95SlaMs: number | undefined, maxErrorPct: number | undefined, coordinate: (point: MetricsHistoryPoint) => T): TimelineBreachWindow<T>[]
+export function buildBreachWindows(history: MetricsHistoryPoint[], p95SlaMs?: number, maxErrorPct?: number, coordinate: (point: MetricsHistoryPoint) => string | number = point => point.time): TimelineBreachWindow<string | number>[] {
+  const windows: TimelineBreachWindow<string | number>[] = []
+  let activeStart: string | number | undefined
+  let activeEnd: string | number | undefined
 
   history.forEach(point => {
     if (point.resourceSampleOnly === 1) return
     const breached = (finite(p95SlaMs) && finite(point.p95) && point.p95 > p95SlaMs) ||
       (finite(maxErrorPct) && finite(point.errorPct) && point.errorPct > maxErrorPct)
     if (breached) {
-      activeStart = activeStart ?? point.time
-      activeEnd = point.time
+      activeStart = activeStart ?? coordinate(point)
+      activeEnd = coordinate(point)
       return
     }
-    if (activeStart && activeEnd) {
+    if (activeStart !== undefined && activeEnd !== undefined) {
       windows.push({ start: activeStart, end: activeEnd })
     }
     activeStart = undefined
     activeEnd = undefined
   })
-  if (activeStart && activeEnd) windows.push({ start: activeStart, end: activeEnd })
+  if (activeStart !== undefined && activeEnd !== undefined) windows.push({ start: activeStart, end: activeEnd })
   return windows
 }
 

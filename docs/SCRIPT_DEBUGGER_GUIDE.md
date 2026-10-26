@@ -40,6 +40,75 @@ A pause request while an action is executing remains unavailable until the engin
 
 **Recent runs** retains up to five completed runs in the current editor session, with protocol-appropriate evidence. Pin a comparison baseline to inspect differences in outcomes, assertions, resolved requests, responses, variables and configuration. This is temporary editor history; use **Export session** before closing. The export includes the captured run controls and retained evidence; seed-variable names are exported without their original input values.
 
+## Completion summary
+
+When a debug run completes, fails, or stops, **Summary** opens in the main debug
+workspace. It shows the run outcome, source revision, elapsed time, retained action
+counts, errors, and warnings. **Inspect** opens a failed action's evidence;
+**Return to debugger** restores the evidence view, and **Debug again** checks the
+current draft. Editing the script leaves the completed snapshot intact and marks
+it as results from an earlier draft. Dropped or truncated evidence is identified.
+
+The **Transactions** table lists the transactions defined in the run's script,
+with pass/fail status, phase, start time, end time, and elapsed time. Expand a parent
+to inspect subtransactions, page requests, and repeated executions; **Inspect**
+opens the corresponding debugger evidence. The elapsed-time column consistently
+uses retained start/end timestamps, preserving sub-millisecond precision during
+calculation. Steps also show their recorded action time separately.
+Elapsed time includes debugger pauses, think time, and work between children;
+it is not the engine's transaction response-time metric.
+
+A parent's elapsed time need not equal the sum of its children: gaps contribute
+time outside children, while concurrent/overlapping child spans must be counted
+once. Expanding a parent shows the reconciliation: child elapsed spans minus
+duplicate time from overlapping children plus time outside child spans equals
+parent elapsed time.
+Only immediate children are counted, avoiding nested double counting. Subtransactions
+use their declared parent, including overlapping siblings. Repeated
+executions include the elapsed gaps between executions. Displayed values are
+rounded, so small rounding differences can remain. The breakdown is withheld
+when retained timing is incomplete.
+
+An unfinished transaction has no end time or duration. Manually reported
+transactions without captured boundaries leave their timing blank. Transactions with no
+execution evidence are marked **Not run**, or **Not observed** when evidence was
+dropped. The table retains the original transaction structure after draft edits.
+
+HTTP and browser scripts offer **Download HAR** when the session retains network
+requests. This is a redacted HAR 1.2 derived from observed traffic; its detail follows
+the capture options selected before the run. Refused actions
+and cache hits do not become dispatched requests. Failed and stopped runs can
+still export retained traffic. Summary downloads follow existing debug-session
+retention and project access; download evidence before the session expires.
+
+### HAR capture options
+
+In **Debug options → HAR capture**, choose **Retain bodies**: None (the default),
+Request only, Response only, or Request and response. Bodies are complete UTF-8
+text only and use the existing credential, runtime-secret, and custom redaction
+rules. Binary, incomplete, oversized, or budget-exhausted bodies are omitted
+whole, with the reason recorded in each HAR entry. An empty retained body is
+preserved as empty content.
+
+**Per-body limit** offers 16, 64, 256, or 1,024 KiB; **Total body limit per run**
+offers 1, 4, or 16 MiB. Defaults are 64 KiB and 4 MiB. Existing event, snapshot,
+and session limits can further reduce retained evidence. HTTP execution reuses
+its bounded decoded final response; encoded intermediate response bodies may be
+unavailable. Browser content requires a known size and unencoded text; encoded or unmeasured
+browser bodies are omitted to keep body reads bounded.
+
+**Retain intermediate redirects** and **Retain detailed timings** are on by
+default in the dashboard. Redirect capture observes actual followed requests and
+never changes the script's redirect policy. Final, unfollowed redirect responses
+remain visible when intermediate hops are off. Timings include measured DNS,
+connection, TLS, wait, and receive phases; HTTP can also measure sending. Missing
+phases are marked unavailable, and browser wait includes send where the browser
+cannot separate them.
+
+Options apply to a new run, can be saved in a run profile, and appear in the
+completed summary and HAR metadata. Changing them does not enrich an earlier
+run. Native HAR file disposal and session access/expiry rules remain unchanged.
+
 ## Routes
 
 Use `/api/v1/replay/sessions/{session_id}` for session reads and transport controls; it is the canonical route family. The older `/api/v1/script-debug/sessions/{session_id}` routes are still registered but marked deprecated in `swagger.yaml`. Browser replay canary sessions still use `/api/v1/browser-replay/sessions/{session_id}`.

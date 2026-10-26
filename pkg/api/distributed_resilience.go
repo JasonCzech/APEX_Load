@@ -1440,11 +1440,15 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				correlation := tr.runCorrelationAssignment(testID)
 				messagingCarrier := tr.testUsesMessagingTraceCarrier(testID)
 				jointProjection := runJointProjection(managedTest)
-				if len(correlation.Origins) > 0 || messagingCarrier || jointProjection != nil || len(tr.liveBindings(testID)) > 0 {
+				requireNativeHAR := dsl.BrowserHARCaptureRequested(group.script)
+				if len(correlation.Origins) > 0 || messagingCarrier || jointProjection != nil || len(tr.liveBindings(testID)) > 0 || requireNativeHAR {
 					// One probe answers every feature the replacement must support.
 					ctx, cancel := context.WithTimeout(parent, b.timeout)
 					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
 					cancel()
+					if requireNativeHAR && !protocol.RuntimeFeaturesSatisfy(snapshot.CompatibleFeatures, generatorrpc.FeatureBrowserNativeHARV1) {
+						return fail(fmt.Errorf("generator %q lacks browser_native_har_v1 for evacuation", shard.Target))
+					}
 					if len(tr.liveBindings(testID)) > 0 && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureLiveTablesV1) {
 						return fail(fmt.Errorf("generator %q lacks live_tables_v1 for evacuation", shard.Target))
 					}
@@ -1500,6 +1504,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				changes = append(changes, appliedChange{target: shard.Target, group: groupName, newlyAssigned: true})
 				touchedTargets[shard.Target] = struct{}{}
 				assignment, assignErr := client.AssignWork(ctx, generatorrpc.Assignment{
+					RequireBrowserNativeHAR:    requireNativeHAR,
 					ArchiveSourceTarget:        archiveSourceTarget,
 					LiveTableBindingsJSON:      tr.liveBindingJSONForGroup(testID, group.Name),
 					TestID:                     testID,

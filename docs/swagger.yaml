@@ -41947,6 +41947,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -43090,6 +43095,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -43203,6 +43212,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -43933,6 +43964,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -45076,6 +45112,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -45189,6 +45229,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -45962,6 +46024,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -47105,6 +47172,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -47218,6 +47289,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -47867,6 +47960,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -49010,6 +49108,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -49123,6 +49225,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -49772,6 +49896,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -50915,6 +51044,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -51028,6 +51161,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -147418,6 +147573,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -148161,6 +148321,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -148598,6 +148799,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -148713,6 +148918,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -148817,6 +149044,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -149559,6 +149787,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -150302,6 +150535,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -150739,6 +151013,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -150854,6 +151132,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -150958,6 +151258,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -151021,7 +151322,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: string
         "401":
           description: Authentication required or invalid.
           content:
@@ -151036,6 +151337,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -151760,6 +152067,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -152503,6 +152815,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -152940,6 +153293,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -153055,6 +153412,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -153159,6 +153538,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -153907,6 +154287,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -154650,6 +155035,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -155087,6 +155513,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -155202,6 +155632,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -155306,6 +155758,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -156048,6 +156501,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -156791,6 +157249,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -157228,6 +157727,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -157343,6 +157846,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -157447,6 +157972,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -158194,6 +158720,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -158937,6 +159468,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -159374,6 +159946,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -159489,6 +160065,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -159593,6 +160191,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -160341,6 +160940,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -161084,6 +161688,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -161521,6 +162166,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -161636,6 +162285,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -161740,6 +162411,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -202569,6 +203241,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -203312,6 +203989,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -203749,6 +204467,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -203864,6 +204586,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -203968,6 +204712,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -204711,6 +205456,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -205454,6 +206204,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -205891,6 +206682,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -206006,6 +206801,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -206110,6 +206927,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -206174,7 +206992,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: string
         "401":
           description: Authentication required or invalid.
           content:
@@ -206189,6 +207007,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -206914,6 +207738,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -207657,6 +208486,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -208094,6 +208964,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -208209,6 +209083,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -208313,6 +209209,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -209062,6 +209959,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -209805,6 +210707,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -210242,6 +211185,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -210357,6 +211304,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -210461,6 +211430,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -211204,6 +212174,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -211947,6 +212922,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -212384,6 +213400,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -212499,6 +213519,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -212603,6 +213645,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -213351,6 +214394,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -214094,6 +215142,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -214531,6 +215620,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -214646,6 +215739,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -214750,6 +215865,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -215499,6 +216615,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -216242,6 +217363,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -216679,6 +217841,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -216794,6 +217960,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -216898,6 +218086,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -238772,6 +239961,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -239915,6 +241109,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -240028,6 +241226,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -240687,6 +241907,22 @@ paths:
                       type: string
                     har_capture_policy:
                       type: string
+                    har_options:
+                      type: object
+                      properties:
+                        bodies:
+                          type: string
+                        max_body_bytes:
+                          type: integer
+                          format: int64
+                        max_total_body_bytes:
+                          type: integer
+                          format: int64
+                        redirects:
+                          type: boolean
+                        timings:
+                          type: boolean
+                      nullable: true
                     headless:
                       type: boolean
                       nullable: true
@@ -243391,6 +244627,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -244134,6 +245375,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -244571,6 +245853,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -244686,6 +245972,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -244790,6 +246098,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -259309,6 +260618,22 @@ paths:
                       type: string
                     har_capture_policy:
                       type: string
+                    har_options:
+                      type: object
+                      properties:
+                        bodies:
+                          type: string
+                        max_body_bytes:
+                          type: integer
+                          format: int64
+                        max_total_body_bytes:
+                          type: integer
+                          format: int64
+                        redirects:
+                          type: boolean
+                        timings:
+                          type: boolean
+                      nullable: true
                     headless:
                       type: boolean
                       nullable: true
@@ -262013,6 +263338,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -262756,6 +264086,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -263193,6 +264564,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -263308,6 +264683,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -263412,6 +264809,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -285517,6 +286915,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -286660,6 +288063,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -286773,6 +288180,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -287047,6 +288476,60 @@ paths:
                         format: double
                       failure_kind:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          phases:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                end_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                name:
+                                  type: string
+                                start_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                unavailable_reason:
+                                  type: string
+                          request_body:
+                            type: object
+                            properties:
+                              mime_type:
+                                type: string
+                              size_bytes:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              state:
+                                type: string
+                              text:
+                                type: string
+                            nullable: true
+                          response_body:
+                            type: object
+                            properties:
+                              mime_type:
+                                type: string
+                              size_bytes:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              state:
+                                type: string
+                              text:
+                                type: string
+                            nullable: true
+                          started_at:
+                            type: string
+                            format: date-time
+                        nullable: true
                       method:
                         type: string
                       request_body:
@@ -293541,6 +295024,22 @@ paths:
                       type: string
                     har_capture_policy:
                       type: string
+                    har_options:
+                      type: object
+                      properties:
+                        bodies:
+                          type: string
+                        max_body_bytes:
+                          type: integer
+                          format: int64
+                        max_total_body_bytes:
+                          type: integer
+                          format: int64
+                        redirects:
+                          type: boolean
+                        timings:
+                          type: boolean
+                      nullable: true
                     headless:
                       type: boolean
                       nullable: true
@@ -296245,6 +297744,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -296988,6 +298492,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -297425,6 +298970,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -297540,6 +299089,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -297644,6 +299215,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -345474,6 +347046,22 @@ paths:
                       type: string
                     har_capture_policy:
                       type: string
+                    har_options:
+                      type: object
+                      properties:
+                        bodies:
+                          type: string
+                        max_body_bytes:
+                          type: integer
+                          format: int64
+                        max_total_body_bytes:
+                          type: integer
+                          format: int64
+                        redirects:
+                          type: boolean
+                        timings:
+                          type: boolean
+                      nullable: true
                     headless:
                       type: boolean
                       nullable: true
@@ -348178,6 +349766,11 @@ paths:
                                   format: double
                                 failure_kind:
                                   type: string
+                                har:
+                                  type: object
+                                  description: 'Go type: ReplayHARExchange'
+                                  additionalProperties: true
+                                  nullable: true
                                 method:
                                   type: string
                                 request_body:
@@ -348921,6 +350514,47 @@ paths:
                             - target
                       group:
                         type: string
+                      har:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                          eligible:
+                            type: boolean
+                          limitations:
+                            type: string
+                          options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
+                          reason:
+                            type: string
+                          retained_request_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - available
+                          - eligible
+                          - limitations
+                          - retained_request_count
                       id:
                         type: string
                       log_level:
@@ -349358,6 +350992,10 @@ paths:
                                 type: string
                               har_capture_policy:
                                 type: string
+                              har_options:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               headless:
                                 type: boolean
                                 nullable: true
@@ -349473,6 +351111,28 @@ paths:
                             type: string
                           har_capture_policy:
                             type: string
+                          har_options:
+                            type: object
+                            properties:
+                              bodies:
+                                type: string
+                              max_body_bytes:
+                                type: integer
+                                format: int64
+                              max_total_body_bytes:
+                                type: integer
+                                format: int64
+                              redirects:
+                                type: boolean
+                              timings:
+                                type: boolean
+                            required:
+                              - bodies
+                              - max_body_bytes
+                              - max_total_body_bytes
+                              - redirects
+                              - timings
+                            nullable: true
                           headless:
                             type: boolean
                             nullable: true
@@ -349577,6 +351237,7 @@ paths:
                       - continue_on_error
                       - current_event_index
                       - group
+                      - har
                       - id
                       - log_level
                       - protocol
@@ -529994,6 +531655,46 @@ paths:
                               format: double
                             failure_kind:
                               type: string
+                            har:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                phases:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      end_ms:
+                                        type: number
+                                        format: double
+                                        nullable: true
+                                      name:
+                                        type: string
+                                      start_ms:
+                                        type: number
+                                        format: double
+                                        nullable: true
+                                      unavailable_reason:
+                                        type: string
+                                    required:
+                                      - name
+                                request_body:
+                                  type: object
+                                  description: 'Go type: ReplayHARBody'
+                                  additionalProperties: true
+                                  nullable: true
+                                response_body:
+                                  type: object
+                                  description: 'Go type: ReplayHARBody'
+                                  additionalProperties: true
+                                  nullable: true
+                                started_at:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - started_at
+                              nullable: true
                             method:
                               type: string
                             request_body:

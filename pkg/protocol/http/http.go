@@ -87,6 +87,8 @@ type HTTP struct {
 	cacheContentURLsOnly       bool
 	cacheCheckNewerVersions    bool
 	resources                  *resourceFetcher
+	replayHAR                  *protocol.ReplayHARCapture
+	captureReplayNetwork       bool
 	captureCorrelationEvidence bool
 	// page is the virtual user's HTML page context, shared with the
 	// per-version clones; nil unless the script has HTML-mode steps.
@@ -179,6 +181,8 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.authDelay = boundedHTTPTimeout(config, "challenge_delay_ms")
 	h.baseURL, _ = config["base_url"].(string)
 	h.captureCorrelationEvidence, _ = config[protocol.CorrelationEvidenceCaptureConfigKey].(bool)
+	h.captureReplayNetwork, _ = config[protocol.ReplayNetworkCaptureConfigKey].(bool)
+	h.replayHAR = protocol.ReplayHARCaptureFromConfig(config)
 	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
 	h.traceparentEnabled = parseTraceparentEnabled(config)
@@ -247,7 +251,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	return nil
 }
 
-func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *protocol.Result, executeErr error) {
 	if action != nil && IsWebSocketStep(action.Type) {
 		return h.executeWebSocketStep(ctx, action)
 	}
@@ -673,6 +677,17 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		req = req.WithContext(budgetCtx)
 	}
 	client := *h.client
+	var harRecorder *replayHARTransport
+	if h.captureReplayNetwork {
+		recorder := newReplayHARTransport(client.Transport, h.replayHAR)
+		harRecorder = recorder
+		client.Transport = recorder
+		defer func() {
+			if returned != nil {
+				returned.NetworkEntries = append(recorder.entries(), returned.NetworkEntries...)
+			}
+		}()
+	}
 	if action.TimeoutMs > 0 {
 		client.Timeout = time.Duration(action.TimeoutMs) * time.Millisecond
 	} else if sseRequestedByParams(action.Params) {
@@ -759,6 +774,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if !cacheHit {
 		var err error
 		resp, err = client.Do(req)
+
 		if err != nil {
 			result.Duration = time.Since(result.StartTime)
 			reused, rCount, rDur := applyTraceTelemetry()
@@ -911,6 +927,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		_ = decoder.Close()
 	} else {
 		_ = resp.Body.Close()
+	}
+	if harRecorder != nil && !cacheHit && contentDecoded {
+		harRecorder.decodedBody(resp, buf.Bytes(), bodyReadErr == nil && contentComplete)
 	}
 	if bodyReadErr == nil && !isEventStream && !contentComplete {
 		bodyReadErr = &contentdecode.Error{Kind: contentdecode.Truncated}

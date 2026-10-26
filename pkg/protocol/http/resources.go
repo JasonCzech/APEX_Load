@@ -287,7 +287,7 @@ type resourceFetchStats struct {
 	capped    bool // the page offered more resources than maxPageResources
 }
 
-func (s *resourceFetchStats) record(entry protocol.NetworkEntry, bytes int64, failed, cacheHit bool) {
+func (s *resourceFetchStats) record(entry protocol.NetworkEntry, bytes int64, failed, cacheHit bool, authoredURL ...string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.entries = append(s.entries, entry)
@@ -302,7 +302,11 @@ func (s *resourceFetchStats) record(entry protocol.NetworkEntry, bytes int64, fa
 	if s.seen == nil {
 		s.seen = make(map[string]struct{})
 	}
-	s.seen[entry.URL] = struct{}{}
+	key := entry.URL
+	if len(authoredURL) > 0 {
+		key = authoredURL[0]
+	}
+	s.seen[key] = struct{}{}
 }
 
 func (s *resourceFetchStats) requested() int {
@@ -415,8 +419,16 @@ func (f *resourceFetcher) fetchResourceWave(
 					}
 					defer func() { <-hostSem }()
 
-					entry, bytes, css, failed, cacheHit := f.h.fetchResource(ctx, ref, pageURL, pageHeaders)
-					stats.record(entry, bytes, failed, cacheHit)
+					resourceCtx := ctx
+					if f.h.captureReplayNetwork && f.h.replayHAR != nil {
+						resourceCtx = context.WithValue(ctx, replayResourceHARKey{}, func(entries []protocol.NetworkEntry) {
+							stats.mu.Lock()
+							defer stats.mu.Unlock()
+							stats.entries = append(stats.entries, entries...)
+						})
+					}
+					entry, bytes, css, failed, cacheHit := f.h.fetchResource(resourceCtx, ref, pageURL, pageHeaders)
+					stats.record(entry, bytes, failed, cacheHit, ref.url)
 					if collectCSS && css != nil {
 						cssMu.Lock()
 						if len(cssBodies) < maxResourceCSSRefs {
@@ -565,6 +577,29 @@ func (h *HTTP) fetchResource(
 		client = &clone
 	}
 
+	var harRecorder *replayHARTransport
+	if h.captureReplayNetwork && h.replayHAR != nil {
+		harRecorder = newReplayHARTransport(client.Transport, h.replayHAR)
+		client.Transport = harRecorder
+		defer func() {
+			observed := harRecorder.entries()
+			if len(observed) == 0 {
+				return
+			}
+			last := observed[len(observed)-1]
+			last.ResourceType = entry.ResourceType
+			last.FailureKind = entry.FailureKind
+			last.DurationMs = entry.DurationMs
+			last.BytesReceived = entry.BytesReceived
+			entry = last
+			if publish, ok := ctx.Value(replayResourceHARKey{}).(func([]protocol.NetworkEntry)); ok && len(observed) > 1 {
+				for i := range observed[:len(observed)-1] {
+					observed[i].ResourceType = ref.resourceType
+				}
+				publish(observed[:len(observed)-1])
+			}
+		}()
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		entry.FailureKind = resourceFailureKind(err)
@@ -653,6 +688,9 @@ func (h *HTTP) fetchResource(
 	}
 	captureResponse = responseView.Header
 	captureBody, captureComplete = buffered, !failed && logicalSize <= int64(httpCacheMaxBodyBytes)
+	if harRecorder != nil && decoder.Decoding() {
+		harRecorder.decodedBody(resp, buffered, captureComplete)
+	}
 	observeVerification(ctx, wireHeaders, buffered, true, !failed && logicalSize <= int64(httpCacheMaxBodyBytes))
 	if resp.StatusCode >= 400 {
 		if !failed {

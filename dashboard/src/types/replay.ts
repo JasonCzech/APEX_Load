@@ -28,7 +28,15 @@ export interface BrowserReplayDomSummary {
   visible_text?: string[]
 }
 
+export interface ReplayHAROptions {
+ bodies: 'none' | 'request' | 'response' | 'both'
+ redirects: boolean
+ timings: boolean
+ max_body_bytes: number
+ max_total_body_bytes: number
+}
 export interface ReplayRuntimeProfile {
+ har_options?: ReplayHAROptions
   name?: string
   capture_mode?: string
   log_level?: string
@@ -374,7 +382,17 @@ export interface ScriptDebugRuntimeState {
   snapshot: ReplayRuntimeSnapshot | null
 }
 
+export interface ScriptDebugHARAvailability {
+ options?: ReplayHAROptions
+  eligible: boolean
+  available: boolean
+  retained_request_count: number
+  reason?: string
+  limitations: string
+}
+
 export interface ScriptDebugSession {
+  har?: ScriptDebugHARAvailability
   session_incarnation?: string
   state_revision?: string
   runtime_state?: ScriptDebugRuntimeState

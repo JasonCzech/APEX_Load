@@ -24,7 +24,7 @@ vi.mock('recharts', () => {
       <path data-testid="mock-line" data-key={dataKey || ''} data-dash={strokeDasharray || ''} data-connect-nulls={String(Boolean(connectNulls))} data-dot={String(Boolean(dot))} />
     ),
     ReferenceArea: ({ x1, x2 }: { x1?: string; x2?: string }) => <path data-testid="mock-reference-area" data-x1={x1 || ''} data-x2={x2 || ''} />,
-    ReferenceLine: ({ y }: { y?: number }) => <path data-testid="mock-reference-line" data-y={String(y ?? '')} />,
+    ReferenceLine: ({ x, y }: { x?: string | number; y?: number }) => <path data-testid="mock-reference-line" data-x={String(x ?? '')} data-y={String(y ?? '')} />,
     ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="mock-responsive">{children}</div>,
     Tooltip: Mock,
     XAxis: Mock,
@@ -109,7 +109,7 @@ describe('SynchronizedTimeline', () => {
     })
     const spans = Array.from(container.querySelectorAll('[data-testid="mock-reference-area"]')).map(area => [area.getAttribute('data-x1'), area.getAttribute('data-x2')])
     // One span per lane, from the sample starting at :00 to the one at :01.
-    expect(spans).toEqual(Array(8).fill(['01', '02']))
+    expect(spans).toEqual(Array(8).fill([String(at('01')), String(at('02'))]))
     const legend = container.querySelector('[aria-label="Root-cause markers"]')!
     expect(legend.textContent).toContain('Load step to 20 VUsers')
     await act(async () => (legend.querySelector('button') as HTMLButtonElement).click())
@@ -130,22 +130,22 @@ describe('SynchronizedTimeline', () => {
     expect(lines.every(line => line.getAttribute('data-connect-nulls') === 'true')).toBe(true)
   })
 
-  it('breaks a line where its own samples stop for several intervals', async () => {
+  it('keeps one continuous line across unreported intervals', async () => {
     const points = Array.from({ length: 12 }, (_, i) => ({ ...samplePoint(String(i).padStart(2, '0'), 100, 0), tps: i <= 3 || i >= 10 ? 20 : Number.NaN }))
     await act(async () => {
       root.render(<SynchronizedTimeline data={points} />)
     })
     const throughput = Array.from(container.querySelectorAll('[data-lane="throughput"] [data-testid="mock-line"]')).map(line => line.getAttribute('data-key'))
-    expect(throughput.filter(key => key?.startsWith('tps'))).toEqual(['tps\u00010', 'tps\u00011'])
+    expect(throughput.filter(key => key?.startsWith('tps'))).toEqual(['tps'])
   })
 
-  it('draws a lone sample between two gaps as a dot', async () => {
-    const points = Array.from({ length: 15 }, (_, i) => ({ ...samplePoint(String(i).padStart(2, '0'), 100, 0), tps: i <= 3 || i === 8 || i >= 13 ? 20 : Number.NaN }))
+  it('draws a series with only one recorded sample as a dot', async () => {
+    const points = Array.from({ length: 15 }, (_, i) => ({ ...samplePoint(String(i).padStart(2, '0'), 100, 0), tps: i === 8 ? 20 : Number.NaN }))
     await act(async () => {
       root.render(<SynchronizedTimeline data={points} />)
     })
     const lines = Array.from(container.querySelectorAll('[data-lane="throughput"] [data-testid="mock-line"]')).filter(line => line.getAttribute('data-key')?.startsWith('tps'))
-    expect(lines.map(line => line.getAttribute('data-dot'))).toEqual(['false', 'true', 'false'])
+    expect(lines.map(line => line.getAttribute('data-dot'))).toEqual(['true'])
   })
 
   it('raises the start thumb where the thumbs meet in the right half', async () => {
@@ -224,7 +224,7 @@ describe('SynchronizedTimeline', () => {
   const selectTransactions = async () => {
     await act(async () => button('Transactions').click())
     await act(async () => {
-      const select = container.querySelector('select')!
+      const select = container.querySelector<HTMLSelectElement>('.run-report-timeline-picker select')!
       select.value = 'selected'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
@@ -282,7 +282,7 @@ describe('SynchronizedTimeline', () => {
     await act(async () => button('Clear selection').click())
     expect(transactionLines()).toHaveLength(0)
     await act(async () => {
-      const select = container.querySelector('select')!
+      const select = container.querySelector<HTMLSelectElement>('.run-report-timeline-picker select')!
       select.value = 'all'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
@@ -337,4 +337,94 @@ describe('SynchronizedTimeline', () => {
     for (const input of Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))) await act(async () => input.click())
     expect(container.textContent).toContain('No graphs selected.')
   })
+  it('applies relative and UTC time ranges to every lane, validates bounds, and resets', async () => {
+    await act(async () => root.render(<SynchronizedTimeline startedAt="2026-05-12T20:00:00Z" data={[0, 1, 2, 3].map(i => samplePoint(String(i).padStart(2, '0'), 100, 0))} />))
+    const form = container.querySelector('form')!
+    const [start, end] = Array.from(form.querySelectorAll<HTMLInputElement>('input'))
+    const apply = async () => act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await inputValue(start, '1s')
+    await inputValue(end, '00:02')
+    await apply()
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-chart"]')).every(chart => chart.getAttribute('data-length') === '2')).toBe(true)
+    await inputValue(end, '9s')
+    await apply()
+    expect(form.querySelector('[role="alert"]')).not.toBeNull()
+    expect((container.querySelector('[aria-label="Timeline window end"]') as HTMLInputElement).value).toBe('2')
+    await act(async () => { const mode = form.querySelector('select')!; mode.value = 'clock'; mode.dispatchEvent(new Event('change', { bubbles: true })) })
+    await inputValue(start, '20:00:02')
+    await inputValue(end, '2026-05-12T20:00:03Z')
+    await apply()
+    expect((container.querySelector('[aria-label="Timeline window start"]') as HTMLInputElement).value).toBe('2')
+    expect((container.querySelector('[aria-label="Timeline window end"]') as HTMLInputElement).value).toBe('3')
+    await act(async () => button('Reset zoom').click())
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-chart"]')).every(chart => chart.getAttribute('data-length') === '4')).toBe(true)
+    expect(start.value).toBe('2026-05-12T20:00:00.000Z')
+    expect(end.value).toBe('2026-05-12T20:00:03.000Z')
+    await inputValue(end, 'invalid draft')
+    await inputValue(container.querySelector('[aria-label="Timeline window start"]')!, '1')
+    expect(start.value).toBe('2026-05-12T20:00:01.000Z')
+    expect(end.value).toBe('2026-05-12T20:00:03.000Z')
+  })
+
+  it('bounds large histories at display resolution and restores detail when zoomed', async () => {
+    const data = Array.from({ length: 10000 }, (_, i) => ({ ...samplePoint('00', 100, 0), time: String(i), timestampMs: Date.parse('2026-05-12T20:00:00Z') + i * 1000 }))
+    await act(async () => root.render(<SynchronizedTimeline data={data} />))
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-chart"]')).every(chart => Number(chart.getAttribute('data-length')) <= 1200)).toBe(true)
+    await inputValue(container.querySelector('[aria-label="Timeline window end"]')!, '10')
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-chart"]')).every(chart => chart.getAttribute('data-length') === '11')).toBe(true)
+  })
+
+  it('keeps annotations, SLA bands and root-cause overlays at distinct timestamps when labels repeat', async () => {
+    const data = [0, 1, 2, 3].map(i => ({ ...samplePoint(String(i).padStart(2, '0'), i < 2 ? 700 : 100, 0), time: 'Repeated clock label' }))
+    await act(async () => root.render(<SynchronizedTimeline data={data} goalConfig={{ p95_latency_ms: 500 }}
+      annotations={[{ id: 'note', label: 'First observation', timestamp: new Date(data[0].timestampMs!).toISOString() }]}
+      overlays={[{ id: 'span', kind: 'anomaly', label: 'Early anomaly', start: data[0].timestampMs!, end: data[1].timestampMs!, tone: 'danger' }]} />))
+    const spans = Array.from(container.querySelectorAll('[data-lane="latency"] [data-testid="mock-reference-area"]'))
+    expect(spans.map(area => [area.getAttribute('data-x1'), area.getAttribute('data-x2')])).toEqual([
+      [String(data[0].timestampMs), String(data[1].timestampMs)],
+      [String(data[1].timestampMs), String(data[2].timestampMs)],
+    ])
+    const marker = container.querySelector('[data-lane="latency"] [data-testid="mock-reference-line"][data-x]')!
+    expect(marker.getAttribute('data-x')).toBe(String(data[0].timestampMs))
+  })
+
+  it('supports a zero relative start when interval evidence starts after the run', async () => {
+    await act(async () => root.render(<SynchronizedTimeline startedAt="2026-05-12T20:00:00Z" data={[1, 2, 3].map(i => samplePoint(String(i).padStart(2, '0'), 100, 0))} />))
+    const form = container.querySelector('form')!
+    const [start, end] = Array.from(form.querySelectorAll<HTMLInputElement>('input'))
+    await inputValue(start, '0')
+    await inputValue(end, '2s')
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    expect(form.querySelector('[role="alert"]')).toBeNull()
+    expect((container.querySelector('[aria-label="Timeline window start"]') as HTMLInputElement).value).toBe('0')
+    expect((container.querySelector('[aria-label="Timeline window end"]') as HTMLInputElement).value).toBe('1')
+    expect(start.value).toBe('1s')
+    expect(end.value).toBe('2s')
+  })
+
+  it('names the relative origin accurately when the run start is unknown and clears drafts when switching modes', async () => {
+    await act(async () => root.render(<SynchronizedTimeline data={[samplePoint('00', 100, 0), samplePoint('01', 100, 0)]} />))
+    const form = container.querySelector('form')!
+    expect(form.textContent).toContain('Relative to first sample')
+    const [start, end] = Array.from(form.querySelectorAll<HTMLInputElement>('input'))
+    await inputValue(start, 'invalid draft')
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    expect(form.querySelector('[role="alert"]')).not.toBeNull()
+    const mode = form.querySelector('select')!
+    for (const value of ['clock', 'relative']) {
+      await act(async () => { mode.value = value; mode.dispatchEvent(new Event('change', { bubbles: true })) })
+    }
+    expect(start.value).toBe('0s')
+    expect(end.value).toBe('1s')
+    expect(form.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('keeps legacy history usable with a run start but missing sample timestamps', async () => {
+    const data = [samplePoint('00', 100, 0), { ...samplePoint('01', 100, 0), timestampMs: undefined }]
+    await act(async () => root.render(<SynchronizedTimeline startedAt="2026-05-12T20:00:00Z" data={data} />))
+    expect(container.querySelector('form')).toBeNull()
+    expect(container.querySelector('[aria-label="Timeline window start"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-testid="mock-chart"]')).toHaveLength(4)
+  })
+
 })

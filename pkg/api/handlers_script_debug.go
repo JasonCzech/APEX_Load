@@ -235,6 +235,16 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.RuntimeProfile != nil && req.RuntimeProfile.HAROptions != nil {
+		normalized, err := req.RuntimeProfile.HAROptions.Normalize()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		profile := *req.RuntimeProfile
+		profile.HAROptions = &normalized
+		req.RuntimeProfile = &profile
+	}
 	script = applyScriptDebugOverrides(script, req)
 	submitted := script
 	var prepared bool
@@ -470,6 +480,23 @@ func (s *Server) handleExportScriptDebugSession(w http.ResponseWriter, r *http.R
 	sessionID := r.PathValue("session_id")
 	format := strings.TrimSpace(r.URL.Query().Get("format"))
 	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	if strings.EqualFold(format, "har") {
+		payload, availability, ok := s.scriptDebug.ExportHARForProject(sessionID, authorizedProjectID)
+		if !ok {
+			writeError(w, http.StatusNotFound, "script debug session not found")
+			return
+		}
+		if !availability.Available {
+			writeError(w, http.StatusConflict, availability.Reason)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="script-debug-%s.har"`, sessionID))
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+		return
+	}
 	payload, contentType, ok := s.scriptDebug.ExportForProject(sessionID, authorizedProjectID, format)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")

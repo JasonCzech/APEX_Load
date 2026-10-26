@@ -1,5 +1,5 @@
 import SeriesChartExport from "../SeriesChartExport"
-import { useId, useMemo, useReducer, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, useDeferredValue, type CSSProperties } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -20,7 +20,7 @@ import {
   transactionChartSeriesNames,
   transactionChartSeriesPresentation,
 } from '../transactionChartSeries'
-import { buildBreachWindows } from './runReportModel'
+import { buildBreachWindows, type TimelineBreachWindow } from './runReportModel'
 import { timelineOverlayBands, type TimelineOverlay, type TimelineOverlayBand } from './timelineOverlays'
 import { initialTimelineZoomState, timelineZoomReducer } from './timelineZoomModel'
 import {
@@ -31,16 +31,18 @@ import {
   MAX_TIMELINE_TRANSACTIONS,
   TIMELINE_GRAPHS,
   timelineMetricKeys,
-  timelineSeriesSegments,
   type TimelineGraph,
 } from './timelineGraphModel'
+
+import { nearestTimelineTick, sampleTimeline, timelineTimeBounds } from './timelineSampling'
+import TimelineTimeRange from './TimelineTimeRange'
 
 /** An operator note placed on the run timeline. */
 export interface TimelineAnnotation { id: string; label: string; timestamp: string }
 
-// The axis is categorical (sample labels), so a note sits on its nearest sample.
-function annotationMarkers(annotations: TimelineAnnotation[] | undefined, data: MetricsHistoryPoint[]) {
-  const sampled = data.filter(point => point.timestampMs !== undefined)
+// Notes attach to their nearest retained observation.
+function annotationMarkers(annotations: TimelineAnnotation[] | undefined, data: MetricsHistoryPoint[], timed: boolean) {
+  const sampled = data.filter(point => Number.isFinite(point.timestampMs))
   if (!annotations?.length || !sampled.length) return []
   return annotations.flatMap(annotation => {
     const at = Date.parse(annotation.timestamp)
@@ -50,7 +52,7 @@ function annotationMarkers(annotations: TimelineAnnotation[] | undefined, data: 
     // Notes outside the visible window are not pinned to its edge.
     if (at < first - 5_000 || at > last + 5_000) return []
     const nearest = sampled.reduce((best, point) => Math.abs(point.timestampMs! - at) < Math.abs(best.timestampMs! - at) ? point : best)
-    return [{ id: annotation.id, label: annotation.label, x: nearest.time }]
+    return [{ id: annotation.id, label: annotation.label, x: timed ? nearest.timestampMs! : nearest.time }]
   })
 }
 
@@ -67,15 +69,17 @@ interface Props {
   showBaseline?: boolean
   runId?: string
   baselineId?: string
+  startedAt?: string
 }
 
 const seriesColor = (index: number) => `var(--chart-${(index % 6) + 1})`
 
 const OVERLAY_COLORS: Record<TimelineOverlay['tone'], string> = { danger: 'var(--danger)', warning: 'var(--warning)', accent: 'var(--accent)', muted: 'var(--text-muted)' }
 
-function LaneChart({
+const LaneChart = memo(function LaneChart({
   lane,
   data,
+  timed,
   metricKeys,
   goalConfig,
   breachWindows,
@@ -89,14 +93,15 @@ function LaneChart({
 }: {
   lane: TimelineGraph
   annotations?: TimelineAnnotation[]
-  overlayBands?: TimelineOverlayBand[]
+  overlayBands?: TimelineOverlayBand<string | number>[]
   data: MetricsHistoryPoint[]
+  timed: boolean
   metricKeys: Set<string>
   goalConfig?: GoalConfig
-  breachWindows: ReturnType<typeof buildBreachWindows>
+  breachWindows: TimelineBreachWindow<string | number>[]
   showBaseline?: boolean
   transactions?: string[]
-  onRemove: () => void
+  onRemove: (id: string) => void
   runId?: string
   baselineId?: string
 }) {
@@ -132,8 +137,27 @@ function LaneChart({
       result.push({ key: item.baselineKey, name: `Baseline · ${item.name}`, color: seriesColor(index), dash: '5 4' })
     return result
   })
-  // Lines bridge samples of other kinds but break where their own data stops.
-  const { rows: chartRows, segments, points } = timelineSeriesSegments(data, series.map(item => item.key))
+  const chartRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(600)
+  useEffect(() => {
+    if (!chartRef.current || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      const measured = entries[0]?.contentRect.width
+      if (measured > 0) setWidth(Math.round(measured))
+    })
+    observer.observe(chartRef.current)
+    return () => observer.disconnect()
+  }, [])
+  const keySignature = JSON.stringify(series.map(item => item.key))
+  const chartRows = useMemo(() => {
+    const keys: string[] = JSON.parse(keySignature)
+    return sampleTimeline(data, keys, Math.max(1, width - 76)).map(point => {
+      const row = { ...point }
+      for (const key of keys) if (typeof row[key] !== 'number' || !Number.isFinite(row[key])) row[key] = undefined
+      return row
+    })
+  }, [data, keySignature, width])
+  const singlePoints = new Set(series.filter(item => chartRows.filter(point => Number.isFinite(point[item.key])).length === 1).map(item => item.key))
   // Whole-run thresholds and bands are not transaction-specific evidence.
   const sla = transactionScoped
     ? undefined
@@ -153,12 +177,12 @@ function LaneChart({
           className="btn btn-sm btn-ghost"
           type="button"
           aria-label={`Remove ${lane.title} graph`}
-          onClick={onRemove}
+          onClick={() => onRemove(lane.id)}
         >
           Remove
         </button>
       </div>
-      <div className="run-report-lane-chart">
+      <div className="run-report-lane-chart" ref={chartRef}>
         {series.length === 0 ? (
           <p className="run-report-timeline-empty">
             {transactionScoped
@@ -167,12 +191,13 @@ function LaneChart({
           </p>
         ) : (
           <>
-            <SeriesChartExport id={`timeline-${lane.id}`} title={lane.title} rows={data} axes={[{ key: "time", label: "Run time", value: point => point.time }, { key: "utc", label: "Captured UTC timestamp (when retained)", value: point => point.timestampMs === undefined ? undefined : new Date(point.timestampMs).toISOString() }]} series={series.map(item => ({ key: item.key, label: item.name, unit: lane.unit }))} context={{ run_id: runId, baseline_id: showBaseline && !transactionScoped ? baselineId : undefined, scope: transactionScoped ? transactions : "Whole run", baseline_visible: showBaseline && !transactionScoped, sla, breach_windows: transactionScoped ? undefined : breachWindows }}><ResponsiveContainer width="100%" height={138}>
-              <ComposedChart data={chartRows} syncId="metrics" margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
+            <SeriesChartExport id={`timeline-${lane.id}`} title={lane.title} rows={chartRows} axes={[{ key: "time", label: "Run time", value: point => point.time }, { key: "utc", label: "Captured UTC timestamp (when retained)", value: point => point.timestampMs === undefined ? undefined : new Date(point.timestampMs).toISOString() }]} series={series.map(item => ({ key: item.key, label: item.name, unit: lane.unit }))} context={{ run_id: runId, baseline_id: showBaseline && !transactionScoped ? baselineId : undefined, scope: transactionScoped ? transactions : "Whole run", baseline_visible: showBaseline && !transactionScoped, sla, breach_windows: transactionScoped ? undefined : breachWindows }}><ResponsiveContainer width="100%" height={138}>
+              <ComposedChart data={chartRows} syncId="metrics" syncMethod={nearestTimelineTick} margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
+                <XAxis dataKey={timed ? 'timestampMs' : 'time'} type={timed ? 'number' : 'category'} domain={timed ? [data[0].timestampMs!, data[data.length - 1].timestampMs!] : undefined} tickFormatter={timed ? value => new Date(Number(value)).toLocaleTimeString() : undefined} stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
                 <YAxis stroke="var(--text-muted)" fontSize={11} width={48} domain={[0, 'auto']} />
                 <Tooltip
+                  labelFormatter={value => timed ? new Date(Number(value)).toLocaleTimeString() : String(value)}
                   formatter={(value, name) => [
                     typeof value === 'number' && Number.isFinite(value)
                       ? `${value.toFixed(lane.unit === '%' ? 2 : 1)} ${lane.unit}`
@@ -207,7 +232,7 @@ function LaneChart({
                 ) : (
                   <ReferenceLine key={`overlay-${overlay.id}`} x={x1} stroke={OVERLAY_COLORS[overlay.tone]} strokeDasharray={overlay.kind === 'phase' ? '5 4' : undefined} />
                 ))}
-                {annotationMarkers(annotations, data).map((marker) => (
+                {annotationMarkers(annotations, data, timed).map((marker) => (
                   <ReferenceLine
                     key={`annotation-${marker.id}`}
                     x={marker.x}
@@ -228,35 +253,35 @@ function LaneChart({
                     }}
                   />
                 )}
-                {series.flatMap((item) => (segments.get(item.key) ?? [item.key]).map((dataKey) =>
+                {series.map((item) =>
                   item.key === 'vusers' ? (
                     <Area
-                      key={dataKey}
-                      type="monotone"
-                      dataKey={dataKey}
+                      key={item.key}
+                      type="linear"
+                      dataKey={item.key}
                       name={item.name}
                       stroke={item.color}
                       fill={item.color}
                       fillOpacity={0.18}
-                      dot={points.has(dataKey) ? { r: 2.5, fill: item.color, strokeWidth: 0 } : false}
+                      dot={singlePoints.has(item.key) ? { r: 2.5, fill: item.color, strokeWidth: 0 } : false}
                       connectNulls
                       isAnimationActive={false}
                     />
                   ) : (
                     <Line
-                      key={dataKey}
-                      type="monotone"
-                      dataKey={dataKey}
+                      key={item.key}
+                      type="linear"
+                      dataKey={item.key}
                       name={item.name}
                       stroke={item.color}
                       strokeDasharray={item.dash}
                       strokeWidth={2}
-                      dot={points.has(dataKey) ? { r: 2.5, fill: item.color, strokeWidth: 0 } : false}
+                      dot={singlePoints.has(item.key) ? { r: 2.5, fill: item.color, strokeWidth: 0 } : false}
                       connectNulls
                       isAnimationActive={false}
                     />
                   ),
-                ))}
+                )}
               </ComposedChart>
             </ResponsiveContainer></SeriesChartExport>
             <div className="run-report-timeline-legend" aria-label={`${lane.title} series`}>
@@ -272,7 +297,7 @@ function LaneChart({
       </div>
     </div>
   )
-}
+})
 
 // One track with a thumb for each end of the window. Each thumb is its own
 // range input, so either end keeps keyboard and screen-reader control; a
@@ -322,7 +347,7 @@ function TimelineWindowSlider({ data, startIndex, endIndex, onChange }: {
   )
 }
 
-export default function SynchronizedTimeline({ data, annotations, overlays, onOverlaySelect, goalConfig, loading, error, showBaseline, runId, baselineId }: Props) {
+export default function SynchronizedTimeline({ data, annotations, overlays, onOverlaySelect, goalConfig, loading, error, showBaseline, runId, baselineId, startedAt }: Props) {
   const controlsId = useId()
   const [zoomState, dispatchZoom] = useReducer(timelineZoomReducer, initialTimelineZoomState)
   const [visibleLanes, setVisibleLanes] = useState(() => new Set(DEFAULT_TIMELINE_GRAPHS))
@@ -333,14 +358,16 @@ export default function SynchronizedTimeline({ data, annotations, overlays, onOv
   const [transactionSearch, setTransactionSearch] = useState('')
   const startIndex = Math.min(zoomState.window?.startIndex ?? 0, Math.max(0, data.length - 1))
   const endIndex = Math.min(zoomState.window?.endIndex ?? Math.max(0, data.length - 1), Math.max(0, data.length - 1))
-  const visibleData = useMemo(() => data.slice(startIndex, endIndex + 1), [data, startIndex, endIndex])
+  const windowData = useMemo(() => data.slice(startIndex, endIndex + 1), [data, startIndex, endIndex])
+  const visibleData = useDeferredValue(windowData)
   const metricKeys = useMemo(() => timelineMetricKeys(data), [data])
   const visibleMetricKeys = useMemo(() => timelineMetricKeys(visibleData), [visibleData])
+  const timed = useMemo(() => timelineTimeBounds(visibleData) !== null, [visibleData])
   const breachWindows = useMemo(
-    () => buildBreachWindows(visibleData, goalConfig?.p95_latency_ms, goalConfig?.max_error_pct),
-    [goalConfig?.max_error_pct, goalConfig?.p95_latency_ms, visibleData],
+    () => buildBreachWindows(visibleData, goalConfig?.p95_latency_ms, goalConfig?.max_error_pct, point => timed ? point.timestampMs! : point.time),
+    [goalConfig?.max_error_pct, goalConfig?.p95_latency_ms, visibleData, timed],
   )
-  const overlayBands = useMemo(() => timelineOverlayBands(overlays, visibleData), [overlays, visibleData])
+  const overlayBands = useMemo(() => timelineOverlayBands(overlays, visibleData, point => timed ? point.timestampMs! : point.time), [overlays, visibleData, timed])
   const transactionNames = useMemo(() => transactionChartSeriesNames(data), [data])
   const selectedTransactions = useMemo(
     () => transactionNames.filter((name) => visibleTransactions.has(name)),
@@ -354,13 +381,13 @@ export default function SynchronizedTimeline({ data, annotations, overlays, onOv
       .toLocaleLowerCase()
       .includes(graphSearch.trim().toLocaleLowerCase()),
   )
-  const toggleGraph = (id: string) =>
+  const toggleGraph = useCallback((id: string) =>
     setVisibleLanes((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else if (next.size < MAX_TIMELINE_GRAPHS) next.add(id)
       return next
-    })
+    }), [])
   const toggleTransaction = (name: string) =>
     setVisibleTransactions((current) => {
       const next = new Set(transactionNames.filter((transaction) => current.has(transaction)))
@@ -605,18 +632,21 @@ export default function SynchronizedTimeline({ data, annotations, overlays, onOv
           }
         />
       )}
+      {data.length > 1 && <TimelineTimeRange data={data} startIndex={startIndex} endIndex={endIndex} startedAt={startedAt} onChange={(nextStart, nextEnd) => dispatchZoom({ type: 'set-window', startIndex: nextStart, endIndex: nextEnd, pointCount: data.length })} />}
+      <p className="run-report-muted">Detail adapts to graph width and the selected window, preserving observed peaks and troughs. Lines connect recorded samples across unreported intervals; connections do not indicate measurements in those intervals.</p>
       <div className="run-report-timeline-stack">
         {TIMELINE_GRAPHS.filter((lane) => visibleLanes.has(lane.id)).map((lane) => (
           <LaneChart
             key={lane.id}
             lane={lane}
             data={visibleData}
+            timed={timed}
             metricKeys={visibleMetricKeys}
             goalConfig={goalConfig}
             breachWindows={breachWindows}
             showBaseline={showBaseline}
             transactions={selectedOnly ? selectedTransactions : undefined}
-            onRemove={() => toggleGraph(lane.id)}
+            onRemove={toggleGraph}
             runId={runId}
             baselineId={baselineId}
             annotations={annotations}

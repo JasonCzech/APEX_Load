@@ -273,6 +273,11 @@ func (tr *TestRunner) persistRunEvacuationRestartIntent(test *ManagedTest, raw s
 // generation, and it never gives the share to the old replacement, so that
 // answer cannot occur here; the answer carries no generation to tell it apart.
 func runEvacuationRestartAbsence(outcome generatorrpc.RunAdoptionResult) string {
+	if outcome.Finalizing {
+		// Still finalizing after the bounded wait: the outcome it will publish
+		// is unknown, so it is not taken as proof, as any unproven stop.
+		return "its run is still finalizing its terminal outcome"
+	}
 	switch outcome.Outcome {
 	case pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED, pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_UNKNOWN_TEST, pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED:
 		return ""

@@ -174,6 +174,7 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 		}
 		out = append(out, protocol.NetworkEntry{
 			BrowserEvidence: resource, FailureKind: entry.FailureKind,
+			HAR:                  takeSnapshotHAR(entry.HAR, remaining),
 			URL:                  takeSnapshotString(entry.URL, remaining, 8<<10),
 			Method:               takeSnapshotString(entry.Method, remaining, 64),
 			StatusCode:           entry.StatusCode,
@@ -207,4 +208,23 @@ func takeSnapshotDOMSummary(summary *protocol.DOMSummary, remaining *int) *proto
 		out.VisibleText = append(out.VisibleText, takeSnapshotString(text, remaining, 8<<10))
 	}
 	return out
+}
+
+func takeSnapshotHAR(e *protocol.ReplayHARExchange, remaining *int) *protocol.ReplayHARExchange {
+	if e == nil || *remaining < 1024 {
+		return nil
+	}
+	c := e.Clone()
+	*remaining -= 1024
+	for _, b := range []*protocol.ReplayHARBody{c.RequestBody, c.ResponseBody} {
+		if b != nil {
+			if len(b.Text) > *remaining {
+				b.Text = ""
+				b.State = "total_limit"
+			} else {
+				*remaining -= len(b.Text)
+			}
+		}
+	}
+	return c
 }

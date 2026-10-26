@@ -56,6 +56,7 @@ const optionsFixture = { break_on_failure: true } satisfies OptionsBody
 const successFixture = {
   session: {
     id: 'debug-session-1',
+    har: { eligible: true, available: false, retained_request_count: 0, reason: 'HAR is available after debugging finishes.', limitations: 'Retained traffic only.' },
     session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     state_revision: '0',
     runtime_state: { version: 1, kind: 'full', session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '0', state: 'unavailable', reason: 'pause_pending', snapshot: null },
@@ -124,6 +125,7 @@ describe('generated OpenAPI transport helpers', () => {
       successFixture: {
         session: {
           id: 'debug-session-1',
+          har: { eligible: true, available: false, retained_request_count: 0, reason: 'HAR is available after debugging finishes.', limitations: 'Retained traffic only.' },
           session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           state_revision: '0',
           runtime_state: { version: 1, kind: 'full', session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '0', state: 'unavailable', reason: 'pause_pending', snapshot: null },

@@ -527,6 +527,20 @@ export function ScriptReplayDebuggerView({
                 <p className="replay-panel-subtitle">Temporary settings for this debugger session. They do not change saved Runtime Settings.</p>
                 <DebugProfiles options={replayOptions} disabled={replaying} onChange={setReplayOptions} />
                 <fieldset className="replay-options-grid" disabled={replaying}>
+                  {(['browser', 'http', 'soap', 'java_http'].includes(script.protocol) || script.protocol.startsWith('http/')) && <fieldset className="replay-options-grid debug-har-options"><legend>HAR capture</legend>
+                    <label><span>Retain bodies</span><select value={replayOptions.harBodies || 'none'} onChange={e => setReplayOptions(prev => ({ ...prev, harBodies: e.target.value as 'none' | 'request' | 'response' | 'both' }))}>
+                      <option value="none">None</option><option value="request">Request only</option><option value="response">Response only</option><option value="both">Request and response</option>
+                    </select></label>
+                    <label className="replay-checkbox"><input type="checkbox" checked={replayOptions.harRedirects ?? true} onChange={e => setReplayOptions(prev => ({ ...prev, harRedirects: e.target.checked }))} />Retain intermediate redirects</label>
+                    <label className="replay-checkbox"><input type="checkbox" checked={replayOptions.harTimings ?? true} onChange={e => setReplayOptions(prev => ({ ...prev, harTimings: e.target.checked }))} />Retain detailed timings</label>
+                    <label><span>Per-body limit</span><select disabled={!replayOptions.harBodies || replayOptions.harBodies === 'none'} value={replayOptions.harMaxBodyBytes || 65536} onChange={e => setReplayOptions(prev => ({ ...prev, harMaxBodyBytes: Number(e.target.value) }))}>
+                      {[16384, 65536, 262144, 1048576].map(bytes => <option key={bytes} value={bytes}>{bytes / 1024} KiB</option>)}
+                    </select></label>
+                    <label><span>Total body limit per run</span><select disabled={!replayOptions.harBodies || replayOptions.harBodies === 'none'} value={replayOptions.harMaxTotalBodyBytes || 4194304} onChange={e => setReplayOptions(prev => ({ ...prev, harMaxTotalBodyBytes: Number(e.target.value) }))}>
+                      {[1048576, 4194304, 16777216].map(bytes => <option key={bytes} value={bytes}>{bytes / 1048576} MiB</option>)}
+                    </select></label>
+                    <p>Applies to the next run. Text bodies are redacted; binary, oversized, or incomplete bodies are omitted. Only observed redirect hops and measured timing phases can be retained. Existing evidence limits still apply.</p>
+                  </fieldset>}
                   <label><span>Evidence capture</span><select value={replayOptions.capture || 'diagnostic'} onChange={e => setReplayOptions(prev => ({ ...prev, capture: e.target.value as 'diagnostic' | 'errors' | 'script' }))}><option value="diagnostic">Diagnostic — bounded detailed capture</option><option value="errors">Failures only</option><option value="script">Use saved Runtime Settings (custom)</option></select></label>
                   <p>HTTP/SOAP diagnostic capture: up to 100 messages, 64 KiB per message, 4 MiB total, subject to server retention and redaction. Browser capture uses per-action screenshots. Other protocols retain their native evidence.</p>
                   <label>

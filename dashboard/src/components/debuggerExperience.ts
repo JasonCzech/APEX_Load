@@ -1,9 +1,12 @@
 import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugBreakpoint, ScriptDebugSession } from '../types/replay'
 import type { ScriptDefinition } from '../types/scripts'
+import type { DebugTransactionDefinition } from './debugTransactionModel'
 import type { ReplayOptionsState } from './scriptEditorState'
 
 export type DebugCapture = 'diagnostic' | 'errors' | 'script'
 export interface DebugRunRecord {
+  transactions?: DebugTransactionDefinition[]
+  scriptName?: string
   id: string
   report: BrowserReplayReport
   options: ReplayOptionsState
@@ -87,7 +90,11 @@ export function safeProfile(name: string, options: ReplayOptionsState): DebugPro
   // Whitelist only execution controls. Never persist variables, URLs, group
   // names, captured evidence or copied credentials in named presets.
   const afterFailure = (['test-run', 'continue', 'stop'] as const).find(value => value === options.afterFailure) || 'test-run'
-  return { name: name.trim().slice(0, 60), options: { ignoreThinkTime: options.ignoreThinkTime, startPaused: options.startPaused, breakOnFailure: options.breakOnFailure, logLevel: options.logLevel, capture: options.capture || 'diagnostic', afterFailure } }
+  return { name: name.trim().slice(0, 60), options: { ignoreThinkTime: options.ignoreThinkTime, startPaused: options.startPaused, breakOnFailure: options.breakOnFailure, logLevel: options.logLevel, capture: options.capture || 'diagnostic', afterFailure,
+  harBodies: (['none', 'request', 'response', 'both'] as const).find(value => value === options.harBodies) || 'none',
+  harRedirects: options.harRedirects !== false, harTimings: options.harTimings !== false,
+  harMaxBodyBytes: [16384, 65536, 262144, 1048576].includes(options.harMaxBodyBytes || 0) ? options.harMaxBodyBytes : 65536,
+  harMaxTotalBodyBytes: [1048576, 4194304, 16777216].includes(options.harMaxTotalBodyBytes || 0) ? options.harMaxTotalBodyBytes : 4194304 } }
 }
 export function readProfiles(raw: string | null): DebugProfile[] {
   try {

@@ -18,10 +18,17 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/internal/diskspace"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const collectionReceiptMaxBytes int64 = 8 << 20
+const (
+	collectionReceiptMaxBytes          int64 = 8 << 20
+	collectionOptionalReceiptFileName        = "optional_receipt.json"
+	maxCollectionRequiredFiles               = 5
+	maxCollectionOptionalFiles               = protocol.MaxBrowserHARArtifactsPerRun + 1
+	maxCollectionCacheDirectoryEntries       = 1 + maxCollectionRequiredFiles + 1 + maxCollectionOptionalFiles
+)
 
 var collectionPayloadNames = []string{"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl"}
 
@@ -54,6 +61,14 @@ type collectionSourceReceipt struct {
 	Identity  string                 `json:"identity"`
 	Manifest  json.RawMessage        `json:"manifest"`
 	Files     []collectionCachedFile `json:"files"`
+}
+type collectionOptionalReceipt struct {
+	TestID        string                 `json:"test_id"`
+	Token         string                 `json:"token"`
+	Target        string                 `json:"target"`
+	Identity      string                 `json:"identity"`
+	ReceiptSHA256 string                 `json:"receipt_sha256"`
+	Files         []collectionCachedFile `json:"files"`
 }
 type collectionSourceCache struct {
 	mu           sync.Mutex
@@ -205,7 +220,7 @@ func (c *collectionSourceCache) decode(ctx context.Context, root *os.Root, targe
 	if err := json.Unmarshal(data, &receipt); err != nil {
 		return nil, err
 	}
-	if receipt.TestID != c.intent.TestID || receipt.ProjectID != c.intent.ProjectID || !receipt.StartTime.Equal(c.intent.StartTime) || receipt.Token != c.intent.IntentToken || receipt.Target != target || receipt.Identity != c.intent.Sources[target] || (len(receipt.Files) < 3 || len(receipt.Files) > 5) || int64(len(receipt.Manifest)) > remoteArchiveManifestMaxBytes {
+	if receipt.TestID != c.intent.TestID || receipt.ProjectID != c.intent.ProjectID || !receipt.StartTime.Equal(c.intent.StartTime) || receipt.Token != c.intent.IntentToken || receipt.Target != target || receipt.Identity != c.intent.Sources[target] || (len(receipt.Files) < 3 || len(receipt.Files) > maxCollectionRequiredFiles) || int64(len(receipt.Manifest)) > remoteArchiveManifestMaxBytes {
 		return nil, errors.New("collection receipt identity mismatch")
 	}
 	var manifest RunArchiveManifest
@@ -239,13 +254,65 @@ func (c *collectionSourceCache) decode(ctx context.Context, root *os.Root, targe
 	if len(receipt.Files) != len(names) {
 		return nil, errors.New("collection receipt browser artifact mismatch")
 	}
-	return &cachedArchiveSource{root: root, receipt: receipt, names: names}, nil
+	source := &cachedArchiveSource{root: root, receipt: receipt, names: names}
+	optData, _, optErr := readArchiveFileAtRootLimitedContext(ctx, root, collectionOptionalReceiptFileName, collectionReceiptMaxBytes)
+	if optErr != nil && !os.IsNotExist(optErr) {
+		return nil, optErr
+	}
+	if optErr == nil {
+		var optReceipt collectionOptionalReceipt
+		if err := json.Unmarshal(optData, &optReceipt); err != nil {
+			return nil, err
+		}
+		if optReceipt.TestID != c.intent.TestID || optReceipt.Token != c.intent.IntentToken || optReceipt.Target != target || optReceipt.Identity != c.intent.Sources[target] || optReceipt.ReceiptSHA256 != anchor.ReceiptSHA256 || len(optReceipt.Files) == 0 || len(optReceipt.Files) > maxCollectionOptionalFiles {
+			return nil, errors.New("collection optional receipt identity mismatch")
+		}
+		declaredOptional := make(map[string]RunArchiveEvidenceArtifact, len(manifest.BrowserHARArtifacts)+1)
+		for _, har := range manifest.BrowserHARArtifacts {
+			if validDeclaredHAR(har) {
+				declaredOptional[har.Name] = har
+			}
+		}
+		if validDeclaredInteractions(manifest.BrowserInteractionsArtifact) {
+			declaredOptional[manifest.BrowserInteractionsArtifact.Name] = *manifest.BrowserInteractionsArtifact
+		}
+		seenOptional := make(map[string]bool, len(optReceipt.Files))
+		optTotal := total + int64(len(optData))
+		for _, file := range optReceipt.Files {
+			declared, ok := declaredOptional[file.Name]
+			if !ok || seenOptional[file.Name] || file.Bytes != declared.Bytes || file.SHA256 != declared.SHA256 || file.Bytes <= 0 || file.Bytes > c.intent.CacheLimitBytes-optTotal {
+				return nil, errors.New("invalid collection optional receipt payload")
+			}
+			seenOptional[file.Name] = true
+			optTotal += file.Bytes
+		}
+		if optTotal > c.intent.CacheLimitBytes {
+			return nil, errors.New("collection optional receipt size mismatch")
+		}
+		source.optionalFiles = optReceipt.Files
+		source.hasOptionalReceipt = true
+	}
+	return source, nil
 }
 
 type cachedArchiveSource struct {
-	root    *os.Root
-	receipt collectionSourceReceipt
-	names   []string
+	root               *os.Root
+	receipt            collectionSourceReceipt
+	names              []string
+	optionalFiles      []collectionCachedFile
+	hasOptionalReceipt bool
+}
+
+func (s *cachedArchiveSource) hasOptional(name string) bool {
+	if s == nil {
+		return false
+	}
+	for _, file := range s.optionalFiles {
+		if file.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *cachedArchiveSource) close() { _ = s.root.Close() }
@@ -264,27 +331,35 @@ func (s *cachedArchiveSource) StreamArchiveArtifact(ctx context.Context, request
 	}
 	for i, name := range s.names {
 		if request.Name == name {
-			expected := s.receipt.Files[i]
-			file, info, err := openArchiveArtifactForReadAt(s.root, expected.Name)
-			if err != nil {
-				return 0, err
-			}
-			defer file.Close()
-			if info.Size() != expected.Bytes || expected.Bytes > max {
-				return 0, errors.New("cached artifact size mismatch")
-			}
-			hash := sha256.New()
-			n, err := copyArchiveArtifactContext(ctx, io.MultiWriter(dst, hash), io.LimitReader(file, expected.Bytes+1))
-			if err != nil {
-				return n, err
-			}
-			if n != expected.Bytes || hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
-				return n, errors.New("cached artifact hash mismatch")
-			}
-			return n, nil
+			return s.streamVerifiedFile(ctx, s.receipt.Files[i], dst, max)
+		}
+	}
+	for _, expected := range s.optionalFiles {
+		if request.Name == expected.Name {
+			return s.streamVerifiedFile(ctx, expected, dst, max)
 		}
 	}
 	return 0, errors.New("unknown cached artifact")
+}
+
+func (s *cachedArchiveSource) streamVerifiedFile(ctx context.Context, expected collectionCachedFile, dst io.Writer, max int64) (int64, error) {
+	file, info, err := openArchiveArtifactForReadAt(s.root, expected.Name)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	if info.Size() != expected.Bytes || expected.Bytes > max {
+		return 0, errors.New("cached artifact size mismatch")
+	}
+	hash := sha256.New()
+	n, err := copyArchiveArtifactContext(ctx, io.MultiWriter(dst, hash), io.LimitReader(file, expected.Bytes+1))
+	if err != nil {
+		return n, err
+	}
+	if n != expected.Bytes || hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
+		return n, errors.New("cached artifact hash mismatch")
+	}
+	return n, nil
 }
 
 // Includes incomplete/unanchored files: a crash or SQL cascade cannot erase
@@ -459,6 +534,15 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 		if available < size+(64<<20) {
 			return errors.New("insufficient free space for archive collection cache")
 		}
+		var runUsed int64
+		hasRunUsed := false
+		if runRoot, runErr := openArchiveChildDirectoryAt(c.root, c.intent.TestID, false, 0); runErr == nil {
+			if measuredRunUsed, usageErr := collectionCacheUsage(ctx, runRoot, c.intent.CacheLimitBytes); usageErr == nil {
+				runUsed = measuredRunUsed
+				hasRunUsed = true
+			}
+			_ = runRoot.Close()
+		}
 		stage := ".pending-" + uuid.NewString()
 		if err := parent.Mkdir(stage, 0o700); err != nil {
 			return err
@@ -512,6 +596,9 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 		if closeErr != nil {
 			return closeErr
 		}
+		if hasRunUsed {
+			c.stageOptional(ctx, destination, bundle, receipt.Identity, anchor.ReceiptSHA256, used+size, runUsed+size)
+		}
 		if err := syncOpenedArchiveDirectory(destination); err != nil {
 			return err
 		}
@@ -531,6 +618,11 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 		}
 		for _, name := range cached.names {
 			if _, err := cached.StreamArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: c.intent.TestID, SourceIdentity: receipt.Identity, Name: name}, io.Discard, c.intent.CacheLimitBytes); err != nil {
+				return err
+			}
+		}
+		for _, opt := range cached.optionalFiles {
+			if _, err := cached.StreamArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: c.intent.TestID, SourceIdentity: receipt.Identity, Name: opt.Name}, io.Discard, c.intent.CacheLimitBytes); err != nil {
 				return err
 			}
 		}
@@ -555,4 +647,144 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 	}
 	c.intent.CachedSources[bundle.target] = anchor
 	return nil
+}
+
+// stageOptional best-effort stages optional HAR and interaction files alongside
+// required source files inside the pending stage directory before atomic rename,
+// recording their digests in optional_receipt.json so SQL ReceiptSHA256 never
+// diverges across HA pods with different local disk space and the committed
+// ReceiptSHA256 directory is immutable once renamed. Exceeding byte or
+// disk-space bounds skips optional files without failing the collection attempt.
+func (c *collectionSourceCache) stageOptional(ctx context.Context, destination *os.Root, bundle remoteArchiveBundle, identity, receiptSHA256 string, used, runUsed int64) {
+	if c == nil || destination == nil || (len(bundle.hars) == 0 && bundle.interactions == nil) {
+		return
+	}
+	if ctx.Err() != nil || identity == "" || receiptSHA256 == "" {
+		return
+	}
+	type optionalCandidate struct {
+		name   string
+		path   string
+		bytes  int64
+		sha256 string
+	}
+	candidates := make([]optionalCandidate, 0, len(bundle.hars)+1)
+	for _, har := range bundle.hars {
+		if validDeclaredHAR(har.entry) && har.path != "" {
+			candidates = append(candidates, optionalCandidate{
+				name:   har.entry.Name,
+				path:   har.path,
+				bytes:  har.entry.Bytes,
+				sha256: har.entry.SHA256,
+			})
+		}
+	}
+	if bundle.interactions != nil && validDeclaredInteractions(&bundle.interactions.entry) && bundle.interactions.path != "" {
+		candidates = append(candidates, optionalCandidate{
+			name:   bundle.interactions.entry.Name,
+			path:   bundle.interactions.path,
+			bytes:  bundle.interactions.entry.Bytes,
+			sha256: bundle.interactions.entry.SHA256,
+		})
+	}
+	if len(candidates) == 0 || len(candidates) > maxCollectionOptionalFiles {
+		return
+	}
+	var optFiles []collectionCachedFile
+	var writtenNames []string
+	committed := false
+	defer func() {
+		if !committed {
+			_ = destination.Remove(collectionOptionalReceiptFileName)
+			for _, name := range writtenNames {
+				_ = destination.Remove(name)
+			}
+		}
+	}()
+	var optBytes int64
+	seen := make(map[string]bool, len(candidates))
+	for _, cand := range candidates {
+		if ctx.Err() != nil {
+			return
+		}
+		if seen[cand.name] || cand.bytes <= 0 {
+			continue
+		}
+		trialFiles := append(append([]collectionCachedFile(nil), optFiles...), collectionCachedFile{Name: cand.name, Bytes: cand.bytes, SHA256: cand.sha256})
+		trialReceipt, marshalErr := json.Marshal(collectionOptionalReceipt{
+			TestID:        c.intent.TestID,
+			Token:         c.intent.IntentToken,
+			Target:        bundle.target,
+			Identity:      identity,
+			ReceiptSHA256: receiptSHA256,
+			Files:         trialFiles,
+		})
+		if marshalErr != nil || int64(len(trialReceipt)) > collectionReceiptMaxBytes {
+			continue
+		}
+		needed := optBytes + cand.bytes + int64(len(trialReceipt))
+		if needed > c.intent.CacheLimitBytes-runUsed || needed > c.maxBytes-used {
+			continue
+		}
+		available, availErr := diskspace.AvailablePath(resolveArchiveRoot())
+		if availErr != nil || available < needed+(64<<20) {
+			continue
+		}
+		src, info, openErr := openArchiveArtifactForRead(filepath.Dir(cand.path), filepath.Base(cand.path))
+		if openErr != nil {
+			continue
+		}
+		if !info.Mode().IsRegular() || info.Size() != cand.bytes {
+			_ = src.Close()
+			continue
+		}
+		dst, createErr := destination.OpenFile(cand.name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if createErr != nil {
+			_ = src.Close()
+			continue
+		}
+		hash := sha256.New()
+		n, copyErr := copyArchiveArtifactContext(ctx, io.MultiWriter(dst, hash), io.LimitReader(src, cand.bytes+1))
+		syncErr := dst.Sync()
+		closeErr := dst.Close()
+		_ = src.Close()
+		if copyErr != nil || syncErr != nil || closeErr != nil || n != cand.bytes || hex.EncodeToString(hash.Sum(nil)) != cand.sha256 {
+			_ = destination.Remove(cand.name)
+			continue
+		}
+		seen[cand.name] = true
+		writtenNames = append(writtenNames, cand.name)
+		optFiles = append(optFiles, collectionCachedFile{Name: cand.name, Bytes: cand.bytes, SHA256: cand.sha256})
+		optBytes += cand.bytes
+	}
+	if len(optFiles) == 0 {
+		return
+	}
+	optReceipt := collectionOptionalReceipt{
+		TestID:        c.intent.TestID,
+		Token:         c.intent.IntentToken,
+		Target:        bundle.target,
+		Identity:      identity,
+		ReceiptSHA256: receiptSHA256,
+		Files:         optFiles,
+	}
+	data, err := json.Marshal(optReceipt)
+	if err != nil || int64(len(data)) > collectionReceiptMaxBytes {
+		return
+	}
+	totalOptionalBytes := optBytes + int64(len(data))
+	if totalOptionalBytes > c.intent.CacheLimitBytes-runUsed || totalOptionalBytes > c.maxBytes-used {
+		return
+	}
+	file, err := destination.OpenFile(collectionOptionalReceiptFileName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	_, writeErr := file.Write(data)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if writeErr != nil || syncErr != nil || closeErr != nil {
+		return
+	}
+	committed = true
 }

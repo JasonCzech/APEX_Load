@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -425,6 +426,7 @@ func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) 
 	if len(PlanRuntimeHARWorkingCleanup(dir, 128)) != 0 {
 		t.Fatal("a live recording was planned")
 	}
+	killedAt := time.Now()
 	if err := child.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
@@ -442,6 +444,8 @@ func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) 
 			t.Fatalf("orphaned driver %d did not exit", driver)
 		}
 	}
+	driverExitElapsed := time.Since(killedAt)
+	t.Logf("engine=%s pid=%d driver=%d exited after %s", engine, os.Getpid(), driver, driverExitElapsed.Round(time.Millisecond))
 	plans := PlanRuntimeHARWorkingCleanup(dir, 128)
 	if len(plans) != 1 || !plans[0].Abandoned {
 		manifest, _ := os.ReadFile(filepath.Join(generationDir, "manifest.json"))
@@ -535,5 +539,72 @@ func writeReadyToken(dir, token string) {
 	staged := filepath.Join(dir, "ready.tmp")
 	if os.WriteFile(staged, []byte(token), 0o600) == nil {
 		_ = os.Rename(staged, filepath.Join(dir, "ready"))
+	}
+}
+
+func TestParseLinuxProcStatStartTreatsZombieAndDeadStatesAsExited(t *testing.T) {
+	statLine := func(comm, state, startTime string) []byte {
+		// Fields 3..22 after ')': state(0) ppid(1) pgrp(2) session(3) tty_nr(4)
+		// tpgid(5) flags(6) minflt(7) cminflt(8) majflt(9) cmajflt(10) utime(11)
+		// stime(12) cutime(13) cstime(14) priority(15) nice(16) num_threads(17)
+		// itrealvalue(18) starttime(19).
+		return []byte(fmt.Sprintf("42 (%s) %s 1 42 42 0 -1 4194304 10 0 0 0 5 2 0 0 20 0 1 0 %s 123456 100", comm, state, startTime))
+	}
+
+	host := harHost{machine: "m1@node-a", boot: "boot-1", namespace: "pid:[4026531836]"}
+	id := harProcessIdentity{
+		Role:      harProcessWriter,
+		Machine:   host.machine,
+		Boot:      host.boot,
+		Namespace: host.namespace,
+		PID:       42,
+		Start:     "987654",
+	}
+
+	for _, state := range []string{"R", "S", "D", "T"} {
+		got, found, err := procidentity.ParseLinuxStatStart(statLine("node (playwright)", state, "987654"))
+		if err != nil || !found || got != "987654" {
+			t.Fatalf("live state %q: got=(%q, %v, %v), want (987654, true, nil)", state, got, found, err)
+		}
+		if harProcessGone(host, id, func(int) (string, bool, error) {
+			return procidentity.ParseLinuxStatStart(statLine("node (playwright)", state, "987654"))
+		}) {
+			t.Fatalf("live state %q reported harProcessGone = true", state)
+		}
+	}
+
+	// Container PID-1 scenario: when generator is PID 1 without --init, an
+	// orphaned Playwright Node grandchild reparented to PID 1 becomes a 'Z'
+	// zombie when it exits on stdin EOF. parseLinuxProcStatStart must treat
+	// 'Z', 'X', and 'x' as exited (found = false, err = nil).
+	for _, exitedState := range []string{"Z", "X", "x"} {
+		got, found, err := procidentity.ParseLinuxStatStart(statLine("node (playwright)", exitedState, "987654"))
+		if err != nil || found || got != "" {
+			t.Fatalf("exited state %q: got=(%q, %v, %v), want (\"\", false, nil)", exitedState, got, found, err)
+		}
+		if !harProcessGone(host, id, func(int) (string, bool, error) {
+			return procidentity.ParseLinuxStatStart(statLine("node (playwright)", exitedState, "987654"))
+		}) {
+			t.Fatalf("exited state %q reported harProcessGone = false", exitedState)
+		}
+	}
+
+	// Malformed stat lines must fail closed (err != nil -> harProcessGone = false),
+	// even if field 3 is 'Z'.
+	for _, malformed := range [][]byte{
+		[]byte("42 unclosed_comm Z 1 2 3"),
+		[]byte("42 (short) Z 1 2 3"),
+		statLine("node", "Z", "not-a-uint"),
+		statLine("node", "S", "-1"),
+	} {
+		_, found, err := procidentity.ParseLinuxStatStart(malformed)
+		if err == nil || found {
+			t.Fatalf("malformed stat %q: found=%v err=%v, want false and non-nil error", string(malformed), found, err)
+		}
+		if harProcessGone(host, id, func(int) (string, bool, error) {
+			return procidentity.ParseLinuxStatStart(malformed)
+		}) {
+			t.Fatalf("malformed stat %q reported harProcessGone = true", string(malformed))
+		}
 	}
 }

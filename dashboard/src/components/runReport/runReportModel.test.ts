@@ -92,6 +92,15 @@ describe('runReportModel', () => {
     expect(windows).toEqual([{ start: 'b', end: 'd' }])
   })
 
+  it('keeps numeric breach coordinates independent of repeated labels, including timestamp zero', () => {
+    const windows = buildBreachWindows([
+      point('same', 0, { p95: 700 }),
+      point('same', 1000, { p95: 750 }),
+      point('same', 2000, { p95: 100 }),
+    ], 500, undefined, point => point.timestampMs!)
+    expect(windows).toEqual([{ start: 0, end: 1000 }])
+  })
+
   it('builds KPIs and SLA rows from the report contract', () => {
     const report: RunArchiveReport = {
       manifest: {} as RunArchiveReport['manifest'],

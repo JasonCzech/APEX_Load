@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +48,10 @@ type runLiveTables struct {
 	ready              bool
 	lastNotification   atomic.Int64
 	notificationSeq    atomic.Uint64
+
+	// unrestored lists the run's tables a finalize-only restore skipped
+	// because only memory held them; the run view shows them from storage.
+	unrestored []storage.LiveTableRecord
 }
 type runLiveTable struct {
 	table                     *livetable.Table
@@ -489,6 +494,34 @@ func (tr *TestRunner) checkpointLiveTable(ctx context.Context, run *runLiveTable
 }
 
 func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, term executionLeaseTerm) error {
+	return tr.restoreRunLiveTables(ctx, test, term, false)
+}
+
+// liveTableRestoreUnrecoverable marks a restore failure that no retry can
+// change: the stored tables or the run's bindings themselves are wrong. Its
+// message is the wrapped error's.
+type liveTableRestoreUnrecoverable struct{ error }
+
+func (e liveTableRestoreUnrecoverable) Unwrap() error { return e.error }
+
+func unrecoverableLiveTableRestore(err error) error {
+	return liveTableRestoreUnrecoverable{err}
+}
+
+// restoreRunLiveTables restores the run's live tables under term. With
+// finalizeOnly, it restores them only so this term can finalize them, for a
+// run that will not resume: tables kept only in memory, which another term
+// cannot claim, are skipped and kept as storage records for the run view; a
+// table its binding names but storage never initialized (a lease lost during
+// the launch) is not required; the run's project-table attachments are taken
+// as they are, to be detached; the tables are registered closed, so they never
+// serve; and nothing is finalized here, so the caller's finalization reports
+// every failure to its own retry.
+//
+// Either way the tables are registered only while term is still this
+// process's term: a restore whose term ended during its reads must not
+// replace tables a newer term restored.
+func (tr *TestRunner) restoreRunLiveTables(ctx context.Context, test *ManagedTest, term executionLeaseTerm, finalizeOnly bool) error {
 	if !hasLiveDataPools(test.DataPools) {
 		return nil
 	}
@@ -500,27 +533,40 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 	if err != nil {
 		return err
 	}
+	normalized, err := normalizeDataPoolBindingIntent(test.DataPools)
+	if err != nil {
+		return unrecoverableLiveTableRestore(err)
+	}
+	restorable := func(binding storage.ScenarioDataPoolBinding) bool {
+		return binding.AccessMode == "live" && binding.Scope != "project" &&
+			(!finalizeOnly || (binding.LiveOptions != nil && binding.LiveOptions.Durability == "durable"))
+	}
+	var unrestored []storage.LiveTableRecord
+	if finalizeOnly {
+		for _, record := range records {
+			if record.Durability != "durable" {
+				unrestored = append(unrestored, record)
+			}
+		}
+		records = slices.DeleteFunc(records, func(record storage.LiveTableRecord) bool { return record.Durability != "durable" })
+	}
 	expected := 0
-	for _, b := range test.DataPools {
-		if b.AccessMode == "live" && b.Scope != "project" {
+	for _, b := range normalized {
+		if restorable(b) {
 			expected++
 		}
 	}
-	if len(records) != expected {
-		return errors.New("live table recovery manifest is incomplete")
+	if len(records) != expected && (!finalizeOnly || len(records) > expected) {
+		return unrecoverableLiveTableRestore(errors.New("live table recovery manifest is incomplete"))
 	}
-	run := &runLiveTables{tables: map[string]*runLiveTable{}, term: term, testID: test.ID, projectID: test.ProjectID}
-	normalized, err := normalizeDataPoolBindingIntent(test.DataPools)
-	if err != nil {
-		return err
-	}
+	run := &runLiveTables{tables: map[string]*runLiveTable{}, term: term, testID: test.ID, projectID: test.ProjectID, unrestored: unrestored}
 	for _, binding := range normalized {
-		if binding.AccessMode == "live" && binding.Scope != "project" {
+		if restorable(binding) {
 			run.budget += liveTableReservation(binding.LiveOptions)
 		}
 	}
 	if run.budget > liveTableRunBudget {
-		return errors.New("live table recovery run budget exceeded")
+		return unrecoverableLiveTableRestore(errors.New("live table recovery run budget exceeded"))
 	}
 	tr.liveTablesMu.Lock()
 	if err := tr.liveTableBudgetError(test.ProjectID, run.budget, ""); err != nil {
@@ -551,12 +597,15 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 			return err
 		}
 		if record.Durability != "durable" || (record.State != "active" && record.State != "closed") {
-			return errors.New("live table is not recoverable")
+			return unrecoverableLiveTableRestore(errors.New("live table is not recoverable"))
 		}
 		if err := state.ClaimLiveTable(ctx, record.ID, liveStorageTerm(term)); err != nil {
 			return err
 		}
 		recovery, err := state.ReadLiveTableRecovery(ctx, record.ID, test.ProjectID)
+		if errors.Is(err, storage.ErrLiveTableCorrupt) {
+			return unrecoverableLiveTableRestore(err)
+		}
 		if err != nil {
 			return err
 		}
@@ -565,11 +614,11 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 			recoveryBytes += len(entry.Payload)
 		}
 		if recoveryBytes > liveTableRecoveryBytes {
-			return errors.New("live table aggregate recovery byte budget exceeded")
+			return unrecoverableLiveTableRestore(errors.New("live table aggregate recovery byte budget exceeded"))
 		}
 		var metadata liveTablePrivateMetadata
 		if err := json.Unmarshal([]byte(record.SeedMetadata), &metadata); err != nil || metadata.Version != 1 {
-			return errors.New("invalid live table recovery metadata")
+			return unrecoverableLiveTableRestore(errors.New("invalid live table recovery metadata"))
 		}
 		cipher, err := restoreLiveTableCipher(ctx, tr.continuityKeyWrapper, record.ID, metadata.Key)
 		if err != nil {
@@ -580,11 +629,11 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 			return err
 		}
 		if manifest.Binding.LiveOptions == nil || manifest.Binding.AccessMode != "live" || liveTableID(test.ID, manifest.Binding.Alias) != record.ID {
-			return errors.New("live table recovery binding mismatch")
+			return unrecoverableLiveTableRestore(errors.New("live table recovery binding mismatch"))
 		}
 		actualBudget += liveTableReservation(manifest.Binding.LiveOptions)
 		if actualBudget > run.budget {
-			return errors.New("live table recovery exceeds its reservation")
+			return unrecoverableLiveTableRestore(errors.New("live table recovery exceeds its reservation"))
 		}
 		rt := &runLiveTable{binding: manifest.Binding, seed: manifest.Identity, cipher: cipher, record: recovery.Table, lastCheckpoint: recovery.Table.CheckpointRevision}
 		var snapshot livetable.Snapshot
@@ -630,13 +679,24 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 
 	}
 	run.recoveryBytes = recoveryBytes
-	if err := tr.projectLiveTableService().attachRun(ctx, test, run, normalized, true); err != nil {
+	if finalizeOnly {
+		if err := tr.collectUnrestoredProjectAttachments(ctx, run); err != nil {
+			return err
+		}
+	} else if err := tr.projectLiveTableService().attachRun(ctx, test, run, normalized, true); err != nil {
 		return err
 	}
 	if run.budget > liveTableRunBudget {
 		return errors.New("live table recovery run budget exceeded")
 	}
+	if tr.beforeLiveTableRestoreRegistration != nil {
+		tr.beforeLiveTableRestoreRegistration()
+	}
 	tr.liveTablesMu.Lock()
+	if !tr.executionLeaseTermLocallyCurrent(term) {
+		tr.liveTablesMu.Unlock()
+		return errors.New("live table restore owner expired before its tables were registered")
+	}
 	if err := tr.liveTableBudgetError(test.ProjectID, 0, test.ID); err != nil {
 		tr.liveTablesMu.Unlock()
 		return err
@@ -645,6 +705,14 @@ func (tr *TestRunner) restoreLiveTables(ctx context.Context, test *ManagedTest, 
 		tr.liveTables = map[string]*runLiveTables{}
 	}
 	run.ready = true
+	if finalizeOnly {
+		// The caller finalizes the tables; a table already closing keeps its
+		// recorded finalization, if any. They never serve.
+		run.closed = true
+		tr.liveTables[test.ID] = run
+		tr.liveTablesMu.Unlock()
+		return nil
+	}
 	run.closed = interruptedFinalization || continuationErr != nil
 	tr.liveTables[test.ID] = run
 	tr.liveTablesMu.Unlock()
@@ -890,6 +958,9 @@ func (tr *TestRunner) liveTablesFinalizableBy(run *runLiveTables, test *ManagedT
 func (tr *TestRunner) finishLiveTables(test *ManagedTest, finalStatus string) {
 	run := tr.liveRun(test.ID)
 	if run == nil || !tr.liveTablesFinalizableBy(run, test) {
+		// No tables of this writer's term are in memory: a term this process
+		// lost left its own, or this term never restored the run's.
+		tr.finishUnrestoredLiveTables(test, run, finalStatus)
 		return
 	}
 	finish := tr.liveTableFinalizer(test, run, finalStatus)

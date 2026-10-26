@@ -37,6 +37,9 @@ type readyCapacityServer struct {
 	ready     bool
 	available func(probe int) int32
 	probes    atomic.Int32
+	// withoutFeatures are left out of the heartbeat, as a generator that
+	// lacks those capabilities reports.
+	withoutFeatures []string
 }
 
 type readyCapacityHeartbeat struct {
@@ -57,6 +60,11 @@ func (s readyCapacityHeartbeat) Send(pong *pb.HeartbeatPong) error {
 	}
 	if s.server.available != nil {
 		pong.AvailableCapacity = s.server.available(s.probe)
+	}
+	if len(s.server.withoutFeatures) > 0 {
+		pong.CompatibleFeatures = slices.DeleteFunc(pong.CompatibleFeatures, func(feature string) bool {
+			return slices.Contains(s.server.withoutFeatures, feature)
+		})
 	}
 	return s.GeneratorControl_HeartbeatServer.Send(pong)
 }

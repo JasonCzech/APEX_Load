@@ -115,3 +115,33 @@ func TestExitedJudgesLiveAndReapedProcesses(t *testing.T) {
 		t.Fatal("PID 0 was identified")
 	}
 }
+
+func TestParseLinuxStatStartTreatsZombieAndDeadAsExited(t *testing.T) {
+	stat := func(state, start string) []byte {
+		return []byte("42 (node (playwright)) " + state + " 1 42 42 0 -1 4194304 10 0 0 0 5 2 0 0 20 0 1 0 " + start + " 123456 100")
+	}
+	for _, state := range []string{"R", "S", "D", "T"} {
+		if start, found, err := ParseLinuxStatStart(stat(state, "987654")); err != nil || !found || start != "987654" {
+			t.Fatalf("live state %q = (%q, %v, %v), want (987654, true, nil)", state, start, found, err)
+		}
+	}
+	host := Host{Machine: "m@a", Boot: "b", Namespace: "pid:[1]"}
+	id := Identity{Machine: "m@a", Boot: "b", Namespace: "pid:[1]", PID: 42, Start: "987654"}
+	for _, state := range []string{"Z", "X", "x"} {
+		if start, found, err := ParseLinuxStatStart(stat(state, "987654")); err != nil || found || start != "" {
+			t.Fatalf("exited state %q = (%q, %v, %v), want (\"\", false, nil)", state, start, found, err)
+		}
+		if !Gone(host, id, func(int) (string, bool, error) { return ParseLinuxStatStart(stat(state, "987654")) }) {
+			t.Fatalf("a %q process is not judged gone", state)
+		}
+	}
+	// A malformed record fails closed, even with a zombie state.
+	for _, bad := range [][]byte{[]byte("42 (short) Z 1 2 3"), []byte("42 unclosed Z 1"), stat("Z", "not-a-number")} {
+		if _, found, err := ParseLinuxStatStart(bad); err == nil || found {
+			t.Fatalf("malformed %q: found=%v err=%v", bad, found, err)
+		}
+		if Gone(host, id, func(int) (string, bool, error) { return ParseLinuxStatStart(bad) }) {
+			t.Fatalf("malformed %q judged gone", bad)
+		}
+	}
+}

@@ -776,10 +776,11 @@ export function useScriptApi() {
   )
 
   const exportScriptDebugSession = useCallback(
-    async (sessionId: string, format: 'json' | 'log' = 'json') => {
+    async (sessionId: string, format: 'json' | 'log' | 'har' = 'json') => {
       const res = await apiFetch(`/replay/sessions/${sessionId}/export?format=${encodeURIComponent(format)}`)
       if (!res.ok) {
-        throw new Error(res.statusText || 'Failed to export script debugger session')
+        const failure = await res.json().catch(() => null) as { error?: unknown } | null
+        throw new Error(typeof failure?.error === 'string' ? failure.error : res.statusText || 'Failed to export script debugger session')
       }
       return format === 'log' ? res.text() : res.blob()
     },

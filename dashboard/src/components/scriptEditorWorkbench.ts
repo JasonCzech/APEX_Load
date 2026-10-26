@@ -38,6 +38,7 @@ export type CenterWorkbenchTabId =
   | 'browser-replay'
   | 'object-descriptors'
   | 'http-conversion'
+  | 'debug-summary'
 
 export interface CenterTabsState {
   tabs: CenterWorkbenchTabId[]
@@ -74,6 +75,7 @@ export const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
   'browser-replay',
   'object-descriptors',
   'http-conversion',
+  'debug-summary',
 ]
 
 export const DEBUGGER_LAYOUT_DEFAULTS: Record<DebuggerResizeKind, number> = {

@@ -37,7 +37,8 @@ func validDeclaredInteractions(a *RunArchiveEvidenceArtifact) bool {
 }
 
 // fetchRemoteInteractions fetches and verifies a source's declared
-// interactions sidecar from its live generator client.
+// interactions sidecar from its cached optional evidence or live generator
+// client.
 func fetchRemoteInteractions(ctx context.Context, source *optionalEvidenceSource, testID, sourceIdentity, dir string, declared *RunArchiveEvidenceArtifact, records int64, transfer *remoteArchiveTransferBudget) (*stagedRemoteHAR, string) {
 	if declared == nil {
 		return nil, ""
@@ -45,10 +46,10 @@ func fetchRemoteInteractions(ctx context.Context, source *optionalEvidenceSource
 	if !validDeclaredInteractions(declared) || records <= 0 || records > maxRunArchiveInteractionsRecords {
 		return nil, interactionsUnavailableInvalid
 	}
-	if source == nil || source.client == nil {
+	if !source.canFetch(declared.Name) {
 		return nil, interactionsUnavailableSource
 	}
-	if source.stalled {
+	if (source.cached == nil || !source.cached.hasOptional(declared.Name)) && source.stalled {
 		return nil, interactionsUnavailableTransfer
 	}
 	path := filepath.Join(dir, declared.Name)
@@ -75,6 +76,9 @@ func fetchRemoteInteractions(ctx context.Context, source *optionalEvidenceSource
 	if err != nil {
 		_ = os.Remove(path)
 		transfer.release(declared.Bytes)
+		if errors.Is(err, errOptionalEvidenceSourceUnavailable) {
+			return nil, interactionsUnavailableSource
+		}
 		return nil, interactionsUnavailableTransfer
 	}
 	entry := *declared
