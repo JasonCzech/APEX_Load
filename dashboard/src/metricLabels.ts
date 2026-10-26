@@ -4,6 +4,7 @@
  * values carry it after the number ("1,006 ms", via formatMs).
  */
 export const METRIC_LABELS = {
+  duration: { label: 'Duration', unit: 'ms' },
   lcp: { label: 'LCP', unit: 'ms' },
   fcp: { label: 'FCP', unit: 'ms' },
   inp: { label: 'INP', unit: 'ms' },

@@ -30,6 +30,9 @@ func replayHARNetwork(event engine.ReplayActionEvent) ([]protocol.NetworkEntry, 
 }
 
 func replayHARIdentity(entry protocol.NetworkEntry) (replayHARRequestKey, bool) {
+	if entry.BrowserEvidence == nil && entry.HAR != nil && entry.HAR.ID != "" {
+		return replayHARRequestKey{"http", entry.HAR.ID, 0}, true
+	}
 	e := entry.BrowserEvidence
 	if e == nil || e.SourceGeneration == "" || e.RequestID == "" {
 		return replayHARRequestKey{}, false
@@ -38,15 +41,23 @@ func replayHARIdentity(entry protocol.NetworkEntry) (replayHARRequestKey, bool) 
 }
 
 func WriteReplaySyntheticHAR(events []engine.ReplayActionEvent, out io.Writer) (harsynth.Summary, error) {
+	return WriteReplaySyntheticHARWithOptions(events, out, nil)
+}
+
+func WriteReplaySyntheticHARWithOptions(events []engine.ReplayActionEvent, out io.Writer, options *protocol.ReplayHAROptions) (harsynth.Summary, error) {
 	// Snapshots overlap. Keep the latest observation for measured identities so
 	// a later completion replaces an earlier in-flight observation. Equal URLs
 	// alone never prove duplication. Bound identity bookkeeping to the HAR limit.
 	latest := make(map[replayHARRequestKey]replayHARPosition)
+	followed := make(map[replayHARRequestKey]bool)
 	for ei, event := range events {
 		entries, _ := replayHARNetwork(event)
 		for ni, entry := range entries {
 			if strings.HasSuffix(entry.ResourceType, "(cache)") {
 				continue
+			}
+			if e := entry.BrowserEvidence; e != nil && e.RedirectFromRequestID != "" && len(followed) < harsynth.MaxEntries {
+				followed[replayHARRequestKey{e.SourceGeneration, e.RedirectFromRequestID, max(0, e.RedirectHop-1)}] = true
 			}
 			if key, ok := replayHARIdentity(entry); ok {
 				if _, exists := latest[key]; exists || len(latest) < harsynth.MaxEntries {
@@ -55,7 +66,7 @@ func WriteReplaySyntheticHAR(events []engine.ReplayActionEvent, out io.Writer) (
 			}
 		}
 	}
-	writer := harsynth.NewWriter(out, harsynth.Metadata{CaptureMode: harsynth.CaptureReplayNetworkEntries})
+	writer := harsynth.NewWriter(out, harsynth.Metadata{CaptureMode: harsynth.CaptureReplayNetworkEntries, HAROptions: options})
 	for ei, event := range events {
 		entries, pageURL := replayHARNetwork(event)
 		for ni, entry := range entries {
@@ -64,6 +75,10 @@ func WriteReplaySyntheticHAR(events []engine.ReplayActionEvent, out io.Writer) (
 				continue
 			}
 			if key, ok := replayHARIdentity(entry); ok {
+				if options != nil && !options.Redirects && followed[key] {
+					writer.Omit("intermediate_redirect")
+					continue
+				}
 				if position, tracked := latest[key]; tracked && position != (replayHARPosition{ei, ni}) {
 					continue
 				}

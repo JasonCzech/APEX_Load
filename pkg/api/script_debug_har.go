@@ -7,16 +7,18 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/recordbridge"
 )
 
 // ScriptDebugHARAvailability describes a synthetic export of retained traffic.
 type ScriptDebugHARAvailability struct {
-	Eligible             bool   `json:"eligible"`
-	Available            bool   `json:"available"`
-	RetainedRequestCount int64  `json:"retained_request_count"`
-	Reason               string `json:"reason,omitempty"`
-	Limitations          string `json:"limitations"`
+	Options              *protocol.ReplayHAROptions `json:"options,omitempty"`
+	Eligible             bool                       `json:"eligible"`
+	Available            bool                       `json:"available"`
+	RetainedRequestCount int64                      `json:"retained_request_count"`
+	Reason               string                     `json:"reason,omitempty"`
+	Limitations          string                     `json:"limitations"`
 }
 
 func scriptDebugHAREvents(session *ScriptDebugSession) []engine.ReplayActionEvent {
@@ -29,8 +31,9 @@ func scriptDebugHAREvents(session *ScriptDebugSession) []engine.ReplayActionEven
 func scriptDebugHARAvailability(session *ScriptDebugSession) ScriptDebugHARAvailability {
 	protocol := strings.ToLower(session.Protocol)
 	info := ScriptDebugHARAvailability{
+		Options:     session.RuntimeProfile.HAROptions.Clone(),
 		Eligible:    protocol == "browser" || protocol == "http" || strings.HasPrefix(protocol, "http/") || protocol == "soap" || protocol == "java_http",
-		Limitations: "Contains retained traffic only. Bodies, intermediate redirects, and detailed timings may be unavailable. Capture and retention limits apply.",
+		Limitations: "Contains retained traffic only. Bodies, redirect hops, and measured timing phases follow the run’s capture options and may be unavailable. Capture and retention limits apply.",
 	}
 	switch {
 	case !info.Eligible:
@@ -40,7 +43,7 @@ func scriptDebugHARAvailability(session *ScriptDebugSession) ScriptDebugHARAvail
 	case session.RuntimeEvidenceUnavailable || session.FinalReport == nil || session.FinalReport.RuntimeEvidenceUnavailable:
 		info.Reason = "Runtime evidence unavailable."
 	default:
-		summary, err := recordbridge.WriteReplaySyntheticHAR(scriptDebugHAREvents(session), io.Discard)
+		summary, err := recordbridge.WriteReplaySyntheticHARWithOptions(scriptDebugHAREvents(session), io.Discard, info.Options)
 		if err != nil {
 			info.Reason = "Retained traffic could not be exported."
 			break
@@ -67,7 +70,7 @@ func (m *ScriptDebugManager) ExportHARForProject(sessionID, projectID string) ([
 		return nil, info, true
 	}
 	var out bytes.Buffer
-	if _, err := recordbridge.WriteReplaySyntheticHAR(scriptDebugHAREvents(session), &out); err != nil {
+	if _, err := recordbridge.WriteReplaySyntheticHARWithOptions(scriptDebugHAREvents(session), &out, info.Options); err != nil {
 		info.Available = false
 		info.Reason = "Retained traffic could not be exported."
 		return nil, info, true

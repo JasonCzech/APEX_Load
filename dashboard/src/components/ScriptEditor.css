@@ -8199,3 +8199,7 @@ span.script-outline-gutter { cursor: inherit; }
 .author-insert-group { display: grid; gap: 10px; margin: 0 0 14px; padding: 12px 0 0; border: 0; border-top: 1px solid var(--border); }
 .author-insert-group > legend { padding: 0 0 2px; font-size: 13px; font-weight: 700; color: var(--text-primary); }
 .author-insert-group .author-insert-hint { margin: 0; }
+
+.debugger-settings-popover .debug-har-options { grid-column: 1 / -1; }
+.debug-har-options legend { margin-bottom: 12px; font-weight: 600; }
+.debug-har-options p { grid-column: 1 / -1; }

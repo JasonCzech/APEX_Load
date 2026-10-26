@@ -507,6 +507,7 @@ type ConsoleEntry struct {
 }
 
 type NetworkEntry struct {
+	HAR             *ReplayHARExchange       `json:"har,omitempty"`
 	BrowserEvidence *BrowserResourceEvidence `json:"browser_evidence,omitempty"`
 	FailureKind     string                   `json:"failure_kind,omitempty"` // http, transport, timeout, canceled
 
@@ -564,6 +565,7 @@ func CloneNetworkEntries(entries []NetworkEntry) []NetworkEntry {
 		cloned[i].ResponseHeaders = cloneStringMap(entry.ResponseHeaders)
 		cloned[i].BrowserEvidence = entry.BrowserEvidence.Clone()
 		cloned[i].Aura = entry.Aura.Clone()
+		cloned[i].HAR = entry.HAR.Clone()
 	}
 	return cloned
 }

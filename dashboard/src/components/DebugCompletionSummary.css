@@ -9,3 +9,21 @@
 .debug-summary-issues li { padding: 16px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .debug-summary-issues p { white-space: pre-wrap; }
 .debug-summary-issues button { margin-left: 12px; }
+
+.debug-transaction-section { margin: 24px 0; }
+.debug-transaction-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.debug-transaction-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.debug-transaction-table th, .debug-transaction-table td { padding: 12px; text-align: start; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.debug-transaction-table th:first-child { width: 26%; }
+.debug-transaction-table th:nth-child(2) { width: 8%; }
+.debug-transaction-table th:nth-child(3) { width: 12%; }
+.debug-transaction-table th:nth-child(4), .debug-transaction-table th:nth-child(5) { width: 17%; }
+.debug-transaction-table th:nth-child(6) { width: 10%; }
+.debug-transaction-table th:nth-child(7) { width: 10%; }
+.debug-transaction-table thead { background: var(--bg-secondary); }
+.debug-transaction-table small { display: block; font-weight: 400; color: var(--text-secondary); margin-top: 4px; }
+.debug-transaction-name { display: flex; align-items: baseline; gap: 4px; }
+.debug-transaction-name button { flex-shrink: 0; padding: 2px 5px; }
+.debug-transaction-status.passed { color: var(--success-text, var(--success)); }
+.debug-transaction-status.failed { color: var(--danger-text, var(--danger)); }
+.debug-transaction-status.muted { color: var(--text-secondary); }

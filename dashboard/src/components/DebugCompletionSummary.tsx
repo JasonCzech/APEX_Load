@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react'
 import { debugSummaryModel, type DebugCompletionSnapshot } from './debugCompletionModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import './DebugCompletionSummary.css'
+import DebugTransactionTable from './DebugTransactionTable'
 
 export default function DebugCompletionSummary({ snapshot, stale, unavailable, onReturn, onDebugAgain, onSelectEvent, onDownloadHAR }: {
   snapshot: DebugCompletionSnapshot; stale: boolean; unavailable: boolean
@@ -34,6 +35,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
       </dl>
       {model.incomplete && <p className="warning-message">Some run evidence was dropped or truncated. Counts reflect retained actions.</p>}
       {model.outcome === 'Stopped' && <p>The run was stopped before completion. Results cover actions that finished.</p>}
+      <DebugTransactionTable key={snapshot.key} snapshot={snapshot} onSelectEvent={onSelectEvent} />
       <h3>Errors and warnings</h3>
       {model.issues.length === 0 ? <p>No errors or warnings were retained.</p> : <ul className="debug-summary-issues">{model.issues.map(issue => <li key={issue.key}>
         <strong>{issue.severity === 'error' ? 'Error' : 'Warning'}{issue.actionName ? ` · ${issue.actionName}` : ''}</strong>
@@ -41,6 +43,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
         {issue.eventIndex != null && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onSelectEvent(issue.eventIndex!)}>Inspect {issue.actionName || 'action'}</button>}
       </li>)}</ul>}
       {har?.eligible && <section aria-label="HAR download"><h3>Network evidence</h3><p>{har.limitations}</p>
+        {har.options && <p>Bodies: {({ none: 'none', request: 'request only', response: 'response only', both: 'request and response' })[har.options.bodies]} · Intermediate redirects: {har.options.redirects ? 'on' : 'off'} · Detailed timings: {har.options.timings ? 'on' : 'off'}{har.options.bodies !== 'none' ? ` · ${har.options.max_body_bytes / 1024} KiB per body · ${har.options.max_total_body_bytes / 1048576} MiB per run` : ''}</p>}
         {har.available ? <><p>{har.retained_request_count.toLocaleString()} retained requests</p><button type="button" className="btn btn-secondary" disabled={downloading} onClick={() => {
           setDownloading(true); setDownloadError(''); void onDownloadHAR().catch(error => setDownloadError(error instanceof Error ? error.message : 'HAR download failed.')).finally(() => setDownloading(false))
         }}>{downloading ? 'Downloading…' : 'Download HAR'}</button></> : <p>{har.reason || 'No network traffic was retained for this run.'}</p>}

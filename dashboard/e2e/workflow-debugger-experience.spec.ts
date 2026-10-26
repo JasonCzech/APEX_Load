@@ -8,6 +8,15 @@ let targetURL = ''
 let capturePageGate: Promise<void> | undefined
 test.beforeAll(async () => {
   target = createServer(async (req, res) => {
+    if (req.url === '/har-start') {
+      res.writeHead(307, { Location: '/har-end', 'Content-Type': 'application/json' }); res.end('{"hop":true}'); return
+    }
+    if (req.url === '/har-body-page') {
+      res.setHeader('Content-Type', 'text/html'); res.end(`<script>fetch('/har-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:'request-visible',password:'private-password'})}).then(r=>r.json()).then(()=>document.body.textContent='ready')</script>`); return
+    }
+    if (req.url === '/har-end') {
+      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ value: 'response-visible', access_token: 'private-token' })); return
+    }
     if (req.url === '/capture-page') {
       await capturePageGate
       res.setHeader('Content-Type', 'text/html'); res.end('<img src="/capture-resource">'); return
@@ -48,7 +57,7 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
       const checkbox = label.querySelector('input[type="checkbox"]')!
       return { direction: getComputedStyle(label).flexDirection, inset: checkbox.getBoundingClientRect().left - label.getBoundingClientRect().left, width: checkbox.getBoundingClientRect().width }
     }))
-    expect(alignments).toHaveLength(3)
+    expect(alignments).toHaveLength(5)
     expect(alignments.every(item => item.direction === 'row' && item.inset < 24 && item.width < 30)).toBe(true)
   }
   await checkOptionAlignment()
@@ -387,4 +396,146 @@ test('browser debug completion summary exports observed page and resource reques
   expect(urls).toContain(`${targetURL}/capture-resource`)
   await summary.getByRole('button', { name: 'Return to debugger', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Browser Replay', exact: true })).toHaveAttribute('aria-selected', 'true')
+})
+
+for (const protocol of ['http', 'browser'] as const) test(`${protocol} HAR capture options retain redacted bodies, redirects and timings`, async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request, workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
+    name: `HAR_options_${protocol}`, version: '1.0', protocol,
+    config: protocol === 'http' ? { base_url: targetURL } : { browser: { engine: 'chromium', headless: true } },
+    actions: protocol === 'http'
+      ? [{ name: 'Send data', type: 'request', method: 'POST', target: '/har-start', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: 'request-visible', password: '{{var.debug_password}}' }) }]
+      : [{ name: 'Open body page', type: 'browser_navigate', target: `${targetURL}/har-body-page` }, { name: 'Wait for response', type: 'browser_wait', wait_for: { type: 'text', value: 'ready' } }],
+  } } })))
+  await page.setViewportSize({ width: 1500, height: 1000 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  const options = page.getByRole('region', { name: 'Session Overrides' })
+  const openOptions = () => page.getByRole('button', { name: /^Debug options \(/ }).click()
+  await openOptions()
+  if (protocol === 'http') await options.getByRole('textbox', { name: 'Session Variables JSON', exact: true }).fill(JSON.stringify({ debug_password: 'private-password' }))
+  const bodies = options.getByRole('combobox', { name: 'Retain bodies', exact: true })
+  await bodies.focus(); await expect(bodies).toBeFocused()
+  await bodies.press('Tab')
+  const redirects = options.getByRole('checkbox', { name: 'Retain intermediate redirects', exact: true })
+  await expect(redirects).toBeFocused()
+  await redirects.press('Space'); await expect(redirects).not.toBeChecked()
+  await redirects.press('Space'); await expect(redirects).toBeChecked()
+  // Native select key changes are unavailable in this headless macOS runtime.
+  await bodies.selectOption('both')
+  await expect(bodies).toHaveValue('both')
+  await expect(options.getByRole('combobox', { name: 'Per-body limit', exact: true })).toBeEnabled()
+  await options.getByRole('combobox', { name: 'Per-body limit', exact: true }).selectOption('262144')
+  await options.getByRole('checkbox', { name: 'Retain intermediate redirects', exact: true }).check()
+  await options.getByRole('checkbox', { name: 'Retain detailed timings', exact: true }).check()
+  await page.screenshot({ path: testInfo.outputPath('har-capture-options.png') })
+  await options.getByRole('button', { name: 'Done', exact: true }).click()
+  const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
+  const downloadHAR = async () => {
+    const ready = page.waitForEvent('download')
+    await summary.getByRole('button', { name: 'Download HAR', exact: true }).click()
+    const download = await ready, file = await download.path()
+    const raw = await readFile(file!, 'utf8')
+    expect(raw).not.toContain('private-password'); expect(raw).not.toContain('private-token')
+    return JSON.parse(raw)
+  }
+  await page.locator('.topbar-debug-action-run').click()
+  await expect(summary).toBeVisible({ timeout: 60_000 })
+  await expect(summary.getByRole('status')).toContainText('Passed')
+  await expect(summary).toContainText('256 KiB per body')
+  const rich = await downloadHAR()
+  expect(rich.log.entries.some((e: { request: { url: string } }) => e.request.url.endsWith('/har-start'))).toBe(true)
+  const last = rich.log.entries.find((e: { request: { url: string } }) => e.request.url.endsWith('/har-end'))
+  expect(last.request.postData.text).toContain('request-visible')
+  expect(last.response.content.text).toContain('response-visible')
+  expect(last._apexload.time_source).toBe('timings')
+  await openOptions()
+  await options.getByRole('combobox', { name: 'Retain bodies', exact: true }).selectOption('none')
+  await options.getByRole('checkbox', { name: 'Retain intermediate redirects', exact: true }).uncheck()
+  await options.getByRole('checkbox', { name: 'Retain detailed timings', exact: true }).uncheck()
+  await options.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(summary).toContainText('Bodies: request and response')
+  await summary.getByRole('button', { name: 'Debug again', exact: true }).click()
+  await expect(summary).toBeVisible({ timeout: 60_000 })
+  await expect(summary).toContainText('Bodies: none')
+  const limited = await downloadHAR()
+  expect(limited.log.entries.some((e: { request: { url: string } }) => e.request.url.endsWith('/har-start'))).toBe(false)
+  for (const entry of limited.log.entries) { expect(entry.request.postData).toBeUndefined(); expect(entry.response.content.text).toBeUndefined(); expect(entry.timings.dns).toBe(-1); expect(entry.timings.connect).toBe(-1) }
+})
+
+
+test('summary expands transaction timings, nested pages and debugger evidence', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request, workspace = await createWorkspace(request)
+  const marker = (name: string, end = false, sub = false) => ({ name: `${end ? 'End' : 'Start'} ${name}`, type: 'source_transaction', target: '', params: { function: `lr_${end ? 'end' : 'start'}_${sub ? 'sub_' : ''}transaction`, args: end ? [name, 'LR_AUTO'] : sub ? [name, 'Checkout'] : [name] } })
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
+    name: 'Transaction_breakdown', version: '1.0', protocol: 'http', config: { base_url: targetURL },
+    init: [marker('Setup'), { name: 'Login', type: 'request', method: 'GET', target: '/login' }, marker('Setup', true)],
+    actions: [marker('Checkout'), marker('Cart', false, true), {
+      name: 'Cart page', type: 'http_sequence', target: '', params: { requests: [
+        { name: 'Get customer', method: 'GET', target: '/customer' },
+        { name: 'Check order', method: 'GET', target: '/order', assertions: [{ type: 'status_code', expected: 201 }] },
+      ] },
+    }, marker('Cart', true, true), marker('Checkout', true), marker('Receipt'), { name: 'Finish', type: 'request', method: 'GET', target: '/finish' }, marker('Receipt', true)],
+  } } })))
+  await page.setViewportSize({ width: 1800, height: 1200 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  await page.getByRole('button', { name: /^Debug options \(/ }).click()
+  const options = page.getByRole('region', { name: 'Session Overrides' })
+  await options.getByRole('checkbox', { name: 'Break on failure', exact: true }).uncheck()
+  await options.getByRole('combobox', { name: 'After a failure', exact: true }).selectOption('continue')
+  await options.getByRole('button', { name: 'Done', exact: true }).click()
+  await page.locator('.topbar-debug-action-run').click()
+  const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
+  await expect(summary).toBeVisible()
+  await expect(summary.getByRole('status')).toContainText('Failed')
+  const table = summary.getByRole('table', { name: 'Transactions from the completed debug run' })
+  await expect(table.getByRole('columnheader', { name: 'Duration (ms)', exact: true })).toBeVisible()
+  const row = (name: string) => table.getByRole('row').filter({ has: page.getByRole('rowheader').filter({ hasText: name }) })
+  await expect(row('Setup')).toContainText('Passed')
+  await expect(row('Checkout')).toContainText('Failed')
+  await expect(row('Receipt')).toContainText('Passed')
+  await expect(table.getByText('Cart page', { exact: true })).toHaveCount(0)
+  const expandCheckout = table.getByRole('button', { name: 'Expand Checkout', exact: true })
+  await expandCheckout.focus(); await expandCheckout.press('Enter')
+  await expect(table.getByRole('button', { name: 'Collapse Checkout', exact: true })).toHaveAttribute('aria-expanded', 'true')
+  await table.getByRole('button', { name: 'Expand Cart', exact: true }).press('Space')
+  await table.getByRole('button', { name: 'Expand Cart page', exact: true }).click()
+  await expect(row('Cart page')).toContainText('Failed')
+  await expect(row('Get customer')).toContainText('Passed')
+  await expect(row('Check order')).toContainText('Failed')
+  await expect(row('Checkout').locator('time')).toHaveCount(2)
+  await expect(row('Check order').locator('time')).toHaveCount(2)
+  await expect(row('Check order').getByRole('cell').nth(4)).toContainText('ms')
+  await page.screenshot({ path: testInfo.outputPath('transaction-summary-desktop.png'), fullPage: true })
+  await table.getByRole('button', { name: 'Inspect Check order', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click()
+  // Returning to Summary restores the transaction table.
+  if (await table.getByRole('button', { name: 'Expand Checkout', exact: true }).isVisible()) {
+    await table.getByRole('button', { name: 'Expand Checkout', exact: true }).click()
+    await table.getByRole('button', { name: 'Expand Cart', exact: true }).click()
+    await table.getByRole('button', { name: 'Expand Cart page', exact: true }).click()
+  }
+  await expect(table.getByText('Check order', { exact: true })).toBeVisible()
+  await page.setViewportSize({ width: 900, height: 1000 })
+  const scrollRegion = summary.getByRole('region', { name: 'Transaction timings', exact: true })
+  await scrollRegion.focus(); await expect(scrollRegion).toBeFocused()
+  expect(await scrollRegion.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+  await scrollRegion.press('ArrowRight')
+  await expect.poll(() => scrollRegion.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+  await page.screenshot({ path: testInfo.outputPath('transaction-summary-narrow.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Restart in step mode', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Paused before: Start Setup' })).toBeVisible()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await expect(summary).toBeVisible()
+  await expect(summary.getByRole('status')).toContainText('Stopped')
+  await expect(row('Checkout')).toContainText('Not run')
+  await expect(row('Checkout').locator('time')).toHaveCount(0)
+  await expect(table.getByText('Check order', { exact: true })).toHaveCount(0)
 })

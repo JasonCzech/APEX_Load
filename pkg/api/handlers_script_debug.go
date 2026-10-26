@@ -235,6 +235,16 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.RuntimeProfile != nil && req.RuntimeProfile.HAROptions != nil {
+		normalized, err := req.RuntimeProfile.HAROptions.Normalize()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		profile := *req.RuntimeProfile
+		profile.HAROptions = &normalized
+		req.RuntimeProfile = &profile
+	}
 	script = applyScriptDebugOverrides(script, req)
 	submitted := script
 	var prepared bool

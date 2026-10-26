@@ -109,3 +109,9 @@ describe('debugger operator experience', () => {
     expect(renderToStaticMarkup(<DebugTimeline events={replay.events} onSelect={() => {}} />)).toContain('Passed · Get customer')
   })
 })
+
+it('keeps bounded HAR controls in profiles and defaults legacy profiles safely', () => {
+  const rich = safeProfile('HAR', { ...DEFAULT_REPLAY_OPTIONS, harBodies: 'both', harRedirects: false, harTimings: false, harMaxBodyBytes: 262144, harMaxTotalBodyBytes: 16777216 })
+  expect(readProfiles(JSON.stringify([rich]))[0].options).toMatchObject({ harBodies: 'both', harRedirects: false, harTimings: false, harMaxBodyBytes: 262144, harMaxTotalBodyBytes: 16777216 })
+  expect(safeProfile('Legacy', { ...DEFAULT_REPLAY_OPTIONS, harBodies: undefined, harMaxBodyBytes: -1 }).options).toMatchObject({ harBodies: 'none', harMaxBodyBytes: 65536 })
+})

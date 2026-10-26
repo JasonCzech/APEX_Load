@@ -49,12 +49,50 @@ counts, errors, and warnings. **Inspect** opens a failed action's evidence;
 current draft. Editing the script leaves the completed snapshot intact and marks
 it as results from an earlier draft. Dropped or truncated evidence is identified.
 
+The **Transactions** table lists the transactions defined in the run's script,
+with pass/fail status, phase, start time, end time, and duration. Expand a parent
+to inspect subtransactions, page requests, and repeated executions; **Inspect**
+opens the corresponding debugger evidence. Transaction groups use elapsed spans
+(including pauses and think time), while individual steps use recorded durations.
+An unfinished transaction has no end time or duration. Manually reported
+transactions without captured boundaries leave their timing blank. Transactions with no
+execution evidence are marked **Not run**, or **Not observed** when evidence was
+dropped. The table retains the original transaction structure after draft edits.
+
 HTTP and browser scripts offer **Download HAR** when the session retains network
-requests. This is a redacted HAR 1.2 derived from observed traffic; bodies,
-intermediate redirects, and detailed timings may be unavailable. Refused actions
+requests. This is a redacted HAR 1.2 derived from observed traffic; its detail follows
+the capture options selected before the run. Refused actions
 and cache hits do not become dispatched requests. Failed and stopped runs can
 still export retained traffic. Summary downloads follow existing debug-session
 retention and project access; download evidence before the session expires.
+
+### HAR capture options
+
+In **Debug options → HAR capture**, choose **Retain bodies**: None (the default),
+Request only, Response only, or Request and response. Bodies are complete UTF-8
+text only and use the existing credential, runtime-secret, and custom redaction
+rules. Binary, incomplete, oversized, or budget-exhausted bodies are omitted
+whole, with the reason recorded in each HAR entry. An empty retained body is
+preserved as empty content.
+
+**Per-body limit** offers 16, 64, 256, or 1,024 KiB; **Total body limit per run**
+offers 1, 4, or 16 MiB. Defaults are 64 KiB and 4 MiB. Existing event, snapshot,
+and session limits can further reduce retained evidence. HTTP execution reuses
+its bounded decoded final response; encoded intermediate response bodies may be
+unavailable. Browser content requires a known size and unencoded text; encoded or unmeasured
+browser bodies are omitted to keep body reads bounded.
+
+**Retain intermediate redirects** and **Retain detailed timings** are on by
+default in the dashboard. Redirect capture observes actual followed requests and
+never changes the script's redirect policy. Final, unfollowed redirect responses
+remain visible when intermediate hops are off. Timings include measured DNS,
+connection, TLS, wait, and receive phases; HTTP can also measure sending. Missing
+phases are marked unavailable, and browser wait includes send where the browser
+cannot separate them.
+
+Options apply to a new run, can be saved in a run profile, and appear in the
+completed summary and HAR metadata. Changing them does not enrich an earlier
+run. Native HAR file disposal and session access/expiry rules remain unchanged.
 
 ## Routes
 

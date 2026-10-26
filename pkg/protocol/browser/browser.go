@@ -19,6 +19,7 @@ func init() {
 }
 
 type Browser struct {
+	replayHAR                   *protocol.ReplayHARCapture
 	sourceLease                 *protocol.BrowserSourceLease // Execution-owner expectation predates Init. Protected by mu.
 	contextCloseGate            chan struct{}                // Context-aware physical-close ownership; initialized under mu.
 	authoredIdentityReadPending bool                         // At most one native identity read, including a timed-out reader.

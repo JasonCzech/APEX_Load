@@ -741,6 +741,37 @@ func (b *Browser) recordNetworkTask(task browserNetworkTask) {
 		ResponseHeaders:      responseHeaders,
 		Aura:                 auraBatch,
 	})
+	if b.replayHAR != nil {
+		c := b.replayHAR
+		entry.HAR = protocol.NewReplayHARExchange()
+		// Browser request time belongs to its measured evidence, never the time
+		// this worker happened to collect a body.
+		entry.HAR.StartedAt = time.Time{}
+		if c.Options.KeepBody(true) {
+			raw, err := request.PostDataBuffer()
+			mimeType := requestHeaders["content-type"]
+			if mimeType == "" {
+				mimeType, _ = request.HeaderValue("content-type")
+			}
+			entry.HAR.RequestBody = c.Body(raw, mimeType, err == nil)
+		}
+		if c.Options.KeepBody(false) {
+			entry.HAR.ResponseBody = &protocol.ReplayHARBody{State: "unavailable"}
+			if nativeResponse != nil && finished {
+				mimeType := responseHeaders["content-type"]
+				if nativeSizes == nil || nativeSizes.ResponseBodySize < 0 || responseHeaders["content-encoding"] != "" && !strings.EqualFold(strings.TrimSpace(responseHeaders["content-encoding"]), "identity") {
+					entry.HAR.ResponseBody = &protocol.ReplayHARBody{State: "unavailable", MimeType: mimeType}
+				} else if nativeSizes.ResponseBodySize > c.Options.MaxBodyBytes {
+					entry.HAR.ResponseBody = &protocol.ReplayHARBody{State: "size_limit", MimeType: mimeType}
+				} else if !protocol.HARTextMIME(mimeType) {
+					entry.HAR.ResponseBody = &protocol.ReplayHARBody{State: "binary", MimeType: mimeType}
+				} else {
+					raw, err := nativeResponse.Body()
+					entry.HAR.ResponseBody = c.Body(raw, mimeType, err == nil)
+				}
+			}
+		}
+	}
 	b.mu.Lock()
 	if b.networkTaskCurrentLocked(task) {
 		b.appendNetworkEntryLocked(entry)
@@ -765,7 +796,7 @@ func browserNetworkFailureKind(finished bool, statusCode int) string {
 
 func (b *Browser) appendNetworkEntryLocked(entry protocol.NetworkEntry) {
 	b.networkEntries = append(b.networkEntries, entry)
-	b.networkBodyBytes += len(entry.RequestBody)
+	b.networkBodyBytes += (len(entry.RequestBody) + entry.HAR.BodyBytes())
 	b.networkMetadataBytes += browserNetworkEntryMetadataBytes(entry)
 	b.trimNetworkEntriesLocked()
 }
@@ -785,7 +816,7 @@ func (b *Browser) trimNetworkEntriesLocked() {
 		if !overCount && !overBodyBytes && !overMetadataBytes {
 			break
 		}
-		b.networkBodyBytes -= len(b.networkEntries[keepFrom].RequestBody)
+		b.networkBodyBytes -= len(b.networkEntries[keepFrom].RequestBody) + b.networkEntries[keepFrom].HAR.BodyBytes()
 		b.networkMetadataBytes -= browserNetworkEntryMetadataBytes(b.networkEntries[keepFrom])
 		keepFrom++
 	}

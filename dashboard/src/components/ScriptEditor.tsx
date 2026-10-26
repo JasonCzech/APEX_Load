@@ -1,4 +1,5 @@
 import DebugCompletionSummary from './DebugCompletionSummary'
+import { captureDebugTransactionDefinitions } from './debugTransactionModel'
 import { useDebugCompletionSummary } from './debugCompletionModel'
 import { downloadBlob } from '../utils/fileUtils'
 import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
@@ -3519,6 +3520,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     session: browserReplaySession, report: replayReport, running: replaying,
     scriptName: currentRunRef.current?.scriptName || script.name,
     draft: currentRunRef.current?.draft || false,
+    transactions: currentRunRef.current?.transactions,
     onComplete: showDebugSummary,
   })
   const [retainedDebugRunHistory, setDebugRunHistory] = useState<DebugRunRecord[]>([])
@@ -3612,7 +3614,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const payload = {
         ...baseReplayPayload,
         live_table_seeds: liveTableSeeds.length ? liveTableSeeds : undefined,
-        runtime_profile: { capture_mode: replayOptions.capture || 'diagnostic' },
+        runtime_profile: { capture_mode: replayOptions.capture || 'diagnostic', har_options: { bodies: replayOptions.harBodies || 'none', redirects: replayOptions.harRedirects ?? true, timings: replayOptions.harTimings ?? true, max_body_bytes: replayOptions.harMaxBodyBytes || 65536, max_total_body_bytes: replayOptions.harMaxTotalBodyBytes || 4194304 } },
         browser: currentScript.protocol === 'browser'
           ? { ...(baseReplayPayload.browser || {}), capture_screenshots: replayOptions.capture === 'script' ? baseReplayPayload.browser?.capture_screenshots : replayOptions.capture === 'errors' ? 'on_error' : 'per_action' }
           : baseReplayPayload.browser,
@@ -3626,7 +3628,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         ...(replayOptions.afterFailure !== 'test-run' ? { continue_on_error: replayOptions.afterFailure === 'continue' } : {}),
       }
       currentRunRef.current = {
-        id: replaySessionId, scriptName: currentScript.name, options: structuredClone({ ...replayOptions, startPaused, liveTableSeedsText: undefined }), breakpoints: structuredClone(payload.breakpoints),
+        id: replaySessionId, scriptName: currentScript.name, transactions: captureDebugTransactionDefinitions(currentScript), options: structuredClone({ ...replayOptions, startPaused, liveTableSeedsText: undefined }), breakpoints: structuredClone(payload.breakpoints),
         target: currentScript.config.base_url || 'Action-specific targets', draft: scriptEditorDirty, dataSourceCount: currentScript.data_sources?.length || 0,
         failurePolicy: debugContinuesAfterFailure(replayOptions, currentScript) ? 'Continue on error' : 'Stop on error',
         inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),

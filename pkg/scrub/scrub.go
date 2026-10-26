@@ -1857,7 +1857,7 @@ func (cp compiledPolicy) scrubHARBody(entry, container map[string]any) {
 		if knownMIME && !textualMIME {
 			return
 		}
-		container["text"] = cp.value(text)
+		container["text"] = cp.value(redactBodyAssignments(text))
 		return
 	}
 	decoded, err := base64.StdEncoding.DecodeString(text)
@@ -1881,7 +1881,7 @@ func (cp compiledPolicy) scrubHARBody(entry, container map[string]any) {
 	if !utf8.Valid(decoded) || (!knownMIME && !isTextualHARBody(decoded)) {
 		return
 	}
-	scrubbed := cp.value(string(decoded))
+	scrubbed := cp.value(redactBodyAssignments(string(decoded)))
 	container["text"] = base64.StdEncoding.EncodeToString([]byte(scrubbed))
 	container["encoding"] = "base64"
 }
