@@ -682,6 +682,9 @@ func (tr *TestRunner) persistTelemetryLoss(test *ManagedTest, manifest *RunArchi
 
 // runArchiveAttached runs the work that waits for a run's finalized archive.
 func (s *Server) runArchiveAttached(testID string) {
+	if s != nil && s.runner != nil {
+		s.runner.stopAndJoinLiveBrowserIntelligenceByID(testID)
+	}
 	s.autoQueueBrowserIntelligence(testID)
 	// Capable stores enqueue at archive commit, before this non-durable hook.
 	if !s.runner.hasAtomicTelemetryNotifications() {

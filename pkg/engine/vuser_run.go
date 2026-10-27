@@ -389,7 +389,7 @@ func (run *vuserRun) prepareIteration() (ready, skipped bool) {
 		}
 		_ = run.vu.refreshImportedCredentialRuntimeValues()
 		// A long browser session hands over each iteration's interactions.
-		handOffBrowserInteractions(run.vu.Proto, run.vu.ResultSink, run.vu.RedactionConfig)
+		run.vu.flushBrowserIterationEvidence()
 		// Only a browser observer's lost salesforce_jwt session asks for renewal.
 		renewSession := run.vu.takeBrowserSessionRenewal()
 		if renewSession || run.vu.Script.Protocol == "browser" && run.cfg.Browser.NewUserPerIter != nil && *run.cfg.Browser.NewUserPerIter {
@@ -527,6 +527,7 @@ func (run *vuserRun) completeIteration() bool {
 	run.recordIterationTransaction(run.iterSuccess)
 	run.iterTransactionSource = nil
 	run.releaseReservedActionTransaction()
+	run.vu.flushBrowserIterationEvidence()
 
 	run.iteration++
 	if run.vu.Metrics != nil {

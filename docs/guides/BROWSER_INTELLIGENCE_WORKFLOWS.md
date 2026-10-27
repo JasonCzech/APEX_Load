@@ -31,7 +31,7 @@ A run with browser groups, browser document evidence or a pinned browser policy 
 - **Journey risk.**
 - **The retained resource inspector.**
 
-The live execution page shows the same comparison over the documents published so far. Findings, interaction patterns and journeys read the finalized archive, so they appear only in the run report.
+The live execution page shows the same comparison over the documents published so far, together with **Provisional live browser intelligence** (findings, interaction patterns, and journey risk) evaluated on a 30-second cadence from bounded incremental document, interaction, and journey evidence (`provisional: true`, baseline status `not_evaluated_live`, and `live_truncated: true` if in-memory live caps are exceeded). Provisional live snapshots are persisted through `LiveStateStore` so HA followers serve identical provisional responses while the run is active or finalizing, and are atomically replaced once the finalized archive is attached.
 
 ### Drill-down: finding → document → resources → HAR entry
 

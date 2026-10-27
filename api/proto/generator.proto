@@ -709,6 +709,43 @@ message MetricsBatch {
   // boundaries. False for legacy, missing, invalid or bounded-out evidence.
   // This does not certify cross-host clock quality or durable delivery.
   bool collection_windows_complete = 40;
+  // Bounded incremental browser document evidence, interactions, and journey
+  // boundary events for provisional live controller views (BI-C1).
+  repeated string live_browser_documents_json = 41;
+  repeated string live_browser_interactions_json = 42;
+  repeated LiveJourneyEvent live_journey_events = 43;
+  LiveBrowserTruncation live_browser_truncation = 44;
+}
+
+message BrowserAuthoredStep {
+  int32 version = 1;
+  string script_sha256 = 2;
+  string source_structure_sha256 = 3;
+  string step_path = 4;
+  string step_id = 5;
+}
+
+message LiveJourneyEvent {
+  string group = 1;
+  int32 vuser_id = 2;
+  uint64 vuser_lifetime = 3;
+  int64 iteration = 4;
+  string phase = 5;
+  string action_name = 6;
+  int64 timestamp_unix_nano = 7;
+  double duration_ms = 8;
+  double elapsed_ms = 9;
+  bool business_transaction = 10;
+  bool success = 11;
+  bool interrupted = 12;
+  bool ends_iteration = 13;
+  BrowserAuthoredStep authored_step = 14;
+}
+
+message LiveBrowserTruncation {
+  int64 dropped_documents = 1;
+  int64 dropped_interactions = 2;
+  int64 dropped_journey_events = 3;
 }
 
 message MetricsCollectionWindow {

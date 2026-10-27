@@ -58,7 +58,7 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
+    setLoading(current => report?.run_id === testId && !failure ? current : true)
     setFailure(null)
     getTestArchiveJourneys(testId, selection, { signal: controller.signal })
       .then(next => { if (!controller.signal.aborted) setReport(next) })
@@ -71,14 +71,22 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
     return () => controller.abort()
   }, [getTestArchiveJourneys, testId, selection, attempt])
 
+  const isProvisional = Boolean(report?.provisional)
+  useEffect(() => {
+    if (!isProvisional) return
+    const timer = window.setTimeout(() => setAttempt(value => value + 1), 3000)
+    return () => window.clearTimeout(timer)
+  }, [isProvisional, report])
+
   const apply = (event: FormEvent) => {
     event.preventDefault()
     const policy = policyDraft.trim()
     const revision = Number.parseInt(revisionDraft, 10)
+    setReport(null)
     setSelection(policy ? { policy, revision: Number.isFinite(revision) && revision > 0 ? revision : undefined } : {})
   }
 
-  return <section className="run-report-panel journey-risk" aria-label="Journey risk">
+  return <section className="run-report-panel journey-risk" aria-label="Journey risk" data-provisional={isProvisional ? 'true' : undefined}>
     <h2>Journey risk</h2>
     <form className="run-report-toolbar-actions" onSubmit={apply} aria-label="Journey policy">
       <label>Journey policy <input value={policyDraft} onChange={event => setPolicyDraft(event.target.value)} placeholder="Run's pinned policy" maxLength={128} /></label>
@@ -86,6 +94,7 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
       <button type="submit" className="btn btn-secondary" disabled={loading}>Apply</button>
     </form>
     {loading && <p role="status">Accounting journeys…</p>}
+    {!loading && isProvisional && <p role="note" className="run-report-provisional-notice">Provisional live journey accounting (non-verdict) — updated from active and completed VUser iterations and replaced when the archive is finalized.{report?.live_truncated ? ' Live journey event buffer reached its in-memory bound (live_truncated).' : ''}</p>}
     {!loading && failure?.kind === 'archive_missing' && <p role="note">This run's saved archive is not available yet (it may still be publishing), so its journeys cannot be accounted. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p>}
     {!loading && failure?.kind === 'not_finalized' && <p role="note">Journeys are accounted once the run's archive is finalized. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p>}
     {!loading && failure?.kind === 'policy' && <Notice tone="error" title={failure.message} details={failure.detail} />}

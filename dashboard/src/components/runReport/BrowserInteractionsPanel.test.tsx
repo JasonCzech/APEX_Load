@@ -183,4 +183,29 @@ describe('BrowserInteractionsPanel', () => {
     await act(async () => root.unmount())
   })
 
+  it('polls provisional live interaction patterns and replaces them when the archive is finalized', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.request
+        .mockResolvedValueOnce({ ...analysis, provisional: true, live_truncated: true })
+        .mockResolvedValueOnce(analysis)
+      const container = document.createElement('div')
+      const root = createRoot(container)
+      await act(async () => root.render(<BrowserInteractionsPanel testId="run-1" />))
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('[data-provisional="true"]')).not.toBeNull()
+      expect(container.textContent).toContain('Provisional live interaction patterns and heatmaps (non-verdict)')
+      expect(container.textContent).toContain('live_truncated')
+
+      await act(async () => { vi.advanceTimersByTime(3000) })
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('[data-provisional="true"]')).toBeNull()
+      expect(container.textContent).not.toContain('Provisional live interaction patterns')
+      await act(async () => root.unmount())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
 })

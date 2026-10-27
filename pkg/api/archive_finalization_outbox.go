@@ -617,6 +617,7 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	// are released, and counted as dropped so a sidecar written later (its
 	// first write failed, then a refresh) is marked truncated.
 	releaseHeldJointPublicationsLocked(current)
+	releaseLiveBrowserIntelligenceLocked(current)
 	tr.notifyArchiveAttached(testID)
 }
 

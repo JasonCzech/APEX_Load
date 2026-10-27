@@ -74,11 +74,13 @@ type BrowserInteractionAnalysis struct {
 	// Status is ready; not_captured when the run recorded no interaction
 	// evidence; or unavailable when it captured some but none reached the
 	// archive (a lost transfer, a refused or torn sidecar).
-	Status     string                       `json:"status"`
-	Thresholds BrowserInteractionThresholds `json:"thresholds"`
-	Coverage   BrowserInteractionCoverage   `json:"coverage"`
-	Patterns   []BrowserInteractionPattern  `json:"patterns"`
-	Heatmaps   []BrowserInteractionHeatmap  `json:"heatmaps"`
+	Status        string                       `json:"status"`
+	Provisional   bool                         `json:"provisional,omitempty"`
+	LiveTruncated bool                         `json:"live_truncated,omitempty"`
+	Thresholds    BrowserInteractionThresholds `json:"thresholds"`
+	Coverage      BrowserInteractionCoverage   `json:"coverage"`
+	Patterns      []BrowserInteractionPattern  `json:"patterns"`
+	Heatmaps      []BrowserInteractionHeatmap  `json:"heatmaps"`
 	// Notes state what the analysis does not claim.
 	Notes       []string `json:"notes"`
 	Limitations []string `json:"limitations,omitempty"`
@@ -898,6 +900,12 @@ func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r
 	ctx := r.Context()
 	id := r.PathValue("id")
 	analysis, err := s.runArchiveBrowserInteractions(ctx, id)
+	if errors.Is(err, errInteractionArchiveNotFound) || errors.Is(err, errInteractionArchiveNotFinalized) {
+		if provisional, ok := s.provisionalRunBrowserInteractions(ctx, id); ok {
+			analysis = provisional
+			err = nil
+		}
+	}
 	switch {
 	case err == nil:
 		if wantsCSV(r) {

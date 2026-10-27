@@ -25,12 +25,15 @@ export interface BrowserInteractionHeatmap {
 }
 export interface BrowserInteractionAnalysis {
   run_id: string; version: string; status: 'ready' | 'not_captured' | 'unavailable' | string
+  provisional?: boolean; live_truncated?: boolean
   thresholds: { repeat_min_gestures: number; repeat_window_ms: number; repeat_radius_px: number; heatmap_grid: number }
   coverage: { interactions: number; streamed_interactions?: number; pattern_retained?: number; pattern_truncated?: number; pattern_eligible?: number; pattern_excluded?: Record<string, number>; records: number; dropped: number; incomplete: boolean; by_provenance: Record<string, number>; mapped: number; mapped_via_transform?: number; excluded?: Record<string, number> }
   patterns: BrowserInteractionPattern[]; heatmaps: BrowserInteractionHeatmap[]; notes: string[]; limitations?: string[]
 }
 
-const browserInteractionsApi = {
+export const BROWSER_INTERACTIONS_POLL_MS = 3000
+
+export const browserInteractionsApi = {
   get: (runId: string, signal?: AbortSignal) =>
     request<BrowserInteractionAnalysis>(`/tests/${encodeURIComponent(runId)}/archive/browser-interactions`, { signal }),
 }
@@ -72,7 +75,7 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
+    setLoading(current => analysis?.run_id === testId ? current : true)
     setError(null)
     browserInteractionsApi.get(testId, controller.signal)
       .then(next => { if (!controller.signal.aborted) setAnalysis(next) })
@@ -89,12 +92,19 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
     return () => controller.abort()
   }, [testId, attempt])
 
-  if (loading) return <p role="status">Loading interaction patterns…</p>
+  const isProvisional = Boolean(analysis?.provisional)
+  useEffect(() => {
+    if (!isProvisional) return
+    const timer = window.setTimeout(() => setAttempt(value => value + 1), BROWSER_INTERACTIONS_POLL_MS)
+    return () => window.clearTimeout(timer)
+  }, [isProvisional, analysis])
+
+  if (loading && !analysis) return <p role="status">Loading interaction patterns…</p>
   if (error?.state === 'missing') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">This run's saved archive is not available yet (it may still be publishing), so no interaction patterns can be shown. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p></section>
   if (error?.state === 'not_finalized') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">Interaction patterns appear once the run's archive is finalized. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p></section>
   if (error) return <Notice tone="error" title="Interaction patterns could not be loaded" details={error.detail} action={<button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Retry interaction patterns</button>} />
-  if (!analysis || analysis.status === 'not_captured') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p>This run recorded no interaction evidence. {INTERACTION_CAPTURE_SETTING_HINT}</p></section>
-  if (analysis.status === 'unavailable') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">The run captured interaction evidence, but none reached its archive{analysis.coverage?.dropped ? ` (${analysis.coverage.dropped} gestures lost)` : ''}, so no pattern or heatmap can be shown.</p></section>
+  if (!analysis || analysis.status === 'not_captured') return <section className="run-report-panel" aria-label="Interaction patterns" data-provisional={isProvisional ? 'true' : undefined}><h3>Interaction patterns</h3>{isProvisional && <p role="note" className="run-report-provisional-notice">Provisional live interaction patterns and heatmaps (non-verdict) — updated during the run and replaced when the archive is finalized.{analysis?.live_truncated ? ' Live interaction evidence reached its in-memory bound (live_truncated).' : ''}</p>}<p>This run recorded no interaction evidence. {INTERACTION_CAPTURE_SETTING_HINT}</p></section>
+  if (analysis.status === 'unavailable') return <section className="run-report-panel" aria-label="Interaction patterns" data-provisional={isProvisional ? 'true' : undefined}><h3>Interaction patterns</h3>{isProvisional && <p role="note" className="run-report-provisional-notice">Provisional live interaction patterns and heatmaps (non-verdict) — updated during the run and replaced when the archive is finalized.{analysis.live_truncated ? ' Live interaction evidence reached its in-memory bound (live_truncated).' : ''}</p>}<p role="note">The run captured interaction evidence, but none reached its archive{analysis.coverage?.dropped ? ` (${analysis.coverage.dropped} gestures lost)` : ''}, so no pattern or heatmap can be shown.</p></section>
   // A response without its coverage or thresholds is not an analysis this
   // panel can show; say so rather than fail the report around it.
   if (!analysis.coverage || !analysis.thresholds) return <p className="run-report-error" role="alert">The interaction analysis could not be read.</p>
@@ -106,8 +116,9 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   const qualified = analysis.version === 'browser_interaction_patterns.v3' || analysis.version === 'browser_interaction_patterns.v4'
   const patternExcluded = Object.entries(coverage.pattern_excluded || {})
   return (
-    <section className="run-report-panel" aria-label="Interaction patterns">
+    <section className="run-report-panel" aria-label="Interaction patterns" data-provisional={isProvisional ? 'true' : undefined}>
       <h3>Interaction patterns</h3>
+      {isProvisional && <p role="note" className="run-report-provisional-notice">Provisional live interaction patterns and heatmaps (non-verdict) — updated during the run and replaced when the archive is finalized.{analysis.live_truncated ? ' Live interaction evidence reached its in-memory bound (live_truncated).' : ''}</p>}
       <p className="run-report-muted">
         {coverage.interactions} recorded gestures ({Object.entries(coverage.by_provenance).map(([provenance, count]) => `${count} ${provenance}`).join(', ') || 'none'}); {coverage.mapped} mapped{(coverage.mapped_via_transform ?? 0) > 0 ? ` (${coverage.mapped_via_transform} via child-frame transform)` : ''}.
         {coverage.dropped > 0 ? ` ${coverage.dropped} gestures were dropped by capture bounds or lost before the archive.` : ''}{coverage.incomplete ? ' Some interaction evidence is incomplete.' : ''}

@@ -14,26 +14,57 @@ func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, sele
 	if b.shouldUseSyntheticTap() {
 		return b.runTouchScript(ctx, action, selector, syntheticTapOperation(), "browser tap")
 	}
+	timeout := b.actionTimeout(action)
+	var targetLocator playwright.Locator
 	if locator, ok := b.actionLocator(action, selector); ok {
-		timeout := b.actionTimeout(action)
 		if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
 			return err
 		}
-		return locator.Tap(playwright.LocatorTapOptions{
-			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
-		})
+		targetLocator = locator
+	} else {
+		if err := b.waitVisibleWithTimeout(ctx, selector, timeout); err != nil {
+			return err
+		}
+		page := b.currentPage()
+		if page == nil {
+			return fmt.Errorf("browser tap failed: no active page")
+		}
+		targetLocator = firstMatch(page, selector)
 	}
-	timeout := b.actionTimeout(action)
-	if err := b.waitVisibleWithTimeout(ctx, selector, timeout); err != nil {
-		return err
+	tapTimeout := timeout
+	if b.engine == "webkit" && tapTimeout > 750*time.Millisecond {
+		tapTimeout = 750 * time.Millisecond
 	}
-	page := b.currentPage()
-	if page == nil {
-		return fmt.Errorf("browser tap failed: no active page")
-	}
-	return firstMatch(page, selector).Tap(playwright.LocatorTapOptions{
-		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+	err := targetLocator.Tap(playwright.LocatorTapOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, tapTimeout)),
 	})
+	if err != nil && b.engine == "webkit" && strings.Contains(err.Error(), "intercepts pointer events") {
+		if b.webkitElementUnoccludedAtCenter(ctx, targetLocator, timeout) {
+			return b.runTouchScript(ctx, action, selector, syntheticTapOperation(), "browser tap")
+		}
+	}
+	return err
+}
+
+func (b *Browser) webkitElementUnoccludedAtCenter(ctx context.Context, locator playwright.Locator, timeout time.Duration) bool {
+	if locator == nil {
+		return false
+	}
+	val, err := locator.Evaluate(`(el) => {
+		if (!el) return false;
+		el.scrollIntoView({ block: 'center', inline: 'center' });
+		const r = el.getBoundingClientRect();
+		if (r.width <= 0 || r.height <= 0) return false;
+		const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+		return Boolean(hit && (hit === el || el.contains(hit) || hit.contains(el)));
+	}`, nil, playwright.LocatorEvaluateOptions{
+		Timeout: playwright.Float(b.timeoutMS(ctx, min(timeout, 2*time.Second))),
+	})
+	if err != nil {
+		return false
+	}
+	ok, _ := val.(bool)
+	return ok
 }
 
 func (b *Browser) shouldUseSyntheticTap() bool {

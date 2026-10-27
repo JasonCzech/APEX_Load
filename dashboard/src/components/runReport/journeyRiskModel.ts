@@ -41,6 +41,8 @@ export interface JourneyAccounting {
 export interface JourneyRiskReport {
   schema_version: string
   run_id: string
+  provisional?: boolean
+  live_truncated?: boolean
   policy: { id: string; name: string; revision: number; sha256: string; source: 'pinned' | 'requested' | string }
   availability: 'available' | 'unavailable' | string
   reason?: string
@@ -67,6 +69,8 @@ const incompleteReasons: Record<string, string> = {
   buffer_bound: 'iterations larger than the accounting buffers',
   archive_scan_budget: 'more rows than one archive scan reads',
   sources_not_collected: 'generator sources whose archives were not collected',
+  sources_not_completed: 'active VUser iterations have not completed yet',
+  live_truncated: 'live provisional buffer reached its bound',
   rows_without_vuser_identity: 'rows from a source that records no VUser identity',
 }
 

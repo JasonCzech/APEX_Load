@@ -412521,7 +412521,11 @@ paths:
                     type: string
                   job_id:
                     type: string
+                  live_truncated:
+                    type: boolean
                   pending:
+                    type: boolean
+                  provisional:
                     type: boolean
                   result:
                     type: object
@@ -412722,6 +412726,8 @@ paths:
                             - window
                       input_fingerprint:
                         type: string
+                      live_truncated:
+                        type: boolean
                       notes:
                         type: array
                         items:
@@ -412774,6 +412780,8 @@ paths:
                             - revision
                             - sha256
                             - source
+                      provisional:
+                        type: boolean
                       rule_set:
                         type: string
                       run_id:
@@ -413114,6 +413122,8 @@ paths:
                     type: array
                     items:
                       type: string
+                  live_truncated:
+                    type: boolean
                   notes:
                     type: array
                     items:
@@ -413195,6 +413205,8 @@ paths:
                         - kind
                         - provenance
                         - start
+                  provisional:
+                    type: boolean
                   run_id:
                     type: string
                   status:
@@ -414600,6 +414612,8 @@ paths:
                         - steps
                         - success
                         - weight
+                  live_truncated:
+                    type: boolean
                   notes:
                     type: array
                     items:
@@ -414624,6 +414638,8 @@ paths:
                       - revision
                       - sha256
                       - source
+                  provisional:
+                    type: boolean
                   reason:
                     type: string
                   rows_outside_iterations:

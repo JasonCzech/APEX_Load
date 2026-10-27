@@ -37,8 +37,11 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
     return () => controller.abort()
   }, [testId, reload])
 
-  // A queued or running evaluation is checked again until it settles.
-  const pending = state?.status === 'pending'
+  // A queued, running or provisional live evaluation is checked again until the finalized archive evaluation settles.
+  const result = state?.result
+  const isProvisional = Boolean(state?.provisional || result?.provisional)
+  const isLiveTruncated = Boolean(state?.live_truncated || result?.live_truncated)
+  const pending = state?.status === 'pending' || isProvisional
   useEffect(() => {
     if (!pending) return
     const timer = window.setTimeout(() => setReload(value => value + 1), BROWSER_FINDINGS_POLL_MS)
@@ -58,20 +61,22 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
     }
   }, [projectId, testId])
 
-  const result = state?.result
   const findings = [...(result?.findings || [])].sort((a, b) => (stateOrder[a.state] ?? 3) - (stateOrder[b.state] ?? 3) || a.summary.localeCompare(b.summary))
-  return <section className="run-report-panel browser-findings" aria-label="Browser findings">
+  return <section className="run-report-panel browser-findings" aria-label="Browser findings" data-provisional={isProvisional ? 'true' : undefined}>
     <h2>Browser findings</h2>
     {loading && !state && <p role="status">Loading browser findings…</p>}
     {!loading && error && <p role="alert" className="run-report-error">{error}</p>}
+    {isProvisional && <p role="note" className="run-report-provisional-notice">Provisional live browser findings (non-verdict) — evaluated from active run evidence; baseline comparison is not evaluated live and will be replaced by the finalized archive verdict.{isLiveTruncated ? ' Live browser evidence reached its in-memory bound (live_truncated); the finalized archive evaluation will read the full retained archive.' : ''}</p>}
     {state && !result && <p>{state.status === 'pending'
       ? 'A browser evaluation is queued or running.'
       : state.status === 'failed'
         ? `The browser evaluation failed: ${state.failure || 'no reason recorded'}.`
         : browserPolicyPinned === false
           ? 'This run has no browser evaluation. It pinned no browser policy, so the run report cannot evaluate it. An evaluation under a named policy revision (API or apexctl) is read from that evaluation and does not appear here.'
-          : `This run has no browser evaluation. A run that pins a browser policy and captures page timings and Web Vitals (Runtime Settings › Browser) is queued for evaluation when its archive is finalized${evaluable ? '; evaluate it here if none was queued' : ''}.`}</p>}
-    {evaluable && !loading && <button type="button" className="btn btn-secondary" onClick={() => void evaluate()} disabled={queueing || state?.status === 'pending'}>Evaluate with the pinned policy</button>}
+          : isProvisional
+            ? 'Provisional live browser findings are enabled for this active run; findings will appear once the run pins a browser policy and reports page observations.'
+            : `This run has no browser evaluation. A run that pins a browser policy and captures page timings and Web Vitals (Runtime Settings › Browser) is queued for evaluation when its archive is finalized${evaluable ? '; evaluate it here if none was queued' : ''}.`}</p>}
+    {evaluable && !loading && !isProvisional && <button type="button" className="btn btn-secondary" onClick={() => void evaluate()} disabled={queueing || state?.status === 'pending'}>Evaluate with the pinned policy</button>}
     {result && <>
       <p>
         <strong>{result.score.score !== undefined ? `Score ${result.score.score.toFixed(1)}/100 (${result.score.severity.replace(/_/g, ' ')})` : browserScoreUnscoredText(result.score.unscored_reason)}</strong>{' '}

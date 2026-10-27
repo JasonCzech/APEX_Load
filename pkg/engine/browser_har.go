@@ -3,6 +3,7 @@ package engine
 import (
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -50,6 +51,17 @@ type BrowserInteractionEvidenceSink interface {
 	RecordBrowserInteractionEvidence(*protocol.BrowserInteractionEvidence) error
 }
 
+// LiveBrowserInteractionEvidenceSink receives scrubbed interaction evidence
+// records for provisional live evaluation.
+type LiveBrowserInteractionEvidenceSink interface {
+	RecordLiveBrowserInteractionEvidence(*protocol.BrowserInteractionEvidence) error
+}
+
+// browserInteractionHandoffMu serializes interaction draining and sink
+// delivery across collector sample ticks, iteration boundaries, and session
+// teardowns so records are never interleaved out of chronological order.
+var browserInteractionHandoffMu sync.Mutex
+
 // maxHandedOffInteractionRoute is the interaction route bound
 // (protocol.BrowserInteraction.Valid).
 const maxHandedOffInteractionRoute = 512
@@ -63,9 +75,12 @@ func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink, config *Re
 	if !ok {
 		return
 	}
+	browserInteractionHandoffMu.Lock()
+	defer browserInteractionHandoffMu.Unlock()
 	evidence := takeBrowserInteractions(provider)
 	interactionSink, ok := sink.(BrowserInteractionEvidenceSink)
-	if !ok {
+	liveSink, liveOK := sink.(LiveBrowserInteractionEvidenceSink)
+	if !ok && !liveOK {
 		if len(evidence) > 0 {
 			slog.Warn("browser interaction evidence has no run archive to go to and was dropped", "records", len(evidence))
 		}
@@ -85,8 +100,13 @@ func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink, config *Re
 			record.Interactions[i].Route = route
 		}
 		for _, part := range protocol.SplitBrowserInteractionEvidence(record) {
-			if err := interactionSink.RecordBrowserInteractionEvidence(part); err != nil {
-				slog.Warn("browser interaction evidence was not retained in the run archive", "generation", part.SourceGeneration, "err", err)
+			if ok {
+				if err := interactionSink.RecordBrowserInteractionEvidence(part); err != nil {
+					slog.Warn("browser interaction evidence was not retained in the run archive", "generation", part.SourceGeneration, "err", err)
+				}
+			}
+			if liveOK {
+				_ = liveSink.RecordLiveBrowserInteractionEvidence(part.Clone())
 			}
 		}
 	}

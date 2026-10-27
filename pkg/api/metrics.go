@@ -819,15 +819,16 @@ func buildRunLiveStateSnapshotLocked(test *ManagedTest, updatedAt time.Time) Run
 		return RunLiveStateSnapshot{UpdatedAt: updatedAt}
 	}
 	return RunLiveStateSnapshot{
-		TestID:        test.ID,
-		TestName:      test.Name,
-		ProjectID:     normalizeProjectID(test.ProjectID),
-		Status:        test.Status,
-		UpdatedAt:     updatedAt.UTC(),
-		StartedAt:     cloneTimePtr(test.StartedAt),
-		EndedAt:       cloneTimePtr(test.EndedAt),
-		LiveMetrics:   cloneRunLiveMetrics(test),
-		HistoryPoints: len(test.History),
+		TestID:                         test.ID,
+		TestName:                       test.Name,
+		ProjectID:                      normalizeProjectID(test.ProjectID),
+		Status:                         test.Status,
+		UpdatedAt:                      updatedAt.UTC(),
+		StartedAt:                      cloneTimePtr(test.StartedAt),
+		EndedAt:                        cloneTimePtr(test.EndedAt),
+		LiveMetrics:                    cloneRunLiveMetrics(test),
+		ProvisionalBrowserIntelligence: cloneProvisionalBrowserIntelligenceSnapshot(test.provisionalBrowserIntelligence),
+		HistoryPoints:                  len(test.History),
 	}
 }
 

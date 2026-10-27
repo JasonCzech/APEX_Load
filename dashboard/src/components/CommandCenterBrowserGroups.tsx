@@ -1,10 +1,14 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
+import { request } from '../hooks/apiClient'
 import type { LiveMetrics } from '../types'
 import { DOCUMENT_CAPTURE_SETTING_HINT } from './browserCaptureSettings'
 import { formatBrowserDocumentValue } from './browserDocumentEvidenceModel'
 import type { CommandGroup } from './commandCenterScenarioRows'
 import { BROWSER_COMPARISON_METRICS, BROWSER_METRIC_LABELS, buildBrowserComparison } from './runReport/browserComparisonModel'
+import { BROWSER_FINDINGS_POLL_MS, browserFindingsApi, browserScoreUnscoredText, type RunBrowserFindings } from './runReport/browserFindingsModel'
+import { browserInteractionsApi, type BrowserInteractionAnalysis } from './runReport/BrowserInteractionsPanel'
+import { formatJourneyFraction, journeyUnscoredText, type JourneyRiskReport } from './runReport/journeyRiskModel'
 import { JOURNEY_RATE_WINDOW } from './testExecutionMetricsModel'
 
 function formatRate(value: number | undefined): string {
@@ -17,10 +21,13 @@ function formatClientMs(value: number | undefined): string {
 
 /**
  * Browser groups as their users see them: journeys (iterations) per minute,
- * the requests their pages make, and the pages' Web Vitals as they are
- * published.
+ * the requests their pages make, the pages' Web Vitals as they are published,
+ * and provisional live browser intelligence (findings, interactions and
+ * journeys) while the run is active or finalizing.
  */
-export default function CommandCenterBrowserGroups({ groups, metrics, rateWindow, requestsCounted, inRunRequestRate }: {
+export default function CommandCenterBrowserGroups({ testId, groups, metrics, rateWindow, requestsCounted, inRunRequestRate }: {
+  /** When set, polls provisional live browser intelligence for this run. */
+  testId?: string
   groups: CommandGroup[]
   metrics?: LiveMetrics
   /** The window the page's rates cover, e.g. "10 s avg". */
@@ -32,6 +39,57 @@ export default function CommandCenterBrowserGroups({ groups, metrics, rateWindow
 }) {
   const vitals = useMemo(() => buildBrowserComparison(metrics?.browser_documents, 'live-history'), [metrics?.browser_documents])
   const client = metrics?.browser
+  const [liveIntelligence, setLiveIntelligence] = useState<{
+    findings: RunBrowserFindings | null
+    interactions: BrowserInteractionAnalysis | null
+    journeys: JourneyRiskReport | null
+  }>({ findings: null, interactions: null, journeys: null })
+
+  useEffect(() => {
+    if (!testId) {
+      setLiveIntelligence({ findings: null, interactions: null, journeys: null })
+      return undefined
+    }
+    let cancelled = false
+    let timer: number | undefined
+    const controller = new AbortController()
+    const load = async () => {
+      const [findings, interactions, journeys] = await Promise.all([
+        browserFindingsApi.get(testId, controller.signal).catch(() => null),
+        browserInteractionsApi.get(testId, controller.signal).catch(() => null),
+        request<JourneyRiskReport>(`/tests/${encodeURIComponent(testId)}/archive/journeys`, { signal: controller.signal }).catch(() => null),
+      ])
+      if (cancelled || controller.signal.aborted) return
+      setLiveIntelligence({ findings, interactions, journeys })
+      const stillProvisional = Boolean(
+        findings?.provisional || findings?.result?.provisional ||
+        interactions?.provisional || journeys?.provisional,
+      )
+      if (stillProvisional) {
+        timer = window.setTimeout(() => { void load() }, BROWSER_FINDINGS_POLL_MS)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+      controller.abort()
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [testId])
+
+  const hasLiveIntelligence = Boolean(
+    liveIntelligence.findings?.result ||
+    (liveIntelligence.interactions && liveIntelligence.interactions.status === 'ready') ||
+    (liveIntelligence.journeys && liveIntelligence.journeys.availability === 'available'),
+  )
+  const isProvisionalIntelligence = Boolean(
+    liveIntelligence.findings?.provisional || liveIntelligence.findings?.result?.provisional ||
+    liveIntelligence.interactions?.provisional || liveIntelligence.journeys?.provisional,
+  )
+  const isLiveTruncated = Boolean(
+    liveIntelligence.findings?.live_truncated || liveIntelligence.findings?.result?.live_truncated ||
+    liveIntelligence.interactions?.live_truncated || liveIntelligence.journeys?.live_truncated,
+  )
   return (
     <section className="command-panel command-browser-groups" aria-label="Browser groups">
       <div className="command-panel-header"><h3>Browser groups</h3></div>
@@ -92,6 +150,41 @@ export default function CommandCenterBrowserGroups({ groups, metrics, rateWindow
             // The summary's presence means capture is on.
             ? `Page timings are captured, but no page load has been measured yet.${vitals.incomplete ? ' Some page evidence was dropped.' : ''}`
             : `No page timings yet. ${DOCUMENT_CAPTURE_SETTING_HINT}`}</p>
+      )}
+      {hasLiveIntelligence && (
+        <div className="command-browser-live-intelligence" data-provisional={isProvisionalIntelligence ? 'true' : 'false'}>
+          <h4>{isProvisionalIntelligence ? 'Live browser intelligence (provisional — non-verdict)' : 'Browser intelligence (finalized archive)'}</h4>
+          {isProvisionalIntelligence && (
+            <p role="note">
+              Provisional live views refresh during the run and are replaced by the finalized archive verdict.{isLiveTruncated ? ' Live browser evidence reached its in-memory bound (live_truncated).' : ''}
+            </p>
+          )}
+          <ul>
+            {liveIntelligence.findings?.result && (
+              <li data-testid="live-browser-findings-summary">
+                <strong>Findings ({liveIntelligence.findings.result.policy.name || liveIntelligence.findings.result.policy.id} rev {liveIntelligence.findings.result.policy.revision}):</strong>{' '}
+                {liveIntelligence.findings.result.score.score !== undefined
+                  ? `Score ${liveIntelligence.findings.result.score.score.toFixed(1)}/100 (${liveIntelligence.findings.result.score.severity.replace(/_/g, ' ')})`
+                  : browserScoreUnscoredText(liveIntelligence.findings.result.score.unscored_reason)}{' '}
+                · {liveIntelligence.findings.result.counts.active || 0} active findings
+                {isProvisionalIntelligence ? ' · baseline not evaluated live' : ''}
+              </li>
+            )}
+            {liveIntelligence.interactions && liveIntelligence.interactions.status === 'ready' && (
+              <li data-testid="live-browser-interactions-summary">
+                <strong>Interactions ({liveIntelligence.interactions.version}):</strong>{' '}
+                {liveIntelligence.interactions.coverage.interactions} gestures · {(liveIntelligence.interactions.patterns || []).length} patterns · {(liveIntelligence.interactions.heatmaps || []).length} heatmaps
+              </li>
+            )}
+            {liveIntelligence.journeys && liveIntelligence.journeys.availability === 'available' && (
+              <li data-testid="live-browser-journeys-summary">
+                <strong>Journeys ({liveIntelligence.journeys.policy.name || liveIntelligence.journeys.policy.id} rev {liveIntelligence.journeys.policy.revision}):</strong>{' '}
+                weighted failure index {liveIntelligence.journeys.weighted_failure_index !== undefined ? formatJourneyFraction(liveIntelligence.journeys.weighted_failure_index) : journeyUnscoredText(liveIntelligence.journeys.index_unscored)}{' '}
+                · {(liveIntelligence.journeys.journeys || []).map(j => `${j.name}: ${j.completed} completed, ${j.failed} failed, ${j.censored} censored`).join('; ')}
+              </li>
+            )}
+          </ul>
+        </div>
       )}
     </section>
   )

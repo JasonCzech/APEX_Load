@@ -96,6 +96,8 @@ type JourneyPolicyRef struct {
 type JourneyRiskReport struct {
 	SchemaVersion string           `json:"schema_version"`
 	RunID         string           `json:"run_id"`
+	Provisional   bool             `json:"provisional,omitempty"`
+	LiveTruncated bool             `json:"live_truncated,omitempty"`
 	Policy        JourneyPolicyRef `json:"policy"`
 	// Availability is "available", or "unavailable" with Reason (an archive
 	// without VUser iteration identity, for example).
@@ -680,6 +682,19 @@ func resolveJourneyPolicy(store storage.AnalysisDefinitionStore, projectID strin
 //
 // OpenAPI-Responses: 400, 404, 409, 500, 503
 func (s *Server) handleGetRunArchiveJourneys(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if testSummary, ok := s.archiveDomainService().GetTestSummary(id); ok && testSummary != nil {
+		if record, hasArchive := s.archiveDomainService().GetRunArchiveContext(r.Context(), testSummary.ID); !hasArchive || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
+			if report, status, err, handled := s.provisionalRunJourneys(r.Context(), testSummary, r.URL.Query().Get("policy"), r.URL.Query().Get("revision")); handled {
+				if err != nil {
+					writeError(w, status, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, report)
+				return
+			}
+		}
+	}
 	test, record, lease, ok := s.requireRunArchiveTest(w, r)
 	if !ok {
 		return

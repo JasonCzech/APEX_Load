@@ -214,6 +214,8 @@ type BrowserIntelligenceResult struct {
 	RuleSet          string               `json:"rule_set"`
 	InputFingerprint string               `json:"input_fingerprint"`
 	RunID            string               `json:"run_id"`
+	Provisional      bool                 `json:"provisional,omitempty"`
+	LiveTruncated    bool                 `json:"live_truncated,omitempty"`
 	Policy           BrowserPolicyRef     `json:"policy"`
 	PolicyPins       []RunPolicyPin       `json:"policy_pins,omitempty"`
 	Window           BrowserFindingWindow `json:"window"`
@@ -241,6 +243,8 @@ type browserIntelligenceInputs struct {
 	baselineQualification  string
 	baselineReasons        []string
 	baselineMismatchReason string
+	provisional            bool
+	liveTruncated          bool
 	fingerprint            string
 	preRCAFingerprint      string
 }
@@ -1022,6 +1026,13 @@ func evaluateFindingBaseline(inputs *browserIntelligenceInputs, finding BrowserF
 	}
 	if finding.Category == browserFindingCategoryCollection {
 		out.Status = "not_applicable"
+		return out
+	}
+	if inputs.provisional {
+		out.Status = "not_evaluated_live"
+		out.Reason = "not_evaluated_live"
+		out.BaselineRunID = inputs.baselineRunID
+		out.BaselineArchiveSHA256 = inputs.baselineArchiveSHA256
 		return out
 	}
 	if inputs.rcaAnalysisID != "" {

@@ -238,7 +238,34 @@ type MetricsBatch struct {
 	TransactionResponseTimeSLA []TransactionResponseTimeSLACompliance
 	// HTTPVersionMix is the generator's run-to-date HTTP version mix; nil
 	// from older generators or before any HTTP action.
-	HTTPVersionMix *protocol.HTTPVersionMix
+	HTTPVersionMix              *protocol.HTTPVersionMix
+	LiveBrowserDocumentsJSON    []string
+	LiveBrowserInteractionsJSON []string
+	LiveJourneyEvents           []LiveJourneyEvent
+	LiveBrowserTruncation       *LiveBrowserTruncation
+}
+
+type LiveJourneyEvent struct {
+	Group               string
+	VUserID             int
+	VUserLifetime       uint64
+	Iteration           int64
+	Phase               string
+	ActionName          string
+	TimestampUnixNano   int64
+	DurationMs          float64
+	ElapsedMs           float64
+	BusinessTransaction bool
+	Success             bool
+	Interrupted         bool
+	EndsIteration       bool
+	AuthoredStep        *protocol.BrowserAuthoredStep
+}
+
+type LiveBrowserTruncation struct {
+	DroppedDocuments     int64
+	DroppedInteractions  int64
+	DroppedJourneyEvents int64
 }
 
 type TransactionResponseTimeSLACompliance struct {
@@ -1973,9 +2000,69 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		LifecycleState:             batch.GetLifecycleState(),
 		LifecycleError:             batch.GetLifecycleError(),
 		Telemetry:                  telemetry,
-		TransactionResponseTimeSLA: transactionResponseTimeSLAFromProto(batch.GetTransactionResponseTimeSla()),
-		HTTPVersionMix:             httpVersionMixFromProto(batch.GetHttpVersionMix()),
+		TransactionResponseTimeSLA:  transactionResponseTimeSLAFromProto(batch.GetTransactionResponseTimeSla()),
+		HTTPVersionMix:              httpVersionMixFromProto(batch.GetHttpVersionMix()),
+		LiveBrowserDocumentsJSON:    append([]string(nil), batch.GetLiveBrowserDocumentsJson()...),
+		LiveBrowserInteractionsJSON: append([]string(nil), batch.GetLiveBrowserInteractionsJson()...),
+		LiveJourneyEvents:           liveJourneyEventsFromProto(batch.GetLiveJourneyEvents()),
+		LiveBrowserTruncation:       liveBrowserTruncationFromProto(batch.GetLiveBrowserTruncation()),
 	}, nil
+}
+
+func liveJourneyEventsFromProto(rows []*pb.LiveJourneyEvent) []LiveJourneyEvent {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]LiveJourneyEvent, 0, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		var step *protocol.BrowserAuthoredStep
+		if pbStep := row.GetAuthoredStep(); pbStep != nil {
+			candidate := &protocol.BrowserAuthoredStep{
+				Version:               int(pbStep.GetVersion()),
+				ScriptSHA256:          pbStep.GetScriptSha256(),
+				SourceStructureSHA256: pbStep.GetSourceStructureSha256(),
+				StepPath:              pbStep.GetStepPath(),
+				StepID:                pbStep.GetStepId(),
+			}
+			if candidate.Valid() {
+				step = candidate
+			}
+		}
+		out = append(out, LiveJourneyEvent{
+			Group:               row.GetGroup(),
+			VUserID:             int(row.GetVuserId()),
+			VUserLifetime:       row.GetVuserLifetime(),
+			Iteration:           row.GetIteration(),
+			Phase:               row.GetPhase(),
+			ActionName:          row.GetActionName(),
+			TimestampUnixNano:   row.GetTimestampUnixNano(),
+			DurationMs:          row.GetDurationMs(),
+			ElapsedMs:           row.GetElapsedMs(),
+			BusinessTransaction: row.GetBusinessTransaction(),
+			Success:             row.GetSuccess(),
+			Interrupted:         row.GetInterrupted(),
+			EndsIteration:       row.GetEndsIteration(),
+			AuthoredStep:        step,
+		})
+	}
+	return out
+}
+
+func liveBrowserTruncationFromProto(in *pb.LiveBrowserTruncation) *LiveBrowserTruncation {
+	if in == nil {
+		return nil
+	}
+	if in.GetDroppedDocuments() <= 0 && in.GetDroppedInteractions() <= 0 && in.GetDroppedJourneyEvents() <= 0 {
+		return nil
+	}
+	return &LiveBrowserTruncation{
+		DroppedDocuments:     max(in.GetDroppedDocuments(), 0),
+		DroppedInteractions:  max(in.GetDroppedInteractions(), 0),
+		DroppedJourneyEvents: max(in.GetDroppedJourneyEvents(), 0),
+	}
 }
 
 // maxHTTPVersionMixKeys bounds each count map a generator sends; the keys

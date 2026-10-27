@@ -83,6 +83,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext
 	if test == nil {
 		return nil, fmt.Errorf("test is required")
 	}
+	tr.stopAndJoinLiveBrowserIntelligence(test, completedAt)
 	if err := validateArchiveRunID(test.ID); err != nil {
 		return nil, err
 	}

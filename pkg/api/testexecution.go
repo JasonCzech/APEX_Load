@@ -6040,6 +6040,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 
 	tr.cacheRunSnapshot(snapshot)
 	tr.broadcastEvent("test_started", eventSnapshot)
+	tr.startLiveBrowserIntelligence(test, nil)
 	tr.startStageSchedules(ctx, test, mge)
 	tr.startTrafficProfileSchedules(ctx, test, mge)
 	tr.scheduleRuntimeGroupDeadlines(eventSnapshot)
@@ -6191,6 +6192,9 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	test.Archive = archiveRecord
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord
+		if strings.TrimSpace(archiveRecord.ManifestSHA256) != "" {
+			releaseLiveBrowserIntelligenceLocked(test)
+		}
 	}
 	terminalSnapshot := buildRunLiveStateSnapshotLocked(test, endTime)
 	eventSnapshot := cloneManagedTestFieldsLocked(test)

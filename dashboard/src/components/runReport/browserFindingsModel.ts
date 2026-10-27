@@ -18,7 +18,7 @@ export interface BrowserCandidateRejection {
 }
 export interface BrowserFindingBaseline {
   mode: string
-  status: 'regressed' | 'within_baseline' | 'insufficient_evidence' | 'unqualified' | 'not_selected' | 'not_evaluated' | 'not_applicable' | string
+  status: 'regressed' | 'within_baseline' | 'insufficient_evidence' | 'unqualified' | 'not_selected' | 'not_evaluated' | 'not_evaluated_live' | 'not_applicable' | string
   reason?: string
   detail?: string
   analysis_id?: string
@@ -49,6 +49,7 @@ export interface BrowserScore {
 }
 export interface BrowserIntelligenceResult {
   schema_version: string; rule_set: string; input_fingerprint: string; run_id: string
+  provisional?: boolean; live_truncated?: boolean
   policy: { id: string; name: string; revision: number; sha256: string; source: string }
   policy_pins?: RunPolicyPin[]
   window: { start: string; end: string }; score: BrowserScore; findings: BrowserFinding[]
@@ -56,6 +57,7 @@ export interface BrowserIntelligenceResult {
 }
 export interface RunBrowserFindings {
   run_id: string; status: 'ready' | 'pending' | 'failed' | 'not_evaluated' | string
+  provisional?: boolean; live_truncated?: boolean
   job_id?: string; completed_at?: string; pending?: boolean; failure?: string; result?: BrowserIntelligenceResult
 }
 
@@ -102,6 +104,9 @@ export function browserCohortLabel(cohort?: BrowserFindingCohort): string {
 
 export function browserFindingBaselineLabel(baseline?: BrowserFindingBaseline): string {
   if (!baseline || baseline.status === 'not_applicable') return ''
+  if (baseline.status === 'not_evaluated_live') {
+    return `Baseline (${baseline.mode || 'none'}): not evaluated live (provisional).`
+  }
   const status = (baseline.status || 'not_selected').replace(/_/g, ' ')
   const reason = baseline.reason ? ` (${baseline.reason.replace(/_/g, ' ')})` : ''
   const detail = baseline.detail ? ` — ${baseline.detail}` : ''

@@ -77082,7 +77082,9 @@ export interface operations {
             "completed_at"?: (string) | null;
             "failure"?: string;
             "job_id"?: string;
+            "live_truncated"?: boolean;
             "pending"?: boolean;
+            "provisional"?: boolean;
             "result"?: ({
               "counts": Record<string, number>;
               "findings": Array<{
@@ -77149,6 +77151,7 @@ export interface operations {
                 };
               }>;
               "input_fingerprint": string;
+              "live_truncated"?: boolean;
               "notes": Array<string>;
               "policy": {
                 "id": string;
@@ -77166,6 +77169,7 @@ export interface operations {
                 "sha256": string;
                 "source": string;
               }>;
+              "provisional"?: boolean;
               "rule_set": string;
               "run_id": string;
               "schema_version": string;
@@ -77353,6 +77357,7 @@ export interface operations {
               "viewport_width": number;
             }>;
             "limitations"?: Array<string>;
+            "live_truncated"?: boolean;
             "notes": Array<string>;
             "patterns": Array<{
               "action_id"?: string;
@@ -77381,6 +77386,7 @@ export interface operations {
               "route"?: string;
               "start": string;
             }>;
+            "provisional"?: boolean;
             "run_id": string;
             "status": string;
             "thresholds": {
@@ -77781,6 +77787,7 @@ export interface operations {
               };
               "weight": number;
             }>;
+            "live_truncated"?: boolean;
             "notes": Array<string>;
             "policy": {
               "id": string;
@@ -77789,6 +77796,7 @@ export interface operations {
               "sha256": string;
               "source": string;
             };
+            "provisional"?: boolean;
             "reason"?: string;
             "rows_outside_iterations": number;
             "run_id": string;

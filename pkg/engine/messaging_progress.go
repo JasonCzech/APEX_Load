@@ -26,14 +26,15 @@ type messagingProgressRegistration struct {
 	browser *browserDocumentRegistration
 	// har hands a browser session's published HAR artifacts to the sink
 	// publishBrowser named, after the final teardown.
-	har      protocol.Protocol
-	harSink  ResultSink
-	mu       sync.Mutex
-	id       uint64
-	provider protocol.Protocol
-	group    string
-	latest   *protocol.MessagingProgressSnapshot
-	finished bool
+	har          protocol.Protocol
+	harSink      ResultSink
+	harRedaction func() *RedactionConfig
+	mu           sync.Mutex
+	id           uint64
+	provider     protocol.Protocol
+	group        string
+	latest       *protocol.MessagingProgressSnapshot
+	finished     bool
 }
 
 func (mc *MetricsCollector) registerMessagingProgress(p protocol.Protocol, group string, resources *engineRuntimeResources, phase ...string) *messagingProgressRegistration {
@@ -47,9 +48,15 @@ func (mc *MetricsCollector) registerMessagingProgressWithRedaction(p protocol.Pr
 	browser := mc.registerBrowserDocuments(p, group, redaction)
 	_, harProvider := p.(protocol.BrowserHARArtifactProvider)
 	if browser != nil || harProvider {
-		entry := &messagingProgressRegistration{browser: browser}
+		entry := &messagingProgressRegistration{browser: browser, harRedaction: redaction}
 		if harProvider {
 			entry.har = p
+			state := &mc.browserDocuments
+			state.mu.Lock()
+			if !state.closed && len(state.interactions) < maxBrowserEvidenceProviders {
+				state.interactions = append(state.interactions, entry)
+			}
+			state.mu.Unlock()
 		}
 		return entry
 	}
@@ -306,10 +313,29 @@ func (state *engineMessagingProgress) snapshot() *protocol.MessagingProgressSnap
 	return state.latest.Clone()
 }
 
+func (entry *messagingProgressRegistration) flushBrowserInteractions() {
+	if entry == nil {
+		return
+	}
+	entry.mu.Lock()
+	har, sink, redaction, finished := entry.har, entry.harSink, entry.harRedaction, entry.finished
+	entry.mu.Unlock()
+	if finished || har == nil || sink == nil {
+		return
+	}
+	if _, ok := sink.(LiveBrowserInteractionEvidenceSink); !ok {
+		return
+	}
+	handOffBrowserInteractions(har, sink, currentRedactionConfig(redaction))
+}
+
 func (entry *messagingProgressRegistration) publishBrowser(sink ResultSink, region string, redaction func() *RedactionConfig) {
 	if entry != nil && entry.har != nil {
 		entry.mu.Lock()
 		entry.harSink = sink
+		if redaction != nil {
+			entry.harRedaction = redaction
+		}
 		entry.mu.Unlock()
 	}
 	if entry != nil && entry.browser != nil {

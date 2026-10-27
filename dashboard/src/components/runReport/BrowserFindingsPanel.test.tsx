@@ -143,4 +143,40 @@ describe('BrowserFindingsPanel', () => {
     expect(browserScoreUnscoredText('no_document_evidence')).toContain('no document evidence')
     expect(browserFindingReasonText('other')).toBe('other')
   })
+
+  it('renders provisional live findings with not_evaluated_live baseline and replaces them when finalized', async () => {
+    vi.useFakeTimers()
+    try {
+      const provisionalReady = {
+        ...ready,
+        provisional: true,
+        live_truncated: true,
+        result: {
+          ...ready.result,
+          provisional: true,
+          live_truncated: true,
+          findings: [
+            finding({ id: 'a1', severity: 'poor', baseline: { mode: 'latest_compatible', status: 'not_evaluated_live', reason: 'not_evaluated_live' } }),
+          ],
+        },
+      }
+      mocks.request.mockResolvedValueOnce(provisionalReady).mockResolvedValueOnce(ready)
+      act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj" canEvaluate />))
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('[data-provisional="true"]')).not.toBeNull()
+      expect(container.textContent).toContain('Provisional live browser findings (non-verdict)')
+      expect(container.textContent).toContain('live_truncated')
+      expect(container.textContent).toContain('Baseline (latest_compatible): not evaluated live (provisional).')
+      expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Evaluate with the pinned policy')).toBe(false)
+
+      await act(async () => { vi.advanceTimersByTime(3000) })
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('[data-provisional="true"]')).toBeNull()
+      expect(container.textContent).toContain('Baseline (latest_compatible): regressed')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

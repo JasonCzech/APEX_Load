@@ -194,6 +194,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	tr.mu.RUnlock()
 	tr.publishFinalLocalMetrics(test, finalSnapshot, lastPublishedSnapshot, groupVUsers, artifacts)
+	tr.stopAndJoinLiveBrowserIntelligence(test, endTime)
 
 	tr.mu.RLock()
 	testStatus := test.Status
@@ -550,6 +551,7 @@ func (a *runArtifacts) resultSink() engine.ResultSink {
 		a.recorder,
 		elkTraceEvidenceSink{artifacts: a},
 		liveErrorEvidenceSink{runner: a.runner, test: a.test},
+		liveBrowserIntelligenceSink{runner: a.runner, test: a.test},
 	}
 }
 
@@ -1078,6 +1080,28 @@ func (sink combinedResultSink) RecordBrowserInteractionEvidence(evidence *protoc
 		}
 	}
 	return errors.New("no run archive retains browser interaction evidence")
+}
+
+func (sink combinedResultSink) RecordLiveBrowserDocumentEvidence(evidence *protocol.BrowserDocumentEvidence) error {
+	for _, candidate := range sink {
+		if liveSink, ok := candidate.(engine.LiveBrowserDocumentEvidenceSink); ok {
+			if err := liveSink.RecordLiveBrowserDocumentEvidence(evidence); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (sink combinedResultSink) RecordLiveBrowserInteractionEvidence(evidence *protocol.BrowserInteractionEvidence) error {
+	for _, candidate := range sink {
+		if liveSink, ok := candidate.(engine.LiveBrowserInteractionEvidenceSink); ok {
+			if err := liveSink.RecordLiveBrowserInteractionEvidence(evidence); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // RecordBrowserHARArtifact hands a HAR to the first sink that retains HARs;

@@ -20,6 +20,13 @@ type browserSeenMeasurement struct {
 	terminal bool
 	digest   [32]byte
 }
+// LiveBrowserDocumentEvidenceSink receives scrubbed incremental and final
+// browser document evidence for provisional live evaluation without writing to
+// the durable archive sidecar.
+type LiveBrowserDocumentEvidenceSink interface {
+	RecordLiveBrowserDocumentEvidence(*protocol.BrowserDocumentEvidence) error
+}
+
 type browserDocumentRegistration struct {
 	mu                                  sync.Mutex
 	provider                            protocol.BrowserDocumentEvidenceProvider
@@ -36,10 +43,16 @@ type browserDocumentRegistration struct {
 	receiptDone                         chan struct{}
 	publishing                          bool
 	redaction                           func() *RedactionConfig
+	liveSeen                            map[string]browserSeenMeasurement
+	liveGeneration                      string
+	liveSourceDropped                   int64
+	liveDroppedRequestIdentities        int64
+	liveIncomplete                      bool
 }
 type engineBrowserDocuments struct {
 	mu                 sync.Mutex
 	entries            []*browserDocumentRegistration
+	interactions       []*messagingProgressRegistration
 	seen               map[string]browserSeenMeasurement
 	window             map[string]protocol.BrowserDocumentObservation
 	dropped            int64
@@ -90,6 +103,64 @@ func (mc *MetricsCollector) registerBrowserDocuments(p protocol.Protocol, group 
 	state.entries = append(state.entries, registration)
 	return registration
 }
+func (r *browserDocumentRegistration) nextLiveDeltaLocked(raw *protocol.BrowserDocumentEvidence) *protocol.BrowserDocumentEvidence {
+	if r == nil || raw == nil {
+		return nil
+	}
+	if r.liveGeneration != raw.SourceGeneration {
+		r.liveGeneration = raw.SourceGeneration
+		r.liveSourceDropped = 0
+		r.liveDroppedRequestIdentities = 0
+		r.liveIncomplete = false
+		clear(r.liveSeen)
+	}
+	if r.liveSeen == nil {
+		r.liveSeen = make(map[string]browserSeenMeasurement)
+	}
+	var delta []protocol.BrowserDocumentObservation
+	for _, observation := range raw.Observations {
+		data, _ := json.Marshal(observation)
+		digest := sha256.Sum256(data)
+		previous, exists := r.liveSeen[observation.MeasurementID]
+		if exists {
+			if observation.Revision < previous.revision || previous.terminal || observation.Revision == previous.revision {
+				continue
+			}
+		} else if len(r.liveSeen) >= maxBrowserSeenMeasurements {
+			r.liveIncomplete = true
+			continue
+		}
+		r.liveSeen[observation.MeasurementID] = browserSeenMeasurement{
+			revision: observation.Revision,
+			terminal: observation.State == "final" || observation.State == "censored",
+			digest:   digest,
+		}
+		delta = append(delta, observation)
+	}
+	coverageChanged := raw.DroppedObservations > r.liveSourceDropped ||
+		raw.DroppedRequestIdentities > r.liveDroppedRequestIdentities ||
+		(raw.Incomplete && !r.liveIncomplete)
+	if raw.DroppedObservations > r.liveSourceDropped {
+		r.liveSourceDropped = raw.DroppedObservations
+	}
+	if raw.DroppedRequestIdentities > r.liveDroppedRequestIdentities {
+		r.liveDroppedRequestIdentities = raw.DroppedRequestIdentities
+	}
+	if raw.Incomplete {
+		r.liveIncomplete = true
+	}
+	if len(delta) == 0 && !coverageChanged {
+		return nil
+	}
+	cloned := raw.Clone()
+	if cloned == nil {
+		return nil
+	}
+	cloned.Observations = delta
+	cloned.Incomplete = cloned.Incomplete || r.liveIncomplete
+	return protocol.PackBrowserDocumentEvidence(cloned)
+}
+
 func (r *browserDocumentRegistration) capture(finish bool) bool {
 	if r == nil {
 		return false
@@ -98,28 +169,32 @@ func (r *browserDocumentRegistration) capture(finish bool) bool {
 		r.publishReceipts()
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.provider == nil {
+		r.mu.Unlock()
 		return false
 	}
-	evidence := readBrowserDocuments(r.provider)
-	if evidence != nil {
-		for i := range evidence.Observations {
-			evidence.Observations[i].Group = r.group
-			evidence.Observations[i].Region = r.region
+	sink, group, region := r.sink, r.group, r.region
+	redactionCfg := currentRedactionConfig(r.redaction)
+	rawEvidence := readBrowserDocuments(r.provider)
+	if rawEvidence != nil {
+		for i := range rawEvidence.Observations {
+			rawEvidence.Observations[i].Group = group
+			rawEvidence.Observations[i].Region = region
 		}
 	}
-	evidence = scrubBrowserDocumentEvidence(evidence, currentRedactionConfig(r.redaction))
+	evidence := scrubBrowserDocumentEvidence(rawEvidence.Clone(), redactionCfg)
 	state := r.registry
 	state.mu.Lock()
-	defer state.mu.Unlock()
 	if evidence == nil {
 		state.markIncomplete()
 		if finish {
 			r.finished = true
 			r.provider = nil
 		}
-		return state.coverageDirty
+		coverageDirty := state.coverageDirty
+		state.mu.Unlock()
+		r.mu.Unlock()
+		return coverageDirty
 	}
 	changed := false
 	if r.generation != evidence.SourceGeneration {
@@ -178,15 +253,41 @@ func (r *browserDocumentRegistration) capture(finish bool) bool {
 		}
 		changed = true
 	}
+	liveSink, hasLiveSink := sink.(LiveBrowserDocumentEvidenceSink)
+	var liveDelta *protocol.BrowserDocumentEvidence
+	if hasLiveSink && rawEvidence != nil {
+		liveDelta = r.nextLiveDeltaLocked(rawEvidence)
+	}
 	if finish {
 		r.finished = true
 		r.provider = nil
+	}
+	state.mu.Unlock()
+	r.mu.Unlock()
+	if hasLiveSink && liveDelta != nil {
+		result := &protocol.Result{
+			ActionName:    "Browser document evidence",
+			SampleKind:    "browser_document_evidence",
+			Group:         group,
+			Region:        region,
+			Phase:         "teardown",
+			StartTime:     time.Now().UTC(),
+			Success:       true,
+			ClientMetrics: &protocol.ClientMetrics{DocumentEvidence: liveDelta},
+		}
+		scrubSensitiveStructuredResult(result, redactionCfg)
+		scrubSensitiveResultWithOptions(result, redactionCfg, false)
+		boundResultEvidence(result)
+		if result.ClientMetrics != nil && result.ClientMetrics.DocumentEvidence != nil {
+			_ = liveSink.RecordLiveBrowserDocumentEvidence(result.ClientMetrics.DocumentEvidence)
+		}
 	}
 	return changed
 }
 func (state *engineBrowserDocuments) sample(final bool) bool {
 	state.mu.Lock()
 	entries := append([]*browserDocumentRegistration(nil), state.entries...)
+	interactions := append([]*messagingProgressRegistration(nil), state.interactions...)
 	if final {
 		state.closed = true
 	}
@@ -195,10 +296,19 @@ func (state *engineBrowserDocuments) sample(final bool) bool {
 	for _, entry := range entries {
 		changed = entry.capture(final) || changed
 	}
+	for _, entry := range interactions {
+		entry.flushBrowserInteractions()
+	}
 	finished := make(map[*browserDocumentRegistration]bool, len(entries))
 	for _, entry := range entries {
 		entry.mu.Lock()
 		finished[entry] = entry.finished
+		entry.mu.Unlock()
+	}
+	finishedInteractions := make(map[*messagingProgressRegistration]bool, len(interactions))
+	for _, entry := range interactions {
+		entry.mu.Lock()
+		finishedInteractions[entry] = entry.finished || final
 		entry.mu.Unlock()
 	}
 	state.mu.Lock()
@@ -210,6 +320,14 @@ func (state *engineBrowserDocuments) sample(final bool) bool {
 	}
 	clear(state.entries[len(kept):])
 	state.entries = kept
+	keptInteractions := state.interactions[:0]
+	for _, entry := range state.interactions {
+		if !finishedInteractions[entry] {
+			keptInteractions = append(keptInteractions, entry)
+		}
+	}
+	clear(state.interactions[len(keptInteractions):])
+	state.interactions = keptInteractions
 	// A provider can finish between ticks and retire its handle after writing
 	// terminal observations. Only snapshot publication acknowledges that window.
 	changed = changed || state.coverageDirty || len(state.window) > 0
@@ -311,6 +429,9 @@ func (r *browserDocumentRegistration) publishFinal(evidence *protocol.BrowserDoc
 		err = fmt.Errorf("browser document archive sink is unavailable")
 	} else {
 		err = documentSink.RecordBrowserDocumentEvidence(result.ClientMetrics.DocumentEvidence)
+	}
+	if liveSink, liveSupported := sink.(LiveBrowserDocumentEvidenceSink); liveSupported && result.ClientMetrics != nil && result.ClientMetrics.DocumentEvidence != nil {
+		_ = liveSink.RecordLiveBrowserDocumentEvidence(result.ClientMetrics.DocumentEvidence.Clone())
 	}
 	r.mu.Lock()
 	r.publishing = false
