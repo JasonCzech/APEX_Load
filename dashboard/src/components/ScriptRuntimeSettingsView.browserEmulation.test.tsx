@@ -273,6 +273,23 @@ describe('ScriptRuntimeSettingsView browser QUIC', () => {
     expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ capture_interactions: true }))
   })
 
+  it('offers HAR capture policy options and clears back to undefined when off', () => {
+    const { onUpdateField } = renderBrowser(browserScript())
+    const harSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(element => element.closest('label')?.textContent?.includes('HAR capture'))
+    expect(harSelect?.value).toBe('off')
+    act(() => {
+      harSelect!.value = 'always'
+      harSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ engine: 'chromium', har_capture: 'always' }))
+    act(() => {
+      harSelect!.value = 'off'
+      harSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.browser', expect.objectContaining({ har_capture: undefined }))
+  })
+
   it('does not offer off for WebKit', () => {
     const script = browserScript()
     script.config.browser = { engine: 'webkit' }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { request } from '../../hooks/apiClient'
 import { getErrorMessage } from '../../utils/errorUtils'
@@ -31,9 +31,9 @@ export interface BrowserInteractionAnalysis {
   patterns: BrowserInteractionPattern[]; heatmaps: BrowserInteractionHeatmap[]; notes: string[]; limitations?: string[]
 }
 
-export const BROWSER_INTERACTIONS_POLL_MS = 3000
+const BROWSER_INTERACTIONS_POLL_MS = 3000
 
-export const browserInteractionsApi = {
+const browserInteractionsApi = {
   get: (runId: string, signal?: AbortSignal) =>
     request<BrowserInteractionAnalysis>(`/tests/${encodeURIComponent(runId)}/archive/browser-interactions`, { signal }),
 }
@@ -73,14 +73,21 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   const [error, setError] = useState<{ state: 'missing' | 'not_finalized' | 'error'; detail: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
+  const loadedRunIdRef = useRef<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(current => analysis?.run_id === testId ? current : true)
+    setLoading(current => loadedRunIdRef.current === testId ? current : true)
     setError(null)
     browserInteractionsApi.get(testId, controller.signal)
-      .then(next => { if (!controller.signal.aborted) setAnalysis(next) })
+      .then(next => {
+        if (!controller.signal.aborted) {
+          loadedRunIdRef.current = next.run_id
+          setAnalysis(next)
+        }
+      })
       .catch(err => {
         if (controller.signal.aborted) return
+        loadedRunIdRef.current = null
         setAnalysis(null)
         // A run without a finalized archive is a state, said plainly; the
         // server's text for anything else stays behind the notice's details.

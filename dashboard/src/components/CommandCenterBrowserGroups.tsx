@@ -7,7 +7,7 @@ import { formatBrowserDocumentValue } from './browserDocumentEvidenceModel'
 import type { CommandGroup } from './commandCenterScenarioRows'
 import { BROWSER_COMPARISON_METRICS, BROWSER_METRIC_LABELS, buildBrowserComparison } from './runReport/browserComparisonModel'
 import { BROWSER_FINDINGS_POLL_MS, browserFindingsApi, browserScoreUnscoredText, type RunBrowserFindings } from './runReport/browserFindingsModel'
-import { browserInteractionsApi, type BrowserInteractionAnalysis } from './runReport/BrowserInteractionsPanel'
+import type { BrowserInteractionAnalysis } from './runReport/BrowserInteractionsPanel'
 import { formatJourneyFraction, journeyUnscoredText, type JourneyRiskReport } from './runReport/journeyRiskModel'
 import { JOURNEY_RATE_WINDOW } from './testExecutionMetricsModel'
 
@@ -56,7 +56,7 @@ export default function CommandCenterBrowserGroups({ testId, groups, metrics, ra
     const load = async () => {
       const [findings, interactions, journeys] = await Promise.all([
         browserFindingsApi.get(testId, controller.signal).catch(() => null),
-        browserInteractionsApi.get(testId, controller.signal).catch(() => null),
+        request<BrowserInteractionAnalysis>(`/tests/${encodeURIComponent(testId)}/archive/browser-interactions`, { signal: controller.signal }).catch(() => null),
         request<JourneyRiskReport>(`/tests/${encodeURIComponent(testId)}/archive/journeys`, { signal: controller.signal }).catch(() => null),
       ])
       if (cancelled || controller.signal.aborted) return

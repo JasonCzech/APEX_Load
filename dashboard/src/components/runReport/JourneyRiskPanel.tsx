@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '../../hooks/useApi'
 import { getErrorMessage } from '../../utils/errorUtils'
@@ -55,15 +55,22 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
   const [failure, setFailure] = useState<JourneyLoadFailure | null>(null)
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
+  const loadedRunIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(current => report?.run_id === testId && !failure ? current : true)
+    setLoading(current => loadedRunIdRef.current === testId ? current : true)
     setFailure(null)
     getTestArchiveJourneys(testId, selection, { signal: controller.signal })
-      .then(next => { if (!controller.signal.aborted) setReport(next) })
+      .then(next => {
+        if (!controller.signal.aborted) {
+          loadedRunIdRef.current = next.run_id
+          setReport(next)
+        }
+      })
       .catch(err => {
         if (controller.signal.aborted) return
+        loadedRunIdRef.current = null
         setReport(null)
         setFailure(journeyLoadFailure(err, selection))
       })
@@ -82,6 +89,7 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
     event.preventDefault()
     const policy = policyDraft.trim()
     const revision = Number.parseInt(revisionDraft, 10)
+    loadedRunIdRef.current = null
     setReport(null)
     setSelection(policy ? { policy, revision: Number.isFinite(revision) && revision > 0 ? revision : undefined } : {})
   }

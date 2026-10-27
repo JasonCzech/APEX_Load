@@ -7067,10 +7067,46 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
       return (
         <ScriptBrowserEvidence
-          key={activeReplaySessionId || 'idle'}
+          key={`${editorResourceScopeVersionRef.current}:${activeReplaySessionId || 'idle'}`}
           event={selectedReplayEvent}
           variables={replayVariableInspector || {}}
           running={replaying}
+          projectId={projectId}
+          nativeReplayDisabled={replaying || replayGateButton.disabled || Boolean(jsonParseMessage)}
+          nativeReplayTitle={replayGateButton.disabled ? replayGateButton.title : undefined}
+          onStartNativeReplay={async () => {
+            const gate = replayStartGateRef.current
+            if (gate.kind === 'blocked') {
+              goToReplayBlockerRef.current()
+              return null
+            }
+            if (gate.kind === 'save-first') {
+              throw new Error('Save the script before running native browser replay.')
+            }
+            if (gate.kind === 'waiting' && (gate.cause === 'secrets' || gate.cause === 'save')) return null
+            const currentScript = resolveDraft().script
+            if (jsonDirty) commitJsonDraft(currentScript)
+            const variables = parseReplayVariablesText(replayOptions.variablesText)
+            const liveTableSeeds = parseLiveTableSandboxSeeds(replayOptions.liveTableSeedsText)
+            const runIdProblem = debugRunIdError(replayOptions.runId)
+            if (runIdProblem) throw new Error(runIdProblem)
+            const payload = {
+              ...buildReplayStartPayload(currentScript, {
+                projectId,
+                groupName: replayOptions.groupName,
+                variables,
+                ignoreThinkTime: replayOptions.ignoreThinkTime,
+              }),
+              live_table_seeds: liveTableSeeds.length ? liveTableSeeds : undefined,
+              ...(replayOptions.runId.trim() ? { run_id: replayOptions.runId.trim() } : {}),
+              ...(replayOptions.afterFailure !== 'test-run' ? { continue_on_error: replayOptions.afterFailure === 'continue' } : {}),
+              record_har: true,
+            }
+            const response = scriptId
+              ? await api.startBrowserReplaySession(scriptId, payload)
+              : await api.startDraftBrowserReplaySession(payload)
+            return response.replay_session_id || response.session?.id || null
+          }}
           onEdit={!replaying && !jsonParseMessage && selectedReplayEvent && replayEditableActionsKey === currentEditableActionsKey ? () => editReplayAction(selectedReplayEvent) : undefined}
           onApplyLocator={!replaying && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
         />

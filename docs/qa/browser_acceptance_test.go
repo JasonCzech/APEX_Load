@@ -82,7 +82,7 @@ type browserAcceptanceE2E struct {
 
 func browserAcceptanceEndToEnd() []browserAcceptanceE2E {
 	return []browserAcceptanceE2E{
-		{Behavior: "Archive resource to HAR and archive ZIP downloads", Tests: []string{"workflow-browser-har.spec.ts:an archived run leads from its retained resources to HAR and archive downloads"}},
+		{Behavior: "Archive resource to HAR and archive ZIP downloads", Tests: []string{"workflow-browser-har.spec.ts:an archived run leads from its retained resources to HAR and archive downloads", "workflow-browser-har.spec.ts:UI-driven Chromium managed chain authors, replays, runs and downloads native HARs without stubs", "workflow-browser-har.spec.ts:UI-driven WebKit managed chain authors, replays, runs and downloads native HARs without stubs"}},
 		{Behavior: "Viewer/editor separation and project denial", LocalAuthOnly: true, Tests: []string{"workflow-browser-har.spec.ts:viewers list HARs but cannot download them, and other projects are denied"}},
 		{Behavior: "Retained missing values", Tests: []string{"workflow-retained-resource-inspector.spec.ts:retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks", "workflow-retained-resource-inspector.spec.ts:retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero", "workflow-browser-resource-evidence.spec.ts:archive document evidence retains latest pending, censored and unavailable measurements independently from actions"}},
 	}

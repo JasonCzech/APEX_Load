@@ -78,6 +78,8 @@ These Playwright tests run in both authentication profiles (default and local-au
 | BE-4 behavior | Spec | Test | Profiles |
 | --- | --- | --- | --- |
 | Archive resource to HAR and archive ZIP downloads | `dashboard/e2e/workflow-browser-har.spec.ts` | an archived run leads from its retained resources to HAR and archive downloads | both |
+|  | `dashboard/e2e/workflow-browser-har.spec.ts` | UI-driven Chromium managed chain authors, replays, runs and downloads native HARs without stubs | both |
+|  | `dashboard/e2e/workflow-browser-har.spec.ts` | UI-driven WebKit managed chain authors, replays, runs and downloads native HARs without stubs | both |
 | Viewer/editor separation and project denial | `dashboard/e2e/workflow-browser-har.spec.ts` | viewers list HARs but cannot download them, and other projects are denied | local-auth only |
 | Retained missing values | `dashboard/e2e/workflow-retained-resource-inspector.spec.ts` | retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks | both |
 |  | `dashboard/e2e/workflow-retained-resource-inspector.spec.ts` | retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero | both |
