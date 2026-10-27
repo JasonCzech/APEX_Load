@@ -12,6 +12,7 @@ import Notice from '../ux/Notice'
 export interface BrowserInteractionPattern {
   authored_step?: { version: number; script_sha256: string; step_path: string; step_id: string }
   id: string; kind: string; provenance: string; route?: string; layout_revision?: string; action_id?: string; action_name?: string
+  outcome_kind?: string; outcome_index?: number; outcome_reason?: string
   count: number; start: string; end: string; declared?: string; deadline_ms?: number; detail: string; interactions: string[]
 }
 export interface BrowserInteractionHeatmap {
@@ -25,7 +26,7 @@ export interface BrowserInteractionHeatmap {
 export interface BrowserInteractionAnalysis {
   run_id: string; version: string; status: 'ready' | 'not_captured' | 'unavailable' | string
   thresholds: { repeat_min_gestures: number; repeat_window_ms: number; repeat_radius_px: number; heatmap_grid: number }
-  coverage: { pattern_eligible?: number; pattern_excluded?: Record<string, number>; interactions: number; records: number; dropped: number; incomplete: boolean; by_provenance: Record<string, number>; mapped: number; excluded?: Record<string, number> }
+  coverage: { pattern_eligible?: number; pattern_excluded?: Record<string, number>; interactions: number; records: number; dropped: number; incomplete: boolean; by_provenance: Record<string, number>; mapped: number; mapped_via_transform?: number; excluded?: Record<string, number> }
   patterns: BrowserInteractionPattern[]; heatmaps: BrowserInteractionHeatmap[]; notes: string[]; limitations?: string[]
 }
 
@@ -102,13 +103,13 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   const patterns = analysis.patterns ?? []
   const heatmaps = analysis.heatmaps ?? []
   const excluded = Object.entries(coverage.excluded || {})
-  const qualified = analysis.version === 'browser_interaction_patterns.v3'
+  const qualified = analysis.version === 'browser_interaction_patterns.v3' || analysis.version === 'browser_interaction_patterns.v4'
   const patternExcluded = Object.entries(coverage.pattern_excluded || {})
   return (
     <section className="run-report-panel" aria-label="Interaction patterns">
       <h3>Interaction patterns</h3>
       <p className="run-report-muted">
-        {coverage.interactions} recorded gestures ({Object.entries(coverage.by_provenance).map(([provenance, count]) => `${count} ${provenance}`).join(', ') || 'none'}); {coverage.mapped} mapped.
+        {coverage.interactions} recorded gestures ({Object.entries(coverage.by_provenance).map(([provenance, count]) => `${count} ${provenance}`).join(', ') || 'none'}); {coverage.mapped} mapped{(coverage.mapped_via_transform ?? 0) > 0 ? ` (${coverage.mapped_via_transform} via child-frame transform)` : ''}.
         {coverage.dropped > 0 ? ` ${coverage.dropped} gestures were dropped by capture bounds or lost before the archive.` : ''}{coverage.incomplete ? ' Some interaction evidence is incomplete.' : ''}
         {!qualified && <>{' '}A repeat is at least {thresholds.repeat_min_gestures} click, tap or check gestures within {thresholds.repeat_window_ms} ms and {thresholds.repeat_radius_px} CSS px (or with one action name, gesture kind and target when no point was dispatched).</>}
       </p>
@@ -119,7 +120,7 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
           <thead><tr><th scope="col">Pattern</th><th scope="col">Provenance</th><th scope="col">Route</th><th scope="col">Action</th><th scope="col">Gestures</th><th scope="col">Detail</th></tr></thead>
           <tbody>{patterns.map(pattern => <tr key={pattern.id} data-pattern={pattern.kind}>
             <th scope="row">{PATTERN_LABELS[pattern.kind] || label(pattern.kind)}</th><td>{pattern.provenance}</td><td>{pattern.route || '—'}</td>
-            <td>{pattern.action_name || '—'}{pattern.authored_step && <><br /><small>Step <code>{pattern.authored_step.step_path}</code></small></>}</td><td>{pattern.count}</td><td>{pattern.detail}</td>
+            <td>{pattern.action_name || '—'}{pattern.authored_step && <><br /><small>Step <code>{pattern.authored_step.step_path}</code></small></>}</td><td>{pattern.count}</td><td>{pattern.detail}{pattern.outcome_kind && <><br /><small>Outcome <code>{pattern.outcome_kind}[{pattern.outcome_index ?? 0}]</code></small></>}</td>
           </tr>)}</tbody>
         </table>
       )}

@@ -385,22 +385,25 @@ rows outside iterations (init, teardown, or no identity).
 ## Patterns and heatmaps
 
 `GET /api/v1/tests/{id}/archive/browser-interactions` reads a finalized run's
-interaction evidence (historical-only `browser_interaction_patterns.v2`, or
-`browser_interaction_patterns.v3` when raw v2 is present). Viewer access is
+interaction evidence (historical-only `browser_interaction_patterns.v2`,
+`browser_interaction_patterns.v3` when raw v2/v3 is present, or
+`browser_interaction_patterns.v4` when raw v4 interaction evidence is present). Viewer access is
 enough. The run report shows the result in its [Browser area](#the-browser-area-of-a-run-report), under **Interaction patterns**. A run without interaction evidence answers
 `not_captured`; a run that captured some but kept none in its archive (a
 failed transfer, a refused or torn sidecar) answers `unavailable` with what
 was lost. The response states its thresholds and coverage: interactions,
 records, dropped (by capture bounds, or lost before the archive) and
 incomplete evidence (the archive's own account, which includes sources that
-never arrived), counts by provenance, gestures mapped,
+never arrived), counts by provenance, gestures mapped (`mapped`, plus
+`mapped_via_transform` when same-origin child-frame gestures are mapped via an
+invertible 2D frame-chain transform in v4),
 and gestures left out by reason. A run without an archive answers `404` (on
 an HA controller, also until the finalized archive is published, so the run
 report offers to check again), an archive not yet finalized `409`, and
 unreadable evidence or an archive that cannot be read `500`. Nothing is
 replayed or injected.
 
-V3 pattern eligibility requires a valid authored step, engine invocation and
+V3 and V4 pattern eligibility requires a valid authored step, engine invocation and
 joined native dispatch timestamp whose source/document/lifecycle tuple is present
 in the verified document archive. A separate 100,000-tuple bound limits this
 join index; excess tuples remain `document_lifecycle_unavailable`, with
@@ -412,15 +415,19 @@ cover the streamed input; the existing 100,000-row retained pattern bound
 still applies. Historical rows remain downloadable and may contribute only
 to separately labelled historical maps in a mixed archive.
 
-V3 groups patterns by source generation, document and lifecycle and sorts by
+V3 and V4 group patterns by source generation, document and lifecycle and sort by
 native dispatch. Repetition requires the same structural step, compatible
 scroll/layout/viewport geometry and the 2-second native-event window;
 duplicate display names cannot merge. Intended retries share the engine's
-logical invocation and consecutive attempt numbers, rather than being
+logical invocation and increasing attempt numbers (even when an intermediate
+attempt was dropped), rather than being
 inferred from proximity. Retry attempts stay out of repetition even when an
 earlier attempt is missing. Pattern windows use the observed dispatch clock,
 so post-action waits do not move them. Pattern and report output retain the
-authored step and script identity. Sync-only outcome limits remain; canceled
+authored step and script identity. In V4, every missed declared page-response
+outcome (`sync`, `dialog`, `download`, `assertion`, or `navigation`) is
+evaluated with its own deadline and emits a distinct `dead_interaction` or
+`unexpected_navigation` pattern ID; canceled
 or otherwise unevaluated waits cannot become dead interactions.
 
 Historical-only v2 analysis keeps the following rules per document, in capture order:

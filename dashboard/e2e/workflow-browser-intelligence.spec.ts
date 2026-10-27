@@ -76,7 +76,7 @@ test('the Browser area leads from a finding to its document resources and HAR en
   // Transport fixture for v3 pattern eligibility and mixed map rendering; API archive tests independently
   // qualify cohort separation. This HTTP run does not qualify native capture.
   await page.route(`**/api/v1/tests/${id}/archive/browser-interactions`, route => route.fulfill({ json: {
-    run_id: id, version: 'browser_interaction_patterns.v3', status: 'ready',
+    run_id: id, version: 'browser_interaction_patterns.v4', status: 'ready',
     thresholds: { repeat_min_gestures: 3, repeat_window_ms: 2000, repeat_radius_px: 32, heatmap_grid: 64 },
     coverage: { pattern_eligible: 1, pattern_excluded: { legacy_identity_unavailable: 1, dispatch_unavailable: 2 }, interactions: 4, records: 1, dropped: 0, incomplete: false, by_provenance: { scripted: 4 }, mapped: 2, excluded: { engine_profile_unknown: 1, layout_unknown: 1 } },
     patterns: [], notes: ['Native dispatch and historical post-action maps are separate populations.'],

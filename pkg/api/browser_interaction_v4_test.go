@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,8 +22,8 @@ func v4InteractionFixture(n int, dispatch time.Duration) protocol.BrowserInterac
 	i := protocol.BrowserInteraction{
 		Version:            protocol.BrowserInteractionVersion4,
 		SourceGeneration:   e4Generation,
-		InteractionID:      e4Generation + "-i" + string(rune('0'+n)),
-		ActionID:           e4Generation + "-a" + string(rune('0'+n)),
+		InteractionID:      e4Generation + "-i" + strconv.Itoa(n),
+		ActionID:           e4Generation + "-a" + strconv.Itoa(n),
 		DocumentID:         e4Generation + "-doc-1",
 		FrameScope:         "main_frame",
 		Kind:               "click",
@@ -166,6 +167,9 @@ func TestBrowserInteractionV4ChildFrameMappingAndExclusions(t *testing.T) {
 	}
 
 	got := analyzeV3(mappedChild, xoriginChild, non2DChild, postActionMain, missedDialog, depthExceededChild)
+	if got.Version != browserInteractionAnalysisVersion4 {
+		t.Fatalf("version = %q, want %q", got.Version, browserInteractionAnalysisVersion4)
+	}
 	if mappedChild.Points[0].X != 40 || mappedChild.Points[0].Y != 20 {
 		t.Fatalf("mapInteraction mutated caller Points slice in-place: %+v", mappedChild.Points)
 	}
@@ -259,3 +263,234 @@ func TestArchiveAuthoredPageAccumulatorRetainsDistinctRouteSeqs(t *testing.T) {
 		t.Fatalf("authored page report = %+v", report)
 	}
 }
+
+func TestBrowserInteractionPatternsV4CombinedQualificationAndReportFormats(t *testing.T) {
+	def := protocol.BrowserAuthoredDefinition{
+		Version:         1,
+		ScriptSHA256:    strings.Repeat("a", 64),
+		StructureSHA256: strings.Repeat("b", 64),
+	}
+	stepA := protocol.NewBrowserOriginalAuthoredStep(def, "actions[1]")
+	stepB := protocol.NewBrowserOriginalAuthoredStep(def, "actions[2]")
+	stepRetry := protocol.NewBrowserOriginalAuthoredStep(def, "actions[3]")
+	stepMultiDead := protocol.NewBrowserOriginalAuthoredStep(def, "actions[4]")
+	stepUnexpectedNav := protocol.NewBrowserOriginalAuthoredStep(def, "actions[5]")
+
+	// 1. Duplicate ActionName on distinct AuthoredStep.StepID, or frame-scope/frame-chain mismatches,
+	// never merge into a repeat pattern.
+	dup1 := v4InteractionFixture(1, 0)
+	dup1.ActionName = "Click Buy"
+	dup1.AuthoredStep = stepA
+	dup2 := v4InteractionFixture(2, 400*time.Millisecond)
+	dup2.ActionName = "Click Buy"
+	dup2.AuthoredStep = stepB
+	dup3 := v4InteractionFixture(3, 800*time.Millisecond)
+	dup3.ActionName = "Click Buy"
+	dup3.AuthoredStep = stepA
+	if got := analyzeV3(dup1, dup2, dup3); len(got.Patterns) != 0 {
+		t.Fatalf("duplicate ActionName with distinct StepID merged into pattern: %+v", got.Patterns)
+	}
+	frameHop1 := protocol.BrowserInteractionFrameHop{BoundingX: 0, BoundingY: 0, BoundingWidth: 100, BoundingHeight: 100, OffsetWidth: 100, OffsetHeight: 100, Matrix: []float64{1, 0, 0, 1, 0, 0}}
+	frameHop2 := frameHop1
+	frameHop2.BoundingY = 50
+	fm1 := v4InteractionFixture(4, 0)
+	fm1.FrameScope = "child_frame"
+	fm1.FrameChain = []protocol.BrowserInteractionFrameHop{frameHop1}
+	fm2 := v4InteractionFixture(5, 300*time.Millisecond)
+	fm2.FrameScope = "child_frame"
+	fm2.FrameChain = []protocol.BrowserInteractionFrameHop{frameHop2}
+	fm3 := v4InteractionFixture(6, 600*time.Millisecond)
+	fm3.FrameScope = "child_frame"
+	fm3.FrameChain = []protocol.BrowserInteractionFrameHop{frameHop1}
+	if got := analyzeV3(fm1, fm2, fm3); len(got.Patterns) != 0 {
+		t.Fatalf("frame-chain mismatch merged into repeat pattern: %+v", got.Patterns)
+	}
+
+	// 2. Non-consecutive retry attempt numbers (Attempt 1 + Attempt 3 with Attempt 2 dropped,
+	// plus an interleaved unrelated gesture) group into one retry pattern and never count as repetition.
+	retry1 := v4InteractionFixture(10, 10*time.Second)
+	retry1.ActionName = "Submit Order"
+	retry1.AuthoredStep = stepRetry
+	retry1.Execution = &protocol.BrowserActionExecution{Invocation: 10, Attempt: 1}
+	retry1.Success = false
+	interleaved := v4InteractionFixture(11, 10200*time.Millisecond)
+	interleaved.ActionName = "Other Step"
+	interleaved.AuthoredStep = stepB
+	retry3 := v4InteractionFixture(12, 10500*time.Millisecond)
+	retry3.ActionName = "Submit Order"
+	retry3.AuthoredStep = stepRetry
+	retry3.Execution = &protocol.BrowserActionExecution{Invocation: 10, Attempt: 3}
+	retry3.Success = true
+	retryFollowup := v4InteractionFixture(13, 10800*time.Millisecond)
+	retryFollowup.ActionName = "Submit Order"
+	retryFollowup.AuthoredStep = stepRetry
+	retryFollowup.Execution = &protocol.BrowserActionExecution{Invocation: 11, Attempt: 1}
+
+	// 3. Delayed post-action waits (CapturedAt minutes/hours apart) do not shift Dispatch.At repeat windows,
+	// and "recorded" provenance produces repeated_gesture whereas "unknown" produces scripted_repetition.
+	rec1 := v4InteractionFixture(20, 20*time.Second)
+	rec1.ActionName = "Tap Checkout"
+	rec1.AuthoredStep = stepA
+	rec1.Provenance = protocol.InteractionProvenanceRecorded
+	rec1.CapturedAt = e4Start.Add(10 * time.Minute)
+	rec2 := v4InteractionFixture(21, 20500*time.Millisecond)
+	rec2.ActionName = "Tap Checkout"
+	rec2.AuthoredStep = stepA
+	rec2.Provenance = protocol.InteractionProvenanceRecorded
+	rec2.CapturedAt = e4Start.Add(20 * time.Minute)
+	rec3 := v4InteractionFixture(22, 21*time.Second)
+	rec3.ActionName = "Tap Checkout"
+	rec3.AuthoredStep = stepA
+	rec3.Provenance = protocol.InteractionProvenanceRecorded
+	rec3.CapturedAt = e4Start.Add(30 * time.Minute)
+
+	unk1 := v4InteractionFixture(30, 30*time.Second)
+	unk1.ActionName = "Tap Promo"
+	unk1.AuthoredStep = stepB
+	unk1.Provenance = protocol.InteractionProvenanceUnknown
+	unk2 := v4InteractionFixture(31, 30400*time.Millisecond)
+	unk2.ActionName = "Tap Promo"
+	unk2.AuthoredStep = stepB
+	unk2.Provenance = protocol.InteractionProvenanceUnknown
+	unk3 := v4InteractionFixture(32, 30800*time.Millisecond)
+	unk3.ActionName = "Tap Promo"
+	unk3.AuthoredStep = stepB
+	unk3.Provenance = protocol.InteractionProvenanceUnknown
+
+	// 4. Multi-outcome misses on a single v4 interaction emit separate dead_interaction patterns with distinct IDs,
+	// while a missed non-page-response sync (dom_stable) does not emit a dead interaction.
+	multiDead := v4InteractionFixture(40, 40*time.Second)
+	multiDead.ActionName = "Confirm Modal"
+	multiDead.AuthoredStep = stepMultiDead
+	dStart := multiDead.Dispatch.At
+	dAssertionObs := dStart.Add(2000 * time.Millisecond)
+	multiDead.CapturedAt = dStart.Add(3 * time.Second)
+	multiDead.Outcomes = []protocol.BrowserInteractionOutcome{
+		{
+			Kind:       protocol.InteractionOutcomeKindDialog,
+			Declared:   "dialog",
+			DeadlineMS: 1200,
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "deadline_missed",
+			Clock: &protocol.BrowserOutcomeClock{
+				Version: 1, StartedAt: dStart, DeadlineAt: dStart.Add(1200 * time.Millisecond), ObservedAt: dStart.Add(1200 * time.Millisecond), BudgetMS: 1200, ElapsedMS: 1200,
+			},
+		},
+		{
+			Kind:       protocol.InteractionOutcomeKindAssertion,
+			Declared:   "visible",
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "assertion_failed",
+			ObservedAt: &dAssertionObs,
+		},
+		{
+			Kind:       protocol.InteractionOutcomeKindSync,
+			Declared:   "dom_stable",
+			DeadlineMS: 2500,
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "deadline_missed",
+			Clock: &protocol.BrowserOutcomeClock{
+				Version: 1, StartedAt: dStart, DeadlineAt: dStart.Add(2500 * time.Millisecond), ObservedAt: dStart.Add(2500 * time.Millisecond), BudgetMS: 2500, ElapsedMS: 2500,
+			},
+		},
+	}
+	if !multiDead.Valid() {
+		t.Fatal("valid multiDead rejected")
+	}
+
+	// 5. Navigated v4 interaction with missed assertion emits unexpected_navigation, never dead_interaction.
+	unexpectedNav := v4InteractionFixture(50, 50*time.Second)
+	unexpectedNav.ActionName = "Stay On Cart"
+	unexpectedNav.AuthoredStep = stepUnexpectedNav
+	nStart := unexpectedNav.Dispatch.At
+	nNavObs := nStart.Add(300 * time.Millisecond)
+	nAssertObs := nStart.Add(1500 * time.Millisecond)
+	unexpectedNav.CapturedAt = nStart.Add(2 * time.Second)
+	unexpectedNav.Outcomes = []protocol.BrowserInteractionOutcome{
+		{
+			Kind:               protocol.InteractionOutcomeKindNavigation,
+			Declared:           "load",
+			Observed:           protocol.InteractionOutcomeMet,
+			ObservedAt:         &nNavObs,
+			NavigationSequence: 1,
+		},
+		{
+			Kind:       protocol.InteractionOutcomeKindAssertion,
+			Declared:   "visible",
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "assertion_failed",
+			ObservedAt: &nAssertObs,
+		},
+	}
+	if !unexpectedNav.Valid() {
+		t.Fatal("valid unexpectedNav rejected")
+	}
+
+	// 6. Scroll, layout, child-frame transform, and unknown cohort separation.
+	scrolled := v4InteractionFixture(60, 60*time.Second)
+	scrolled.ScrollY = 480
+	childMapped := v4InteractionFixture(61, 61*time.Second)
+	childMapped.FrameScope = "child_frame"
+	childMapped.Points = []protocol.BrowserInteractionPoint{{X: 20, Y: 30}}
+	childMapped.FrameChain = []protocol.BrowserInteractionFrameHop{{
+		BoundingX: 10, BoundingY: 20, BoundingWidth: 100, BoundingHeight: 100, OffsetWidth: 100, OffsetHeight: 100, Matrix: []float64{1, 0, 0, 1, 0, 0},
+	}}
+	unknownCohort := v4InteractionFixture(62, 62*time.Second)
+	unknownCohort.SourceGeneration = strings.Repeat("f", 32)
+	unknownCohort.InteractionID = unknownCohort.SourceGeneration + "-i62"
+	unknownCohort.ActionID = unknownCohort.SourceGeneration + "-a62"
+	unknownCohort.DocumentID = unknownCohort.SourceGeneration + "-doc-1"
+	unknownCohort.Dispatch.DocumentID = unknownCohort.DocumentID
+	unknownCohort.Dispatch.LifecycleID = unknownCohort.SourceGeneration + "-life-1"
+
+	got := analyzeV3(retry1, interleaved, retry3, retryFollowup, rec1, rec2, rec3, unk1, unk2, unk3, multiDead, unexpectedNav, scrolled, childMapped, unknownCohort)
+	if got.Version != browserInteractionAnalysisVersion4 {
+		t.Fatalf("version = %q, want %q", got.Version, browserInteractionAnalysisVersion4)
+	}
+	if got.Coverage.MappedViaTransform != 1 || got.Coverage.PatternExcluded["engine_profile_unknown"] != 1 || got.Coverage.Excluded["engine_profile_unknown"] != 1 {
+		t.Fatalf("coverage = %+v", got.Coverage)
+	}
+
+	retries := e4Patterns(got, interactionPatternRetry)
+	if len(retries) != 1 || retries[0].Count != 2 || retries[0].AuthoredStep.StepID != stepRetry.StepID {
+		t.Fatalf("retries = %+v", retries)
+	}
+	repeated := e4Patterns(got, interactionPatternRepeatedGesture)
+	if len(repeated) != 1 || repeated[0].Provenance != protocol.InteractionProvenanceRecorded || !repeated[0].Start.Equal(rec1.Dispatch.At) || !repeated[0].End.Equal(rec3.Dispatch.At) {
+		t.Fatalf("repeated_gesture = %+v", repeated)
+	}
+	scripted := e4Patterns(got, interactionPatternScriptedRepetition)
+	if len(scripted) != 1 || scripted[0].Provenance != protocol.InteractionProvenanceUnknown || scripted[0].AuthoredStep.StepID != stepB.StepID {
+		t.Fatalf("scripted_repetition = %+v", scripted)
+	}
+	dead := e4Patterns(got, interactionPatternDeadInteraction)
+	if len(dead) != 2 || dead[0].ID == dead[1].ID || dead[0].OutcomeKind != protocol.InteractionOutcomeKindDialog || dead[0].OutcomeIndex != 0 || dead[1].OutcomeKind != protocol.InteractionOutcomeKindAssertion || dead[1].OutcomeIndex != 1 {
+		t.Fatalf("dead_interaction = %+v", dead)
+	}
+	unexp := e4Patterns(got, interactionPatternUnexpectedNavigation)
+	if len(unexp) != 1 || unexp[0].OutcomeKind != protocol.InteractionOutcomeKindAssertion || unexp[0].OutcomeIndex != 1 || unexp[0].Declared != "visible" {
+		t.Fatalf("unexpected_navigation = %+v", unexp)
+	}
+
+	// Verify HTML, PDF, and CSV report formats surface browser_interaction_patterns.v4, mapped_via_transform, and outcome metadata.
+	report := consistencyMatrixReport()
+	report.BrowserIntelligence = browserIntelligenceReportFixture()
+	report.BrowserIntelligence.Interactions = &got
+	rendered := renderBrowserIntelligenceSections(t, report)[reportSectionInteractionMap]
+	for index, format := range []string{"HTML", "PDF", "CSV"} {
+		for _, want := range []string{
+			"browser_interaction_patterns.v4",
+			"Pattern-eligible gestures: 14.",
+			"Mapped via child-frame transform: 1.",
+			"Excluded from patterns: 1 engine_profile_unknown.",
+			"outcome dialog[0]",
+			"outcome assertion[1]",
+			stepMultiDead.StepID,
+		} {
+			if !strings.Contains(rendered[index], want) {
+				t.Fatalf("%s lacks %q:\n%s", format, want, rendered[index])
+			}
+		}
+	}
+}
+

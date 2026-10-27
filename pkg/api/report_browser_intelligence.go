@@ -302,8 +302,11 @@ func (d *runArchiveHTMLReportData) InteractionMapView() reportInteractionMapView
 			map[bool]string{true: ", incomplete", false: ""}[coverage.Incomplete], analysis.Version),
 		Notes: append(append([]string(nil), analysis.Notes...), analysis.Limitations...),
 	}
-	if analysis.Version == browserInteractionAnalysisVersion3 {
+	if analysis.Version == browserInteractionAnalysisVersion3 || analysis.Version == browserInteractionAnalysisVersion4 {
 		view.Notes = append(view.Notes, fmt.Sprintf("Pattern-eligible gestures: %d.", coverage.PatternEligible))
+		if coverage.MappedViaTransform > 0 {
+			view.Notes = append(view.Notes, fmt.Sprintf("Mapped via child-frame transform: %d.", coverage.MappedViaTransform))
+		}
 		var reasons []string
 		for reason := range coverage.PatternExcluded {
 			reasons = append(reasons, reason)
@@ -330,6 +333,9 @@ func (d *runArchiveHTMLReportData) InteractionMapView() reportInteractionMapView
 		if step := pattern.AuthoredStep; step.Valid() {
 			action += " (" + step.StepPath + ")"
 			detail += "; authored step " + step.StepID + "; script " + step.ScriptSHA256
+		}
+		if pattern.OutcomeKind != "" {
+			detail += fmt.Sprintf("; outcome %s[%d]", pattern.OutcomeKind, pattern.OutcomeIndex)
 		}
 		view.Patterns = append(view.Patterns, reportInteractionPatternRow{Kind: pattern.Kind, Provenance: pattern.Provenance, Route: pattern.Route, Action: action, Count: fmt.Sprint(pattern.Count), Detail: detail})
 	}

@@ -324,7 +324,7 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	if profile != "" {
 		wantEligible = 0
 	}
-	if interactions.Version != browserInteractionAnalysisVersion3 || interactions.Coverage.Interactions != 1 || interactions.Coverage.PatternEligible != wantEligible {
+	if interactions.Version != browserInteractionAnalysisVersion4 || interactions.Coverage.Interactions != 1 || interactions.Coverage.PatternEligible != wantEligible {
 		t.Fatalf("managed native dispatch did not qualify: %+v", interactions)
 	}
 	if profile != "" && interactions.Coverage.PatternExcluded["dispatch_unavailable"] != 1 {

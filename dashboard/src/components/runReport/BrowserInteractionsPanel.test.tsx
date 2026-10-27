@@ -159,5 +159,25 @@ describe('BrowserInteractionsPanel', () => {
     expect(empty.container.textContent).toContain('No gestures qualified for pattern analysis.')
     await act(async () => empty.root.unmount())
   })
+  it('renders qualified v4 patterns, child-frame transform counts and multi-outcome dead interactions', async () => {
+    const result = {
+      ...analysis,
+      version: 'browser_interaction_patterns.v4',
+      coverage: { ...analysis.coverage, mapped: 4, mapped_via_transform: 2, pattern_eligible: 3, pattern_excluded: { legacy_identity_unavailable: 1 } },
+      patterns: [
+        { ...analysis.patterns[1], id: 'p2-0', outcome_kind: 'dialog', outcome_index: 0, declared: 'dialog', deadline_ms: 1500, detail: 'the declared dialog outcome was not observed within 1500 ms', authored_step: { version: 1, script_sha256: 'a'.repeat(64), step_path: 'actions[1]', step_id: 'b'.repeat(64) } },
+        { ...analysis.patterns[1], id: 'p2-1', outcome_kind: 'assertion', outcome_index: 1, declared: 'visible', deadline_ms: 2000, detail: 'the declared visible outcome was not observed within 2000 ms', authored_step: { version: 1, script_sha256: 'a'.repeat(64), step_path: 'actions[1]', step_id: 'b'.repeat(64) } },
+      ],
+    }
+    const { container, root } = await render(result)
+    expect(container.textContent).toContain('4 mapped (2 via child-frame transform).')
+    expect(container.textContent).toContain('3 gestures qualify for patterns.')
+    expect(container.textContent).toContain('2000 ms of native dispatch')
+    expect(container.textContent).toContain('Excluded from patterns: 1 legacy identity unavailable.')
+    expect(container.textContent).toContain('Outcome dialog[0]')
+    expect(container.textContent).toContain('Outcome assertion[1]')
+    expect(container.querySelectorAll('tbody tr[data-pattern="dead_interaction"]')).toHaveLength(2)
+    await act(async () => root.unmount())
+  })
 
 })
