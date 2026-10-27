@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { getErrorMessage } from '../../utils/errorUtils'
 import {
-  BROWSER_FINDINGS_POLL_MS, browserCohortLabel, browserFindingReasonText, browserFindingsApi, browserScoreUnscoredText, formatBrowserMetric,
+  BROWSER_FINDINGS_POLL_MS, browserCohortLabel, browserFindingBaselineLabel, browserFindingReasonText, browserFindingsApi, browserScoreUnscoredText, formatBrowserMetric,
   type BrowserFinding, type RunBrowserFindings,
 } from './browserFindingsModel'
 
@@ -91,14 +91,24 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
         </tr>)}</tbody>
       </table></div>
       <p>{result.counts.active || 0} active · {result.counts.unscored || 0} unscored · {result.counts.suppressed || 0} suppressed</p>
-      {findings.length > 0 && <ul className="browser-findings-list">{findings.map(finding => <li key={finding.id} data-state={finding.state} data-category={finding.category}>
-        <strong>{findingTitle(finding)}</strong> — {finding.state === 'active' ? (finding.severity || 'active').replace(/_/g, ' ') : `${finding.state}: ${browserFindingReasonText(finding.reason)}`}
-        {finding.category === 'collection_health' ? ' (collection health)' : ''}. {finding.summary}
-        {finding.evidence.documents?.length ? <> Worst documents: {onInspectDocument
-          ? finding.evidence.documents.map((document, index) => <span key={document.document_id}>{index > 0 ? ', ' : ''}{formatBrowserMetric(finding.metric, document.value)}{' '}
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onInspectDocument(document.document_id)} aria-label={`Inspect the resources of document …${document.document_id.slice(-8)}`}>(document …{document.document_id.slice(-8)})</button></span>)
-          : finding.evidence.documents.map(document => `${formatBrowserMetric(finding.metric, document.value)} (document …${document.document_id.slice(-8)})`).join(', ')}.</> : null}
-      </li>)}</ul>}
+      {findings.length > 0 && <ul className="browser-findings-list">{findings.map(finding => {
+        const baselineText = finding.category === 'collection_health' ? '' : browserFindingBaselineLabel(finding.baseline)
+        const baseline = finding.baseline
+        return <li key={finding.id} data-state={finding.state} data-category={finding.category} data-baseline-status={baseline?.status || ''}>
+          <strong>{findingTitle(finding)}</strong> — {finding.state === 'active' ? (finding.severity || 'active').replace(/_/g, ' ') : `${finding.state}: ${browserFindingReasonText(finding.reason)}`}
+          {finding.category === 'collection_health' ? ' (collection health)' : ''}. {finding.summary}
+          {finding.evidence.documents?.length ? <> Worst documents: {onInspectDocument
+            ? finding.evidence.documents.map((document, index) => <span key={document.document_id}>{index > 0 ? ', ' : ''}{formatBrowserMetric(finding.metric, document.value)}{' '}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onInspectDocument(document.document_id)} aria-label={`Inspect the resources of document …${document.document_id.slice(-8)}`}>(document …{document.document_id.slice(-8)})</button></span>)
+            : finding.evidence.documents.map(document => `${formatBrowserMetric(finding.metric, document.value)} (document …${document.document_id.slice(-8)})`).join(', ')}.</> : null}
+          {baselineText ? <>{' '}<span className="browser-finding-baseline">{baselineText}
+            {baseline?.baseline_run_id ? <>{' '}<a href={`#/report/${encodeURIComponent(baseline.baseline_run_id)}?section=browser`}>Baseline run {baseline.baseline_run_id}</a>{baseline.baseline_archive_sha256 ? ` (archive …${baseline.baseline_archive_sha256.slice(-8)})` : ''}</> : null}
+            {baseline?.analysis_id ? <>{' '}· <a href={`#/report/${encodeURIComponent(testId)}?section=diagnostics`}>RCA {baseline.analysis_id}</a></> : null}
+            {baseline?.selection_receipt_sha256 ? <>{' '}· selection receipt …{baseline.selection_receipt_sha256.slice(-8)}</> : null}
+            {baseline?.policy_pins?.length ? <>{' '}· pins: {baseline.policy_pins.map(pin => `${pin.kind}:${pin.id}@${pin.revision}`).join(', ')}</> : null}
+          </span></> : null}
+        </li>
+      })}</ul>}
       <ul className="browser-findings-notes">{result.notes.map(note => <li key={note}>{note}</li>)}</ul>
     </>}
   </section>

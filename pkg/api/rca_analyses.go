@@ -1016,6 +1016,7 @@ func (s *Server) runRCAAnalysis(ctx context.Context, store storage.RCAStore, ana
 		done := *analysis
 		done.State, done.CompletedAt = state, &completedAt
 		s.notifyRCAAnalysisCompleted(&done, payload.Assessment)
+		s.autoQueueBrowserIntelligence(analysis.TestID)
 	}
 	return err
 }
@@ -1175,7 +1176,7 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	// The run's pinned browser policy sets the browser baselines' effect
 	// floors and baseline mode; a run without document series has no
 	// browser baseline to apply it to.
-	if len(documents) > 0 {
+	if len(documents) > 0 || input.Detection.DocumentsIncomplete || input.Detection.DocumentsUnreadable {
 		if input.Detection.BrowserPolicy, err = s.rcaBrowserBaselinePolicy(analysis.ProjectID, manifest); err != nil {
 			return nil, nil, err
 		}

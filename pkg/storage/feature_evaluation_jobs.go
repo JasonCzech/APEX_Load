@@ -176,6 +176,10 @@ func (s *SQLiteStore) CreateEvaluationJob(job *EvaluationJob, maxActivePerProjec
 		return nil, false, ErrEvaluationJobQuota
 	}
 	now := time.Now().UTC()
+	var latestCreated sql.NullTime
+	if err := tx.QueryRow(`SELECT created_at FROM feature_evaluation_jobs WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`, project).Scan(&latestCreated); err == nil && latestCreated.Valid && !now.After(latestCreated.Time) {
+		now = latestCreated.Time.UTC().Add(time.Microsecond)
+	}
 	if _, err := tx.Exec(`INSERT INTO feature_evaluation_jobs (id, project_id, actor, kind, idempotency_key_hash, request_digest, request, input_fingerprint,
 		state, revision, owner, lease_expires_at, progress, result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, subject_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, '', NULL, '', '', '', '', '', 0, NULL, ?, ?, NULL, ?)`,

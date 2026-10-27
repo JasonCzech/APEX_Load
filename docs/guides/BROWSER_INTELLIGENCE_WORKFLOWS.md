@@ -57,7 +57,7 @@ The live execution page shows the same comparison over the documents published s
 
 Project analytics panels can plot **Archived browser documents**: a document metric (`document_lcp`, `document_fcp`, `document_inp`, `document_cls`) at p50 to p99 over elapsed time.
 - **One tuple per panel:** a panel reads one measurement tuple, named by engine, device profile, group, region, runtime cohort, frame scope and lifecycle. A selection that spans several tuples is refused and names the first difference.
-- **Viewing:** saved panels open in the run's archived panels.
+- **Viewing:** saved panels open in the run's archived panels, preserving the run's pinned policy and baseline selection provenance.
 
 ## Reports
 
@@ -89,7 +89,7 @@ Each section reads its result when the report is exported. A section whose resul
 Browser findings judge a run's archived document metrics against a
 versioned `browser_policy`, server side. They produce two things:
 
-- versioned finding records (`browser_findings.v1`);
+- versioned finding records (`browser_findings.v2`);
 - a weighted score (`browser_score.v1`).
 
 Only qualified final observations count. The dashboard's legacy summary
@@ -108,11 +108,20 @@ contains:
 - **Applicability:** optional engine (`chromium`, `webkit`) and device
   profile lists. A cohort outside them is suppressed, never scored.
 - **Effect floors and baseline mode:** these are used by RCA's browser
-  baseline anomalies (`browser_baseline.v1`, a separate rule set). The floors
-  can only raise its minimums. Mode `none` turns the comparison off,
-  `pinned_run` compares only when the analysis's baseline is that run, and
-  `latest_compatible` uses the analysis's baseline run. A threshold finding
-  records the baseline mode with status `not_evaluated`.
+  baseline anomalies (`browser_baseline.v1`) and populated into each finding's
+  `baseline` verdict under `browser_findings.v2`. The floors can only raise its
+  minimums. Mode `none` turns the comparison off (`status: not_selected`,
+  `reason: policy_baseline_off`), `pinned_run` compares only when the
+  analysis's baseline is that run, and `latest_compatible` uses the analysis's
+  selected baseline run. When a completed RCA analysis matches the run's
+  archive digest and the evaluated policy's `PolicySHA256`, each application
+  outcome finding records `regressed`, `within_baseline`,
+  `insufficient_evidence`, `unqualified` (with its reason), or `not_selected`
+  (never healthy when a baseline is missing), with deterministic worst-status
+  precedence across multi-load-level runs and immutable links to the RCA
+  analysis ID, baseline run ID, baseline archive digest, `browser_selection`
+  receipt digest, and pinned browser/journey policies; `collection_health`
+  findings record `not_applicable`.
 
 A policy marked `apply_by_default` is pinned to every run started in the
 project, by revision and digest.
@@ -121,9 +130,11 @@ project, by revision and digest.
 
 Evaluation is a `browser_intelligence` evaluation job.
 
-- **Automatically:** when a run's archive is finalized, if the run pinned a
-  browser policy and requested document evidence. An evaluation of the same
-  inputs (same archive digest and policy revision) is never queued twice.
+- **Automatically:** when a run's archive is finalized (if the run pinned a
+  browser policy and requested document evidence), and again when a completed
+  root-cause analysis commits for that run so findings reflect the evaluated
+  baseline status without double-firing webhook notifications for unchanged
+  active finding keys. An evaluation of the same inputs is never queued twice.
 - **On demand:**
   - `POST /api/v1/analysis/evaluations` with
     `{"kind":"browser_intelligence","request":{"run":"<id>"}}`. Add

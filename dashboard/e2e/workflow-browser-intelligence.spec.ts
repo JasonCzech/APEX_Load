@@ -35,13 +35,13 @@ const documentsSummary = { version: 2, dropped_observations: 0, incomplete: fals
 
 function findingsFixture(id: string, policyId: string) {
   return { run_id: id, status: 'ready', job_id: 'job-1', result: {
-    schema_version: 'apexload.browser_findings.v1', rule_set: 'browser_findings.v1', input_fingerprint: 'fp', run_id: id,
+    schema_version: 'apexload.browser_findings.v2', rule_set: 'browser_findings.v2', input_fingerprint: 'fp', run_id: id,
     policy: { id: policyId, name: 'Checkout vitals', revision: 1, sha256: 'abc', source: 'pinned' }, window: { start: '', end: '' },
     score: { version: 'browser_score.v1', severity: 'poor', score: 0, coverage: { observed: 1, required: 1 },
       components: [{ metric: 'lcp', weight: 1, required: true, good: 2500, poor: 4000, observed: 4700, samples: 1, score: 0, contribution: 0 }] },
-    findings: [{ id: 'a1', key: 'k1', rule_set: 'browser_findings.v1', rule_id: 'threshold', rule_version: 1, category: 'application_outcome', metric: 'lcp', severity: 'poor',
+    findings: [{ id: 'a1', key: 'k1', rule_set: 'browser_findings.v2', rule_id: 'threshold', rule_version: 2, category: 'application_outcome', metric: 'lcp', severity: 'poor',
       cohort: { engine: 'chromium', device_profile: 'desktop', frame_scope: 'main_frame', lifecycle_phase: 'navigation' }, window: { start: '', end: '' }, applicable: true,
-      quality: { eligible_final: 1, unqualified_final: 0, unavailable_final: 0, censored: 0, provisional: 0 }, baseline: { mode: 'none', status: 'not_evaluated' },
+      quality: { eligible_final: 1, unqualified_final: 0, unavailable_final: 0, censored: 0, provisional: 0 }, baseline: { mode: 'none', status: 'not_selected', reason: 'policy_baseline_off' },
       evidence: { documents: [{ document_id: DOCUMENT_ID, source_generation: RESOURCE_GENERATION, value: 4700, resources: '/api' }] }, state: 'active', summary: 'LCP p75 is poor.' }],
     counts: { active: 1, suppressed: 0, unscored: 0 }, notes: [],
   } }

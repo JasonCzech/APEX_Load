@@ -5322,6 +5322,9 @@ paths:
                                 type: string
                               request_id:
                                 type: string
+                              route_seq:
+                                type: integer
+                                format: int64
                               source_generation:
                                 type: string
                               state:
@@ -411846,7 +411849,55 @@ paths:
                             baseline:
                               type: object
                               properties:
+                                analysis_id:
+                                  type: string
+                                baseline_archive_sha256:
+                                  type: string
+                                baseline_run_id:
+                                  type: string
+                                detail:
+                                  type: string
                                 mode:
+                                  type: string
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      applied:
+                                        type: boolean
+                                      id:
+                                        type: string
+                                      kind:
+                                        type: string
+                                      name:
+                                        type: string
+                                      revision:
+                                        type: integer
+                                        format: int64
+                                      sha256:
+                                        type: string
+                                      source:
+                                        type: string
+                                    required:
+                                      - applied
+                                      - id
+                                      - kind
+                                      - name
+                                      - revision
+                                      - sha256
+                                      - source
+                                reason:
+                                  type: string
+                                rejected_candidates:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: rca.BrowserCandidateRejection'
+                                    additionalProperties: true
+                                selection_receipt_sha256:
+                                  type: string
+                                selection_status:
                                   type: string
                                 status:
                                   type: string
@@ -412001,6 +412052,34 @@ paths:
                           - revision
                           - sha256
                           - source
+                      policy_pins:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            applied:
+                              type: boolean
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                            source:
+                              type: string
+                          required:
+                            - applied
+                            - id
+                            - kind
+                            - name
+                            - revision
+                            - sha256
+                            - source
                       rule_set:
                         type: string
                       run_id:
@@ -412191,6 +412270,9 @@ paths:
                         type: integer
                         format: int64
                       mapped:
+                        type: integer
+                        format: int64
+                      mapped_via_transform:
                         type: integer
                         format: int64
                       pattern_eligible:
@@ -424365,6 +424447,9 @@ paths:
                               type: string
                             request_id:
                               type: string
+                            route_seq:
+                              type: integer
+                              format: int64
                             source_generation:
                               type: string
                             state:

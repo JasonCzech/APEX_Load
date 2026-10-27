@@ -5,21 +5,26 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import BrowserFindingsPanel from './BrowserFindingsPanel'
-import { browserFindingReasonText, browserScoreUnscoredText, formatBrowserMetric } from './browserFindingsModel'
+import { browserFindingBaselineLabel, browserFindingReasonText, browserScoreUnscoredText, formatBrowserMetric } from './browserFindingsModel'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock('../../hooks/apiClient', () => ({ request: mocks.request }))
 
 const cohort = { engine: 'chromium', device_profile: 'desktop', frame_scope: 'main_frame', lifecycle_phase: 'navigation' }
 const finding = (overrides: Record<string, unknown>) => ({
-  id: 'f1', key: 'k1', rule_set: 'browser_findings.v1', rule_id: 'threshold', rule_version: 1, category: 'application_outcome', metric: 'lcp',
+  id: 'f1', key: 'k1', rule_set: 'browser_findings.v2', rule_id: 'threshold', rule_version: 2, category: 'application_outcome', metric: 'lcp',
   cohort, window: { start: '2026-10-08T10:00:00Z', end: '2026-10-08T10:02:00Z' }, applicable: true, quality: { eligible_final: 7, unqualified_final: 0, unavailable_final: 0, censored: 0, provisional: 0 },
-  baseline: { mode: 'none', status: 'not_evaluated' }, evidence: {}, state: 'active', summary: 'LCP p75 is high.', ...overrides,
+  baseline: {
+    mode: 'latest_compatible', status: 'regressed', detail: 'level 10 VUsers: current 4700 ms vs baseline mean 1200 ms (z=4.50)',
+    analysis_id: 'rca-1', baseline_run_id: 'base-run-1', baseline_archive_sha256: '0123456789abcdef', selection_receipt_sha256: 'fedcba9876543210',
+    policy_pins: [{ kind: 'browser_policy', id: 'browser', revision: 2, sha256: 'abc' }, { kind: 'journey_policy', id: 'checkout', revision: 1, sha256: 'def' }],
+  },
+  evidence: {}, state: 'active', summary: 'LCP p75 is high.', ...overrides,
 })
 const ready = {
   run_id: 'run-1', status: 'ready', job_id: 'job-1',
   result: {
-    schema_version: 'apexload.browser_findings.v1', rule_set: 'browser_findings.v1', input_fingerprint: 'fp', run_id: 'run-1',
+    schema_version: 'apexload.browser_findings.v2', rule_set: 'browser_findings.v2', input_fingerprint: 'fp', run_id: 'run-1',
     policy: { id: 'browser', name: 'Web vitals', revision: 2, sha256: 'abc', source: 'pinned' }, window: { start: '', end: '' },
     score: {
       version: 'browser_score.v1', severity: 'unscored', unscored_reason: 'missing_required_metric', missing: ['inp'], coverage: { observed: 1, required: 2 },
@@ -29,9 +34,9 @@ const ready = {
       ],
     },
     findings: [
-      finding({ id: 's1', state: 'suppressed', reason: 'engine_not_applicable', cohort: { ...cohort, engine: 'webkit' }, summary: 'outside' }),
+      finding({ id: 's1', state: 'suppressed', reason: 'engine_not_applicable', cohort: { ...cohort, engine: 'webkit' }, baseline: { mode: 'none', status: 'not_selected', reason: 'policy_baseline_off' }, summary: 'outside' }),
       finding({ id: 'a1', severity: 'poor', evidence: { documents: [{ document_id: 'abcdef0123456789', source_generation: 'g', value: 4700, resources: '/api' }] } }),
-      finding({ id: 'c1', rule_id: 'collection.incomplete', category: 'collection_health', metric: undefined, cohort: undefined, severity: 'needs_improvement', summary: 'Document evidence is incomplete.' }),
+      finding({ id: 'c1', rule_id: 'collection.incomplete', category: 'collection_health', metric: undefined, cohort: undefined, baseline: { mode: 'latest_compatible', status: 'not_applicable' }, severity: 'needs_improvement', summary: 'Document evidence is incomplete.' }),
     ],
     counts: { active: 2, suppressed: 1, unscored: 0 }, notes: ['Only qualified final observations of main-frame navigations are judged.'],
   },
@@ -77,10 +82,18 @@ describe('BrowserFindingsPanel', () => {
     expect(rows[1]).toEqual(['INP', '1', '—', '200 ms / 500 ms', 'Unscored', '—', '0'])
     const items = Array.from(container.querySelectorAll('.browser-findings-list li'))
     expect(items.map(item => item.getAttribute('data-state'))).toEqual(['active', 'active', 'suppressed'])
+    expect(items.map(item => item.getAttribute('data-baseline-status'))).toEqual(['not_applicable', 'regressed', 'not_selected'])
     expect(text).toContain('LCP · chromium · desktop — poor. LCP p75 is high. Worst documents: 4700 ms (document …23456789).')
+    expect(text).toContain('Baseline (latest_compatible): regressed — level 10 VUsers: current 4700 ms vs baseline mean 1200 ms (z=4.50).')
+    expect(text).toContain('Baseline run base-run-1 (archive …89abcdef)')
+    expect(text).toContain('RCA rca-1')
+    expect(text).toContain('selection receipt …76543210')
+    expect(text).toContain('pins: browser_policy:browser@2, journey_policy:checkout@1')
+    expect(text).toContain('Baseline (none): not selected (policy baseline off).')
     expect(text).toContain('Document evidence incomplete — needs improvement (collection health).')
     expect(text).toContain('suppressed: outside the policy’s engines')
     expect(container.querySelector('button')).toBeNull()
+    expect(browserFindingBaselineLabel({ mode: 'latest_compatible', status: 'not_applicable' })).toBe('')
   })
 
   it('lets an editor queue an evaluation of a run without one', async () => {

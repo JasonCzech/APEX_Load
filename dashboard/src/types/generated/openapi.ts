@@ -1804,6 +1804,7 @@ export interface operations {
                 "page_id"?: string;
                 "reason"?: string;
                 "request_id"?: string;
+                "route_seq"?: number;
                 "source_generation"?: string;
                 "state"?: string;
                 "version"?: number;
@@ -77011,7 +77012,24 @@ export interface operations {
                 "algorithm"?: string;
                 "applicable": boolean;
                 "baseline": {
+                  "analysis_id"?: string;
+                  "baseline_archive_sha256"?: string;
+                  "baseline_run_id"?: string;
+                  "detail"?: string;
                   "mode": string;
+                  "policy_pins"?: Array<{
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }>;
+                  "reason"?: string;
+                  "rejected_candidates"?: Array<Record<string, unknown>>;
+                  "selection_receipt_sha256"?: string;
+                  "selection_status"?: string;
                   "status": string;
                 };
                 "category": string;
@@ -77062,6 +77080,15 @@ export interface operations {
                 "sha256": string;
                 "source": string;
               };
+              "policy_pins"?: Array<{
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }>;
               "rule_set": string;
               "run_id": string;
               "schema_version": string;
@@ -77206,6 +77233,7 @@ export interface operations {
               "incomplete": boolean;
               "interactions": number;
               "mapped": number;
+              "mapped_via_transform"?: number;
               "pattern_eligible"?: number;
               "pattern_excluded"?: Record<string, number>;
               "records": number;
@@ -80941,6 +80969,7 @@ export interface operations {
                 "page_id"?: string;
                 "reason"?: string;
                 "request_id"?: string;
+                "route_seq"?: number;
                 "source_generation"?: string;
                 "state": string;
                 "version": number;

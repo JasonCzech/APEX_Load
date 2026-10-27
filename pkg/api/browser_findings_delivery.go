@@ -96,6 +96,11 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 			return
 		}
 	}
+	for _, job := range existing {
+		if job.Actor == browserIntelligenceSystemActor && job.State == storage.EvaluationJobQueued && job.InputFingerprint != inputs.fingerprint {
+			_, _ = store.CancelEvaluationJob(project, job.ID, time.Now())
+		}
+	}
 	if _, _, err := store.CreateEvaluationJob(&storage.EvaluationJob{ID: uuid.NewString(), ProjectID: project, Actor: browserIntelligenceSystemActor, Kind: browserIntelligenceKind,
 		Request: string(request), InputFingerprint: inputs.fingerprint, SubjectID: test.ID}, evaluationJobsActivePerProject); err != nil {
 		slog.Warn("browser findings were not queued", "test_id", testID, "error", err)

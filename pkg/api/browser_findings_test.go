@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -743,5 +744,389 @@ func TestRunBrowserFindingsReportAnExpiredEvaluation(t *testing.T) {
 	}
 	if response := getRunBrowserFindings(t, server, "browser-expired"); response.Status != "failed" || !strings.Contains(response.Failure, "without finishing") {
 		t.Fatalf("expired evaluation %+v", response)
+	}
+}
+
+func TestBrowserFindingsV2EvaluatedBaselineStatusesAndPrecedence(t *testing.T) {
+	policy := BrowserPolicyDefinition{
+		Version:  analysisPolicyVersion,
+		Metrics:  []BrowserPolicyMetric{e1LCP, e1CLS, e1INP},
+		Baseline: BrowserPolicyBaseline{Mode: "latest_compatible"},
+	}
+	pins := []RunPolicyPin{
+		{Kind: storage.AnalysisDefinitionKindBrowserPolicy, ID: "browser", Revision: 2, SHA256: "policy-sha-2", Source: "pinned"},
+		{Kind: storage.AnalysisDefinitionKindJourneyPolicy, ID: "checkout", Revision: 1, SHA256: "journey-sha-1", Source: "pinned"},
+	}
+	window := BrowserFindingWindow{
+		Start: time.Date(2026, 10, 8, 9, 59, 0, 0, time.UTC),
+		End:   time.Date(2026, 10, 8, 10, 1, 0, 0, time.UTC),
+	}
+
+	// 1. Collection health stays not_applicable; before RCA completes, application outcomes are not_evaluated (rca_not_completed).
+	preRCAInputs := &browserIntelligenceInputs{
+		runID:                  "run-v2",
+		policy:                 policy,
+		ref:                    BrowserPolicyRef{ID: "browser", Name: "Web vitals", Revision: 2, SHA256: "policy-sha-2", Source: "pinned"},
+		policyPins:             pins,
+		baselineMismatchReason: "rca_not_completed",
+		fingerprint:            "fp-pre-rca",
+	}
+	preRCA := evaluateBrowserFindings(preRCAInputs, window, e1Observations(e1Document{id: 1, metric: "lcp", value: 4500, qualified: true}), true, true, 2)
+	if preRCA.RuleSet != "browser_findings.v2" || preRCA.SchemaVersion != "apexload.browser_findings.v2" || len(preRCA.PolicyPins) != 2 {
+		t.Fatalf("unexpected v2 header: %+v", preRCA)
+	}
+	collectionLoss := e1Findings(preRCA, browserFindingRuleCollectionLoss, "")
+	if len(collectionLoss) != 1 || collectionLoss[0].Baseline.Status != "not_applicable" || collectionLoss[0].RuleVersion != 2 {
+		t.Fatalf("collection health baseline = %+v", collectionLoss)
+	}
+	lcpPre := e1Findings(preRCA, browserFindingRuleThreshold, "lcp")
+	if len(lcpPre) != 1 || lcpPre[0].Baseline.Status != "not_evaluated" || lcpPre[0].Baseline.Reason != "rca_not_completed" {
+		t.Fatalf("pre-RCA lcp baseline = %+v", lcpPre)
+	}
+
+	// 2. Multi-load-level worst-status precedence (regressed > unqualified > insufficient_evidence > within_baseline) + sub-threshold regression.
+	selection := &rca.BrowserBaselineSelection{
+		Version:        rca.BrowserSelectionVersion,
+		Policy:         "browser@2",
+		Status:         "selected",
+		InventoryCount: 2,
+		SelectedTestID: "baseline-run-1",
+		SelectedDigest: strings.Repeat("b", 64),
+		Rejected: []rca.BrowserCandidateRejection{
+			{TestID: "run-v2", Reasons: []string{"self_baseline"}},
+			{TestID: "older-candidate", Digest: strings.Repeat("c", 64), Reasons: []string{"current_population_not_comparable", rca.BrowserBaselineCohortChanged}},
+		},
+	}
+	matchedInputs := &browserIntelligenceInputs{
+		runID:                  "run-v2",
+		policy:                 policy,
+		ref:                    BrowserPolicyRef{ID: "browser", Name: "Web vitals", Revision: 2, SHA256: "policy-sha-2", Source: "pinned"},
+		policyPins:             pins,
+		rcaAnalysisID:          "rca-analysis-1",
+		rcaRevision:            1,
+		baselineRunID:          "baseline-run-1",
+		baselineArchiveSHA256:  strings.Repeat("b", 64),
+		selectionReceiptSHA256: strings.Repeat("d", 64),
+		browserSelection:       selection,
+		browserBaseline: &rca.BrowserBaseline{
+			Version:      rca.BrowserBaselineVersion,
+			Status:       rca.DetectionPartial,
+			Policy:       "browser@2",
+			PolicySHA256: "policy-sha-2",
+			Baseline:     rca.BaselineRef{TestID: "baseline-run-1", Qualification: rca.BaselineQualified},
+			Results: []rca.BrowserBaselineResult{
+				// LCP on chromium/desktop has within_range at level 1 and anomaly (regressed) at level 2 -> regressed wins, even though p75 (1800ms) <= good (2500ms).
+				{ID: "lcp-lvl1", Metric: "lcp", Engine: "chromium", DeviceProfile: "desktop", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "ms", Level: "5 VUsers", State: rca.BrowserBaselineWithinRange, Current: 1200, ExpectedLow: 900, ExpectedHigh: 1500, Z: 0.4},
+				{ID: "lcp-lvl2", Metric: "lcp", Engine: "chromium", DeviceProfile: "desktop", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "ms", Level: "10 VUsers", State: rca.BrowserBaselineAnomaly, Direction: rca.DirectionIncrease, Current: 1800, BaselineMean: 1100, Z: 4.2},
+				// CLS on chromium/desktop has within_range at level 1 and insufficient_baseline at level 2 -> insufficient_evidence wins over within_baseline.
+				{ID: "cls-lvl1", Metric: "cls", Engine: "chromium", DeviceProfile: "desktop", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "score", Level: "5 VUsers", State: rca.BrowserBaselineWithinRange, Current: 0.15, ExpectedLow: 0.05, ExpectedHigh: 0.20, Z: 0.5},
+				{ID: "cls-lvl2", Metric: "cls", Engine: "chromium", DeviceProfile: "desktop", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "score", Level: "10 VUsers", State: rca.BrowserBaselineUnscored, Reason: rca.BrowserBaselineInsufficient, Detail: "12 of the 30 valid baseline buckets needed"},
+				// INP on chromium/desktop has insufficient_baseline at level 1 and cohort_changed (unqualified) at level 2 -> unqualified wins over insufficient_evidence.
+				{ID: "inp-lvl1", Metric: "inp", Engine: "chromium", DeviceProfile: "desktop", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "ms", Level: "5 VUsers", State: rca.BrowserBaselineUnscored, Reason: rca.BrowserBaselineInsufficient, Detail: "10 of the 30 valid baseline buckets needed"},
+				{ID: "inp-lvl2", Metric: "inp", Engine: "chromium", DeviceProfile: "desktop", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "ms", Level: "10 VUsers", State: rca.BrowserBaselineUnscored, Reason: rca.BrowserBaselineCohortChanged, Detail: "the baseline measured this document with a different browser_version"},
+			},
+		},
+		fingerprint: "fp-matched-rca",
+	}
+	evaluated := evaluateBrowserFindings(matchedInputs, window, e1Observations(
+		e1Document{id: 1, metric: "lcp", value: 1800, qualified: true},
+		e1Document{id: 1, metric: "cls", value: 0.15, qualified: true},
+		e1Document{id: 1, metric: "inp", value: 300, qualified: true},
+	), true, false, 0)
+
+	lcpFinding := e1Findings(evaluated, browserFindingRuleThreshold, "lcp")
+	if len(lcpFinding) != 1 || lcpFinding[0].State != "active" || lcpFinding[0].Baseline.Status != "regressed" ||
+		lcpFinding[0].Baseline.AnalysisID != "rca-analysis-1" || lcpFinding[0].Baseline.BaselineRunID != "baseline-run-1" ||
+		lcpFinding[0].Baseline.BaselineArchiveSHA256 != strings.Repeat("b", 64) ||
+		lcpFinding[0].Baseline.SelectionReceiptSHA256 != strings.Repeat("d", 64) ||
+		len(lcpFinding[0].Baseline.PolicyPins) != 2 || len(lcpFinding[0].Baseline.RejectedCandidates) != 1 ||
+		lcpFinding[0].Baseline.RejectedCandidates[0].TestID != "older-candidate" {
+		t.Fatalf("lcp regressed finding = %+v", lcpFinding)
+	}
+	clsFinding := e1Findings(evaluated, browserFindingRuleThreshold, "cls")
+	if len(clsFinding) != 1 || clsFinding[0].Baseline.Status != "insufficient_evidence" || clsFinding[0].Baseline.Reason != rca.BrowserBaselineInsufficient {
+		t.Fatalf("cls insufficient_evidence finding = %+v", clsFinding)
+	}
+	inpFinding := e1Findings(evaluated, browserFindingRuleThreshold, "inp")
+	if len(inpFinding) != 1 || inpFinding[0].Baseline.Status != "unqualified" || inpFinding[0].Baseline.Reason != rca.BrowserBaselineCohortChanged {
+		t.Fatalf("inp unqualified finding = %+v", inpFinding)
+	}
+
+	// 3. When no compatible candidate exists in latest_compatible, baseline status is not_selected (never within_baseline) with the candidate rejection reason.
+	noCandidateInputs := *matchedInputs
+	noCandidateInputs.baselineRunID = ""
+	noCandidateInputs.baselineArchiveSHA256 = ""
+	noCandidateInputs.browserBaseline = &rca.BrowserBaseline{
+		Version:      rca.BrowserBaselineVersion,
+		Status:       rca.DetectionUnavailable,
+		Policy:       "browser@2",
+		PolicySHA256: "policy-sha-2",
+		Limitations:  []rca.Limitation{{Code: rca.BrowserBaselineNoBaselineRun, Detail: "no workload-qualified baseline run was given"}},
+	}
+	noCandidateInputs.browserSelection = &rca.BrowserBaselineSelection{
+		Version:        rca.BrowserSelectionVersion,
+		Policy:         "browser@2",
+		Status:         "no_compatible_candidate",
+		InventoryCount: 1,
+		Rejected: []rca.BrowserCandidateRejection{
+			{TestID: "cand-1", Digest: strings.Repeat("e", 64), Reasons: []string{"current_population_not_comparable", rca.BrowserBaselineNoBaselineCohort}},
+		},
+	}
+	noCandidateResult := evaluateBrowserFindings(&noCandidateInputs, window, e1Observations(e1Document{id: 1, metric: "lcp", value: 4500, qualified: true}), true, false, 0)
+	lcpNoCandidate := e1Findings(noCandidateResult, browserFindingRuleThreshold, "lcp")
+	if len(lcpNoCandidate) != 1 || lcpNoCandidate[0].Baseline.Status != "not_selected" || lcpNoCandidate[0].Baseline.Reason != rca.BrowserBaselineNoBaselineRun && lcpNoCandidate[0].Baseline.Reason != rca.BrowserBaselineNoBaselineCohort ||
+		lcpNoCandidate[0].Baseline.SelectionStatus != "no_compatible_candidate" || len(lcpNoCandidate[0].Baseline.RejectedCandidates) != 1 {
+		t.Fatalf("no compatible candidate baseline = %+v", lcpNoCandidate)
+	}
+
+	// 4. Suppressed (!finding.Applicable) findings report not_applicable (even if RCA has results for that cohort),
+	//    unscored findings report insufficient_evidence (metric_not_observed) without being overwritten by another cohort's limitation,
+	//    and results_truncated is classified as insufficient_evidence.
+	scopedInputs := *matchedInputs
+	scopedInputs.policy.Applicability.Engines = []string{"chromium"}
+	scopedInputs.browserBaseline = &rca.BrowserBaseline{
+		Version:      rca.BrowserBaselineVersion,
+		Status:       rca.DetectionPartial,
+		Policy:       "browser@2",
+		PolicySHA256: "policy-sha-2",
+		Baseline:     rca.BaselineRef{TestID: "baseline-run-1", Qualification: rca.BaselineQualified},
+		Results: []rca.BrowserBaselineResult{
+			{ID: "webkit-lcp", Metric: "lcp", Engine: "webkit", DeviceProfile: "iphone", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "ms", Level: "5 VUsers", State: rca.BrowserBaselineAnomaly, Direction: rca.DirectionIncrease, Current: 5000, BaselineMean: 1200, Z: 5.0},
+			{ID: "chromium-lcp-trunc", Metric: "lcp", Engine: "chromium", DeviceProfile: "desktop", FrameScope: "main_frame", LifecyclePhase: "navigation", Unit: "ms", Level: "5 VUsers", State: rca.BrowserBaselineUnscored, Reason: rca.BrowserBaselineResultsTruncated},
+		},
+		Limitations: []rca.Limitation{
+			{Code: rca.BrowserClockUnavailable, Detail: "webkit clock unavailable"},
+		},
+	}
+	scopedResult := evaluateBrowserFindings(&scopedInputs, window, e1Observations(
+		e1Document{id: 1, metric: "lcp", engine: "chromium", device: "desktop", value: 4500, qualified: true},
+		e1Document{id: 2, metric: "lcp", engine: "webkit", device: "iphone", value: 5000, qualified: true},
+	), true, false, 0)
+	for _, f := range e1Findings(scopedResult, browserFindingRuleThreshold, "lcp") {
+		if f.Cohort.Engine == "webkit" {
+			if f.State != "suppressed" || f.Baseline.Status != "not_applicable" || f.Baseline.Reason != "engine_not_applicable" {
+				t.Fatalf("expected suppressed webkit finding to have not_applicable baseline, got %+v", f)
+			}
+		} else if f.Cohort.Engine == "chromium" {
+			if f.Baseline.Status != "insufficient_evidence" || f.Baseline.Reason != rca.BrowserBaselineResultsTruncated {
+				t.Fatalf("expected results_truncated to map to insufficient_evidence, got %+v", f.Baseline)
+			}
+		}
+	}
+	for _, f := range e1Findings(scopedResult, browserFindingRuleThreshold, "cls") {
+		if f.Cohort.Engine == "chromium" {
+			if f.State != "unscored" || f.Baseline.Status != "insufficient_evidence" || f.Baseline.Reason != "metric_not_observed" {
+				t.Fatalf("expected unscored cls finding to report insufficient_evidence (metric_not_observed), got %+v", f)
+			}
+		}
+	}
+}
+
+func TestRCACompletionReTriggersBrowserFindingsWithoutDuplicateWebhooks(t *testing.T) {
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	server, store := baselineTestServer(t)
+	received := make(chan map[string]any, 16)
+	hook := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		received <- payload
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hook.Close()
+	server.runner.notifier = newNotificationDispatcher(hook.Client())
+	settings := server.runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{
+		Webhooks: []NotificationWebhookSettings{{
+			Enabled: true,
+			URL:     hook.URL,
+			Format:  notificationFormatSlack,
+			Events:  []string{"browser_finding", "browser_finding_resolved"},
+		}},
+	}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	policy := BrowserPolicyDefinition{
+		Version:  analysisPolicyVersion,
+		Metrics:  []BrowserPolicyMetric{e1LCP},
+		Baseline: BrowserPolicyBaseline{Mode: "latest_compatible"},
+	}
+	pin := saveBrowserPolicy(t, store, "browser", 1, policy)
+	record := e1Archive(t, server, store, "browser-rca-hook", &pin, e1Document{id: 1, metric: "lcp", value: 4800, qualified: true})
+
+	// Step 1: initial auto-evaluation before RCA completes.
+	server.autoQueueBrowserIntelligence("browser-rca-hook")
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("initial evaluation worker ran=%v err=%v", ran, err)
+	}
+	select {
+	case payload := <-received:
+		if !strings.Contains(fmt.Sprint(payload["text"]), "Browser Finding: browser-rca-hook (active)") {
+			t.Fatalf("unexpected initial webhook %v", payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected initial browser_finding webhook")
+	}
+	initial := getRunBrowserFindings(t, server, "browser-rca-hook")
+	if initial.Status != "ready" || initial.Result == nil || len(initial.Result.Findings) != 1 ||
+		initial.Result.Findings[0].Baseline.Status != "not_evaluated" || initial.Result.Findings[0].Baseline.Reason != "rca_not_completed" {
+		t.Fatalf("expected pre-RCA not_evaluated finding, got %+v", initial.Result)
+	}
+
+	// Step 2: complete RCA analysis for the run; runRCAAnalysis must re-trigger autoQueueBrowserIntelligence.
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archiveDigest, err := rcaEvidenceDigest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := &rca.BrowserBaselineSelection{
+		Version:        rca.BrowserSelectionVersion,
+		Policy:         "browser@1",
+		Status:         "selected",
+		InventoryCount: 1,
+		SelectedTestID: "baseline-run-0",
+		SelectedDigest: strings.Repeat("a", 64),
+	}
+	selectionBytes, _ := json.Marshal(selection)
+	selectionSHA := sha256BytesHex(selectionBytes)
+	rcaInputs := rca.InputDigests{
+		Archive:          archiveDigest,
+		Baseline:         strings.Repeat("a", 64),
+		BrowserSelection: selectionSHA,
+		Engine:           rcaEngineVersion,
+	}
+	rcaPayloadBytes, _ := json.Marshal(rcaAnalysisPayload{
+		BrowserSelection: selection,
+		Request:          rcaAnalysisRequest{BaselineTestID: "baseline-run-0"},
+		Inputs:           rcaInputs,
+		ArchiveManifest:  record.ManifestSHA256,
+		Assessment: &rca.Assessment{
+			SchemaVersion:    rca.AssessmentSchemaVersion,
+			AnalysisID:       "rca-hook-1",
+			Revision:         1,
+			Inputs:           rcaInputs,
+			BrowserSelection: selection,
+			BrowserBaseline: &rca.BrowserBaseline{
+				Version:      rca.BrowserBaselineVersion,
+				Status:       rca.DetectionComplete,
+				Policy:       "browser@1",
+				PolicySHA256: pin.SHA256,
+				Baseline:     rca.BaselineRef{TestID: "baseline-run-0", Qualification: rca.BaselineQualified},
+				Results: []rca.BrowserBaselineResult{
+					{
+						ID:             "lcp-regressed",
+						Metric:         "lcp",
+						Engine:         "chromium",
+						DeviceProfile:  "desktop",
+						FrameScope:     "main_frame",
+						LifecyclePhase: "navigation",
+						Unit:           "ms",
+						Level:          "10 VUsers",
+						State:          rca.BrowserBaselineAnomaly,
+						Direction:      rca.DirectionIncrease,
+						Current:        4800,
+						BaselineMean:   1400,
+						Z:              5.1,
+					},
+				},
+			},
+		},
+	})
+	analysis, _, err := store.CreateRCAAnalysisWithOrigin(storage.DefaultProjectID, "browser-rca-hook", rcaInputDigest(rcaInputs, 0), storage.RCAOriginAutomatic, rcaPayloadBytes, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimRCAAnalysis("rca-worker", time.Now().UTC(), time.Minute)
+	if err != nil || claimed == nil || claimed.ID != analysis.ID {
+		t.Fatalf("claim RCA analysis = %+v, err=%v", claimed, err)
+	}
+	var savedPayload rcaAnalysisPayload
+	if err := json.Unmarshal(rcaPayloadBytes, &savedPayload); err != nil {
+		t.Fatal(err)
+	}
+	savedPayload.Assessment.AnalysisID = claimed.ID
+	finalPayload, err := boundStoredRCAPayload(&savedPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := time.Now().UTC()
+	recorded, err := store.CompleteRCAAnalysisFenced(claimed.ID, "rca-worker", storage.RCAStateCompleted, finalPayload, completedAt, "", "", 0)
+	if err != nil || !recorded {
+		t.Fatalf("CompleteRCAAnalysisFenced recorded=%v err=%v", recorded, err)
+	}
+	done := *claimed
+	done.State, done.CompletedAt = storage.RCAStateCompleted, &completedAt
+	server.notifyRCAAnalysisCompleted(&done, savedPayload.Assessment)
+	server.autoQueueBrowserIntelligence(claimed.TestID)
+
+	// The new evaluation job with the RCA baseline fingerprint must be queued and run.
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("post-RCA evaluation worker ran=%v err=%v", ran, err)
+	}
+	updated := getRunBrowserFindings(t, server, "browser-rca-hook")
+	if updated.Status != "ready" || updated.Result == nil || len(updated.Result.Findings) != 1 {
+		t.Fatalf("expected updated ready findings, got %+v", updated)
+	}
+	gotBaseline := updated.Result.Findings[0].Baseline
+	if gotBaseline.Status != "regressed" || gotBaseline.AnalysisID != claimed.ID ||
+		gotBaseline.BaselineRunID != "baseline-run-0" || gotBaseline.BaselineArchiveSHA256 != strings.Repeat("a", 64) ||
+		gotBaseline.SelectionReceiptSHA256 != selectionSHA || len(gotBaseline.PolicyPins) != 1 || gotBaseline.PolicyPins[0].SHA256 != pin.SHA256 {
+		t.Fatalf("expected evaluated regressed baseline with provenance, got %+v", gotBaseline)
+	}
+
+	// Verify that notifyBrowserFindingTransitions did NOT double-fire a webhook for the unchanged active finding key.
+	select {
+	case payload := <-received:
+		t.Fatalf("unexpected duplicate webhook after RCA baseline update: %v", payload)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	// Step 3: evaluating under a named policy revision whose SHA256 does not match the RCA PolicySHA256 reports rca_policy_mismatch.
+	altPolicy := policy
+	altPolicy.Metrics = []BrowserPolicyMetric{{Metric: "lcp", Good: 2400, Poor: 4000, Weight: 1}}
+	saveBrowserPolicy(t, store, "browser", 2, altPolicy)
+	rawMismatchReq, _ := json.Marshal(BrowserIntelligenceRequest{
+		Run:    "browser-rca-hook",
+		Policy: &BrowserIntelligencePolicy{ID: "browser", Revision: 2},
+	})
+	mismatchInputs, err := prepareBrowserIntelligence(context.Background(), server, storage.DefaultProjectID, rawMismatchReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mismatchInputs.rcaAnalysisID != "" || mismatchInputs.baselineMismatchReason != "rca_policy_mismatch" {
+		t.Fatalf("expected rca_policy_mismatch for mismatched policy SHA256, got rcaAnalysisID=%q reason=%q", mismatchInputs.rcaAnalysisID, mismatchInputs.baselineMismatchReason)
+	}
+
+	// Step 4: verify runNextRCAAnalysis directly triggers autoQueueBrowserIntelligence upon completion.
+	t.Setenv("APEXLOAD_RCA_V2_PROJECTS", storage.DefaultProjectID)
+	workerRecord := exemplarArchiveFixture(t, server, store, "rca-run", nil)
+	attachD2Documents(t, workerRecord, d2Document{id: 1, metric: "lcp", cohort: d2Cohort("141.0"), at: exemplarFixtureStart.Add(10 * time.Second), value: 4800, final: true})
+	pinRCAAdmissionPolicy(t, server, pin)
+	if err := store.SaveRunArchive(workerRecord); err != nil {
+		t.Fatal(err)
+	}
+	server.autoQueueBrowserIntelligence("rca-run")
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("worker-hook initial evaluation ran=%v err=%v", ran, err)
+	}
+	<-received // drain initial active finding webhook for rca-run
+	if _, created, err := server.queueRCAAnalysis(context.Background(), storage.DefaultProjectID, "rca-run", workerRecord, rcaAnalysisRequest{}, storage.RCAOriginAutomatic); err != nil || !created {
+		t.Fatalf("queueRCAAnalysis created=%v err=%v", created, err)
+	}
+	if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+		t.Fatalf("runNextRCAAnalysis ran=%v err=%v", ran, err)
+	}
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("expected runNextRCAAnalysis to auto-queue post-RCA browser intelligence job, ran=%v err=%v", ran, err)
+	}
+	workerUpdated := getRunBrowserFindings(t, server, "rca-run")
+	if workerUpdated.Status != "ready" || workerUpdated.Result == nil || len(workerUpdated.Result.Findings) != 1 ||
+		workerUpdated.Result.Findings[0].Baseline.Status == "not_evaluated" || workerUpdated.Result.Findings[0].Baseline.AnalysisID == "" {
+		t.Fatalf("expected post-RCA worker finding to transition from not_evaluated with AnalysisID, got %+v", workerUpdated.Result)
 	}
 }

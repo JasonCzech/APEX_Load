@@ -56,6 +56,8 @@ func (s *Server) rcaBrowserBaselinePolicy(projectID string, manifest *RunArchive
 	if digest := sha256.Sum256(definition.Definition); hex.EncodeToString(digest[:]) != pin.SHA256 {
 		out.Unavailable = "its revision no longer matches the pin"
 		return out, nil
+	} else {
+		out.SHA256 = hex.EncodeToString(digest[:])
 	}
 	var policy BrowserPolicyDefinition
 	if json.Unmarshal(definition.Definition, &policy) != nil || policy.validate() != nil {
@@ -332,7 +334,12 @@ func rcaDocumentCohort(tuple protocol.BrowserDocumentMetricSummary, incomplete b
 	// Retained v1 browser documents have no browser-to-host calibration or
 	// expected-source/terminal ledger. Do not infer either from generator clock
 	// samples, local execution, or successful archive collection.
-	return &rca.DocumentCohort{ClockQualification: rca.BrowserEvidenceUnavailable, SourceCoverageQualification: rca.BrowserEvidenceUnavailable, Metric: tuple.Metric, Group: tuple.Group, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
+	return &rca.DocumentCohort{
+		ClockQualification: rca.BrowserEvidenceUnavailable, SourceCoverageQualification: rca.BrowserEvidenceUnavailable,
+		Metric: tuple.Metric, Engine: tuple.Engine, DeviceProfile: tuple.DeviceProfile,
+		FrameScope: tuple.FrameScope, LifecyclePhase: tuple.LifecyclePhase, Group: tuple.Group,
+		Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete,
+	}
 }
 
 // browserCohortFields are a runtime cohort's fields as text, so two cohorts'

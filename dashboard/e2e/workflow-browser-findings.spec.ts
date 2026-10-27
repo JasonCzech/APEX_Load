@@ -38,7 +38,7 @@ test('browser findings are evaluated on demand and never score absent evidence',
   const ready = await json(await request.get(`/api/v1/tests/${id}/archive/browser-findings`)) as unknown as Findings
   expect(ready.status).toBe('ready')
   expect(ready.job_id).toBe(String(queued.id))
-  expect(ready.result!.rule_set).toBe('browser_findings.v1')
+  expect(ready.result!.rule_set).toBe('browser_findings.v2')
   expect(ready.result!.policy).toMatchObject({ id: String(policy.id), revision: Number(policy.revision), source: 'pinned' })
   expect(ready.result!.score.score, 'no score without document evidence').toBeUndefined()
   expect(ready.result!.score).toMatchObject({ severity: 'unscored', unscored_reason: 'no_document_evidence' })
