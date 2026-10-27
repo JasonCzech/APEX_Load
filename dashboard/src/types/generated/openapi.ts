@@ -77245,6 +77245,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "format"?: string;
+      };
     };
     requestBody?: never;
     responses: {
@@ -77261,7 +77264,10 @@ export interface operations {
               "mapped_via_transform"?: number;
               "pattern_eligible"?: number;
               "pattern_excluded"?: Record<string, number>;
+              "pattern_retained": number;
+              "pattern_truncated"?: number;
               "records": number;
+              "streamed_interactions": number;
             };
             "heatmaps": Array<{
               "by_kind": Record<string, number>;
@@ -77315,6 +77321,10 @@ export interface operations {
               "interactions": Array<string>;
               "kind": string;
               "layout_revision"?: string;
+              "members_truncated"?: boolean;
+              "outcome_index"?: number;
+              "outcome_kind"?: string;
+              "outcome_reason"?: string;
               "provenance": string;
               "route"?: string;
               "start": string;
@@ -77329,6 +77339,12 @@ export interface operations {
             };
             "version": string;
           }) | null;
+          "text/csv": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {

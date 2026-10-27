@@ -412837,7 +412837,16 @@ paths:
                         additionalProperties:
                           type: integer
                           format: int64
+                      pattern_retained:
+                        type: integer
+                        format: int64
+                      pattern_truncated:
+                        type: integer
+                        format: int64
                       records:
+                        type: integer
+                        format: int64
+                      streamed_interactions:
                         type: integer
                         format: int64
                     required:
@@ -412846,7 +412855,9 @@ paths:
                       - incomplete
                       - interactions
                       - mapped
+                      - pattern_retained
                       - records
+                      - streamed_interactions
                   heatmaps:
                     type: array
                     items:
@@ -413019,6 +413030,15 @@ paths:
                           type: string
                         layout_revision:
                           type: string
+                        members_truncated:
+                          type: boolean
+                        outcome_index:
+                          type: integer
+                          format: int64
+                        outcome_kind:
+                          type: string
+                        outcome_reason:
+                          type: string
                         provenance:
                           type: string
                         route:
@@ -413071,6 +413091,15 @@ paths:
                   - thresholds
                   - version
                 nullable: true
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -413114,6 +413143,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
           schema:
             type: string
       tags:

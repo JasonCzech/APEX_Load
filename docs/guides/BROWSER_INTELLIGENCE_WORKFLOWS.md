@@ -387,11 +387,16 @@ rows outside iterations (init, teardown, or no identity).
 `GET /api/v1/tests/{id}/archive/browser-interactions` reads a finalized run's
 interaction evidence (historical-only `browser_interaction_patterns.v2`,
 `browser_interaction_patterns.v3` when raw v2/v3 is present, or
-`browser_interaction_patterns.v4` when raw v4 interaction evidence is present). Viewer access is
+`browser_interaction_patterns.v4` when raw v4 interaction evidence is present;
+append `?format=csv` for a spreadsheet-safe CSV export of coverage, patterns,
+heatmaps, keyboard targets, limitations, and notes). Viewer access is
 enough. The run report shows the result in its [Browser area](#the-browser-area-of-a-run-report), under **Interaction patterns**. A run without interaction evidence answers
 `not_captured`; a run that captured some but kept none in its archive (a
 failed transfer, a refused or torn sidecar) answers `unavailable` with what
-was lost. The response states its thresholds and coverage: interactions,
+was lost. The response states its thresholds and coverage: interactions
+(`interactions` and `streamed_interactions`), pattern-sample retention
+(`pattern_retained` and `pattern_truncated` when the 100,000-row pattern sample
+is exceeded while streaming coverage and heatmaps continue across all records),
 records, dropped (by capture bounds, or lost before the archive) and
 incomplete evidence (the archive's own account, which includes sources that
 never arrived), counts by provenance, gestures mapped (`mapped`, plus

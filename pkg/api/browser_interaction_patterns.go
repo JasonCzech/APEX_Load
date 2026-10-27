@@ -4,13 +4,16 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,7 +45,10 @@ const (
 	repeatRadiusPx    = 32.0
 	// heatmapGrid is a map's cells per side.
 	heatmapGrid = 64
-	// Output and memory bounds.
+)
+
+// Output and memory bounds. Variables so unit tests can reach each bound.
+var (
 	maxInteractionPatterns       = 200
 	maxInteractionPatternMembers = 16
 	maxInteractionHeatmaps       = 64
@@ -88,10 +94,13 @@ type BrowserInteractionThresholds struct {
 
 // BrowserInteractionCoverage counts the evidence and what was left out.
 type BrowserInteractionCoverage struct {
-	Interactions    int64            `json:"interactions"`
-	PatternEligible int64            `json:"pattern_eligible,omitempty"`
-	PatternExcluded map[string]int64 `json:"pattern_excluded,omitempty"`
-	Records         int64            `json:"records"`
+	Interactions         int64            `json:"interactions"`
+	StreamedInteractions int64            `json:"streamed_interactions"`
+	PatternRetained      int64            `json:"pattern_retained"`
+	PatternTruncated     int64            `json:"pattern_truncated,omitempty"`
+	PatternEligible      int64            `json:"pattern_eligible,omitempty"`
+	PatternExcluded      map[string]int64 `json:"pattern_excluded,omitempty"`
+	Records              int64            `json:"records"`
 	// Dropped counts interactions left out by capture bounds, refused by the
 	// archive's budget or a write, or lost with a torn sidecar. A failed
 	// transfer, a refused receipt or an invalid artifact loses an unknown
@@ -123,13 +132,14 @@ type BrowserInteractionPattern struct {
 	Start          time.Time                     `json:"start"`
 	End            time.Time                     `json:"end"`
 	// Declared and DeadlineMs are a dead interaction's authored outcome.
-	OutcomeKind   string   `json:"outcome_kind,omitempty"`
-	OutcomeIndex  int      `json:"outcome_index,omitempty"`
-	OutcomeReason string   `json:"outcome_reason,omitempty"`
-	Declared      string   `json:"declared,omitempty"`
-	DeadlineMs    int      `json:"deadline_ms,omitempty"`
-	Detail        string   `json:"detail"`
-	Interactions  []string `json:"interactions"`
+	OutcomeKind      string   `json:"outcome_kind,omitempty"`
+	OutcomeIndex     int      `json:"outcome_index,omitempty"`
+	OutcomeReason    string   `json:"outcome_reason,omitempty"`
+	Declared         string   `json:"declared,omitempty"`
+	DeadlineMs       int      `json:"deadline_ms,omitempty"`
+	Detail           string   `json:"detail"`
+	Interactions     []string `json:"interactions"`
+	MembersTruncated bool     `json:"members_truncated,omitempty"`
 }
 
 // BrowserInteractionHeatmap is one compatible layout's map.
@@ -269,8 +279,8 @@ func newInteractionAnalyzer(runID string, cohorts map[string]browserGenerationCo
 			"Patterns describe the run's recorded gestures. Scripted or unknown gestures never carry a human-frustration label; a scripted repeat is scripted_repetition.",
 			"A dead interaction needs an authored expected outcome whose deadline was missed; an unchanged page alone is never one.",
 			"Heatmaps show where gestures were dispatched on an abstract grid of the viewport, not production user behavior. Screenshot overlays are not produced.",
-			"Maps separate exact recorded scroll offsets, layouts, viewports, engines and device profiles. Layout, viewport and scroll are read after the gesture and its wait; they do not prove dispatch-time geometry. Child frames without an observed transform and missing or conflicting cohorts are excluded.",
-			"Only clicks, taps and checks repeat. Those without dispatched points (touch gestures are dispatched synthetically) repeat when they share an action name, gesture kind and recorded target; those with points repeat within the radius. The repeat window is measured on capture time, after each gesture's wait. Steps are told apart by action name and gesture kind, so distinct steps that share a name are one step here.",
+			"Maps separate exact recorded scroll offsets, layouts, viewports, engines and device profiles. In historical v1 evidence, layout, viewport and scroll are read after the gesture and its wait; they do not prove dispatch-time geometry. Child frames without an observed transform and missing or conflicting cohorts are excluded.",
+			"In historical v1 evidence, only clicks, taps and checks repeat. Those without dispatched points (touch gestures are dispatched synthetically) repeat when they share an action name, gesture kind and recorded target; those with points repeat within the radius. The repeat window is measured on capture time, after each gesture's wait. Steps are told apart by action name and gesture kind, so distinct steps that share a name are one step here.",
 		},
 	}}
 }
@@ -283,6 +293,7 @@ func (a *interactionAnalyzer) add(evidence *protocol.BrowserInteractionEvidence)
 	a.analysis.Coverage.Incomplete = a.analysis.Coverage.Incomplete || evidence.Incomplete
 	for _, interaction := range evidence.Interactions {
 		a.analysis.Coverage.Interactions++
+		a.analysis.Coverage.StreamedInteractions++
 		a.hasV2 = a.hasV2 || protocol.BrowserInteractionHasDispatch(interaction.Version)
 		a.hasV4 = a.hasV4 || interaction.Version >= protocol.BrowserInteractionVersion4
 		a.patternPopulations[a.patternQualificationReason(interaction)]++
@@ -290,8 +301,12 @@ func (a *interactionAnalyzer) add(evidence *protocol.BrowserInteractionEvidence)
 		a.mapInteraction(interaction)
 		if len(a.retained) < maxRetainedInteractions {
 			a.retained = append(a.retained, interaction)
-		} else if len(a.analysis.Limitations) == 0 || a.analysis.Limitations[len(a.analysis.Limitations)-1] != "interactions_truncated" {
-			a.analysis.Limitations = append(a.analysis.Limitations, "interactions_truncated")
+			a.analysis.Coverage.PatternRetained = int64(len(a.retained))
+		} else {
+			a.analysis.Coverage.PatternTruncated++
+			if len(a.analysis.Limitations) == 0 || a.analysis.Limitations[len(a.analysis.Limitations)-1] != "interactions_truncated" {
+				a.analysis.Limitations = append(a.analysis.Limitations, "interactions_truncated")
+			}
 		}
 	}
 }
@@ -490,14 +505,32 @@ func (a *interactionAnalyzer) finish() BrowserInteractionAnalysis {
 	if a.unknownCohort > 0 {
 		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("engine_profile_unknown: %d gestures excluded from maps without a consistent engine/profile cohort (%s)", a.unknownCohort, a.unknownReason))
 	}
+	a.analysis.Coverage.StreamedInteractions = a.analysis.Coverage.Interactions
+	a.analysis.Coverage.PatternRetained = int64(len(a.retained))
 	if len(a.analysis.Patterns) > maxInteractionPatterns {
-		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("patterns_truncated: kept %d of %d", maxInteractionPatterns, len(a.analysis.Patterns)))
+		totalPatterns := len(a.analysis.Patterns)
+		slices.SortStableFunc(a.analysis.Patterns, func(x, y BrowserInteractionPattern) int {
+			return cmp.Or(cmp.Compare(patternTruncationPriority(x.Kind), patternTruncationPriority(y.Kind)), x.Start.Compare(y.Start), cmp.Compare(x.ID, y.ID))
+		})
 		a.analysis.Patterns = a.analysis.Patterns[:maxInteractionPatterns]
+		slices.SortStableFunc(a.analysis.Patterns, func(x, y BrowserInteractionPattern) int {
+			return cmp.Or(x.Start.Compare(y.Start), cmp.Compare(x.ID, y.ID))
+		})
+		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("patterns_truncated: kept %d of %d", maxInteractionPatterns, totalPatterns))
 	}
 	if len(a.analysis.Coverage.Excluded) == 0 {
 		a.analysis.Coverage.Excluded = nil
 	}
 	return a.analysis
+}
+
+func patternTruncationPriority(kind string) int {
+	switch kind {
+	case interactionPatternDeadInteraction, interactionPatternUnexpectedNavigation, interactionPatternRetry, interactionPatternRepeatedGesture:
+		return 0
+	default:
+		return 1
+	}
 }
 
 func sumCounts(targets []BrowserInteractionTargetCount) int64 {
@@ -837,7 +870,7 @@ func interactionPattern(kind string, members []protocol.BrowserInteraction, deta
 	}
 	sum := sha256.Sum256([]byte(kind + "\x00" + strings.Join(ids, "\x00")))
 	return BrowserInteractionPattern{ID: hex.EncodeToString(sum[:8]), Kind: kind, Provenance: provenance, Route: first.Route, LayoutRevision: first.LayoutRevision, ActionID: first.ActionID, ActionName: first.ActionName,
-		Count: len(members), AuthoredStep: first.AuthoredStep.Clone(), Start: interactionClock(first), End: interactionClock(last), Detail: detail, Interactions: ids}
+		Count: len(members), AuthoredStep: first.AuthoredStep.Clone(), Start: interactionClock(first), End: interactionClock(last), Detail: detail, Interactions: ids, MembersTruncated: len(members) > maxInteractionPatternMembers}
 }
 
 func interactionOutcomePattern(kind string, g protocol.BrowserInteraction, outcomeIndex int, outcome protocol.BrowserInteractionOutcome, detail string) BrowserInteractionPattern {
@@ -857,10 +890,24 @@ func interactionOutcomePattern(kind string, g protocol.BrowserInteraction, outco
 func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r *http.Request) {
 	// Materializing an object-backed archive can outlast the write timeout.
 	extendArtifactWriteDeadline(w)
+	format := queryFormat(r)
+	if format != "" && format != "json" && format != "csv" {
+		writeError(w, http.StatusBadRequest, "unsupported format")
+		return
+	}
 	ctx := r.Context()
-	analysis, err := s.runArchiveBrowserInteractions(ctx, r.PathValue("id"))
+	id := r.PathValue("id")
+	analysis, err := s.runArchiveBrowserInteractions(ctx, id)
 	switch {
 	case err == nil:
+		if wantsCSV(r) {
+			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+			w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-browser-interactions-"+sanitizeFilename(id)+".csv\"")
+			if err := writeBrowserInteractionAnalysisCSV(analysis, w); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to write browser interactions csv: "+err.Error())
+			}
+			return
+		}
 		writeJSON(w, http.StatusOK, analysis)
 	case errors.Is(err, errInteractionRunNotFound), errors.Is(err, errInteractionArchiveNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -875,6 +922,143 @@ func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r
 		// answer.
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
+}
+
+func writeBrowserInteractionAnalysisCSV(analysis *BrowserInteractionAnalysis, w io.Writer) error {
+	cw := csv.NewWriter(w)
+	writeRow := func(section, key, field, value string) error {
+		return cw.Write([]string{reportCSVSafeCell(section), reportCSVSafeCell(key), reportCSVSafeCell(field), reportCSVSafeCell(value)})
+	}
+	if err := cw.Write([]string{"section", "key", "field", "value"}); err != nil {
+		return err
+	}
+	cov := analysis.Coverage
+	for _, item := range [][2]string{
+		{"run_id", analysis.RunID},
+		{"version", analysis.Version},
+		{"status", analysis.Status},
+		{"interactions", strconv.FormatInt(cov.Interactions, 10)},
+		{"streamed_interactions", strconv.FormatInt(cov.StreamedInteractions, 10)},
+		{"pattern_retained", strconv.FormatInt(cov.PatternRetained, 10)},
+		{"pattern_truncated", strconv.FormatInt(cov.PatternTruncated, 10)},
+		{"pattern_eligible", strconv.FormatInt(cov.PatternEligible, 10)},
+		{"records", strconv.FormatInt(cov.Records, 10)},
+		{"dropped", strconv.FormatInt(cov.Dropped, 10)},
+		{"incomplete", strconv.FormatBool(cov.Incomplete)},
+		{"mapped", strconv.FormatInt(cov.Mapped, 10)},
+		{"mapped_via_transform", strconv.FormatInt(cov.MappedViaTransform, 10)},
+	} {
+		if err := writeRow("coverage", "", item[0], item[1]); err != nil {
+			return err
+		}
+	}
+	writeMap := func(prefix string, m map[string]int64) error {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		for _, k := range keys {
+			if err := writeRow("coverage", "", prefix+"."+k, strconv.FormatInt(m[k], 10)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := writeMap("by_provenance", cov.ByProvenance); err != nil {
+		return err
+	}
+	if err := writeMap("pattern_excluded", cov.PatternExcluded); err != nil {
+		return err
+	}
+	if err := writeMap("excluded", cov.Excluded); err != nil {
+		return err
+	}
+	for _, p := range analysis.Patterns {
+		stepID, stepPath, scriptSHA := "", "", ""
+		if p.AuthoredStep.Valid() {
+			stepID, stepPath, scriptSHA = p.AuthoredStep.StepID, p.AuthoredStep.StepPath, p.AuthoredStep.ScriptSHA256
+		}
+		for _, item := range [][2]string{
+			{"kind", p.Kind},
+			{"provenance", p.Provenance},
+			{"route", p.Route},
+			{"layout_revision", p.LayoutRevision},
+			{"action_id", p.ActionID},
+			{"action_name", p.ActionName},
+			{"step_id", stepID},
+			{"step_path", stepPath},
+			{"script_sha256", scriptSHA},
+			{"count", strconv.Itoa(p.Count)},
+			{"members_truncated", strconv.FormatBool(p.MembersTruncated)},
+			{"start", p.Start.UTC().Format(time.RFC3339Nano)},
+			{"end", p.End.UTC().Format(time.RFC3339Nano)},
+			{"outcome_kind", p.OutcomeKind},
+			{"outcome_index", strconv.Itoa(p.OutcomeIndex)},
+			{"outcome_reason", p.OutcomeReason},
+			{"declared", p.Declared},
+			{"deadline_ms", strconv.Itoa(p.DeadlineMs)},
+			{"detail", p.Detail},
+			{"interactions", strings.Join(p.Interactions, ";")},
+		} {
+			if err := writeRow("pattern", p.ID, item[0], item[1]); err != nil {
+				return err
+			}
+		}
+	}
+	for _, m := range analysis.Heatmaps {
+		kbd := sumCounts(m.Targets)
+		for _, item := range [][2]string{
+			{"observation", m.Observation},
+			{"route", m.Route},
+			{"layout_revision", m.LayoutRevision},
+			{"viewport_width", strconv.Itoa(m.ViewportWidth)},
+			{"viewport_height", strconv.Itoa(m.ViewportHeight)},
+			{"orientation", m.Orientation},
+			{"engine", m.Engine},
+			{"device_profile", m.DeviceProfile},
+			{"device_scale_factor", fmt.Sprintf("%g", m.DeviceScaleFactor)},
+			{"coordinate_space", m.CoordinateSpace},
+			{"points", strconv.FormatInt(m.Points, 10)},
+			{"keyboard_gestures", strconv.FormatInt(kbd, 10)},
+			{"total_gestures", strconv.FormatInt(m.Points+kbd, 10)},
+			{"occupied_cells", strconv.Itoa(len(m.Cells))},
+			{"targets", formatReportHeatmapTargets(m.Targets)},
+		} {
+			if err := writeRow("heatmap", m.Key, item[0], item[1]); err != nil {
+				return err
+			}
+		}
+		if m.Scroll != nil {
+			for _, item := range [][2]string{
+				{"scroll_min_x", fmt.Sprintf("%g", m.Scroll.MinX)},
+				{"scroll_max_x", fmt.Sprintf("%g", m.Scroll.MaxX)},
+				{"scroll_min_y", fmt.Sprintf("%g", m.Scroll.MinY)},
+				{"scroll_max_y", fmt.Sprintf("%g", m.Scroll.MaxY)},
+			} {
+				if err := writeRow("heatmap", m.Key, item[0], item[1]); err != nil {
+					return err
+				}
+			}
+		}
+		for idx, note := range m.Notes {
+			if err := writeRow("heatmap_note", fmt.Sprintf("%s.%d", m.Key, idx), "note", note); err != nil {
+				return err
+			}
+		}
+	}
+	for idx, lim := range analysis.Limitations {
+		if err := writeRow("limitation", strconv.Itoa(idx), "limitation", lim); err != nil {
+			return err
+		}
+	}
+	for idx, note := range analysis.Notes {
+		if err := writeRow("note", strconv.Itoa(idx), "note", note); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
 }
 
 var (

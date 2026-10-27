@@ -181,7 +181,7 @@ type reportInteractionPatternRow struct {
 }
 
 type reportInteractionHeatmapRow struct {
-	Route, Layout, Viewport, Engine, Profile, Gestures, Cells string
+	Route, Layout, Viewport, Engine, Profile, Gestures, Cells, Targets string
 }
 
 type reportJourneyRiskView struct {
@@ -302,6 +302,9 @@ func (d *runArchiveHTMLReportData) InteractionMapView() reportInteractionMapView
 			map[bool]string{true: ", incomplete", false: ""}[coverage.Incomplete], analysis.Version),
 		Notes: append(append([]string(nil), analysis.Notes...), analysis.Limitations...),
 	}
+	if coverage.PatternTruncated > 0 {
+		view.Notes = append(view.Notes, fmt.Sprintf("Pattern sample retained %d of %d streamed interactions (%d beyond pattern sample).", coverage.PatternRetained, coverage.StreamedInteractions, coverage.PatternTruncated))
+	}
 	if analysis.Version == browserInteractionAnalysisVersion3 || analysis.Version == browserInteractionAnalysisVersion4 {
 		view.Notes = append(view.Notes, fmt.Sprintf("Pattern-eligible gestures: %d.", coverage.PatternEligible))
 		if coverage.MappedViaTransform > 0 {
@@ -337,6 +340,9 @@ func (d *runArchiveHTMLReportData) InteractionMapView() reportInteractionMapView
 		if pattern.OutcomeKind != "" {
 			detail += fmt.Sprintf("; outcome %s[%d]", pattern.OutcomeKind, pattern.OutcomeIndex)
 		}
+		if pattern.MembersTruncated {
+			detail += fmt.Sprintf("; %d of %d interaction IDs listed", len(pattern.Interactions), pattern.Count)
+		}
 		view.Patterns = append(view.Patterns, reportInteractionPatternRow{Kind: pattern.Kind, Provenance: pattern.Provenance, Route: pattern.Route, Action: action, Count: fmt.Sprint(pattern.Count), Detail: detail})
 	}
 	for index, heatmap := range analysis.Heatmaps {
@@ -357,10 +363,33 @@ func (d *runArchiveHTMLReportData) InteractionMapView() reportInteractionMapView
 		case "post_action":
 			viewport += "; historical post-action geometry"
 		}
+		for _, note := range heatmap.Notes {
+			view.Notes = append(view.Notes, fmt.Sprintf("Heatmap %s (%s): %s.", firstNonEmpty(heatmap.Route, "unrecorded route"), firstNonEmpty(heatmap.LayoutRevision, "unknown"), note))
+		}
 		view.Heatmaps = append(view.Heatmaps, reportInteractionHeatmapRow{Route: heatmap.Route, Layout: heatmap.LayoutRevision, Viewport: viewport,
-			Engine: heatmap.Engine, Profile: heatmap.DeviceProfile, Gestures: fmt.Sprint(heatmap.Points), Cells: fmt.Sprintf("%d of %d×%d", len(heatmap.Cells), heatmap.Columns, heatmap.Rows)})
+			Engine: heatmap.Engine, Profile: heatmap.DeviceProfile, Gestures: fmt.Sprint(heatmap.Points + sumCounts(heatmap.Targets)),
+			Cells: fmt.Sprintf("%d of %d×%d", len(heatmap.Cells), heatmap.Columns, heatmap.Rows), Targets: formatReportHeatmapTargets(heatmap.Targets)})
 	}
 	return view
+}
+
+func formatReportHeatmapTargets(targets []BrowserInteractionTargetCount) string {
+	if len(targets) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(targets))
+	for _, target := range targets {
+		label := target.Role
+		if target.LabelSHA256 != "" {
+			short := target.LabelSHA256
+			if len(short) > 12 {
+				short = short[:12]
+			}
+			label += " (" + short + ")"
+		}
+		parts = append(parts, fmt.Sprintf("%s: %d", label, target.Count))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // JourneyRiskView is the journey_risk section's view of the report.
@@ -447,7 +476,11 @@ func interactionMapReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 		*lines = append(*lines, fmt.Sprintf("%d more patterns are in the run report.", view.More))
 	}
 	for _, heatmap := range view.Heatmaps {
-		*lines = append(*lines, fmt.Sprintf("Heatmap %s (%s) %s %s %s: %s gestures in %s cells", heatmap.Route, heatmap.Layout, heatmap.Viewport, heatmap.Engine, heatmap.Profile, heatmap.Gestures, heatmap.Cells))
+		line := fmt.Sprintf("Heatmap %s (%s) %s %s %s: %s gestures in %s cells", heatmap.Route, heatmap.Layout, heatmap.Viewport, heatmap.Engine, heatmap.Profile, heatmap.Gestures, heatmap.Cells)
+		if heatmap.Targets != "" {
+			line += "; targets: " + heatmap.Targets
+		}
+		*lines = append(*lines, line)
 	}
 	if view.MoreMaps > 0 {
 		*lines = append(*lines, fmt.Sprintf("%d more heatmaps are in the run report.", view.MoreMaps))
@@ -469,6 +502,9 @@ func interactionMapReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteFu
 		key := fmt.Sprint(index)
 		for _, item := range [][2]string{{"route", heatmap.Route}, {"layout", heatmap.Layout}, {"viewport", heatmap.Viewport}, {"engine", heatmap.Engine}, {"profile", heatmap.Profile}, {"gestures", heatmap.Gestures}, {"cells", heatmap.Cells}} {
 			rows = append(rows, [4]string{"interaction_heatmap", key, item[0], item[1]})
+		}
+		if heatmap.Targets != "" {
+			rows = append(rows, [4]string{"interaction_heatmap", key, "targets", heatmap.Targets})
 		}
 	}
 	if view.More > 0 {

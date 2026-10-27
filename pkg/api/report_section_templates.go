@@ -589,7 +589,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </tbody></table>{{end}}
 {{if .More}}<p class="section-copy">{{.More}} more patterns are in the run report.</p>{{end}}
 {{if .Heatmaps}}<table><thead><tr><th>Route</th><th>Layout</th><th>Viewport</th><th>Engine</th><th>Profile</th><th class="num">Gestures</th><th>Occupied cells</th></tr></thead><tbody>
-{{range .Heatmaps}}<tr><td>{{.Route}}</td><td>{{.Layout}}</td><td>{{.Viewport}}</td><td>{{.Engine}}</td><td>{{.Profile}}</td><td class="num">{{.Gestures}}</td><td>{{.Cells}}</td></tr>{{end}}
+{{range .Heatmaps}}<tr><td>{{.Route}}</td><td>{{.Layout}}</td><td>{{.Viewport}}</td><td>{{.Engine}}</td><td>{{.Profile}}</td><td class="num">{{.Gestures}}</td><td>{{.Cells}}{{if .Targets}}; targets: {{.Targets}}{{end}}</td></tr>{{end}}
 </tbody></table>{{end}}
 {{if .MoreMaps}}<p class="section-copy">{{.MoreMaps}} more heatmaps are in the run report.</p>{{end}}
 {{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}

@@ -1,6 +1,12 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -493,4 +499,213 @@ func TestBrowserInteractionPatternsV4CombinedQualificationAndReportFormats(t *te
 		}
 	}
 }
+
+func TestBrowserInteractionAnalysisSevenBoundsAndCSVReportParity(t *testing.T) {
+	origRetained := maxRetainedInteractions
+	origPatterns := maxInteractionPatterns
+	origMembers := maxInteractionPatternMembers
+	origHeatmaps := maxInteractionHeatmaps
+	origTargets := maxHeatmapTargets
+	origRetainedTargets := maxRetainedHeatmapTargets
+	origCohorts := maxInteractionGenerationCohorts
+	t.Cleanup(func() {
+		maxRetainedInteractions = origRetained
+		maxInteractionPatterns = origPatterns
+		maxInteractionPatternMembers = origMembers
+		maxInteractionHeatmaps = origHeatmaps
+		maxHeatmapTargets = origTargets
+		maxRetainedHeatmapTargets = origRetainedTargets
+		maxInteractionGenerationCohorts = origCohorts
+	})
+
+	// 1. Bound 1 (maxRetainedInteractions) & Bound 4 (maxInteractionPatternMembers):
+	// StreamedInteractions and heatmaps continue past maxRetainedInteractions, while PatternRetained and PatternTruncated
+	// account the retained pattern sample separately. A repeat run exceeding maxInteractionPatternMembers sets MembersTruncated.
+	maxRetainedInteractions = 6
+	maxInteractionPatternMembers = 3
+	g1 := v4InteractionFixture(1, 0)
+	g2 := v4InteractionFixture(2, 100*time.Millisecond)
+	g3 := v4InteractionFixture(3, 200*time.Millisecond)
+	g4 := v4InteractionFixture(4, 300*time.Millisecond)
+	g5 := v4InteractionFixture(5, 400*time.Millisecond)
+	g6 := v4InteractionFixture(6, 5*time.Second)
+	g6.ScrollY = 100
+	g7 := v4InteractionFixture(7, 6*time.Second)
+	g7.ScrollY = 200
+	g8 := v4InteractionFixture(8, 7*time.Second)
+	g8.ScrollY = 300
+	gotRetained := analyzeV3(g1, g2, g3, g4, g5, g6, g7, g8)
+	if gotRetained.Coverage.Interactions != 8 || gotRetained.Coverage.StreamedInteractions != 8 || gotRetained.Coverage.PatternRetained != 6 || gotRetained.Coverage.PatternTruncated != 2 || gotRetained.Coverage.Mapped != 8 {
+		t.Fatalf("retained coverage = %+v", gotRetained.Coverage)
+	}
+	if len(gotRetained.Heatmaps) != 4 {
+		t.Fatalf("heatmaps after retained cap = %d, want 4", len(gotRetained.Heatmaps))
+	}
+	if len(gotRetained.Patterns) != 1 || gotRetained.Patterns[0].Count != 5 || len(gotRetained.Patterns[0].Interactions) != 3 || !gotRetained.Patterns[0].MembersTruncated {
+		t.Fatalf("member-truncated pattern = %+v", gotRetained.Patterns)
+	}
+
+	// 2. Bound 3 (maxInteractionPatterns): High-signal patterns (dead_interaction, unexpected_navigation, retry, repeated_gesture)
+	// are prioritized ahead of scripted_repetition when truncating to maxInteractionPatterns, while preserving chronological order.
+	maxRetainedInteractions = origRetained
+	maxInteractionPatternMembers = origMembers
+	maxInteractionPatterns = 2
+	sr1 := v4InteractionFixture(10, 0)
+	sr2 := v4InteractionFixture(11, 100*time.Millisecond)
+	sr3 := v4InteractionFixture(12, 200*time.Millisecond)
+	sr4 := v4InteractionFixture(13, 5*time.Second)
+	sr5 := v4InteractionFixture(14, 5100*time.Millisecond)
+	sr6 := v4InteractionFixture(15, 5200*time.Millisecond)
+	deadLate := v4InteractionFixture(16, 10*time.Second)
+	dStart := deadLate.Dispatch.At
+	deadLate.CapturedAt = dStart.Add(2 * time.Second)
+	deadLate.Outcomes = []protocol.BrowserInteractionOutcome{{
+		Kind: protocol.InteractionOutcomeKindDialog, Declared: "dialog", DeadlineMS: 1000, Observed: protocol.InteractionOutcomeMissed, Reason: "deadline_missed",
+		Clock: &protocol.BrowserOutcomeClock{Version: 1, StartedAt: dStart, DeadlineAt: dStart.Add(time.Second), ObservedAt: dStart.Add(time.Second), BudgetMS: 1000, ElapsedMS: 1000},
+	}}
+	gotPrioritized := analyzeV3(sr1, sr2, sr3, sr4, sr5, sr6, deadLate)
+	if len(gotPrioritized.Patterns) != 2 || gotPrioritized.Patterns[0].Kind != interactionPatternScriptedRepetition || gotPrioritized.Patterns[1].Kind != interactionPatternDeadInteraction {
+		t.Fatalf("prioritized patterns = %+v", gotPrioritized.Patterns)
+	}
+	if !strings.Contains(strings.Join(gotPrioritized.Limitations, " "), "patterns_truncated: kept 2 of 3") {
+		t.Fatalf("limitations missing patterns_truncated: %+v", gotPrioritized.Limitations)
+	}
+
+	// 3. Bound 5 (maxInteractionHeatmaps) & Bound 6 (maxHeatmapTargets + maxRetainedHeatmapTargets):
+	// Keyboard maps count target gestures in report views and enforce both target bounds.
+	maxInteractionPatterns = origPatterns
+	maxInteractionHeatmaps = 2
+	maxHeatmapTargets = 2
+	maxRetainedHeatmapTargets = 3
+	var kbdRows []protocol.BrowserInteraction
+	for idx, role := range []string{"textbox", "combobox", "searchbox", "spinbutton"} {
+		k := v4InteractionFixture(20+idx, time.Duration(idx)*time.Second)
+		k.Kind = "fill"
+		k.Points = nil
+		k.PointerType = ""
+		k.Target = &protocol.BrowserInteractionTarget{Role: role, LabelSHA256: strings.Repeat(fmt.Sprintf("%x", idx+1), 64)}
+		kbdRows = append(kbdRows, k)
+	}
+	// Duplicate "textbox" so it sorts first with Count=2.
+	dupTextbox := kbdRows[0]
+	dupTextbox.InteractionID = e4Generation + "-i29"
+	dupTextbox.ActionID = e4Generation + "-a29"
+	dupTextbox.Execution = &protocol.BrowserActionExecution{Invocation: 29, Attempt: 1}
+	kbdRows = append(kbdRows, dupTextbox)
+	gotKbd := analyzeV3(kbdRows...)
+	if len(gotKbd.Heatmaps) != 1 || len(gotKbd.Heatmaps[0].Targets) != 2 || gotKbd.Heatmaps[0].Targets[0].Role != "textbox" || gotKbd.Heatmaps[0].Targets[0].Count != 2 || gotKbd.Coverage.Excluded["keyboard_targets_truncated"] != 1 {
+		t.Fatalf("keyboard targets heatmap = %+v, coverage = %+v", gotKbd.Heatmaps, gotKbd.Coverage)
+	}
+
+	// 4. Bound 2 (maxInteractionGenerationCohorts) & Bound 7 (maxInteractionDocumentJoins):
+	cohorts := browserGenerationCohorts{byGeneration: map[string]browserGenerationCohort{}, bound: 1, joinBound: 1}
+	genA := strings.Repeat("1", 32)
+	genB := strings.Repeat("2", 32)
+	cohorts.add(&protocol.BrowserDocumentEvidence{SourceGeneration: genA, Observations: []protocol.BrowserDocumentObservation{
+		{SourceGeneration: genA, DocumentID: genA + "-d1", LifecycleID: genA + "-l1", Engine: "chromium", DeviceProfile: "desktop"},
+		{SourceGeneration: genA, DocumentID: genA + "-d1", LifecycleID: genA + "-l2", Engine: "chromium", DeviceProfile: "desktop"},
+	}})
+	cohorts.add(&protocol.BrowserDocumentEvidence{SourceGeneration: genB, Observations: []protocol.BrowserDocumentObservation{
+		{SourceGeneration: genB, DocumentID: genB + "-d1", LifecycleID: genB + "-l1", Engine: "webkit", DeviceProfile: "mobile"},
+	}})
+	if !cohorts.truncated || !cohorts.joinsTruncated || len(cohorts.byGeneration) != 1 || len(cohorts.joins) != 1 {
+		t.Fatalf("cohorts/joins bounds not enforced: truncated=%v joinsTruncated=%v lenCohorts=%d lenJoins=%d", cohorts.truncated, cohorts.joinsTruncated, len(cohorts.byGeneration), len(cohorts.joins))
+	}
+
+	// 5. Report parity (HTML/PDF/CSV) for keyboard targets, member truncation, and pattern-sample truncation.
+	maxInteractionHeatmaps = origHeatmaps
+	maxHeatmapTargets = origTargets
+	maxRetainedHeatmapTargets = origRetainedTargets
+	gotRetained.Heatmaps = append(gotRetained.Heatmaps, gotKbd.Heatmaps[0])
+	report := consistencyMatrixReport()
+	report.BrowserIntelligence = browserIntelligenceReportFixture()
+	report.BrowserIntelligence.Interactions = &gotRetained
+	mapView := (&runArchiveHTMLReportData{Report: report}).InteractionMapView()
+	kbdRow := mapView.Heatmaps[len(mapView.Heatmaps)-1]
+	if kbdRow.Gestures != "3" {
+		t.Fatalf("keyboard heatmap Gestures = %q, want %q", kbdRow.Gestures, "3")
+	}
+	rendered := renderBrowserIntelligenceSections(t, report)[reportSectionInteractionMap]
+	for index, format := range []string{"HTML", "PDF", "CSV"} {
+		for _, want := range []string{
+			"Pattern sample retained 6 of 8 streamed interactions (2 beyond pattern sample).",
+			"3 of 5 interaction IDs listed",
+			"textbox (111111111111): 2",
+			"1 keyboard gestures excluded after the first 3 distinct targets",
+			"kept the 2 most used of 3 retained keyboard targets",
+		} {
+			if !strings.Contains(rendered[index], want) {
+				t.Fatalf("%s lacks %q:\n%s", format, want, rendered[index])
+			}
+		}
+	}
+
+	// 6. Endpoint ?format=csv export and formula-injection escaping.
+	server, store := baselineTestServer(t)
+	record := e1Archive(t, server, store, "e4-csv-export", nil, e1Document{id: 1, metric: "lcp", engine: "chromium", device: "mobile", value: 1000, qualified: true})
+	evil := v4InteractionFixture(1, 0)
+	evil.SourceGeneration = d2Generation
+	evil.InteractionID = d2Generation + "-i1"
+	evil.ActionID = d2Generation + "-a1"
+	evil.DocumentID = d2Generation + "-document-1"
+	evil.Dispatch.DocumentID = evil.DocumentID
+	evil.Dispatch.LifecycleID = d2Generation + "-lifecycle-1"
+	evil.ActionName = "=cmd|' /C calc'!A0"
+	evilStart := evil.Dispatch.At
+	evil.CapturedAt = evilStart.Add(2 * time.Second)
+	evil.Outcomes = []protocol.BrowserInteractionOutcome{{
+		Kind: protocol.InteractionOutcomeKindDialog, Declared: "dialog", DeadlineMS: 1000, Observed: protocol.InteractionOutcomeMissed, Reason: "deadline_missed",
+		Clock: &protocol.BrowserOutcomeClock{Version: 1, StartedAt: evilStart, DeadlineAt: evilStart.Add(time.Second), ObservedAt: evilStart.Add(time.Second), BudgetMS: 1000, ElapsedMS: 1000},
+	}}
+	line, err := json.Marshal(&protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion4, SourceGeneration: d2Generation, Interactions: []protocol.BrowserInteraction{evil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(record.ArchivePath, browserInteractionsFileName), append(line, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rawManifest, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(rawManifest, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.BrowserInteractionsFile, manifest.BrowserInteractionRecordCount = browserInteractionsFileName, 1
+	rawManifest, _ = json.Marshal(manifest)
+	if err := os.WriteFile(record.ManifestPath, rawManifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record.ManifestSHA256 = sha256BytesHex(rawManifest)
+
+	csvRec := httptest.NewRecorder()
+	csvReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/e4-csv-export/archive/browser-interactions?format=csv", nil)
+	csvReq.SetPathValue("id", "e4-csv-export")
+	server.handleGetRunArchiveBrowserInteractions(csvRec, csvReq)
+	if csvRec.Code != http.StatusOK || !strings.HasPrefix(csvRec.Header().Get("Content-Type"), "text/csv") {
+		t.Fatalf("csv export = %d %s %s", csvRec.Code, csvRec.Header().Get("Content-Type"), csvRec.Body.String())
+	}
+	csvBody := csvRec.Body.String()
+	for _, want := range []string{
+		"section,key,field,value",
+		"coverage,,version,browser_interaction_patterns.v4",
+		"coverage,,streamed_interactions,1",
+		"coverage,,pattern_retained,1",
+		"action_name,'=cmd|' /C calc'!A0",
+	} {
+		if !strings.Contains(csvBody, want) {
+			t.Fatalf("csv body lacks %q:\n%s", want, csvBody)
+		}
+	}
+
+	badRec := httptest.NewRecorder()
+	badReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/e4-csv-export/archive/browser-interactions?format=xml", nil)
+	badReq.SetPathValue("id", "e4-csv-export")
+	server.handleGetRunArchiveBrowserInteractions(badRec, badReq)
+	if badRec.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported format = %d", badRec.Code)
+	}
+}
+
 

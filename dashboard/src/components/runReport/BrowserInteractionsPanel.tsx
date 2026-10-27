@@ -13,7 +13,7 @@ export interface BrowserInteractionPattern {
   authored_step?: { version: number; script_sha256: string; step_path: string; step_id: string }
   id: string; kind: string; provenance: string; route?: string; layout_revision?: string; action_id?: string; action_name?: string
   outcome_kind?: string; outcome_index?: number; outcome_reason?: string
-  count: number; start: string; end: string; declared?: string; deadline_ms?: number; detail: string; interactions: string[]
+  count: number; start: string; end: string; declared?: string; deadline_ms?: number; detail: string; interactions: string[]; members_truncated?: boolean
 }
 export interface BrowserInteractionHeatmap {
   observation?: string
@@ -26,7 +26,7 @@ export interface BrowserInteractionHeatmap {
 export interface BrowserInteractionAnalysis {
   run_id: string; version: string; status: 'ready' | 'not_captured' | 'unavailable' | string
   thresholds: { repeat_min_gestures: number; repeat_window_ms: number; repeat_radius_px: number; heatmap_grid: number }
-  coverage: { pattern_eligible?: number; pattern_excluded?: Record<string, number>; interactions: number; records: number; dropped: number; incomplete: boolean; by_provenance: Record<string, number>; mapped: number; mapped_via_transform?: number; excluded?: Record<string, number> }
+  coverage: { interactions: number; streamed_interactions?: number; pattern_retained?: number; pattern_truncated?: number; pattern_eligible?: number; pattern_excluded?: Record<string, number>; records: number; dropped: number; incomplete: boolean; by_provenance: Record<string, number>; mapped: number; mapped_via_transform?: number; excluded?: Record<string, number> }
   patterns: BrowserInteractionPattern[]; heatmaps: BrowserInteractionHeatmap[]; notes: string[]; limitations?: string[]
 }
 
@@ -114,28 +114,32 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
         {!qualified && <>{' '}A repeat is at least {thresholds.repeat_min_gestures} click, tap or check gestures within {thresholds.repeat_window_ms} ms and {thresholds.repeat_radius_px} CSS px (or with one action name, gesture kind and target when no point was dispatched).</>}
       </p>
       {qualified && <p className="run-report-muted">{coverage.pattern_eligible ?? 0} {(coverage.pattern_eligible ?? 0) === 1 ? 'gesture qualifies' : 'gestures qualify'} for patterns. Repeats require the same authored step within {thresholds.repeat_window_ms} ms of native dispatch and {thresholds.repeat_radius_px} CSS px, with compatible geometry. Engine retries are separate.</p>}
+      {(coverage.pattern_truncated ?? 0) > 0 && <p className="run-report-muted">Pattern sample retained {coverage.pattern_retained ?? 0} of {coverage.streamed_interactions ?? coverage.interactions} streamed interactions ({coverage.pattern_truncated} beyond pattern sample).</p>}
       {patternExcluded.length > 0 && <p className="run-report-muted">Excluded from patterns: {patternExcluded.map(([reason, count]) => `${count} ${label(reason)}`).join(', ')}.</p>}
       {patterns.length === 0 ? <p>{qualified && !coverage.pattern_eligible ? 'No gestures qualified for pattern analysis.' : 'No pattern was found.'}</p> : (
         <table className="run-report-table" aria-label="Interaction patterns found">
           <thead><tr><th scope="col">Pattern</th><th scope="col">Provenance</th><th scope="col">Route</th><th scope="col">Action</th><th scope="col">Gestures</th><th scope="col">Detail</th></tr></thead>
           <tbody>{patterns.map(pattern => <tr key={pattern.id} data-pattern={pattern.kind}>
             <th scope="row">{PATTERN_LABELS[pattern.kind] || label(pattern.kind)}</th><td>{pattern.provenance}</td><td>{pattern.route || '—'}</td>
-            <td>{pattern.action_name || '—'}{pattern.authored_step && <><br /><small>Step <code>{pattern.authored_step.step_path}</code></small></>}</td><td>{pattern.count}</td><td>{pattern.detail}{pattern.outcome_kind && <><br /><small>Outcome <code>{pattern.outcome_kind}[{pattern.outcome_index ?? 0}]</code></small></>}</td>
+            <td>{pattern.action_name || '—'}{pattern.authored_step && <><br /><small>Step <code>{pattern.authored_step.step_path}</code></small></>}</td><td>{pattern.count}{pattern.members_truncated && <><br /><small>{pattern.interactions.length} of {pattern.count} IDs listed</small></>}</td><td>{pattern.detail}{pattern.outcome_kind && <><br /><small>Outcome <code>{pattern.outcome_kind}[{pattern.outcome_index ?? 0}]</code></small></>}</td>
           </tr>)}</tbody>
         </table>
       )}
       {heatmaps.length > 0 && <div className="interaction-heatmaps">
-        {heatmaps.map(map => <figure key={map.key} data-heatmap={map.key}>
+        {heatmaps.map(map => {
+          const keyboardGestures = (map.targets ?? []).reduce((sum, target) => sum + target.count, 0)
+          return <figure key={map.key} data-heatmap={map.key}>
           {map.points > 0 && <HeatmapGrid map={map} />}
           <figcaption>
-            {map.route || 'Unknown route'} · {map.viewport_width}×{map.viewport_height} {map.orientation}{map.device_scale_factor ? ` @${map.device_scale_factor}x` : ''} · {map.engine} / {map.device_profile || 'default'} · layout {map.layout_revision || 'unknown'} · {map.points} pointer gestures
+            {map.route || 'Unknown route'} · {map.viewport_width}×{map.viewport_height} {map.orientation}{map.device_scale_factor ? ` @${map.device_scale_factor}x` : ''} · {map.engine} / {map.device_profile || 'default'} · layout {map.layout_revision || 'unknown'} · {map.points} pointer gestures{keyboardGestures > 0 ? ` · ${keyboardGestures} keyboard gestures (${map.points + keyboardGestures} total)` : ''}
             {map.scroll && <span className="run-report-muted"> · recorded scroll offsets {scrollRange(map.scroll)}</span>}
             {map.observation && <span className="run-report-muted"> · {map.observation === 'native_dispatch' ? 'native dispatch geometry' : map.observation === 'post_action' ? 'historical post-action geometry' : 'geometry observation unavailable'}</span>}
             {map.notes?.map(note => <span key={note} className="run-report-muted"> · {note}</span>)}
           </figcaption>
           {(map.targets?.length ?? 0) > 0 && <table className="run-report-table" aria-label="Keyboard targets"><thead><tr><th scope="col">Target role</th><th scope="col">Label (hashed)</th><th scope="col">Gestures</th></tr></thead>
             <tbody>{map.targets!.map(target => <tr key={`${target.role}-${target.label_sha256 || ''}`}><td>{target.role}</td><td><code>{target.label_sha256 ? target.label_sha256.slice(0, 12) : '—'}</code></td><td>{target.count}</td></tr>)}</tbody></table>}
-        </figure>)}
+        </figure>
+        })}
       </div>}
       {excluded.length > 0 && <p className="run-report-muted">Not mapped: {excluded.map(([reason, count]) => `${count} ${label(reason)}`).join(', ')}.</p>}
       {analysis.limitations?.map(limitation => <p key={limitation} className="run-report-muted" role="note">{label(limitation)}</p>)}
