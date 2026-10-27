@@ -3,7 +3,11 @@ package api
 import (
 	"context"
 	"log/slog"
+	"os"
+	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 func (s *Server) startReplayArtifactCleanup() {
@@ -24,6 +28,7 @@ func (s *Server) startReplayArtifactCleanup() {
 					slog.Warn("replay artifact cleanup remains pending")
 				}
 			}
+			_, _ = browser.ReclaimRuntimeHARWorking(ctx, strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_HAR_DIR")), 128)
 		}
 		sweep()
 		for {
