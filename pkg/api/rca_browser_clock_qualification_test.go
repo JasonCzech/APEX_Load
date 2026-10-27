@@ -318,11 +318,11 @@ func TestRCADistributedTwoGeneratorBrowserClockQualificationAndRTTRefusal(t *tes
 	currSeries, currLevel := distributedTwoGeneratorProofFixture(t, "dist-curr", -15*time.Minute, 3*time.Millisecond, 400)
 
 	for _, s := range []rca.Series{baseSeries[0], currSeries[0]} {
-		if s.Document.ClockQualification != rca.BrowserEvidenceQualified || s.Document.SourceCoverageQualification != rca.BrowserEvidenceQualified {
-			t.Fatalf("expected distributed clock and source coverage qualification, got %+v", s.Document)
+		if s.Document.ClockQualification != rca.BrowserEvidenceQualified || s.Document.SourceCoverageQualification != rca.BrowserEvidenceQualified || s.Document.TimelineQualification != rca.BrowserEvidenceQualified {
+			t.Fatalf("expected distributed clock, source coverage, and timeline qualification, got %+v", s.Document)
 		}
-		if s.Document.ClockUncertainty <= 0 || s.Document.ClockUncertainty > 10*time.Millisecond {
-			t.Fatalf("expected ms-scale clock uncertainty, got %v", s.Document.ClockUncertainty)
+		if s.Document.ClockUncertainty <= 0 || s.Document.ClockUncertainty > 10*time.Millisecond || s.ClockUncertainty != s.Document.ClockUncertainty {
+			t.Fatalf("expected ms-scale clock uncertainty propagated to Series, got doc=%v series=%v", s.Document.ClockUncertainty, s.ClockUncertainty)
 		}
 	}
 
@@ -368,12 +368,12 @@ func TestRCADistributedTwoGeneratorBrowserClockQualificationAndRTTRefusal(t *tes
 	}
 
 	uncertaintySeries, _ := distributedTwoGeneratorProofFixtureWithOptions(t, "dist-uncertainty", 0, 999900*time.Microsecond, 400, false, "distributed_envelope", false)
-	if uncertaintySeries[0].Document.ClockQualification != rca.BrowserEvidenceQualified || len(uncertaintySeries[0].Document.Windows) == 0 {
-		t.Fatalf("expected qualified clocks with invalid bucket windows, got %+v", uncertaintySeries[0].Document)
+	if uncertaintySeries[0].Document.ClockQualification != rca.BrowserEvidenceQualified || uncertaintySeries[0].Document.TimelineQualification != rca.BrowserEvidenceUnavailable || len(uncertaintySeries[0].Document.Windows) == 0 {
+		t.Fatalf("expected qualified clocks with unavailable timeline and invalid bucket windows, got %+v", uncertaintySeries[0].Document)
 	}
 	for _, w := range uncertaintySeries[0].Document.Windows {
 		if !w.Invalid || w.InvalidReason != "observation_window_exceeds_bucket" {
-			t.Fatalf("expected observation_window_exceeds_bucket when clockUncertainty > bucket, got %+v", w)
+			t.Fatalf("expected observation_window_exceeds_bucket when clockUncertainty >= bucket, got %+v", w)
 		}
 	}
 

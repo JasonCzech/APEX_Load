@@ -9,6 +9,7 @@ const BrowserEvidenceUnavailable = "unavailable"
 const (
 	BrowserClockUnavailable                  = "browser_clock_unavailable"
 	BrowserSourceCoverageUnavailable         = "browser_source_coverage_unavailable"
+	BrowserTimelineUnavailable               = "browser_timeline_unavailable"
 	BrowserBaselineClockUnavailable          = "baseline_browser_clock_unavailable"
 	BrowserBaselineSourceCoverageUnavailable = "baseline_browser_source_coverage_unavailable"
 )

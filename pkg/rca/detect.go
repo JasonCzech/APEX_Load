@@ -273,6 +273,7 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 	}
 	out := &detectOutput{params: params, judged: JudgedSeries{}, insufficient: map[string]bool{}}
 	matched := 0
+	baselineComparableEvaluated := 0
 	qualificationSeen := map[string]bool{}
 	for _, s := range series {
 		if budgeter.Exhausted() {
@@ -281,8 +282,12 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 		}
 		if s.Kind == SeriesBrowserDocument {
 			limits := browserDocumentQualificationLimitations(s.Document, false)
-			if s.Document != nil && s.Document.TimelineQualification != BrowserEvidenceQualified {
-				limits = append(limits, Limitation{Code: "browser_timeline_unavailable", Detail: "bounded browser load attribution does not establish alignment with the telemetry timeline"})
+			docUncertainty := s.ClockUncertainty
+			if s.Document != nil && s.Document.ClockUncertainty > docUncertainty {
+				docUncertainty = s.Document.ClockUncertainty
+			}
+			if s.Document != nil && (s.Document.TimelineQualification != BrowserEvidenceQualified || s.Document.Incomplete || s.Observation != ObservationInterval || s.Bucket <= 0 || docUncertainty < 0 || docUncertainty >= s.Bucket || !browserBucketGridValid(sortedPoints(s.Points), s.Bucket)) {
+				limits = append(limits, Limitation{Code: BrowserTimelineUnavailable, Detail: "bounded browser load attribution does not establish alignment with the telemetry timeline"})
 			}
 			if len(limits) > 0 {
 				detection.Status = DetectionPartial
@@ -301,13 +306,16 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 			detection.Status = DetectionPartial
 		}
 		detection.SeriesEvaluated++
+		if s.Kind != SeriesBrowserDocument {
+			baselineComparableEvaluated++
+		}
 		out.inRun(s, detection.Levels)
 		if b, ok := baseline[s.ID]; ok {
 			matched++
 			out.againstBaseline(s, detection.Levels, b, baselineLevels, BaselineRef{TestID: input.Baseline.TestID, Qualification: input.Baseline.Qualification})
 		}
 	}
-	if baseline != nil && matched == 0 && detection.SeriesEvaluated > 0 {
+	if baseline != nil && matched == 0 && baselineComparableEvaluated > 0 {
 		limitations = append(limitations, Limitation{Code: LimitationBaselineUnmatched, Detail: "no series of the baseline run matches one of this run's, so no level was compared with the baseline"})
 	}
 	if len(out.insufficient) > 0 {
@@ -562,6 +570,25 @@ func usable(p SeriesPoint) bool {
 	return p.Valid && !math.IsNaN(p.Value) && !math.IsInf(p.Value, 0)
 }
 
+// usableForSeries reports whether a point holds a value to judge for s.
+// Browser document series require a present, valid DocumentWindow at the
+// bucket's UTC timestamp so invalid or pause-bridging buckets are excluded.
+func usableForSeries(s Series, p SeriesPoint) bool {
+	if !usable(p) {
+		return false
+	}
+	if s.Kind == SeriesBrowserDocument {
+		if s.Document == nil {
+			return false
+		}
+		w, ok := s.Document.Windows[p.At.UTC()]
+		if !ok || w.Invalid {
+			return false
+		}
+	}
+	return true
+}
+
 // levelGroups groups level indexes that offer the same load, in order of
 // their first span.
 func levelGroups(levels []LoadLevel, tolerance float64) [][]int {
@@ -590,20 +617,40 @@ func (o *detectOutput) inRun(s Series, levels []LoadLevel) {
 	minimum := p.minBaseline(s)
 	spans := segments(s, levels)
 	short := false
-	for _, group := range levelGroups(levels, p.LevelTolerance) {
+	groups := levelGroups(levels, p.LevelTolerance)
+	if s.Kind == SeriesBrowserDocument {
+		groups = make([][]int, len(levels))
+		for i := range levels {
+			groups[i] = []int{i}
+		}
+	}
+	for _, group := range groups {
 		var baseline []SeriesPoint
 		var ref reference
 		// Whether the level ever had enough baseline to judge; an onset can
 		// later prune it below the minimum.
 		judged := false
+		skippedInvalidWindow := false
 		rebuild := func() reference {
 			return o.reference(len(baseline), func(i int) float64 { return baseline[i].Value }, s)
 		}
 		for _, index := range group {
+			if s.Kind == SeriesBrowserDocument {
+				var usableSpan []SeriesPoint
+				for _, point := range spans[index] {
+					if usableForSeries(s, point) {
+						usableSpan = append(usableSpan, point)
+					}
+				}
+				if len(usableSpan) > 0 && !browserSourceWindowsWithin(s, usableSpan, levels[index]) {
+					skippedInvalidWindow = true
+					continue
+				}
+			}
 			label := levels[index].Label()
 			d := o.newDetector(s, ScopeTime, label, BaselineRef{Qualification: BaselineSameRun}, len(spans[index]))
 			for _, point := range spans[index] {
-				if !usable(point) {
+				if !usableForSeries(s, point) {
 					continue
 				}
 				if !judged {
@@ -637,7 +684,7 @@ func (o *detectOutput) inRun(s Series, levels []LoadLevel) {
 			}
 			d.finish()
 		}
-		if !judged {
+		if !judged && !skippedInvalidWindow {
 			short = true
 		}
 	}
@@ -662,7 +709,7 @@ func (o *detectOutput) againstBaseline(s Series, levels []LoadLevel, b Series, b
 		for bi, bl := range baselineLevels {
 			if sameLoad(level, bl, p.LevelTolerance) {
 				for _, point := range baselineSpans[bi] {
-					if usable(point) {
+					if usableForSeries(b, point) {
 						values = append(values, point.Value)
 					}
 				}
@@ -675,7 +722,7 @@ func (o *detectOutput) againstBaseline(s Series, levels []LoadLevel, b Series, b
 		d := o.newDetector(s, ScopeLoad, level.Label(), ref, len(spans[index]))
 		d.ref = o.reference(len(values), func(i int) float64 { return values[i] }, s)
 		for _, point := range spans[index] {
-			if usable(point) {
+			if usableForSeries(s, point) {
 				d.observe(point, (point.Value-d.ref.median)/d.ref.scale)
 			}
 		}
@@ -846,8 +893,12 @@ func (d *detector) open(dir *direction, i int) {
 		}
 	}
 	s := d.series
+	clockUncertainty := s.ClockUncertainty
+	if s.Document != nil && s.Document.ClockUncertainty > clockUncertainty {
+		clockUncertainty = s.Document.ClockUncertainty
+	}
 	dir.active, dir.onset, dir.ref, dir.inBand, dir.alarmRun = true, onset, d.ref, 0, 0
-	dir.uncertainty = spread + s.Bucket + s.ClockUncertainty
+	dir.uncertainty = spread + s.Bucket + clockUncertainty
 	dir.peak = 0
 	for j := onset; j <= i; j++ {
 		dir.peak = math.Max(dir.peak, dir.sign*d.zs[j])

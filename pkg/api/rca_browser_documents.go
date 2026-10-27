@@ -253,7 +253,7 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		w.MonotonicVerified = validMap
 		w.MonotonicVUsers = mappedVUsers
 		w.MonotonicSpanID = mappedSpanID
-		if distributedProof && clockUncertainty > bucket {
+		if distributedProof && clockUncertainty >= bucket {
 			w.Invalid = true
 			w.InvalidReason = "observation_window_exceeds_bucket"
 		}
@@ -281,26 +281,36 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			Evidence: rca.EvidenceRef{Kind: "browser_document", Locator: browserDocumentsFileName + "#" + label},
 			Identity: rcaRunSeriesIdentity(scope, "browser_document", digest, metric, t.tuple.Unit, analysis.KindObservation, bucket),
 			Document: rcaDocumentCohort(t.tuple, accumulator.incomplete)}
-		if t.mapped && clockProofComplete {
-			s.Document.ClockQualification = rca.BrowserEvidenceQualified
-			s.Document.TimelineQualification = rca.BrowserEvidenceUnavailable
-			s.Document.ClockUncertainty = t.clockUncertainty
-		} else if clockUnavailableReason != "" {
-			s.Document.ClockUnavailableReason = clockUnavailableReason
-		}
 		if proof != nil && proofErr == nil {
 			s.Document.SourceCoverageQualification = rca.BrowserEvidenceQualified
 		}
 		s.Document.Windows = make(map[time.Time]rca.DocumentWindow, min(n, len(t.windows)))
+		hasQualifiedTimelineWindow := false
 		for i := 0; i < n; i++ {
 			point := rca.SeriesPoint{At: from.Add(time.Duration(i) * bucket)}
 			if d := t.buckets[i]; d != nil {
 				if point.Value, point.Valid = d.Quantile(0.75); point.Valid {
 					point.Count = int32(min(d.Count, math.MaxInt32))
-					s.Document.Windows[point.At.UTC()] = t.windows[i]
+					w := t.windows[i]
+					s.Document.Windows[point.At.UTC()] = w
+					if w.MonotonicVerified && !w.Invalid {
+						hasQualifiedTimelineWindow = true
+					}
 				}
 			}
 			s.Points = append(s.Points, point)
+		}
+		if t.mapped && clockProofComplete {
+			s.Document.ClockQualification = rca.BrowserEvidenceQualified
+			s.Document.ClockUncertainty = t.clockUncertainty
+			s.ClockUncertainty = t.clockUncertainty
+			if s.Document.SourceCoverageQualification == rca.BrowserEvidenceQualified && !s.Document.Incomplete && t.clockUncertainty >= 0 && t.clockUncertainty < bucket && hasQualifiedTimelineWindow {
+				s.Document.TimelineQualification = rca.BrowserEvidenceQualified
+			} else {
+				s.Document.TimelineQualification = rca.BrowserEvidenceUnavailable
+			}
+		} else if clockUnavailableReason != "" {
+			s.Document.ClockUnavailableReason = clockUnavailableReason
 		}
 		series = append(series, s)
 	}
