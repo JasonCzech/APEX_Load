@@ -28,6 +28,7 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 		"devweb_gated_source",
 		dsl.ImportPreservedJMeterJDBCSourcesKey,
 		dsl.ImportPreservedEnterpriseUnsupportedProxySourceKey,
+		dsl.ImportPreservedIgnoredProxyCredentialsKey,
 		dsl.ImportPreservedEnterpriseJavaVMSourceKey,
 		dsl.ImportPreservedEnterpriseJavaJDBCSourceKey,
 		contentcontract.ImportSourceCommitFenceMetadataKey,

@@ -138,6 +138,11 @@ func ImportedCredentialValuesForDisclosure(script *dsl.Script) ([]string, error)
 	return collector.values, nil
 }
 
+type disclosureIgnoredProxyCredentialEnvelope struct {
+	Version      int      `json:"version"`
+	ValuesBase64 []string `json:"values_base64"`
+}
+
 type disclosureJavaVMSourceEnvelope struct {
 	Version    int      `json:"version"`
 	RowsBase64 []string `json:"rows_base64"`
@@ -259,6 +264,20 @@ func (collector *importedCredentialCollector) collectProtectedImportSourceCreden
 		return nil
 	}
 	preserved := script.Metadata.Import.Preserved
+	if raw, exists := preserved[dsl.ImportPreservedIgnoredProxyCredentialsKey]; exists {
+		var envelope disclosureIgnoredProxyCredentialEnvelope
+		if err := decodeDisclosureSourceEnvelope(raw, &envelope); err != nil || envelope.Version != 1 || len(envelope.ValuesBase64) > maxDisclosureSourceEnvelopeItems {
+			return errors.New("ignored proxy credential source is malformed")
+		}
+		total := 0
+		for _, encoded := range envelope.ValuesBase64 {
+			value, err := decodeDisclosureSourceValue(encoded, &total)
+			if err != nil {
+				return errors.New("ignored proxy credential source is malformed")
+			}
+			collector.add(value)
+		}
+	}
 	if raw, exists := preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey]; exists {
 		var envelope disclosureJavaVMSourceEnvelope
 		if err := decodeDisclosureSourceEnvelope(raw, &envelope); err != nil ||

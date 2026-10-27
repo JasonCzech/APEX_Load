@@ -4,11 +4,13 @@ import draftreview "github.com/jasonczech/apexload/pkg/internal/importreview"
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importsession"
+	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
 // ImportRepairOperation describes an operator supplied replacement, never an
@@ -499,6 +502,81 @@ func repairDisclosure(script *dsl.Script) *dsl.Script {
 	return &projected
 }
 
+// retainIgnoredProxyDisclosureSource keeps disclosure protection independent of
+// executable proxy fields. The inert envelope is masked on every projection and
+// is used only for redacting retained evidence, never for runtime resolution.
+func retainIgnoredProxyDisclosureSource(script *dsl.Script) error {
+	values := []string{script.Config.HTTP.Proxy.Username, script.Config.HTTP.Proxy.Password}
+	for _, raw := range []string{script.Config.HTTP.Proxy.URL, script.Config.HTTP.Proxy.PACURL} {
+		if parsed, err := url.Parse(raw); err == nil && parsed.User != nil {
+			values = append(values, parsed.User.Username())
+			password, _ := parsed.User.Password()
+			values = append(values, password)
+		}
+	}
+	preserved := ensureScriptImportPreserved(script, enterpriseArchiveSaveProfile)
+	envelope := struct {
+		Version      int      `json:"version"`
+		ValuesBase64 []string `json:"values_base64"`
+	}{Version: 1}
+	if previous, ok := preserved[dsl.ImportPreservedIgnoredProxyCredentialsKey]; ok {
+		raw, err := json.Marshal(previous)
+		if err != nil || len(raw) > 4<<20 {
+			return errors.New("Protected proxy source evidence is invalid")
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Version != 1 {
+			return errors.New("Protected proxy source evidence is invalid")
+		}
+	}
+	seen := map[string]bool{}
+	total := 0
+	for _, encoded := range envelope.ValuesBase64 {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		valid := err == nil && len(decoded) <= 64<<10
+		clear(decoded)
+		if !valid {
+			return errors.New("Protected proxy source evidence is invalid")
+		}
+		seen[encoded] = true
+		total += len(encoded)
+	}
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		// References name dependencies, not captured literal credentials. They
+		// must remain readable wherever another executable field still uses them.
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(value, "{{") {
+			// Reuse the disclosure contract to distinguish supported bindings
+			// from opaque captured values that merely resemble a template.
+			probe, err := scriptdisclosure.Project(&dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{Proxy: dsl.ProxyConfig{Username: value}}}})
+			if err != nil {
+				return errors.New("Cannot classify protected proxy source evidence")
+			}
+			if probe.Config.HTTP.Proxy.Username == value {
+				continue
+			}
+		}
+		if len(value) > 64<<10 {
+			return errors.New("Proxy source credential exceeds the protected evidence limit")
+		}
+		encoded := base64.StdEncoding.EncodeToString([]byte(value))
+		if !seen[encoded] {
+			envelope.ValuesBase64 = append(envelope.ValuesBase64, encoded)
+			seen[encoded] = true
+			total += len(encoded)
+		}
+	}
+	if len(envelope.ValuesBase64) > 256 || total > 2<<20 {
+		return errors.New("Proxy source evidence exceeds the protected evidence limit")
+	}
+	if len(envelope.ValuesBase64) > 0 {
+		preserved[dsl.ImportPreservedIgnoredProxyCredentialsKey] = envelope
+	}
+	return nil
+}
+
 func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.ParameterAllocationPreview, error) {
 	op := req.Operation
 	if err := engine.ValidateParameterAllocationTopology(script); op.Type == "preview_allocation" && err != nil {
@@ -573,6 +651,50 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 			return nil, errors.New("Select a valid project-secret name for the encrypted proxy requirement")
 		}
 		script.Config.HTTP.Proxy.Password = "{{secret." + op.SecretName + "}}"
+	case "omit_proxy_credentials", "disable_imported_proxy":
+		if req.Finding != "encrypted_proxy_password" {
+			return nil, errors.New("Select an encrypted proxy password requirement")
+		}
+		if err := retainIgnoredProxyDisclosureSource(script); err != nil {
+			return nil, err
+		}
+		change := "Ignored during import: proxy credentials. Proxy routing retained without authentication."
+		if op.Type == "disable_imported_proxy" {
+			script.Config.HTTP.ProxyMode = "none"
+			script.Config.HTTP.Proxy = dsl.ProxyConfig{}
+			change = "Ignored during import: proxy settings. Proxying disabled for this script."
+		} else {
+			// Credentials may also be embedded in a retained URL. Strip them
+			// before dropping the separate fields, never from source evidence.
+			for _, field := range []*string{&script.Config.HTTP.Proxy.URL, &script.Config.HTTP.Proxy.PACURL} {
+				if *field == "" {
+					continue
+				}
+				parsed, err := url.Parse(*field)
+				if err != nil {
+					return nil, errors.New("Cannot omit credentials from this proxy URL; ignore the proxy settings or replace the URL first")
+				}
+				parsed.User = nil
+				*field = parsed.String()
+			}
+			script.Config.HTTP.Proxy.Username = ""
+			script.Config.HTTP.Proxy.Password = ""
+		}
+		// A selected sequence request is a detached action copy. Its final
+		// serialization must retain the same decision as the script-wide walk.
+		target.Metadata["migration_change"] = change
+		// The proxy is script-wide. Resolve only its encrypted-password gates,
+		// including repeated/nested copies, while retaining all other findings.
+		_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+			if !hasExecutionCode(ref.Metadata(), req.Finding) {
+				return nil
+			}
+			gated := dsl.Action{Metadata: ref.Metadata()}
+			gated.Metadata["migration_change"] = change
+			importreview.RemoveActionCodes(&gated, resolved)
+			ref.SetMetadata(gated.Metadata)
+			return nil
+		})
 	case "bind_variable", "add_parameter", "add_extractor":
 		if !strings.HasPrefix(req.Finding, "missing_producer:") && !strings.HasPrefix(req.Finding, "conditional_producer:") {
 			return nil, errors.New("Select a variable dependency finding")

@@ -716,24 +716,43 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(archive, expect.objectContaining({ project_id: 'project-1' }))
   })
 
-  it('places Salesforce options below advanced migration policy inside Conversion Options', async () => {
+  it('hides Salesforce controls until the advanced manual override is selected', async () => {
     await act(async () => root.render(<EnterpriseArchiveImport />))
     const conversionOptions = container.querySelector('#migration-block-policy-options')!
     const policy = conversionOptions.querySelector('.lr-advanced-policy')!
+    expect(conversionOptions.querySelector('.lr-har-panel')).toBeNull()
+    const override = Array.from(policy.querySelectorAll('label')).find(label => label.textContent?.includes('Show Salesforce migration options'))!.querySelector<HTMLInputElement>('input')!
+    await act(async () => override.click())
     const salesforce = conversionOptions.querySelector<HTMLDetailsElement>('.lr-har-panel')!
-    expect(salesforce).not.toBeNull()
     expect(policy.nextElementSibling).toBe(salesforce)
-    expect(salesforce.querySelector('summary')?.textContent).toBe('Salesforce-specific options')
-    expect(container.querySelector('.lr-import-actions-card .lr-har-panel')).toBeNull()
-    expect(salesforce.open).toBe(false)
-    const expirationLabel = Array.from(policy.querySelectorAll('label')).find(label => label.textContent?.includes('Expire converted drafts after 30 minutes'))
-    const expirationInput = expirationLabel?.querySelector<HTMLInputElement>('input[type="checkbox"]')
-    expect(expirationInput?.checked).toBe(false)
-    const nativePreview = salesforce.querySelector<HTMLInputElement>('input[type="checkbox"]')!
-    await act(async () => nativePreview.click())
-    expect(nativePreview.checked).toBe(true)
-    expect(salesforce.open).toBe(true)
-    expect(salesforce.textContent).toContain('Attach HAR')
+    expect(salesforce.querySelector('summary')?.textContent).toBe('Salesforce migration options')
+    const nativeDraft = salesforce.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    expect(nativeDraft.checked).toBe(false)
+    expect(salesforce.textContent).toContain('selects the Salesforce-aware HTTP draft as the import output')
+    await act(async () => nativeDraft.click())
+    await act(async () => override.click())
+    // An active output choice must remain visible even after hiding the override.
+    expect(conversionOptions.querySelector('.lr-har-panel')).not.toBeNull()
+    await act(async () => nativeDraft.click())
+    expect(conversionOptions.querySelector('.lr-har-panel')).toBeNull()
+  })
+
+  it.each([true, false])('shows Salesforce controls only for a detected review (%s)', async detected => {
+    const archive = new File(['archive'], 'Demo.usz')
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue(executableEnterpriseResult(
+      { name: 'Demo', protocol: 'http', actions: [{ name: 'Home' }] },
+      { summary: { project_file: 'Demo.usr', salesforce_review: { detected } } },
+    ))
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" initialFiles={[archive]} />))
+    await flushPromises()
+    await clickImportAction(container, 'Validate Only')
+    const panel = container.querySelector('.lr-har-panel')
+    expect(Boolean(panel)).toBe(detected)
+    if (detected) {
+      expect(panel?.querySelector<HTMLInputElement>('input')?.checked).toBe(false)
+      expect(panel?.textContent).toContain('same recording')
+    }
+    expect(apiMock.validateEnterpriseArchiveImport.mock.calls[0][1].salesforce_native).toBeUndefined()
   })
 
   it('opts into draft expiration from advanced migration policy', async () => {
@@ -7395,7 +7414,7 @@ describe('EnterpriseArchiveImport', () => {
 
     const checkboxes = [
       'Add default status_code assertions', 'Preserve transaction names in generated actions',
-      'Build Salesforce native preview', 'Treat partial runtime settings as blockers',
+      'Use Salesforce-aware HTTP draft', 'Treat partial runtime settings as blockers',
       'Treat preserved-only runtime settings as blockers', 'Treat non-applicable runtime settings as blockers',
     ].map(text => Array.from(container.querySelectorAll('label')).find(label => label.textContent?.trim() === text)?.querySelector('input') as HTMLInputElement)
     expect(checkboxes).toHaveLength(6)
@@ -7601,7 +7620,7 @@ describe('EnterpriseArchiveImport', () => {
 
     const checkboxes = [
       'Add default status_code assertions', 'Preserve transaction names in generated actions',
-      'Build Salesforce native preview', 'Treat partial runtime settings as blockers',
+      'Use Salesforce-aware HTTP draft', 'Treat partial runtime settings as blockers',
       'Treat preserved-only runtime settings as blockers', 'Treat non-applicable runtime settings as blockers',
     ].map(text => Array.from(container.querySelectorAll('label')).find(label => label.textContent?.trim() === text)?.querySelector('input') as HTMLInputElement)
     await act(async () => {
@@ -8390,7 +8409,7 @@ describe('EnterpriseArchiveImport', () => {
 
     const checkboxes = [
       'Add default status_code assertions', 'Preserve transaction names in generated actions',
-      'Build Salesforce native preview', 'Treat partial runtime settings as blockers',
+      'Use Salesforce-aware HTTP draft', 'Treat partial runtime settings as blockers',
       'Treat preserved-only runtime settings as blockers', 'Treat non-applicable runtime settings as blockers',
     ].map(text => Array.from(container.querySelectorAll('label')).find(label => label.textContent?.trim() === text)?.querySelector('input') as HTMLInputElement)
     expect(checkboxes[3]?.checked).toBe(false)
@@ -8456,7 +8475,7 @@ describe('EnterpriseArchiveImport', () => {
 
     const checkboxes = [
       'Add default status_code assertions', 'Preserve transaction names in generated actions',
-      'Build Salesforce native preview', 'Treat partial runtime settings as blockers',
+      'Use Salesforce-aware HTTP draft', 'Treat partial runtime settings as blockers',
       'Treat preserved-only runtime settings as blockers', 'Treat non-applicable runtime settings as blockers',
     ].map(text => Array.from(container.querySelectorAll('label')).find(label => label.textContent?.trim() === text)?.querySelector('input') as HTMLInputElement)
     await act(async () => {

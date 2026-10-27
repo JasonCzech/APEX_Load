@@ -698,3 +698,35 @@ it.each(['legacy_tls_replacement', 'diagnostic:warnings:tls', 'diagnostic:warnin
   expect(JSON.parse(mock.request.mock.calls[0][1].body).changes).toEqual([{path:'config.http.tls.min_version', value:'1.3'}])
  } finally { await act(async () => root.unmount()); container.remove(); mock.request.mockReset() }
 })
+
+
+it.each([
+  ['omit_proxy_credentials', 'Import proxy without credentials'],
+  ['disable_imported_proxy', 'Ignore imported proxy settings'],
+])('previews and applies %s without asking for a replacement secret', async (operation, label) => {
+  const script = { name: 'Proxy draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test', http: { proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } }, init: [{ name: 'Proxy settings', type: 'source_review', target: '', metadata: { execution_blocker: 'encrypted_proxy_password' } }], actions: [], metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: 'protected:proxy' } } } } as ScriptDefinition
+  const finding = { code: 'encrypted_proxy_password', action_path: 'init[0]', detail: 'Replace encrypted proxy password', gate: 'execution' }
+  const initial = { candidate_id: 'protected:proxy', revision: 'protected:proxy', script, before: script, findings: [finding], readiness: { replay_ready: false }, expires_at: '2099-09-19', fidelity_report: {} }
+  const repaired = { ...script, config: { ...script.config, http: operation === 'disable_imported_proxy' ? { proxy_mode: 'none' } : { proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080' } } } } as ScriptDefinition
+  mock.request.mockResolvedValueOnce(initial).mockResolvedValueOnce({ ...initial, script: repaired, findings: [], readiness: { replay_ready: true } }).mockResolvedValueOnce({ ...initial, candidate_id: 'protected:repaired', revision: 'protected:repaired', script: repaired, findings: [], readiness: { replay_ready: true } })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container); const onApplied = vi.fn()
+  const button = (name: string) => Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes(name))!
+  try {
+    await act(async () => root.render(<GuidedRepair script={script} projectId="p" onApplied={onApplied} />))
+    await act(async () => button('Replace encrypted proxy password').click())
+    const selector = container.querySelector<HTMLSelectElement>('[aria-label="Repair operation"]')!
+    expect(selector.value).toBe('replace_proxy_secret')
+    expect(Array.from(selector.options).some(option => option.textContent === label)).toBe(true)
+    await act(async () => { selector.value = operation; selector.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.querySelector('[aria-label="Repair value"]')).toBeNull()
+    expect(container.textContent).toContain(operation === 'disable_imported_proxy' ? 'Disables proxying' : 'unauthenticated access')
+    expect(button('Preview repair').disabled).toBe(false)
+    expect(container.textContent).not.toContain('Apply reviewed repair')
+    await act(async () => button('Preview repair').click())
+    expect(JSON.parse(mock.request.mock.calls[1][1].body).operation).toEqual({ type: operation })
+    await act(async () => button('Apply reviewed repair').click())
+    expect(JSON.parse(mock.request.mock.calls[2][1].body).operation).toEqual({ type: operation })
+    expect(onApplied).toHaveBeenCalledOnce()
+  } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
+})

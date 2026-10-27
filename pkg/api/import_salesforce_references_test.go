@@ -199,3 +199,35 @@ func TestEnterpriseArchiveSalesforceReviewRequiresDetectionWithoutNativeRequest(
 		})
 	}
 }
+
+func TestEnterpriseArchiveDetectsSalesforceWithoutCompanionHAR(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		base string
+		path string
+		want bool
+	}{
+		{"Salesforce", "https://acme.my.salesforce.com", "/services/data/v60.0/sobjects/Account", true},
+		{"Salesforce home page", "https://acme.my.salesforce.com", "/home", true},
+		{"generic", "https://shop.example.test", "/home", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script := &dsl.Script{Name: "source", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: tc.base}, Actions: []dsl.Action{{Type: "GET", Target: tc.base + tc.path}}}
+			result := &enterprisearchive.ConvertResult{Script: script}
+			attachSalesforceReviewToEnterpriseArchiveResult(result, &enterpriseArchiveImportRequest{})
+			review, attached := ensureScriptImportPreserved(script, "enterprise_script_archive")["salesforce_review"]
+			if attached != tc.want {
+				t.Fatalf("review attached = %v, want %v", attached, tc.want)
+			}
+			if attached {
+				details, ok := review.(*salesforce.Review)
+				if !ok || !details.Detected || details.NativePreview != nil || details.HARMatchCoverage.HARProvided || len(details.Blockers) != 0 {
+					t.Fatalf("unexpected automatic detection review: %#v", review)
+				}
+			}
+			if result.Script != script || script.GeneratedBy != "" || len(result.Warnings) != 0 {
+				t.Fatal("automatic detection changed the selected output or added warnings")
+			}
+		})
+	}
+}

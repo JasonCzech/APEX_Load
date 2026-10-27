@@ -29,6 +29,9 @@ import (
 type AnalyzeOptions struct {
 	BuildNative bool
 	HARData     []byte
+	// DetectionOnly returns traffic classification and coverage without replay
+	// assessment, correlation or native generation, even when BuildNative is set.
+	DetectionOnly bool
 	// RequireDetected returns an undetected review before correlation and native
 	// preparation. It preserves detection, endpoints, transactions, HAR coverage,
 	// Aura outcomes, next actions, and their warnings and blockers, including
@@ -285,6 +288,10 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 			"Review Salesforce correlation extractors and HAR match coverage before approval.",
 			"Replay the native preview against a controlled Salesforce sandbox and attach evidence.",
 		},
+	}
+	if opts.DetectionOnly {
+		review.NextActions = nil
+		return review, nil
 	}
 	review.AuraOutcomes = inspectAuraOutcomes(refs, entries)
 	if outcomes := review.AuraOutcomes; outcomes != nil {
