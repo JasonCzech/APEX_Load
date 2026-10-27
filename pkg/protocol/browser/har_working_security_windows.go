@@ -144,3 +144,7 @@ func removeHAR(root *os.Root, name string) error {
 func replaceHAR(root *os.Root, oldName, newName string) error {
 	return retryHAR(func() error { return root.Rename(oldName, newName) })
 }
+
+const harLeaseInheritableAcrossExec = false
+
+func setHARLeaseInheritable(*os.File, bool) error { return nil }

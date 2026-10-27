@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/filelock"
+	"github.com/jasonczech/apexload/pkg/internal/localfs"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -23,7 +24,13 @@ const (
 	maxRuntimeHARWorkingBytes       = int64(2 << 30)
 	maxRuntimeHARManifestBytes      = 4096
 	runtimeHARCloseWait             = 2 * time.Second
+	harOwnershipManifestVersion     = 3
 )
+
+// harWorkingDirectoryIsLocal reports whether the HAR working directory lives on
+// an allowlisted local filesystem (tests may override it to simulate network or
+// FUSE mounts).
+var harWorkingDirectoryIsLocal = localfs.IsLocal
 
 var errHAROwnershipUnproven = errors.New("browser HAR physical ownership remains unproven")
 var runtimeHAROwners = struct {
@@ -53,6 +60,9 @@ type harCaptureOwner struct {
 	parentIdentity, identity       os.FileInfo
 	lease                          *os.File
 	release                        func() error
+	localFS                        bool
+	leaseClosed                    bool
+	inheritedWriterPIDs            map[int]bool
 	writerEntered                  bool
 	closer                         func() error
 	// bound closes when the writer's closer is bound or the writer was
@@ -104,6 +114,68 @@ func (o *harCaptureOwner) retiredSuccessfully() bool {
 	return o.retired
 }
 
+func (o *harCaptureOwner) setLeaseInheritable(inheritable bool) error {
+	if o == nil {
+		return errHAROwnershipUnproven
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if !o.localFS || o.leaseClosed || o.lease == nil || (inheritable && o.writerEntered) {
+		return errHAROwnershipUnproven
+	}
+	return setHARLeaseInheritable(o.lease, inheritable)
+}
+
+func (o *harCaptureOwner) markLeaseInheritedByWriter(pid int) {
+	if o == nil || pid <= 0 {
+		return
+	}
+	o.mu.Lock()
+	if o.inheritedWriterPIDs == nil {
+		o.inheritedWriterPIDs = make(map[int]bool)
+	}
+	o.inheritedWriterPIDs[pid] = true
+	o.mu.Unlock()
+}
+
+func (o *harCaptureOwner) writerInheritedLease(pid int) bool {
+	if o == nil || pid <= 0 {
+		return false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.localFS && o.inheritedWriterPIDs[pid]
+}
+
+func (o *harCaptureOwner) startProcessWithInheritedLease(start func() (int, error)) error {
+	if err := o.setLeaseInheritable(true); err != nil {
+		return err
+	}
+	pid, err := start()
+	restoreErr := o.setLeaseInheritable(false)
+	if err == nil && restoreErr == nil && pid > 0 {
+		o.markLeaseInheritedByWriter(pid)
+	}
+	return errors.Join(err, restoreErr)
+}
+
+func pendingHAROwnerNeedsDriverInheritance(driverPID int) bool {
+	if !harLeaseInheritableAcrossExec || driverPID <= 0 {
+		return false
+	}
+	runtimeHAROwners.Lock()
+	defer runtimeHAROwners.Unlock()
+	for o := range runtimeHAROwners.owners {
+		o.mu.Lock()
+		needs := o.localFS && !o.leaseClosed && o.lease != nil && !o.writerEntered && !o.inheritedWriterPIDs[driverPID]
+		o.mu.Unlock()
+		if needs {
+			return true
+		}
+	}
+	return false
+}
+
 func newHARCaptureOwner(ctx context.Context, dir string) (_ *harCaptureOwner, err error) {
 	o, err := reserveHAROwner()
 	if err != nil {
@@ -127,6 +199,8 @@ func newHARCaptureOwner(ctx context.Context, dir string) (_ *harCaptureOwner, er
 	if err = checkHARWorkingAdmission(n.work); err != nil {
 		return nil, err
 	}
+	isLocal, localErr := harWorkingDirectoryIsLocal(filepath.Join(n.path, runtimeHARWorkingDirectory))
+	isLocalFS := localErr == nil && isLocal && harLeaseInheritableAcrossExec
 	o.generation, err = harRandomGeneration()
 	if err != nil {
 		return nil, err
@@ -148,19 +222,27 @@ func newHARCaptureOwner(ctx context.Context, dir string) (_ *harCaptureOwner, er
 	if err == nil {
 		o.identity, err = o.root.Stat(".")
 	}
+	var lease *os.File
+	var release func() error
 	if err == nil {
-		o.lease, err = openHARRegular(o.root, "owner.lock", true)
+		lease, err = openHARRegular(o.root, "owner.lock", true)
 	}
 	if err == nil {
-		o.release, err = filelock.LockContextOwned(ctx, o.lease)
+		release, err = filelock.LockContextOwned(ctx, lease)
 	}
+	o.mu.Lock()
+	o.lease, o.release = lease, release
+	o.mu.Unlock()
 	if err == nil {
-		err = verifyHARLease(o.root, "owner.lock", o.lease)
+		err = verifyHARLease(o.root, "owner.lock", lease)
 	}
 	if err == nil {
 		manifest := harOwnershipManifest{Version: 1, Generation: o.generation, State: "sealed"}
 		if processes := harGeneratorProcesses(); len(processes) > 0 {
 			manifest.Version, manifest.Processes = 2, processes
+			if isLocalFS {
+				manifest.Version = harOwnershipManifestVersion
+			}
 		}
 		data, _ := json.Marshal(manifest)
 		err = writeHARPrivateDurable(o.root, "manifest.json", data)
@@ -178,6 +260,9 @@ func newHARCaptureOwner(ctx context.Context, dir string) (_ *harCaptureOwner, er
 		return nil, err
 	}
 	o.path = filepath.Join(n.path, runtimeHARWorkingDirectory, o.generation, "working.har")
+	o.mu.Lock()
+	o.localFS = isLocalFS
+	o.mu.Unlock()
 	return o, nil
 }
 
@@ -304,6 +389,9 @@ func (o *harCaptureOwner) beginWriter() error {
 	manifest := harOwnershipManifest{Version: 1, Generation: o.generation, State: "writer_entered"}
 	if processes := harWriterProcesses(); len(processes) > 0 {
 		manifest.Version, manifest.Processes = 2, processes
+		if o.writerInheritedLease(processes[0].PID) {
+			manifest.Version = harOwnershipManifestVersion
+		}
 	}
 	data, _ := json.Marshal(manifest)
 	err := writeHARPrivateDurable(o.root, "writer-entered.json", data)
@@ -710,6 +798,9 @@ func (o *harCaptureOwner) publishScrubbed(ctx context.Context, parent *os.Root, 
 func (o *harCaptureOwner) closeGeneration() error {
 	o.generationOnce.Do(func() {
 		var err error
+		o.mu.Lock()
+		o.leaseClosed = true
+		o.mu.Unlock()
 		if o.release != nil {
 			err = errors.Join(err, o.release())
 		}
@@ -789,7 +880,7 @@ func harWorkingGenerationSize(root *os.Root) (int64, error) {
 // (Windows cannot rename a directory or remove files that handles hold
 // open); then the directory is renamed to its tombstone, reopened, emptied
 // and closed, and removed.
-func retireHARGeneration(work, root *os.Root, directoryName string, identity os.FileInfo, abandoned bool, closeGeneration func() error) error {
+func retireHARGeneration(work, root *os.Root, directoryName string, identity os.FileInfo, abandoned bool, closeGeneration func() error, localFS ...bool) error {
 	generation, recognized := harGenerationFromDirectory(directoryName)
 	if !recognized || closeGeneration == nil {
 		return errHAROwnershipUnproven
@@ -813,7 +904,8 @@ func retireHARGeneration(work, root *os.Root, directoryName string, identity os.
 		}
 	} else {
 		if abandoned {
-			if !harAbandonmentProven(root, generation) {
+			isLocal := len(localFS) > 0 && localFS[0]
+			if !harAbandonmentProven(root, generation, isLocal) {
 				return errHAROwnershipUnproven
 			}
 		} else {
@@ -909,22 +1001,25 @@ func readHARManifest(root *os.Root, name, generation, state string) error {
 var errHARManifestMalformed = errors.New("browser HAR ownership record is malformed")
 
 // readHARManifestFile reads an ownership manifest. A sealed manifest and a
-// writer-entered record may be version 2, which records process identities.
+// writer-entered record may be version 2 or version 3, which record process
+// identities; version 3 additionally guarantees on a local Unix filesystem
+// that the generation lease is held across the writer process tree.
 func readHARManifestFile(root *os.Root, name, generation, state string) (harOwnershipManifest, error) {
 	f, err := openHARRegular(root, name, false)
 	if err != nil {
 		return harOwnershipManifest{}, err
 	}
-	data, err := io.ReadAll(io.LimitReader(f, maxRuntimeHARManifestBytes+1))
-	err = errors.Join(err, f.Close())
-	if err != nil || len(data) > maxRuntimeHARManifestBytes {
+	data, err := io.LimitReader(f, maxRuntimeHARManifestBytes+1), error(nil)
+	raw, readErr := io.ReadAll(data)
+	err = errors.Join(readErr, f.Close())
+	if err != nil || len(raw) > maxRuntimeHARManifestBytes {
 		return harOwnershipManifest{}, errHAROwnershipUnproven
 	}
 	var m harOwnershipManifest
-	if err := strictHARJSON(data, &m); err != nil {
+	if err := strictHARJSON(raw, &m); err != nil {
 		return harOwnershipManifest{}, errors.Join(errHARManifestMalformed, err)
 	}
-	versioned := m.Version == 1 && len(m.Processes) == 0 || m.Version == 2 && (state == "sealed" || state == "writer_entered") && len(m.Processes) == 1
+	versioned := m.Version == 1 && len(m.Processes) == 0 || (m.Version == 2 || m.Version == harOwnershipManifestVersion) && (state == "sealed" || state == "writer_entered") && len(m.Processes) == 1
 	if !versioned || m.Generation != generation || m.State != state {
 		return harOwnershipManifest{}, errHAROwnershipUnproven
 	}
@@ -933,11 +1028,13 @@ func readHARManifestFile(root *os.Root, name, generation, state string) (harOwne
 
 // harAbandonmentProven reports whether an unjoined generation's recorded
 // generator and any entered native writer provably no longer exist.
-func harAbandonmentProven(root *os.Root, generation string) bool {
+func harAbandonmentProven(root *os.Root, generation string, localFS ...bool) bool {
 	sealed, err := readHARManifestFile(root, "manifest.json", generation, "sealed")
 	if err != nil || len(sealed.Processes) != 1 || sealed.Processes[0].Role != harProcessGenerator {
 		return false
 	}
+	isLocal := len(localFS) > 0 && localFS[0]
+	leaseCoversWriterTree := isLocal && harLeaseInheritableAcrossExec && sealed.Version == harOwnershipManifestVersion
 	processes := sealed.Processes
 	entered, err := readHARManifestFile(root, "writer-entered.json", generation, "writer_entered")
 	switch {
@@ -948,14 +1045,15 @@ func harAbandonmentProven(root *os.Root, generation string) bool {
 	case err != nil || len(entered.Processes) != 1 || entered.Processes[0].Role != harProcessWriter:
 		return false
 	default:
+		leaseCoversWriterTree = leaseCoversWriterTree && entered.Version == harOwnershipManifestVersion
 		processes = append(processes, entered.Processes[0])
 	}
-	return harProcessesGone(processes)
+	return harProcessesGoneWithLease(processes, leaseCoversWriterTree)
 }
 
 // harGenerationAbandoned reports whether an unjoined generation's lease is
 // free and its abandonment is proven.
-func harGenerationAbandoned(root *os.Root, generation string) bool {
+func harGenerationAbandoned(root *os.Root, generation string, localFS ...bool) bool {
 	if _, err := readHARManifestFile(root, "manifest.json", generation, "sealed"); err != nil {
 		return false
 	}
@@ -975,7 +1073,7 @@ func harGenerationAbandoned(root *os.Root, generation string) bool {
 	if release() != nil || !free {
 		return false
 	}
-	return harAbandonmentProven(root, generation)
+	return harAbandonmentProven(root, generation, localFS...)
 }
 
 // PlanRuntimeHARWorkingCleanup recognizes a durable writer-joined proof, or
@@ -1031,6 +1129,8 @@ func PlanRuntimeHARWorkingCleanupContext(ctx context.Context, dir string, limit 
 	if err != nil {
 		return nil, err
 	}
+	workLocal, workLocalErr := harWorkingDirectoryIsLocal(filepath.Join(path, runtimeHARWorkingDirectory))
+	isLocalFS := workLocalErr == nil && workLocal && harLeaseInheritableAcrossExec
 	scanned := 0
 	for scanned < 1024 && len(out) < limit {
 		if err := ctx.Err(); err != nil {
@@ -1051,7 +1151,7 @@ func PlanRuntimeHARWorkingCleanupContext(ctx context.Context, dir string, limit 
 				continue
 			}
 			joined := readHARManifest(root, "manifest.json", generation, "sealed") == nil && readHARManifest(root, "writer-joined.json", generation, "writer_joined") == nil
-			abandoned := !joined && harGenerationAbandoned(root, generation)
+			abandoned := !joined && harGenerationAbandoned(root, generation, isLocalFS)
 			if joined || abandoned {
 				info, statErr := root.Stat(".")
 				size, sizeErr := harWorkingGenerationSize(root)
@@ -1207,5 +1307,7 @@ func PruneRuntimeHARWorkingCandidate(ctx context.Context, c RuntimeHARWorkingPru
 	}
 	// A missing generation lease is accepted only with the prior synced,
 	// identity-bound writer-joined ledger record under the namespace lease.
-	return retireHARGeneration(n.work, root, c.directoryName, c.identity, c.Abandoned, closeGeneration)
+	workLocal, workLocalErr := harWorkingDirectoryIsLocal(filepath.Join(n.path, runtimeHARWorkingDirectory))
+	isLocalFS := workLocalErr == nil && workLocal && harLeaseInheritableAcrossExec
+	return retireHARGeneration(n.work, root, c.directoryName, c.identity, c.Abandoned, closeGeneration, isLocalFS)
 }

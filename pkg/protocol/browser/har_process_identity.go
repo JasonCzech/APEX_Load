@@ -41,7 +41,7 @@ type harProcessIdentity struct {
 // harHost is the machine, boot and PID namespace this process runs in.
 type harHost struct{ machine, boot, namespace string }
 
-func currentHARHost() (harHost, error) {
+var currentHARHost = func() (harHost, error) {
 	host, err := procidentity.CurrentHost()
 	if err != nil {
 		return harHost{}, err
@@ -95,16 +95,40 @@ func harProcessGone(host harHost, id harProcessIdentity, start func(int) (string
 	return procidentity.Gone(procidentity.Host{Machine: host.machine, Boot: host.boot, Namespace: host.namespace}, procidentity.Identity{Machine: id.Machine, Boot: id.Boot, Namespace: id.Namespace, PID: id.PID, Start: id.Start}, start)
 }
 
+// harProcessGoneWithLease reports whether a recorded process provably no
+// longer exists. Within the same PID namespace, procidentity.Gone is always
+// mandatory. On a verified local Unix filesystem where a version-3 generation's
+// owner.lock is inherited across exec by the native writer process and the
+// caller has verified or holds that free lease, a replacement container in a
+// different PID namespace on the same kernel boot and machine identity knows
+// both the generator and the writer tree have closed all descriptors and exited.
+func harProcessGoneWithLease(host harHost, id harProcessIdentity, start func(int) (string, bool, error), leaseCoversWriterTree bool) bool {
+	if harProcessGone(host, id, start) {
+		return true
+	}
+	if !leaseCoversWriterTree {
+		return false
+	}
+	return host.boot != "" && id.Boot == host.boot &&
+		id.Machine == host.machine &&
+		host.namespace != "" && id.Namespace != "" && id.Namespace != host.namespace &&
+		id.PID > 0 && id.Start != ""
+}
+
 // harProcessesGone reports whether every recorded process, a generator and
 // at most one native writer, provably no longer exists.
 func harProcessesGone(processes []harProcessIdentity) bool {
+	return harProcessesGoneWithLease(processes, false)
+}
+
+func harProcessesGoneWithLease(processes []harProcessIdentity, leaseCoversWriterTree bool) bool {
 	host, err := currentHARHost()
 	if err != nil {
 		return false
 	}
 	roles := map[string]bool{}
 	for _, p := range processes {
-		if p.Role != harProcessGenerator && p.Role != harProcessWriter || roles[p.Role] || !harProcessGone(host, p, harProcessStart) {
+		if p.Role != harProcessGenerator && p.Role != harProcessWriter || roles[p.Role] || !harProcessGoneWithLease(host, p, harProcessStart, leaseCoversWriterTree) {
 			return false
 		}
 		roles[p.Role] = true

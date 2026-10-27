@@ -246,6 +246,12 @@ func (e *evidenceBudget) releaseBrowserContext(b *Browser) {
 	e.mu.Unlock()
 }
 
+func (e *evidenceBudget) liveCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.live)
+}
+
 // refreshSample measures when the sample is stale; only one measurement runs
 // at a time. Admitters that find no usable sample while another measures
 // wait for it rather than being admitted unmeasured. A failed measurement

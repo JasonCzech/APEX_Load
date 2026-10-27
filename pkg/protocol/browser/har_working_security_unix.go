@@ -87,3 +87,30 @@ func removeHAR(root *os.Root, name string) error { return root.Remove(name) }
 
 // replaceHAR renames oldName over newName in root.
 func replaceHAR(root *os.Root, oldName, newName string) error { return root.Rename(oldName, newName) }
+
+const harLeaseInheritableAcrossExec = true
+
+// setHARLeaseInheritable toggles FD_CLOEXEC on f without switching f into
+// blocking mode, so a child process spawned while inheritable is true inherits
+// the open file description holding the flock lease.
+func setHARLeaseInheritable(f *os.File, inheritable bool) error {
+	if f == nil {
+		return errHAROwnershipUnproven
+	}
+	raw, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var fcntlErr error
+	err = raw.Control(func(fd uintptr) {
+		flags := syscall.FD_CLOEXEC
+		if inheritable {
+			flags = 0
+		}
+		_, _, e := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_SETFD, uintptr(flags))
+		if e != 0 {
+			fcntlErr = e
+		}
+	})
+	return errors.Join(err, fcntlErr)
+}

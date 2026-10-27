@@ -30,3 +30,7 @@ func renameHARNoReplace(*os.Root, string, string) error { return errHARPrivacyUn
 func removeHAR(*os.Root, string) error { return errHARPrivacyUnqualified }
 
 func replaceHAR(*os.Root, string, string) error { return errHARPrivacyUnqualified }
+
+const harLeaseInheritableAcrossExec = false
+
+func setHARLeaseInheritable(*os.File, bool) error { return errHARPrivacyUnqualified }
