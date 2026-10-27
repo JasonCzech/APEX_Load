@@ -104,7 +104,7 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
           <th scope="col">Skipped</th><th scope="col">Censored</th><th scope="col">Failure rate</th><th scope="col">Step failures</th>
         </tr></thead>
         <tbody>{report.journeys.map(journey => <tr key={journey.id}>
-          <td><span title={`From ${formatJourneyBoundary(journey.start)} to ${formatJourneyBoundary(journey.success)}`}>{journey.name}</span></td>
+          <td><span title={`From ${formatJourneyBoundary(journey.start)} to ${formatJourneyBoundary(journey.success)}${journey.match_mode ? ` (matched by ${journey.match_mode === 'step_path' ? 'step path' : journey.match_mode})` : ''}`}>{journey.name}</span></td>
           <td>{journey.weight}</td><td>{journey.completed}</td><td>{journey.failed}</td><td>{journey.aborted}</td>
           <td>{journey.skipped}</td><td>{journey.censored}</td><td>{formatJourneyFraction(journey.failure_rate)}</td>
           <td>{journey.step_failures} of {journey.steps}</td>

@@ -29,8 +29,12 @@ export interface JourneyDraft {
   name: string
   startKind: 'transaction' | 'action'
   start: string
+  startStepPath?: string
+  startStructureSha256?: string
   successKind: 'transaction' | 'action'
   success: string
+  successStepPath?: string
+  successStructureSha256?: string
   weight: string
 }
 export interface JourneyPolicyDraft {
@@ -65,7 +69,7 @@ export function defaultBrowserPolicyDraft(): BrowserPolicyDraft {
 }
 
 export function emptyJourney(index: number): JourneyDraft {
-  return { id: `journey-${index + 1}`, name: '', startKind: 'transaction', start: '', successKind: 'transaction', success: '', weight: '1' }
+  return { id: `journey-${index + 1}`, name: '', startKind: 'transaction', start: '', startStepPath: '', startStructureSha256: '', successKind: 'transaction', success: '', successStepPath: '', successStructureSha256: '', weight: '1' }
 }
 
 export function defaultJourneyPolicyDraft(): JourneyPolicyDraft {
@@ -160,20 +164,36 @@ export function journeyDraftFromDefinition(name: string, definition: unknown): J
   draft.description = typeof definition.description === 'string' ? definition.description : ''
   draft.applyByDefault = definition.apply_by_default === true
   draft.stepRiskEnabled = definition.step_risk_enabled === true
-  const boundary = (value: unknown): [JourneyDraft['startKind'], string] => {
-    if (record(value) && typeof value.action === 'string' && value.action) return ['action', value.action]
-    return ['transaction', record(value) && typeof value.transaction === 'string' ? value.transaction : '']
+  const boundary = (value: unknown): [JourneyDraft['startKind'], string, string, string] => {
+    const stepPath = record(value) && typeof value.step_path === 'string' ? value.step_path : ''
+    const structureSha256 = record(value) && typeof value.structure_sha256 === 'string' ? value.structure_sha256 : ''
+    if (record(value) && typeof value.action === 'string' && value.action) return ['action', value.action, stepPath, structureSha256]
+    return ['transaction', record(value) && typeof value.transaction === 'string' ? value.transaction : '', stepPath, structureSha256]
   }
   const journeys = (Array.isArray(definition.journeys) ? definition.journeys : []).filter(record).map(journey => {
-    const [startKind, start] = boundary(journey.start)
-    const [successKind, success] = boundary(journey.success)
-    return { id: typeof journey.id === 'string' ? journey.id : '', name: typeof journey.name === 'string' ? journey.name : '', startKind, start, successKind, success, weight: numberText(journey.weight) }
+    const [startKind, start, startStepPath, startStructureSha256] = boundary(journey.start)
+    const [successKind, success, successStepPath, successStructureSha256] = boundary(journey.success)
+    return {
+      id: typeof journey.id === 'string' ? journey.id : '',
+      name: typeof journey.name === 'string' ? journey.name : '',
+      startKind,
+      start,
+      startStepPath,
+      startStructureSha256,
+      successKind,
+      success,
+      successStepPath,
+      successStructureSha256,
+      weight: numberText(journey.weight),
+    }
   })
   draft.journeys = journeys.length ? journeys : [emptyJourney(0)]
   return draft
 }
 
 const JOURNEY_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/
+const STEP_PATH = /^actions\[(0|[1-9][0-9]{0,5})\](\.control\.((steps|else|default)\[(0|[1-9][0-9]{0,5})\]|(cases|branches)\[(0|[1-9][0-9]{0,5})\]\.steps\[(0|[1-9][0-9]{0,5})\])){0,64}$/
+const SHA256_HEX = /^[0-9a-f]{64}$/
 
 /** The definition a journey draft saves, or the first reason it cannot be saved. */
 export function journeyDefinitionFromDraft(draft: JourneyPolicyDraft): { definition?: Record_; problem?: string } {
@@ -187,13 +207,31 @@ export function journeyDefinitionFromDraft(draft: JourneyPolicyDraft): { definit
     seen.add(id)
     if (!journey.name.trim()) return { problem: `Name journey ${id}.` }
     if (!journey.start.trim() || !journey.success.trim()) return { problem: `Journey ${id} needs a start and a success boundary.` }
+    const startStepPath = (journey.startStepPath || '').trim()
+    const startStructureSha256 = (journey.startStructureSha256 || '').trim()
+    const successStepPath = (journey.successStepPath || '').trim()
+    const successStructureSha256 = (journey.successStructureSha256 || '').trim()
+    if (startStepPath && !STEP_PATH.test(startStepPath)) return { problem: `Journey ${id} start step path must be a canonical DSL step path (for example, actions[0]).` }
+    if (startStructureSha256 && !startStepPath) return { problem: `Journey ${id} start structure digest needs a step path.` }
+    if (startStructureSha256 && !SHA256_HEX.test(startStructureSha256)) return { problem: `Journey ${id} start structure digest must be a 64-character lowercase hex SHA-256.` }
+    if (successStepPath && !STEP_PATH.test(successStepPath)) return { problem: `Journey ${id} success step path must be a canonical DSL step path (for example, actions[0]).` }
+    if (successStructureSha256 && !successStepPath) return { problem: `Journey ${id} success structure digest needs a step path.` }
+    if (successStructureSha256 && !SHA256_HEX.test(successStructureSha256)) return { problem: `Journey ${id} success structure digest must be a 64-character lowercase hex SHA-256.` }
     const weight = parsed(journey.weight)
     if (weight === undefined || !Number.isFinite(weight) || weight < 0) return { problem: `Journey ${id} needs a weight of zero or more.` }
     journeys.push({
       id,
       name: journey.name.trim(),
-      start: { [journey.startKind]: journey.start.trim() },
-      success: { [journey.successKind]: journey.success.trim() },
+      start: {
+        [journey.startKind]: journey.start.trim(),
+        ...(startStepPath ? { step_path: startStepPath } : {}),
+        ...(startStructureSha256 ? { structure_sha256: startStructureSha256 } : {}),
+      },
+      success: {
+        [journey.successKind]: journey.success.trim(),
+        ...(successStepPath ? { step_path: successStepPath } : {}),
+        ...(successStructureSha256 ? { structure_sha256: successStructureSha256 } : {}),
+      },
       weight,
     })
   }

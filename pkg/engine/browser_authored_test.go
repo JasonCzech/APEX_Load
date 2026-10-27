@@ -229,3 +229,130 @@ func TestBrowserAuthoredIdentityPreservesSourceAcrossRuntimeCopies(t *testing.T)
 		t.Fatal("changed action type acquired a source identity")
 	}
 }
+
+type captureResultAndTxSink struct {
+	results      []*protocol.Result
+	transactions []*protocol.Result
+}
+
+func (s *captureResultAndTxSink) RecordResult(result *protocol.Result) error {
+	if result != nil {
+		copied := *result
+		copied.AuthoredStep = result.AuthoredStep.Clone()
+		s.results = append(s.results, &copied)
+	}
+	return nil
+}
+
+func (s *captureResultAndTxSink) RecordTransaction(result *protocol.Result) error {
+	if result != nil {
+		copied := *result
+		copied.AuthoredStep = result.AuthoredStep.Clone()
+		s.transactions = append(s.transactions, &copied)
+	}
+	return nil
+}
+
+func TestBrowserAuthoredStepPropagatesToLeafAndSourceTransactionResults(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "DuplicateNamesAndSourceTx",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
+			Pacing:   dsl.PacingConfig{Type: "none"},
+		},
+		Actions: []dsl.Action{
+			{Name: "Submit", Type: "browser_navigate", Target: "https://example.test/step1"},
+			dsl.TransactionMarker("Checkout", true),
+			{Name: "Submit", Type: "browser_click", Selector: "#confirm"},
+			dsl.TransactionMarker("Checkout", false),
+		},
+	}
+	def := BrowserOriginalAuthoredDefinition(script)
+	if !def.Valid() {
+		t.Fatal("expected valid BrowserOriginalAuthoredDefinition")
+	}
+	structureSHA, steps := ScriptJourneySteps(script)
+	if structureSHA != def.StructureSHA256 || len(steps) != 3 {
+		t.Fatalf("ScriptJourneySteps=(%q, %+v), want structure=%q and 3 steps", structureSHA, steps, def.StructureSHA256)
+	}
+	if steps[0].StepPath != "actions[0]" || steps[0].Kind != "action" || steps[0].Name != "Submit" ||
+		steps[1].StepPath != "actions[1]" || steps[1].Kind != "transaction" || steps[1].Name != "Checkout" ||
+		steps[2].StepPath != "actions[2]" || steps[2].Kind != "action" || steps[2].Name != "Submit" {
+		t.Fatalf("unexpected ScriptJourneySteps: %+v", steps)
+	}
+
+	sink := &captureResultAndTxSink{}
+	proto := &replayTestProtocol{execute: func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{Success: true, StatusCode: 200, StartTime: time.Now()}, nil
+	}}
+	vu := &VUser{
+		ID:                        1,
+		Script:                    script,
+		browserAuthoredSource:     script,
+		browserAuthoredDefinition: def,
+		Proto:                     proto,
+		Variables:                 map[string]string{},
+		Metrics:                   NewMetricsCollector(32),
+		ResultSink:                sink,
+	}
+	vu.Run(context.Background())
+
+	if len(sink.results) != 2 {
+		t.Fatalf("recorded %d action results, want 2", len(sink.results))
+	}
+	if sink.results[0].AuthoredStep == nil || sink.results[0].AuthoredStep.StepPath != "actions[0]" || sink.results[0].AuthoredStep.SourceStructureSHA256 != def.StructureSHA256 {
+		t.Fatalf("first action AuthoredStep = %+v", sink.results[0].AuthoredStep)
+	}
+	if sink.results[1].AuthoredStep == nil || sink.results[1].AuthoredStep.StepPath != "actions[2]" || sink.results[1].AuthoredStep.SourceStructureSHA256 != def.StructureSHA256 {
+		t.Fatalf("second action AuthoredStep = %+v", sink.results[1].AuthoredStep)
+	}
+	if len(sink.transactions) != 1 {
+		t.Fatalf("recorded %d transactions, want 1", len(sink.transactions))
+	}
+	if sink.transactions[0].ActionName != "Checkout" || sink.transactions[0].AuthoredStep == nil || sink.transactions[0].AuthoredStep.StepPath != "actions[1]" {
+		t.Fatalf("source_transaction AuthoredStep = %+v", sink.transactions[0].AuthoredStep)
+	}
+
+	iterScript := &dsl.Script{
+		Name:     "WholeIterationTx",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_iteration"},
+			Pacing:   dsl.PacingConfig{Type: "none"},
+		},
+		Actions: []dsl.Action{
+			{Name: "Open", Type: "browser_navigate", Target: "https://example.test"},
+		},
+	}
+	iterSink := &captureResultAndTxSink{}
+	iterVU := &VUser{
+		ID:         1,
+		Script:     iterScript,
+		Proto:      proto,
+		Variables:  map[string]string{},
+		Metrics:    NewMetricsCollector(32),
+		ResultSink: iterSink,
+	}
+	iterVU.Run(context.Background())
+	if len(iterSink.transactions) != 1 || iterSink.transactions[0].AuthoredStep != nil {
+		t.Fatalf("whole-iteration synthetic transaction must not carry leaf AuthoredStep: %+v", iterSink.transactions)
+	}
+
+	failIterSink := &captureResultAndTxSink{}
+	failProto := &replayTestProtocol{execute: func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{Success: false, StatusCode: 500, ErrorMessage: "boom", StartTime: time.Now()}, nil
+	}}
+	failIterVU := &VUser{
+		ID:         1,
+		Script:     iterScript,
+		Proto:      failProto,
+		Variables:  map[string]string{},
+		Metrics:    NewMetricsCollector(32),
+		ResultSink: failIterSink,
+	}
+	failIterVU.Run(context.Background())
+	if len(failIterSink.transactions) != 1 || failIterSink.transactions[0].Success || failIterSink.transactions[0].AuthoredStep != nil {
+		t.Fatalf("failed whole-iteration synthetic transaction must not carry failing leaf AuthoredStep: %+v", failIterSink.transactions)
+	}
+}

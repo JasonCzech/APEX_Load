@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../hooks/apiClient'
 import JourneyRiskPanel from './JourneyRiskPanel'
-import { formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText } from './journeyRiskModel'
+import { formatJourneyBoundary, formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText } from './journeyRiskModel'
 
 const mocks = vi.hoisted(() => ({ api: { getTestArchiveJourneys: vi.fn() } }))
 vi.mock('../../hooks/useApi', () => ({ useApi: () => mocks.api }))
@@ -187,5 +187,6 @@ describe('JourneyRiskPanel', () => {
     expect(journeyUnscoredText('accounting_incomplete')).toContain('incomplete')
     expect(journeyUnavailableText('no_iterations')).toContain('ran no VUser iteration')
     expect(journeyIncompleteText(['sources_not_collected', 'novel_reason'])).toBe('The counts are incomplete (generator sources whose archives were not collected; novel reason), so the indexes are withheld.')
+    expect(formatJourneyBoundary({ action: 'Submit', step_path: 'actions[2]' })).toBe('action Submit (actions[2])')
   })
 })

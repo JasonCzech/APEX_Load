@@ -87,6 +87,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	// CorrelationEvidence is a replay-only, pre-scrub side channel. No metrics or
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
+	result.AuthoredStep = result.AuthoredStep.Clone()
 	result.Group = vu.Group
 	result.VUserID, result.Iteration, result.VUserLifetime = vu.ID, vu.currentIteration.Load(), vu.lifetime
 	if result.Region == "" {
@@ -296,9 +297,13 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		tx.SourceProfile = source.SourceProfile
 		tx.SourcePath = source.SourcePath
 		tx.Hierarchy = source.Hierarchy
+		tx.AuthoredStep = source.AuthoredStep.Clone()
 		if source.Phase != "" {
 			tx.Phase = source.Phase
 		}
+	}
+	if tx.AuthoredStep == nil {
+		tx.AuthoredStep = vu.currentBrowserAuthoredStep()
 	}
 	if !success && tx.ErrorMessage == "" {
 		tx.ErrorMessage = "transaction failed"
@@ -1399,6 +1404,9 @@ func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[str
 func applyProtocolResultAttribution(result *protocol.Result, action *protocol.Action) {
 	if result == nil || action == nil {
 		return
+	}
+	if result.AuthoredStep == nil && action.BrowserAuthoredStep.Valid() {
+		result.AuthoredStep = action.BrowserAuthoredStep.Clone()
 	}
 	if result.Hierarchy == "" {
 		result.Hierarchy = action.HierarchyPath

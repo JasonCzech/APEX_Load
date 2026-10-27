@@ -4417,6 +4417,15 @@ export interface operations {
               "browser_interactions_file"?: string;
               "browser_interactions_incomplete"?: boolean;
               "browser_proof_authority_mode"?: string;
+              "browser_proof_clock_envelope"?: ({
+                "authority_started_at"?: string;
+                "controller"?: Record<string, unknown>;
+                "max_bracket_gap_ns"?: number;
+                "max_bracket_rtt_ns"?: number;
+                "max_skew_ppm"?: number;
+                "owners"?: Record<string, Array<Record<string, unknown>>>;
+                "version"?: number;
+              }) | null;
               "browser_proof_expected_owners"?: Array<string>;
               "browser_receipt_incomplete"?: boolean;
               "browser_receipt_record_count"?: number;
@@ -77617,16 +77626,21 @@ export interface operations {
               "failed": number;
               "failure_rate"?: (number) | null;
               "id": string;
+              "match_mode"?: string;
               "name": string;
               "skipped": number;
               "start": {
                 "action"?: string;
+                "step_path"?: string;
+                "structure_sha256"?: string;
                 "transaction"?: string;
               };
               "step_failures": number;
               "steps": number;
               "success": {
                 "action"?: string;
+                "step_path"?: string;
+                "structure_sha256"?: string;
                 "transaction"?: string;
               };
               "weight": number;
@@ -77746,6 +77760,25 @@ export interface operations {
             "browser_interactions_file"?: string;
             "browser_interactions_incomplete"?: boolean;
             "browser_proof_authority_mode"?: string;
+            "browser_proof_clock_envelope"?: ({
+              "authority_started_at": string;
+              "controller": {
+                "domain_id": string;
+                "incarnation": string;
+                "run_id": string;
+              };
+              "max_bracket_gap_ns": number;
+              "max_bracket_rtt_ns": number;
+              "max_skew_ppm": number;
+              "owners": Record<string, Array<{
+                "authority": Record<string, unknown>;
+                "controller_recv_ns": number;
+                "controller_send_ns": number;
+                "owner_id": string;
+                "owner_mono_ns": number;
+              }>>;
+              "version": number;
+            }) | null;
             "browser_proof_expected_owners"?: Array<string>;
             "browser_receipt_incomplete"?: boolean;
             "browser_receipt_record_count"?: number;
@@ -83586,6 +83619,19 @@ export interface operations {
               "browser_interactions_file"?: string;
               "browser_interactions_incomplete"?: boolean;
               "browser_proof_authority_mode"?: string;
+              "browser_proof_clock_envelope"?: ({
+                "authority_started_at": string;
+                "controller": {
+                  "domain_id": string;
+                  "incarnation": string;
+                  "run_id": string;
+                };
+                "max_bracket_gap_ns": number;
+                "max_bracket_rtt_ns": number;
+                "max_skew_ppm": number;
+                "owners": Record<string, Array<Record<string, unknown>>>;
+                "version": number;
+              }) | null;
               "browser_proof_expected_owners"?: Array<string>;
               "browser_receipt_incomplete"?: boolean;
               "browser_receipt_record_count"?: number;
@@ -105243,6 +105289,46 @@ export interface operations {
               "supported_signals": Array<string>;
             }>;
           };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListAnalysisJourneySteps": {
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+        "script_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "protocol": string;
+            "script_id": string;
+            "script_name": string;
+            "steps": Array<{
+              "action_type": string;
+              "kind": string;
+              "name": string;
+              "step_path": string;
+            }>;
+            "structure_sha256"?: string;
+          }>;
         };
       };
       "401": {
@@ -200354,6 +200440,9 @@ export interface paths {
   };
   "/api/v1/analysis/imports/{id}/precision-review": {
     "post": operations["handleAnalysisPrecisionReview"];
+  };
+  "/api/v1/analysis/journey-steps": {
+    "get": operations["handleListAnalysisJourneySteps"];
   };
   "/api/v1/analysis/mappings": {
     "get": operations["handleAnalysisDefinitions_11"];

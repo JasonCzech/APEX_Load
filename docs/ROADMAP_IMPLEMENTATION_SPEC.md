@@ -342,6 +342,8 @@ Retain at least 30 valid comparable baseline buckets and absolute z-score ≥3 f
 
 ### BI-B — Interaction maps and authored journey outcomes
 
+The [structural intra-iteration journey boundaries slice](qa/reviews/roadmap-browser-journey-steps-2026-10-26/README.md) plumbs `BrowserAuthoredStep` (`StepPath` and `SourceStructureSHA256`) onto leaf action results, per-action auto-transactions, and `source_transaction` start/end markers through `archiveTransactionEvent` and `TransactionEvent`, adds `GET /api/v1/analysis/journey-steps` for the dashboard policy editor's step picker, keys `JourneyBoundary` on edit-resilient `StepPath` (+ optional `StructureSHA256`) with explicit `match_mode` (`"step_path"` vs `"name"` fallback on legacy rows), and breaks zero-duration (`begin == end`) loop ties by execution ordinal so each intra-iteration loop attempt settles before the next pass opens.
+
 The [interaction map cohort slice](qa/reviews/roadmap-browser-map-cohorts-2026-10-20/README.md) separates exact recorded scroll offsets and excludes missing layouts, untransformed child frames and unknown/conflicting engine-profile contexts from maps. It preserves raw interaction evidence and the historical pattern estimator. The subsequent native dispatch slice supplies dispatch-time geometry and stable step identity; authored page identity and the wider interaction/journey gates below remain open.
 
 The [observed Sync clock slice](qa/reviews/roadmap-browser-outcome-clocks-2026-10-21/README.md) captures supported post-action wait clocks and result state before delay/capture, with negotiated raw v3 and legacy wire preservation. Full assertion/dialog/download/navigation/state composition remains open.

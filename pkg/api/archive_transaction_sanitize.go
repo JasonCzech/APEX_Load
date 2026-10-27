@@ -155,6 +155,7 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	item.SourceActionName = scrub.ValueLabel(item.SourceActionName, policy)
 	// Preserve the authored source transaction name.
 	item.SourceProfile = scrub.ValueLabel(item.SourceProfile, policy)
+	item.AuthoredStep = item.AuthoredStep.Clone()
 	if item.ServerTelemetry != nil {
 		cloned := *item.ServerTelemetry
 		if !cloned.WebSocket.Valid() {

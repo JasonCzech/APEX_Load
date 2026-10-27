@@ -371,6 +371,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		SourceAction:          result.SourceAction,
 		SourceActionName:      result.SourceActionName,
 		SourceProfile:         result.SourceProfile,
+		AuthoredStep:          result.AuthoredStep.Clone(),
 	}
 	applySentTraceContext(&event, result.TraceContext)
 	event.HTTPVersion, event.HTTPVersionFallback, event.AttemptCount = protocol.ArchiveHTTPVersionFields(result)

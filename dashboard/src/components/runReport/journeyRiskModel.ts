@@ -6,6 +6,8 @@ import { formatPercentValue } from '../../utils/numberFormat'
 export interface JourneyBoundary {
   transaction?: string
   action?: string
+  step_path?: string
+  structure_sha256?: string
 }
 
 export interface JourneyAttemptRef {
@@ -23,6 +25,7 @@ export interface JourneyAccounting {
   weight: number
   start: JourneyBoundary
   success: JourneyBoundary
+  match_mode?: 'step_path' | 'name' | string
   completed: number
   failed: number
   aborted: number
@@ -87,8 +90,9 @@ export function journeyUnscoredText(reason?: string): string {
 }
 
 export function formatJourneyBoundary(boundary: JourneyBoundary): string {
-  if (boundary.transaction) return `transaction ${boundary.transaction}`
-  if (boundary.action) return `action ${boundary.action}`
+  const suffix = boundary.step_path ? ` (${boundary.step_path})` : ''
+  if (boundary.transaction) return `transaction ${boundary.transaction}${suffix}`
+  if (boundary.action) return `action ${boundary.action}${suffix}`
   return 'not set'
 }
 

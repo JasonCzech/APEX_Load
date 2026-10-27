@@ -12349,6 +12349,36 @@ paths:
                           type: boolean
                         browser_proof_authority_mode:
                           type: string
+                        browser_proof_clock_envelope:
+                          type: object
+                          properties:
+                            authority_started_at:
+                              type: string
+                              format: date-time
+                            controller:
+                              type: object
+                              additionalProperties: true
+                            max_bracket_gap_ns:
+                              type: integer
+                              format: int64
+                            max_bracket_rtt_ns:
+                              type: integer
+                              format: int64
+                            max_skew_ppm:
+                              type: integer
+                              format: int64
+                            owners:
+                              type: object
+                              additionalProperties:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserClockBracket'
+                                  additionalProperties: true
+                            version:
+                              type: integer
+                              format: int64
+                          nullable: true
                         browser_proof_expected_owners:
                           type: array
                           items:
@@ -32422,6 +32452,83 @@ paths:
       tags:
         - Analysis
       x-handler: handleAnalysisPrecisionReview
+  /api/v1/analysis/journey-steps:
+    get:
+      summary: List Analysis Journey Steps
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleListAnalysisJourneySteps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    protocol:
+                      type: string
+                    script_id:
+                      type: string
+                    script_name:
+                      type: string
+                    steps:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          action_type:
+                            type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          step_path:
+                            type: string
+                        required:
+                          - action_type
+                          - kind
+                          - name
+                          - step_path
+                    structure_sha256:
+                      type: string
+                  required:
+                    - protocol
+                    - script_id
+                    - script_name
+                    - steps
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: script_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleListAnalysisJourneySteps
   /api/v1/analysis/mappings:
     get:
       summary: Analysis Definitions
@@ -413556,6 +413663,8 @@ paths:
                           nullable: true
                         id:
                           type: string
+                        match_mode:
+                          type: string
                         name:
                           type: string
                         skipped:
@@ -413565,6 +413674,10 @@ paths:
                           type: object
                           properties:
                             action:
+                              type: string
+                            step_path:
+                              type: string
+                            structure_sha256:
                               type: string
                             transaction:
                               type: string
@@ -413578,6 +413691,10 @@ paths:
                           type: object
                           properties:
                             action:
+                              type: string
+                            step_path:
+                              type: string
+                            structure_sha256:
                               type: string
                             transaction:
                               type: string
@@ -413854,6 +413971,73 @@ paths:
                     type: boolean
                   browser_proof_authority_mode:
                     type: string
+                  browser_proof_clock_envelope:
+                    type: object
+                    properties:
+                      authority_started_at:
+                        type: string
+                        format: date-time
+                      controller:
+                        type: object
+                        properties:
+                          domain_id:
+                            type: string
+                          incarnation:
+                            type: string
+                          run_id:
+                            type: string
+                        required:
+                          - domain_id
+                          - incarnation
+                          - run_id
+                      max_bracket_gap_ns:
+                        type: integer
+                        format: int64
+                      max_bracket_rtt_ns:
+                        type: integer
+                        format: int64
+                      max_skew_ppm:
+                        type: integer
+                        format: int64
+                      owners:
+                        type: object
+                        additionalProperties:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              authority:
+                                type: object
+                                additionalProperties: true
+                              controller_recv_ns:
+                                type: integer
+                                format: int64
+                              controller_send_ns:
+                                type: integer
+                                format: int64
+                              owner_id:
+                                type: string
+                              owner_mono_ns:
+                                type: integer
+                                format: int64
+                            required:
+                              - authority
+                              - controller_recv_ns
+                              - controller_send_ns
+                              - owner_id
+                              - owner_mono_ns
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - authority_started_at
+                      - controller
+                      - max_bracket_gap_ns
+                      - max_bracket_rtt_ns
+                      - max_skew_ppm
+                      - owners
+                      - version
+                    nullable: true
                   browser_proof_expected_owners:
                     type: array
                     items:
@@ -433444,6 +433628,53 @@ paths:
                         type: boolean
                       browser_proof_authority_mode:
                         type: string
+                      browser_proof_clock_envelope:
+                        type: object
+                        properties:
+                          authority_started_at:
+                            type: string
+                            format: date-time
+                          controller:
+                            type: object
+                            properties:
+                              domain_id:
+                                type: string
+                              incarnation:
+                                type: string
+                              run_id:
+                                type: string
+                            required:
+                              - domain_id
+                              - incarnation
+                              - run_id
+                          max_bracket_gap_ns:
+                            type: integer
+                            format: int64
+                          max_bracket_rtt_ns:
+                            type: integer
+                            format: int64
+                          max_skew_ppm:
+                            type: integer
+                            format: int64
+                          owners:
+                            type: object
+                            additionalProperties:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - authority_started_at
+                          - controller
+                          - max_bracket_gap_ns
+                          - max_bracket_rtt_ns
+                          - max_skew_ppm
+                          - owners
+                          - version
+                        nullable: true
                       browser_proof_expected_owners:
                         type: array
                         items:

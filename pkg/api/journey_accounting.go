@@ -67,6 +67,7 @@ type JourneyAccounting struct {
 	Weight    float64         `json:"weight"`
 	Start     JourneyBoundary `json:"start"`
 	Success   JourneyBoundary `json:"success"`
+	MatchMode string          `json:"match_mode,omitempty"`
 	Completed int64           `json:"completed"`
 	Failed    int64           `json:"failed"`
 	Aborted   int64           `json:"aborted"`
@@ -118,21 +119,48 @@ type JourneyRiskReport struct {
 	Notes                 []string `json:"notes"`
 }
 
-func (b JourneyBoundary) matches(event *TransactionEvent) bool {
-	if b.Transaction != "" {
-		return event.BusinessTransaction && event.ActionName == b.Transaction
+func (b JourneyBoundary) matches(event *TransactionEvent) (bool, string) {
+	if event == nil {
+		return false, ""
 	}
-	return !event.BusinessTransaction && b.Action != "" && event.ActionName == b.Action
+	wantName := b.Action
+	if b.Transaction != "" {
+		if !event.BusinessTransaction {
+			return false, ""
+		}
+		wantName = b.Transaction
+	} else if event.BusinessTransaction || b.Action == "" {
+		return false, ""
+	}
+	if b.StepPath != "" {
+		if event.AuthoredStep != nil {
+			if event.AuthoredStep.StepPath != b.StepPath {
+				return false, ""
+			}
+			if b.StructureSHA256 != "" && event.AuthoredStep.SourceStructureSHA256 != b.StructureSHA256 {
+				return false, ""
+			}
+			return true, "step_path"
+		}
+		if b.StructureSHA256 != "" {
+			return false, ""
+		}
+	}
+	if event.ActionName == wantName {
+		return true, "name"
+	}
+	return false, ""
 }
 
 // journeyEvent is the part of an archived row journey accounting keeps while
 // its iteration is open.
 type journeyEvent struct {
-	ordinal int64
-	begin   int64 // start, Unix ns
-	end     int64 // begin + duration
-	step    bool  // an action sample (not a transaction row)
-	success bool
+	ordinal      int64
+	beginOrdinal int64
+	begin        int64 // start, Unix ns
+	end          int64 // begin + duration
+	step         bool  // an action sample (not a transaction row)
+	success      bool
 	// interrupted: a failure recorded once the VUser was stopping, or one the
 	// generator's own resource limit caused.
 	interrupted bool
@@ -152,6 +180,7 @@ const (
 
 type journeyPoint struct {
 	at    int64
+	seq   int64
 	kind  int
 	event *journeyEvent
 }
@@ -205,7 +234,11 @@ type journeyVUserKey struct {
 func newJourneyAccumulator(policy JourneyPolicyDefinition, report *JourneyRiskReport) *journeyAccumulator {
 	acc := &journeyAccumulator{policy: policy, vusers: map[journeyVUserKey]*journeyVUserState{}, report: report}
 	for _, journey := range policy.Journeys {
-		acc.results = append(acc.results, JourneyAccounting{ID: journey.ID, Name: journey.Name, Weight: journey.Weight, Start: journey.Start, Success: journey.Success})
+		matchMode := "name"
+		if journey.Start.StepPath != "" && journey.Success.StepPath != "" {
+			matchMode = "step_path"
+		}
+		acc.results = append(acc.results, JourneyAccounting{ID: journey.ID, Name: journey.Name, Weight: journey.Weight, Start: journey.Start, Success: journey.Success, MatchMode: matchMode})
 		acc.started = append(acc.started, map[string]bool{})
 		acc.skipped = append(acc.skipped, map[string]int64{})
 	}
@@ -260,18 +293,25 @@ func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored b
 	points := make([]journeyPoint, 0, len(state.events)+4)
 	for i := range state.events {
 		event := &state.events[i]
-		points = append(points, journeyPoint{at: event.begin, kind: journeyPointBegin, event: event})
+		event.beginOrdinal = event.ordinal
+		if !event.step {
+			for k := i - 1; k >= 0 && state.events[k].step && state.events[k].begin >= event.begin; k-- {
+				event.beginOrdinal = state.events[k].ordinal
+			}
+		}
+		points = append(points, journeyPoint{at: event.begin, seq: event.beginOrdinal, kind: journeyPointBegin, event: event})
 		if event.finishes != 0 {
-			points = append(points, journeyPoint{at: event.end, kind: journeyPointFinish, event: event})
+			points = append(points, journeyPoint{at: event.end, seq: event.ordinal, kind: journeyPointFinish, event: event})
 		}
 		if event.interrupted {
 			censored = true
-			points = append(points, journeyPoint{at: event.end, kind: journeyPointInterrupt, event: event})
+			points = append(points, journeyPoint{at: event.end, seq: event.ordinal, kind: journeyPointInterrupt, event: event})
 		}
 	}
 	// At one instant, a row that ended there (finish, then interrupt) comes
-	// before a row that begins there, and a zero-length row's own end follows
-	// its begin.
+	// before a row that begins there, and zero-length rows execute in their
+	// recorded ordinal order so a zero-length loop completes each attempt
+	// before the next attempt opens.
 	tie := func(point journeyPoint) int {
 		switch {
 		case point.kind == journeyPointBegin:
@@ -286,15 +326,25 @@ func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored b
 		if left.at != right.at {
 			return left.at < right.at
 		}
-		if leftTie, rightTie := tie(left), tie(right); leftTie != rightTie {
+		leftTie, rightTie := tie(left), tie(right)
+		if (leftTie == 0) != (rightTie == 0) {
+			return leftTie == 0
+		}
+		if left.seq != right.seq {
+			return left.seq < right.seq
+		}
+		if leftTie != rightTie {
 			return leftTie < rightTie
 		}
 		if left.kind != right.kind {
 			return left.kind < right.kind
 		}
 		if left.event.step != right.event.step {
-			// A transaction opens before the steps that begin with it.
-			return !left.event.step
+			if left.kind == journeyPointBegin {
+				// A transaction opens before the steps that begin with it.
+				return !left.event.step
+			}
+			return left.event.step
 		}
 		return left.event.ordinal < right.event.ordinal
 	})
@@ -430,11 +480,17 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 	}
 	var starts, finishes uint64
 	for j, journey := range a.policy.Journeys {
-		if journey.Start.matches(event) {
+		if ok, mode := journey.Start.matches(event); ok {
 			starts |= uint64(1) << uint(j)
+			if mode == "name" {
+				a.results[j].MatchMode = "name"
+			}
 		}
-		if journey.Success.matches(event) {
+		if ok, mode := journey.Success.matches(event); ok {
 			finishes |= uint64(1) << uint(j)
+			if mode == "name" {
+				a.results[j].MatchMode = "name"
+			}
 		}
 	}
 	step := !event.BusinessTransaction
