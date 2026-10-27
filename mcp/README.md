@@ -10,14 +10,15 @@ Run this bridge on a machine that can reach your APEX Load controller. File impo
 
 The server exposes structured tools for the documented API surface:
 
-- `system_*`: health, readiness, inventory, usage, fleet, parity, support matrices, and settings.
-- `auth_*`: identity, effective access, access matrix, diagnostics, service accounts, and audit exports.
-- `project_*`, `application_*`, `release_*`, `folder_*`: project and release organization.
-- `script_*`: library CRUD, validation, replay, imports, authoring sessions, runtime reports, and support matrices.
-- `scenario_*`, `schedule_*`, `data_pool_*`: scenario assembly, load model validation, schedules, and shared data.
-- `run_*`, `archive_*`: run lifecycle, live metrics, archive reports, comparisons, and retention.
+- `system_*`, `fleet_*`: health, readiness, inventory, usage, entitlements, fleet, parity, support matrices, and settings.
+- `auth_*`: identity, effective access, access matrix, diagnostics, roles, service accounts, and audit exports.
+- `project_*`, `application_*`, `release_*`, `folder_*`: project, application, release, SLA governance, and folder organization.
+- `script_*`, `object_repository_*`, `correlation_ruleset_*`, `github_*`: library CRUD, validation, replay, imports, authoring sessions, runtime reports, support matrices, object repositories, correlation rulesets, and GitHub Enterprise sync.
+- `scenario_*`, `schedule_*`, `timeslot_*`, `execution_plan_*`, `data_pool_*`: scenario assembly, load model validation, schedules, capacity reservations (timeslots), multi-stage execution plans, and shared CSV data pools.
+- `run_*`, `archive_*`: run lifecycle, live metrics, archive reports, root-cause analysis, comparison baselines, and retention.
 - `run_archive_browser_*`, `run_archive_journeys`, `analysis_policy_*`: browser findings, interaction patterns, one request's HAR entry, journey accounting, and revisioned browser and journey policies.
-- `ai_*`, `integrations_*`, `monitoring_*`, `report_*`, `results_*`: AI assistance, integrations, monitoring packs, report profiles, and external imports.
+- `dynatrace_*`, `elastic_*`, `prometheus_*`, `monitor_*`, `monitoring_*`: governed Dynatrace, Elasticsearch/OpenSearch, and Prometheus connections, inspections, monitor sources, scenario monitor bindings, monitoring collectors, and run telemetry.
+- `browser_replay_session_*`, `recorder_*`, `ai_*`, `integrations_*`, `report_*`, `results_*`: browser replay sessions, recording sessions, AI assistance, integrations, report profiles, and external imports.
 
 Stable resources are also available:
 

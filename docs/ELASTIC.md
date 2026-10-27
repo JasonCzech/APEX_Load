@@ -31,7 +31,7 @@ Logs, errors, spans and transactions use product-specific PIT plus `search_after
 
 ## Collectors
 
-Register a monitoring collector allowed to use the `elastic` pack. Enroll its X25519 public key and persistent controller Ed25519 signing trust. The collector advertises `elastic.v1`; older collectors fail readiness visibly. Configure local adapter approval, for example [elastic-collector-targets.json](../examples/monitoring/elastic-collector-targets.json). Exact selected wildcard patterns must be locally approved; a signed grant cannot broaden them. `elastic_esql` and `elastic_health` are separate local approvals. Component target trust remains independent.
+Register a monitoring collector allowed to use the `elastic` pack. Enroll its X25519 public key and persistent controller Ed25519 signing trust. The collector advertises `elastic.v1`; older collectors fail readiness visibly. Configure local adapter approval, for example `examples/monitoring/elastic-collector-targets.json`. Exact selected wildcard patterns must be locally approved; a signed grant cannot broaden them. `elastic_esql` and `elastic_health` are separate local approvals. Component target trust remains independent.
 
 Sealed grants are assigned, expiring, and tied to immutable run/source revisions. Existing bounded spool persistence and replay handle interrupted uploads. Records are projected and scrubbed before spool storage, controller ingestion, live publication and archive export. Full raw documents and credential values are never evidence.
 
@@ -71,13 +71,13 @@ Live and archived panels show metric overlays, projected logs/errors, spans with
 | Canonical Elastic bytes | 8 MiB/source, 32 MiB/run |
 | Accepted immutable Elastic artifacts | 64 MiB/run including revisions |
 
-Sources may lower retention ceilings. Request ceilings belong to deployment policy: administrators can explicitly configure `APEXLOAD_ELASTIC_MAX_REQUESTS_PER_MINUTE` (default60, hard maximum600), `APEXLOAD_ELASTIC_MAX_REQUESTS_PER_POLL` (default20, hard maximum100), and `APEXLOAD_ELASTIC_MAX_POLL_SECONDS` (default30, hard maximum60). Connection budgets cannot exceed these ceilings. Invalid deployment values retain the defaults. Quotas commit with canonical heads and receipts; identical retries do not consume quota twice. Exhaustion stops the affected query and records truncation. Archive adjunct metadata shares the existing 64 MiB allowance with other metadata and preserves its finalization reserve; this is not the whole performance archive limit.
+Sources may lower retention ceilings. Request ceilings belong to deployment policy: administrators can explicitly configure `APEXLOAD_ELASTIC_MAX_REQUESTS_PER_MINUTE` (default 60, hard maximum 600), `APEXLOAD_ELASTIC_MAX_REQUESTS_PER_POLL` (default 20, hard maximum 100), and `APEXLOAD_ELASTIC_MAX_POLL_SECONDS` (default 30, hard maximum 60). Connection budgets cannot exceed these ceilings. Invalid deployment values retain the defaults. Quotas commit with canonical heads and receipts; identical retries do not consume quota twice. Exhaustion stops the affected query and records truncation. Archive adjunct metadata shares the existing 64 MiB allowance with other metadata and preserves its finalization reserve; this is not the whole performance archive limit.
 
 ## CLI, API and compatibility evidence
 
 `apexctl elastic` provides `list|create|get|update|delete|test|inspect|operation|cancel`. For example, `apexctl elastic inspect --project PROJECT --id CONNECTION --revision 2 --kind verify --wait`. Query preview and field discovery use `--file` with the typed request. Existing `apexctl monitor` commands manage sources, bindings, run series and evidence. MCP has equivalent `elastic_connection_*` and `elastic_inspection_*` tools plus the generic monitoring tools.
 
-Use the generated [OpenAPI](swagger.yaml) and [endpoint catalog](api-endpoint-catalog.json) for request shapes and current routes. [Implementation specification](ELASTIC_SPEC.md) records contracts and qualification gates. The [exact-version qualification report](ELASTIC_QUALIFICATION.md) records passing local TLS/auth, query and pagination trials for Elasticsearch 8.14.3/9.1.0 and OpenSearch 2.19.0/3.3.0, including scoped readers, filtered aliases and both OpenSearch tie paths. Hosted/Serverless, Azure Native and actual collector-to-vendor deployments remain unqualified. These local results do not extend to every patch version or deployment. Serverless capabilities are probed rather than inferred from reported version.
+Use the generated [OpenAPI](swagger.yaml) and [endpoint catalog](api-endpoint-catalog.json) for request shapes and current routes. [Implementation specification](ELASTIC_SPEC.md) records contracts and qualification gates. Local TLS/auth, query and pagination trials pass for Elasticsearch 8.14.3/9.1.0 and OpenSearch 2.19.0/3.3.0, including scoped readers, filtered aliases and both OpenSearch tie paths. Hosted/Serverless, Azure Native and actual collector-to-vendor deployments remain unqualified. These local results do not extend to every patch version or deployment. Serverless capabilities are probed rather than inferred from reported version.
 
 ## Bucketed Elasticsearch capture
 
@@ -146,7 +146,7 @@ The Elasticsearch identity needs only read/search access to the configured index
 ### Setup
 
 1. Create the authentication material as project secrets. API-key authentication uses one secret whose value is the Elasticsearch REST API key. Basic authentication uses separate username and password secrets.
-2. Open **Settings → Connections → Elastic test capture**, or use **Manage Elastic connections** from Monitoring → Telemetry. Confirm the active project. **Save draft** needs only a name; the checklist identifies details to supply later.
+2. Open **Settings → Elastic test capture** (`#/settings?setting=elk-capture`), or use **Manage Elastic connections** from Monitoring → Telemetry. Confirm the active project. **Save draft** needs only a name; the checklist identifies details to supply later.
 3. Enter an HTTPS Elasticsearch endpoint, index pattern, field mappings, authentication type, and project-secret references. Secret-reference names are accepted as write-only input and are not returned by the API.
 4. Use **Test saved connection** while it is disabled, then edit and select **Enable for new tests**. Configuration, enablement, and last-check status are separate. Only enabled, fully configured connections appear in the create-test selector. Blank replacement credential fields preserve existing secrets; saved values and reference names remain hidden.
 5. Opt a test into capture with **Elastic log capture**. Existing tests and new tests without a selection make no ELK requests.

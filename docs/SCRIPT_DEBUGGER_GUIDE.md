@@ -4,7 +4,13 @@ The Script Editor debugger runs a DSL script through the controller replay engin
 
 ## Author and Debug workspace
 
-The left outline is a tree of Init, Actions, and Teardown, one line per step, with transactions as collapsible groups. A sub-transaction around one step folds into that step's row, named for what it measures; one around several steps is a nested group. Start and end markers stay in the script but are not rows: select a folded step to rename or remove its sub-transaction in the context panel, or turn on **Show markers** to see every marker as a row. Salesforce Aura calls read as `Class.method` (for example `DCIController.getBaggingOrderCount`, the class taken from the request), a step drops the name of the transaction around it, transactions drop the prefix they all share, and a name repeated in a transaction gets a number (`getActions #2`). A long name is cut at its end on a word boundary to fit, and the full name shows on hover or focus. **Expand all** and **Collapse all** open or close every transaction; a script with more than 200 steps opens with its transactions collapsed, except the one holding the selection. The search box matches the names as shown and keeps each match's transaction open; it also opens a sequence or block whose request or step matches. Arrow keys move through the tree (Right opens a group or steps into it, Left closes it or returns to its parent) and Enter selects. Debug's sidebar is this same outline, with a breakpoint dot in the gutter of each step, sub-step and request (click it, double-click the row or press F9; an open sequence's **All requests** row sets or clears every request's breakpoint) and each step's pass, fail or running status; every execution, loop passes included, is in **Timeline**. Below the outline, Debug's **Parameters** section opens a parameter's uses and its captured values. An action type without a dedicated editor (live tables, Kafka, Event Hubs, SAP GUI, Java Vuser runs, cookies, error messages and the like) is edited by a form built from the controller's action catalog, under **Settings**: it shows the fields that type (or, for a live table, that operation) takes and lists any it does not recognise with a Remove button; it never shows HTTP request fields. A field the engine resolves templates in (a target, a header value, a catalog field, the request body) has an **Insert reference** button, and typing `{{` lists the same references in place: the script's parameters, data columns, what earlier steps save (a value saved inside an `if`, a `switch` case or a loop is marked as possibly unset; another branch and a sibling parallel lane are left out), environment and run values, secret names, and built-in functions. Pick one and the editor writes the syntax. The same menu turns the field's value, or the selected part of it, into a parameter, reviewing the other places with the same text first. A reference nothing defines is flagged under its field before any replay, with fixes: a similar name, an extractor on the nearest earlier step with a response, or a new parameter. The context panel lists what the selected step produces (extractor names, a table step's results) with **Insert** (into the field you last edited), **Copy** and the steps that read each one. Shared-data steps are inserted by what they do (**Read the next row**, **Lease a row**, and four linked workflows such as **Lease, process, acknowledge**); see the user guide's data pools section. In the debugger, **Create tables from this script** under Debug options › Isolated live tables adds a sandbox table for each alias the table steps use, and a replayed table step shows its row as a table with its status, record ID, version, revision and count. A failed table step explains what happened beside it; a change whose outcome is unknown is never offered to run again, since it may already have been made. The script's documents are fixed tabs above the editor: **Action editor**, **DSL**, **Runtime Settings** (including Script Configuration), **Parameters**, and, for imported scripts, **Source Mapping**. Rename the script in place in the top bar. Bulk action operations open from **Overview & bulk** in the **Action editor**.
+The left outline is a tree of Init, Actions, and Teardown, one line per step, with transactions as collapsible groups. A sub-transaction around one step folds into that step's row, named for what it measures; one around several steps is a nested group. Start and end markers stay in the script but are not rows: select a folded step to rename or remove its sub-transaction in the context panel, or turn on **Show markers** to see every marker as a row. Salesforce Aura calls read as `Class.method` (for example `DCIController.getBaggingOrderCount`, the class taken from the request), a step drops the name of the transaction around it, transactions drop the prefix they all share, and a name repeated in a transaction gets a number (`getActions #2`). A long name is cut at its end on a word boundary to fit, and the full name shows on hover or focus. **Expand all** and **Collapse all** open or close every transaction; a script with more than 200 steps opens with its transactions collapsed, except the one holding the selection.
+
+The search box matches the names as shown and keeps each match's transaction open; it also opens a sequence or block whose request or step matches. Arrow keys move through the tree (Right opens a group or steps into it, Left closes it or returns to its parent) and Enter selects. Debug's sidebar is this same outline, with a breakpoint dot in the gutter of each step, sub-step and request (click it, double-click the row or press F9; an open sequence's **All requests** row sets or clears every request's breakpoint) and each step's pass, fail or running status; every execution, loop passes included, is in **Timeline**. Below the outline, Debug's **Parameters** section opens a parameter's uses and its captured values.
+
+An action type without a dedicated editor (live tables, Kafka, Event Hubs, SAP GUI, Java Vuser runs, cookies, error messages and the like) is edited by a form built from the controller's action catalog, under **Settings**: it shows the fields that type (or, for a live table, that operation) takes and lists any it does not recognise with a Remove button; it never shows HTTP request fields. A field the engine resolves templates in (a target, a header value, a catalog field, the request body) has an **Insert reference** button, and typing `{{` lists the same references in place: the script's parameters, data columns, what earlier steps save (a value saved inside an `if`, a `switch` case or a loop is marked as possibly unset; another branch and a sibling parallel lane are left out), environment and run values, secret names, and built-in functions. Pick one and the editor writes the syntax. The same menu turns the field's value, or the selected part of it, into a parameter, reviewing the other places with the same text first. A reference nothing defines is flagged under its field before any replay, with fixes: a similar name, an extractor on the nearest earlier step with a response, or a new parameter. The context panel lists what the selected step produces (extractor names, a table step's results) with **Insert** (into the field you last edited), **Copy** and the steps that read each one.
+
+Shared-data steps are inserted by what they do (**Read the next row**, **Lease a row**, and four linked workflows such as **Lease, process, acknowledge**); see the user guide's data pools section. In the debugger, **Create tables from this script** under Debug options › Isolated live tables adds a sandbox table for each alias the table steps use, and a replayed table step shows its row as a table with its status, record ID, version, revision and count. A failed table step explains what happened beside it; a change whose outcome is unknown is never offered to run again, since it may already have been made. The script's documents are fixed tabs above the editor: **Action editor**, **DSL**, **Runtime Settings** (including Script Configuration), **Parameters**, and, for imported scripts, **Source Mapping**. Rename the script in place in the top bar. Bulk action operations open from **Overview & bulk** in the **Action editor**.
 
 The right inspector follows the selected item. Action properties are grouped into **Request**, **Correlation & checks**, **Timing**, and **Metadata**. Large HTTP request bodies open in the center workspace, where selection-based parameterization remains available. Parameter summaries link to the single **Parameters** editing workspace; usage links open the correct location in full-script source.
 
@@ -273,72 +279,3 @@ mirrors. Existing scripts are unchanged; re-import to a new draft to obtain new
 mappings. Diagnostic policies can be edited in script settings, the import
 review, or scenario/group runtime settings. Scenario `results` overrides replace
 the whole section; omission inherits the existing policy.
-
-Regression fixture: `pkg/convert/enterprisearchive/testdata/acc_runtime_diagnostics`
-is a sanitized runtime-profile twin of acc_wls_reg_1.zip (VuGen 24.3), with synthetic C actions. Runtime keys and selectors are preserved; proxy credentials, network identities and user agents are replaced; C source is reduced to synthetic examples of its operation families. No customer data or executable customer workflow is included.
-
-A local Apple M4 microbenchmark of one small resource's collector (Go 1.26.5,
-2026-09-23) measured approximately 16.9 µs, 2,351 allocated bytes and 40 allocations
-with capture enabled; the disabled path measured about 10 ns with no allocations.
-This isolates diagnostic collection and redaction, not network latency or
-end-to-end load capacity. Reproduce with:
-
-```sh
-go test ./pkg/protocol/http -run '^$' -bench BenchmarkResourceSnapshotCapture -benchmem
-```
-
-### Validation (2026-09-23)
-
-- `go test ./...`: passed.
-- Resource-capture HTTP tests with `-race`: passed.
-- Dashboard type checking, lint, 419 unit-test files / 4,449 tests, and embedded build: passed.
-- Focused browser workflows: three passed in each of dev-admin and local-auth. They cover fresh import explanations, explicit-false settings persistence, and preservation of an older draft's saved classification.
-- Fresh conversion of the original archive confirms sampled capture at rate 1, resource inclusion, and independent error snapshots remaining disabled. `DisableAED=0` stays review-required. Conversion did not execute the customer script.
-
-The required full dashboard cycle also exercises unrelated workflows. Its dev-admin
-profile reported 122 passes, four skips and nine failures. The failing tests concern
-older dashboard/navigation locators, workspace creation/scoping, and source-mapping
-review persistence; those test names also fail in earlier local artifacts. The
-repository documentation checker additionally reports existing audit links and
-unindexed documents outside this change; this guide is included in the index.
-
-The full local-auth profile completed with 50 passes, one skip and two failures:
-`workflow-local-auth.spec.ts` (the old “Current project” locator) and
-`workflow-script-sidebars.spec.ts` (source-mapping review persistence). Thus
-`npm run test:cycle` was run but is not green: 11 workflow failures across the
-two profiles. The three feature-specific workflows passed in both profiles.
-
-### Follow-up code review
-
-Two review passes corrected five defects:
-
-- A full error-snapshot store could substitute a previous action's snapshot in a
-  debugger event. Replay now substitutes only a snapshot added for that action
-  and preserves a streamed child's own failure evidence.
-- Resource metadata could be shortened without a truncation marker. Metadata
-  loss now sets `truncated`, and a removed body is marked `not_captured`.
-- Conflicting resource selectors could erase a valid all-exchange capture
-  policy. Child conflicts now clear only the child preference; unresolved parent
-  policies leave dependent source rows review-required.
-- Switching the debugger to failures-only capture discarded resource preferences
-  and limits. The override now preserves those authored fields.
-- Debugger snapshots bypassed configured message-detail retention limits. Replay
-  now applies item, per-item byte, and aggregate byte budgets without suppressing
-  execution or its scalar result rows.
-
-Each fix has regression coverage. The changed converter, engine and HTTP package
-suites passed, as did dashboard type checking, lint, 4,450 unit tests and the
-embedded build. The new failures-only resource-capture browser test passed in
-both dev-admin and local-auth profiles.
-
-The follow-up `go test ./...` run completed with two failures outside these
-changes: `desktop/TestSecureWriteGrantedFileFromEnforcesLimitBeforePublish`
-and `pkg/api/TestRunTestPanicBackstopWaitsOutASlowDurableWriteHoldingTheRunnerLock`.
-The desktop test and full desktop package passed reruns; the API test passed
-three consecutive isolated runs. This does not turn the failed full run into a
-passing run. The dev-admin browser profile completed with 124 passes, four skips
-and the same nine previously observed workflow failures.
-The local-auth profile completed with 51 passes, one skip and the same two
-previously observed failures. The required dashboard cycle therefore remains
-non-green with 11 existing workflow failures; all feature-specific checks passed
-in both profiles.

@@ -127,4 +127,15 @@ describe('GuideMarkdownArticle', () => {
     expect(wrap.hasAttribute('role')).toBe(false)
     expect(wrap.hasAttribute('tabindex')).toBe(false)
   })
+
+  it('renders horizontal rules, blockquotes, bold inline code, and emphasis without mangling glob or comment tokens', async () => {
+    await render(['Use **`--flag`**, *italic* text, and */…/*ERROR*/ patterns.', '', '---', '', '> Operator note with `code`.'].join('\n'))
+    expect(container.querySelector('hr')).not.toBeNull()
+    const quote = container.querySelector('blockquote')
+    expect(quote?.textContent).toBe('Operator note with code.')
+    expect(quote?.querySelector('code')?.textContent).toBe('code')
+    expect(container.querySelector('p strong code')?.textContent).toBe('--flag')
+    expect(Array.from(container.querySelectorAll('p em')).map(node => node.textContent)).toEqual(['italic'])
+    expect(container.querySelector('p')?.textContent).toContain('*/…/*ERROR*/')
+  })
 })

@@ -112,7 +112,7 @@ function safeMarkdownHref(href: string) {
 
 function renderMarkdownInline(text: string, keyPrefix: string, options: InlineOptions): ReactNode[] {
   const nodes: ReactNode[] = []
-  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)]+\))/g
+  const pattern = /(`[^`]+`)|(\*\*(?:[^*`]|`[^`]+`)+\*\*)|(\[[^\]]+\]\([^)]+\))|((?<![*\w/`])\*(?:[^*`\s/]|[^*`\s/][^*`\n]*?[^*`\s/])\*(?![*\w/`]))/g
   const plain: PlainText = (value, key) => options.identifierBreaks ? withIdentifierBreaks(value, key) : value
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -129,7 +129,9 @@ function renderMarkdownInline(text: string, keyPrefix: string, options: InlineOp
     if (token.startsWith('`')) {
       nodes.push(<code key={key}>{plain(token.slice(1, -1), key)}</code>)
     } else if (token.startsWith('**')) {
-      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>)
+      nodes.push(<strong key={key}>{renderLabel(token.slice(2, -2), key, plain)}</strong>)
+    } else if (token.startsWith('*')) {
+      nodes.push(<em key={key}>{plain(token.slice(1, -1), key)}</em>)
     } else {
       const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
       const href = linkMatch ? safeMarkdownHref(options.resolveLink ? options.resolveLink(linkMatch[2]) : linkMatch[2]) : ''
@@ -177,6 +179,10 @@ function renderMarkdownBlock(block: MarkdownBlock, key: string, options: BlockOp
     }
     case 'paragraph':
       return <p key={key}>{renderMarkdownInline(block.text, key, options)}</p>
+    case 'blockquote':
+      return <blockquote key={key} className="markdown-blockquote"><p>{renderMarkdownInline(block.text, key, options)}</p></blockquote>
+    case 'hr':
+      return <hr key={key} className="markdown-hr" />
     case 'code': {
       const source = options.copyExamples
         ? <CopyCodeBlock code={block.code} language={block.language} />

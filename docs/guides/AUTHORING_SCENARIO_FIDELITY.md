@@ -1,6 +1,6 @@
 # Scenario and queued-run authoring fidelity
 
-This slice preserves scenario and queued-run authoring fidelity. The linked review records exact source, review findings and qualification results. Opaque scenario content revisions and the broader shared authoring owner remain separate AUTH-1 work.
+This guide covers scenario and queued-run authoring fidelity. Opaque scenario content revisions and the broader shared authoring owner remain separate work.
 
 An unrelated scenario edit preserves the root and group Results and WebSocket sections, named workload shape, workload configuration, group timing and transaction response-time SLA. An absent section inherits. A present empty section is a whole-section replacement. Explicit false and zero values retain the existing runtime contract. Run-only clear operations remove the selected override so the lower layer applies. These distinctions do not introduce new protocol measurements.
 
@@ -26,4 +26,4 @@ New Test group edits and revised copies retain authored start offsets, ramp-up/d
 
 Library scenario exports use the same portable content projection as local link hashing. Historical default duration mode and omitted empty shape retain their existing hashes. Nondefault termination mode and group SLA now transfer and participate in hashes. Older links that omitted those nondefault fields can correctly report a local change or conflict; the importer does not accept a weaker hash that erases the fields. A complete imported snapshot materializes an absent portable shape as an explicit clear only after the supplied portable hash is validated. Ordinary scenario updates with an absent shape continue to preserve the current value. Rollback and owned recovery use complete, separately owned snapshots.
 
-[Review and qualification](../qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.md) records exact source and gate scope. Scenario revision/CAS, request replay retirement and shared authoring-owner changes remain open after this fidelity slice.
+Scenario revision/CAS, request replay retirement and shared authoring-owner changes remain open after this fidelity slice.

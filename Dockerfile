@@ -25,6 +25,7 @@ RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/pack
 # not just a hand-picked few, or articles silently go missing from the built bundle
 # while still working in `npm run dev` (which sees the whole repo).
 COPY docs/*.md ./docs/
+COPY docs/guides/*.md ./docs/guides/
 COPY docs/help-content-catalog.json docs/dsl.schema.json ./docs/
 COPY pkg/api/import_settings_fields.json ./pkg/api/import_settings_fields.json
 COPY mcp/README.md ./mcp/README.md

@@ -37,10 +37,10 @@ TLS, secret-bearing distributed runs fail closed; the production Helm, on-prem,
 and AKS deployments provide authenticated TLS delivery.
 
 Audited Kubernetes restart controls are enabled by default through
-[restart-controls.yaml](restart-controls.yaml). Only the controller mounts a
+`restart-controls.yaml`. Only the controller mounts a
 default Kubernetes API token; generator pods receive no Kubernetes API token or
 restart RBAC. See
-[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md).
+[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls).
 
 ## Prerequisites
 

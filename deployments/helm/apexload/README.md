@@ -25,7 +25,7 @@ the shared ConfigMap or Secret cannot re-enable the integration. An HA
 controller still receives the separate projected token required for
 EndpointSlice leadership, without restart permissions.
 Registered remote clusters still require their own RBAC; see
-[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md).
+[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls).
 
 | Value | Default | Purpose |
 |---|---|---|
@@ -89,7 +89,7 @@ contains the OpenTelemetry header string (for example under
 key differs, `tracing.headersSecretKey`. The chart projects that key as
 `OTEL_EXPORTER_OTLP_HEADERS` into both controller and generator containers;
 the credential is never copied into values or the shared ConfigMap. See
-[OpenTelemetry tracing](../../../docs/OBSERVABILITY_INTEGRATIONS.md) for configuration and
+[OpenTelemetry tracing](../../../docs/OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing) for configuration and
 data-handling details.
 
 HTTP/3 is off by default. `http3.enabled=true` sets `APEXLOAD_HTTP3` on the
@@ -140,7 +140,7 @@ its values schema caps renewal at 10 seconds so every allowed TTL retains at
 least three renewal opportunities. The first upgrade from a tokenless release
 requires a no-active-tests maintenance window because mixed controller/generator
 versions intentionally reject new work. Follow the rollout gate and connectivity
-drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision).
+drill in [Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls).
 The controller pod template checksums the shared ConfigMap, so changing the TTL
 or renewal value triggers a controller rollout instead of leaving stale process
 environment behind.
@@ -211,7 +211,7 @@ enterprise profile. Set an explicit runner tag for a signed custom image.
 Supply precompiled classes/JARs through that image or set
 `javaVuser.assets.existingClaim` to a read-only PVC; source compilation and
 artifact upload are intentionally out of scope. See
-[`docs/PROTOCOL_SUPPORT.md`](../../../docs/PROTOCOL_SUPPORT.md) for the JDK,
+[Java Vuser execution](../../../docs/PROTOCOL_SUPPORT.md#java-vuser-execution) for the JDK,
 classpath, and trust contract.
 
 Bruno native HTTP import remains available with `bruno.importEnabled=true`, a protected artifact PVC through `bruno.artifactPersistence.existingClaim`, and the existing wrapping key. Only controllers mount source artifacts. The physical PVC and artifact directory names remain unchanged, including `/var/lib/apexload-bruno`.
@@ -222,3 +222,16 @@ Set `certManager.enabled=true` when the cluster uses cert-manager to issue the
 controller/generator mTLS secrets. If the platform syncs those secrets from Key
 Vault CSI, leave `certManager.enabled=false` and create the Kubernetes Secrets
 out of band.
+
+## Top-Level Values Summary
+
+| Key | Purpose |
+|---|---|
+| `namespace.*`, `image.*` | Target namespace creation/override and registry, repository names, tag, and pull policy for controller and generator images. |
+| `controller.*`, `controller.ha.*`, `restartControls.*` | Controller replicas, resource requests/limits, public URL, HA active Service settings, and Kubernetes restart/scale RBAC controls. |
+| `generator.*`, `generator.runSupervision.*`, `generator.statePersistence.*` | Generator StatefulSet replicas, resources, node placement, run supervision leases, and fencing/evidence PVC settings. |
+| `dataPlatform.*`, `projectSecrets.*`, `workloadIdentity.*` | PostgreSQL/Redis/gRPC secret bindings, Azure Blob/Key Vault settings, project secret wrapping provider, and Azure Workload Identity bindings. |
+| `importAssets.*`, `archiveStaging.*`, `bruno.*` | Persistent storage for imported script assets, controller archive staging, and protected Bruno HTTP import source artifacts. |
+| `http3.*`, `tracing.*`, `javaVuser.*` | Optional HTTP/3 + QUIC tuning, OpenTelemetry OTLP trace export, and loopback Java Vuser sidecar configuration. |
+| `ingress.*`, `networkPolicy.*`, `networkPolicy.egress.*`, `pdb.*` | Public TLS Ingress, ingress NetworkPolicies, optional egress profiles (`dns`, `targets`, `controllerExtraRules`, `generatorExtraRules`), and PodDisruptionBudget toggles. |
+| `serviceMonitor.*`, `keda.*`, `certManager.*` | ServiceMonitor scrape settings, KEDA autoscaling (in-cluster Prometheus or Azure Monitor), and cert-manager mTLS certificate issuance. |
