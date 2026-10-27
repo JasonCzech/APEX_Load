@@ -171,9 +171,28 @@ The flagship on-ramp is the embedded browser recorder:
 2. **Session model** — `pkg/recorder/recorder.go` accumulates `Session` /
    `RecordedRequest` (method, URL, headers, body, status, timings, transaction/step
    annotations, WebSocket messages).
-3. **Convert** — `pkg/recorder/converter.go → ConvertSession(session, name)`
+3. **Convert** — `pkg/recorder/converter.go → ConvertSessionWithOptions(session, name, opts)`
    produces a `dsl.Script` (HTTP or WebSocket actions), extracts correlations, optionally
    parameterizes recorded inputs, and can export a side-car HAR (`pkg/recorder/har.go`).
+
+All five capture/HAR entry points — dedicated HAR (`POST /api/v1/scripts/import/har`),
+Salesforce HAR (`POST /api/v1/scripts/import/salesforce`), sample HAR
+(`POST /api/v1/scripts/import/sample` with `format: "har"`), proxy recording conversion
+(`POST /api/v1/recorder/{id}/convert` and `/preview`), and browser HTTP companion
+conversion (`POST /api/v1/browser-recorder/sessions/{id}/convert` and `/preview` with
+`also_create_http_script: true`) — share a negotiated `conversion_policy` (`unified_v1`
+versus omitted/`legacy` route defaults) and return `conversion_policy` alongside a
+disclosure-safe `effective_settings` summary. Project recording profile correlation
+settings propagate into native Salesforce analysis (`salesforce.Analyze`) as well as
+`sample.Convert`. Proxy recording preview claims (`RecordingSnapshotDigest`) and durable
+baseline observations (`result.Baseline`) are bound to the option-resolved conversion
+graph (`resource_mode`, `async_scan`, `recording_profile_id`, `http_version_mode`, and
+native rewrites). For browser dual-script recordings, preview responses return per-output
+HTTP companion metadata (`http_parameterization`, `http_preflight`, and
+`http_secret_binding_requirements`) alongside the browser script's review fields, and grouped
+`http_sequence` actions preserve child `body_multipart`, `think_time_after`, and
+`attribution` fields through validation, variable-flow readiness (`pkg/dsl/varflow`), and
+runtime execution.
 
 Embedded browser capture is intentionally narrower than browser replay. It records clicks,
 input/textarea changes as fills, select changes, file-input filenames, Enter/Escape/Tab

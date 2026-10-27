@@ -55,9 +55,10 @@ func (s CorrelationSettings) maxLength() int {
 }
 
 func (s CorrelationSettings) excludes(correlation correlate.Correlation, families map[string]string, byID map[int]correlate.Observation) bool {
+	ruleIDLower := strings.ToLower(correlation.RuleID)
 	for _, rule := range s.DisabledRules {
 		rule = strings.ToLower(strings.TrimSpace(rule))
-		if rule == strings.ToLower(correlation.RuleID) || rule == families[correlation.RuleID] {
+		if rule == ruleIDLower || rule == families[correlation.RuleID] || (rule == "salesforce" && strings.HasPrefix(ruleIDLower, "salesforce.")) {
 			return true
 		}
 	}

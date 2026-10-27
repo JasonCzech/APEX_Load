@@ -38,22 +38,33 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 		return
 	}
 	sanitize := false
+	highConfidenceOnly := opts.HighConfidenceOnly == nil || *opts.HighConfidenceOnly
 	converted, err := sample.Convert(sample.ImportRequest{
 		Name:    name,
 		Format:  "har",
 		Content: string(content),
 		Options: sample.ConvertOptions{
-			BaseURL:           session.BaseURL,
-			SanitizeSensitive: &sanitize,
-			PageTitleChecks:   opts.PageTitleChecks,
-			ResourceMode:      opts.ResourceMode,
-			AsyncScan:         opts.AsyncScan,
-			Profile:           opts.Profile,
-			HTTPVersionMode:   opts.HTTPVersionMode,
-			OmitSourceReview:  true,
-			// As before convergence, a recording rewrites only
-			// high-confidence correlations.
-			HighConfidenceOnly: true,
+			BaseURL:                session.BaseURL,
+			RecordingProfileID:     opts.RecordingProfileID,
+			ConversionPolicy:       opts.ConversionPolicy,
+			CorrelationMode:        opts.CorrelationMode,
+			IncludeAssertions:      opts.IncludeAssertions,
+			InferExtractors:        opts.InferExtractors,
+			IncludeStaticAssets:    opts.IncludeStaticAssets,
+			SanitizeSensitive:      &sanitize,
+			PageTitleChecks:        opts.PageTitleChecks,
+			ResourceMode:           opts.ResourceMode,
+			AsyncScan:              opts.AsyncScan,
+			Profile:                opts.Profile,
+			HTTPVersionMode:        opts.HTTPVersionMode,
+			OmitSourceReview:       true,
+			EntryPoint:             sample.EntryPointRecorderConvert,
+			HighConfidenceOnly:     highConfidenceOnly,
+			ReviewOnlyCorrelations: opts.ReviewOnlyCorrelations,
+			DisableSalesforce:      opts.DisableSalesforce,
+			SalesforceNative:       opts.SalesforceNative,
+			AgentforceTransform:    opts.AgentforceTransform,
+			Parameterize:           opts.Parameterize,
 			// Transactions marked while recording time their requests, and
 			// notes attach to the request after them.
 			Transactions: sessionTransactionWindows(session),
@@ -79,24 +90,7 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 	// its import source.
 	ensureRecorderImportPreserved(script, session.Name)
 	script.Metadata.Import.Source = "recorder"
-	// A recorded sign-in may run in init (pkg/convert/sample).
-	for _, phase := range []*[]dsl.Action{&script.Init, &script.Actions} {
-		for index := range *phase {
-			// HAR page and timing notes say nothing about a proxy recording.
-			action := &(*phase)[index]
-			delete(action.Metadata, "har.pageref")
-			delete(action.Metadata, "har.timings")
-			if len(action.Metadata) == 0 {
-				action.Metadata = nil
-			}
-		}
-		// Recording lineage hashes the exact action graph, and a draft comes
-		// back from the client as JSON: typed values inside metadata and params
-		// maps must already be in their JSON form, or the hashes differ.
-		if normalized, err := jsonNormalizedActions(*phase); err == nil {
-			*phase = normalized
-		}
-	}
+	NormalizeScriptActionsForLineage(script)
 	for _, warning := range converted.Warnings {
 		if warning != harNoteForRecordings {
 			result.Warnings = append(result.Warnings, warning)
@@ -155,8 +149,40 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 		result.Warnings = append(result.Warnings, fmt.Sprintf("Detected %d correlation candidate(s) left for review because confidence or encoding semantics did not permit an automatic rewrite.", skipped))
 	}
 	result.Correlations = disclosureSafeCorrelations(correlations)
+	result.SampleCorrelations = converted.Correlations
 	result.Baseline = converted.Baseline
+	result.Document = converted.Document
+	result.HARData = content
+	result.Stats = converted.Stats
+	result.EffectiveSettings = converted.EffectiveSettings
+	protectedRequirements := converted.ProtectedRequirements.Take()
+	result.ProtectedRequirements.Store(protectedRequirements)
+	for index := range protectedRequirements {
+		protectedRequirements[index].Value = ""
+	}
 	result.Script = script
+}
+
+// NormalizeScriptActionsForLineage strips HAR-only metadata keys and normalizes
+// script.Init and script.Actions through JSON marshaling so recording lineage
+// digests match the round-tripped JSON action graph submitted on save.
+func NormalizeScriptActionsForLineage(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	for _, phase := range []*[]dsl.Action{&script.Init, &script.Actions} {
+		for index := range *phase {
+			action := &(*phase)[index]
+			delete(action.Metadata, "har.pageref")
+			delete(action.Metadata, "har.timings")
+			if len(action.Metadata) == 0 {
+				action.Metadata = nil
+			}
+		}
+		if normalized, err := jsonNormalizedActions(*phase); err == nil {
+			*phase = normalized
+		}
+	}
 }
 
 // conversionHAR writes a recording as the HAR the shared conversion reads:

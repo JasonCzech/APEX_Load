@@ -186,10 +186,13 @@ func applySOAPImportHints(action *dsl.Action, fn ParsedFunction) {
 		action.Headers = make(map[string]string)
 	}
 	if contentType := firstHeaderValue(action.Headers, "Content-Type"); contentType == "" {
+		ct := "text/xml"
 		if detectSOAPVersion(fn) == "1.2" {
-			action.Headers["Content-Type"] = "application/soap+xml"
-		} else {
-			action.Headers["Content-Type"] = "text/xml"
+			ct = "application/soap+xml"
+		}
+		action.Headers["Content-Type"] = ct
+		if len(action.HeaderList) > 0 {
+			action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: "Content-Type", Value: ct})
 		}
 	}
 }

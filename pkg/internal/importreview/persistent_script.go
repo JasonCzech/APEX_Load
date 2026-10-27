@@ -140,5 +140,19 @@ func PreparePersistentLibraryScriptWithImportTrust(
 	if err := SanitizePersistentImportReviewSurfaces(script); err != nil {
 		return nil, err
 	}
+	if !trustedImport && prior != nil {
+		if script != nil && script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+			delete(script.Metadata.Import.Preserved, "effective_settings")
+		}
+		if prior.Metadata != nil &&
+			prior.Metadata.Import != nil && prior.Metadata.Import.Preserved != nil {
+			if priorSettings, ok := prior.Metadata.Import.Preserved["effective_settings"]; ok {
+				cloned, err := CloneImportSecurityMetadata(priorSettings)
+				if err == nil {
+					EnsureScriptImportPreserved(script, prior.Metadata.Import.Source)["effective_settings"] = cloned
+				}
+			}
+		}
+	}
 	return script, nil
 }

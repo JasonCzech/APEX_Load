@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf16"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -1544,6 +1547,149 @@ httpConnection:
 	}
 	if result.Stats.ConvertedActions != 2 || result.Stats.ReviewOnlyFunctions == 0 {
 		t.Fatalf("stats = %#v, want converted action plus helper-module review gate", result.Stats)
+	}
+}
+
+func TestConvertZipPreservesDelegatedDevWebProtectedRequirements(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Checkout/Checkout.usr", `[General]
+Type=DevWeb
+`)
+	addFile("Checkout/main.js", strings.Join([]string{
+		`load.action("SubmitOrder", async function() {`,
+		`  new load.WebRequest({`,
+		`    url: "https://api.example.test/orders",`,
+		`    method: "POST",`,
+		`    headers: { "Authorization": "Bearer live-secret-token" },`,
+		`    body: "{\"item\":1}"`,
+		`  }).sendSync();`,
+		`});`,
+	}, "\n"))
+	addFile("Checkout/rts.yml", strings.Join([]string{
+		`proxy:`,
+		`  useProxy: true`,
+		`  proxyServer: "http://proxy.internal:8080"`,
+		`  proxyUser: "operator"`,
+		`  proxyPassword: "%255BReDaCtEd%255D"`,
+		``,
+	}, "\n"))
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	directResult, err := devweb.ConvertZip(buf.Bytes(), devweb.ConvertOptions{})
+	if err != nil {
+		t.Fatalf("devweb.ConvertZip returned error: %v", err)
+	}
+	delegatedResult, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+
+	directRequirements := directResult.ProtectedRequirements.Take()
+	delegatedRequirements := delegatedResult.ProtectedRequirements.Take()
+	if len(delegatedRequirements) != 1 || !reflect.DeepEqual(delegatedRequirements, directRequirements) {
+		t.Fatalf("delegated requirements = %#v, want exact match with direct DevWeb requirements %#v", delegatedRequirements, directRequirements)
+	}
+	req := delegatedRequirements[0]
+	if req.Source.Format != "devweb" || req.Source.Path != "Checkout/rts.yml" || req.Source.Pointer != "/proxy/proxyPassword" {
+		t.Fatalf("requirement source = %#v, want Checkout/rts.yml#/proxy/proxyPassword", req.Source)
+	}
+	if req.SourceValueAvailable || req.SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder {
+		t.Fatalf("requirement availability/status = (%t, %q), want unavailable redacted placeholder", req.SourceValueAvailable, req.SourceValueStatus)
+	}
+	wantTargets := []credentialpolicy.TargetRef{{
+		RequestKey: "devweb_runtime",
+		Field:      "config.http.proxy.password",
+	}}
+	if !reflect.DeepEqual(req.Targets, wantTargets) || strings.TrimSpace(req.Context) == "" {
+		t.Fatalf("requirement targets/context = (%#v, %q), want %#v and non-empty context", req.Targets, req.Context, wantTargets)
+	}
+	if again := delegatedResult.ProtectedRequirements.Take(); again != nil {
+		t.Fatalf("second Take() = %#v, want nil one-shot consumption", again)
+	}
+
+	if delegatedResult.Script == nil || len(delegatedResult.Script.Actions) != 1 {
+		t.Fatalf("delegated script = %#v, want 1 action", delegatedResult.Script)
+	}
+	action := delegatedResult.Script.Actions[0]
+	if got := action.Headers["Authorization"]; got != "Bearer live-secret-token" {
+		t.Fatalf("Authorization header = %q, want preserved genuine credential", got)
+	}
+	if got := delegatedResult.Script.Config.HTTP.Proxy.Username; got != "operator" {
+		t.Fatalf("proxy username = %q, want preserved operator username", got)
+	}
+	if got := delegatedResult.Script.Config.HTTP.Proxy.Password; got != "{{secret.DEVWEB_PROXY_PASSWORD}}" {
+		t.Fatalf("proxy password = %q, want governed secret placeholder", got)
+	}
+	if got := action.Metadata["execution_blocker"]; got != "import_review_required" {
+		t.Fatalf("execution_blocker = %#v, want import_review_required", got)
+	}
+	if delegatedResult.Script.Metadata == nil || delegatedResult.Script.Metadata.Import == nil || directResult.Script.Metadata == nil || directResult.Script.Metadata.Import == nil {
+		t.Fatalf("missing import metadata on delegated (%#v) or direct (%#v) script", delegatedResult.Script.Metadata, directResult.Script.Metadata)
+	}
+	if !reflect.DeepEqual(delegatedResult.Script.Metadata.Import.Preserved["import_review"], directResult.Script.Metadata.Import.Preserved["import_review"]) {
+		t.Fatalf("delegated import review = %#v, want %#v", delegatedResult.Script.Metadata.Import.Preserved["import_review"], directResult.Script.Metadata.Import.Preserved["import_review"])
+	}
+	if delegatedResult.DetectedProtocol == nil || delegatedResult.DetectedProtocol.CanonicalSourceProtocol != "devweb" {
+		t.Fatalf("detected protocol = %#v, want devweb", delegatedResult.DetectedProtocol)
+	}
+	if delegatedResult.FidelityReport == nil {
+		t.Fatal("expected enterprise fidelity report on delegated DevWeb result")
+	}
+	if got := delegatedResult.Script.Metadata.Import.Preserved["source_document"]; got != "Checkout" {
+		t.Fatalf("source_document = %#v, want Checkout", got)
+	}
+	if got := delegatedResult.Script.Metadata.Import.Preserved["source_document_declared"]; got != true {
+		t.Fatalf("source_document_declared = %#v, want true", got)
+	}
+}
+
+func TestAdaptDevWebConvertResultOneShotProtectedRequirements(t *testing.T) {
+	devResult := &devweb.ConvertResult{
+		Script: &dsl.Script{
+			Name:     "DevWebScript",
+			Protocol: "http",
+		},
+	}
+	devResult.ProtectedRequirements.Store([]credentialpolicy.Requirement{{
+		ID:                       "devweb_runtime:config.http.proxy.password",
+		Key:                      "proxyPassword",
+		SuggestedName:            "DEVWEB_RUNTIME_PROXY_PASSWORD",
+		Replacement:              "{{secret.DEVWEB_RUNTIME_PROXY_PASSWORD}}",
+		Value:                    "transient-secret-value",
+		DeferredSourceExpression: "transient-deferred-expr",
+		Source: credentialpolicy.SourceRef{
+			Format:  "devweb",
+			Path:    "rts.yml",
+			Pointer: "/proxy/proxyPassword",
+		},
+		Targets: []credentialpolicy.TargetRef{{
+			RequestKey: "devweb_runtime",
+			Field:      "config.http.proxy.password",
+		}},
+	}})
+
+	adapted := adaptDevWebConvertResult(devResult, map[string]string{"main.js": ""}, &ProjectConfig{ScriptType: "DevWeb"})
+	if remaining := devResult.ProtectedRequirements.Take(); remaining != nil {
+		t.Fatalf("devResult.ProtectedRequirements.Take() = %#v, want nil after handoff", remaining)
+	}
+	transferred := adapted.ProtectedRequirements.Take()
+	if len(transferred) != 1 || transferred[0].Value != "transient-secret-value" || transferred[0].DeferredSourceExpression != "transient-deferred-expr" {
+		t.Fatalf("adapted.ProtectedRequirements.Take() = %#v, want transferred requirement", transferred)
+	}
+	if second := adapted.ProtectedRequirements.Take(); second != nil {
+		t.Fatalf("second adapted.ProtectedRequirements.Take() = %#v, want nil", second)
 	}
 }
 
@@ -4952,4 +5098,252 @@ func TestConvertUniquifiesRepeatedTransactionWrappers(t *testing.T) {
 		t.Fatalf("http_sequence wrappers = %d, want 2 (one per AuraFlow run); actions=%#v", sequences, result.Script.Actions)
 	}
 	assertTopLevelNamesFoldedUnique(t, result.Script)
+}
+
+func TestLeafHTTPProjectionHeaderListAndCookieSynchronization(t *testing.T) {
+	source := `Action()
+{
+	web_reg_add_cookie("jar_cookie=from_reg; DOMAIN=shop.test", LAST);
+	web_add_auto_header("x-auto", "initial");
+	web_add_auto_header("X-Auto", "updated");
+	web_add_header("x-trace", "first");
+	web_add_header("X-Trace", "second");
+	web_add_header("X-Inline", "should_not_override_inline");
+
+	lr_start_transaction("Checkout");
+	web_rest("step_one",
+		"URL=https://shop.test/api/cart",
+		"Method=POST",
+		"Body=item=1",
+		HEADERS,
+		"Name=x-inline", "Value=inline_val", ENDHEADER,
+		"Name=Cookie", "Value=inline_cookie=1", ENDHEADER,
+		LAST);
+	web_rest("step_two",
+		"URL=https://shop.test/api/pay",
+		"Method=POST",
+		"Body=pay=1",
+		HEADERS,
+		"Name=X-Second", "Value=two", ENDHEADER,
+		LAST);
+	lr_end_transaction("Checkout", LR_AUTO);
+
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("ParseActionFile: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if err := dsl.ValidateScriptError(result.Script); err != nil {
+		t.Fatalf("dsl.ValidateScriptError failed: %v", err)
+	}
+	var seq *dsl.Action
+	for i := range result.Script.Actions {
+		if result.Script.Actions[i].Type == "http_sequence" {
+			seq = &result.Script.Actions[i]
+			break
+		}
+	}
+	if seq == nil {
+		t.Fatalf("expected compacted http_sequence action, got %#v", result.Script.Actions)
+	}
+	requests, ok := seq.Params["requests"].([]map[string]any)
+	if !ok || len(requests) != 2 {
+		t.Fatalf("expected 2 requests in http_sequence, got %#v", seq.Params["requests"])
+	}
+	req1Headers, ok := requests[0]["headers"].(map[string]string)
+	if !ok {
+		t.Fatalf("step_one headers = %#v (%T), want map[string]string", requests[0]["headers"], requests[0]["headers"])
+	}
+	seenReq1Lower := make(map[string]string, len(req1Headers))
+	for k := range req1Headers {
+		lower := strings.ToLower(k)
+		if prev, dup := seenReq1Lower[lower]; dup {
+			t.Fatalf("step_one headers retained duplicate case-variant keys %q and %q: %#v", prev, k, req1Headers)
+		}
+		seenReq1Lower[lower] = k
+	}
+	if got := req1Headers["Cookie"]; got != "inline_cookie=1; jar_cookie=from_reg" {
+		t.Fatalf("step_one Cookie = %q, want %q", got, "inline_cookie=1; jar_cookie=from_reg")
+	}
+	if got := req1Headers["x-inline"]; got != "inline_val" {
+		t.Fatalf("step_one x-inline = %q, want inline_val", got)
+	}
+	if got := req1Headers["X-Trace"]; got != "second" {
+		t.Fatalf("step_one X-Trace = %q, want second", got)
+	}
+	if got := req1Headers["X-Auto"]; got != "updated" {
+		t.Fatalf("step_one X-Auto = %q, want updated", got)
+	}
+	req1HeaderList := enterpriseSequenceHeaderListForTest(t, requests[0]["header_list"])
+	wantReq1HeaderList := dsl.HeaderList{
+		{Name: "x-inline", Value: "inline_val"},
+		{Name: "X-Trace", Value: "second"},
+		{Name: "X-Auto", Value: "updated"},
+		{Name: "Cookie", Value: "inline_cookie=1; jar_cookie=from_reg"},
+	}
+	if !reflect.DeepEqual(req1HeaderList, wantReq1HeaderList) {
+		t.Fatalf("step_one header_list = %#v, want %#v", req1HeaderList, wantReq1HeaderList)
+	}
+
+	req2Headers, ok := requests[1]["headers"].(map[string]string)
+	if !ok {
+		t.Fatalf("step_two headers = %#v (%T), want map[string]string", requests[1]["headers"], requests[1]["headers"])
+	}
+	seenReq2Lower := make(map[string]string, len(req2Headers))
+	for k := range req2Headers {
+		lower := strings.ToLower(k)
+		if prev, dup := seenReq2Lower[lower]; dup {
+			t.Fatalf("step_two headers retained duplicate case-variant keys %q and %q: %#v", prev, k, req2Headers)
+		}
+		seenReq2Lower[lower] = k
+	}
+	for _, oneShot := range []string{"X-Trace", "x-trace", "x-inline", "X-Inline"} {
+		if val, exists := req2Headers[oneShot]; exists {
+			t.Fatalf("step_two unexpectedly carried over one-shot header %s=%q: %#v", oneShot, val, req2Headers)
+		}
+	}
+	if got := req2Headers["X-Second"]; got != "two" {
+		t.Fatalf("step_two X-Second = %q, want two", got)
+	}
+	if got := req2Headers["X-Auto"]; got != "updated" {
+		t.Fatalf("step_two X-Auto = %q, want updated", got)
+	}
+	if got := req2Headers["Cookie"]; got != "jar_cookie=from_reg" {
+		t.Fatalf("step_two Cookie = %q, want jar_cookie=from_reg", got)
+	}
+	req2HeaderList := enterpriseSequenceHeaderListForTest(t, requests[1]["header_list"])
+	wantReq2HeaderList := dsl.HeaderList{
+		{Name: "X-Second", Value: "two"},
+		{Name: "X-Auto", Value: "updated"},
+		{Name: "Cookie", Value: "jar_cookie=from_reg"},
+	}
+	if !reflect.DeepEqual(req2HeaderList, wantReq2HeaderList) {
+		t.Fatalf("step_two header_list = %#v, want %#v", req2HeaderList, wantReq2HeaderList)
+	}
+}
+
+func TestExplicitCorrelationRegistrationsAndFixedUUIDTimestampsPreserved(t *testing.T) {
+	fixedUUID := "550e8400-e29b-41d4-a716-446655440000"
+	fixedEpochMs := "1730000000123"
+
+	archive := buildSourceZip(t, map[string]string{
+		"Explicit.usr": `[General]
+Type=Multi
+DefaultCfg=default.cfg
+ParameterFile=Explicit.prm
+[Actions]
+Action=Action.c
+`,
+		"default.cfg": `[General]
+[WEB]
+KeepAlive=No
+MaxRedirectionDepth=4
+ReceiveTimeout=45
+`,
+		"Explicit.prm": `[parameter:GenUUID]
+Type="UUID"
+GenerateNewVal="EachIteration"
+
+[parameter:GenTS]
+Type="TimeStamp"
+Format="unix_ms"
+GenerateNewVal="EachOccurrence"
+`,
+		"Action.c": `Action()
+{
+	web_reg_save_param_ex("ParamName=HeaderTok",
+		"LB=X-Tok: ",
+		"RB=\r\n",
+		"Ordinal=2",
+		"SaveOffset=1",
+		"SaveLen=6",
+		"Convert=HTML_TO_URL",
+		"NotFound=ERROR",
+		SEARCH_FILTERS,
+		"Scope=Headers",
+		LAST);
+
+	web_reg_save_param_json("ParamName=AllItems",
+		"QueryString=$.items[*].id",
+		"SelectAll=Yes",
+		"NotFound=WARNING",
+		SEARCH_FILTERS,
+		"Scope=Body",
+		LAST);
+
+	web_image_check("logo_check", "Src=/img/logo.png", LAST);
+
+	web_custom_request("fixed_and_param_request",
+		"URL=https://api.shop.test/v1/orders?fixed_uuid=` + fixedUUID + `&fixed_ts=` + fixedEpochMs + `&gen_uuid={GenUUID}&gen_ts={GenTS}",
+		"Method=POST",
+		"EncType=application/json",
+		"Header=X-Fixed-UUID: ` + fixedUUID + `\r\nX-Fixed-TS: ` + fixedEpochMs + `\r\n",
+		"Body={\"fixed_uuid\":\"` + fixedUUID + `\",\"fixed_ts\":` + fixedEpochMs + `,` + `\"gen_uuid\":\"{GenUUID}\",\"tok\":\"{HeaderTok}\"}",
+		LAST);
+
+	return 0;
+}
+`,
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	script := result.Script
+	if err := dsl.ValidateScriptError(script); err != nil {
+		t.Fatalf("dsl.ValidateScriptError: %v", err)
+	}
+
+	// Verify authored runtime settings from default.cfg were not overridden by recording-profile defaults.
+	if script.Config.HTTP.KeepAlive == nil || *script.Config.HTTP.KeepAlive {
+		t.Fatalf("expected KeepAlive=No to set KeepAlive=false, got %+v", script.Config.HTTP.KeepAlive)
+	}
+	if script.Config.HTTP.RequestTimeoutMs != 45000 {
+		t.Fatalf("expected ReceiveTimeout=45 to set RequestTimeoutMs=45000, got %d", script.Config.HTTP.RequestTimeoutMs)
+	}
+
+	// Find the HTTP request action (after web_image_check, which must NOT steal pending extractors).
+	var reqAction *dsl.Action
+	for i := range script.Actions {
+		if script.Actions[i].Name == "fixed_and_param_request" {
+			reqAction = &script.Actions[i]
+			break
+		}
+	}
+	if reqAction == nil {
+		t.Fatalf("fixed_and_param_request not found in %#v", script.Actions)
+	}
+	if len(reqAction.Extractors) != 2 {
+		t.Fatalf("expected 2 extractors attached to fixed_and_param_request (skipping web_image_check), got %#v", reqAction.Extractors)
+	}
+	ext0 := reqAction.Extractors[0]
+	if ext0.Name != "headertok" || ext0.Source != "header" || ext0.SaveOffset != 1 || ext0.SaveLength != 6 || ext0.Convert != "html_url_encode" || ext0.OnMiss != "fail" {
+		t.Fatalf("extractor[0] fidelity mismatch: %+v", ext0)
+	}
+	ext1 := reqAction.Extractors[1]
+	if ext1.Name != "allitems" || ext1.Type != "jsonpath" || ext1.Mode != "all" || ext1.OnMiss != "empty" || ext1.Source != "body" {
+		t.Fatalf("extractor[1] fidelity mismatch: %+v", ext1)
+	}
+
+	// Verify fixed UUIDs and epoch timestamps are preserved verbatim (never replaced by {{fn.uuid()}} or {{fn.timestamp.*}}),
+	// and parameter-generated UUIDs/timestamps use {{param.*}}.
+	if !strings.Contains(reqAction.Target, "fixed_uuid="+fixedUUID) || !strings.Contains(reqAction.Target, "fixed_ts="+fixedEpochMs) {
+		t.Fatalf("fixed UUID or timestamp in Target was overwritten: %q", reqAction.Target)
+	}
+	if !strings.Contains(reqAction.Target, "gen_uuid={{param.genuuid}}") || !strings.Contains(reqAction.Target, "gen_ts={{param.gents}}") {
+		t.Fatalf("parameter-generated UUID or timestamp in Target not mapped to {{param.*}}: %q", reqAction.Target)
+	}
+	if !strings.Contains(reqAction.Body, fixedUUID) || !strings.Contains(reqAction.Body, fixedEpochMs) || !strings.Contains(reqAction.Body, "{{param.genuuid}}") || !strings.Contains(reqAction.Body, "{{var.headertok}}") {
+		t.Fatalf("Body did not preserve fixed literals, param references, and extractor references: %q", reqAction.Body)
+	}
+	if strings.Contains(reqAction.Target, "fn.uuid") || strings.Contains(reqAction.Target, "fn.timestamp") || strings.Contains(reqAction.Body, "fn.uuid") || strings.Contains(reqAction.Body, "fn.timestamp") {
+		t.Fatalf("LoadRunner import must never overwrite fixed UUIDs/timestamps with capture heuristics: target=%q body=%q", reqAction.Target, reqAction.Body)
+	}
 }

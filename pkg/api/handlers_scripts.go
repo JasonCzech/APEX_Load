@@ -72,6 +72,8 @@ type harImportRequest struct {
 	// Salvage describes the truncated capture whose complete entries Data
 	// holds, when the import opted in to salvage_truncated.
 	Salvage *har.TruncationSalvage
+	// SecretBindings applies reviewed secret bindings to the draft.
+	SecretBindings []importreview.SecretBindingSelection
 }
 
 // applyClientGeneratedUUIDs gives UUIDs the recorded client made up (no
@@ -179,6 +181,73 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	req.ProjectID = firstNonEmpty(strings.TrimSpace(req.ProjectID), strings.TrimSpace(r.URL.Query().Get("project_id")))
+	profileID := strings.TrimSpace(firstNonEmpty(
+		req.RecordingProfileID,
+		req.ProfileID,
+		req.Options.RecordingProfileID,
+		r.URL.Query().Get("recording_profile_id"),
+		r.URL.Query().Get("profile_id"),
+	))
+	req.RecordingProfileID = profileID
+	req.Options.RecordingProfileID = profileID
+	req.ConversionPolicy = strings.TrimSpace(firstNonEmpty(req.ConversionPolicy, req.Options.ConversionPolicy, r.URL.Query().Get("conversion_policy")))
+	req.Options.ConversionPolicy = req.ConversionPolicy
+	req.CorrelationMode = strings.TrimSpace(firstNonEmpty(req.CorrelationMode, req.Options.CorrelationMode, r.URL.Query().Get("correlation_mode")))
+	req.Options.CorrelationMode = req.CorrelationMode
+	req.ResourceMode = strings.TrimSpace(firstNonEmpty(req.ResourceMode, req.Options.ResourceMode, r.URL.Query().Get("resource_mode")))
+	req.Options.ResourceMode = req.ResourceMode
+	req.HTTPVersionMode = strings.TrimSpace(firstNonEmpty(req.HTTPVersionMode, req.Options.HTTPVersionMode, r.URL.Query().Get("http_version_mode")))
+	req.Options.HTTPVersionMode = req.HTTPVersionMode
+	req.IncludeAssertions = firstNonNilBool(req.IncludeAssertions, req.Options.IncludeAssertions, parseOptionalBool(r.URL.Query().Get("include_assertions")))
+	req.Options.IncludeAssertions = req.IncludeAssertions
+	req.InferExtractors = firstNonNilBool(req.InferExtractors, req.Options.InferExtractors, parseOptionalBool(r.URL.Query().Get("infer_extractors")))
+	req.Options.InferExtractors = req.InferExtractors
+	req.SanitizeSensitive = firstNonNilBool(req.SanitizeSensitive, req.Options.SanitizeSensitive, parseOptionalBool(r.URL.Query().Get("sanitize_sensitive")))
+	req.Options.SanitizeSensitive = req.SanitizeSensitive
+	req.IncludeStaticAssets = firstNonNilBool(req.IncludeStaticAssets, req.Options.IncludeStaticAssets, parseOptionalBool(r.URL.Query().Get("include_static_assets")))
+	req.Options.IncludeStaticAssets = req.IncludeStaticAssets
+	req.PageTitleChecks = firstNonNilBool(req.PageTitleChecks, req.Options.PageTitleChecks, parseOptionalBool(r.URL.Query().Get("page_title_checks")))
+	req.Options.PageTitleChecks = req.PageTitleChecks
+	req.AsyncScan = firstNonNilBool(req.AsyncScan, req.Options.AsyncScan, parseOptionalBool(r.URL.Query().Get("async_scan")))
+	req.Options.AsyncScan = req.AsyncScan
+	req.DisableSalesforce = firstNonNilBool(req.DisableSalesforce, req.Options.DisableSalesforce, parseOptionalBool(r.URL.Query().Get("disable_salesforce")))
+	req.Options.DisableSalesforce = req.DisableSalesforce
+	req.SalesforceNative = firstNonNilBool(req.SalesforceNative, req.Options.SalesforceNative, parseOptionalBool(r.URL.Query().Get("salesforce_native")))
+	req.Options.SalesforceNative = req.SalesforceNative
+	req.AgentforceTransform = firstNonNilBool(req.AgentforceTransform, req.Options.AgentforceTransform, parseOptionalBool(r.URL.Query().Get("agentforce_transform")))
+	req.Options.AgentforceTransform = req.AgentforceTransform
+	if !req.Parameterize && !req.Options.Parameterize {
+		if param := parseOptionalBool(r.URL.Query().Get("parameterize")); param != nil {
+			req.Parameterize = *param
+			req.Options.Parameterize = *param
+		}
+	}
+	if _, err := sample.ValidateConversionPolicy(req.ConversionPolicy); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := sample.ValidateCorrelationMode(req.CorrelationMode); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := sample.ValidateResourceMode(req.Options.ResourceMode); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !validHTTPVersionMode(w, req.Options.HTTPVersionMode) {
+		return
+	}
+	isHARFormat := strings.EqualFold(strings.TrimSpace(req.Format), "har")
+	if profileID != "" || isHARFormat {
+		profile, err := s.projectRecordingProfile(normalizeProjectID(req.ProjectID), profileID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Options.Profile = profile
+	}
+	req.Options.EntryPoint = sample.EntryPointImportSample
 
 	result, err := sample.Convert(req)
 	if err != nil {
@@ -187,32 +256,138 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	}
 	protectedRequirements := result.ProtectedRequirements.Take()
 	defer clearCredentialRequirementValues(protectedRequirements)
+
+	script := result.Script
+	source := req.Format
+	var sections []importreview.ScriptImportReviewSection
+	correlations := any(result.Correlations)
+	var summary any
+	preApplied := sampleCorrelationsToPreApplied(result.Correlations)
+	agentforceTransform := agentforceTransformRequested(r)
+	if result.EffectiveSettings != nil {
+		agentforceTransform = result.EffectiveSettings.AgentforceTransform
+	}
+
+	var harResult *har.ConvertResult
+	if isHARFormat {
+		harResult = &har.ConvertResult{
+			Document:          result.Document,
+			Script:            result.Script,
+			Warnings:          result.Warnings,
+			Unsupported:       result.Unsupported,
+			Stats:             result.Stats,
+			Correlations:      result.Correlations,
+			SourceReview:      result.SourceReview,
+			EffectiveSettings: result.EffectiveSettings,
+			Baseline:          result.Baseline,
+		}
+		if result.EffectiveSettings != nil && !result.EffectiveSettings.DisableSalesforce &&
+			(result.EffectiveSettings.SalesforceNative || result.EffectiveSettings.AgentforceTransform) {
+			salesforceAugmentation := importreview.AugmentHARImportWithSalesforceProfile(
+				harResult,
+				[]byte(req.Content),
+				req.ProjectID,
+				req.Name,
+				req.Format,
+				result.EffectiveSettings.SalesforceNative,
+				agentforceTransform,
+				true,
+				req.Options.Profile,
+			)
+			result.Warnings = harResult.Warnings
+			result.Unsupported = harResult.Unsupported
+			result.Baseline = harResult.Baseline
+			if salesforceAugmentation.Detected {
+				script = salesforceAugmentation.Script
+				source = salesforceAugmentation.Source
+				sections = salesforceAugmentation.ReviewSections
+				correlations = salesforceAugmentation.Correlations
+				summary = salesforceAugmentation.Summary
+				if script != result.Script {
+					preApplied = nil
+				}
+			}
+		}
+	}
+
+	secretBindings := make([]importreview.SecretBindingSelection, 0, len(req.SecretBindings))
+	for _, b := range req.SecretBindings {
+		secretBindings = append(secretBindings, importreview.SecretBindingSelection{
+			RequirementID: b.RequirementID,
+			SecretName:    b.SecretName,
+		})
+	}
+	selections := req.ParameterizationSelections
+	if len(selections) == 0 {
+		selections = req.Options.ParameterizationSelections
+	}
+	var preparedCredentialReview []importreview.SecretBindingRequirement
+	var credentialReviewPrepared bool
+
 	draft := importDraft{
-		Source:           req.Format,
+		Source:           source,
 		SourceScriptName: req.Name,
 		ProjectID:        req.ProjectID,
-		Script:           result.Script,
+		Script:           script,
 		SourceReview:     result.SourceReview,
 		Unsupported:      result.Unsupported,
+		Sections:         sections,
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
+		BeforeFinalize: func(s *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error {
+			if isHARFormat && harResult != nil &&
+				((result.EffectiveSettings != nil && result.EffectiveSettings.ConversionPolicy == sample.ConversionPolicyUnifiedV1) || s != result.Script) {
+				applyClientGeneratedUUIDs(s, []byte(req.Content), harResult)
+				applyClientTimestamps(s, []byte(req.Content), harResult)
+				result.Warnings = harResult.Warnings
+				result.Unsupported = harResult.Unsupported
+				*warnings = result.Warnings
+				*unsupported = result.Unsupported
+			}
+			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && len(selections) == 0 {
+				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
+				*warnings = result.Warnings
+			}
+			if len(selections) > 0 {
+				if _, err := importreview.ApplyParameterizationSelectionsToScript(s, 0, selections); err != nil {
+					return err
+				}
+			}
+			if len(secretBindings) > 0 {
+				var err error
+				_, preparedCredentialReview, credentialReviewPrepared, err = importreview.ApplySecretBindingsToImportDraft(s, 0, secretBindings, protectedRequirements)
+				if err != nil {
+					return err
+				}
+			}
+			sample.AttachEffectiveSettings(s, result.EffectiveSettings)
+			return nil
+		},
 	}
-	augmented := draft.Augment(r)
+	augmented, err := draft.AugmentWithAgentforceTransformChecked(agentforceTransform)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	result.Warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Result:                result,
-		Script:                result.Script,
-		Warnings:              result.Warnings,
-		Stats:                 result.Stats,
-		Correlations:          result.Correlations,
-		Diagnostics:           result.Unsupported,
-		UnsupportedElements:   result.Unsupported.Strings(),
-		ReviewSections:        augmented.Sections,
-		SourceReview:          result.SourceReview,
-		Parameterization:      buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
-		Preflight:             augmented.Preflight,
-		ProtectedRequirements: protectedRequirements,
+		Result:                   result,
+		Script:                   script,
+		Warnings:                 result.Warnings,
+		Stats:                    result.Stats,
+		Correlations:             correlations,
+		Diagnostics:              result.Unsupported,
+		UnsupportedElements:      result.Unsupported.Strings(),
+		ReviewSections:           augmented.Sections,
+		SourceReview:             result.SourceReview,
+		Summary:                  summary,
+		Parameterization:         buildImportParameterization(script, preApplied),
+		Preflight:                augmented.Preflight,
+		EffectiveSettings:        result.EffectiveSettings,
+		ProtectedRequirements:    protectedRequirements,
+		PreparedCredentialReview: preparedCredentialReview,
+		CredentialReviewPrepared: credentialReviewPrepared,
 	})
 }
 
@@ -410,6 +585,17 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		if err := reconcileMaskedScriptSecrets(script, stored.Script); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		if script != nil && script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+			delete(script.Metadata.Import.Preserved, "effective_settings")
+		}
+		if stored.Script != nil && stored.Script.Metadata != nil &&
+			stored.Script.Metadata.Import != nil && stored.Script.Metadata.Import.Preserved != nil {
+			if priorSettings, ok := stored.Script.Metadata.Import.Preserved["effective_settings"]; ok {
+				if cloned, err := importreview.CloneImportSecurityMetadata(priorSettings); err == nil {
+					importreview.EnsureScriptImportPreserved(script, stored.Script.Metadata.Import.Source)["effective_settings"] = cloned
+				}
+			}
 		}
 	}
 

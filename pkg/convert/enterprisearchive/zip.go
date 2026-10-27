@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
@@ -2172,6 +2173,16 @@ func convertDevWebZipViaEnterpriseArchiveImport(zipData []byte, opts ConvertOpti
 	if err != nil {
 		return nil, err
 	}
+	return adaptDevWebConvertResult(devResult, files, projectConfig), nil
+}
+
+func adaptDevWebConvertResult(devResult *devweb.ConvertResult, files map[string]string, projectConfig *ProjectConfig) *ConvertResult {
+	if devResult == nil {
+		return nil
+	}
+	protectedRequirements := devResult.ProtectedRequirements.Take()
+	defer clearTransferredProtectedRequirements(protectedRequirements)
+
 	detected := detectedDevWebProtocol(projectConfig, devResult)
 	unsupported := append([]string(nil), devResult.Stats.UnsupportedCalls...)
 	unsupported = append(unsupported, devResult.Unsupported.Strings()...)
@@ -2192,6 +2203,7 @@ func convertDevWebZipViaEnterpriseArchiveImport(zipData []byte, opts ConvertOpti
 			UnsupportedFuncs:    uniqueStrings(unsupported),
 		},
 	}
+	result.ProtectedRequirements.Store(protectedRequirements)
 	if result.Script != nil {
 		preserved := ensureDevWebSourcePreserved(result.Script)
 		preserved["detected_protocol"] = result.DetectedProtocol
@@ -2212,7 +2224,14 @@ func convertDevWebZipViaEnterpriseArchiveImport(zipData []byte, opts ConvertOpti
 		findParameterFiles(files, projectConfig),
 	)
 	attachImportFidelityReport(result, files, projectConfig, nil)
-	return result, nil
+	return result
+}
+
+func clearTransferredProtectedRequirements(requirements []credentialpolicy.Requirement) {
+	for index := range requirements {
+		requirements[index].Value = ""
+		requirements[index].DeferredSourceExpression = ""
+	}
 }
 
 func detectedDevWebProtocol(projectConfig *ProjectConfig, result *devweb.ConvertResult) DetectedProtocol {

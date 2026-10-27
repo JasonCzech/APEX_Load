@@ -1,8 +1,29 @@
 import { useCallback, useMemo } from 'react'
 
 import { type RecordingProfile, type RecordingProfilesResponse } from '../../types/recordingProfiles'
-import { type RecorderImportResult } from '../../types/scriptImports'
+import { type RecorderConversionOptions, type RecorderImportResult } from '../../types/scriptImports'
 import { request } from '../apiClient'
+
+export type { RecorderConversionOptions }
+
+function buildRecorderConversionPayload(
+  nameOrOptions?: string | RecorderConversionOptions,
+  parameterize?: boolean,
+  extraOptions?: Omit<RecorderConversionOptions, 'name' | 'parameterize'>,
+): RecorderConversionOptions {
+  if (nameOrOptions && typeof nameOrOptions === 'object') {
+    return {
+      ...nameOrOptions,
+      ...(parameterize !== undefined ? { parameterize } : {}),
+      ...extraOptions,
+    }
+  }
+  return {
+    name: nameOrOptions,
+    parameterize,
+    ...extraOptions,
+  }
+}
 
 export type RecorderRequestRecord = {
   seq: number
@@ -202,14 +223,30 @@ export function useRecorderApi() {
   )
 
   const convertRecording = useCallback(
-    (id: string, name?: string, parameterize?: boolean) =>
-      request<RecorderImportResult>(`/recorder/${id}/convert`, { method: 'POST', body: JSON.stringify({ name, parameterize }) }),
+    (
+      id: string,
+      nameOrOptions?: string | RecorderConversionOptions,
+      parameterize?: boolean,
+      options?: Omit<RecorderConversionOptions, 'name' | 'parameterize'>,
+    ) =>
+      request<RecorderImportResult>(`/recorder/${id}/convert`, {
+        method: 'POST',
+        body: JSON.stringify(buildRecorderConversionPayload(nameOrOptions, parameterize, options)),
+      }),
     [],
   )
 
   const previewRecordingConversion = useCallback(
-    (id: string, name?: string, parameterize?: boolean) =>
-      request<RecorderImportResult>(`/recorder/${id}/convert/preview`, { method: 'POST', body: JSON.stringify({ name, parameterize }) }),
+    (
+      id: string,
+      nameOrOptions?: string | RecorderConversionOptions,
+      parameterize?: boolean,
+      options?: Omit<RecorderConversionOptions, 'name' | 'parameterize'>,
+    ) =>
+      request<RecorderImportResult>(`/recorder/${id}/convert/preview`, {
+        method: 'POST',
+        body: JSON.stringify(buildRecorderConversionPayload(nameOrOptions, parameterize, options)),
+      }),
     [],
   )
 

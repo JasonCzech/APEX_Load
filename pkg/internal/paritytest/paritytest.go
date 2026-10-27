@@ -93,6 +93,29 @@ type Expectation struct {
 	ExpectFailures map[string]string `json:"expect_failures,omitempty"`
 	// Secrets are the project secrets the replay resolves.
 	Secrets map[string]string `json:"secrets,omitempty"`
+	// Dependencies states request ordering and concurrency overlap invariants
+	// that must hold across the recorded requests.
+	Dependencies []DependencyRule `json:"dependencies,omitempty"`
+}
+
+// DependencyRule asserts a request ordering or concurrency overlap invariant
+// over recorded fixture traffic. Request specs are "METHOD /path" (or "/path"
+// to match any method, optionally with "?query").
+type DependencyRule struct {
+	// Prerequisite requires the matching request(s) to have strictly completed
+	// at the server before each Dependent request arrived
+	// (prereq.CompletionSeq < dep.ArrivalSeq). When Prerequisite and Dependent
+	// request counts differ across waves, each Dependent is checked against the
+	// latest Prerequisite that arrived before it.
+	Prerequisite string   `json:"prerequisite,omitempty"`
+	Dependents   []string `json:"dependents,omitempty"`
+	// OverlapGroup requires all listed requests (within each wave) to have
+	// overlapped in flight at the server (max ArrivalSeq < min CompletionSeq).
+	OverlapGroup []string `json:"overlap_group,omitempty"`
+	// MinMaxInFlight requires the server's observed concurrency high-water mark
+	// (and, when OverlapGroup is set, the peak in-flight count observed across
+	// each OverlapGroup wave's arrivals) to be at least this value.
+	MinMaxInFlight int `json:"min_max_in_flight,omitempty"`
 }
 
 // ExpectedRequest describes one request the fixture server must receive.
@@ -103,9 +126,17 @@ type ExpectedRequest struct {
 	Query  *string `json:"query,omitempty"`
 	// QueryPattern is an RE2 pattern the whole raw query must match, for
 	// values that change on every run (timestamps).
-	QueryPattern  string            `json:"query_pattern,omitempty"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	AbsentHeaders []string          `json:"absent_headers,omitempty"`
+	QueryPattern string            `json:"query_pattern,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	// HeaderList asserts per-name ordered header occurrences using the DSL's
+	// multi-header representation, distinguishing multiple separate header lines
+	// from a single comma-joined header value.
+	HeaderList dsl.HeaderList `json:"header_list,omitempty"`
+	// HeaderOccurrences asserts the exact slice of wire header occurrences per
+	// header name in order, distinguishing separate occurrences from a single
+	// comma-joined value.
+	HeaderOccurrences map[string][]string `json:"header_occurrences,omitempty"`
+	AbsentHeaders     []string            `json:"absent_headers,omitempty"`
 	// HeaderContains asserts that a header's joined values contain a substring.
 	HeaderContains map[string]string `json:"header_contains,omitempty"`
 	// HeaderCounts asserts how many comma- or semicolon-separated values a
@@ -144,7 +175,20 @@ type Response struct {
 	Path    string            `json:"path"`
 	Status  int               `json:"status,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body,omitempty"`
+	// HeaderList emits multiple response headers in order via Header().Add,
+	// allowing multiple distinct Set-Cookie or duplicate header occurrences.
+	HeaderList dsl.HeaderList `json:"header_list,omitempty"`
+	// HeaderOccurrences emits multiple response headers per name in order via
+	// Header().Add.
+	HeaderOccurrences map[string][]string `json:"header_occurrences,omitempty"`
+	Body              string              `json:"body,omitempty"`
+	// Barrier names an optional deterministic rendezvous barrier on the server.
+	// Concurrent requests naming the same barrier wait until BarrierCount
+	// requests have arrived before any completes, proving overlap without
+	// wall-clock sleeps.
+	Barrier          string `json:"barrier,omitempty"`
+	BarrierCount     int    `json:"barrier_count,omitempty"`
+	BarrierTimeoutMs int    `json:"barrier_timeout_ms,omitempty"`
 	// WebSocket upgrades the request and answers each message.
 	WebSocket *WebSocketBehavior `json:"websocket,omitempty"`
 	// NTLM requires an NTLM handshake naming User before the response is
@@ -167,11 +211,24 @@ type WebSocketBehavior struct {
 
 // Recorded is one request the fixture server received.
 type Recorded struct {
-	Method string
-	Path   string
-	Query  string
-	Header http.Header
-	Body   []byte
+	// Seq is the 1-based arrival order of this request at the server.
+	Seq int
+	// ArrivalSeq is the server's monotonic event counter when the request
+	// arrived (before any barrier or response write).
+	ArrivalSeq int
+	// CompletionSeq is the server's monotonic event counter when the handler
+	// finished serving the request. Request A strictly completed before
+	// Request B arrived iff A.CompletionSeq < B.ArrivalSeq; A and B overlapped
+	// in flight iff max(A.ArrivalSeq, B.ArrivalSeq) < min(A.CompletionSeq, B.CompletionSeq).
+	CompletionSeq int
+	// InFlightAtArrival is the number of active in-flight requests at the
+	// server when this request arrived (including this request).
+	InFlightAtArrival int
+	Method            string
+	Path              string
+	Query             string
+	Header            http.Header
+	Body              []byte
 	// Messages are the WebSocket messages received over this request's
 	// connection.
 	Messages []string
@@ -294,16 +351,31 @@ func isStaticResource(resourceType, mimeType string) bool {
 // responses.
 type Server struct {
 	*httptest.Server
-	mu         sync.Mutex
-	recorded   []Recorded
-	responses  map[string][]Response
-	served     map[string]int
-	webSockets []<-chan struct{}
+	mu          sync.Mutex
+	recorded    []Recorded
+	responses   map[string][]Response
+	served      map[string]int
+	webSockets  []<-chan struct{}
+	eventSeq    int
+	inFlight    int
+	maxInFlight int
+	barriers    map[string]*concurrencyBarrier
+}
+
+type concurrencyBarrier struct {
+	count   int
+	timeout time.Duration
+	waiting int
+	ch      chan struct{}
 }
 
 // NewServer starts a fixture server for the given scripted responses.
 func NewServer(responses []Response) *Server {
-	s := &Server{responses: map[string][]Response{}, served: map[string]int{}}
+	s := &Server{
+		responses: map[string][]Response{},
+		served:    map[string]int{},
+		barriers:  map[string]*concurrencyBarrier{},
+	}
 	for _, response := range responses {
 		key := strings.ToUpper(response.Method) + " " + response.Path
 		s.responses[key] = append(s.responses[key], response)
@@ -312,11 +384,106 @@ func NewServer(responses []Response) *Server {
 	return s
 }
 
+// SetBarrier configures a named rendezvous barrier so count concurrent requests
+// wait until all count have arrived before any completes, and resets cleanly
+// for subsequent waves.
+func (s *Server) SetBarrier(name string, count int, timeout time.Duration) {
+	if count <= 0 {
+		count = 2
+	}
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.barriers[name] = &concurrencyBarrier{
+		count:   count,
+		timeout: timeout,
+		ch:      make(chan struct{}),
+	}
+}
+
+// MaxInFlight returns the maximum number of requests simultaneously in flight
+// at the server so far.
+func (s *Server) MaxInFlight() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.maxInFlight
+}
+
+func (s *Server) waitBarrier(ctx context.Context, name string, count, timeoutMs int) {
+	if name == "" {
+		return
+	}
+	s.mu.Lock()
+	b := s.barriers[name]
+	if b == nil {
+		c := count
+		if c <= 0 {
+			c = 2
+		}
+		timeout := 2 * time.Second
+		if timeoutMs > 0 {
+			timeout = time.Duration(timeoutMs) * time.Millisecond
+		}
+		b = &concurrencyBarrier{
+			count:   c,
+			timeout: timeout,
+			ch:      make(chan struct{}),
+		}
+		s.barriers[name] = b
+	}
+	ch := b.ch
+	b.waiting++
+	if b.waiting >= b.count {
+		close(ch)
+		b.waiting = 0
+		b.ch = make(chan struct{})
+		s.mu.Unlock()
+		return
+	}
+	timeout := b.timeout
+	s.mu.Unlock()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		s.mu.Lock()
+		if b.ch == ch && b.waiting > 0 {
+			b.waiting--
+		}
+		s.mu.Unlock()
+	case <-timer.C:
+		s.mu.Lock()
+		if b.ch == ch && b.waiting > 0 {
+			b.waiting--
+		}
+		s.mu.Unlock()
+	}
+}
+
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 64<<20))
 	s.mu.Lock()
+	s.eventSeq++
+	arrivalSeq := s.eventSeq
+	s.inFlight++
+	if s.inFlight > s.maxInFlight {
+		s.maxInFlight = s.inFlight
+	}
+	inFlightAtArrival := s.inFlight
+	seq := len(s.recorded) + 1
 	s.recorded = append(s.recorded, Recorded{
-		Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.RawQuery, Header: r.Header.Clone(), Body: body,
+		Seq:               seq,
+		ArrivalSeq:        arrivalSeq,
+		InFlightAtArrival: inFlightAtArrival,
+		Method:            r.Method,
+		Path:              r.URL.EscapedPath(),
+		Query:             r.URL.RawQuery,
+		Header:            r.Header.Clone(),
+		Body:              body,
 	})
 	recordedIndex := len(s.recorded) - 1
 	key := r.Method + " " + r.URL.Path
@@ -335,6 +502,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		response = &chosen
 	}
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.eventSeq++
+		s.recorded[recordedIndex].CompletionSeq = s.eventSeq
+		s.inFlight--
+		s.mu.Unlock()
+	}()
 	if response != nil && response.NTLM != nil && !ntlmAuthenticated(r, response.NTLM.User) {
 		if kind, _ := ntlmMessage(r.Header.Get("Authorization")); kind == 1 {
 			w.Header().Set("WWW-Authenticate", "NTLM "+ntlmChallenge())
@@ -348,12 +522,33 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	if response.Barrier != "" {
+		s.waitBarrier(r.Context(), response.Barrier, response.BarrierCount, response.BarrierTimeoutMs)
+	}
 	if response.WebSocket != nil {
 		s.serveWebSocket(w, r, recordedIndex, *response.WebSocket)
 		return
 	}
-	for name, value := range response.Headers {
-		w.Header().Set(name, s.expand(value))
+	headerNames := make([]string, 0, len(response.Headers))
+	for name := range response.Headers {
+		headerNames = append(headerNames, name)
+	}
+	sort.Strings(headerNames)
+	for _, name := range headerNames {
+		w.Header().Set(name, s.expand(response.Headers[name]))
+	}
+	for _, h := range response.HeaderList {
+		w.Header().Add(h.Name, s.expand(h.Value))
+	}
+	occNames := make([]string, 0, len(response.HeaderOccurrences))
+	for name := range response.HeaderOccurrences {
+		occNames = append(occNames, name)
+	}
+	sort.Strings(occNames)
+	for _, name := range occNames {
+		for _, value := range response.HeaderOccurrences[name] {
+			w.Header().Add(name, s.expand(value))
+		}
 	}
 	status := response.Status
 	if status == 0 {
@@ -569,6 +764,38 @@ func (s *Server) compareOne(n int, want ExpectedRequest, got Recorded) []string 
 		if strings.Join(gotValues, ", ") != wantValue {
 			add("header %s = %q, want %q", name, strings.Join(gotValues, ", "), wantValue)
 		}
+	}
+	checkOccurrences := func(name string, wantRaw []string) {
+		wantValues := make([]string, len(wantRaw))
+		for i, v := range wantRaw {
+			wantValues[i] = s.expand(v)
+		}
+		gotValues := got.Header.Values(name)
+		if !reflect.DeepEqual(gotValues, wantValues) {
+			add("header %s occurrences = %q (%d), want %q (%d)", name, gotValues, len(gotValues), wantValues, len(wantValues))
+		}
+	}
+	if len(want.HeaderList) > 0 {
+		var order []string
+		grouped := map[string][]string{}
+		for _, h := range want.HeaderList {
+			canon := http.CanonicalHeaderKey(h.Name)
+			if _, seen := grouped[canon]; !seen {
+				order = append(order, canon)
+			}
+			grouped[canon] = append(grouped[canon], h.Value)
+		}
+		for _, canon := range order {
+			checkOccurrences(canon, grouped[canon])
+		}
+	}
+	occNames := make([]string, 0, len(want.HeaderOccurrences))
+	for name := range want.HeaderOccurrences {
+		occNames = append(occNames, name)
+	}
+	sort.Strings(occNames)
+	for _, name := range occNames {
+		checkOccurrences(name, want.HeaderOccurrences[name])
 	}
 	containNames := make([]string, 0, len(want.HeaderContains))
 	for name := range want.HeaderContains {
@@ -862,6 +1089,9 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 		if len(exp.Requests) > 0 {
 			problems = append(problems, server.Compare(exp.Requests)...)
 		}
+		if len(exp.Dependencies) > 0 {
+			problems = append(problems, server.CheckDependencies(exp.Dependencies...)...)
+		}
 	case OutcomeReplay:
 		if len(exp.ExpectFailures) > 0 {
 			continueOnError := true
@@ -882,6 +1112,171 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 			problems = append(problems, "replay did not succeed: "+detail)
 		}
 		problems = append(problems, server.Compare(exp.Requests)...)
+		if len(exp.Dependencies) > 0 {
+			problems = append(problems, server.CheckDependencies(exp.Dependencies...)...)
+		}
 	}
 	return problems
+}
+
+// CheckDependencies verifies request ordering and concurrency overlap rules
+// against the server's recorded request ledger.
+func (s *Server) CheckDependencies(rules ...DependencyRule) []string {
+	var problems []string
+	recorded := s.Recorded()
+	maxInFlight := s.MaxInFlight()
+	matchAll := func(spec string) []Recorded {
+		var out []Recorded
+		for _, rec := range recorded {
+			if matchRequestSpec(rec, spec) {
+				out = append(out, rec)
+			}
+		}
+		return out
+	}
+	for _, rule := range rules {
+		if rule.MinMaxInFlight > 0 && maxInFlight < rule.MinMaxInFlight {
+			problems = append(problems, fmt.Sprintf("max in-flight requests = %d, want >= %d", maxInFlight, rule.MinMaxInFlight))
+		}
+		if rule.Prerequisite != "" && len(rule.Dependents) > 0 {
+			prereqs := matchAll(rule.Prerequisite)
+			if len(prereqs) == 0 {
+				problems = append(problems, fmt.Sprintf("dependency prerequisite %q was never recorded", rule.Prerequisite))
+			} else {
+				for _, depSpec := range rule.Dependents {
+					deps := matchAll(depSpec)
+					if len(deps) == 0 {
+						problems = append(problems, fmt.Sprintf("dependency dependent %q was never recorded", depSpec))
+						continue
+					}
+					if len(prereqs) == len(deps) {
+						for i := range deps {
+							if prereqs[i].CompletionSeq == 0 || prereqs[i].CompletionSeq >= deps[i].ArrivalSeq {
+								problems = append(problems, fmt.Sprintf(
+									"dependency violation (wave %d): prerequisite %s (seq %d, completed @%d) did not complete before dependent %s (seq %d, arrived @%d)",
+									i+1, rule.Prerequisite, prereqs[i].Seq, prereqs[i].CompletionSeq, depSpec, deps[i].Seq, deps[i].ArrivalSeq,
+								))
+							}
+						}
+					} else {
+						for _, dep := range deps {
+							// Require the latest prerequisite that arrived before this dependent
+							// to have completed before the dependent arrived, catching later-wave
+							// dependents that overtake their wave's prerequisite.
+							var latestPrereq *Recorded
+							for i := range prereqs {
+								if prereqs[i].ArrivalSeq < dep.ArrivalSeq {
+									if latestPrereq == nil || prereqs[i].ArrivalSeq > latestPrereq.ArrivalSeq {
+										latestPrereq = &prereqs[i]
+									}
+								}
+							}
+							if latestPrereq == nil {
+								problems = append(problems, fmt.Sprintf(
+									"dependency violation: no prerequisite %s arrived before dependent %s (seq %d, arrived @%d)",
+									rule.Prerequisite, depSpec, dep.Seq, dep.ArrivalSeq,
+								))
+								continue
+							}
+							if latestPrereq.CompletionSeq == 0 || latestPrereq.CompletionSeq >= dep.ArrivalSeq {
+								problems = append(problems, fmt.Sprintf(
+									"dependency violation: prerequisite %s (seq %d, completed @%d) did not complete before dependent %s (seq %d, arrived @%d)",
+									rule.Prerequisite, latestPrereq.Seq, latestPrereq.CompletionSeq, depSpec, dep.Seq, dep.ArrivalSeq,
+								))
+							}
+						}
+					}
+				}
+			}
+		}
+		if len(rule.OverlapGroup) > 0 {
+			if len(rule.OverlapGroup) < 2 {
+				problems = append(problems, fmt.Sprintf("overlap_group %v must list at least 2 request specs", rule.OverlapGroup))
+				continue
+			}
+			var specsInOrder []string
+			perWaveNeed := map[string]int{}
+			for _, spec := range rule.OverlapGroup {
+				if perWaveNeed[spec] == 0 {
+					specsInOrder = append(specsInOrder, spec)
+				}
+				perWaveNeed[spec]++
+			}
+			matchesBySpec := map[string][]Recorded{}
+			missing := false
+			waves := -1
+			for _, spec := range specsInOrder {
+				matches := matchAll(spec)
+				need := perWaveNeed[spec]
+				if len(matches) < need {
+					problems = append(problems, fmt.Sprintf("concurrency overlap spec %q recorded %d time(s), want at least %d", spec, len(matches), need))
+					missing = true
+					continue
+				}
+				matchesBySpec[spec] = matches
+				w := len(matches) / need
+				if waves == -1 || w < waves {
+					waves = w
+				}
+			}
+			if missing || waves <= 0 {
+				continue
+			}
+			for w := 0; w < waves; w++ {
+				var group []Recorded
+				for _, spec := range specsInOrder {
+					need := perWaveNeed[spec]
+					start := w * need
+					group = append(group, matchesBySpec[spec][start:start+need]...)
+				}
+				maxArrival := group[0].ArrivalSeq
+				minCompletion := group[0].CompletionSeq
+				waveMaxInFlight := group[0].InFlightAtArrival
+				for _, rec := range group[1:] {
+					if rec.ArrivalSeq > maxArrival {
+						maxArrival = rec.ArrivalSeq
+					}
+					if rec.CompletionSeq == 0 || (minCompletion > 0 && rec.CompletionSeq < minCompletion) {
+						minCompletion = rec.CompletionSeq
+					}
+					if rec.InFlightAtArrival > waveMaxInFlight {
+						waveMaxInFlight = rec.InFlightAtArrival
+					}
+				}
+				if minCompletion == 0 || maxArrival >= minCompletion {
+					problems = append(problems, fmt.Sprintf(
+						"concurrency violation: overlap_group %v (wave %d) did not overlap in flight (max arrival @%d >= min completion @%d)",
+						rule.OverlapGroup, w+1, maxArrival, minCompletion,
+					))
+				}
+				if rule.MinMaxInFlight > 0 && waveMaxInFlight < rule.MinMaxInFlight {
+					problems = append(problems, fmt.Sprintf(
+						"concurrency violation: overlap_group %v (wave %d) max in-flight at arrival = %d, want >= %d",
+						rule.OverlapGroup, w+1, waveMaxInFlight, rule.MinMaxInFlight,
+					))
+				}
+			}
+		}
+	}
+	return problems
+}
+
+func matchRequestSpec(rec Recorded, spec string) bool {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return false
+	}
+	wantMethod := ""
+	wantTarget := spec
+	if method, rest, ok := strings.Cut(spec, " "); ok {
+		wantMethod = strings.TrimSpace(method)
+		wantTarget = strings.TrimSpace(rest)
+	}
+	if wantMethod != "" && !strings.EqualFold(rec.Method, wantMethod) {
+		return false
+	}
+	if wantPath, wantQuery, hasQuery := strings.Cut(wantTarget, "?"); hasQuery {
+		return rec.Path == wantPath && rec.Query == wantQuery
+	}
+	return rec.Path == wantTarget
 }

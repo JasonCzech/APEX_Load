@@ -3,6 +3,7 @@ package requestimport
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -119,10 +120,10 @@ func HoistMultipartFiles(script *dsl.Script) {
 		used[strings.ToLower(strings.TrimSpace(source.Name))] = true
 	}
 	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
-		if ref.Action == nil || ref.Action.BodyMultipart == nil {
+		body := surfaceMultipartBody(ref)
+		if body == nil {
 			return nil
 		}
-		body := ref.Action.BodyMultipart
 		for partIndex := range body.Parts {
 			part := &body.Parts[partIndex]
 			base64Value := strings.EqualFold(strings.TrimSpace(part.ValueEncoding), "base64")
@@ -144,6 +145,36 @@ func HoistMultipartFiles(script *dsl.Script) {
 		}
 		return nil
 	})
+}
+
+func surfaceMultipartBody(ref dslwalk.SurfaceRef) *dsl.MultipartBody {
+	if ref.Action != nil {
+		return ref.Action.BodyMultipart
+	}
+	if ref.Request == nil {
+		return nil
+	}
+	switch typed := ref.Request["body_multipart"].(type) {
+	case *dsl.MultipartBody:
+		return typed
+	case dsl.MultipartBody:
+		copied := typed
+		ref.Request["body_multipart"] = &copied
+		return &copied
+	case map[string]any:
+		payload, err := json.Marshal(typed)
+		if err != nil {
+			return nil
+		}
+		var decoded dsl.MultipartBody
+		if err := json.Unmarshal(payload, &decoded); err != nil {
+			return nil
+		}
+		ref.Request["body_multipart"] = &decoded
+		return &decoded
+	default:
+		return nil
+	}
 }
 
 func claimMultipartAssetName(field string, used map[string]bool) string {

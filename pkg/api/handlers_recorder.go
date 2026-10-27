@@ -265,46 +265,36 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var req struct {
-		Name         string `json:"name"`
-		Parameterize bool   `json:"parameterize"`
-		// PageTitleChecks (default on) and ResourceMode (runtime | in_step)
-		// mirror VuGen's recording options.
-		PageTitleChecks *bool  `json:"page_title_checks,omitempty"`
-		ResourceMode    string `json:"resource_mode,omitempty"`
-		// AsyncScan (default on) turns requests a page repeated in the
-		// background into background conversations; false keeps them inline.
-		AsyncScan *bool `json:"async_scan,omitempty"`
-		// RecordingProfileID names a project recording profile; it defaults
-		// to the one the session was started with.
-		RecordingProfileID string `json:"recording_profile_id,omitempty"`
-		// HTTPVersionMode maps captured HTTP versions to leaf policies.
-		HTTPVersionMode string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
-	}
+	var req recordbridge.RecordingConversionRequest
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
 	if !validHTTPVersionMode(w, req.HTTPVersionMode) {
 		return
 	}
-	profile, err := s.sessionRecordingProfile(session, req.RecordingProfileID)
+	profileID := strings.TrimSpace(req.RecordingProfileID)
+	if profileID == "" {
+		profileID = strings.TrimSpace(req.ProfileID)
+	}
+	profile, err := s.sessionRecordingProfile(session, profileID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile, HTTPVersionMode: req.HTTPVersionMode})
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
-		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
+	composed, convErr := recordbridge.ComposeRecordingSessionConversion(session, profile, req)
+	if convErr != nil {
+		writeError(w, convErr.Status, convErr.Message)
+		return
 	}
+	defer clearCredentialRequirementValues(composed.ProtectedRequirements)
 
 	// This conversion is produced directly from the server-owned recording
 	// snapshot. The operator already supplied every captured request credential,
 	// so retain those exact executable values in the private durable copy rather
 	// than replacing them with unconfigured {{secret.*}} references.
 	importedScript, err := preparePersistentImportedLibraryScript(
-		result.Script,
+		composed.Script,
 		nil,
 		"recorder",
 	)
@@ -324,20 +314,28 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "failed to save recorded script: "+err.Error())
 		return
 	}
-	if result.Script != nil && stored.ID != "" {
+	if composed.Script != nil && stored.ID != "" {
 		// The conversion's own baseline lines up with the options it used
 		// (resource mode, profile filters, async shaping).
-		if err := s.persistRecordedBaseline(stored.ID, "proxy_recording", stored.Script, result.Baseline); err != nil {
+		if err := s.persistRecordedBaseline(stored.ID, "proxy_recording", stored.Script, composed.Baseline); err != nil {
 			slog.Warn("failed to persist proxy recording baseline", "script_id", stored.ID, "error", err)
 		}
 	}
 
 	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Script:               result.Script,
-		Warnings:             result.Warnings,
-		Diagnostics:          result.Diagnostics,
-		Correlations:         result.Correlations,
-		SkipDraftAttestation: true,
+		Script:                   composed.Script,
+		Warnings:                 composed.Warnings,
+		Diagnostics:              composed.Diagnostics,
+		UnsupportedElements:      composed.Diagnostics.Strings(),
+		Correlations:             composed.Correlations,
+		ReviewSections:           composed.Sections,
+		Parameterization:         buildImportParameterization(composed.Script, composed.PreApplied),
+		Preflight:                composed.Preflight,
+		EffectiveSettings:        composed.EffectiveSettings,
+		ProtectedRequirements:    composed.ProtectedRequirements,
+		PreparedCredentialReview: composed.PreparedCredentialReview,
+		CredentialReviewPrepared: composed.CredentialReviewPrepared,
+		SkipDraftAttestation:     true,
 	})
 	response["script"] = maskStoredScript(stored)
 	response["scripts"] = []any{maskStoredScript(stored)}

@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -17,10 +20,47 @@ import (
 	"github.com/jasonczech/apexload/pkg/recorder"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/recorder/marker"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"net/http"
 	"strconv"
 	"strings"
 )
+
+type RecordingConversionRequest struct {
+	Name                       string                                `json:"name"`
+	Parameterize               bool                                  `json:"parameterize"`
+	PageTitleChecks            *bool                                 `json:"page_title_checks,omitempty"`
+	ResourceMode               string                                `json:"resource_mode,omitempty"`
+	AsyncScan                  *bool                                 `json:"async_scan,omitempty"`
+	RecordingProfileID         string                                `json:"recording_profile_id,omitempty"`
+	ProfileID                  string                                `json:"profile_id,omitempty"`
+	ConversionPolicy           string                                `json:"conversion_policy,omitempty"`
+	CorrelationMode            string                                `json:"correlation_mode,omitempty"`
+	IncludeAssertions          *bool                                 `json:"include_assertions,omitempty"`
+	InferExtractors            *bool                                 `json:"infer_extractors,omitempty"`
+	IncludeStaticAssets        *bool                                 `json:"include_static_assets,omitempty"`
+	DisableSalesforce          *bool                                 `json:"disable_salesforce,omitempty"`
+	SalesforceNative           *bool                                 `json:"salesforce_native,omitempty"`
+	AgentforceTransform        *bool                                 `json:"agentforce_transform,omitempty"`
+	ParameterizationSelections []paramize.Selection                  `json:"parameterization_selections,omitempty"`
+	SecretBindings             []importreview.SecretBindingSelection `json:"secret_bindings,omitempty"`
+	HTTPVersionMode            string                                `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
+}
+
+type ComposedRecordingConversion struct {
+	Script                   *dsl.Script
+	Warnings                 []string
+	Diagnostics              diag.Diagnostics
+	Correlations             any
+	PreApplied               []paramize.PreAppliedCorrelation
+	Sections                 []importreview.ScriptImportReviewSection
+	Preflight                *importreview.ReplayPreflight
+	EffectiveSettings        *sample.EffectiveSettings
+	Baseline                 []correlate.Observation
+	ProtectedRequirements    []credentialpolicy.Requirement
+	PreparedCredentialReview []importreview.SecretBindingRequirement
+	CredentialReviewPrepared bool
+}
 
 type BrowserRecordingConvertRequest struct {
 	Name           string `json:"name"`
@@ -47,7 +87,18 @@ type BrowserRecordingConvertRequest struct {
 	// RecordingProfileID names a project recording profile the HTTP script
 	// applies (filters, headers, think-time threshold, correlation settings,
 	// and the options above when left unset).
-	RecordingProfileID string `json:"recording_profile_id,omitempty"`
+	RecordingProfileID  string `json:"recording_profile_id,omitempty"`
+	ProfileID           string `json:"profile_id,omitempty"`
+	ConversionPolicy    string `json:"conversion_policy,omitempty"`
+	CorrelationMode     string `json:"correlation_mode,omitempty"`
+	ResourceMode        string `json:"resource_mode,omitempty"`
+	PageTitleChecks     *bool  `json:"page_title_checks,omitempty"`
+	IncludeAssertions   *bool  `json:"include_assertions,omitempty"`
+	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
+	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
+	DisableSalesforce   *bool  `json:"disable_salesforce,omitempty"`
+	SalesforceNative    *bool  `json:"salesforce_native,omitempty"`
+	AgentforceTransform *bool  `json:"agentforce_transform,omitempty"`
 	// HTTPVersionMode maps the HTTP script's captured versions to leaf
 	// policies: upgrade (default; captured h3 becomes auto+h3), exact (3) or
 	// inherit (none).
@@ -81,6 +132,17 @@ type BrowserRecordingPreviewRequest struct {
 	HTTPScriptLevel      string `json:"http_script_level,omitempty" enums:"url,html"`
 	AsyncScan            *bool  `json:"async_scan,omitempty"`
 	RecordingProfileID   string `json:"recording_profile_id,omitempty"`
+	ProfileID            string `json:"profile_id,omitempty"`
+	ConversionPolicy     string `json:"conversion_policy,omitempty"`
+	CorrelationMode      string `json:"correlation_mode,omitempty"`
+	ResourceMode         string `json:"resource_mode,omitempty"`
+	PageTitleChecks      *bool  `json:"page_title_checks,omitempty"`
+	IncludeAssertions    *bool  `json:"include_assertions,omitempty"`
+	InferExtractors      *bool  `json:"infer_extractors,omitempty"`
+	IncludeStaticAssets  *bool  `json:"include_static_assets,omitempty"`
+	DisableSalesforce    *bool  `json:"disable_salesforce,omitempty"`
+	SalesforceNative     *bool  `json:"salesforce_native,omitempty"`
+	AgentforceTransform  *bool  `json:"agentforce_transform,omitempty"`
 	HTTPVersionMode      string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
 	Parameterize         bool   `json:"parameterize,omitempty"`
 }
@@ -97,16 +159,31 @@ type BrowserRecordingParameterizationSelection struct {
 }
 
 type BrowserHTTPScriptOptions struct {
-	AsyncScan          *bool
-	RecordingProfileID string
-	HTTPVersionMode    string
+	AsyncScan           *bool
+	RecordingProfileID  string
+	ConversionPolicy    string
+	CorrelationMode     string
+	ResourceMode        string
+	PageTitleChecks     *bool
+	IncludeAssertions   *bool
+	InferExtractors     *bool
+	IncludeStaticAssets *bool
+	DisableSalesforce   *bool
+	SalesforceNative    *bool
+	AgentforceTransform *bool
+	HTTPVersionMode     string
+	Parameterize        bool
 }
 
 type BrowserHTTPScript struct {
-	Script       *dsl.Script
-	Warnings     []string
-	Sections     []importreview.ScriptImportReviewSection
-	Correlations any
+	Script                *dsl.Script
+	Warnings              []string
+	Sections              []importreview.ScriptImportReviewSection
+	Correlations          any
+	PreApplied            []paramize.PreAppliedCorrelation
+	Preflight             *importreview.ReplayPreflight
+	EffectiveSettings     *sample.EffectiveSettings
+	ProtectedRequirements []credentialpolicy.Requirement
 	// Baseline is the recorded observation of each request, keyed by its
 	// action index in Script.
 	Baseline []correlate.Observation
@@ -263,6 +340,10 @@ func ApplyBrowserRecordingParameterizationSelections(
 	if err != nil {
 		return nil, err
 	}
+	if settings, ok := sample.ReadEffectiveSettings(applied); ok && settings != nil && !settings.Parameterize {
+		settings.Parameterize = true
+		sample.AttachEffectiveSettings(applied, settings)
+	}
 	return applied, nil
 }
 
@@ -334,6 +415,237 @@ func RecordingBaselineSnapshotDigest(session *recorder.Session) (string, error) 
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
+// RecordingBaselineSnapshotDigestWithBaseline binds a preview to the recording
+// snapshot it converted and to the option-resolved baseline it attests. A nil
+// baseline yields RecordingBaselineSnapshotDigest, the default-options digest.
+func RecordingBaselineSnapshotDigestWithBaseline(session *recorder.Session, baseline *importreview.RecordingBaseline) (string, error) {
+	if baseline == nil {
+		return RecordingBaselineSnapshotDigest(session)
+	}
+	var sessionRequests []recorder.RecordedRequest
+	var sessionMarkers []marker.Marker
+	if session != nil {
+		sessionRequests = session.Requests
+		sessionMarkers = session.Markers
+	}
+	payload, err := json.Marshal(struct {
+		Requests []recorder.RecordedRequest      `json:"requests"`
+		Markers  []marker.Marker                 `json:"markers"`
+		Baseline *importreview.RecordingBaseline `json:"baseline"`
+	}{
+		Requests: sessionRequests,
+		Markers:  sessionMarkers,
+		Baseline: baseline,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal recording baseline snapshot: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func sampleCorrelationsToPreApplied(correlations []sample.Correlation) []paramize.PreAppliedCorrelation {
+	if len(correlations) == 0 {
+		return nil
+	}
+	out := make([]paramize.PreAppliedCorrelation, 0, len(correlations))
+	for _, c := range correlations {
+		if !c.PreApplied {
+			continue
+		}
+		out = append(out, paramize.PreAppliedCorrelation{
+			Name:        c.Name,
+			Source:      c.Source,
+			Expression:  c.Expression,
+			ExtractType: c.ExtractType,
+			FoundInStep: c.FoundInStep,
+			UsedInSteps: c.UsedInSteps,
+		})
+	}
+	return out
+}
+
+func ComposeRecordingSessionConversion(
+	session *recorder.Session,
+	profile *recordingprofile.Profile,
+	req RecordingConversionRequest,
+) (*ComposedRecordingConversion, *ConversionError) {
+	if _, err := sample.ValidateConversionPolicy(req.ConversionPolicy); err != nil {
+		return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if _, err := sample.ValidateCorrelationMode(req.CorrelationMode); err != nil {
+		return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if _, err := sample.ValidateResourceMode(req.ResourceMode); err != nil {
+		return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if _, err := requestimport.NormalizeHTTPVersionMode(req.HTTPVersionMode); err != nil {
+		return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	profileID := strings.TrimSpace(req.RecordingProfileID)
+	if profileID == "" {
+		profileID = strings.TrimSpace(req.ProfileID)
+	}
+
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{
+		ConversionPolicy:    strings.TrimSpace(req.ConversionPolicy),
+		CorrelationMode:     strings.TrimSpace(req.CorrelationMode),
+		RecordingProfileID:  profileID,
+		Parameterize:        req.Parameterize,
+		DeferParameterize:   true,
+		PageTitleChecks:     req.PageTitleChecks,
+		ResourceMode:        strings.TrimSpace(req.ResourceMode),
+		AsyncScan:           req.AsyncScan,
+		IncludeAssertions:   req.IncludeAssertions,
+		InferExtractors:     req.InferExtractors,
+		IncludeStaticAssets: req.IncludeStaticAssets,
+		DisableSalesforce:   req.DisableSalesforce,
+		SalesforceNative:    req.SalesforceNative,
+		AgentforceTransform: req.AgentforceTransform,
+		Profile:             profile,
+		HTTPVersionMode:     strings.TrimSpace(req.HTTPVersionMode),
+	})
+	protectedRequirements := result.ProtectedRequirements.Take()
+	if result.Script != nil && session != nil {
+		result.Script.ProjectID = importreview.NormalizeProjectID(session.ProjectID)
+		importreview.EnsureCredentialPreservingImportMetadata(result.Script, "recorder")
+	}
+	correlations := any(result.Correlations)
+	preApplied := sampleCorrelationsToPreApplied(result.SampleCorrelations)
+	var sections []importreview.ScriptImportReviewSection
+	var preflight *importreview.ReplayPreflight
+	var preparedCredentialReview []importreview.SecretBindingRequirement
+	var credentialReviewPrepared bool
+
+	if len(result.HARData) > 0 && result.Script != nil {
+		harResult := &har.ConvertResult{
+			Document:          result.Document,
+			Script:            result.Script,
+			Warnings:          result.Warnings,
+			Unsupported:       result.Diagnostics,
+			Stats:             result.Stats,
+			Correlations:      result.SampleCorrelations,
+			EffectiveSettings: result.EffectiveSettings,
+			Baseline:          result.Baseline,
+		}
+		agentforceTransform := false
+		if result.EffectiveSettings != nil {
+			agentforceTransform = result.EffectiveSettings.AgentforceTransform
+		}
+		var salesforceAugmentation importreview.SalesforceHARAugmentation
+		if result.EffectiveSettings != nil && !result.EffectiveSettings.DisableSalesforce &&
+			(result.EffectiveSettings.SalesforceNative || result.EffectiveSettings.AgentforceTransform) {
+			projectID := ""
+			if session != nil {
+				projectID = session.ProjectID
+			}
+			salesforceAugmentation = importreview.AugmentHARImportWithSalesforceProfile(
+				harResult,
+				result.HARData,
+				projectID,
+				req.Name,
+				"recorder",
+				result.EffectiveSettings.SalesforceNative,
+				agentforceTransform,
+				true,
+				profile,
+			)
+			result.Warnings = harResult.Warnings
+			result.Diagnostics = harResult.Unsupported
+			result.Baseline = harResult.Baseline
+			if salesforceAugmentation.Detected {
+				if salesforceAugmentation.Script != result.Script {
+					preApplied = nil
+				}
+				result.Script = salesforceAugmentation.Script
+				if session != nil {
+					result.Script.ProjectID = importreview.NormalizeProjectID(session.ProjectID)
+				}
+				importreview.EnsureCredentialPreservingImportMetadata(result.Script, "recorder")
+				sections = salesforceAugmentation.ReviewSections
+				correlations = salesforceAugmentation.Correlations
+			}
+		}
+
+		sessionName := ""
+		sessionProjectID := ""
+		if session != nil {
+			sessionName = session.Name
+			sessionProjectID = session.ProjectID
+		}
+		draft := importreview.ImportDraft{
+			Source:           "recorder",
+			SourceScriptName: sessionName,
+			ProjectID:        sessionProjectID,
+			Script:           result.Script,
+			Unsupported:      result.Diagnostics,
+			Sections:         sections,
+			Warnings:         result.Warnings,
+			BeforeFinalize: func(s *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error {
+				if (result.EffectiveSettings != nil && result.EffectiveSettings.ConversionPolicy == sample.ConversionPolicyUnifiedV1) || salesforceAugmentation.Detected {
+					importreview.ApplyClientGeneratedUUIDs(s, result.HARData, harResult)
+					importreview.ApplyClientTimestamps(s, result.HARData, harResult)
+					result.Warnings = harResult.Warnings
+					result.Diagnostics = harResult.Unsupported
+					*warnings = result.Warnings
+					*unsupported = result.Diagnostics
+				}
+				if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && len(req.ParameterizationSelections) == 0 {
+					var paramWarnings []string
+					if result.EffectiveSettings.ConversionPolicy == sample.ConversionPolicyUnifiedV1 {
+						paramWarnings = importreview.ApplyAutoParameterizationToScript(s)
+					} else {
+						paramWarnings = recorder.ParameterizeRecordingInputs(s, sessionName)
+					}
+					result.Warnings = append(result.Warnings, paramWarnings...)
+					*warnings = result.Warnings
+				}
+				if len(req.ParameterizationSelections) > 0 {
+					if _, err := importreview.ApplyParameterizationSelectionsToScript(s, 0, req.ParameterizationSelections); err != nil {
+						return err
+					}
+				}
+				if len(req.SecretBindings) > 0 {
+					var err error
+					_, preparedCredentialReview, credentialReviewPrepared, err = importreview.ApplySecretBindingsToImportDraft(s, 0, req.SecretBindings, protectedRequirements)
+					if err != nil {
+						return err
+					}
+				}
+				sample.AttachEffectiveSettings(s, result.EffectiveSettings)
+				recorder.NormalizeScriptActionsForLineage(s)
+				return nil
+			},
+		}
+		augmented, err := draft.AugmentWithAgentforceTransformChecked(agentforceTransform)
+		if err != nil {
+			importreview.ClearCredentialRequirementValues(protectedRequirements)
+			return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+		}
+		recorder.NormalizeScriptActionsForLineage(result.Script)
+		result.Warnings = augmented.Warnings
+		sections = augmented.Sections
+		preflight = augmented.Preflight
+	} else if result.Script != nil {
+		sample.AttachEffectiveSettings(result.Script, result.EffectiveSettings)
+	}
+
+	return &ComposedRecordingConversion{
+		Script:                   result.Script,
+		Warnings:                 result.Warnings,
+		Diagnostics:              result.Diagnostics,
+		Correlations:             correlations,
+		PreApplied:               preApplied,
+		Sections:                 sections,
+		Preflight:                preflight,
+		EffectiveSettings:        result.EffectiveSettings,
+		Baseline:                 result.Baseline,
+		ProtectedRequirements:    protectedRequirements,
+		PreparedCredentialReview: preparedCredentialReview,
+		CredentialReviewPrepared: credentialReviewPrepared,
+	}, nil
+}
+
 func (s *Service) HandlePreviewRecordingConversion(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	session, ok := s.Recorder.GetSession(id)
@@ -342,53 +654,79 @@ func (s *Service) HandlePreviewRecordingConversion(w http.ResponseWriter, r *htt
 		return
 	}
 
-	var req struct {
-		Name         string `json:"name"`
-		Parameterize bool   `json:"parameterize"`
-		// PageTitleChecks (default on) and ResourceMode (runtime | in_step)
-		// mirror VuGen's recording options.
-		PageTitleChecks *bool  `json:"page_title_checks,omitempty"`
-		ResourceMode    string `json:"resource_mode,omitempty"`
-		// AsyncScan (default on) turns requests a page repeated in the
-		// background into background conversations; false keeps them inline.
-		AsyncScan *bool `json:"async_scan,omitempty"`
-		// RecordingProfileID names a project recording profile; it defaults
-		// to the one the session was started with.
-		RecordingProfileID string `json:"recording_profile_id,omitempty"`
-		// HTTPVersionMode maps captured HTTP versions to leaf policies.
-		HTTPVersionMode string `json:"http_version_mode,omitempty" enums:"upgrade,exact,inherit"`
-	}
+	var req RecordingConversionRequest
 	if !s.decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
 	if !s.validHTTPVersionMode(w, req.HTTPVersionMode) {
 		return
 	}
-	profile, err := s.Conversion.SessionRecordingProfile(session, req.RecordingProfileID)
+	profileID := strings.TrimSpace(req.RecordingProfileID)
+	if profileID == "" {
+		profileID = strings.TrimSpace(req.ProfileID)
+	}
+	profile, err := s.Conversion.SessionRecordingProfile(session, profileID)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile, HTTPVersionMode: req.HTTPVersionMode})
-	if result.Script != nil {
-		result.Script.ProjectID = importreview.NormalizeProjectID(session.ProjectID)
-		importreview.EnsureCredentialPreservingImportMetadata(result.Script, "recorder")
+	composed, convErr := ComposeRecordingSessionConversion(session, profile, req)
+	if convErr != nil {
+		s.writeError(w, convErr.Status, convErr.Message)
+		return
 	}
-	snapshotDigest, err := RecordingBaselineSnapshotDigest(session)
+	defer importreview.ClearCredentialRequirementValues(composed.ProtectedRequirements)
+
+	// Attest only the prefix persistence keeps, so the draft capability stays
+	// bounded however large the recording is.
+	baseline := importreview.NewRecordingBaseline(composed.Baseline)
+	snapshotDigest, err := RecordingBaselineSnapshotDigestWithBaseline(session, baseline)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "failed to bind recording preview snapshot")
 		return
 	}
 	s.writeImportResponseWithSourceSecrets(w, r, http.StatusOK, importreview.ScriptImportResponseOptions{
-		Script:                  result.Script,
-		Warnings:                result.Warnings,
-		Diagnostics:             result.Diagnostics,
-		Correlations:            result.Correlations,
-		Stats:                   RecordingConversionStats(session),
-		RecordingSessionID:      id,
-		RecordingSnapshotDigest: snapshotDigest,
+		Script:                   composed.Script,
+		Warnings:                 composed.Warnings,
+		Diagnostics:              composed.Diagnostics,
+		UnsupportedElements:      composed.Diagnostics.Strings(),
+		Correlations:             composed.Correlations,
+		ReviewSections:           composed.Sections,
+		Parameterization:         importreview.BuildImportParameterization(composed.Script, composed.PreApplied),
+		Preflight:                composed.Preflight,
+		EffectiveSettings:        composed.EffectiveSettings,
+		Stats:                    RecordingConversionStats(session),
+		RecordingSessionID:       id,
+		RecordingSnapshotDigest:  snapshotDigest,
+		RecordingBaseline:        baseline,
+		ProtectedRequirements:    composed.ProtectedRequirements,
+		PreparedCredentialReview: composed.PreparedCredentialReview,
+		CredentialReviewPrepared: composed.CredentialReviewPrepared,
 	})
+}
+
+func (req BrowserRecordingConvertRequest) HTTPScriptOptions() BrowserHTTPScriptOptions {
+	profileID := strings.TrimSpace(req.RecordingProfileID)
+	if profileID == "" {
+		profileID = strings.TrimSpace(req.ProfileID)
+	}
+	return BrowserHTTPScriptOptions{
+		AsyncScan:           req.AsyncScan,
+		RecordingProfileID:  profileID,
+		ConversionPolicy:    req.ConversionPolicy,
+		CorrelationMode:     req.CorrelationMode,
+		ResourceMode:        req.ResourceMode,
+		PageTitleChecks:     req.PageTitleChecks,
+		IncludeAssertions:   req.IncludeAssertions,
+		InferExtractors:     req.InferExtractors,
+		IncludeStaticAssets: req.IncludeStaticAssets,
+		DisableSalesforce:   req.DisableSalesforce,
+		SalesforceNative:    req.SalesforceNative,
+		AgentforceTransform: req.AgentforceTransform,
+		HTTPVersionMode:     req.HTTPVersionMode,
+		Parameterize:        req.Parameterize,
+	}
 }
 
 func (req BrowserRecordingPreviewRequest) ConvertRequest() BrowserRecordingConvertRequest {
@@ -402,9 +740,36 @@ func (req BrowserRecordingPreviewRequest) ConvertRequest() BrowserRecordingConve
 		HTTPScriptLevel:      req.HTTPScriptLevel,
 		AsyncScan:            req.AsyncScan,
 		RecordingProfileID:   req.RecordingProfileID,
+		ProfileID:            req.ProfileID,
+		ConversionPolicy:     req.ConversionPolicy,
+		CorrelationMode:      req.CorrelationMode,
+		ResourceMode:         req.ResourceMode,
+		PageTitleChecks:      req.PageTitleChecks,
+		IncludeAssertions:    req.IncludeAssertions,
+		InferExtractors:      req.InferExtractors,
+		IncludeStaticAssets:  req.IncludeStaticAssets,
+		DisableSalesforce:    req.DisableSalesforce,
+		SalesforceNative:     req.SalesforceNative,
+		AgentforceTransform:  req.AgentforceTransform,
 		HTTPVersionMode:      req.HTTPVersionMode,
 		Parameterize:         req.Parameterize,
 	}
+}
+
+func (s *Service) validBrowserPolicyOptions(w http.ResponseWriter, req BrowserRecordingConvertRequest) bool {
+	if _, err := sample.ValidateConversionPolicy(req.ConversionPolicy); err != nil {
+		s.writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	if _, err := sample.ValidateCorrelationMode(req.CorrelationMode); err != nil {
+		s.writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	if _, err := sample.ValidateResourceMode(req.ResourceMode); err != nil {
+		s.writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	return true
 }
 
 func (s *Service) ConvertBrowserRecording(artifact *recbrowser.Session, info *BrowserRecordingSession, req BrowserRecordingConvertRequest) *recbrowser.ConvertResult {
@@ -444,6 +809,15 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 	if len(artifact.HAR) == 0 {
 		return BrowserHTTPScript{}, fmt.Errorf("no side-car HAR is available to build an HTTP script")
 	}
+	if _, err := sample.ValidateConversionPolicy(scriptOptions.ConversionPolicy); err != nil {
+		return BrowserHTTPScript{}, err
+	}
+	if _, err := sample.ValidateCorrelationMode(scriptOptions.CorrelationMode); err != nil {
+		return BrowserHTTPScript{}, err
+	}
+	if _, err := sample.ValidateResourceMode(scriptOptions.ResourceMode); err != nil {
+		return BrowserHTTPScript{}, err
+	}
 	profile, err := s.Conversion.ProjectRecordingProfile(importreview.NormalizeProjectID(info.ProjectID), scriptOptions.RecordingProfileID)
 	if err != nil {
 		return BrowserHTTPScript{}, err
@@ -456,7 +830,25 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 		httpName = info.Name
 	}
 	httpName += " (HTTP)"
-	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile, HTTPVersionMode: scriptOptions.HTTPVersionMode}
+	options := har.ConvertOptions{
+		ScriptName:          httpName,
+		RecordingProfileID:  strings.TrimSpace(scriptOptions.RecordingProfileID),
+		ConversionPolicy:    strings.TrimSpace(scriptOptions.ConversionPolicy),
+		CorrelationMode:     strings.TrimSpace(scriptOptions.CorrelationMode),
+		ResourceMode:        strings.TrimSpace(scriptOptions.ResourceMode),
+		PageTitleChecks:     scriptOptions.PageTitleChecks,
+		IncludeAssertions:   scriptOptions.IncludeAssertions,
+		InferExtractors:     scriptOptions.InferExtractors,
+		IncludeStaticAssets: scriptOptions.IncludeStaticAssets,
+		DisableSalesforce:   scriptOptions.DisableSalesforce,
+		SalesforceNative:    scriptOptions.SalesforceNative,
+		AgentforceTransform: scriptOptions.AgentforceTransform,
+		AsyncScan:           scriptOptions.AsyncScan,
+		Profile:             profile,
+		EntryPoint:          sample.EntryPointBrowserHTTP,
+		HTTPVersionMode:     scriptOptions.HTTPVersionMode,
+		Parameterize:        scriptOptions.Parameterize,
+	}
 	// The HTTP script times the transactions marked while recording with the
 	// browser script's start and end markers, each request carries the
 	// transaction that was open when it started, and a note attaches to the
@@ -479,19 +871,50 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 	if err != nil {
 		return BrowserHTTPScript{}, err
 	}
+	protectedRequirements := result.ProtectedRequirements.Take()
 	result.Warnings = append(result.Warnings, levelNotes...)
 	if result.Script != nil {
 		result.Script.ProjectID = importreview.NormalizeProjectID(info.ProjectID)
 		result.Script.GeneratedBy = "browser-recorder"
 		result.Script.GeneratedFrom = "browser_recording_har"
 	}
+
+	salesforceNative := true
+	agentforceTransform := false
+	disableSalesforce := false
+	if result.EffectiveSettings != nil {
+		salesforceNative = result.EffectiveSettings.SalesforceNative
+		agentforceTransform = result.EffectiveSettings.AgentforceTransform
+		disableSalesforce = result.EffectiveSettings.DisableSalesforce
+	}
+	source := "browser_recording_har"
+	sections := importreview.HarImportReviewSections(result)
+	correlations := any(result.Correlations)
+	preApplied := sampleCorrelationsToPreApplied(result.Correlations)
 	// Use the same native rewrite and review as a direct HAR import. Merely
 	// attaching its review leaves the executable script with recorded Aura state.
-	salesforceDraft := importreview.AugmentHARImportWithSalesforce(result, artifact.HAR,
-		importreview.NormalizeProjectID(info.ProjectID), httpName, "browser_recording_har", true, false, true)
-	result.Script = salesforceDraft.Script
-	importreview.ApplyClientGeneratedUUIDs(result.Script, artifact.HAR, result)
-	importreview.ApplyClientTimestamps(result.Script, artifact.HAR, result)
+	if !disableSalesforce {
+		salesforceDraft := importreview.AugmentHARImportWithSalesforceProfile(
+			result,
+			artifact.HAR,
+			importreview.NormalizeProjectID(info.ProjectID),
+			httpName,
+			"browser_recording_har",
+			salesforceNative,
+			agentforceTransform,
+			true,
+			profile,
+		)
+		if salesforceDraft.Detected {
+			if salesforceDraft.Script != result.Script {
+				preApplied = nil
+			}
+			result.Script = salesforceDraft.Script
+			source = salesforceDraft.Source
+			sections = salesforceDraft.ReviewSections
+			correlations = salesforceDraft.Correlations
+		}
+	}
 
 	// Run the shared augmentation over the generated HTTP draft and hand its
 	// sections back. Before this the detectors ran here with their return value
@@ -502,17 +925,43 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 	// credential-preserving script whose recorded values must survive verbatim —
 	// the recorder already keeps the capture itself as the script's baseline.
 	draft := importreview.ImportDraft{
-		Source:           salesforceDraft.Source,
+		Source:           source,
 		SourceScriptName: httpName,
 		ProjectID:        info.ProjectID,
 		Script:           result.Script,
 		Unsupported:      result.Unsupported,
-		Sections:         salesforceDraft.ReviewSections,
+		Sections:         sections,
 		Warnings:         result.Warnings,
+		BeforeFinalize: func(s *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error {
+			importreview.ApplyClientGeneratedUUIDs(s, artifact.HAR, result)
+			importreview.ApplyClientTimestamps(s, artifact.HAR, result)
+			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize {
+				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
+			}
+			*warnings = result.Warnings
+			*unsupported = result.Unsupported
+			sample.AttachEffectiveSettings(s, result.EffectiveSettings)
+			importreview.EnsureCredentialPreservingImportMetadata(s, "browser_recording_har")
+			return nil
+		},
 	}
-	augmented := draft.AugmentWithAgentforceTransform(false)
+	augmented, err := draft.AugmentWithAgentforceTransformChecked(agentforceTransform)
+	if err != nil {
+		importreview.ClearCredentialRequirementValues(protectedRequirements)
+		return BrowserHTTPScript{}, err
+	}
 	recbrowser.AttachRecordingEnvironment(result.Script, artifact.RecordingEnvironment)
-	return BrowserHTTPScript{Script: result.Script, Warnings: augmented.Warnings, Sections: augmented.Sections, Correlations: salesforceDraft.Correlations, Baseline: result.Baseline}, nil
+	return BrowserHTTPScript{
+		Script:                result.Script,
+		Warnings:              augmented.Warnings,
+		Sections:              augmented.Sections,
+		Correlations:          correlations,
+		PreApplied:            preApplied,
+		Preflight:             augmented.Preflight,
+		EffectiveSettings:     result.EffectiveSettings,
+		ProtectedRequirements: protectedRequirements,
+		Baseline:              result.Baseline,
+	}, nil
 }
 
 func (s *Service) HandlePreviewBrowserRecordingConversion(w http.ResponseWriter, r *http.Request) {
@@ -531,6 +980,9 @@ func (s *Service) HandlePreviewBrowserRecordingConversion(w http.ResponseWriter,
 		return
 	}
 	req := previewReq.ConvertRequest()
+	if !s.validBrowserPolicyOptions(w, req) {
+		return
+	}
 
 	result := s.ConvertBrowserRecording(artifact, info, req)
 	warnings := append([]string(nil), result.Warnings...)
@@ -544,8 +996,11 @@ func (s *Service) HandlePreviewBrowserRecordingConversion(w http.ResponseWriter,
 	var httpSections []importreview.ScriptImportReviewSection
 	// Correlations are the HTTP output's: browser replay does not correlate.
 	var httpCorrelations any
+	var generated BrowserHTTPScript
+	httpScriptIndex := len(scripts)
 	if req.AlsoCreateHTTPScript {
-		generated, err := s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, BrowserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID, HTTPVersionMode: req.HTTPVersionMode})
+		var err error
+		generated, err = s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, req.HTTPScriptOptions())
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if generated.Script != nil {
@@ -554,17 +1009,66 @@ func (s *Service) HandlePreviewBrowserRecordingConversion(w http.ResponseWriter,
 			warnings = append(warnings, generated.Warnings...)
 		}
 	}
+	defer importreview.ClearCredentialRequirementValues(generated.ProtectedRequirements)
+
+	browserParam := importreview.BuildImportParameterization(result.Script, nil)
+	combinedParam := browserParam
+	var httpParam *paramize.Result
+	if httpScript != nil {
+		httpParam = importreview.BuildImportParameterization(httpScript, generated.PreApplied)
+		if httpParam != nil && len(httpParam.Suggestions) > 0 {
+			merged := make([]paramize.Suggestion, 0, len(browserParam.Suggestions)+len(httpParam.Suggestions))
+			for _, sug := range browserParam.Suggestions {
+				if sug.ScriptName == "" && result.Script != nil {
+					sug.ScriptName = result.Script.Name
+				}
+				merged = append(merged, sug)
+			}
+			for _, sug := range httpParam.Suggestions {
+				if sug.ScriptName == "" {
+					sug.ScriptName = httpScript.Name
+				}
+				merged = append(merged, sug)
+			}
+			combinedParam = &paramize.Result{
+				Suggestions: merged,
+				Summary:     importreview.ParamizeSummary(merged),
+				Warnings:    append(append([]string(nil), browserParam.Warnings...), httpParam.Warnings...),
+				AuraPayload: httpParam.AuraPayload,
+			}
+		}
+	}
+
 	response := s.importResponse(r, importreview.ScriptImportResponseOptions{
-		Script:           result.Script,
-		Scripts:          scripts,
-		Warnings:         warnings,
-		Stats:            result.Stats,
-		Correlations:     httpCorrelations,
-		ReviewSections:   httpSections,
-		Parameterization: importreview.BuildImportParameterization(result.Script, nil),
+		Script:                result.Script,
+		Scripts:               scripts,
+		Warnings:              warnings,
+		Stats:                 result.Stats,
+		Correlations:          httpCorrelations,
+		ReviewSections:        httpSections,
+		Parameterization:      combinedParam,
+		EffectiveSettings:     generated.EffectiveSettings,
+		ProtectedRequirements: generated.ProtectedRequirements,
 	})
 	if httpScript != nil {
-		response["http_script"] = httpScript
+		if responseScripts, ok := response["scripts"].([]any); ok && httpScriptIndex < len(responseScripts) {
+			response["http_script"] = responseScripts[httpScriptIndex]
+		} else {
+			response["http_script"] = importreview.MaskScriptSecrets(httpScript)
+		}
+		response["http_parameterization"] = importreview.FilterTrustedImportParameterization(httpParam, []*dsl.Script{httpScript})
+		if generated.Preflight != nil {
+			response["http_preflight"] = generated.Preflight
+		}
+		if allReqs, ok := response["secret_binding_requirements"].([]importreview.SecretBindingRequirement); ok {
+			httpReqs := make([]importreview.SecretBindingRequirement, 0)
+			for _, reqItem := range allReqs {
+				if reqItem.ScriptIndex == httpScriptIndex {
+					httpReqs = append(httpReqs, reqItem)
+				}
+			}
+			response["http_secret_binding_requirements"] = httpReqs
+		}
 	}
 	s.writeImportResponse(w, http.StatusOK, response)
 }
@@ -577,7 +1081,7 @@ func (s *Service) HandleVerifyBrowserRecording(w http.ResponseWriter, r *http.Re
 	if !s.decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
-	if !s.validHTTPVersionMode(w, req.Conversion.HTTPVersionMode) {
+	if !s.validHTTPVersionMode(w, req.Conversion.HTTPVersionMode) || !s.validBrowserPolicyOptions(w, req.Conversion) {
 		return
 	}
 	if err := ValidateExternalReplaySessionID(req.ReplaySessionID); err != nil {
@@ -601,13 +1105,21 @@ func (s *Service) HandleVerifyBrowserRecording(w http.ResponseWriter, r *http.Re
 	result := s.ConvertBrowserRecording(artifact, info, req.Conversion)
 	scripts := append([]*dsl.Script(nil), result.Scripts...)
 	if req.Conversion.AlsoCreateHTTPScript {
-		generated, err := s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, BrowserHTTPScriptOptions{AsyncScan: req.Conversion.AsyncScan, RecordingProfileID: req.Conversion.RecordingProfileID, HTTPVersionMode: req.Conversion.HTTPVersionMode})
+		generated, err := s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, req.Conversion.HTTPScriptOptions())
 		if err != nil {
 			s.writeError(w, http.StatusUnprocessableEntity, "HTTP conversion failed: "+err.Error())
 			return
 		}
+		defer importreview.ClearCredentialRequirementValues(generated.ProtectedRequirements)
 		result.Warnings = append(result.Warnings, generated.Warnings...)
 		if generated.Script != nil {
+			if len(generated.ProtectedRequirements) > 0 {
+				reqs := importreview.MergeReferencedImportCredentialRequirements([]*dsl.Script{generated.Script}, generated.ProtectedRequirements)
+				if len(reqs) > 0 {
+					_, _ = importreview.AttachImportCredentialReview([]*dsl.Script{generated.Script}, reqs)
+					importreview.ClearCredentialRequirementValues(reqs)
+				}
+			}
 			scripts = append(scripts, generated.Script)
 		}
 	}

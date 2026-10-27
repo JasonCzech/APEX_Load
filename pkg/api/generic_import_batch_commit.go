@@ -681,11 +681,12 @@ func (s *Server) persistOrVerifyGenericImportBatchBaselines(
 			baseline = baselines[index]
 		}
 		if baseline != nil {
-			if err := s.persistRecordedBaseline(
+			if err := s.persistRecordedBaselineCounted(
 				stored[index].ID,
 				baseline.source,
 				stored[index].Script,
 				baseline.observations,
+				baseline.count(),
 			); err != nil {
 				return fmt.Errorf("script %d: %w", index+1, err)
 			}

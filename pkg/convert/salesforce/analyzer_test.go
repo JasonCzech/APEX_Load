@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jmespath/go-jmespath"
 )
 
@@ -3025,5 +3026,163 @@ func TestAnalyzeHandlesMalformedTargetURLs(t *testing.T) {
 		if _, err := Analyze(script, AnalyzeOptions{BuildNative: true}); err != nil {
 			t.Fatalf("Analyze(%q) returned error: %v", target, err)
 		}
+	}
+}
+
+func TestAnalyzeRespectsCorrelationSettingsAndReviewModes(t *testing.T) {
+	newScript := func() *dsl.Script {
+		return &dsl.Script{
+			Name:     "SF Policy Test",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{BaseURL: "https://attone--perfhyper2.sandbox.my.salesforce.com"},
+			Actions: []dsl.Action{{
+				Name:   "Login",
+				Type:   "GET",
+				Method: "GET",
+				Target: "/login",
+			}, {
+				Name:   "Aura",
+				Type:   "POST",
+				Method: "POST",
+				Target: "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+				Body:   `{"actions":[{"id":"1;a","descriptor":"apex://AccountController/ACTION$get"}],"token":"tok-abcdef123456"}`,
+			}},
+		}
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "GET", "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/login", "headers": []},
+	        "response": {"headers": [], "content": {"text": "{\"access_token\":\"tok-abcdef123456\"}"}}
+	      },
+	      {
+	        "request": {"method": "POST", "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura", "headers": [], "postData": {"text": "{\"token\":\"tok-abcdef123456\"}"}},
+	        "response": {"headers": [], "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}}
+	      }
+	    ]
+	  }
+	}`)
+
+	baselineReview, err := Analyze(newScript(), AnalyzeOptions{
+		BuildNative: true,
+		HARData:     har,
+	})
+	if err != nil {
+		t.Fatalf("baseline Analyze returned error: %v", err)
+	}
+	if baselineReview.NativePreview == nil || len(baselineReview.NativePreview.Correlations) == 0 {
+		t.Fatalf("expected default Analyze control call to detect at least 1 correlation, got %#v", baselineReview.NativePreview)
+	}
+
+	t.Run("InferExtractors false skips correlation detection", func(t *testing.T) {
+		inferExtractors := false
+		review, err := Analyze(newScript(), AnalyzeOptions{
+			BuildNative:     true,
+			HARData:         har,
+			InferExtractors: &inferExtractors,
+		})
+		if err != nil {
+			t.Fatalf("Analyze returned error: %v", err)
+		}
+		if review.NativePreview == nil || review.NativePreview.Script == nil || len(review.NativePreview.Script.Actions) < 1 {
+			t.Fatalf("unexpected NativePreview = %#v", review.NativePreview)
+		}
+		if len(review.NativePreview.Correlations) != 0 {
+			t.Fatalf("correlations = %#v, want none when InferExtractors=false", review.NativePreview.Correlations)
+		}
+		if len(review.NativePreview.Script.Actions[0].Extractors) != 0 {
+			t.Fatalf("extractors = %#v, want none when InferExtractors=false", review.NativePreview.Script.Actions[0].Extractors)
+		}
+	})
+
+	t.Run("CorrelationSettings Disabled skips correlation detection", func(t *testing.T) {
+		review, err := Analyze(newScript(), AnalyzeOptions{
+			BuildNative: true,
+			HARData:     har,
+			CorrelationSettings: &recordingprofile.CorrelationSettings{
+				Disabled: true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Analyze returned error: %v", err)
+		}
+		if len(review.NativePreview.Correlations) != 0 {
+			t.Fatalf("correlations = %#v, want none when CorrelationSettings.Disabled=true", review.NativePreview.Correlations)
+		}
+	})
+
+	t.Run("CorrelationSettings ExcludedValues suppresses excluded token", func(t *testing.T) {
+		review, err := Analyze(newScript(), AnalyzeOptions{
+			BuildNative: true,
+			HARData:     har,
+			CorrelationSettings: &recordingprofile.CorrelationSettings{
+				ExcludedValues: []string{"tok-abcdef123456"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Analyze returned error: %v", err)
+		}
+		if len(review.NativePreview.Correlations) != 0 {
+			t.Fatalf("correlations = %#v, want excluded value filtered", review.NativePreview.Correlations)
+		}
+	})
+
+	t.Run("ReviewOnlyCorrelations retains correlation candidates without rewriting native script", func(t *testing.T) {
+		review, err := Analyze(newScript(), AnalyzeOptions{
+			BuildNative:            true,
+			HARData:                har,
+			ReviewOnlyCorrelations: true,
+		})
+		if err != nil {
+			t.Fatalf("Analyze returned error: %v", err)
+		}
+		if review.NativePreview == nil || review.NativePreview.Script == nil || len(review.NativePreview.Script.Actions) < 2 {
+			t.Fatalf("unexpected NativePreview = %#v", review.NativePreview)
+		}
+		if len(review.NativePreview.Correlations) == 0 {
+			t.Fatal("expected review-only correlations to be reported")
+		}
+		for _, c := range review.NativePreview.Correlations {
+			if c.PreApplied {
+				t.Fatalf("correlation %#v was marked PreApplied in review_only mode", c)
+			}
+			if c.ReviewAction != "manual_review_required" {
+				t.Fatalf("correlation ReviewAction = %q, want manual_review_required", c.ReviewAction)
+			}
+		}
+		if len(review.NativePreview.Script.Actions[0].Extractors) != 0 {
+			t.Fatalf("native preview extractors = %#v, want none in review_only mode", review.NativePreview.Script.Actions[0].Extractors)
+		}
+		if strings.Contains(review.NativePreview.Script.Actions[1].Body, "{{var.") {
+			t.Fatalf("native preview body = %q, want literal preserved in review_only mode", review.NativePreview.Script.Actions[1].Body)
+		}
+	})
+}
+
+func TestNativePreviewRemapBaselineObservations(t *testing.T) {
+	preview := &NativePreview{
+		Script: &dsl.Script{
+			Actions: []dsl.Action{
+				{Name: "Salesforce Login", Type: "salesforce_login"},
+				{Name: "Aura Call", Type: "salesforce_aura"},
+			},
+		},
+		oldToNewActionIndex: []int{0, -1, 1},
+	}
+	baseline := []correlate.Observation{
+		{ID: 0, RequestURL: "https://login.salesforce.com/"},
+		{ID: 1, RequestURL: "https://login.salesforce.com/post"},
+		{ID: 2, RequestURL: "https://acme.lightning.force.com/aura"},
+	}
+	remapped := preview.RemapBaselineObservations(baseline)
+	if len(remapped) != 2 {
+		t.Fatalf("remapped len = %d, want 2 (%#v)", len(remapped), remapped)
+	}
+	if remapped[0].ID != 0 || remapped[0].RequestURL != "https://login.salesforce.com/" {
+		t.Fatalf("remapped[0] = %#v, want ID 0", remapped[0])
+	}
+	if remapped[1].ID != 1 || remapped[1].RequestURL != "https://acme.lightning.force.com/aura" {
+		t.Fatalf("remapped[1] = %#v, want ID 1", remapped[1])
 	}
 }

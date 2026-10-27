@@ -1,5 +1,19 @@
 {
   "artifact_mode": "design_har",
+  "effective_settings": {
+    "agentforce_transform": false,
+    "async_scan": true,
+    "conversion_policy": "legacy",
+    "correlation_mode": "all",
+    "high_confidence_only": false,
+    "http_version_mode": "upgrade",
+    "include_assertions": true,
+    "infer_extractors": true,
+    "page_title_checks": true,
+    "resource_mode": "runtime",
+    "salesforce_native": true,
+    "source_entry_point": "import_har"
+  },
   "governance": {
     "artifact_mode": "design_har",
     "body_capture_required": true,

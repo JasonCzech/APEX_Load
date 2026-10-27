@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -80,6 +81,7 @@ type importDraftAttestationClaim struct {
 	// transformation descended from it).
 	RecordingSessionID            string
 	RecordingSnapshotDigest       string
+	RecordingBaseline             *importreview.RecordingBaseline
 	AttestedExecutionGraphDigest  string
 	SubmittedExecutionGraphDigest string
 }
@@ -108,11 +110,12 @@ func (s *Server) attachImportDraftAttestations(
 			continue
 		}
 		seen[script] = struct{}{}
-		expiresAt, projected, err := s.attachImportDraftAttestationProjecting(
+		expiresAt, projected, err := s.attachImportDraftAttestationProjectingWithBaseline(
 			r,
 			script,
 			opts.TextMemo,
 			opts.DisableDraftExpiration,
+			opts.RecordingBaseline,
 			opts.RecordingSessionID,
 			opts.RecordingSnapshotDigest,
 		)
@@ -165,6 +168,17 @@ func (s *Server) attachImportDraftAttestationWithExpirationPolicy(
 	return expiresAt, err
 }
 
+func (s *Server) attachImportDraftAttestationWithBaseline(
+	r *http.Request,
+	script *dsl.Script,
+	disableExpiration bool,
+	recordingBaseline *importreview.RecordingBaseline,
+	recordingSessionIDs ...string,
+) (time.Time, error) {
+	expiresAt, _, err := s.attachImportDraftAttestationProjectingWithBaseline(r, script, nil, disableExpiration, recordingBaseline, recordingSessionIDs...)
+	return expiresAt, err
+}
+
 // attachImportDraftAttestationProjecting also returns the disclosure
 // projection fingerprinting computed for script (nil when it computed none),
 // scrubbing text through memo. Attestation changes only the draft's capability
@@ -177,11 +191,22 @@ func (s *Server) attachImportDraftAttestationProjecting(
 	disableExpiration bool,
 	recordingSessionIDs ...string,
 ) (time.Time, *dsl.Script, error) {
+	return s.attachImportDraftAttestationProjectingWithBaseline(r, script, memo, disableExpiration, nil, recordingSessionIDs...)
+}
+
+func (s *Server) attachImportDraftAttestationProjectingWithBaseline(
+	r *http.Request,
+	script *dsl.Script,
+	memo *importProjectionTextMemo,
+	disableExpiration bool,
+	recordingBaseline *importreview.RecordingBaseline,
+	recordingSessionIDs ...string,
+) (time.Time, *dsl.Script, error) {
 	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || strings.TrimSpace(script.Metadata.Import.Source) == "" {
 		return time.Time{}, nil, nil
 	}
 	_, actor, _ := s.resolveAuditActor(r)
-	options := importreview.DraftAttachOptions{Scope: importreview.DraftScope{Actor: actor, ProjectID: importDraftProjectIDForRequest(r, script)}, DisableExpiration: disableExpiration, TextMemo: memo}
+	options := importreview.DraftAttachOptions{Scope: importreview.DraftScope{Actor: actor, ProjectID: importDraftProjectIDForRequest(r, script)}, DisableExpiration: disableExpiration, RecordingBaseline: recordingBaseline.Clone(), TextMemo: memo}
 	if len(recordingSessionIDs) > 0 {
 		options.RecordingSessionID = recordingSessionIDs[0]
 	}
@@ -218,11 +243,15 @@ func (s *Server) attachImportDraftAttestationProjecting(
 		}
 		if recordingSessionID != "" {
 			preserved := ensureScriptImportPreserved(protectedCandidate, profile)
-			preserved[importDraftRecordingLineageMetadataKey] = map[string]any{
+			lineageMap := map[string]any{
 				"recording_session_id":      recordingSessionID,
 				"recording_snapshot_digest": recordingSnapshotDigest,
 				"execution_graph_digest":    record.ExecutionGraphDigest,
 			}
+			if record.RecordingBaseline != nil {
+				lineageMap["recording_baseline"] = record.RecordingBaseline
+			}
+			preserved[importDraftRecordingLineageMetadataKey] = lineageMap
 		}
 		sessionID, expiresAt, err := s.registerImportCandidateSessionWithExpirationPolicy(
 			r,
@@ -286,10 +315,11 @@ func (s *Server) completeImportDraftMutation(
 		return time.Time{}, nil
 	}
 	stripImportDraftAttestation(script)
-	expiresAt, err := s.attachImportDraftAttestationWithExpirationPolicy(
+	expiresAt, err := s.attachImportDraftAttestationWithBaseline(
 		r,
 		script,
 		claim.ExpirationDisabled,
+		claim.RecordingBaseline,
 		claim.RecordingSessionID,
 		claim.RecordingSnapshotDigest,
 	)
@@ -363,7 +393,7 @@ func (s *Server) claimImportDraftAttestationWithJavaReview(
 	if err != nil {
 		return nil, err
 	}
-	return &importDraftAttestationClaim{Token: claim.Token, Profile: claim.Profile, Script: claim.Script, ExpirationDisabled: claim.ExpirationDisabled, JavaClasspathReviewChecked: claim.JavaClasspathReviewChecked, RecordingSessionID: claim.RecordingSessionID, RecordingSnapshotDigest: claim.RecordingSnapshotDigest, AttestedExecutionGraphDigest: claim.AttestedExecutionGraphDigest, SubmittedExecutionGraphDigest: claim.SubmittedExecutionGraphDigest}, nil
+	return &importDraftAttestationClaim{Token: claim.Token, Profile: claim.Profile, Script: claim.Script, ExpirationDisabled: claim.ExpirationDisabled, JavaClasspathReviewChecked: claim.JavaClasspathReviewChecked, RecordingSessionID: claim.RecordingSessionID, RecordingSnapshotDigest: claim.RecordingSnapshotDigest, RecordingBaseline: claim.RecordingBaseline, AttestedExecutionGraphDigest: claim.AttestedExecutionGraphDigest, SubmittedExecutionGraphDigest: claim.SubmittedExecutionGraphDigest}, nil
 }
 
 func (s *Server) claimProtectedImportDraftAttestation(
@@ -428,6 +458,9 @@ func (s *Server) claimProtectedImportDraftAttestationWithJavaReview(
 			return nil, err
 		}
 	}
+	recordingSessionID, recordingSnapshotDigest, lineageDigest, recordingBaseline := takeProtectedImportDraftRecordingLineage(
+		candidate.Script,
+	)
 	attestedFingerprint, attestedProjection, err := fingerprintImportDraftCredentialsWithProjection(candidate.Script, nil)
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
@@ -473,9 +506,6 @@ func (s *Server) claimProtectedImportDraftAttestationWithJavaReview(
 			return nil, errImportDraftAttestationInvalid
 		}
 	}
-	recordingSessionID, recordingSnapshotDigest, lineageDigest := protectedImportDraftRecordingLineage(
-		candidate.Script,
-	)
 	record := &importDraftAttestation{
 		CredentialDigests:              attestedFingerprint.CredentialDigests,
 		StructureDigest:                attestedFingerprint.StructureDigest,
@@ -528,6 +558,7 @@ func (s *Server) claimProtectedImportDraftAttestationWithJavaReview(
 	if lineageAllowed {
 		claim.RecordingSessionID = recordingSessionID
 		claim.RecordingSnapshotDigest = recordingSnapshotDigest
+		claim.RecordingBaseline = recordingBaseline
 	}
 	return claim, nil
 }
@@ -665,14 +696,31 @@ var importDraftAttestationToken = importreview.ImportDraftAttestationToken
 
 var stripImportDraftAttestation = importreview.StripImportDraftAttestation
 
-func protectedImportDraftRecordingLineage(script *dsl.Script) (string, string, string) {
+// takeProtectedImportDraftRecordingLineage reads a protected candidate's
+// recording lineage and removes the attested baseline from the candidate, so
+// the baseline never takes part in the candidate's credential fingerprint. A
+// baseline that cannot be decoded voids the lineage: the save then falls back
+// to the unattested path rather than persisting an unverified baseline.
+func takeProtectedImportDraftRecordingLineage(script *dsl.Script) (string, string, string, *importreview.RecordingBaseline) {
 	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
 		script.Metadata.Import.Preserved == nil {
-		return "", "", ""
+		return "", "", "", nil
 	}
 	raw, ok := script.Metadata.Import.Preserved[importDraftRecordingLineageMetadataKey].(map[string]any)
 	if !ok {
-		return "", "", ""
+		return "", "", "", nil
+	}
+	var baseline *importreview.RecordingBaseline
+	if rawBaseline, exists := raw["recording_baseline"]; exists {
+		delete(raw, "recording_baseline")
+		encoded, err := json.Marshal(rawBaseline)
+		if err != nil {
+			return "", "", "", nil
+		}
+		baseline = &importreview.RecordingBaseline{}
+		if err := json.Unmarshal(encoded, baseline); err != nil {
+			return "", "", "", nil
+		}
 	}
 	sessionID, _ := raw["recording_session_id"].(string)
 	snapshotDigest, _ := raw["recording_snapshot_digest"].(string)
@@ -681,9 +729,9 @@ func protectedImportDraftRecordingLineage(script *dsl.Script) (string, string, s
 	snapshotDigest = strings.TrimSpace(snapshotDigest)
 	digest = strings.TrimSpace(digest)
 	if sessionID == "" || snapshotDigest == "" || digest == "" {
-		return "", "", ""
+		return "", "", "", nil
 	}
-	return sessionID, snapshotDigest, digest
+	return sessionID, snapshotDigest, digest, baseline
 }
 
 var fingerprintImportDraftCredentials = importreview.FingerprintImportDraftCredentials
@@ -775,10 +823,11 @@ func (s *Server) completeImportDraftMutations(
 			return nil, false, err
 		}
 		stripImportDraftAttestation(scripts[index])
-		expiresAt, err := s.attachImportDraftAttestationWithExpirationPolicy(
+		expiresAt, err := s.attachImportDraftAttestationWithBaseline(
 			r,
 			scripts[index],
 			claim.ExpirationDisabled,
+			claim.RecordingBaseline,
 			claim.RecordingSessionID,
 			claim.RecordingSnapshotDigest,
 		)
