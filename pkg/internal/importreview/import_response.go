@@ -9,6 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -89,6 +90,14 @@ type ScriptImportResponseOptions struct {
 	// snapshot used for the preview, so a still-live recording cannot acquire
 	// new baseline observations between preview and save.
 	RecordingSnapshotDigest string
+	// RecordingBaseline holds the option-resolved, persistence-bounded baseline
+	// for a proxy recording preview so save attestation persists the exact
+	// action-index aligned baseline rather than re-converting with default
+	// options.
+	RecordingBaseline *RecordingBaseline
+	// EffectiveSettings is the resolved conversion policy and authoring option
+	// summary for HTTP authoring entry points.
+	EffectiveSettings *sample.EffectiveSettings
 	// DraftAttestationExpiresAt is populated only by the server-side response
 	// builder. It is never accepted from converter or client input.
 	DraftAttestationExpiresAt time.Time
@@ -255,8 +264,17 @@ func NewScriptImportResponseWithProjection(opts ScriptImportResponseOptions) (ma
 		"preflight":                   ImportResponseValue(opts.Preflight),
 	}
 
+	effectiveSettings := opts.EffectiveSettings
+	if effectiveSettings == nil && scriptForNativeRefs != nil {
+		if resolved, ok := sample.ReadEffectiveSettings(scriptForNativeRefs); ok {
+			effectiveSettings = resolved
+		}
+	}
 	if opts.ReviewSummary != nil {
 		response["review_summary"] = opts.ReviewSummary
+	}
+	if effectiveSettings != nil {
+		response["effective_settings"] = effectiveSettings
 	}
 	if !opts.Accounting.Empty() {
 		response["accounting"] = opts.Accounting

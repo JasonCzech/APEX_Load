@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
@@ -39,13 +41,23 @@ type Correlation struct {
 }
 
 type ConvertResult struct {
-	Script       *dsl.Script   `json:"script"`
-	Correlations []Correlation `json:"correlations"`
-	Warnings     []string      `json:"warnings,omitempty"`
+	Script            *dsl.Script               `json:"script"`
+	Correlations      []Correlation             `json:"correlations"`
+	Warnings          []string                  `json:"warnings,omitempty"`
+	EffectiveSettings *sample.EffectiveSettings `json:"effective_settings,omitempty"`
 	// Diagnostics carries coded, informational observations from the shared
 	// conversion pipeline, such as origins that advertise HTTP/3. Warnings
 	// and blockers stay in Warnings.
 	Diagnostics diag.Diagnostics `json:"diagnostics,omitempty"`
+	// Document and HARData retain the synthesized in-memory HAR representation
+	// for optional downstream Stage 2/3 composition passes.
+	Document           *sample.HARDocument  `json:"-"`
+	HARData            []byte               `json:"-"`
+	Stats              sample.ConvertStats  `json:"-"`
+	SampleCorrelations []sample.Correlation `json:"-"`
+	// ProtectedRequirements transfers source values needed to bind {{secret.*}}
+	// references during conversion composition.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
 	// Baseline is the raw recorded observation of each converted request,
 	// with ID the index of its action in Script: the recorded side of a
 	// record-vs-replay correlation diagnosis. It holds source values; the
@@ -55,10 +67,22 @@ type ConvertResult struct {
 
 // ConvertOptions toggles optional, opt-in conversion behaviors.
 type ConvertOptions struct {
+	ConversionPolicy       string
+	CorrelationMode        string
+	RecordingProfileID     string
+	IncludeAssertions      *bool
+	InferExtractors        *bool
+	IncludeStaticAssets    *bool
+	HighConfidenceOnly     *bool
+	ReviewOnlyCorrelations bool
+	DisableSalesforce      *bool
+	SalesforceNative       *bool
+	AgentforceTransform    *bool
 	// Parameterize promotes recorded input values (form fields / query params)
 	// into a generated data source so the script is data-driven instead of
 	// replaying hard-coded values.
-	Parameterize bool
+	Parameterize      bool
+	DeferParameterize bool
 	// PageTitleChecks adds a body_contains check on each recorded HTML page's
 	// <title>, as VuGen does by default. Nil means on.
 	PageTitleChecks *bool
@@ -113,7 +137,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		if opts.PageTitleChecks == nil {
 			opts.PageTitleChecks = profile.PageTitleChecks
 		}
-		if opts.ResourceMode == "" {
+		if opts.ResourceMode == "" && opts.IncludeStaticAssets == nil {
 			opts.ResourceMode = profile.ResourceMode
 		}
 		if opts.AsyncScan == nil {
@@ -148,7 +172,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	if len(script.Actions) == 0 {
 		return result
 	}
-	if opts.Parameterize {
+	if opts.Parameterize && !opts.DeferParameterize {
 		result.Warnings = append(result.Warnings, parameterizeInputs(script, session.Name)...)
 	}
 	preserved := make(map[string]any)
@@ -533,6 +557,12 @@ var keyValuePair = regexp.MustCompile(`([?&]|^)([A-Za-z0-9_.\-\[\]]+)=([^&#\s"']
 // source and rewrites the occurrences to {{data.recorded_inputs.<col>}}. It runs
 // after correlation replacement so values already turned into {{var.*}} are left
 // alone. Returns warnings describing what was parameterized.
+// ParameterizeRecordingInputs promotes recorded input values into a generated data
+// source and rewrites the occurrences to {{data.recorded_inputs.<col>}}.
+func ParameterizeRecordingInputs(script *dsl.Script, sourceName string) []string {
+	return parameterizeInputs(script, sourceName)
+}
+
 func parameterizeInputs(script *dsl.Script, sourceName string) []string {
 	return parameterizeInputsWithLimits(
 		script,

@@ -195,6 +195,9 @@ func sourceSequenceChild(action dsl.Action) map[string]any {
 	if action.BodyEncoding != "" {
 		child["body_encoding"] = action.BodyEncoding
 	}
+	if action.BodyMultipart != nil {
+		child["body_multipart"] = cloneSourceMultipartBody(action.BodyMultipart)
+	}
 	if len(action.Params) > 0 {
 		child["params"] = cloneSourceAnyMap(action.Params)
 	}
@@ -225,10 +228,32 @@ func sourceSequenceChild(action dsl.Action) map[string]any {
 	if action.ThinkTimeAfter {
 		child["think_time_after"] = true
 	}
+	if action.Attribution != nil {
+		attr := *action.Attribution
+		child["attribution"] = &attr
+	}
 	if action.SOAP != nil {
 		child["soap"] = action.SOAP
 	}
 	return child
+}
+
+func cloneSourceMultipartBody(body *dsl.MultipartBody) *dsl.MultipartBody {
+	if body == nil {
+		return nil
+	}
+	parts := make([]dsl.MultipartPart, len(body.Parts))
+	for index, part := range body.Parts {
+		parts[index] = part
+		if len(part.Headers) > 0 {
+			headers := make(map[string]string, len(part.Headers))
+			for key, value := range part.Headers {
+				headers[key] = value
+			}
+			parts[index].Headers = headers
+		}
+	}
+	return &dsl.MultipartBody{Parts: parts}
 }
 
 // sourceSequenceCompatibilityHeaders derives the legacy single-value map from
@@ -267,6 +292,9 @@ func actionTransactionName(action dsl.Action) string {
 }
 
 func isHTTPProtocolAction(action dsl.Action) bool {
+	if action.BodyMultipart != nil && (action.Body != "" || action.BodyFile != "" || action.BodyEncoding != "") {
+		return false
+	}
 	actionType := strings.ToUpper(strings.TrimSpace(convertutil.FirstNonEmpty(action.Method, action.Type)))
 	switch actionType {
 	case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS":

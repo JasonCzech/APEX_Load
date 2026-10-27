@@ -111,6 +111,74 @@ type Result struct {
 	AuraPayload *AuraPayloadCoverage `json:"aura_payload,omitempty"`
 }
 
+// Selection identifies one or more parameterization suggestion IDs chosen by the
+// operator during import/conversion. It decodes either a plain string suggestion
+// ID or an object with id/suggestion_id/selected_ids and optional script_index.
+type Selection struct {
+	ID          string   `json:"id,omitempty"`
+	ScriptIndex int      `json:"script_index,omitempty"`
+	SelectedIDs []string `json:"selected_ids,omitempty"`
+}
+
+func (s *Selection) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		id := strings.TrimSpace(single)
+		s.ID = id
+		s.ScriptIndex = 0
+		if id != "" {
+			s.SelectedIDs = []string{id}
+		} else {
+			s.SelectedIDs = nil
+		}
+		return nil
+	}
+	var obj struct {
+		ID           string   `json:"id"`
+		SuggestionID string   `json:"suggestion_id"`
+		ScriptIndex  int      `json:"script_index"`
+		SelectedIDs  []string `json:"selected_ids"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+	s.ScriptIndex = obj.ScriptIndex
+	s.ID = strings.TrimSpace(obj.ID)
+	if s.ID == "" {
+		s.ID = strings.TrimSpace(obj.SuggestionID)
+	}
+	ids := make([]string, 0, len(obj.SelectedIDs)+1)
+	if s.ID != "" {
+		ids = append(ids, s.ID)
+	}
+	for _, raw := range obj.SelectedIDs {
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			ids = append(ids, trimmed)
+		}
+	}
+	s.SelectedIDs = ids
+	return nil
+}
+
+// SelectedIDsForScript collects all selected suggestion IDs targeting scriptIndex.
+func SelectedIDsForScript(selections []Selection, scriptIndex int) map[string]bool {
+	selected := make(map[string]bool)
+	for _, item := range selections {
+		if item.ScriptIndex != scriptIndex {
+			continue
+		}
+		if id := strings.TrimSpace(item.ID); id != "" {
+			selected[id] = true
+		}
+		for _, id := range item.SelectedIDs {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				selected[trimmed] = true
+			}
+		}
+	}
+	return selected
+}
+
 // PreAppliedCorrelation describes a correlation a converter already applied to
 // the generated script (extractor added, literals replaced with {{var.X}}).
 type PreAppliedCorrelation struct {

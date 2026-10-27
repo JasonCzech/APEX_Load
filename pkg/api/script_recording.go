@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -18,8 +19,8 @@ import (
 )
 
 const (
-	maxRecordedBaselineObservations  = 500
-	maxRecordedBaselinePlaintextSize = 12 << 20
+	maxRecordedBaselineObservations  = importreview.MaxRecordedBaselineObservations
+	maxRecordedBaselinePlaintextSize = importreview.MaxRecordedBaselinePlaintextSize
 )
 
 var (
@@ -34,6 +35,20 @@ var (
 type attestedRecordingBaseline struct {
 	source       string
 	observations []correlate.Observation
+	// requestCount is the recording's observation count before the
+	// persistence bound; zero means len(observations).
+	requestCount int
+}
+
+// count is the original request count persistence records for the baseline.
+func (b *attestedRecordingBaseline) count() int {
+	if b == nil {
+		return 0
+	}
+	if b.requestCount > 0 {
+		return b.requestCount
+	}
+	return len(b.observations)
 }
 
 var recordingBaselineSnapshotDigest = recordbridge.RecordingBaselineSnapshotDigest
@@ -119,8 +134,19 @@ func scrubRepairSuggestions(suggestions []correlate.RepairSuggestion) []correlat
 // encrypted raw correlation sidecar for a script. It is best-effort: a nil
 // store, empty baseline, or save error must not fail the surrounding import.
 func (s *Server) persistRecordedBaseline(scriptID, source string, script *dsl.Script, observations []correlate.Observation) error {
+	return s.persistRecordedBaselineCounted(scriptID, source, script, observations, len(observations))
+}
+
+// persistRecordedBaselineCounted is persistRecordedBaseline for observations
+// that were already bounded (a preview attests only the prefix persistence
+// keeps): requestCount is the recording's observation count before that bound
+// and is what the record reports as its original request count.
+func (s *Server) persistRecordedBaselineCounted(scriptID, source string, script *dsl.Script, observations []correlate.Observation, requestCount int) error {
 	scriptID = strings.TrimSpace(scriptID)
-	if s.store == nil || scriptID == "" || len(observations) == 0 {
+	if requestCount < len(observations) {
+		requestCount = len(observations)
+	}
+	if s.store == nil || scriptID == "" || requestCount == 0 {
 		return nil
 	}
 	actionGraphDigest, err := scriptCorrelationActionGraphDigest(script)
@@ -172,7 +198,7 @@ func (s *Server) persistRecordedBaseline(scriptID, source string, script *dsl.Sc
 		Sensitivity:       scrub.SensitivityScrubbed,
 		// RequestCount describes the original recording. The retained baseline
 		// can be smaller because of the observation-count or plaintext-size cap.
-		RequestCount: len(observations),
+		RequestCount: requestCount,
 		Observations: redacted,
 	}
 	// Even when the first raw exchange alone exceeds the authenticated
@@ -212,26 +238,17 @@ func (s *Server) persistRecordedBaseline(scriptID, source string, script *dsl.Sc
 	return s.store.SaveScriptRecording(record)
 }
 
+// estimatedRecordingObservationJSONSize is the shared retention estimate
+// (importreview.EstimatedRecordingObservationJSONSize), so a preview attests
+// exactly the prefix this persistence keeps.
 func estimatedRecordingObservationJSONSize(observation storage.ScriptRecordingObservation) int {
-	// encoding/json can expand one input byte to at most six bytes (for control,
-	// invalid UTF-8, and HTML-escaped characters). Include generous structural
-	// overhead for field names, delimiters, the integer ID, and header entries.
-	size := 256
-	add := func(value string) { size += 6 * len(value) }
-	add(observation.RequestURL)
-	add(observation.RequestBody)
-	add(observation.ResponseBody)
-	for key, value := range observation.RequestHeaders {
-		size += 16
-		add(key)
-		add(value)
-	}
-	for key, value := range observation.ResponseHeaders {
-		size += 16
-		add(key)
-		add(value)
-	}
-	return size
+	return importreview.EstimatedRecordingObservationJSONSize(
+		observation.RequestURL,
+		observation.RequestBody,
+		observation.ResponseBody,
+		observation.RequestHeaders,
+		observation.ResponseHeaders,
+	)
 }
 
 // attestRecordingBaselineCapture resolves one immutable recording snapshot and
@@ -272,48 +289,55 @@ func (s *Server) attestRecordingBaselineCapture(
 	if normalizeProjectID(session.ProjectID) != normalizeProjectID(scriptProjectID) {
 		return nil, errRecordingCaptureSourceNotFound
 	}
-	snapshotDigest, err := recordingBaselineSnapshotDigest(session)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errRecordingCaptureUnattested, err)
-	}
 	if len(importClaims) > 0 {
 		claim := importClaims[0]
 		if claim != nil &&
 			strings.EqualFold(strings.TrimSpace(claim.Profile), "recorder") &&
-			strings.TrimSpace(claim.RecordingSessionID) == sessionID &&
-			strings.TrimSpace(claim.RecordingSnapshotDigest) == snapshotDigest &&
-			claim.AttestedExecutionGraphDigest != "" &&
-			claim.AttestedExecutionGraphDigest ==
-				claim.SubmittedExecutionGraphDigest {
-			return &attestedRecordingBaseline{
-				source:       "proxy_recording",
-				observations: recorder.SessionBaseline(session),
-			}, nil
+			strings.TrimSpace(claim.RecordingSessionID) == sessionID {
+			expectedDigest, digestErr := recordbridge.RecordingBaselineSnapshotDigestWithBaseline(session, claim.RecordingBaseline)
+			if digestErr != nil {
+				return nil, fmt.Errorf("%w: %v", errRecordingCaptureUnattested, digestErr)
+			}
+			if strings.TrimSpace(claim.RecordingSnapshotDigest) == expectedDigest &&
+				claim.AttestedExecutionGraphDigest != "" &&
+				claim.AttestedExecutionGraphDigest ==
+					claim.SubmittedExecutionGraphDigest {
+				if claim.RecordingBaseline == nil {
+					return &attestedRecordingBaseline{
+						source:       "proxy_recording",
+						observations: recorder.SessionBaseline(session),
+					}, nil
+				}
+				return &attestedRecordingBaseline{
+					source:       "proxy_recording",
+					observations: claim.RecordingBaseline.Observations,
+					requestCount: claim.RecordingBaseline.RequestCount,
+				}, nil
+			}
 		}
+	}
+	if settings, ok := sample.ReadEffectiveSettings(script); ok && sample.HasNonDefaultRecordingConversionSettings(settings) {
+		return nil, fmt.Errorf("%w: recording draft uses non-default conversion settings and requires a current preview attestation; re-run recording conversion preview before saving", errRecordingCaptureUnattested)
 	}
 	submittedDigest, err := scriptCorrelationActionGraphDigest(script)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errRecordingCaptureUnattested, err)
 	}
-	for _, parameterize := range []bool{false, true} {
-		converted := recorder.ConvertSessionWithOptions(session, script.Name, recorder.ConvertOptions{Parameterize: parameterize})
-		if converted == nil || converted.Script == nil {
-			continue
-		}
+	converted := recorder.ConvertSession(session, script.Name)
+	if converted != nil && converted.Script != nil {
 		candidate, prepareErr := preparePersistentImportedLibraryScript(
 			converted.Script,
 			nil,
 			"recorder",
 		)
-		if prepareErr != nil || candidate == nil {
-			continue
-		}
-		candidateDigest, digestErr := scriptCorrelationActionGraphDigest(candidate)
-		if digestErr == nil && candidateDigest == submittedDigest {
-			return &attestedRecordingBaseline{
-				source:       "proxy_recording",
-				observations: recorder.SessionBaseline(session),
-			}, nil
+		if prepareErr == nil && candidate != nil {
+			candidateDigest, digestErr := scriptCorrelationActionGraphDigest(candidate)
+			if digestErr == nil && candidateDigest == submittedDigest {
+				return &attestedRecordingBaseline{
+					source:       "proxy_recording",
+					observations: recorder.SessionBaseline(session),
+				}, nil
+			}
 		}
 	}
 	return nil, errRecordingCaptureUnattested

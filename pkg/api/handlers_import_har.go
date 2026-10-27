@@ -12,8 +12,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +31,8 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	importReq.Opts.Profile = profile
+	importReq.Opts.RecordingProfileID = strings.TrimSpace(importReq.RecordingProfileID)
+	importReq.Opts.EntryPoint = sample.EntryPointImportHAR
 
 	result, err := har.Convert(importReq.Data, importReq.Opts)
 	if err != nil {
@@ -50,11 +56,21 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
+	salesforceNative := salesforceNativeRequested(r)
 	agentforceTransform := agentforceTransformRequested(r)
+	disableSalesforce := false
+	if result.EffectiveSettings != nil {
+		salesforceNative = result.EffectiveSettings.SalesforceNative
+		agentforceTransform = result.EffectiveSettings.AgentforceTransform
+		disableSalesforce = result.EffectiveSettings.DisableSalesforce
+	}
 	// A Salesforce HAR may ship a native rewrite instead of the raw HAR draft.
 	// Everything downstream of that choice — which script, which source profile,
 	// which sections — is the same for both outcomes.
-	salesforceAugmentation := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "har", salesforceNativeRequested(r), agentforceTransform, true)
+	var salesforceAugmentation salesforceHARAugmentation
+	if !disableSalesforce {
+		salesforceAugmentation = importreview.AugmentHARImportWithSalesforceProfile(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "har", salesforceNative, agentforceTransform, true, profile)
+	}
 	script := result.Script
 	source := "har"
 	sections := harImportReviewSections(result)
@@ -71,9 +87,9 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 			preApplied = nil
 		}
 	}
-	applyClientGeneratedUUIDs(script, importReq.Data, result)
-	applyClientTimestamps(script, importReq.Data, result)
 
+	var preparedCredentialReview []importreview.SecretBindingRequirement
+	var credentialReviewPrepared bool
 	draft := importDraft{
 		Source:           source,
 		SourceScriptName: importReq.Opts.ScriptName,
@@ -84,24 +100,55 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		Sections:         sections,
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
+		BeforeFinalize: func(s *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error {
+			applyClientGeneratedUUIDs(s, importReq.Data, result)
+			applyClientTimestamps(s, importReq.Data, result)
+			*warnings = result.Warnings
+			*unsupported = result.Unsupported
+			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && len(importReq.Opts.ParameterizationSelections) == 0 {
+				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
+				*warnings = result.Warnings
+			}
+			if len(importReq.Opts.ParameterizationSelections) > 0 {
+				if _, err := importreview.ApplyParameterizationSelectionsToScript(s, 0, importReq.Opts.ParameterizationSelections); err != nil {
+					return err
+				}
+			}
+			if len(importReq.SecretBindings) > 0 {
+				var err error
+				_, preparedCredentialReview, credentialReviewPrepared, err = importreview.ApplySecretBindingsToImportDraft(s, 0, importReq.SecretBindings, protectedRequirements)
+				if err != nil {
+					return err
+				}
+			}
+			sample.AttachEffectiveSettings(s, result.EffectiveSettings)
+			return nil
+		},
 	}
-	augmented := draft.AugmentWithAgentforceTransform(agentforceTransform)
+	augmented, err := draft.AugmentWithAgentforceTransformChecked(agentforceTransform)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	result.Warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Result:                result,
-		Script:                script,
-		Warnings:              result.Warnings,
-		Stats:                 result.Stats,
-		Correlations:          correlations,
-		Diagnostics:           result.Unsupported,
-		UnsupportedElements:   result.Unsupported.Strings(),
-		ReviewSections:        augmented.Sections,
-		SourceReview:          result.SourceReview,
-		Summary:               summary,
-		Parameterization:      buildImportParameterization(script, preApplied),
-		Preflight:             augmented.Preflight,
-		ProtectedRequirements: protectedRequirements,
+		Result:                   result,
+		Script:                   script,
+		Warnings:                 result.Warnings,
+		Stats:                    result.Stats,
+		Correlations:             correlations,
+		Diagnostics:              result.Unsupported,
+		UnsupportedElements:      result.Unsupported.Strings(),
+		ReviewSections:           augmented.Sections,
+		SourceReview:             result.SourceReview,
+		Summary:                  summary,
+		Parameterization:         buildImportParameterization(script, preApplied),
+		Preflight:                augmented.Preflight,
+		EffectiveSettings:        result.EffectiveSettings,
+		ProtectedRequirements:    protectedRequirements,
+		PreparedCredentialReview: preparedCredentialReview,
+		CredentialReviewPrepared: credentialReviewPrepared,
 	})
 }
 
@@ -152,21 +199,66 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 	}
 	if upload.Transport == importTransportJSON {
 		var req struct {
-			Name              string             `json:"name,omitempty"`
-			ProjectID         string             `json:"project_id,omitempty"`
-			Content           string             `json:"content"`
-			SecondaryContent  string             `json:"secondary_content,omitempty"`
-			ComparisonContent string             `json:"comparison_content,omitempty"`
-			ContentB          string             `json:"content_b,omitempty"`
-			Options           har.ConvertOptions `json:"options,omitempty"`
-			// RecordingProfileID names a project recording profile to apply.
-			RecordingProfileID string `json:"recording_profile_id,omitempty"`
+			Name                       string                                `json:"name,omitempty"`
+			ProjectID                  string                                `json:"project_id,omitempty"`
+			Content                    string                                `json:"content"`
+			SecondaryContent           string                                `json:"secondary_content,omitempty"`
+			ComparisonContent          string                                `json:"comparison_content,omitempty"`
+			ContentB                   string                                `json:"content_b,omitempty"`
+			Options                    har.ConvertOptions                    `json:"options,omitempty"`
+			RecordingProfileID         string                                `json:"recording_profile_id,omitempty"`
+			ProfileID                  string                                `json:"profile_id,omitempty"`
+			ConversionPolicy           string                                `json:"conversion_policy,omitempty"`
+			CorrelationMode            string                                `json:"correlation_mode,omitempty"`
+			ResourceMode               string                                `json:"resource_mode,omitempty"`
+			PageTitleChecks            *bool                                 `json:"page_title_checks,omitempty"`
+			IncludeAssertions          *bool                                 `json:"include_assertions,omitempty"`
+			InferExtractors            *bool                                 `json:"infer_extractors,omitempty"`
+			IncludeStaticAssets        *bool                                 `json:"include_static_assets,omitempty"`
+			RedactSensitive            *bool                                 `json:"redact_sensitive,omitempty"`
+			SalvageTruncated           *bool                                 `json:"salvage_truncated,omitempty"`
+			AsyncScan                  *bool                                 `json:"async_scan,omitempty"`
+			HTTPVersionMode            string                                `json:"http_version_mode,omitempty"`
+			DisableSalesforce          *bool                                 `json:"disable_salesforce,omitempty"`
+			SalesforceNative           *bool                                 `json:"salesforce_native,omitempty"`
+			AgentforceTransform        *bool                                 `json:"agentforce_transform,omitempty"`
+			Parameterize               *bool                                 `json:"parameterize,omitempty"`
+			ParameterizationSelections []paramize.Selection                  `json:"parameterization_selections,omitempty"`
+			SecretBindings             []importreview.SecretBindingSelection `json:"secret_bindings,omitempty"`
 		}
 		if err := json.Unmarshal(upload.Data, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
-		if !validHTTPVersionMode(w, req.Options.HTTPVersionMode) {
+		profileID := strings.TrimSpace(firstNonEmpty(
+			req.RecordingProfileID,
+			req.ProfileID,
+			req.Options.RecordingProfileID,
+			upload.Value("recording_profile_id"),
+			upload.Value("profile_id"),
+		))
+		req.Options.RecordingProfileID = profileID
+		req.Options.ConversionPolicy = strings.TrimSpace(firstNonEmpty(req.ConversionPolicy, req.Options.ConversionPolicy, upload.Value("conversion_policy")))
+		req.Options.CorrelationMode = strings.TrimSpace(firstNonEmpty(req.CorrelationMode, req.Options.CorrelationMode, upload.Value("correlation_mode")))
+		req.Options.ResourceMode = strings.TrimSpace(firstNonEmpty(req.ResourceMode, req.Options.ResourceMode, upload.Value("resource_mode")))
+		req.Options.HTTPVersionMode = strings.TrimSpace(firstNonEmpty(req.HTTPVersionMode, req.Options.HTTPVersionMode, upload.Value("http_version_mode")))
+		req.Options.PageTitleChecks = firstNonNilBool(req.PageTitleChecks, req.Options.PageTitleChecks, parseOptionalBool(upload.Value("page_title_checks")))
+		req.Options.IncludeAssertions = firstNonNilBool(req.IncludeAssertions, req.Options.IncludeAssertions, parseOptionalBool(upload.Value("include_assertions")))
+		req.Options.InferExtractors = firstNonNilBool(req.InferExtractors, req.Options.InferExtractors, parseOptionalBool(upload.Value("infer_extractors")))
+		req.Options.IncludeStaticAssets = firstNonNilBool(req.IncludeStaticAssets, req.Options.IncludeStaticAssets, parseOptionalBool(upload.Value("include_static_assets")))
+		req.Options.RedactSensitive = firstNonNilBool(req.RedactSensitive, req.Options.RedactSensitive, parseOptionalBool(upload.Value("redact_sensitive")))
+		req.Options.SalvageTruncated = firstNonNilBool(req.SalvageTruncated, req.Options.SalvageTruncated, parseOptionalBool(upload.Value("salvage_truncated")))
+		req.Options.AsyncScan = firstNonNilBool(req.AsyncScan, req.Options.AsyncScan, parseOptionalBool(upload.Value("async_scan")))
+		req.Options.DisableSalesforce = firstNonNilBool(req.DisableSalesforce, req.Options.DisableSalesforce, parseOptionalBool(upload.Value("disable_salesforce")))
+		req.Options.SalesforceNative = firstNonNilBool(req.SalesforceNative, req.Options.SalesforceNative, parseOptionalBool(upload.Value("salesforce_native")))
+		req.Options.AgentforceTransform = firstNonNilBool(req.AgentforceTransform, req.Options.AgentforceTransform, parseOptionalBool(upload.Value("agentforce_transform")))
+		if param := firstNonNilBool(req.Parameterize, parseOptionalBool(upload.Value("parameterize"))); param != nil {
+			req.Options.Parameterize = *param
+		}
+		if len(req.ParameterizationSelections) > 0 {
+			req.Options.ParameterizationSelections = req.ParameterizationSelections
+		}
+		if !validHTTPVersionMode(w, req.Options.HTTPVersionMode) || !validHARImportPolicyOptions(w, req.Options) {
 			return nil, false
 		}
 		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
@@ -177,7 +269,8 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			SecondaryData:      []byte(secondary),
 			ProjectID:          upload.jsonProjectID(req.ProjectID),
 			Opts:               req.Options,
-			RecordingProfileID: strings.TrimSpace(req.RecordingProfileID),
+			RecordingProfileID: profileID,
+			SecretBindings:     req.SecretBindings,
 		}, true
 	}
 
@@ -191,26 +284,79 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 		}
 	}
 	httpVersionMode := strings.TrimSpace(upload.Value("http_version_mode"))
-	if !validHTTPVersionMode(w, httpVersionMode) {
+	profileID := strings.TrimSpace(firstNonEmpty(upload.Value("recording_profile_id"), upload.Value("profile_id")))
+	opts := har.ConvertOptions{
+		ScriptName:          firstNonEmpty(upload.Value("name"), upload.Name),
+		BaseURL:             upload.Value("base_url"),
+		RecordingProfileID:  profileID,
+		ConversionPolicy:    strings.TrimSpace(upload.Value("conversion_policy")),
+		CorrelationMode:     strings.TrimSpace(upload.Value("correlation_mode")),
+		ResourceMode:        strings.TrimSpace(upload.Value("resource_mode")),
+		ArtifactMode:        normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
+		RetentionDays:       parseOptionalIntDefault(upload.Value("retention_days"), 0),
+		RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
+		IncludeAssertions:   parseOptionalBool(upload.Value("include_assertions")),
+		InferExtractors:     parseOptionalBool(upload.Value("infer_extractors")),
+		IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
+		PageTitleChecks:     parseOptionalBool(upload.Value("page_title_checks")),
+		SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
+		AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
+		DisableSalesforce:   parseOptionalBool(upload.Value("disable_salesforce")),
+		SalesforceNative:    parseOptionalBool(upload.Value("salesforce_native")),
+		AgentforceTransform: parseOptionalBool(upload.Value("agentforce_transform")),
+		Parameterize:        parseBoolDefault(upload.Value("parameterize"), false),
+		HTTPVersionMode:     httpVersionMode,
+	}
+	if !validHTTPVersionMode(w, httpVersionMode) || !validHARImportPolicyOptions(w, opts) {
 		return nil, false
+	}
+	if rawSelections := strings.TrimSpace(upload.Value("parameterization_selections")); rawSelections != "" {
+		if err := json.Unmarshal([]byte(rawSelections), &opts.ParameterizationSelections); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid parameterization_selections: "+err.Error())
+			return nil, false
+		}
+	}
+	var secretBindings []importreview.SecretBindingSelection
+	if rawBindings := strings.TrimSpace(upload.Value("secret_bindings")); rawBindings != "" {
+		if err := json.Unmarshal([]byte(rawBindings), &secretBindings); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid secret_bindings: "+err.Error())
+			return nil, false
+		}
 	}
 	return &harImportRequest{
 		Data:               upload.Data,
 		SecondaryData:      secondaryData,
 		ProjectID:          upload.ProjectID,
-		RecordingProfileID: strings.TrimSpace(upload.Value("recording_profile_id")),
-		Opts: har.ConvertOptions{
-			ScriptName:          firstNonEmpty(upload.Value("name"), upload.Name),
-			BaseURL:             upload.Value("base_url"),
-			ArtifactMode:        normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
-			RetentionDays:       parseOptionalIntDefault(upload.Value("retention_days"), 0),
-			RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
-			IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
-			SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
-			AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
-			HTTPVersionMode:     httpVersionMode,
-		},
+		RecordingProfileID: profileID,
+		Opts:               opts,
+		SecretBindings:     secretBindings,
 	}, true
+}
+
+func firstNonNilBool(values ...*bool) *bool {
+	for _, value := range values {
+		if value != nil {
+			copied := *value
+			return &copied
+		}
+	}
+	return nil
+}
+
+func validHARImportPolicyOptions(w http.ResponseWriter, opts har.ConvertOptions) bool {
+	if _, err := sample.ValidateConversionPolicy(opts.ConversionPolicy); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	if _, err := sample.ValidateCorrelationMode(opts.CorrelationMode); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	if _, err := sample.ValidateResourceMode(opts.ResourceMode); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	return true
 }
 
 func normalizeHARArtifactMode(value string, hasComparison bool) string {

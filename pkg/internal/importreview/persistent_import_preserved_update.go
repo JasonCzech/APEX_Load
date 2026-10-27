@@ -32,6 +32,7 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 		dsl.ImportPreservedEnterpriseJavaJDBCSourceKey,
 		contentcontract.ImportSourceCommitFenceMetadataKey,
 		"recorded_input_secret_columns",
+		"effective_settings",
 	} {
 		var priorValue any
 		hasPriorValue := false
@@ -118,6 +119,7 @@ func ValidatePreservedImportCredentialEdits(candidate, prior *dsl.Script) error 
 		if script.Metadata != nil && script.Metadata.Import != nil {
 			delete(script.Metadata.Import.Preserved, "recorder_session_id")
 			delete(script.Metadata.Import.Preserved, contentcontract.ImportSourceCommitFenceMetadataKey)
+			delete(script.Metadata.Import.Preserved, "effective_settings")
 		}
 	}
 	projectedCandidate := MaskScriptSecrets(candidate)

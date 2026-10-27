@@ -40266,9 +40266,19 @@ paths:
             schema:
               type: object
               properties:
+                agentforce_transform:
+                  type: boolean
+                  nullable: true
                 also_create_http_script:
                   type: boolean
                 async_scan:
+                  type: boolean
+                  nullable: true
+                conversion_policy:
+                  type: string
+                correlation_mode:
+                  type: string
+                disable_salesforce:
                   type: boolean
                   nullable: true
                 end_seq:
@@ -40284,11 +40294,23 @@ paths:
                   type: string
                 http_version_mode:
                   type: string
+                include_assertions:
+                  type: boolean
+                  nullable: true
+                include_static_assets:
+                  type: boolean
+                  nullable: true
+                infer_extractors:
+                  type: boolean
+                  nullable: true
                 max_think_time_ms:
                   type: integer
                   format: int64
                 name:
                   type: string
+                page_title_checks:
+                  type: boolean
+                  nullable: true
                 parameterization_selections:
                   type: array
                   items:
@@ -40303,8 +40325,15 @@ paths:
                           type: string
                 parameterize:
                   type: boolean
+                profile_id:
+                  type: string
                 recording_profile_id:
                   type: string
+                resource_mode:
+                  type: string
+                salesforce_native:
+                  type: boolean
+                  nullable: true
                 secret_bindings:
                   type: array
                   items:
@@ -40406,9 +40435,19 @@ paths:
             schema:
               type: object
               properties:
+                agentforce_transform:
+                  type: boolean
+                  nullable: true
                 also_create_http_script:
                   type: boolean
                 async_scan:
+                  type: boolean
+                  nullable: true
+                conversion_policy:
+                  type: string
+                correlation_mode:
+                  type: string
+                disable_salesforce:
                   type: boolean
                   nullable: true
                 end_seq:
@@ -40418,15 +40457,34 @@ paths:
                   type: string
                 http_version_mode:
                   type: string
+                include_assertions:
+                  type: boolean
+                  nullable: true
+                include_static_assets:
+                  type: boolean
+                  nullable: true
+                infer_extractors:
+                  type: boolean
+                  nullable: true
                 max_think_time_ms:
                   type: integer
                   format: int64
                 name:
                   type: string
+                page_title_checks:
+                  type: boolean
+                  nullable: true
                 parameterize:
                   type: boolean
+                profile_id:
+                  type: string
                 recording_profile_id:
                   type: string
+                resource_mode:
+                  type: string
+                salesforce_native:
+                  type: boolean
+                  nullable: true
                 split_at_transactions:
                   type: boolean
                 start_seq:
@@ -41303,9 +41361,19 @@ paths:
                 conversion:
                   type: object
                   properties:
+                    agentforce_transform:
+                      type: boolean
+                      nullable: true
                     also_create_http_script:
                       type: boolean
                     async_scan:
+                      type: boolean
+                      nullable: true
+                    conversion_policy:
+                      type: string
+                    correlation_mode:
+                      type: string
+                    disable_salesforce:
                       type: boolean
                       nullable: true
                     end_seq:
@@ -41321,11 +41389,23 @@ paths:
                       type: string
                     http_version_mode:
                       type: string
+                    include_assertions:
+                      type: boolean
+                      nullable: true
+                    include_static_assets:
+                      type: boolean
+                      nullable: true
+                    infer_extractors:
+                      type: boolean
+                      nullable: true
                     max_think_time_ms:
                       type: integer
                       format: int64
                     name:
                       type: string
+                    page_title_checks:
+                      type: boolean
+                      nullable: true
                     parameterization_selections:
                       type: array
                       items:
@@ -41340,8 +41420,15 @@ paths:
                               type: string
                     parameterize:
                       type: boolean
+                    profile_id:
+                      type: string
                     recording_profile_id:
                       type: string
+                    resource_mode:
+                      type: string
+                    salesforce_native:
+                      type: boolean
+                      nullable: true
                     secret_bindings:
                       type: array
                       items:
@@ -89455,22 +89542,61 @@ paths:
             schema:
               type: object
               properties:
+                agentforce_transform:
+                  type: boolean
+                  nullable: true
                 async_scan:
+                  type: boolean
+                  nullable: true
+                conversion_policy:
+                  type: string
+                correlation_mode:
+                  type: string
+                disable_salesforce:
                   type: boolean
                   nullable: true
                 http_version_mode:
                   type: string
+                include_assertions:
+                  type: boolean
+                  nullable: true
+                include_static_assets:
+                  type: boolean
+                  nullable: true
+                infer_extractors:
+                  type: boolean
+                  nullable: true
                 name:
                   type: string
                 page_title_checks:
                   type: boolean
                   nullable: true
+                parameterization_selections:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: paramize.Selection'
+                    additionalProperties: true
                 parameterize:
                   type: boolean
+                profile_id:
+                  type: string
                 recording_profile_id:
                   type: string
                 resource_mode:
                   type: string
+                salesforce_native:
+                  type: boolean
+                  nullable: true
+                secret_bindings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      requirement_id:
+                        type: string
+                      secret_name:
+                        type: string
       responses:
         2XX:
           description: Successful response; exact status is selected by the handler.
@@ -89549,22 +89675,61 @@ paths:
             schema:
               type: object
               properties:
+                agentforce_transform:
+                  type: boolean
+                  nullable: true
                 async_scan:
+                  type: boolean
+                  nullable: true
+                conversion_policy:
+                  type: string
+                correlation_mode:
+                  type: string
+                disable_salesforce:
                   type: boolean
                   nullable: true
                 http_version_mode:
                   type: string
+                include_assertions:
+                  type: boolean
+                  nullable: true
+                include_static_assets:
+                  type: boolean
+                  nullable: true
+                infer_extractors:
+                  type: boolean
+                  nullable: true
                 name:
                   type: string
                 page_title_checks:
                   type: boolean
                   nullable: true
+                parameterization_selections:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: paramize.Selection'
+                    additionalProperties: true
                 parameterize:
                   type: boolean
+                profile_id:
+                  type: string
                 recording_profile_id:
                   type: string
                 resource_mode:
                   type: string
+                salesforce_native:
+                  type: boolean
+                  nullable: true
+                secret_bindings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      requirement_id:
+                        type: string
+                      secret_name:
+                        type: string
       responses:
         2XX:
           description: Successful response; exact status is selected by the handler.
@@ -310422,28 +310587,54 @@ paths:
             schema:
               type: object
               properties:
+                agentforce_transform:
+                  type: string
                 artifact_mode:
                   type: string
                 async_scan:
                   type: string
                 base_url:
                   type: string
+                conversion_policy:
+                  type: string
+                correlation_mode:
+                  type: string
+                disable_salesforce:
+                  type: string
                 file:
                   type: string
                   format: binary
                 http_version_mode:
                   type: string
+                include_assertions:
+                  type: string
                 include_static_assets:
                   type: string
+                infer_extractors:
+                  type: string
                 name:
+                  type: string
+                page_title_checks:
+                  type: string
+                parameterization_selections:
+                  type: string
+                parameterize:
+                  type: string
+                profile_id:
                   type: string
                 recording_profile_id:
                   type: string
                 redact_sensitive:
                   type: string
+                resource_mode:
+                  type: string
                 retention_days:
                   type: string
+                salesforce_native:
+                  type: string
                 salvage_truncated:
+                  type: string
+                secret_bindings:
                   type: string
               additionalProperties: true
       responses:
@@ -310481,6 +310672,12 @@ paths:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       parameters:
+        - name: agentforce_transform
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
         - name: artifact_mode
           in: query
           description: Handler-defined query parameter.
@@ -310499,6 +310696,24 @@ paths:
           required: false
           schema:
             type: string
+        - name: conversion_policy
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: correlation_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: disable_salesforce
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: filename
           in: query
           description: Handler-defined query parameter.
@@ -310511,13 +310726,49 @@ paths:
           required: false
           schema:
             type: string
+        - name: include_assertions
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: include_static_assets
           in: query
           description: Handler-defined query parameter.
           required: false
           schema:
             type: boolean
+        - name: infer_extractors
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: name
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: page_title_checks
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: parameterization_selections
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: parameterize
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: profile_id
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -310541,6 +310792,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: resource_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: response_format
           in: query
           description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
@@ -310554,12 +310811,24 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: salesforce_native
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
         - name: salvage_truncated
           in: query
           description: Handler-defined query parameter.
           required: false
           schema:
             type: boolean
+        - name: secret_bindings
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleImportHAR
@@ -334851,28 +335120,54 @@ paths:
             schema:
               type: object
               properties:
+                agentforce_transform:
+                  type: string
                 artifact_mode:
                   type: string
                 async_scan:
                   type: string
                 base_url:
                   type: string
+                conversion_policy:
+                  type: string
+                correlation_mode:
+                  type: string
+                disable_salesforce:
+                  type: string
                 file:
                   type: string
                   format: binary
                 http_version_mode:
                   type: string
+                include_assertions:
+                  type: string
                 include_static_assets:
                   type: string
+                infer_extractors:
+                  type: string
                 name:
+                  type: string
+                page_title_checks:
+                  type: string
+                parameterization_selections:
+                  type: string
+                parameterize:
+                  type: string
+                profile_id:
                   type: string
                 recording_profile_id:
                   type: string
                 redact_sensitive:
                   type: string
+                resource_mode:
+                  type: string
                 retention_days:
                   type: string
+                salesforce_native:
+                  type: string
                 salvage_truncated:
+                  type: string
+                secret_bindings:
                   type: string
               additionalProperties: true
       responses:
@@ -334910,6 +335205,12 @@ paths:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       parameters:
+        - name: agentforce_transform
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
         - name: artifact_mode
           in: query
           description: Handler-defined query parameter.
@@ -334928,6 +335229,24 @@ paths:
           required: false
           schema:
             type: string
+        - name: conversion_policy
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: correlation_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: disable_salesforce
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: filename
           in: query
           description: Handler-defined query parameter.
@@ -334940,13 +335259,49 @@ paths:
           required: false
           schema:
             type: string
+        - name: include_assertions
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: include_static_assets
           in: query
           description: Handler-defined query parameter.
           required: false
           schema:
             type: boolean
+        - name: infer_extractors
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: name
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: page_title_checks
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: parameterization_selections
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: parameterize
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: profile_id
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -334970,6 +335325,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: resource_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: response_format
           in: query
           description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
@@ -334983,12 +335344,24 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: salesforce_native
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
         - name: salvage_truncated
           in: query
           description: Handler-defined query parameter.
           required: false
           schema:
             type: boolean
+        - name: secret_bindings
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleImportSalesforce
@@ -335004,20 +335377,54 @@ paths:
             schema:
               type: object
               properties:
+                agentforce_transform:
+                  type: boolean
+                  nullable: true
+                async_scan:
+                  type: boolean
+                  nullable: true
                 content:
                   type: string
+                conversion_policy:
+                  type: string
+                correlation_mode:
+                  type: string
+                disable_salesforce:
+                  type: boolean
+                  nullable: true
                 format:
                   type: string
+                http_version_mode:
+                  type: string
+                include_assertions:
+                  type: boolean
+                  nullable: true
+                include_static_assets:
+                  type: boolean
+                  nullable: true
+                infer_extractors:
+                  type: boolean
+                  nullable: true
                 name:
                   type: string
                 options:
                   type: object
                   properties:
+                    agentforce_transform:
+                      type: boolean
+                      nullable: true
                     async_scan:
                       type: boolean
                       nullable: true
                     base_url:
                       type: string
+                    conversion_policy:
+                      type: string
+                    correlation_mode:
+                      type: string
+                    disable_salesforce:
+                      type: boolean
+                      nullable: true
                     http_version_mode:
                       type: string
                     include_assertions:
@@ -335032,15 +335439,60 @@ paths:
                     page_title_checks:
                       type: boolean
                       nullable: true
+                    parameterization_selections:
+                      type: array
+                      items:
+                        type: object
+                        description: 'Go type: paramize.Selection'
+                        additionalProperties: true
+                    parameterize:
+                      type: boolean
+                    recording_profile_id:
+                      type: string
                     resource_mode:
                       type: string
+                    salesforce_native:
+                      type: boolean
+                      nullable: true
                     sanitize_sensitive:
                       type: boolean
                       nullable: true
+                page_title_checks:
+                  type: boolean
+                  nullable: true
+                parameterization_selections:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: paramize.Selection'
+                    additionalProperties: true
+                parameterize:
+                  type: boolean
+                profile_id:
+                  type: string
                 project_id:
+                  type: string
+                recording_profile_id:
+                  type: string
+                resource_mode:
                   type: string
                 response_content:
                   type: string
+                salesforce_native:
+                  type: boolean
+                  nullable: true
+                sanitize_sensitive:
+                  type: boolean
+                  nullable: true
+                secret_bindings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      requirement_id:
+                        type: string
+                      secret_name:
+                        type: string
               required:
                 - content
                 - format
@@ -335079,9 +335531,111 @@ paths:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       parameters:
+        - name: agentforce_transform
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
+        - name: async_scan
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
+        - name: conversion_policy
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: correlation_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: disable_salesforce
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: http_version_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: include_assertions
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: include_static_assets
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
+        - name: infer_extractors
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: page_title_checks
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: parameterize
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: profile_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: recording_profile_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: resource_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: response_format
           in: query
           description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
+          required: false
+          schema:
+            type: string
+        - name: salesforce_native
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
+        - name: sanitize_sensitive
+          in: query
+          description: Handler-defined query parameter.
           required: false
           schema:
             type: string

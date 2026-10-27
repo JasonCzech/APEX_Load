@@ -9,6 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -27,6 +28,9 @@ const (
 type ConvertOptions struct {
 	ScriptName          string `json:"script_name,omitempty"`
 	BaseURL             string `json:"base_url,omitempty"`
+	RecordingProfileID  string `json:"recording_profile_id,omitempty"`
+	ConversionPolicy    string `json:"conversion_policy,omitempty"`
+	CorrelationMode     string `json:"correlation_mode,omitempty"`
 	ArtifactMode        string `json:"artifact_mode,omitempty"`
 	RetentionDays       int    `json:"retention_days,omitempty"`
 	RedactSensitive     *bool  `json:"redact_sensitive,omitempty"`
@@ -58,6 +62,16 @@ type ConvertOptions struct {
 	// header drop list, think-time threshold and correlation settings and
 	// supplies the options above that are left unset.
 	Profile *recordingprofile.Profile `json:"-"`
+	// HighConfidenceOnly and ReviewOnlyCorrelations allow callers or conversion
+	// policy resolution to control automatic correlation rewrites.
+	HighConfidenceOnly         bool                 `json:"-"`
+	ReviewOnlyCorrelations     bool                 `json:"-"`
+	EntryPoint                 string               `json:"-"`
+	DisableSalesforce          *bool                `json:"disable_salesforce,omitempty"`
+	SalesforceNative           *bool                `json:"salesforce_native,omitempty"`
+	AgentforceTransform        *bool                `json:"agentforce_transform,omitempty"`
+	Parameterize               bool                 `json:"parameterize,omitempty"`
+	ParameterizationSelections []paramize.Selection `json:"parameterization_selections,omitempty"`
 	// HTTPVersionMode maps captured HTTP versions to leaf policies: upgrade
 	// (default; captured h3 becomes auto+h3), exact (3) or inherit (none).
 	HTTPVersionMode string `json:"http_version_mode,omitempty"`
@@ -75,16 +89,17 @@ type ArtifactGovernance struct {
 
 type ConvertResult struct {
 	// Document retains parsed source evidence for private analysis passes.
-	Document     *sample.HARDocument  `json:"-"`
-	Script       *dsl.Script          `json:"script"`
-	Warnings     []string             `json:"warnings,omitempty"`
-	Unsupported  diag.Diagnostics     `json:"unsupported,omitempty"`
-	Stats        sample.ConvertStats  `json:"stats"`
-	Correlations []sample.Correlation `json:"correlations,omitempty"`
-	SourceReview *sourceview.Review   `json:"source_review,omitempty"`
-	ArtifactMode string               `json:"artifact_mode,omitempty"`
-	Governance   *ArtifactGovernance  `json:"governance,omitempty"`
-	Diff         *DiffReport          `json:"diff,omitempty"`
+	Document          *sample.HARDocument       `json:"-"`
+	Script            *dsl.Script               `json:"script"`
+	Warnings          []string                  `json:"warnings,omitempty"`
+	Unsupported       diag.Diagnostics          `json:"unsupported,omitempty"`
+	Stats             sample.ConvertStats       `json:"stats"`
+	Correlations      []sample.Correlation      `json:"correlations,omitempty"`
+	SourceReview      *sourceview.Review        `json:"source_review,omitempty"`
+	ArtifactMode      string                    `json:"artifact_mode,omitempty"`
+	Governance        *ArtifactGovernance       `json:"governance,omitempty"`
+	Diff              *DiffReport               `json:"diff,omitempty"`
+	EffectiveSettings *sample.EffectiveSettings `json:"effective_settings,omitempty"`
 
 	// ProtectedRequirements transfers the sample adapter's source values to
 	// HAR API workflows without placing them in the public conversion payload.
@@ -116,6 +131,10 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	redactionEnabled := false
 	governanceWarnings := []string{}
 	sensitivity := scrub.SensitivityRaw
+	entryPoint := opts.EntryPoint
+	if entryPoint == "" {
+		entryPoint = sample.EntryPointImportHAR
+	}
 	// Correlation detection and its review samples retain the imported values.
 	// Run and debug output are responsible for masking values they emit.
 	result, err := sample.Convert(sample.ImportRequest{
@@ -123,19 +142,30 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		Format:  "har",
 		Content: string(data),
 		Options: sample.ConvertOptions{
-			BaseURL:             opts.BaseURL,
-			IncludeAssertions:   opts.IncludeAssertions,
-			InferExtractors:     opts.InferExtractors,
-			SanitizeSensitive:   boolPointer(false),
-			IncludeStaticAssets: opts.IncludeStaticAssets,
-			PageTitleChecks:     opts.PageTitleChecks,
-			ResourceMode:        opts.ResourceMode,
-			HTMLSteps:           opts.HTMLSteps,
-			Transactions:        opts.Transactions,
-			Notes:               opts.Notes,
-			AsyncScan:           opts.AsyncScan,
-			Profile:             opts.Profile,
-			HTTPVersionMode:     opts.HTTPVersionMode,
+			BaseURL:                    opts.BaseURL,
+			RecordingProfileID:         opts.RecordingProfileID,
+			ConversionPolicy:           opts.ConversionPolicy,
+			CorrelationMode:            opts.CorrelationMode,
+			IncludeAssertions:          opts.IncludeAssertions,
+			InferExtractors:            opts.InferExtractors,
+			SanitizeSensitive:          boolPointer(false),
+			IncludeStaticAssets:        opts.IncludeStaticAssets,
+			PageTitleChecks:            opts.PageTitleChecks,
+			ResourceMode:               opts.ResourceMode,
+			HTMLSteps:                  opts.HTMLSteps,
+			Transactions:               opts.Transactions,
+			Notes:                      opts.Notes,
+			AsyncScan:                  opts.AsyncScan,
+			Profile:                    opts.Profile,
+			HighConfidenceOnly:         opts.HighConfidenceOnly,
+			ReviewOnlyCorrelations:     opts.ReviewOnlyCorrelations,
+			EntryPoint:                 entryPoint,
+			DisableSalesforce:          opts.DisableSalesforce,
+			SalesforceNative:           opts.SalesforceNative,
+			AgentforceTransform:        opts.AgentforceTransform,
+			Parameterize:               opts.Parameterize,
+			ParameterizationSelections: opts.ParameterizationSelections,
+			HTTPVersionMode:            opts.HTTPVersionMode,
 		},
 	})
 	if err != nil {
@@ -152,15 +182,16 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	converted := &ConvertResult{
-		Document:     result.Document,
-		Script:       result.Script,
-		Warnings:     warnings,
-		Unsupported:  result.Unsupported,
-		Stats:        result.Stats,
-		Correlations: result.Correlations,
-		SourceReview: result.SourceReview,
-		ArtifactMode: artifactMode,
-		Baseline:     result.Baseline,
+		Document:          result.Document,
+		Script:            result.Script,
+		Warnings:          warnings,
+		Unsupported:       result.Unsupported,
+		Stats:             result.Stats,
+		Correlations:      result.Correlations,
+		SourceReview:      result.SourceReview,
+		ArtifactMode:      artifactMode,
+		EffectiveSettings: result.EffectiveSettings,
+		Baseline:          result.Baseline,
 		Governance: &ArtifactGovernance{
 			ArtifactMode:        artifactMode,
 			Sensitivity:         sensitivity,

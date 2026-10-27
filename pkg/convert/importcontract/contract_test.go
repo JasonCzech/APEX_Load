@@ -62,12 +62,12 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "0b3323c2222f9a34eaaee03c3e106421e0afc3fe5b768a8dda5e8a8fea37fc88",
+	"har":      "03fc9cf598ad03d647308a19e73658d61ce3bd104c1d8c6b2b0c7669333f055f",
 	"jmeter":   "3c6e167f1526ecec0148f58521aba4970b123890c0569e56e89dab6cbd7929c2",
 	"k6":       "223d2eb2c757a624f7c0f670f04d32bb0d9de0abb406ab040af52cbf2b2eba94",
 	"openapi":  "2556790828c10f7324153accb4cb0c850171b031581e5aea760b322de638ff9d",
 	"postman":  "d8e22b1ff33f8bd71d312ba049cfd3fcf17424541feb51da39a08550ce7052f4",
-	"raw_http": "baf7c224f75f8963016f84addc2a0a6a65b1d2734d0b708cfc677cba263ce082",
+	"raw_http": "305238d0f983a8ee7a871fed8828592145da34d96d3027025ae22ad6c6947ca0",
 	"wsdl":     "0f94fdda0ed3abd5d8b8c336c64aacfbb7ada5ca3f8e0307e6df52742482587e",
 }
 
@@ -90,6 +90,7 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			if importer.name == "raw_http" {
 				requireIntentionalDelta(t, "raw_http_explicit_http11_runtime_mode")
 				requireIntentionalDelta(t, "per_leaf_http_version_policy")
+				requireIntentionalDelta(t, "http_conversion_effective_settings")
 			}
 			if importer.name == "har" {
 				requireIntentionalDelta(t, "har_request_http_version_fidelity")
@@ -97,6 +98,7 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 				requireIntentionalDelta(t, "har_capture_version_provenance")
 				requireIntentionalDelta(t, "har_response_content_storage_provenance")
 				requireIntentionalDelta(t, "har_http_version_mode")
+				requireIntentionalDelta(t, "http_conversion_effective_settings")
 			}
 			if importer.name == "postman" {
 				requireIntentionalDelta(t, "postman_source_file_provenance")
@@ -603,6 +605,7 @@ var intentionalDeltaAllowlist = map[string]string{
 	"jmeter_normalized_review_evidence":              "JMeter returns source-qualified structured diagnostics and separate behavior-level review counts, restricts unsupported elements to unrepresentable behavior, and retains normalized evidence in new draft provenance.",
 	"jmeter_stable_source_identity":                  "JMeter provenance retains content-addressed plan and source group identities, stable source mapping IDs, and separate workload and contributor counts for regeneration and scoped compatibility behavior.",
 	"script_results_contract":                        "The optional bounded result-detail policy adds an empty results object to imported script configuration while preserving legacy runtime behavior.",
+	"http_conversion_effective_settings":             "HTTP sample and HAR conversion results surface the resolved effective_settings summary (policy, correlation mode, generation options, and source entrypoint) so callers can audit conversion provenance.",
 }
 
 func requireIntentionalDelta(t *testing.T, key string) {

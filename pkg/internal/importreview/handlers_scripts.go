@@ -1,13 +1,105 @@
 package importreview
 
 import (
+	"fmt"
+
 	"github.com/jasonczech/apexload/pkg/convert/clientids"
 	"github.com/jasonczech/apexload/pkg/convert/clienttimestamps"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recorder"
 )
+
+func ApplyAutoParameterizationToScript(script *dsl.Script) []string {
+	if script == nil {
+		return nil
+	}
+	uniquify.DeduplicateActionNames(script)
+	result := paramize.Suggest(script, paramize.Options{EnableDataParams: true, EnableSecrets: false})
+	selected := make(map[string]bool)
+	for _, suggestion := range result.Suggestions {
+		if suggestion.AutoApply && !suggestion.HighRisk && suggestion.Kind != paramize.KindSecret {
+			selected[suggestion.ID] = true
+		}
+	}
+	if len(selected) > 0 {
+		if applied, _, err := paramize.ApplySuggestions(script, result.Suggestions, selected); err == nil && applied != nil {
+			*script = *applied
+		}
+	}
+	sourceName := script.Name
+	if script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.SourceScriptName != "" {
+		sourceName = script.Metadata.Import.SourceScriptName
+	}
+	return recorder.ParameterizeRecordingInputs(script, sourceName)
+}
+
+func ApplyParameterizationSelectionsToScript(script *dsl.Script, scriptIndex int, selections []paramize.Selection) (*dsl.Script, error) {
+	selected := paramize.SelectedIDsForScript(selections, scriptIndex)
+	if len(selected) == 0 || script == nil {
+		return script, nil
+	}
+	trusted := BuildTrustedImportParameterization(script)
+	trustedByID := make(map[string]paramize.Suggestion, len(trusted.Suggestions))
+	for _, suggestion := range trusted.Suggestions {
+		trustedByID[suggestion.ID] = suggestion
+	}
+	for id := range selected {
+		suggestion, ok := trustedByID[id]
+		if !ok {
+			return nil, fmt.Errorf("selected parameterization suggestion %q is stale or unavailable", id)
+		}
+		if suggestion.Kind == paramize.KindSecret {
+			return nil, fmt.Errorf("secret parameterization must use guided credential bindings")
+		}
+	}
+	applied, _, err := paramize.ApplySuggestions(script, trusted.Suggestions, selected)
+	if err != nil {
+		return nil, err
+	}
+	if applied != nil {
+		*script = *applied
+	}
+	return script, nil
+}
+
+func ApplySecretBindingsToImportDraft(
+	script *dsl.Script,
+	scriptIndex int,
+	bindings []SecretBindingSelection,
+	protectedRequirements []credentialpolicy.Requirement,
+) (*dsl.Script, []SecretBindingRequirement, bool, error) {
+	if len(bindings) == 0 || script == nil {
+		return script, nil, false, nil
+	}
+	if len(protectedRequirements) > 0 {
+		reqs := MergeReferencedImportCredentialRequirements([]*dsl.Script{script}, protectedRequirements)
+		if len(reqs) > 0 {
+			if _, err := AttachImportCredentialReview([]*dsl.Script{script}, reqs); err != nil {
+				ClearCredentialRequirementValues(reqs)
+				return nil, nil, false, err
+			}
+			ClearCredentialRequirementValues(reqs)
+		}
+	}
+	resolver := ApplySecretBindings
+	if IsCredentialPreservingImport(script) {
+		resolver = ApplyCredentialPreservingSecretBindings
+	}
+	resolved, remaining, err := resolver(script, scriptIndex, bindings)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if resolved != nil {
+		*script = *resolved
+	}
+	return script, remaining, true, nil
+}
 
 func ApplyClientGeneratedUUIDs(script *dsl.Script, harData []byte, result *har.ConvertResult) {
 	if script == nil || result == nil {

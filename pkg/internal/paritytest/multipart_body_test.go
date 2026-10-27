@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -41,8 +42,8 @@ func TestBodyMultipartReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report == nil {
-		t.Fatal("no replay report")
+	if report == nil || !report.Success {
+		t.Fatalf("ReplayOnce report = %+v, want Success", report)
 	}
 	recorded := server.Recorded()
 	if len(recorded) != 2 {
@@ -136,8 +137,12 @@ func TestBodyMultipartWindows1252Part(t *testing.T) {
 	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
 		t.Fatalf("validate: %v", issues)
 	}
-	if _, err := ReplayOnce(context.Background(), script, map[string]string{"who": "José"}, nil); err != nil {
+	winReport, err := ReplayOnce(context.Background(), script, map[string]string{"who": "José"}, nil)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if winReport == nil || !winReport.Success {
+		t.Fatalf("ReplayOnce report = %+v, want Success", winReport)
 	}
 	recorded := server.Recorded()
 	if len(recorded) != 1 {
@@ -154,5 +159,128 @@ func TestBodyMultipartWindows1252Part(t *testing.T) {
 	data, _ := io.ReadAll(part)
 	if string(data) != "M\xe1laga Jos\xe9" {
 		t.Fatalf("part bytes = %q, want Windows-1252", data)
+	}
+}
+
+func TestBodyMultipartInHTTPSequenceReplay(t *testing.T) {
+	fileBytes := []byte("report-bytes")
+	for _, mode := range []string{"sequential", "concurrent"} {
+		t.Run(mode, func(t *testing.T) {
+			server := NewServer([]Response{
+				{Method: "POST", Path: "/upload", Status: 200, Body: "uploaded"},
+				{Method: "GET", Path: "/confirm", Status: 200, Body: "confirmed"},
+			})
+			defer server.Close()
+
+			params := map[string]any{
+				"requests": []map[string]any{
+					{
+						"name":   "upload",
+						"type":   "POST",
+						"method": "POST",
+						"target": "/upload",
+						"attribution": &dsl.AnalyticsAttribution{
+							HierarchyPath: "Orders/Upload",
+							PageName:      "UploadPage",
+						},
+						"body_multipart": &dsl.MultipartBody{Parts: []dsl.MultipartPart{
+							{Name: "account", Value: "{{var.account}}"},
+							{Name: "doc", Value: "{{file.upload_doc}}", Filename: "report.txt", ContentType: "text/plain"},
+						}},
+					},
+					{
+						"name":   "confirm",
+						"type":   "GET",
+						"method": "GET",
+						"target": "/confirm",
+					},
+				},
+			}
+			if mode == "concurrent" {
+				params["execution_mode"] = dsl.HTTPSequenceConcurrent
+			} else {
+				params["requests"].([]map[string]any)[0]["think_time_after"] = true
+			}
+
+			script := &dsl.Script{
+				Name:     "seq-multipart-replay",
+				Protocol: "http",
+				Config:   dsl.ScriptConfig{BaseURL: server.URL},
+				DataSources: []dsl.DataSource{{
+					Name:       "upload_doc",
+					Type:       "file",
+					FileName:   "report.txt",
+					InlineData: base64.StdEncoding.EncodeToString(fileBytes),
+					Encoding:   "base64",
+				}},
+				Actions: []dsl.Action{{
+					Name:   "Upload_Order",
+					Type:   "http_sequence",
+					Method: "SEQUENCE",
+					Target: "/upload",
+					Params: params,
+				}},
+			}
+			if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+				t.Fatalf("ValidateScriptIssues: %v", issues)
+			}
+			rawReqs, err := json.Marshal(script.Actions[0].Params["requests"])
+			if err != nil {
+				t.Fatalf("json.Marshal(requests): %v", err)
+			}
+			var seqReqs []dsl.Action
+			if err := json.Unmarshal(rawReqs, &seqReqs); err != nil {
+				t.Fatalf("json.Unmarshal(requests): %v", err)
+			}
+			if len(seqReqs) != 2 {
+				t.Fatalf("seqReqs = %+v, want 2 requests", seqReqs)
+			}
+			if seqReqs[0].Attribution == nil || seqReqs[0].Attribution.HierarchyPath != "Orders/Upload" || seqReqs[0].Attribution.PageName != "UploadPage" {
+				t.Fatalf("seqReqs[0].Attribution = %+v, want HierarchyPath=Orders/Upload PageName=UploadPage", seqReqs[0].Attribution)
+			}
+			report, err := ReplayOnce(context.Background(), script, map[string]string{"account": "Acme"}, nil)
+			if err != nil {
+				t.Fatalf("ReplayOnce: %v", err)
+			}
+			if report == nil || !report.Success {
+				t.Fatalf("ReplayOnce report = %+v, want Success", report)
+			}
+			recorded := server.Recorded()
+			if len(recorded) != 2 {
+				t.Fatalf("recorded requests = %d, want 2", len(recorded))
+			}
+			uploadIndex := -1
+			for index := range recorded {
+				if recorded[index].Method == "POST" && recorded[index].Path == "/upload" {
+					uploadIndex = index
+					break
+				}
+			}
+			if uploadIndex < 0 {
+				t.Fatalf("missing POST /upload in recorded requests: %+v", recorded)
+			}
+			uploadReq := recorded[uploadIndex]
+			_, mediaParams, err := mime.ParseMediaType(uploadReq.Header.Get("Content-Type"))
+			if err != nil {
+				t.Fatalf("ParseMediaType: %v", err)
+			}
+			reader := multipart.NewReader(bytes.NewReader(uploadReq.Body), mediaParams["boundary"])
+			part1, err := reader.NextRawPart()
+			if err != nil {
+				t.Fatalf("NextRawPart(1): %v", err)
+			}
+			data1, _ := io.ReadAll(part1)
+			if part1.FormName() != "account" || string(data1) != "Acme" {
+				t.Fatalf("part1 = (%q, %q), want (account, Acme)", part1.FormName(), string(data1))
+			}
+			part2, err := reader.NextRawPart()
+			if err != nil {
+				t.Fatalf("NextRawPart(2): %v", err)
+			}
+			data2, _ := io.ReadAll(part2)
+			if part2.FormName() != "doc" || part2.FileName() != "report.txt" || string(data2) != string(fileBytes) {
+				t.Fatalf("part2 = (%q, %q, %q), want (doc, report.txt, %q)", part2.FormName(), part2.FileName(), string(data2), string(fileBytes))
+			}
+		})
 	}
 }

@@ -40,6 +40,11 @@ type ImportDraft struct {
 	// importer shares. Converters that track no detected count leave it zero and
 	// the response omits it rather than claiming nothing was found.
 	Accounting convertresult.Accounting
+	// BeforeFinalize runs Stage 3 value transformations (UUIDs, timestamps,
+	// parameterization, secret bindings, effective_settings attachment) after
+	// Stage 2 domain/protocol augmentation (Salesforce, MuleSoft, Agentforce)
+	// and before Stage 4 reference finalization, validation, and preflight.
+	BeforeFinalize func(primary *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error
 }
 
 type ImportAugmentation struct {
@@ -60,27 +65,42 @@ func (d *ImportDraft) Augment(r *http.Request) ImportAugmentation {
 }
 
 func (d *ImportDraft) AugmentWithAgentforceTransform(agentforceTransform bool) ImportAugmentation {
+	augmented, _ := d.AugmentWithAgentforceTransformChecked(agentforceTransform)
+	return augmented
+}
+
+func (d *ImportDraft) AugmentWithAgentforceTransformChecked(agentforceTransform bool) (ImportAugmentation, error) {
 	scripts := d.AllScripts()
 	projectID := NormalizeProjectID(d.ProjectID)
 	for _, script := range scripts {
 		script.ProjectID = projectID
 		EnsureImportProvenance(script, d.Source, d.SourceScriptName)
 	}
-	StampFileImportSourceIdentity(d.SourceScriptName, scripts)
+	if d.Source != "recorder" {
+		StampFileImportSourceIdentity(d.SourceScriptName, scripts)
+	}
 	AttachSourceReviewToScripts(scripts, d.Source, d.SourceScriptName, d.SourceReview)
-
-	sections := AppendImportDiagnosticReviewSections(d.Sections, d.Unsupported)
 
 	// The protocol detectors report on the converted traffic as a whole, so they
 	// run against the primary draft; a batch's scripts share one source artifact.
 	Primary := d.Primary()
-	sections = AttachMuleSoftReview(Primary, d.Source, sections, d.SuppressedMuleSoftPolicies...)
+	var protocolSections []ScriptImportReviewSection
+	protocolSections = AttachMuleSoftReview(Primary, d.Source, protocolSections, d.SuppressedMuleSoftPolicies...)
 	// Agentforce transformation rewrites executable actions and can introduce
 	// governed secret references. It must run before validation and preflight so
 	// those describe the draft the operator will actually save, not the
 	// pre-transform one.
 	nativeSalesforceReview := TrustedNativeSalesforceReview(Primary)
-	sections = AttachAgentforceReview(Primary, d.Source, sections, agentforceTransform)
+	protocolSections = AttachAgentforceReview(Primary, d.Source, protocolSections, agentforceTransform)
+	if d.BeforeFinalize != nil && Primary != nil {
+		if err := d.BeforeFinalize(Primary, &d.Warnings, &d.Unsupported); err != nil {
+			return ImportAugmentation{}, err
+		}
+		scripts = d.AllScripts()
+		Primary = d.Primary()
+	}
+	sections := AppendImportDiagnosticReviewSections(d.Sections, d.Unsupported)
+	sections = append(sections, protocolSections...)
 	FinalizeSalesforceNativeReferences(nativeSalesforceReview, Primary, d.SourceReview)
 
 	augmented := ImportAugmentation{Sections: sections, Warnings: d.Warnings, Accounting: d.Accounting}
@@ -104,7 +124,7 @@ func (d *ImportDraft) AugmentWithAgentforceTransform(agentforceTransform bool) I
 		}
 	}
 	augmented.Warnings = AppendUniqueStrings(append([]string(nil), d.Warnings...), allIssues...)
-	return augmented
+	return augmented, nil
 }
 
 func (d *ImportDraft) AllScripts() []*dsl.Script {

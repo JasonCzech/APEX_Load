@@ -23,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	"github.com/jasonczech/apexload/pkg/protocol/aura"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 type AnalyzeOptions struct {
@@ -46,6 +47,18 @@ type AnalyzeOptions struct {
 	Source string
 	// Document reuses parsed evidence only when it matches HARData.
 	Document *sample.HARDocument
+	// CorrelationSettings applies project recording profile correlation rules,
+	// disabled rules/families, excluded values, length bounds, and content-type
+	// filters during Salesforce correlation detection.
+	CorrelationSettings *recordingprofile.CorrelationSettings
+	// InferExtractors controls whether correlation analysis runs at all (nil means true).
+	InferExtractors *bool
+	// HighConfidenceOnly controls whether only high-confidence correlations are
+	// automatically rewritten into the native preview script (nil means true).
+	HighConfidenceOnly *bool
+	// ReviewOnlyCorrelations retains detected correlations for review without
+	// automatically attaching extractors or rewriting consumer requests.
+	ReviewOnlyCorrelations bool
 }
 
 // NativePreviewError reports that the review succeeded but its native preview
@@ -117,6 +130,29 @@ type NativePreview struct {
 	NativePathDomain    string                     `json:"native_path_domain,omitempty"`
 	CorrelationCoverage *NativeCorrelationCoverage `json:"correlation_coverage,omitempty"`
 	referenceCatalog    *nativeReferenceCatalog
+	oldToNewActionIndex []int
+}
+
+// RemapBaselineObservations remaps 0-based baseline observation action IDs from
+// the pre-Salesforce script to their positions in preview.Script.Actions,
+// omitting observations whose actions were folded into synthesized control loops.
+func (preview *NativePreview) RemapBaselineObservations(baseline []correlate.Observation) []correlate.Observation {
+	if preview == nil || len(baseline) == 0 || len(preview.oldToNewActionIndex) == 0 {
+		return baseline
+	}
+	remapped := make([]correlate.Observation, 0, len(baseline))
+	for _, obs := range baseline {
+		if obs.ID < 0 || obs.ID >= len(preview.oldToNewActionIndex) {
+			continue
+		}
+		newID := preview.oldToNewActionIndex[obs.ID]
+		if newID < 0 {
+			continue
+		}
+		obs.ID = newID
+		remapped = append(remapped, obs)
+	}
+	return remapped
 }
 
 type CorrelationCandidate struct {
@@ -286,7 +322,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		return review, nil
 	}
 
-	correlations, correlationWarnings, omission, err := detectCorrelationsWithEvidence(entries)
+	correlations, correlationWarnings, omission, err := detectCorrelationsWithEvidenceAndOptions(entries, opts)
 	if note := omission.Note(); note != "" {
 		review.Warnings = append(review.Warnings, "Salesforce "+note)
 	}
@@ -307,7 +343,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	review.Parameterizations, parameterWarnings = auraMessageParameterizationsChecked(refs, correlations)
 	review.Warnings = append(review.Warnings, parameterWarnings...)
 	if buildNative {
-		preview, err := buildNativePreview(script, refs, entries, matches, correlations, review.AuraOutcomes.RecordedFailures())
+		preview, err := buildNativePreviewWithOptions(script, refs, entries, matches, correlations, review.AuraOutcomes.RecordedFailures(), opts)
 		if err != nil {
 			nativeErr := &NativePreviewError{Err: err}
 			if opts.BuildNativeIfDetected {
@@ -1205,6 +1241,10 @@ func nativeGeneratedFrom(source string) string {
 }
 
 func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry, matches map[int]int, correlations []correlate.Correlation, recordedAuraFailures map[string][]aura.RecordedOutcome) (*NativePreview, error) {
+	return buildNativePreviewWithOptions(script, refs, entries, matches, correlations, recordedAuraFailures, AnalyzeOptions{})
+}
+
+func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries []harEntry, matches map[int]int, correlations []correlate.Correlation, recordedAuraFailures map[string][]aura.RecordedOutcome, opts AnalyzeOptions) (*NativePreview, error) {
 	clone, err := cloneScript(script)
 	if err != nil {
 		return nil, err
@@ -1276,9 +1316,10 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	applications := make(map[string]correlationApplicationStatus, len(namedCorrelations))
 	plans := make([]nativeCorrelationPlan, 0, len(namedCorrelations))
 	sourceValidator := correlate.NewExactQueryEncodingValidator()
+	highConfidenceOnly := opts.HighConfidenceOnly == nil || *opts.HighConfidenceOnly
 	for _, corr := range namedCorrelations {
 		foundRef := harIDToRef[corr.FoundInID]
-		automatic := correlate.HighConfidence(corr)
+		automatic := !opts.ReviewOnlyCorrelations && (!highConfidenceOnly || correlate.HighConfidence(corr))
 		usage := correlationUsage(corr, harIDToRef, foundRef.Sequence)
 		value := correlationValue(corr)
 		queryEncoded := correlate.QueryEncodedFormOf(value)
@@ -1449,9 +1490,11 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		originalCorrelationRefs[id] = &copied
 	}
 	synthesizeBulkPollLoops(cloneRefs)
-	collapseCometdConnectLoops(clone)
+	oldToNewActionIndex := collapseCometdConnectLoopsWithIndex(clone)
 
-	return newNativeReferencePreview(clone, correlations, namedCorrelations, originalCorrelationRefs, applications), nil
+	preview := newNativeReferencePreview(clone, correlations, namedCorrelations, originalCorrelationRefs, applications)
+	preview.oldToNewActionIndex = oldToNewActionIndex
+	return preview, nil
 }
 
 // collapseCometdConnectLoops folds a contiguous run of CometD Bayeux
@@ -1462,9 +1505,15 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 // substitution and rebuilds the action slices, so it must be the last preview
 // transform (it invalidates the cloneRefs pointers).
 func collapseCometdConnectLoops(script *dsl.Script) {
+	_ = collapseCometdConnectLoopsWithIndex(script)
+}
+
+func collapseCometdConnectLoopsWithIndex(script *dsl.Script) []int {
 	script.Init = collapseCometdConnectRun(script.Init)
-	script.Actions = collapseCometdConnectRun(script.Actions)
+	var oldToNew []int
+	script.Actions, _, oldToNew = collapseCometdConnectRunInspectedWithIndex(script.Actions)
 	script.Teardown = collapseCometdConnectRun(script.Teardown)
+	return oldToNew
 }
 
 func collapseCometdConnectRun(actions []dsl.Action) []dsl.Action {
@@ -1475,7 +1524,16 @@ func collapseCometdConnectRun(actions []dsl.Action) []dsl.Action {
 // Keep at most the current signature and one pending signature. Every request
 // is admitted/normalized once, including the first non-equivalent next request.
 func collapseCometdConnectRunInspected(actions []dsl.Action) ([]dsl.Action, int) {
+	out, inspections, _ := collapseCometdConnectRunInspectedWithIndex(actions)
+	return out, inspections
+}
+
+func collapseCometdConnectRunInspectedWithIndex(actions []dsl.Action) ([]dsl.Action, int, []int) {
 	out := make([]dsl.Action, 0, len(actions))
+	oldToNew := make([]int, len(actions))
+	for i := range oldToNew {
+		oldToNew[i] = -1
+	}
 	inspections := 0
 	pendingIndex := -1
 	var pending dsl.Action
@@ -1491,6 +1549,9 @@ func collapseCometdConnectRunInspected(actions []dsl.Action) ([]dsl.Action, int)
 	for i := 0; i < len(actions); {
 		first, ok := prepare(i)
 		if !ok {
+			if !strings.EqualFold(actions[i].Type, "control_loop") {
+				oldToNew[i] = len(out)
+			}
 			out = append(out, actions[i])
 			i++
 			continue
@@ -1507,11 +1568,16 @@ func collapseCometdConnectRunInspected(actions []dsl.Action) ([]dsl.Action, int)
 		if j-i >= 2 && cometdConnectExtractorsAreEquivalent(actions[i:j]) {
 			out = append(out, wrapCometdConnectLoop(actions[i], j-i))
 		} else {
-			out = append(out, actions[i:j]...)
+			for k := i; k < j; k++ {
+				if !strings.EqualFold(actions[k].Type, "control_loop") {
+					oldToNew[k] = len(out)
+				}
+				out = append(out, actions[k])
+			}
 		}
 		i = j
 	}
-	return out, inspections
+	return out, inspections, oldToNew
 }
 
 // cometdConnectExtractorsAreEquivalent keeps correlation timing intact when a
@@ -2421,6 +2487,13 @@ func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []s
 // detectCorrelationsWithEvidence is detectCorrelationsChecked that also
 // reports the static-asset bodies left out to fit the evidence budget.
 func detectCorrelationsWithEvidence(entries []harEntry) ([]correlate.Correlation, []string, correlate.StaticEvidenceOmission, error) {
+	return detectCorrelationsWithEvidenceAndOptions(entries, AnalyzeOptions{})
+}
+
+func detectCorrelationsWithEvidenceAndOptions(entries []harEntry, opts AnalyzeOptions) ([]correlate.Correlation, []string, correlate.StaticEvidenceOmission, error) {
+	if opts.InferExtractors != nil && !*opts.InferExtractors {
+		return nil, nil, correlate.StaticEvidenceOmission{}, nil
+	}
 	observations := make([]correlate.Observation, 0, len(entries))
 	for _, entry := range entries {
 		observations = append(observations, correlate.Observation{
@@ -2434,6 +2507,19 @@ func detectCorrelationsWithEvidence(entries []harEntry) ([]correlate.Correlation
 		})
 	}
 	observations, omission := correlate.FitStaticAssetEvidence(observations)
+	if opts.CorrelationSettings != nil && opts.CorrelationSettings.Disabled {
+		correlations := opts.CorrelationSettings.ApplyCorrelation(observations, nil)
+		sort.SliceStable(correlations, func(i, j int) bool {
+			if correlations[i].Confidence != correlations[j].Confidence {
+				return correlations[i].Confidence > correlations[j].Confidence
+			}
+			if correlations[i].FoundInID == correlations[j].FoundInID {
+				return correlations[i].Name < correlations[j].Name
+			}
+			return correlations[i].FoundInID < correlations[j].FoundInID
+		})
+		return correlations, nil, omission, nil
+	}
 	genericCorrelations, warnings, err := correlate.DetectCheckedWithWarnings(observations)
 	if err != nil {
 		if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
@@ -2496,6 +2582,9 @@ func detectCorrelationsWithEvidence(entries []harEntry) ([]correlate.Correlation
 			warnings = append(warnings, fmt.Sprintf("combined Salesforce correlations were truncated at %d", maxSalesforceShapeCorrelations))
 			break
 		}
+	}
+	if opts.CorrelationSettings != nil {
+		correlations = opts.CorrelationSettings.ApplyCorrelation(observations, correlations)
 	}
 	sort.SliceStable(correlations, func(i, j int) bool {
 		if correlations[i].Confidence != correlations[j].Confidence {

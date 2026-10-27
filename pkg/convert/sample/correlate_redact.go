@@ -66,9 +66,16 @@ func detectHARCorrelationsForReview(exchanges []exchange) ([]Correlation, []stri
 // returned omission says how many, so the import can note it.
 func detectHARCorrelationsWithSettings(exchanges []exchange, settings *recordingprofile.CorrelationSettings) ([]Correlation, []string, correlate.StaticEvidenceOmission, error) {
 	observations, omission := correlate.FitStaticAssetEvidence(sampleCorrelationObservations(exchanges))
-	shared, warnings, err := correlate.DetectCheckedWithWarnings(observations)
-	if err != nil {
-		return nil, nil, omission, err
+	var (
+		shared   []correlate.Correlation
+		warnings []string
+		err      error
+	)
+	if settings == nil || !settings.Disabled {
+		shared, warnings, err = correlate.DetectCheckedWithWarnings(observations)
+		if err != nil {
+			return nil, nil, omission, err
+		}
 	}
 	if settings != nil {
 		shared = settings.ApplyCorrelation(observations, shared)

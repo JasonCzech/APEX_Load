@@ -31,25 +31,72 @@ profiles.
   is decided when recording starts (an explicit `capture_cookies` wins over
   the profile); only a different profile at conversion changes it.
 - **Browser recorder.** The convert and preview requests take
-  `recording_profile_id`. It applies to the HTTP script made from the side-car
-  HAR (`also_create_http_script`). The profile's `http_script_level` is the
-  default level, and Recording Studio preselects it.
-- **HAR import.** `POST /api/v1/scripts/import/har` takes
-  `recording_profile_id`, either as a multipart field or in the JSON body.
+  `recording_profile_id` (or `profile_id`). It applies to the HTTP script made
+  from the side-car HAR (`also_create_http_script`). The profile's
+  `http_script_level` is the default level, and Recording Studio preselects it.
+  Dual-script previews (`POST /api/v1/browser-recorder/sessions/{id}/convert/preview`
+  with `also_create_http_script: true`) return per-output review metadata for the
+  HTTP companion (`http_parameterization`, `http_preflight`, and
+  `http_secret_binding_requirements`) alongside the browser script's review fields.
+- **HAR, Salesforce HAR, and sample HAR imports.** `POST /api/v1/scripts/import/har`,
+  `POST /api/v1/scripts/import/salesforce`, and `POST /api/v1/scripts/import/sample`
+  (when `format` is `har`) accept `recording_profile_id` (or `profile_id`), either
+  as a multipart field or in the JSON body, and resolve the named project
+  recording profile before conversion and native Salesforce analysis.
 
-The proxy recorder and HAR import reject an unknown profile ID with 400. The
+The proxy recorder and HAR import routes reject an unknown profile ID with 400. The
 browser recorder still saves its browser script, skips the HTTP script, and
 says why in a warning.
 
 ## One conversion pipeline
 
-The proxy recorder, the browser recorder's HTTP script and HAR import all
-convert through the same pipeline (`pkg/convert/sample`). A proxy session
-is written as an in-memory HAR, and conversion then applies one set of rules
-to all three: redirects, bodies, headers, cookies, correlation, the async
-scan, WebSocket placement and the replay baseline.
+The proxy recorder (`/api/v1/recorder/{id}/convert` and `/preview`), the browser
+recorder's HTTP companion script, dedicated HAR import (`/api/v1/scripts/import/har`),
+Salesforce HAR import (`/api/v1/scripts/import/salesforce`), and sample HAR import
+(`/api/v1/scripts/import/sample`) all convert through the same pipeline
+(`pkg/convert/sample`). A proxy session is written as an in-memory HAR, and
+conversion then applies one set of rules across all five entry points: redirects,
+bodies, headers, cookies, correlation, the async scan, WebSocket placement, native
+Salesforce/Agentforce augmentation, client UUID/timestamp refresh, and the replay
+baseline.
 
-The proxy recorder adds a few rules of its own:
+All five capture/HAR entry points support a negotiated `conversion_policy` selector
+and return `conversion_policy` plus a bounded, disclosure-safe `effective_settings`
+summary on the import/conversion response:
+
+- **`conversion_policy: "unified_v1"`.** Applies a single common HTTP authoring
+  policy across HAR, Salesforce HAR, sample HAR, proxy recording conversion, and
+  browser URL-level HTTP conversion: high-confidence inferred correlations are
+  applied automatically (`high_confidence_only: true`) while lower-confidence
+  candidates remain in `correlations` for review, native Salesforce rewrite and
+  optional `agentforce_transform` run in a fixed stage order before client
+  UUID/timestamp refresh, and final producer/consumer readiness and secret
+  requirements are reconciled against the resulting action graph.
+- **Omitted or `"legacy"`.** Preserves each route's historical default behavior
+  for existing callers (for example, wider automatic correlation application on
+  legacy HAR imports versus high-confidence-only on proxy recordings) while still
+  reporting the resolved `conversion_policy` and `effective_settings`. Unknown
+  policy versions are rejected with 400 rather than silently downgraded.
+
+Project recording profile correlation policy (`correlation.disabled`,
+`correlation.disabled_rules`, `correlation.excluded_values`,
+`correlation.excluded_content_types`, `correlation.min_value_length`,
+`correlation.max_value_length`, `correlation.case_insensitive`,
+`correlation.prefer_regex`, and `correlation.user_rules`) is propagated into native
+Salesforce analysis (`salesforce.Analyze`) as well as `sample.Convert`. When a
+profile disables correlation scanning, disables specific rule IDs or families, or
+supplies project user rules, the native Salesforce second scan honors those exact
+constraints.
+
+For proxy recordings, both `POST /api/v1/recorder/{id}/convert/preview` and durable
+save attestation bind the preview claim (`RecordingSnapshotDigest`) and persisted
+baseline observations (`result.Baseline`) to the option-resolved conversion graph
+(`resource_mode`, `async_scan`, `recording_profile_id`, `http_version_mode`,
+`conversion_policy`, and any enabled native rewrites) rather than a default-options
+reconversion.
+
+The proxy recorder adds capture-specific defaults where the session itself recorded
+traffic:
 
 - **Headers.** It drops browser-supplied headers such as `User-Agent`,
   `Accept` and `Sec-Fetch-*`. It drops `Cookie` unless cookie capture is on.
@@ -57,8 +104,8 @@ The proxy recorder adds a few rules of its own:
 - **Recorded values.** The step names, transaction names and think-time edits
   a tester made in Recording Studio carry through, as does the recorder's own
   static-resource classification.
-- **Correlation.** Only high-confidence correlations are rewritten
-  automatically; the rest stay review candidates.
+- **Correlation.** Under both `legacy` and `unified_v1`, only high-confidence
+  correlations are rewritten automatically; the rest stay review candidates.
 
 A recording keeps the credentials its requests carried, as every import does.
 Correlation still replaces the values that a response supplied.
