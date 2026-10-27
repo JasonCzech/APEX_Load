@@ -111678,15 +111678,34 @@ export interface operations {
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             }) | null;
             "current"?: {
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             };
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
             "query_sha256"?: string;
+            "selection_receipt_sha256"?: string;
             "version"?: number;
           }) | null;
           "browser_tuple_mode"?: string;
@@ -111758,15 +111777,34 @@ export interface operations {
             "browser_inputs"?: ({
               "baseline"?: ({
                 "manifest_sha256": string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
                 "run_id": string;
                 "tuple_ids": Array<string>;
               }) | null;
               "current": {
                 "manifest_sha256": string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
                 "run_id": string;
                 "tuple_ids": Array<string>;
               };
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "revision": number;
+                "sha256": string;
+              }>;
               "query_sha256": string;
+              "selection_receipt_sha256"?: string;
               "version": number;
             }) | null;
             "browser_tuple_comparisons"?: Array<{
@@ -111859,15 +111897,34 @@ export interface operations {
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             }) | null;
             "current"?: {
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             };
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
             "query_sha256"?: string;
+            "selection_receipt_sha256"?: string;
             "version"?: number;
           }) | null;
           "browser_tuple_mode"?: string;

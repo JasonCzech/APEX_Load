@@ -176,8 +176,8 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
-			if q.QueryVersion == 4 && q.BrowserInputs == nil {
-				return errors.New("saved browser query version 4 requires evaluated input pins")
+			if (q.QueryVersion == 4 || q.QueryVersion == 5) && q.BrowserInputs == nil {
+				return errors.New("saved browser query version 4 or 5 requires evaluated input pins")
 			}
 			if err := validateAnalyticsQueryVersion(*q); err != nil {
 				return fmt.Errorf("dashboard panel %q %w", panel.ID, err)
@@ -484,11 +484,11 @@ func validateAnalyticsQueryVersion(q AnalyticsQuery) error {
 	if err := validateBrowserPanelInputs(q); err != nil {
 		return err
 	}
-	if q.BrowserTupleMode != "" && ((q.QueryVersion != 3 && q.QueryVersion != 4) || q.BrowserTupleMode != "separate" || q.Population != analysis.PopulationBrowserDocument || q.EvidenceMode != "" || q.JointEvidence) {
-		return errors.New("separate browser tuples require a version 3 or 4 browser document archive query")
+	if q.BrowserTupleMode != "" && ((q.QueryVersion != 3 && q.QueryVersion != 4 && q.QueryVersion != 5) || q.BrowserTupleMode != "separate" || q.Population != analysis.PopulationBrowserDocument || q.EvidenceMode != "" || q.JointEvidence) {
+		return errors.New("separate browser tuples require a version 3, 4 or 5 browser document archive query")
 	}
-	if q.QueryVersion < 0 || q.QueryVersion > 4 {
-		return fmt.Errorf("query_version must be at most %d", 4)
+	if q.QueryVersion < 0 || q.QueryVersion > 5 {
+		return fmt.Errorf("query_version must be at most %d", 5)
 	}
 	return nil
 }

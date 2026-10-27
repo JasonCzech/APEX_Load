@@ -430,9 +430,15 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				return errors.New("--project is required")
 			}
 			path = "/api/v1/monitoring/dashboard-definitions?project_id=" + url.QueryEscape(*project)
-		case "panel", "update-panel", "delete-panel":
+		case "panel", "update-panel", "delete-panel", "replay-panel":
 			if err := requireID(); err != nil {
 				return err
+			}
+			if action == "replay-panel" {
+				if len(body) > 0 {
+					return errors.New("--file is not accepted by replay-panel")
+				}
+				return client.replaySavedPanel(ctx, *project, *id, *revision, out)
 			}
 			path = "/api/v1/monitoring/dashboard-definitions/" + url.PathEscape(*id)
 			switch action {
@@ -536,7 +542,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, telemetry-policy-change, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, precision-review, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, run-query")
+				return errors.New("analysis actions: telemetry-policy, telemetry-policy-change, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, precision-review, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, replay-panel, run-query")
 			}
 		}
 	default:
@@ -671,6 +677,145 @@ func checkPanelRevision(response []byte, requested string) error {
 		return fmt.Errorf("the controller returned revision %d, not the requested revision %d (a controller that predates saved revisions answers the current one)", panel.Revision, want)
 	}
 	return nil
+}
+
+type replayedSavedPanelItem struct {
+	TabID    string                 `json:"tab_id"`
+	PanelID  string                 `json:"panel_id"`
+	Title    string                 `json:"title"`
+	RunID    string                 `json:"run_id"`
+	Query    storage.AnalyticsQuery `json:"query"`
+	Response json.RawMessage        `json:"response"`
+}
+
+func sameReplayPanelRunInput(a, b storage.BrowserPanelRunInput) bool {
+	if a.RunID != b.RunID || a.ManifestSHA256 != b.ManifestSHA256 || len(a.TupleIDs) != len(b.TupleIDs) || len(a.PolicyPins) != len(b.PolicyPins) {
+		return false
+	}
+	for i := range a.TupleIDs {
+		if a.TupleIDs[i] != b.TupleIDs[i] {
+			return false
+		}
+	}
+	for i := range a.PolicyPins {
+		if a.PolicyPins[i] != b.PolicyPins[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameReplayPanelInputs(a, b storage.BrowserPanelInputs) bool {
+	if a.Version != b.Version || a.QuerySHA256 != b.QuerySHA256 || a.SelectionReceiptSHA256 != b.SelectionReceiptSHA256 || len(a.PolicyPins) != len(b.PolicyPins) {
+		return false
+	}
+	for i := range a.PolicyPins {
+		if a.PolicyPins[i] != b.PolicyPins[i] {
+			return false
+		}
+	}
+	if !sameReplayPanelRunInput(a.Current, b.Current) {
+		return false
+	}
+	if (a.Baseline == nil) != (b.Baseline == nil) {
+		return false
+	}
+	return a.Baseline == nil || sameReplayPanelRunInput(*a.Baseline, *b.Baseline)
+}
+
+func (c *ApiClient) replaySavedPanel(ctx context.Context, project, id, revision string, out io.Writer) error {
+	path := "/api/v1/monitoring/dashboard-definitions/" + url.PathEscape(id)
+	if revision != "" {
+		if n, err := strconv.ParseInt(revision, 10, 64); err != nil || n <= 0 {
+			return errors.New("--revision must be a positive integer")
+		}
+		path += "?revision=" + url.QueryEscape(revision)
+	}
+	rawDef, err := c.workflowRequest(ctx, http.MethodGet, path, nil, "")
+	if err != nil {
+		return err
+	}
+	if revision != "" {
+		if err := checkPanelRevision(rawDef, revision); err != nil {
+			return err
+		}
+	}
+	var def storage.DashboardDefinition
+	if err := json.Unmarshal(rawDef, &def); err != nil {
+		return fmt.Errorf("the panel response could not be read: %w", err)
+	}
+	if def.ID != id {
+		return errors.New("controller returned a different dashboard definition")
+	}
+	if project != "" && def.ProjectID != "" && def.ProjectID != project {
+		return fmt.Errorf("dashboard definition %q belongs to project %q, not %q", id, def.ProjectID, project)
+	}
+	var items []replayedSavedPanelItem
+	for _, tab := range def.Tabs {
+		for _, panel := range tab.Panels {
+			if panel.Query == nil {
+				continue
+			}
+			q := *panel.Query
+			if q.BrowserInputs == nil && q.QueryVersion != 4 && q.QueryVersion != 5 {
+				continue
+			}
+			if q.BrowserInputs == nil || storage.ValidateNativeArchiveQuery(q) != nil {
+				return fmt.Errorf("panel %q has invalid or missing browser input pins", panel.ID)
+			}
+			if len(items) >= 20 {
+				return errors.New("saved dashboard definition exceeds 20 pinned browser panels")
+			}
+			reqBytes, err := json.Marshal(q)
+			if err != nil {
+				return err
+			}
+			runID := q.BrowserInputs.Current.RunID
+			seriesRaw, err := c.workflowRequest(ctx, http.MethodPost, "/api/v1/tests/"+url.PathEscape(runID)+"/archive/native-series", bytes.NewReader(reqBytes), "application/json")
+			if err != nil {
+				return err
+			}
+			var seriesCheck struct {
+				BrowserInputs *storage.BrowserPanelInputs `json:"browser_inputs"`
+			}
+			if err := json.Unmarshal(seriesRaw, &seriesCheck); err != nil || seriesCheck.BrowserInputs == nil || !sameReplayPanelInputs(*q.BrowserInputs, *seriesCheck.BrowserInputs) {
+				return fmt.Errorf("panel %q replay returned mismatched or missing browser input pins", panel.ID)
+			}
+			items = append(items, replayedSavedPanelItem{
+				TabID:    tab.ID,
+				PanelID:  panel.ID,
+				Title:    panel.Title,
+				RunID:    runID,
+				Query:    q,
+				Response: json.RawMessage(seriesRaw),
+			})
+		}
+	}
+	if len(items) == 0 {
+		return errors.New("saved dashboard definition has no pinned browser panels to replay")
+	}
+	envelope := map[string]any{
+		"dashboard_id": def.ID,
+		"name":         def.Name,
+		"revision":     def.Revision,
+		"panels":       items,
+	}
+	if len(items) == 1 {
+		var single map[string]any
+		if json.Unmarshal(items[0].Response, &single) == nil {
+			for k, v := range single {
+				if _, exists := envelope[k]; !exists {
+					envelope[k] = v
+				}
+			}
+		}
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(out, string(encoded))
+	return err
 }
 
 // verdictError is a command's verdict on what it checked, with the exit

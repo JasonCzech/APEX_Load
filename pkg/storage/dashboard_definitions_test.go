@@ -197,9 +197,9 @@ func TestDashboardQueryVersionIsValidated(t *testing.T) {
 	if err := validateDashboardDefinition(definition); err != nil {
 		t.Fatalf("current query version refused: %v", err)
 	}
-	// Version 4 is reserved for explicitly frozen browser inputs; regular
-	// dashboard queries still default to version 3. Version 5 is unknown.
-	definition.Tabs[0].Panels[0].Query.QueryVersion = 5
+	// Versions 4 and 5 are reserved for explicitly frozen browser inputs; regular
+	// dashboard queries still default to version 3. Version 6 is unknown.
+	definition.Tabs[0].Panels[0].Query.QueryVersion = 6
 	if err := validateDashboardDefinition(definition); err == nil {
 		t.Fatal("a future query version was accepted")
 	}

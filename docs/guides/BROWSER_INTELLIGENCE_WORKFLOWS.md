@@ -56,8 +56,8 @@ The live execution page shows the same comparison over the documents published s
 ## Saved panels
 
 Project analytics panels can plot **Archived browser documents**: a document metric (`document_lcp`, `document_fcp`, `document_inp`, `document_cls`) at p50 to p99 over elapsed time.
-- **One tuple per panel:** a panel reads one measurement tuple, named by engine, device profile, group, region, runtime cohort, frame scope and lifecycle. A selection that spans several tuples is refused and names the first difference.
-- **Viewing:** saved panels open in the run's archived panels, preserving the run's pinned policy and baseline selection provenance.
+- **One tuple per panel (or separate cohorts):** a single-tuple panel reads one measurement tuple, named by engine, device profile, group, region, runtime cohort, frame scope and lifecycle; a separate-cohort panel (`browser_tuple_mode: "separate"`) plots up to 20 complete tuples independently.
+- **Frozen archive, policy, and baseline selection pins (`query_version: 5`, `BrowserPanelInputs` `version: 2`):** saving a comparison to a panel from **Baseline comparison → Save to panel** evaluates and pins the current and baseline archive manifest SHA-256 digests, sorted tuple IDs, immutable `browser_policy` and `journey_policy` revision pins (`kind`, `id`, `revision`, `sha256`), and the matched root-cause analysis `selection_receipt_sha256` (`browser_selection` receipt digest). Reopening via `POST /api/v1/tests/{id}/archive/native-series` or `apexctl analysis replay-panel` verifies that pinned policy revisions have not been tombstoned and that the selection receipt and archive digests match, while keeping `query_version: 4` (`version: 1`) saved panels readable.
 
 ## Reports
 
@@ -77,6 +77,7 @@ Each section reads its result when the report is exported. A section whose resul
 | Journey accounting | `analysis journeys --run ID [--policy ID [--revision N]]` | `run_archive_journeys` |
 | One request's HAR entry | `analysis har-entry --run ID --request-id ID` | `run_archive_browser_har_entry` |
 | Policies | `analysis policies list\|get\|save\|delete --project ID …` | `analysis_policy_list`, `_get`, `_create`, `_update`, `_delete` |
+| Replay saved panel | `analysis replay-panel --id ID [--revision N]` | — |
 
 `apexctl analysis policies save` with `--id` needs the `--revision` the policy was read at, as the editor does.
 

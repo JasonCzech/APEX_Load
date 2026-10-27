@@ -421425,6 +421425,20 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
@@ -421437,13 +421451,43 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
                           type: array
                           items:
                             type: string
+                    policy_pins:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
                     query_sha256:
+                      type: string
+                    selection_receipt_sha256:
                       type: string
                     version:
                       type: integer
@@ -421641,6 +421685,25 @@ paths:
                         properties:
                           manifest_sha256:
                             type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
                           run_id:
                             type: string
                           tuple_ids:
@@ -421657,6 +421720,25 @@ paths:
                         properties:
                           manifest_sha256:
                             type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
                           run_id:
                             type: string
                           tuple_ids:
@@ -421667,7 +421749,28 @@ paths:
                           - manifest_sha256
                           - run_id
                           - tuple_ids
+                      policy_pins:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                          required:
+                            - id
+                            - kind
+                            - revision
+                            - sha256
                       query_sha256:
+                        type: string
+                      selection_receipt_sha256:
                         type: string
                       version:
                         type: integer
@@ -526425,6 +526528,20 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
@@ -526437,13 +526554,43 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
                           type: array
                           items:
                             type: string
+                    policy_pins:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
                     query_sha256:
+                      type: string
+                    selection_receipt_sha256:
                       type: string
                     version:
                       type: integer

@@ -29,7 +29,10 @@ type NativeArchiveBucket struct {
 	complete bool
 }
 type NativeArchiveSeries struct {
-	archiveManifestSHA256 string
+	archiveManifestSHA256  string
+	policyPins             []storage.BrowserPanelPolicyPin
+	selectionReceiptSHA256 string
+	manifest               *RunArchiveManifest
 	// BrowserTuples is a versioned separate-tuple result; legacy Buckets remains empty.
 	BrowserTuples *NativeBrowserTupleSeries `json:"browser_tuples,omitempty"`
 	RunID         string                    `json:"run_id"`
@@ -140,6 +143,10 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 		writeError(w, 422, err.Error())
 		return
 	}
+	if err := s.verifyAndPopulateBrowserPanelV2(ctx, normalizeProjectID(current.ProjectID), q, &response); err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
 	if err := bindBrowserPanelInputs(q, &response); err != nil {
 		writeError(w, 422, err.Error())
 		return
@@ -185,10 +192,16 @@ func buildNativeArchiveSeriesForTest(ctx context.Context, record *storage.RunArc
 	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return result, errors.New("completed archive with execution start time required")
 	}
-	if q.QueryVersion == 4 && record.ManifestSHA256 == "" {
+	if (q.QueryVersion == 4 || q.QueryVersion == 5) && record.ManifestSHA256 == "" {
 		return result, errors.New("browser input publication digest unavailable")
 	}
 	result.archiveManifestSHA256 = record.ManifestSHA256
+	result.manifest = manifest
+	policyPins, pinErr := browserPanelPolicyPinsFromManifest(manifest)
+	if q.QueryVersion == 5 && pinErr != nil {
+		return result, pinErr
+	}
+	result.policyPins = policyPins
 	result.Fingerprint = manifest.Provenance.ComparisonFingerprint
 	start := *manifest.Provenance.StartedAt
 	from := start.Add(time.Duration(q.StartSeconds) * time.Second)

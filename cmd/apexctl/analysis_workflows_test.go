@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestWorkflowPreparationAndSources(t *testing.T) {
@@ -366,10 +368,125 @@ func TestAnalysisPanelCatalogAndRunQueryCommands(t *testing.T) {
 	for _, args := range [][]string{
 		{"panel"}, {"panel", "--id", "d1", "--revision", "x"}, {"delete-panel", "--id", "d1"}, {"update-panel", "--id", "d1"},
 		{"save-panel"}, {"run-query", "--id", "run-1"}, {"panels"},
+		{"replay-panel"}, {"replay-panel", "--id", "d1", "--revision", "x"},
+		{"replay-panel", "--id", "d1", "--file", definition},
 	} {
 		if err := executeWorkflowCommand(context.Background(), "analysis", append(args, "--api", s.URL), &bytes.Buffer{}); err == nil {
 			t.Fatalf("%v was accepted", args)
 		}
+	}
+}
+
+func TestAnalysisReplayPanelCommand(t *testing.T) {
+	baseQuery := storage.AnalyticsQuery{
+		QueryVersion:     5,
+		BrowserTupleMode: "separate",
+		Population:       "browser_document",
+		Metric:           "document_lcp",
+		Aggregation:      "p75",
+		EndSeconds:       60,
+		BucketSeconds:    10,
+	}
+	queryDigest := storage.BrowserPanelQueryDigest(baseQuery)
+	pin := map[string]any{
+		"version":                  2,
+		"query_sha256":             queryDigest,
+		"selection_receipt_sha256": strings.Repeat("b", 64),
+		"policy_pins": []map[string]any{
+			{"kind": "browser_policy", "id": "pol-1", "revision": 2, "sha256": strings.Repeat("c", 64)},
+		},
+		"current": map[string]any{
+			"run_id":          "run-current",
+			"manifest_sha256": strings.Repeat("d", 64),
+			"tuple_ids":       []string{strings.Repeat("e", 64)},
+			"policy_pins": []map[string]any{
+				{"kind": "browser_policy", "id": "pol-1", "revision": 2, "sha256": strings.Repeat("c", 64)},
+			},
+		},
+	}
+	var seriesBody map[string]any
+	var returnMutatedPin bool
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/monitoring/dashboard-definitions/d1":
+			rev := 1
+			if r.URL.Query().Get("revision") == "2" {
+				rev = 2
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":         "d1",
+				"project_id": "proj-1",
+				"name":       "Frozen Browser Panel",
+				"revision":   rev,
+				"tabs": []map[string]any{{
+					"id": "main",
+					"panels": []map[string]any{{
+						"id":    "p1",
+						"title": "LCP",
+						"query": map[string]any{
+							"query_version":      5,
+							"browser_tuple_mode": "separate",
+							"population":         "browser_document",
+							"metric":             "document_lcp",
+							"aggregation":        "p75",
+							"end_seconds":        60,
+							"bucket_seconds":     10,
+							"browser_inputs":     pin,
+						},
+					}},
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tests/run-current/archive/native-series":
+			_ = json.NewDecoder(r.Body).Decode(&seriesBody)
+			respPin := pin
+			if returnMutatedPin {
+				respPin = map[string]any{
+					"version":                  2,
+					"query_sha256":             strings.Repeat("f", 64),
+					"selection_receipt_sha256": strings.Repeat("b", 64),
+					"current":                  pin["current"],
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"browser_inputs": respPin,
+				"current":        map[string]any{"run_id": "run-current", "buckets": []any{}},
+			})
+		default:
+			http.Error(w, "unexpected route "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer s.Close()
+
+	var out bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"replay-panel", "--id", "d1", "--revision", "2", "--api", s.URL}, &out); err != nil {
+		t.Fatalf("replay-panel failed: %v", err)
+	}
+	if seriesBody == nil || seriesBody["query_version"] != float64(5) {
+		t.Fatalf("expected query_version 5 posted to native-series, got %+v", seriesBody)
+	}
+	var decoded struct {
+		DashboardID string `json:"dashboard_id"`
+		Revision    int64  `json:"revision"`
+		Panels      []struct {
+			PanelID string `json:"panel_id"`
+			RunID   string `json:"run_id"`
+		} `json:"panels"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode replay-panel output: %v (%s)", err, out.String())
+	}
+	if decoded.DashboardID != "d1" || decoded.Revision != 2 || len(decoded.Panels) != 1 || decoded.Panels[0].PanelID != "p1" || decoded.Panels[0].RunID != "run-current" {
+		t.Fatalf("unexpected replay-panel output: %+v", decoded)
+	}
+
+	returnMutatedPin = true
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"replay-panel", "--id", "d1", "--api", s.URL}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "returned mismatched or missing browser input pins") {
+		t.Fatalf("expected mismatched browser_inputs refusal, got %v", err)
+	}
+	returnMutatedPin = false
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"replay-panel", "--id", "d1", "--project", "other-proj", "--api", s.URL}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "belongs to project") {
+		t.Fatalf("expected project mismatch refusal, got %v", err)
 	}
 }
 
