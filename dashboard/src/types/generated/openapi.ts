@@ -103210,6 +103210,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "fidelity_report"?: Record<string, unknown>;
             "findings": Array<Record<string, unknown>>;
             "import_draft_expires_at"?: (string) | null;
             "readiness": Record<string, unknown>;

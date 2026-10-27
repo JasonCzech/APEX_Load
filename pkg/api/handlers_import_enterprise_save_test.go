@@ -834,7 +834,7 @@ var guidedTLSRepairAction = "Action()\n{\n" +
 	"\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-next\");\n" +
 	"\tweb_add_header(\"Authorization\", \"" + guidedTLSRepairCredential + "\");\n" +
 	"\tweb_url(\"orders\", \"URL=https://example.test/orders\", \"Resource=0\", LAST);\n" +
-	"\tweb_set_sockets_option(\"SSL_VERSION\", \"AUTO\");\n" +
+	"\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-future\");\n" +
 	"\tweb_url(\"cart\", \"URL=https://example.test/cart\", \"Resource=0\", LAST);\n" +
 	"\treturn 0;\n}\n"
 

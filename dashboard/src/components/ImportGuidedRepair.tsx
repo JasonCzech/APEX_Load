@@ -8,7 +8,7 @@ import { request } from '../hooks/apiClient'
 import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '../types/scriptImports'
 import type { ScriptDefinition } from '../types/scripts'
 import { countLabel } from '../utils/numberFormat'
-import { importActionEntries, isConfigReferenceIssue, issueCategories, issueRepairOptions, issueScope, readinessCounts, readinessSummaryText, repairImpactText, unresolvedIssueCount, type ImportFinding, type ImportIssue, type IssueCategory, type RepairFields, type RepairOperation } from './importReviewIssues'
+import { importActionEntries, isConfigReferenceIssue, isTLSReviewFinding, issueCategories, issueRepairOptions, issueScope, readinessCounts, readinessSummaryText, repairImpactText, unresolvedIssueCount, type ImportFinding, type ImportIssue, type IssueCategory, type RepairFields, type RepairOperation } from './importReviewIssues'
 
 export type RepairResult = { secret_binding_requirements: SecretBindingRequirement[]; fidelity_report: EnterpriseArchiveFidelityReport; candidate_id: string; revision: string; script: ScriptDefinition; before: ScriptDefinition; findings: ImportFinding[]; readiness: { replay_ready: boolean; promotion_ready: boolean; blocking_codes?: string[]; validation_issues?: string[]; unresolved_bindings?: number }; allocation?: { name: string; rows: number; block_size: number; population: number }[]; expires_at: string }
 type Props = {
@@ -213,7 +213,9 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const issueLocation = finding?.source_ref || finding?.action_path
   const canViewSource = !!finding && !!onViewSource && !!(finding.action_path || finding.source_mapping_id || finding.source_file)
   const narrowerAssertion = /web_reg_find.*Search=ALL/i.test(finding?.detail || '')
-  const runtimeDiagnostic = selected?.category === 'runtime' && !!finding?.code.startsWith('diagnostic:')
+  const tlsSettings = isTLSReviewFinding(finding)
+  const inlineTLS = !!settings && tlsSettings && (finding?.code.startsWith('diagnostic:') || !candidate.startsWith('protected:'))
+  const runtimeDiagnostic = !inlineTLS && selected?.category === 'runtime' && !!finding?.code.startsWith('diagnostic:')
   const issueImpact = (finding && repairImpactText(finding.code, finding.detail)) || 'Inspect the evidence and choose an available resolution below.'
   const previewIssues = useMemo(() => preview ? regroup(preview) : [], [preview, regroup])
   const previewBlockers = readinessCounts(previewIssues).blockers
@@ -258,10 +260,11 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
           {issueLocation && <p className="lr-issue-location"><strong>Location</strong> {issueLocation} {canViewSource && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onViewSource?.(finding.action_path || '', finding)}>Inspect {finding.source_ref || 'selected request'}</button>}</p>}
           {runtimeDiagnostic && <ImportIssueRuntimeEditor script={script} migrationPending={issues.some(issue => issue.findings.some(item => item.code === 'legacy_tls_replacement'))} />}
           {selected.category === 'credentials' && onCredentialTarget && view === 'overview' && <section aria-label="Fix credential bindings here"><h5>Configure credentials</h5><div ref={onCredentialTarget} /></section>}
+          {inlineTLS && !selectedResolved && <ImportIssueRuntimeEditor script={script} migrationPending={false} tlsOnly />}
           {selectedResolved ? <p>This issue was removed by an applied repair. Remaining requirements are evaluated independently.</p> : canRepair && options.length ? <GuidedRepairForm finding={finding} occurrences={selected.findings} options={options} entries={entries} fields={fields} onChange={changeFields}
             onOccurrence={path => { setOccurrence(path); setResponsePath(''); resetPreview() }} locked={locked} busy={busy} onPreview={operation => run(operation)}>
             {previewContent}
-          </GuidedRepairForm> : <div className="lr-repair-actions"><h5>{options.length ? 'Repair availability' : 'Available resolution'}</h5><p>{options.length ? (loading ? 'Checking whether a guided repair applies to this issue…' : 'Protected repairs are unavailable until this archive has a current protected draft. Use archive setup to revalidate after encrypted import storage is configured.') : selected.blocking ? 'This requires a supported source or configuration change. Reviewing the limitation cannot clear this blocker.' : 'Review the specific behavior above. A review decision records your assessment; it does not change replay behavior or prove compatibility.'}</p>
+          </GuidedRepairForm> : inlineTLS ? null : <div className="lr-repair-actions"><h5>{options.length ? 'Repair availability' : 'Available resolution'}</h5><p>{options.length ? (loading ? 'Checking whether a guided repair applies to this issue…' : 'Protected repairs are unavailable until this archive has a current protected draft. Use archive setup to revalidate after encrypted import storage is configured.') : selected.blocking ? 'This requires a supported source or configuration change. Reviewing the limitation cannot clear this blocker.' : 'Review the specific behavior above. A review decision records your assessment; it does not change replay behavior or prove compatibility.'}</p>
             {onSection && selected.category !== 'review' && !(selected.category === 'credentials' && onCredentialTarget) && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onSection(selected.category === 'credentials' ? 'credentials' : selected.category === 'values' ? 'data' : selected.category === 'runtime' ? 'preserved' : 'source')}>{selected.category === 'credentials' ? 'Configure credential bindings' : selected.category === 'values' ? 'Edit data and parameters' : selected.category === 'runtime' ? 'Open all runtime settings' : 'Inspect source files'}</button>}
             {!options.length && selected.category === 'review' && !canViewSource && <p>No unique source mapping is available. Use the diagnostic location below to find the relevant source; no unrelated mapping will be selected automatically.</p>}
           </div>}

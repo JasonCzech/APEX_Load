@@ -21,7 +21,7 @@ func TestEnterpriseArchiveLegacySSLMigrationWarnsAndSavesWithoutRepair(t *testin
 			server := newGuidedRepairArchiveServer(t, nil)
 			source := `Action()
 {
- web_set_sockets_option("SSL_VERSION", "2&3");
+ web_set_sockets_option("SSL_VERSION", "AUTO");
  web_add_header("Authorization", "Bearer ssl-migration-synthetic-token");
  web_url("orders", "URL=https://example.test/orders", "Resource=0", LAST);
  return 0;
@@ -48,7 +48,7 @@ func TestEnterpriseArchiveLegacySSLMigrationWarnsAndSavesWithoutRepair(t *testin
 				t.Fatalf("TLS = %#v, want TLS 1.3", tls)
 			}
 			warnings := strings.Join(body.Warnings, "\n")
-			if !strings.Contains(warnings, `"2&3" was replaced with TLS 1.3`) {
+			if !strings.Contains(warnings, `"AUTO" was replaced with TLS 1.3`) {
 				t.Fatalf("migration warning missing: %s", warnings)
 			}
 			findings, err := importreview.FindingsFromScript(body.Script)

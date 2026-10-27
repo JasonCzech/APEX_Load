@@ -260,3 +260,86 @@ func TestImportReplayPoliciesAtomicValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestImportSettingsTLSSelectionClearsOnlyTLSGates(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unrelated edit", true: "TLS edit"}[explicit], func(t *testing.T) {
+			script := settingsTestScript()
+			script.Init = []dsl.Action{legacyTLSGateForTest("first", legacyTLSWarningForTest("AUTO")), legacyTLSGateForTest("second", legacyTLSWarningForTest("TLS-next"))}
+			script.Actions[0].Metadata = map[string]any{"execution_blocker": "unrelated_requirement"}
+			before, _ := json.Marshal(script)
+			changes := []ImportSettingsChange{settingChange("config.http.request_timeout_ms", "2000")}
+			if explicit {
+				changes = []ImportSettingsChange{settingChange("config.http.tls.min_version", `"1.3"`), settingChange("config.http.tls.max_version", `"1.3"`)}
+			}
+			draft, errs := applyImportSettings(script, "HTTP", changes)
+			if len(errs) != 0 {
+				t.Fatal(errs)
+			}
+			if got := len(executionGatePaths(draft, "legacy_tls_replacement")); (got == 0) != explicit {
+				t.Fatalf("TLS gates = %d, explicit = %v", got, explicit)
+			}
+			if !hasExecutionCode(draft.Actions[0].Metadata, "unrelated_requirement") {
+				t.Fatal("unrelated gate was cleared")
+			}
+			if explicit && (draft.Init[0].Metadata["migration_change"] == nil || draft.Init[1].Metadata["migration_change"] == nil) {
+				t.Fatal("TLS migration evidence missing")
+			}
+			after, _ := json.Marshal(script)
+			if !bytes.Equal(before, after) {
+				t.Fatal("source draft mutated")
+			}
+		})
+	}
+}
+
+func TestImportSettingsTLSRestampsFidelityAndPreflight(t *testing.T) {
+	server := newGuidedRepairArchiveServer(t, nil)
+	script := storedRepairScript("inline-tls-settings", "http")
+	id, _, err := server.registerImportCandidateSession(httptest.NewRequest("POST", "/", nil), enterpriseArchiveSaveProfile, script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script.Metadata.Import.Preserved[importDraftAttestationMetadataKey] = importDraftProtectedTokenPrefix + id
+	payload, _ := json.Marshal(ImportSettingsRequest{Script: repairDisclosure(script), Category: "HTTP", Changes: []ImportSettingsChange{settingChange("config.http.tls.min_version", `"1.3"`), settingChange("config.http.tls.max_version", `"1.3"`)}})
+	response := httptest.NewRecorder()
+	server.handleImportSettings(response, httptest.NewRequest("POST", "/api/v1/scripts/import/settings", bytes.NewReader(payload)))
+	if response.Code != 200 {
+		t.Fatalf("apply %d: %s", response.Code, response.Body.String())
+	}
+	var result ImportSettingsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if paths := executionGatePaths(result.Script, "legacy_tls_replacement"); len(paths) != 0 {
+		t.Fatalf("TLS gates = %v", paths)
+	}
+	if !result.Readiness.ReplayReady {
+		t.Fatalf("readiness = %+v", result.Readiness)
+	}
+	assertRepairedFidelityReport(t, "settings response", result.FidelityReport, "promotable")
+	assertRepairedFidelityReport(t, "settings draft", result.Script.Metadata.Import.Preserved["fidelity_report"], "promotable")
+	if preflight := preservedReplayPreflight(result.Script); preflight == nil || !preflight.Valid {
+		t.Fatalf("preflight = %+v", preflight)
+	}
+}
+
+func TestImportSettingsSelectsTLSRequiresAnExplicitTLSValue(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		changes []ImportSettingsChange
+		want    bool
+	}{
+		{name: "empty"},
+		{name: "default", changes: []ImportSettingsChange{settingChange("config.http.tls.min_version", " null ")}},
+		{name: "unrelated", changes: []ImportSettingsChange{settingChange("config.http.request_timeout_ms", "1000")}},
+		{name: "minimum", changes: []ImportSettingsChange{settingChange("config.http.tls.min_version", `"1.2"`)}, want: true},
+		{name: "maximum", changes: []ImportSettingsChange{settingChange("config.http.tls.max_version", `"1.3"`)}, want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := importSettingsSelectsTLS(tt.changes); got != tt.want {
+				t.Fatalf("selects TLS = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

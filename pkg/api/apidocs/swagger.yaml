@@ -338012,6 +338012,9 @@ paths:
               schema:
                 type: object
                 properties:
+                  fidelity_report:
+                    type: object
+                    additionalProperties: {}
                   findings:
                     type: array
                     items:

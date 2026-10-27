@@ -130,6 +130,7 @@ export function issueTitle(code: string): string {
 // the finding's detail either way.
 const WARNING_ACTION_TITLES: Array<[RegExp, string]> = [
   [/\bweb_set_sockets_option\b[^;]*\b(?:SSL|TLS)/i, 'Choose supported TLS settings'],
+  [/^(?:Legacy SSL version|Automatic SSL\/TLS selection).*replaced with TLS 1\.3/i, 'Review TLS migration'],
   [/\bweb_reg_save_param\w*\b/i, 'Review the response extraction'],
   [/\bweb_reg_find\b/i, 'Review the text check'],
 ]
@@ -225,6 +226,7 @@ export function groupImportFindings(findings: ImportFinding[], script: ScriptDef
 // import review and the script editor. A code with nothing specific to say
 // reads as its detail, '' without one.
 export function repairImpactText(code: string, detail = ''): string {
+  if (code.startsWith('diagnostic:') && /^(?:Legacy SSL version|Automatic SSL\/TLS selection).*replaced with TLS 1\.3/i.test(detail)) return 'The source SSL/TLS selection was imported using a TLS 1.3 default. Review the current draft range below. Replay requires an endpoint compatible with that range; the original warning records the import-time migration.'
   const category = findingCategory(code)
   if (category === 'values') return code.startsWith('conditional_') ? 'A possible producer exists, but its order or execution path needs review. It must run before the selected request.' : 'This value has no reachable producer. Bind an existing value, add test data, or extract it from a preceding response.'
   if (category === 'bodies') return 'The original payload could not be restored. Supply the body below; previews keep its contents protected.'
@@ -232,6 +234,9 @@ export function repairImpactText(code: string, detail = ''): string {
   if (/web_reg_find.*Search=ALL/i.test(detail)) return 'The converted check can miss text outside the main response body. Verify the intended assertion before replay.'
   if (category === 'runtime' && code.startsWith('diagnostic:')) return 'Some imported settings need an explicit choice or have no editable equivalent. Review their source values and replay consequences below.'
   return detail
+}
+export function isTLSReviewFinding(finding: ImportFinding | undefined): boolean {
+  return finding?.code === 'legacy_tls_replacement' || (!!finding?.code.startsWith('diagnostic:') && (/\bweb_set_sockets_option\b[^;]*\b(?:SSL|TLS)/i.test(finding.detail) || /^(?:Legacy SSL version|Automatic SSL\/TLS selection).*replaced with TLS 1\.3/i.test(finding.detail)))
 }
 export function issueRepairOptions(code: string): { value: string; label: string }[] {
   if (/^(missing_producer|conditional_producer):/.test(code)) return [

@@ -33,7 +33,7 @@ func savedEvaluationArchiveAction(header string) string {
 		"\tweb_url(\"cart\", \"URL=https://example.test/cart/{CartId}\", \"Resource=0\", LAST);\n" +
 		"\tweb_reg_save_param(\"CartId\", \"LB=cart=\", \"RB=;\", LAST);\n" +
 		"\tweb_url(\"home\", \"URL=https://example.test/home\", \"Resource=0\", LAST);\n" +
-		"\tweb_set_sockets_option(\"SSL_VERSION\", \"AUTO\");\n" +
+		"\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-future\");\n" +
 		"\tweb_url(\"summary\", \"URL=https://example.test/summary/{CartId}\", \"Resource=0\", LAST);\n" +
 		"\treturn 0;\n}\n")
 	return action.String()
