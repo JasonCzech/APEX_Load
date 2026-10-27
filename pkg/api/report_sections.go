@@ -250,6 +250,22 @@ func pdfRootCauseLines(lines *[]string, view *ReportRootCause, hypotheses []Repo
 			*lines = append(*lines, "  Limitation: "+limitation)
 		}
 	}
+	if s := view.BrowserSelection; s != nil {
+		*lines = append(*lines, s.Summary)
+		if len(s.Reasons) > 0 {
+			*lines = append(*lines, "  Reasons: "+strings.Join(s.Reasons, ", "))
+		}
+		for _, rej := range s.Rejected {
+			line := "  Rejected " + rej.TestID
+			if len(rej.Reasons) > 0 {
+				line += " (" + strings.Join(rej.Reasons, ", ") + ")"
+			}
+			if rej.Digest != "" {
+				line += " [" + rej.Digest + "]"
+			}
+			*lines = append(*lines, line)
+		}
+	}
 	for _, limitation := range view.Limitations {
 		*lines = append(*lines, "Limitation: "+limitation)
 	}
@@ -299,6 +315,27 @@ func csvRootCauseRows(write reportCSVWriteFunc, section string, view *ReportRoot
 		}
 		for _, limitation := range b.Limitations {
 			rows = append(rows, [3]string{"browser_baseline", "limitation", limitation})
+		}
+	}
+	if s := view.BrowserSelection; s != nil {
+		rows = append(rows,
+			[3]string{"browser_selection", "summary", s.Summary},
+			[3]string{"browser_selection", "status", s.Status},
+			[3]string{"browser_selection", "policy", s.Policy},
+			[3]string{"browser_selection", "selected_test_id", s.SelectedTestID},
+			[3]string{"browser_selection", "selected_digest", s.SelectedDigest},
+			[3]string{"browser_selection", "receipt_digest", s.ReceiptDigest},
+			[3]string{"browser_selection", "reasons", strings.Join(s.Reasons, ", ")},
+		)
+		for _, rej := range s.Rejected {
+			val := rej.TestID
+			if len(rej.Reasons) > 0 {
+				val += " (" + strings.Join(rej.Reasons, ", ") + ")"
+			}
+			if rej.Digest != "" {
+				val += " [" + rej.Digest + "]"
+			}
+			rows = append(rows, [3]string{"browser_selection", "rejected_candidate", val})
 		}
 	}
 	for _, c := range view.Coverage {

@@ -78,6 +78,7 @@ Each section reads its result when the report is exported. A section whose resul
 | One request's HAR entry | `analysis har-entry --run ID --request-id ID` | `run_archive_browser_har_entry` |
 | Policies | `analysis policies list\|get\|save\|delete --project ID …` | `analysis_policy_list`, `_get`, `_create`, `_update`, `_delete` |
 | Replay saved panel | `analysis replay-panel --id ID [--revision N]` | — |
+| Pin policies on run / CI / schedule | `run --api URL [--browser-policy ID@REV] [--journey-policy ID@REV]`, `ci run [--browser-policy ID@REV] [--journey-policy ID@REV]`, `schedule preview\|create\|update --scenario ID [--browser-policy ID@REV\|project_default] [--journey-policy ID@REV\|project_default]` | — |
 
 `apexctl analysis policies save` with `--id` needs the `--revision` the policy was read at, as the editor does.
 

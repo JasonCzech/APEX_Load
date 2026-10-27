@@ -34,6 +34,7 @@ var apexctlCommandHandlers = map[string]func(){
 	"import":       importCmd,
 	"library":      libraryCmd,
 	"prepare":      prepareCmd,
+	"schedule":     scheduleCmd,
 	"monitor":      monitorCmd,
 	"analysis":     analysisCmd,
 	"rca":          rcaCmd,
@@ -124,6 +125,8 @@ func runTest() {
 		client.PollTimeout = args.timeout
 		client.TelemetryPolicy = args.telemetryPolicy
 		client.TelemetryBudgetPolicy = args.telemetryBudgetPolicy
+		client.BrowserPolicy = args.browserPolicy
+		client.JourneyPolicy = args.journeyPolicy
 		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format, goalConfig)
 		if apiResult != nil {
 			slaSummary = apiResult.SLASummary
@@ -321,6 +324,10 @@ type runArgs struct {
 	transactionRulesFile     string
 	telemetryPolicy          string
 	telemetryBudgetPolicy    string
+	browserPolicyRaw         string
+	journeyPolicyRaw         string
+	browserPolicy            *runcontract.AnalysisPolicySelection
+	journeyPolicy            *runcontract.AnalysisPolicySelection
 }
 
 type envAssignments map[string]string
@@ -389,6 +396,8 @@ func parseRunArgs(args []string) runArgs {
 	flags.StringVar(&r.transactionRulesFile, "transaction-rules-file", "", "JSON transaction SLA rule file")
 	flags.StringVar(&r.telemetryPolicy, "telemetry-policy", "", "judge the run by this project telemetry acceptance policy (its ID) instead of the project's default")
 	flags.StringVar(&r.telemetryBudgetPolicy, "telemetry-budget-policy", "", "set the run's live telemetry budgets from this project telemetry budget policy (its ID) instead of the system threshold settings")
+	flags.StringVar(&r.browserPolicyRaw, "browser-policy", "", "pin this project browser policy revision (<id>@<revision> or project_default) for the run")
+	flags.StringVar(&r.journeyPolicyRaw, "journey-policy", "", "pin this project journey policy revision (<id>@<revision> or project_default) for the run")
 	if err := flags.Parse(args); err != nil {
 		r.err = err
 	} else if flags.NArg() != 0 {
@@ -421,8 +430,21 @@ func parseRunArgs(args []string) runArgs {
 		r.err = fmt.Errorf("--telemetry-policy requires --api: a local run has no telemetry acceptance policy")
 	} else if policy := strings.TrimSpace(r.telemetryBudgetPolicy); policy != "" && policy != "project_default" && strings.TrimSpace(r.api) == "" {
 		r.err = fmt.Errorf("--telemetry-budget-policy requires --api: a local run has no telemetry budget policy")
+	} else if bp, _, err := parseAnalysisPolicyFlag("--browser-policy", r.browserPolicyRaw); err != nil {
+		r.err = err
+	} else if bp != nil && strings.TrimSpace(r.api) == "" {
+		r.err = fmt.Errorf("--browser-policy requires --api: a local run has no browser policy")
+	} else if jp, _, err := parseAnalysisPolicyFlag("--journey-policy", r.journeyPolicyRaw); err != nil {
+		r.err = err
+	} else if jp != nil && strings.TrimSpace(r.api) == "" {
+		r.err = fmt.Errorf("--journey-policy requires --api: a local run has no journey policy")
 	} else if r.timeout == 0 {
+		r.browserPolicy = bp
+		r.journeyPolicy = jp
 		r.timeout = r.duration + 30*time.Minute
+	} else {
+		r.browserPolicy = bp
+		r.journeyPolicy = jp
 	}
 	// project_default is the project's default, which omitting the flag
 	// already selects.
@@ -464,6 +486,7 @@ Commands:
   import    Import Bruno collections or Grafana dashboards
   library   Export or import portable project library bundles
   prepare   Prepare, inspect, renew, cancel, or start a prepared run
+  schedule  Manage scenario schedules and occurrence resolutions
   monitor   Configure run-bound monitoring sources and scenario bindings
   prometheus  Manage target-system monitoring connections, discovery and previews
   dynatrace  Manage Dynatrace SaaS connections, discovery and query previews
@@ -500,6 +523,10 @@ Run Flags:
   --telemetry-budget-policy ID    Set the run's live telemetry budgets from this project telemetry budget
                                   policy instead of the system threshold settings (requires --api). The
                                   controller must confirm it as for --telemetry-policy.
+  --browser-policy ID@REV         Pin this project browser policy revision (<id>@<revision> or project_default)
+                                  for the run instead of the project's default (requires --api).
+  --journey-policy ID@REV         Pin this project journey policy revision (<id>@<revision> or project_default)
+                                  for the run instead of the project's default (requires --api).
 
 Examples:
   apexctl run --script order-flow.json --vusers 100 --duration 5m

@@ -15773,6 +15773,37 @@ paths:
                             version:
                               type: string
                           nullable: true
+                        browser_selection:
+                          type: object
+                          properties:
+                            inventory_count:
+                              type: integer
+                              format: int64
+                            policy:
+                              type: string
+                            reasons:
+                              type: array
+                              items:
+                                type: string
+                            receipt_digest:
+                              type: string
+                            rejected:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: rca.BrowserCandidateRejection'
+                                additionalProperties: true
+                            selected_digest:
+                              type: string
+                            selected_test_id:
+                              type: string
+                            status:
+                              type: string
+                            summary:
+                              type: string
+                            version:
+                              type: string
+                          nullable: true
                         completed_at:
                           type: string
                           format: date-time
@@ -52246,6 +52277,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 execution:
                   type: object
                   properties:
@@ -52437,6 +52490,34 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                    nullable: true
                   check_url:
                     type: string
                   duration_ms:
@@ -52796,6 +52877,34 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                    nullable: true
                   check_url:
                     type: string
                   duration_ms:
@@ -53126,6 +53235,34 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                    nullable: true
                   check_url:
                     type: string
                   duration_ms:
@@ -440773,6 +440910,42 @@ paths:
                           - status
                           - summary
                           - unscored
+                          - version
+                        nullable: true
+                      browser_selection:
+                        type: object
+                        properties:
+                          inventory_count:
+                            type: integer
+                            format: int64
+                          policy:
+                            type: string
+                          reasons:
+                            type: array
+                            items:
+                              type: string
+                          receipt_digest:
+                            type: string
+                          rejected:
+                            type: array
+                            items:
+                              type: object
+                              description: 'Go type: rca.BrowserCandidateRejection'
+                              additionalProperties: true
+                          selected_digest:
+                            type: string
+                          selected_test_id:
+                            type: string
+                          status:
+                            type: string
+                          summary:
+                            type: string
+                          version:
+                            type: string
+                        required:
+                          - inventory_count
+                          - status
+                          - summary
                           - version
                         nullable: true
                       completed_at:

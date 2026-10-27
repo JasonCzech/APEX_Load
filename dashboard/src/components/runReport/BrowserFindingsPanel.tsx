@@ -76,7 +76,7 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
       <p>
         <strong>{result.score.score !== undefined ? `Score ${result.score.score.toFixed(1)}/100 (${result.score.severity.replace(/_/g, ' ')})` : browserScoreUnscoredText(result.score.unscored_reason)}</strong>{' '}
         {result.score.missing?.length ? `Missing: ${result.score.missing.map(metric => metric.toUpperCase()).join(', ')}. ` : ''}
-        {result.score.coverage.observed}/{result.score.coverage.required} required metrics observed · {result.score.version} · {result.policy.name || result.policy.id} revision {result.policy.revision} ({result.policy.source === 'pinned' ? "the run's pinned policy" : 'requested'}).
+        {result.score.coverage.observed}/{result.score.coverage.required} required metrics observed · {result.score.version} · {result.policy.name || result.policy.id} revision {result.policy.revision} ({result.policy.source === 'pinned' ? "the run's pinned policy" : 'requested'}){result.policy.sha256 ? ` · sha256 …${result.policy.sha256.slice(-8)}` : ''}.
       </p>
       <div className="run-archive-coverage-table"><table className="tx-table" aria-label="Score components">
         <thead><tr><th scope="col">Metric</th><th scope="col">Weight</th><th scope="col">p75</th><th scope="col">Good / poor</th><th scope="col">Component</th><th scope="col">Contribution</th><th scope="col">Samples</th></tr></thead>
@@ -105,6 +105,7 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
             {baseline?.baseline_run_id ? <>{' '}<a href={`#/report/${encodeURIComponent(baseline.baseline_run_id)}?section=browser`}>Baseline run {baseline.baseline_run_id}</a>{baseline.baseline_archive_sha256 ? ` (archive …${baseline.baseline_archive_sha256.slice(-8)})` : ''}</> : null}
             {baseline?.analysis_id ? <>{' '}· <a href={`#/report/${encodeURIComponent(testId)}?section=diagnostics`}>RCA {baseline.analysis_id}</a></> : null}
             {baseline?.selection_receipt_sha256 ? <>{' '}· selection receipt …{baseline.selection_receipt_sha256.slice(-8)}</> : null}
+            {baseline?.rejected_candidates?.length ? <>{' '}· rejected: {baseline.rejected_candidates.map(candidate => `${candidate.test_id} (${(candidate.reasons || []).map(reason => reason.replace(/_/g, ' ')).join(', ')})${candidate.digest ? ` […${candidate.digest.slice(-8)}]` : ''}`).join('; ')}</> : null}
             {baseline?.policy_pins?.length ? <>{' '}· pins: {baseline.policy_pins.map(pin => `${pin.kind}:${pin.id}@${pin.revision}`).join(', ')}</> : null}
           </span></> : null}
         </li>

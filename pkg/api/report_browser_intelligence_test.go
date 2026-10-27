@@ -1,11 +1,16 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/xml"
+	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/rca"
 )
 
 func browserIntelligenceReportFixture() *ReportBrowserIntelligence {
@@ -241,3 +246,115 @@ func TestBrowserInteractionV3QualificationSurvivesReportFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowserIntelligenceReportSectionsCarryV2ProvenanceAndDeepLinks(t *testing.T) {
+	report := consistencyMatrixReport()
+	report.BrowserIntelligence = browserIntelligenceReportFixture()
+	findings := report.BrowserIntelligence.Findings.Result
+	findings.Policy.SHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	findings.PolicyPins = []RunPolicyPin{
+		{Kind: "browser_policy", ID: "policy-1", Name: "Vitals", Revision: 3, SHA256: findings.Policy.SHA256, Source: "run_selection"},
+		{Kind: "journey_policy", ID: "journeys-1", Name: "Shop", Revision: 2, SHA256: "cccc111122223333", Source: "project_default"},
+	}
+	findings.Findings[0].Evidence.Documents = []BrowserFindingDocument{{
+		DocumentID: "doc-provenance-0001", SourceGeneration: "gen-1", Value: 3100, Resources: "/api/v1/tests/run-1/archive/browser-resources?document_id=doc-provenance-0001",
+	}}
+	findings.Findings[0].Baseline = BrowserFindingBaseline{
+		Mode:                   "latest_compatible",
+		Status:                 "regressed",
+		Detail:                 "level 10 VUsers: current 3100 ms vs baseline mean 1200 ms",
+		AnalysisID:             "rca-prov-1",
+		BaselineRunID:          "base-run-prov",
+		BaselineArchiveSHA256:  "aaaa111122223333444455556666777788889999aaaabbbbccccddddeeeeffff",
+		SelectionReceiptSHA256: "bbbb111122223333444455556666777788889999aaaabbbbccccddddeeeeffff",
+		PolicyPins:             findings.PolicyPins,
+		RejectedCandidates: []rca.BrowserCandidateRejection{
+			{TestID: "cand-run-1", Digest: "dddd111122223333", Reasons: []string{"policy_revision_mismatch", "step_topology_mismatch"}},
+		},
+	}
+	report.BrowserIntelligence.Journeys.Policy.SHA256 = "eeee111122223333444455556666777788889999aaaabbbbccccddddeeeeffff"
+
+	sections := renderBrowserIntelligenceSections(t, report)
+	for index, format := range []string{"HTML", "PDF", "CSV"} {
+		for _, want := range []string{
+			"(sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef)",
+			"regressed; mode latest_compatible",
+			"baseline base-run-prov",
+			"analysis rca-prov-1",
+			"receipt bbbb111122223333444455556666777788889999aaaabbbbccccddddeeeeffff",
+			"rejected cand-run-1 (policy_revision_mismatch, step_topology_mismatch) [dddd111122223333]",
+			"Pinned browser_policy: policy-1@3 (sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef).",
+			"Pinned journey_policy: journeys-1@2 (sha256 cccc111122223333).",
+			"doc-provenance-0001",
+		} {
+			if !strings.Contains(sections[reportSectionBrowserFindings][index], want) {
+				t.Fatalf("browser_findings %s lacks %q:\n%s", format, want, sections[reportSectionBrowserFindings][index])
+			}
+		}
+		if !strings.Contains(sections[reportSectionJourneyRisk][index], "(sha256 eeee111122223333444455556666777788889999aaaabbbbccccddddeeeeffff)") {
+			t.Fatalf("journey_risk %s lacks policy sha256:\n%s", format, sections[reportSectionJourneyRisk][index])
+		}
+	}
+	if !strings.Contains(sections[reportSectionBrowserFindings][0], `href="#/report/run-1?section=browser&amp;document_id=doc-provenance-0001"`) &&
+		!strings.Contains(sections[reportSectionBrowserFindings][0], `href="#/report/run-1?section=browser&document_id=doc-provenance-0001"`) {
+		t.Fatalf("browser_findings HTML lacks deep link:\n%s", sections[reportSectionBrowserFindings][0])
+	}
+	for _, csvRow := range []string{
+		"browser_findings,,policy_sha256,0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"browser_finding,0,baseline_status,regressed",
+		"browser_finding,0,baseline_run_id,base-run-prov",
+		"browser_finding,0,selection_receipt_sha256,bbbb111122223333444455556666777788889999aaaabbbbccccddddeeeeffff",
+		"browser_finding,0,analysis_id,rca-prov-1",
+		"browser_finding,0,rejected_candidates,cand-run-1 (policy_revision_mismatch, step_topology_mismatch) [dddd111122223333]",
+		"browser_finding,0,sample_document_id,doc-provenance-0001",
+		"browser_finding,0,document_link,#/report/run-1?section=browser&document_id=doc-provenance-0001",
+		"journey_risk,,policy_sha256,eeee111122223333444455556666777788889999aaaabbbbccccddddeeeeffff",
+	} {
+		allCSV := sections[reportSectionBrowserFindings][2] + "\n" + sections[reportSectionJourneyRisk][2]
+		if !strings.Contains(allCSV, csvRow) {
+			t.Fatalf("CSV lacks %q:\n%s", csvRow, allCSV)
+		}
+	}
+
+	// DOCX export must produce well-formed Word XML even when the deep link contains '&'.
+	var docxBuf bytes.Buffer
+	if err := writeRunArchiveReportDOCXWithProfileAndAnnotations(report, &docxBuf, "engineer", nil, consistencyMatrixManifest()); err != nil {
+		t.Fatalf("writeRunArchiveReportDOCXWithProfileAndAnnotations: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(docxBuf.Bytes()), int64(docxBuf.Len()))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	foundDocXML := false
+	for _, f := range zr.File {
+		if f.Name != "word/document.xml" {
+			continue
+		}
+		foundDocXML = true
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rawXML, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoder := xml.NewDecoder(bytes.NewReader(rawXML))
+		for {
+			if _, err := decoder.Token(); err != nil {
+				if err == io.EOF {
+					break
+				}
+				t.Fatalf("word/document.xml is not valid XML: %v\n%s", err, string(rawXML))
+			}
+		}
+		if !strings.Contains(string(rawXML), "doc-provenance-0001") || !strings.Contains(string(rawXML), "cand-run-1") {
+			t.Fatalf("word/document.xml lacks provenance fields:\n%s", string(rawXML))
+		}
+	}
+	if !foundDocXML {
+		t.Fatal("word/document.xml missing from DOCX archive")
+	}
+}
+

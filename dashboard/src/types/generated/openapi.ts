@@ -5691,6 +5691,18 @@ export interface operations {
                 "unscored"?: number;
                 "version"?: string;
               }) | null;
+              "browser_selection"?: ({
+                "inventory_count"?: number;
+                "policy"?: string;
+                "reasons"?: Array<string>;
+                "receipt_digest"?: string;
+                "rejected"?: Array<Record<string, unknown>>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status"?: string;
+                "summary"?: string;
+                "version"?: string;
+              }) | null;
               "completed_at"?: (string) | null;
               "confidence"?: string;
               "coverage"?: Array<Record<string, unknown>>;
@@ -9221,6 +9233,16 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+            }) | null;
             "check_url"?: string;
             "duration_ms": number;
             "error"?: string;
@@ -36184,6 +36206,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "execution"?: {
             "base_url"?: string;
             "duration"?: string;
@@ -36270,6 +36302,16 @@ export interface operations {
       "202": {
         content: {
           "application/json": {
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+            }) | null;
             "check_url"?: string;
             "duration_ms": number;
             "error"?: string;
@@ -67238,6 +67280,16 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+            }) | null;
             "check_url"?: string;
             "duration_ms": number;
             "error"?: string;
@@ -85661,6 +85713,18 @@ export interface operations {
                 "status": string;
                 "summary": string;
                 "unscored": number;
+                "version": string;
+              }) | null;
+              "browser_selection"?: ({
+                "inventory_count": number;
+                "policy"?: string;
+                "reasons"?: Array<string>;
+                "receipt_digest"?: string;
+                "rejected"?: Array<Record<string, unknown>>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status": string;
+                "summary": string;
                 "version": string;
               }) | null;
               "completed_at"?: (string) | null;

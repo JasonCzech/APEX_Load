@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -153,14 +154,24 @@ type reportBrowserFindingsView struct {
 	// NotCaptured marks a run that produced nothing for this section (no
 	// evaluation, interactions or pinned policy): the section is left out of
 	// the report and named once under its contents.
-	NotCaptured bool
-	Findings    []reportBrowserFindingRow
-	More        int
-	Notes       []string
+	NotCaptured  bool
+	PolicySHA256 string
+	Findings     []reportBrowserFindingRow
+	More         int
+	Notes        []string
 }
 
 type reportBrowserFindingRow struct {
 	Title, State, Severity, Observed, Summary string
+	Baseline                                  string
+	BaselineStatus                            string
+	BaselineRunID                             string
+	BaselineArchiveSHA256                     string
+	SelectionReceiptSHA256                    string
+	AnalysisID                                string
+	RejectedCandidates                        string
+	SampleDocumentID                          string
+	DocumentLink                              string
 }
 
 type reportInteractionMapView struct {
@@ -189,9 +200,10 @@ type reportJourneyRiskView struct {
 	// NotCaptured marks a run that produced nothing for this section (no
 	// evaluation, interactions or pinned policy): the section is left out of
 	// the report and named once under its contents.
-	NotCaptured bool
-	Journeys    []reportJourneyRow
-	Notes       []string
+	NotCaptured  bool
+	PolicySHA256 string
+	Journeys     []reportJourneyRow
+	Notes        []string
 }
 
 type reportJourneyRow struct {
@@ -255,10 +267,26 @@ func (d *runArchiveHTMLReportData) BrowserFindingsView() reportBrowserFindingsVi
 	} else if result.Score.UnscoredReason != "" {
 		score = "unscored: " + result.Score.UnscoredReason
 	}
+	policyDesc := fmt.Sprintf("%s revision %d", firstNonEmpty(result.Policy.Name, result.Policy.ID), result.Policy.Revision)
+	if result.Policy.SHA256 != "" {
+		policyDesc += fmt.Sprintf(" (sha256 %s)", result.Policy.SHA256)
+	}
 	view := reportBrowserFindingsView{
-		Summary: fmt.Sprintf("Score %s under %s revision %d. %d active, %d unscored, %d suppressed.", score, firstNonEmpty(result.Policy.Name, result.Policy.ID), result.Policy.Revision,
+		Summary: fmt.Sprintf("Score %s under %s. %d active, %d unscored, %d suppressed.", score, policyDesc,
 			result.Counts["active"], result.Counts["unscored"], result.Counts["suppressed"]),
-		Notes: append([]string(nil), result.Notes...),
+		PolicySHA256: result.Policy.SHA256,
+		Notes:        append([]string(nil), result.Notes...),
+	}
+	for _, pin := range result.PolicyPins {
+		note := fmt.Sprintf("Pinned %s: %s@%d", pin.Kind, pin.ID, pin.Revision)
+		if pin.SHA256 != "" {
+			note += " (sha256 " + pin.SHA256 + ")"
+		}
+		view.Notes = append(view.Notes, note+".")
+	}
+	runID := firstNonEmpty(result.RunID, response.RunID)
+	if runID == "" && d != nil && d.Report != nil && d.Report.Manifest != nil {
+		runID = strings.TrimSpace(d.Report.Manifest.TestID)
 	}
 	findings := append([]BrowserFinding(nil), result.Findings...)
 	order := map[string]int{"active": 0, "unscored": 1, "suppressed": 2}
@@ -275,9 +303,76 @@ func (d *runArchiveHTMLReportData) BrowserFindingsView() reportBrowserFindingsVi
 				title += " · " + strings.Join(nonEmptyStrings(finding.Cohort.Engine, finding.Cohort.DeviceProfile), " / ")
 			}
 		}
-		view.Findings = append(view.Findings, reportBrowserFindingRow{Title: title, State: finding.State, Severity: strings.ReplaceAll(finding.Severity, "_", " "), Observed: reportFloat(finding.Observed, finding.Unit), Summary: finding.Summary})
+		baselineSummary, rejected := formatReportFindingBaseline(finding.Baseline)
+		var sampleDocID, docLink string
+		if len(finding.Evidence.Documents) > 0 && finding.Evidence.Documents[0].DocumentID != "" {
+			sampleDocID = finding.Evidence.Documents[0].DocumentID
+			if runID != "" {
+				docLink = fmt.Sprintf("#/report/%s?section=browser&document_id=%s", url.PathEscape(runID), url.QueryEscape(sampleDocID))
+			}
+		}
+		view.Findings = append(view.Findings, reportBrowserFindingRow{
+			Title:                  title,
+			State:                  finding.State,
+			Severity:               strings.ReplaceAll(finding.Severity, "_", " "),
+			Observed:               reportFloat(finding.Observed, finding.Unit),
+			Summary:                finding.Summary,
+			Baseline:               baselineSummary,
+			BaselineStatus:         finding.Baseline.Status,
+			BaselineRunID:          finding.Baseline.BaselineRunID,
+			BaselineArchiveSHA256:  finding.Baseline.BaselineArchiveSHA256,
+			SelectionReceiptSHA256: finding.Baseline.SelectionReceiptSHA256,
+			AnalysisID:             finding.Baseline.AnalysisID,
+			RejectedCandidates:     rejected,
+			SampleDocumentID:       sampleDocID,
+			DocumentLink:           docLink,
+		})
 	}
 	return view
+}
+
+func formatReportFindingBaseline(b BrowserFindingBaseline) (summary, rejected string) {
+	if b.Status == "" && b.Mode == "" {
+		return "", ""
+	}
+	var parts []string
+	if b.Status != "" {
+		parts = append(parts, b.Status)
+	}
+	if b.Mode != "" {
+		parts = append(parts, "mode "+b.Mode)
+	}
+	if b.Reason != "" {
+		parts = append(parts, "reason "+b.Reason)
+	}
+	if b.BaselineRunID != "" {
+		parts = append(parts, "baseline "+b.BaselineRunID)
+	}
+	if b.BaselineArchiveSHA256 != "" {
+		parts = append(parts, "archive "+b.BaselineArchiveSHA256)
+	}
+	if b.SelectionReceiptSHA256 != "" {
+		parts = append(parts, "receipt "+b.SelectionReceiptSHA256)
+	}
+	if b.AnalysisID != "" {
+		parts = append(parts, "analysis "+b.AnalysisID)
+	}
+	var rejParts []string
+	for _, rc := range b.RejectedCandidates {
+		entry := rc.TestID
+		if len(rc.Reasons) > 0 {
+			entry += " (" + strings.Join(rc.Reasons, ", ") + ")"
+		}
+		if rc.Digest != "" {
+			entry += " [" + rc.Digest + "]"
+		}
+		rejParts = append(rejParts, entry)
+	}
+	rejected = strings.Join(rejParts, "; ")
+	if rejected != "" {
+		parts = append(parts, "rejected "+rejected)
+	}
+	return strings.Join(parts, "; "), rejected
 }
 
 // InteractionMapView is the interaction_map section's view of the report.
@@ -411,7 +506,15 @@ func (d *runArchiveHTMLReportData) JourneyRiskView() reportJourneyRiskView {
 	} else if journeys.IndexUnscored != "" {
 		index = "unscored (" + journeys.IndexUnscored + ")"
 	}
-	view := reportJourneyRiskView{Summary: fmt.Sprintf("Weighted failure index %s under %s revision %d.", index, firstNonEmpty(journeys.Policy.Name, journeys.Policy.ID), journeys.Policy.Revision), Notes: append([]string(nil), journeys.Notes...)}
+	policyDesc := fmt.Sprintf("%s revision %d", firstNonEmpty(journeys.Policy.Name, journeys.Policy.ID), journeys.Policy.Revision)
+	if journeys.Policy.SHA256 != "" {
+		policyDesc += fmt.Sprintf(" (sha256 %s)", journeys.Policy.SHA256)
+	}
+	view := reportJourneyRiskView{
+		Summary:      fmt.Sprintf("Weighted failure index %s under %s.", index, policyDesc),
+		PolicySHA256: journeys.Policy.SHA256,
+		Notes:        append([]string(nil), journeys.Notes...),
+	}
 	if journeys.Incomplete {
 		view.Summary += " Incomplete: " + strings.Join(journeys.IncompleteReasons, "; ") + "."
 	}
@@ -442,7 +545,15 @@ func browserFindingsReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 	pdfHeading(lines, reportSectionTitle(reportSectionBrowserFindings))
 	*lines = append(*lines, view.Summary)
 	for _, finding := range view.Findings {
-		*lines = append(*lines, fmt.Sprintf("- %s: %s %s; observed %s. %s", finding.Title, finding.State, finding.Severity, finding.Observed, finding.Summary))
+		line := fmt.Sprintf("- %s: %s %s; observed %s.", finding.Title, finding.State, finding.Severity, finding.Observed)
+		if finding.Baseline != "" {
+			line += " Baseline: " + finding.Baseline + "."
+		}
+		if finding.SampleDocumentID != "" {
+			line += fmt.Sprintf(" Document: %s (%s).", finding.SampleDocumentID, finding.DocumentLink)
+		}
+		line += " " + finding.Summary
+		*lines = append(*lines, line)
 	}
 	if view.More > 0 {
 		*lines = append(*lines, fmt.Sprintf("%d more findings are in the run report.", view.More))
@@ -454,10 +565,28 @@ func browserFindingsReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 func browserFindingsReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 	view := d.BrowserFindingsView()
 	rows := [][4]string{{"browser_findings", "", "summary", view.Summary}}
+	if view.PolicySHA256 != "" {
+		rows = append(rows, [4]string{"browser_findings", "", "policy_sha256", view.PolicySHA256})
+	}
 	for index, finding := range view.Findings {
 		key := fmt.Sprint(index)
 		rows = append(rows, [4]string{"browser_finding", key, "title", finding.Title}, [4]string{"browser_finding", key, "state", finding.State},
 			[4]string{"browser_finding", key, "severity", finding.Severity}, [4]string{"browser_finding", key, "observed", finding.Observed}, [4]string{"browser_finding", key, "summary", finding.Summary})
+		for _, extra := range [][2]string{
+			{"baseline", finding.Baseline},
+			{"baseline_status", finding.BaselineStatus},
+			{"baseline_run_id", finding.BaselineRunID},
+			{"baseline_archive_sha256", finding.BaselineArchiveSHA256},
+			{"selection_receipt_sha256", finding.SelectionReceiptSHA256},
+			{"analysis_id", finding.AnalysisID},
+			{"rejected_candidates", finding.RejectedCandidates},
+			{"sample_document_id", finding.SampleDocumentID},
+			{"document_link", finding.DocumentLink},
+		} {
+			if extra[1] != "" {
+				rows = append(rows, [4]string{"browser_finding", key, extra[0], extra[1]})
+			}
+		}
 	}
 	if view.More > 0 {
 		rows = append(rows, [4]string{"browser_findings", "", "more_findings", fmt.Sprint(view.More)})
@@ -530,6 +659,9 @@ func journeyRiskReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 func journeyRiskReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 	view := d.JourneyRiskView()
 	rows := [][4]string{{"journey_risk", "", "summary", view.Summary}}
+	if view.PolicySHA256 != "" {
+		rows = append(rows, [4]string{"journey_risk", "", "policy_sha256", view.PolicySHA256})
+	}
 	// Journey names may repeat; a journey's rows are keyed by its ID.
 	for _, journey := range view.Journeys {
 		for _, item := range [][2]string{{"name", journey.Name}, {"eligible", journey.Eligible}, {"completed", journey.Completed}, {"failed", journey.Failed}, {"aborted", journey.Aborted}, {"skipped", journey.Skipped}, {"censored", journey.Censored}, {"failure_rate", journey.FailureRate}} {

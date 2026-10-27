@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -103,6 +104,9 @@ type CIRunRequest struct {
 	// TelemetryBudgetPolicyID sets the run's live telemetry budgets from one
 	// of the project's telemetry budget policies; omitted when unset.
 	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
+	// AnalysisPolicySelections pins immutable browser and journey policy
+	// revisions for the CI run; omitted when unset.
+	AnalysisPolicySelections *runcontract.AnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
 }
 
 type CIMetrics struct {
@@ -152,6 +156,9 @@ type CIRunResponse struct {
 	// TelemetryBudgetPolicyID echoes the run's chosen telemetry budget
 	// policy; controllers before the budget choice omit it.
 	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
+	// AnalysisPolicySelections echoes the run's chosen browser and journey
+	// policy revisions; controllers before the choice omit it.
+	AnalysisPolicySelections *runcontract.AnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
 }
 
 // CITelemetryVerdict is a run's telemetry acceptance verdict (pass, fail or

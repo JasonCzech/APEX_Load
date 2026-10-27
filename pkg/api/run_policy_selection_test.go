@@ -1,10 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -471,3 +474,129 @@ func TestScenarioScheduleAnalysisPolicySelectionValidationMaterializationAndTomb
 		t.Fatalf("expected failed occurrence with ReasonCode=analysis_policy_unavailable, got %+v", failedOccurrence)
 	}
 }
+
+func TestCIRunCarriesTheChosenAnalysisPolicySelections(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer target.Close()
+	policy := ciRunSourceTestPolicy()
+	policy.MaxDurationMinutes = 1
+	policy.AllowedTargetHosts = []string{"127.0.0.1"}
+	locked, _ := newCIContractTestServer(t, policy)
+	policy.AllowTelemetryPolicySelection = true
+	server, store := newCIContractTestServer(t, policy)
+
+	browser := storage.AnalysisDefinition{
+		ID: "ci-browser", ProjectID: "project-ci", Kind: storage.AnalysisDefinitionKindBrowserPolicy,
+		Name: "CI Browser v1", Definition: json.RawMessage(selectedBrowserPolicyJSON),
+	}
+	if _, err := store.SaveAnalysisDefinition(browser, 0); err != nil {
+		t.Fatal(err)
+	}
+	browser.Name = "CI Browser v2"
+	if _, err := store.SaveAnalysisDefinition(browser, 1); err != nil {
+		t.Fatal(err)
+	}
+	journey := storage.AnalysisDefinition{
+		ID: "ci-journey", ProjectID: "project-ci", Kind: storage.AnalysisDefinitionKindJourneyPolicy,
+		Name: "CI Journey v1", Definition: json.RawMessage(`{"version":1,"journeys":[{"id":"checkout","name":"Checkout","start":{"transaction":"Browse"},"success":{"transaction":"Submit"},"weight":1}]}`),
+	}
+	if _, err := store.SaveAnalysisDefinition(journey, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	publishCheck := false
+	scriptRaw, err := json.Marshal(ciTestScript(target.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ciRunCreateRequest{
+		ProjectID: "project-ci", ScriptPath: "tests/performance.json", Script: scriptRaw,
+		Execution: ciRunExecutionRequest{VUsers: 1, Duration: "50ms"}, Source: ciTestRunSource("1"),
+		PublishCheck: &publishCheck,
+		AnalysisPolicySelections: &RunAnalysisPolicySelections{
+			Browser: &RunAnalysisPolicySelection{ID: browser.ID, Revision: 1},
+			Journey: &RunAnalysisPolicySelection{ID: journey.ID, Revision: 1},
+		},
+	}
+	invoke := func(srv *Server, key string, req ciRunCreateRequest) (int, ciRunResponse, string) {
+		t.Helper()
+		body, err := json.Marshal(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		httpReq := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs", bytes.NewReader(body))
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Idempotency-Key", key)
+		recorder := httptest.NewRecorder()
+		srv.handleCreateCIRun(recorder, httpReq)
+		var response ciRunResponse
+		if recorder.Code == http.StatusAccepted {
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return recorder.Code, response, recorder.Body.String()
+	}
+
+	// Disallowed when project's GitHub Actions policy does not set allow_telemetry_policy_selection.
+	if status, _, body := invoke(locked, "octo/apex:performance:9001:1:analysis-policy-0000", request); status != http.StatusForbidden || !strings.Contains(body, "allow_telemetry_policy_selection") {
+		t.Fatalf("expected 403 when allow_telemetry_policy_selection is false, got %d %s", status, body)
+	}
+
+	// Empty selection {} needs no permission.
+	emptyReq := request
+	emptyReq.AnalysisPolicySelections = &RunAnalysisPolicySelections{}
+	if status, resp, body := invoke(locked, "octo/apex:performance:9001:1:analysis-policy-empty", emptyReq); status != http.StatusAccepted || resp.AnalysisPolicySelections != nil {
+		t.Fatalf("expected 202 for empty selection without permission, got %d %s", status, body)
+	}
+
+	// Valid selection succeeds and echoes in ciRunResponse and on the created ManagedTest.
+	const key = "octo/apex:performance:9001:1:analysis-policy-aaaa"
+	status, created, body := invoke(server, key, request)
+	if status != http.StatusAccepted || created.TestID == "" || created.AnalysisPolicySelections == nil ||
+		created.AnalysisPolicySelections.Browser == nil || created.AnalysisPolicySelections.Browser.ID != browser.ID || created.AnalysisPolicySelections.Browser.Revision != 1 ||
+		created.AnalysisPolicySelections.Journey == nil || created.AnalysisPolicySelections.Journey.ID != journey.ID || created.AnalysisPolicySelections.Journey.Revision != 1 {
+		t.Fatalf("CI run with analysis_policy_selections: %d %s", status, body)
+	}
+	if run, ok := server.runner.GetTest(created.TestID); !ok || !reflect.DeepEqual(run.AnalysisPolicySelections, request.AnalysisPolicySelections) {
+		t.Fatalf("CI run's stored AnalysisPolicySelections: %+v", run)
+	}
+
+	// Retry under the same Idempotency-Key with a different revision returns 409 Conflict.
+	changed := request
+	changed.AnalysisPolicySelections = &RunAnalysisPolicySelections{
+		Browser: &RunAnalysisPolicySelection{ID: browser.ID, Revision: 2},
+		Journey: &RunAnalysisPolicySelection{ID: journey.ID, Revision: 1},
+	}
+	if status, _, body := invoke(server, key, changed); status != http.StatusConflict {
+		t.Fatalf("expected 409 on idempotency retry with different analysis policy revision, got %d %s", status, body)
+	}
+
+	// Missing policy revision returns 409 Conflict.
+	missing := request
+	missing.AnalysisPolicySelections = &RunAnalysisPolicySelections{
+		Browser: &RunAnalysisPolicySelection{ID: browser.ID, Revision: 99},
+	}
+	if status, _, body := invoke(server, "octo/apex:performance:9001:1:analysis-policy-bbbb", missing); status != http.StatusConflict {
+		t.Fatalf("expected 409 on missing analysis policy revision, got %d %s", status, body)
+	}
+
+	// Exact retry returns 202 even after policy selection is disabled and policy is tombstoned.
+	project, err := store.GetProject("project-ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project.Settings.GitHub.Actions.AllowTelemetryPolicySelection = false
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	browser.Deleted = true
+	if _, err := store.SaveAnalysisDefinition(browser, 2); err != nil {
+		t.Fatal(err)
+	}
+	if status, retried, body := invoke(server, key, request); status != http.StatusAccepted || retried.TestID != created.TestID ||
+		retried.AnalysisPolicySelections == nil || retried.AnalysisPolicySelections.Browser == nil || retried.AnalysisPolicySelections.Browser.Revision != 1 {
+		t.Fatalf("exact idempotency retry after tombstone/lockdown failed: %d %s", status, body)
+	}
+}
+

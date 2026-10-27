@@ -10,6 +10,7 @@ export type RcaAnalysisState = 'none' | 'queued' | 'running' | 'completed' | 'fa
 export type RcaOrigin = 'requested' | 'automatic'
 
 export interface RcaInputDigests {
+  browser_selection?: string
   archive: string
   evidence_revision: number
   baseline?: string
@@ -196,6 +197,26 @@ export interface RcaAssessment {
   littles_law?: RcaLittlesLaw[]
   // Browser document cohorts against the baseline run (browser_baseline.v1).
   browser_baseline?: RcaBrowserBaseline
+  // Browser baseline admission receipt (browser_selection.v1), present even
+  // when no baseline comparison ran.
+  browser_selection?: RcaBrowserBaselineSelection
+}
+
+export interface RcaBrowserCandidateRejection {
+  test_id: string
+  digest?: string
+  reasons: string[]
+}
+
+export interface RcaBrowserBaselineSelection {
+  version: string
+  policy?: string
+  status: string
+  inventory_count: number
+  selected_test_id?: string
+  selected_digest?: string
+  reasons: string[]
+  rejected: RcaBrowserCandidateRejection[]
 }
 
 export interface RcaBrowserBaselineResult {
@@ -302,6 +323,21 @@ export interface ReportRootCause {
   // v2's comparison of the run's browser document cohorts with the baseline
   // run's (browser_baseline.v1), when the run had document series.
   browser_baseline?: ReportBrowserBaseline
+  // v2's browser baseline admission receipt (browser_selection.v1).
+  browser_selection?: ReportBrowserSelection
+}
+
+export interface ReportBrowserSelection {
+  version: string
+  policy?: string
+  status: string
+  inventory_count: number
+  selected_test_id?: string
+  selected_digest?: string
+  receipt_digest?: string
+  reasons?: string[]
+  rejected?: RcaBrowserCandidateRejection[]
+  summary: string
 }
 
 // ReportBrowserBaseline presents the assessment's browser baseline (Go

@@ -7,6 +7,19 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// AnalysisPolicySelection pins an immutable browser or journey policy revision.
+type AnalysisPolicySelection struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+}
+
+// AnalysisPolicySelections holds explicit run-level browser and journey policy
+// revision selections.
+type AnalysisPolicySelections struct {
+	Browser *AnalysisPolicySelection `json:"browser,omitempty"`
+	Journey *AnalysisPolicySelection `json:"journey,omitempty"`
+}
+
 // CreateTestRequest is the single-script client projection of the create-run
 // wire contract. Controller-only creation state does not belong in clients.
 type CreateTestRequest struct {
@@ -23,6 +36,9 @@ type CreateTestRequest struct {
 	// TelemetryBudgetPolicyID sets the run's live telemetry budgets from one
 	// of its project's telemetry budget policies; omitted when unset.
 	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
+	// AnalysisPolicySelections pins immutable browser and journey policy
+	// revisions for the run instead of its project defaults; omitted when unset.
+	AnalysisPolicySelections *AnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
 }
 
 // TestStatus is the managed-run projection consumed by first-party clients.
@@ -41,6 +57,9 @@ type TestStatus struct {
 	// TelemetryBudgetPolicyID echoes the run's chosen telemetry budget
 	// policy; a controller that predates the choice omits it.
 	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
+	// AnalysisPolicySelections echoes the run's chosen browser and journey
+	// policy revisions; a controller that predates the choice omits it.
+	AnalysisPolicySelections *AnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
 }
 
 // LiveMetrics contains the metrics used by run/wait clients. Extra server

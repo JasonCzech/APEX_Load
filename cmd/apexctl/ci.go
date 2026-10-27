@@ -29,6 +29,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/runcontract"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -141,6 +142,10 @@ type ciArgs struct {
 	telemetryInconclusive    string
 	telemetryPolicy          string
 	telemetryBudgetPolicy    string
+	browserPolicyRaw         string
+	journeyPolicyRaw         string
+	browserPolicy            *runcontract.AnalysisPolicySelection
+	journeyPolicy            *runcontract.AnalysisPolicySelection
 }
 
 type optionalFloat struct{ value **float64 }
@@ -246,6 +251,8 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	fs.StringVar(&args.telemetryInconclusive, "telemetry-inconclusive", "", "map an inconclusive fail_ci telemetry verdict: pass or fail (no default)")
 	fs.StringVar(&args.telemetryPolicy, "telemetry-policy", "", "judge the run by this project telemetry acceptance policy (its ID) instead of the project's default")
 	fs.StringVar(&args.telemetryBudgetPolicy, "telemetry-budget-policy", "", "set the run's live telemetry budgets from this project telemetry budget policy (its ID) instead of the system threshold settings")
+	fs.StringVar(&args.browserPolicyRaw, "browser-policy", "", "pin this project browser policy revision (<id>@<revision> or project_default) for the run")
+	fs.StringVar(&args.journeyPolicyRaw, "journey-policy", "", "pin this project journey policy revision (<id>@<revision> or project_default) for the run")
 	if err := fs.Parse(arguments); err != nil {
 		return args, err
 	}
@@ -267,6 +274,16 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	if args.telemetryBudgetPolicy = strings.TrimSpace(args.telemetryBudgetPolicy); args.telemetryBudgetPolicy == "project_default" {
 		args.telemetryBudgetPolicy = ""
 	}
+	bp, _, err := parseAnalysisPolicyFlag("--browser-policy", args.browserPolicyRaw)
+	if err != nil {
+		return args, err
+	}
+	jp, _, err := parseAnalysisPolicyFlag("--journey-policy", args.journeyPolicyRaw)
+	if err != nil {
+		return args, err
+	}
+	args.browserPolicy = bp
+	args.journeyPolicy = jp
 	return args, validateCIArgs(args)
 }
 
@@ -309,6 +326,12 @@ func validateCIArgs(args ciArgs) error {
 		}
 		if args.telemetryBudgetPolicy != "" {
 			return fmt.Errorf("--telemetry-budget-policy requires controller mode")
+		}
+		if args.browserPolicy != nil {
+			return fmt.Errorf("--browser-policy requires controller mode")
+		}
+		if args.journeyPolicy != nil {
+			return fmt.Errorf("--journey-policy requires controller mode")
 		}
 		if args.monitorBindingsFile != "" || args.monitorRulesFile != "" {
 			return fmt.Errorf("monitoring configuration requires controller mode")
@@ -491,6 +514,9 @@ type CIResult struct {
 	// TelemetryBudgetPolicyID is the telemetry budget policy the run chose to
 	// set its live budgets; empty for the system threshold settings.
 	TelemetryBudgetPolicyID string `json:"telemetry_budget_policy_id,omitempty"`
+	// AnalysisPolicySelections echoes the browser and journey policy revisions
+	// the run chose; omitted when unset.
+	AnalysisPolicySelections *runcontract.AnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
 }
 
 func ciCmd() {
@@ -690,6 +716,12 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 		TelemetryAcceptancePolicyID: args.telemetryPolicy,
 		TelemetryBudgetPolicyID:     args.telemetryBudgetPolicy,
 	}
+	if args.browserPolicy != nil || args.journeyPolicy != nil {
+		request.AnalysisPolicySelections = &runcontract.AnalysisPolicySelections{
+			Browser: cloneAnalysisPolicySelection(args.browserPolicy),
+			Journey: cloneAnalysisPolicySelection(args.journeyPolicy),
+		}
+	}
 	if len(rawScript) > 0 {
 		request.Script = json.RawMessage(rawScript)
 	}
@@ -725,6 +757,19 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 		}
 		if chosen := request.TelemetryBudgetPolicyID; chosen != "" && echoedBudget != chosen {
 			return ciConfigurationErrorf("the controller did not confirm --telemetry-budget-policy %q, so the run would be classified by the system threshold settings; upgrade the controller", chosen)
+		}
+		if request.AnalysisPolicySelections != nil {
+			var echoedBrowser, echoedJourney *runcontract.AnalysisPolicySelection
+			if response != nil && response.AnalysisPolicySelections != nil {
+				echoedBrowser = response.AnalysisPolicySelections.Browser
+				echoedJourney = response.AnalysisPolicySelections.Journey
+			}
+			if chosen := request.AnalysisPolicySelections.Browser; chosen != nil && !sameAnalysisPolicySelection(chosen, echoedBrowser) {
+				return ciConfigurationErrorf("the controller did not confirm --browser-policy %q, so the run would be judged by the project's default browser policy; upgrade the controller", formatAnalysisPolicySelection(chosen))
+			}
+			if chosen := request.AnalysisPolicySelections.Journey; chosen != nil && !sameAnalysisPolicySelection(chosen, echoedJourney) {
+				return ciConfigurationErrorf("the controller did not confirm --journey-policy %q, so the run would be judged by the project's default journey policy; upgrade the controller", formatAnalysisPolicySelection(chosen))
+			}
 		}
 		return nil
 	}
@@ -1519,12 +1564,14 @@ func deriveCIIdempotencyKey(request CIRunRequest) string {
 		Goals           CIGoals                   `json:"goals"`
 		MonitorBindings *[]storage.MonitorBinding `json:"monitor_bindings,omitempty"`
 		// Omitted when unset, so existing derived keys are unchanged.
-		TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
-		TelemetryBudgetPolicyID     string `json:"telemetry_budget_policy_id,omitempty"`
+		TelemetryAcceptancePolicyID string                                `json:"telemetry_acceptance_policy_id,omitempty"`
+		TelemetryBudgetPolicyID     string                                `json:"telemetry_budget_policy_id,omitempty"`
+		AnalysisPolicySelections    *runcontract.AnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
 	}{
 		Name: request.Name, ReleaseID: request.ReleaseID, Execution: request.Execution, Goals: request.Goals, MonitorBindings: request.MonitorBindings,
 		TelemetryAcceptancePolicyID: request.TelemetryAcceptancePolicyID,
 		TelemetryBudgetPolicyID:     request.TelemetryBudgetPolicyID,
+		AnalysisPolicySelections:    cloneAnalysisPolicySelections(request.AnalysisPolicySelections),
 	})
 	raw := strings.Join([]string{
 		request.Source.ServerURL, request.Source.RepositoryID, request.Source.Repository,
@@ -1579,7 +1626,8 @@ func ciResultFromResponse(response *CIRunResponse) CIResult {
 		Transactions: transactions, Errors: errorsCount, TPS: tps,
 		DurationMS: durationMS, ReportURL: response.ReportURL, CheckURL: response.CheckURL, Message: response.Error,
 		Validity: response.Validity.clone(), TelemetryVerdict: response.TelemetryVerdict.clone(), RootCause: response.RootCause.clone(),
-		TelemetryBudgetPolicyID: response.TelemetryBudgetPolicyID,
+		TelemetryBudgetPolicyID:  response.TelemetryBudgetPolicyID,
+		AnalysisPolicySelections: cloneAnalysisPolicySelections(response.AnalysisPolicySelections),
 	}
 }
 
@@ -1934,6 +1982,14 @@ Telemetry acceptance:
                          run's acceptance policy is fail_ci. No default: the
                          controller refuses a fail_ci run without it. An
                          advisory policy never changes the exit code.
+  --browser-policy ID@REV
+                         Pin this project browser policy revision (<id>@<revision>
+                         or project_default) for the run where the project's CI
+                         policy allows it.
+  --journey-policy ID@REV
+                         Pin this project journey policy revision (<id>@<revision>
+                         or project_default) for the run where the project's CI
+                         policy allows it.
 
 Evidence:
   --json PATH            JSON result path (default apexload-result.json)

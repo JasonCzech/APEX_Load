@@ -423,6 +423,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 {{if .RootCause}}{{if gt (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}}<p class="muted">{{sub (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}} more ranked in the Engineer report.</p>{{end}}
 {{with .RootCause.BrowserBaseline}}<div class="browser-baseline"><p>{{.Summary}}</p>{{if .Findings}}<ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Qualification}}<p class="muted">{{range $i, $q := .Qualification}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}{{range .Limitations}}<p class="muted">Limitation: {{.}}</p>{{end}}</div>{{end}}
+{{with .RootCause.BrowserSelection}}<div class="browser-selection"><p>{{.Summary}}</p>{{if .Reasons}}<p class="muted">Reasons: {{join .Reasons}}.</p>{{end}}{{if .Rejected}}<ul>{{range .Rejected}}<li>Rejected {{.TestID}}{{if .Reasons}} ({{join .Reasons}}){{end}}{{if .Digest}} [{{.Digest}}]{{end}}</li>{{end}}</ul>{{end}}</div>{{end}}
 {{if .RootCause.Limitations}}<h3>Limitations</h3><ul>{{range .RootCause.Limitations}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}
 {{end}}
 
@@ -572,8 +573,8 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h2>{{sectionTitle "browser_findings"}}</h2>
 {{with .BrowserFindingsView}}
 <p class="section-copy">{{.Summary}}</p>
-{{if .Findings}}<table><thead><tr><th>Finding</th><th>State</th><th>Severity</th><th>Observed</th><th>Summary</th></tr></thead><tbody>
-{{range .Findings}}<tr><td>{{.Title}}</td><td>{{.State}}</td><td>{{.Severity}}</td><td>{{.Observed}}</td><td>{{.Summary}}</td></tr>{{end}}
+{{if .Findings}}<table><thead><tr><th>Finding</th><th>State</th><th>Severity</th><th>Observed</th><th>Baseline</th><th>Sample document</th><th>Summary</th></tr></thead><tbody>
+{{range .Findings}}<tr><td>{{.Title}}</td><td>{{.State}}</td><td>{{.Severity}}</td><td>{{.Observed}}</td><td>{{if .Baseline}}{{.Baseline}}{{else}}—{{end}}</td><td>{{if .SampleDocumentID}}<a href="{{.DocumentLink}}">{{.SampleDocumentID}} ({{.DocumentLink}})</a>{{else}}—{{end}}</td><td>{{.Summary}}</td></tr>{{end}}
 </tbody></table>{{end}}
 {{if .More}}<p class="section-copy">{{.More}} more findings are in the run report.</p>{{end}}
 {{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}

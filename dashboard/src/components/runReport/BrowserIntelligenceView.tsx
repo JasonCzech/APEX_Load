@@ -35,6 +35,8 @@ export default function BrowserIntelligenceView({ testId, projectId, canEvaluate
   // Whether the run pinned a browser policy; unknown until the report loads.
   const browserPolicyPinned = scope.report ? Boolean(scope.report.manifest?.provenance?.policy_pins?.some(pin => pin.kind === 'browser_policy')) : undefined
   const baseline = rootCause.response?.assessment?.browser_baseline
+  const selection = rootCause.response?.assessment?.browser_selection
+  const receiptDigest = rootCause.response?.assessment?.inputs?.browser_selection
   const absence = browserBaselineAbsence(rootCause)
   return <>
     {scope.report
@@ -42,13 +44,12 @@ export default function BrowserIntelligenceView({ testId, projectId, canEvaluate
       : <section className="run-report-panel browser-comparison" aria-label="Device, engine and group comparison"><h2>Device, engine and group comparison</h2><p role="status">Loading the run's document evidence…</p></section>}
     <BrowserFindingsPanel testId={testId} projectId={projectId} canEvaluate={canEvaluate} browserPolicyPinned={browserPolicyPinned} onInspectDocument={id => setInspect(current => ({ id, seq: current.seq + 1 }))} />
     <section className="run-report-panel browser-baseline-summary" aria-label="Browser baseline">
-      {baseline
-        ? <RcaBrowserBaselineSection baseline={baseline} />
-        : <>
-          <h2>Browser baseline</h2>
-          <p role={rootCause.loading && !rootCause.response ? 'status' : undefined}>{absence}</p>
-          {!rootCause.loading && <button type="button" className="btn btn-secondary" onClick={onOpenDiagnostics}>Open root-cause analysis</button>}
-        </>}
+      {(baseline || selection) && <RcaBrowserBaselineSection baseline={baseline} selection={selection} receiptDigest={receiptDigest} />}
+      {!baseline && <>
+        <h2>Browser baseline</h2>
+        <p role={rootCause.loading && !rootCause.response ? 'status' : undefined}>{absence}</p>
+        {!rootCause.loading && <button type="button" className="btn btn-secondary" onClick={onOpenDiagnostics}>Open root-cause analysis</button>}
+      </>}
     </section>
     <BrowserInteractionsPanel testId={testId} />
     <JourneyRiskPanel testId={testId} />

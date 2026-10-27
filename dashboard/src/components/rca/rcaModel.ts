@@ -49,6 +49,11 @@ export function normalizeRcaAssessment(a: RcaAssessment): RcaAssessment {
     capacity: list(a.capacity),
     littles_law: list(a.littles_law),
     browser_baseline: a.browser_baseline ? { ...a.browser_baseline, results: list(a.browser_baseline.results).map(r => ({ ...r, evidence: list(r.evidence), caveats: list(r.caveats) })), limitations: list(a.browser_baseline.limitations) } : undefined,
+    browser_selection: a.browser_selection ? {
+      ...a.browser_selection,
+      reasons: list(a.browser_selection.reasons),
+      rejected: list(a.browser_selection.rejected).map(r => ({ ...r, reasons: list(r.reasons) })),
+    } : undefined,
   }
 }
 
