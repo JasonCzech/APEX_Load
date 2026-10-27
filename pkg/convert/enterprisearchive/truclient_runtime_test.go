@@ -75,7 +75,7 @@ func truClientReviewZIP(t *testing.T) []byte {
 		"Review/default.usp":  "[RunLogicRunRoot]\nRunLogicNumOfIterations=1\nRunLogicPaceType=ASAP\n",
 		"Review/Review.prm":   "[parameter:AccountID]\nParamType=Table\nTable=accounts.dat\nColumnName=AccountID\nSelectNextRow=Unique\nStartRow=1\nUpdateMethod=EachIteration\nOutOfRangePolicy=Cyclic\n",
 		"Review/accounts.dat": "AccountID\n100001\n100002\n",
-		"Review/default.xml":  `<truScript><step action="action" actionName="Action"><step action="Type" stepId="type" objectTimeout="30" arguments='{&quot;Selector&quot;:{&quot;value&quot;:&quot;#account&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;AccountID&quot;,&quot;param&quot;:true}}'/><step action="Select" stepId="select" arguments='{&quot;Selector&quot;:{&quot;value&quot;:&quot;#choice&quot;},&quot;Ordinal&quot;:{&quot;value&quot;:3}}'/><step action="Click" stepId="disabled" disabled="true"/><step action="Wait" stepId="wait" arguments='{&quot;Interval&quot;:{&quot;value&quot;:2}}'/></step><transactions><transaction name="Selection"><vertex type="start" progressType="Step started" step="type"/><vertex type="end" progressType="After step ended" step="select"/></transaction></transactions></truScript>`,
+		"Review/default.xml":  `<truScript><step action="action" actionName="Action"><step action="Type" stepId="type" objectTimeout="30" endEvent="Step network completed" arguments='{&quot;Selector&quot;:{&quot;value&quot;:&quot;#account&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;AccountID&quot;,&quot;param&quot;:true}}'/><step action="Select" stepId="select" arguments='{&quot;Selector&quot;:{&quot;value&quot;:&quot;#choice&quot;},&quot;Ordinal&quot;:{&quot;value&quot;:3}}'/><step action="Click" stepId="click-dl" arguments='{&quot;Selector&quot;:{&quot;value&quot;:&quot;#download&quot;}}'/><step action="Wait for File Download" stepId="wait-dl" arguments='{&quot;File Name&quot;:{&quot;value&quot;:&quot;report.csv&quot;}}'/><step action="Click" stepId="disabled" disabled="true"/><step action="Wait" stepId="wait" arguments='{&quot;Interval&quot;:{&quot;value&quot;:2}}'/></step><transactions><transaction name="Selection"><vertex type="start" progressType="Step started" step="type"/><vertex type="end" progressType="After step ended" step="select"/></transaction></transactions></truScript>`,
 	}
 	for name, content := range files {
 		entry, err := writer.Create(name)
@@ -127,7 +127,7 @@ func TestPlannedTruClientBrowserDraftFinalizesSettingsParametersAndProvenance(t 
 			waiting = action
 		}
 	}
-	if typing == nil || typing.Value != "{{param.accountid}}" || typing.TimeoutMs != 180000 || typing.Params["timeout_ms"] != 30000 {
+	if typing == nil || typing.Value != "{{param.accountid}}" || typing.TimeoutMs != 180000 || typing.Params["timeout_ms"] != 30000 || typing.Sync == nil || typing.Sync.Type != "network_idle" || typing.Sync.StableMs != 150 || typing.Sync.TimeoutMs != 180000 {
 		t.Fatalf("typed source contract=%+v", typing)
 	}
 	if selecting == nil || selecting.Params["option_index"] != 2 || selecting.Params["timeout_ms"] != 20000 {
@@ -155,17 +155,21 @@ func TestPlannedTruClientBrowserDraftFinalizesSettingsParametersAndProvenance(t 
 	if count != 12 {
 		t.Fatalf("runtime keys=%d want12", count)
 	}
-	if rows["default.cfg"]["TruClient"]["StepTimeout"].Status != RuntimeSettingDispositionMapped || rows["default.cfg"]["TruClient"]["WindowWidth"].Status != RuntimeSettingDispositionNonApplicable || rows["default.cfg"]["TruClientEx"]["UnknownBrowserPolicy"].Status != RuntimeSettingDispositionCompatibilityOnly {
+	if rows["default.cfg"]["TruClient"]["StepTimeout"].Status != RuntimeSettingDispositionMapped || rows["default.cfg"]["TruClient"]["NetworkEndThreshold"].Status != RuntimeSettingDispositionMapped || rows["default.cfg"]["TruClient"]["WindowWidth"].Status != RuntimeSettingDispositionNonApplicable || rows["default.cfg"]["TruClientEx"]["UnknownBrowserPolicy"].Status != RuntimeSettingDispositionCompatibilityOnly {
 		t.Fatal("runtime support claims incorrect")
 	}
 	markerMappings := 0
+	downloadMappings := 0
 	for _, mapping := range result.SourceReview.Mappings {
 		if mapping.Function == "Transaction definition" {
 			markerMappings++
 		}
+		if mapping.Function == "Wait for File Download" && strings.Contains(mapping.Notes, "wait-dl") {
+			downloadMappings++
+		}
 	}
-	if markerMappings != 2 {
-		t.Fatalf("transaction source mappings=%d", markerMappings)
+	if markerMappings != 2 || downloadMappings != 1 {
+		t.Fatalf("transaction/download source mappings=%d/%d", markerMappings, downloadMappings)
 	}
 	encoded, err := json.Marshal(script)
 	if err != nil {

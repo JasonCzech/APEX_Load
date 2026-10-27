@@ -436,6 +436,12 @@ func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truCo
 			if converted != nil {
 				actions = append(actions, converted...)
 			}
+			if len(actions) > 0 && i+1 < len(steps) && canCoalesceTruClientDownload(&actions[len(actions)-1], steps[i+1], state) {
+				if err := coalesceTruClientDownloadStep(&actions[len(actions)-1], steps[i+1], result, state); err != nil {
+					return nil, err
+				}
+				i++
+			}
 		}
 	}
 	if state.currentWindowContext != "" {
@@ -443,6 +449,60 @@ func convertStepSequence(steps []truXMLStep, result *ConvertResult, state *truCo
 		state.currentWindowContext = ""
 	}
 	return actions, nil
+}
+
+func canCoalesceTruClientDownload(clickAction *dsl.Action, nextStep truXMLStep, state *truConvertState) bool {
+	if clickAction == nil || nextStep.Disabled || strings.EqualFold(strings.TrimSpace(nextStep.Type), "alternative") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(nextStep.Action), "Wait for File Download") {
+		return false
+	}
+	if clickAction.Type != "browser_click" || reviewRequired(clickAction.Metadata) {
+		return false
+	}
+	if strings.TrimSpace(clickAction.Selector) == "" && strings.TrimSpace(clickAction.Target) == "" {
+		return false
+	}
+	if strings.TrimSpace(nextStep.TestObject) != "" {
+		return false
+	}
+	if sel, err := parseFirstArgumentValue(nextStep.Arguments, "Selector", "selector", "Target", "target", "Element", "element"); err != nil || trimQuotedValue(sel) != "" {
+		return false
+	}
+	if nextEvent := strings.TrimSpace(nextStep.EndEvent); clickAction.Sync != nil && nextEvent != "" && !strings.EqualFold(nextEvent, "Action completed") {
+		return false
+	}
+	if state != nil {
+		if _, err := parseArgumentValues(nextStep.Arguments); err != nil && !state.opts.PreserveUnsupportedSteps {
+			return false
+		}
+	}
+	return true
+}
+
+func coalesceTruClientDownloadStep(clickAction *dsl.Action, downloadStep truXMLStep, result *ConvertResult, state *truConvertState) error {
+	result.Stats.TotalSteps++
+	clickAction.Type = "browser_download"
+	if clickAction.Metadata == nil {
+		clickAction.Metadata = map[string]any{}
+	}
+	clickAction.Metadata["source_download_step"] = downloadStep
+	if id := strings.TrimSpace(downloadStep.StepID); id != "" {
+		clickAction.Metadata["source_download_step_id"] = id
+	}
+	if err := applyTruClientDownloadArguments(clickAction, downloadStep); err != nil {
+		if !state.opts.PreserveUnsupportedSteps {
+			return err
+		}
+		applyTruClientSemanticGate(clickAction, "truclient_step_arguments_require_review", "The recorded browser download step arguments require an explicit replacement.")
+		result.Warnings = append(result.Warnings, "TruClient step arguments were preserved for review instead of guessing executable behavior.")
+	}
+	applyTruClientStepContract(clickAction, downloadStep)
+	if clickAction.Sync == nil {
+		applyTruClientCompletionContract(clickAction, downloadStep, state.descriptors)
+	}
+	return nil
 }
 
 func convertExecutableStep(step truXMLStep, result *ConvertResult, state *truConvertState, hasPriorAction bool, sequence *[]dsl.Action) ([]dsl.Action, error) {

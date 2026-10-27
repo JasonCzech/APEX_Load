@@ -280,8 +280,8 @@ var stepScopes = []StepScope{
 		CanonicalName: "switch_tab",
 		DisplayName:   "Tab management (Activate / Add / Close Tab)",
 		Status:        ScopeSupported,
-		APEXLoadShape: "browser_switch_window",
-		Notes:         "Activate / Activate Tab change focus via browser_switch_window. Add Tab / Close Tab also switch focus but warn that tab open/close lifecycle is not replayed (no close-window action).",
+		APEXLoadShape: "browser_switch_window / browser_close_window",
+		Notes:         "Activate / Activate Tab change focus via browser_switch_window, and Close Tab closes the target or active tab via browser_close_window. Add Tab switches focus and warns that blank tab creation requires a navigation or popup trigger.",
 	},
 	{
 		CanonicalName: "wait_for_property",
@@ -337,8 +337,8 @@ var stepScopes = []StepScope{
 		CanonicalName: "wait_for_download",
 		DisplayName:   "Wait for File Download",
 		Status:        ScopeReviewOnly,
-		APEXLoadShape: "source_review",
-		Notes:         "File-download waits have no browser-runtime equivalent; preserved for review.",
+		APEXLoadShape: "browser_download (when paired with Click or selector) / source_review",
+		Notes:         "Coalesces with an immediately preceding Click step (or uses its own selector) into a pre-armed browser_download action; standalone waits without a trigger selector remain preserved as source_review.",
 	},
 	{
 		CanonicalName: "get_property",

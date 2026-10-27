@@ -1112,6 +1112,46 @@
             "properties": {
               "type": {
                 "enum": [
+                  "browser_close_window"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Closes a browser window or tab (the current page by default) and switches scope to an open remaining page.",
+            "properties": {
+              "capture": {
+                "description": "Evidence capture: {screenshot, full_page, html}.",
+                "type": "object"
+              },
+              "params": {
+                "properties": {
+                  "index": {
+                    "description": "Optional zero-based window/tab index to close.",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "sync": {
+                "description": "Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}.",
+                "type": "object"
+              },
+              "target": {
+                "description": "Optional window title, URL substring, or zero-based index to close; empty closes the active page.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "browser_dblclick"
                 ]
               }
@@ -1427,8 +1467,12 @@
               },
               "params": {
                 "properties": {
+                  "clear": {
+                    "description": "Clear the field before typing when params.input_mode is type; defaults to true.",
+                    "type": "boolean"
+                  },
                   "input_mode": {
-                    "description": "fill (default) sets the value; type clears the field and sends per-character keyboard events.",
+                    "description": "fill (default) sets the value; type clears the field (unless params.clear is false) and sends per-character keyboard events.",
                     "enum": [
                       "fill",
                       "type"
@@ -7304,6 +7348,7 @@
             "browser_back",
             "browser_check",
             "browser_click",
+            "browser_close_window",
             "browser_dblclick",
             "browser_download",
             "browser_drag_and_drop",

@@ -51,7 +51,7 @@ func applyTruClientStepContract(action *dsl.Action, step truXMLStep) {
 	if event := strings.TrimSpace(step.EndEvent); event != "" {
 		action.Metadata["source_end_event"] = event
 		switch event {
-		case "Action completed", "Object Exists", "Document Loaded", "DOM content loaded":
+		case "Action completed", "Object Exists", "Document Loaded", "DOM content loaded", "Step network completed":
 		default:
 			applyTruClientSemanticGate(action, "truclient_completion_event_requires_review", "The source completion event requires a verified browser synchronization contract.")
 		}
@@ -121,6 +121,8 @@ func applyTruClientCompletionContract(action *dsl.Action, step truXMLStep, descr
 		action.Sync = &dsl.BrowserSyncPolicy{Type: "load"}
 	case "DOM content loaded":
 		action.Sync = &dsl.BrowserSyncPolicy{Type: "domcontentloaded"}
+	case "Step network completed":
+		action.Sync = &dsl.BrowserSyncPolicy{Type: "network_idle"}
 	}
 }
 
@@ -135,10 +137,9 @@ func applyXMLAnchoredTransactions(result *ConvertResult, transactions []truXMLTr
 		valid       bool
 	}
 	spans := map[string]span{}
-	for i, action := range result.Script.Actions {
-		id, _ := action.Metadata["source_step_id"].(string)
+	recordSpan := func(id string, i int) {
 		if id == "" {
-			continue
+			return
 		}
 		s, ok := spans[id]
 		if !ok {
@@ -149,6 +150,14 @@ func applyXMLAnchoredTransactions(result *ConvertResult, transactions []truXMLTr
 		} else {
 			s.valid = false
 			spans[id] = s
+		}
+	}
+	for i, action := range result.Script.Actions {
+		id, _ := action.Metadata["source_step_id"].(string)
+		recordSpan(id, i)
+		downloadID, _ := action.Metadata["source_download_step_id"].(string)
+		if downloadID != "" && downloadID != id {
+			recordSpan(downloadID, i)
 		}
 	}
 	before, after := map[int][]dsl.Action{}, map[int][]dsl.Action{}

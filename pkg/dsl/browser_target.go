@@ -38,9 +38,10 @@ func BrowserActionTargetKind(actionType string) BrowserTargetKind {
 // window switch names its window by title, index or URL, and a URL there is
 // read as one.
 func BrowserTargetValueKind(actionType, target string) BrowserTargetKind {
-	kind := BrowserActionTargetKind(actionType)
+	trimmed := strings.TrimSpace(actionType)
+	kind := BrowserActionTargetKind(trimmed)
 	if kind == BrowserTargetLocator &&
-		strings.EqualFold(strings.TrimSpace(actionType), "browser_switch_window") &&
+		(strings.EqualFold(trimmed, "browser_switch_window") || strings.EqualFold(trimmed, "browser_close_window")) &&
 		strings.Contains(target, "://") {
 		return BrowserTargetURL
 	}

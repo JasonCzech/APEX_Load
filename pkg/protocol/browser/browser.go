@@ -495,7 +495,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 // change pages, which still run after a page was refused.
 func browserPageNavigation(actionType string) bool {
 	switch actionType {
-	case "browser_navigate", "browser_back", "browser_forward", "browser_reload", "browser_open_window", "browser_switch_window":
+	case "browser_navigate", "browser_back", "browser_forward", "browser_reload", "browser_open_window", "browser_switch_window", "browser_close_window":
 		return true
 	default:
 		return false

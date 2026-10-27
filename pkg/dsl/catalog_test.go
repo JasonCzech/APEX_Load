@@ -140,7 +140,7 @@ func TestProtocolActionTypeMembership(t *testing.T) {
 				"browser_scroll", "browser_tap", "browser_long_press", "browser_swipe", "browser_dblclick",
 				"browser_hover", "browser_set_files", "browser_drag_and_drop",
 				"browser_press_key", "browser_evaluate_js", "browser_switch_frame",
-				"browser_switch_window", "browser_wait", "browser_wait_response",
+				"browser_switch_window", "browser_close_window", "browser_wait", "browser_wait_response",
 				"browser_set_geolocation", "browser_screenshot",
 			},
 			rejected: []string{"browser_unknown", "ws_send", "rendezvous"},
