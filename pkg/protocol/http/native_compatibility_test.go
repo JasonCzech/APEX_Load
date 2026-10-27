@@ -34,7 +34,10 @@ func TestNativeReadBufferAndMetaRefresh(t *testing.T) {
 		ok   bool
 	}{{"/start", true}, {"/loop", false}, {"/delay", false}} {
 		t.Run(tc.path, func(t *testing.T) {
-			h := initCompatibilityHTTP(t, map[string]any{"receive_buffer_bytes": 17, "max_meta_refresh": 2, "page_timeout_ms": 100})
+			// The page budget must cover ~4,700 17-byte reads under the race
+			// detector, which 100 ms did not on CI; /delay still fails because
+			// its 10 s refresh wait outlasts the budget.
+			h := initCompatibilityHTTP(t, map[string]any{"receive_buffer_bytes": 17, "max_meta_refresh": 2, "page_timeout_ms": 2000})
 			r, e := h.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "GET", Target: server.URL + tc.path, Assertions: []protocol.Assertion{{Type: "body_contains", Value: payload}}})
 			if e != nil || r.Success != tc.ok {
 				t.Fatalf("success=%v err=%v message=%s", r.Success, e, r.ErrorMessage)
