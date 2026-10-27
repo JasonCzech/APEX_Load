@@ -44,8 +44,19 @@ func (b *Browser) applyConfig(config map[string]any) error {
 		default:
 			return fmt.Errorf("browser interaction evidence version must be numeric")
 		}
-		if value != 1 && value != 2 && value != 3 {
+		if value != 1 && value != 2 && value != 3 && value != 4 {
 			return fmt.Errorf("unsupported browser interaction evidence version")
+		}
+	}
+	if raw, present := config["browser_authored_page_version"]; present {
+		value := protocol.ConfigFloat(config, "browser_authored_page_version")
+		switch raw.(type) {
+		case int, float64:
+		default:
+			return fmt.Errorf("browser authored page version must be numeric")
+		}
+		if value != 1 && value != 2 && value != 3 {
+			return fmt.Errorf("unsupported browser authored page version")
 		}
 	}
 	b.applyDefaultConfig()
@@ -87,6 +98,9 @@ func (b *Browser) applyConfig(config map[string]any) error {
 
 func (b *Browser) applyDefaultConfig() {
 	b.interactionVersion = protocol.BrowserInteractionVersion
+	b.authoredPageVersion = 0
+	b.activePageBindings = make(map[playwright.Page]*protocol.BrowserAuthoredPageBinding)
+	b.lifecycleRouteSeq = make(map[string]uint64)
 	b.storageState = nil
 	b.documentProofVersion = protocol.BrowserDocumentReceiptClosureVersion
 	b.documentMetricsEnabled = false
@@ -157,6 +171,9 @@ func (b *Browser) applyConfigOverrides(config map[string]any) {
 	b.interactionsEnabled, _ = config["browser_capture_interactions"].(bool)
 	if _, present := config["browser_interaction_evidence_version"]; present {
 		b.interactionVersion = protocol.ConfigInt(config, "browser_interaction_evidence_version")
+	}
+	if _, present := config["browser_authored_page_version"]; present {
+		b.authoredPageVersion = protocol.ConfigInt(config, "browser_authored_page_version")
 	}
 	if policy, present := config["browser_runtime_new_user_policy"].(string); present {
 		b.newUserPolicy = policy

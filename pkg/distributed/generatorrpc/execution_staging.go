@@ -1175,6 +1175,11 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser interaction evidence v3")
 		}
 	}
+	if request.GetBrowserInteractionEvidenceVersion() == 4 {
+		if _, ok := instance.(protocol.BrowserInteractionEvidenceV4Provider); !ok {
+			return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser interaction evidence v4")
+		}
+	}
 	if source := request.GetBrowserAuthoredDefinition(); source != nil {
 		runtimeSource := engine.BrowserOriginalAuthoredDefinition(&script)
 		if !runtimeSource.Valid() || runtimeSource.StructureSHA256 != source.StructureSha256 {

@@ -17,8 +17,10 @@ func TestBrowserOutcomeClockNegotiationPreservesLegacyAndRejectsWrongAck(t *test
 	}{
 		{"v2-peer", []string{FeaturePreparationV1, FeatureBrowserInteractionEvidenceV2}, true, 2, 2, 2, true},
 		{"v3-peer", []string{FeaturePreparationV1, FeatureBrowserInteractionEvidenceV2, FeatureBrowserInteractionEvidenceV3}, true, 2, 3, 3, true},
+		{"v4-peer", []string{FeaturePreparationV1, FeatureBrowserInteractionEvidenceV2, FeatureBrowserInteractionEvidenceV3, FeatureBrowserInteractionEvidenceV4}, true, 2, 4, 4, true},
 		{"explicit-v2", []string{FeaturePreparationV1, FeatureBrowserInteractionEvidenceV2, FeatureBrowserInteractionEvidenceV3}, false, 2, 2, 2, true},
 		{"missing-v3", []string{FeaturePreparationV1, FeatureBrowserInteractionEvidenceV2}, false, 3, 3, 0, false},
+		{"missing-v4", []string{FeaturePreparationV1, FeatureBrowserInteractionEvidenceV2, FeatureBrowserInteractionEvidenceV3}, false, 4, 4, 0, false},
 		{"wrong-ack", []string{FeaturePreparationV1, FeatureBrowserInteractionEvidenceV2, FeatureBrowserInteractionEvidenceV3}, true, 2, 2, 3, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

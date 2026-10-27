@@ -186,7 +186,7 @@ func (c *connection) Dispatch(msg *message) {
 		}
 		return
 	}
-	if object.objectType == "JsonPipe" {
+	if object.objectType == "JsonPipe" || object.objectType == "CDPSession" {
 		object.channel.Emit(method, msg.Params)
 	} else {
 		// Always resolve GUIDs in events, regardless of connection type
@@ -240,8 +240,8 @@ func (c *connection) replaceGuidsWithChannels(payload any) (any, error) {
 	}
 	if v.Kind() == reflect.Map {
 		mapV := payload.(map[string]any)
-		// Check if this map represents an object reference (has "guid" field)
-		if guid, hasGUID := mapV["guid"]; hasGUID {
+		// Check if this map represents an object reference (a single-key {"guid": "..."} envelope)
+		if guid, hasGUID := mapV["guid"]; hasGUID && len(mapV) == 1 {
 			guidStr, ok := guid.(string)
 			if !ok {
 				return nil, fmt.Errorf("guid field is not a string: %T", guid)

@@ -18,8 +18,9 @@ func TestBrowserAuthoredPageBindingContract(t *testing.T) {
 		t.Fatal(good)
 	}
 	for name, mutate := range map[string]func(*BrowserAuthoredPageBinding){
-		"future":         func(b *BrowserAuthoredPageBinding) { b.Version = 3 },
-		"missing source": func(b *BrowserAuthoredPageBinding) { b.AuthoredStep = nil },
+		"future":               func(b *BrowserAuthoredPageBinding) { b.Version = 4 },
+		"v3 on v1 association": func(b *BrowserAuthoredPageBinding) { b.Version = 3 },
+		"missing source":       func(b *BrowserAuthoredPageBinding) { b.AuthoredStep = nil },
 		"legacy input": func(b *BrowserAuthoredPageBinding) {
 			b.AuthoredStep = NewBrowserAuthoredStep(strings.Repeat("a", 64), "actions[0]")
 		},
@@ -74,5 +75,76 @@ func TestBrowserAuthoredPageMissingnessAndStructuralIdentity(t *testing.T) {
 	}
 	if BrowserAuthoredPageID(nil) != "" {
 		t.Fatal("missing source invented a key")
+	}
+}
+
+func TestBrowserAuthoredPageBindingV3Contract(t *testing.T) {
+	step := NewBrowserOriginalAuthoredStep(BrowserAuthoredDefinition{Version: 1, ScriptSHA256: strings.Repeat("a", 64), StructureSHA256: strings.Repeat("b", 64)}, "actions[2]")
+	gen := strings.Repeat("c", 32)
+	for _, tc := range []struct {
+		name        string
+		association string
+		requestID   string
+		routeSeq    uint64
+		valid       bool
+	}{
+		{"history with request", BrowserAuthoredPageAssociationHistoryTraversal, gen + "-r1", 0, true},
+		{"history without request", BrowserAuthoredPageAssociationHistoryTraversal, "", 1, true},
+		{"same document route", BrowserAuthoredPageAssociationSameDocumentRoute, "", 2, true},
+		{"same document route with request rejected", BrowserAuthoredPageAssociationSameDocumentRoute, gen + "-r1", 2, false},
+		{"same document route zero seq rejected", BrowserAuthoredPageAssociationSameDocumentRoute, "", 0, false},
+		{"opened by action", BrowserAuthoredPageAssociationOpenedByAction, gen + "-r2", 0, true},
+		{"opened by action without request", BrowserAuthoredPageAssociationOpenedByAction, "", 0, true},
+		{"opened by action non-zero route_seq rejected", BrowserAuthoredPageAssociationOpenedByAction, gen + "-r2", 1, false},
+		{"redirect chain", BrowserAuthoredPageAssociationRedirectChain, gen + "-r3", 0, true},
+		{"redirect chain missing request rejected", BrowserAuthoredPageAssociationRedirectChain, "", 0, false},
+		{"redirect chain non-zero route_seq rejected", BrowserAuthoredPageAssociationRedirectChain, gen + "-r3", 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &BrowserAuthoredPageBinding{
+				Version:            BrowserAuthoredPageVersion3,
+				State:              "bound",
+				ObservedAt:         time.Now().UTC(),
+				AuthoredStep:       step.Clone(),
+				PageID:             BrowserAuthoredPageID(step),
+				SourceGeneration:   gen,
+				RequestID:          tc.requestID,
+				DocumentID:         gen + "-d1",
+				LifecycleID:        gen + "-l1",
+				Association:        tc.association,
+				NavigationSequence: 3,
+				RouteSeq:           tc.routeSeq,
+			}
+			if b.Valid() != tc.valid {
+				t.Fatalf("Valid() = %t, want %t for %+v", b.Valid(), tc.valid, b)
+			}
+			if tc.valid {
+				raw, err := json.Marshal(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				decoded, err := DecodeBrowserAuthoredPageBinding(raw)
+				if err != nil || decoded.RouteSeq != tc.routeSeq || decoded.Association != tc.association {
+					t.Fatalf("decoded=%+v err=%v", decoded, err)
+				}
+			}
+		})
+	}
+	for _, reason := range []string{
+		BrowserAuthoredPageUnavailableHistoryTraversal,
+		BrowserAuthoredPageUnavailableSameDocumentRoute,
+		BrowserAuthoredPageUnavailablePopupCommit,
+		BrowserAuthoredPageUnavailableRedirectChain,
+	} {
+		u := &BrowserAuthoredPageBinding{
+			Version:      BrowserAuthoredPageVersion3,
+			State:        "unavailable",
+			Reason:       reason,
+			ObservedAt:   time.Now().UTC(),
+			AuthoredStep: step.Clone(),
+		}
+		if !u.Valid() {
+			t.Fatalf("v3 unavailable reason %q rejected", reason)
+		}
 	}
 }

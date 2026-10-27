@@ -15,7 +15,7 @@ func (b *Browser) historyBackAction(ctx context.Context, action *protocol.Action
 		return fmt.Errorf("browser page is not initialized")
 	}
 	beforeURL := page.URL()
-	beforePopstate := browserHistoryPopstateCount(page)
+	beforeSeq := b.recordNavPreSequence(page)
 	waitUntil, err := navigationWaitUntil(action)
 	if err != nil {
 		return err
@@ -28,8 +28,8 @@ func (b *Browser) historyBackAction(ctx context.Context, action *protocol.Action
 		return err
 	}
 	afterURL := page.URL()
-	afterPopstate := browserHistoryPopstateCount(page)
-	if afterURL == beforeURL && (beforePopstate < 0 || afterPopstate <= beforePopstate) {
+	afterCommit := playwright.APEXFrameNavigationCommit(page.MainFrame())
+	if response == nil && afterURL == beforeURL && (afterCommit.Sequence <= beforeSeq || afterCommit.Failed) {
 		return fmt.Errorf("browser_back did not change page URL; no previous history entry")
 	}
 	b.currentURL = afterURL
@@ -42,7 +42,7 @@ func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Act
 		return fmt.Errorf("browser page is not initialized")
 	}
 	beforeURL := page.URL()
-	beforePopstate := browserHistoryPopstateCount(page)
+	beforeSeq := b.recordNavPreSequence(page)
 	waitUntil, err := navigationWaitUntil(action)
 	if err != nil {
 		return err
@@ -55,8 +55,8 @@ func (b *Browser) historyForwardAction(ctx context.Context, action *protocol.Act
 		return err
 	}
 	afterURL := page.URL()
-	afterPopstate := browserHistoryPopstateCount(page)
-	if afterURL == beforeURL && (beforePopstate < 0 || afterPopstate <= beforePopstate) {
+	afterCommit := playwright.APEXFrameNavigationCommit(page.MainFrame())
+	if response == nil && afterURL == beforeURL && (afterCommit.Sequence <= beforeSeq || afterCommit.Failed) {
 		return fmt.Errorf("browser_forward did not change page URL; no next history entry")
 	}
 	b.currentURL = afterURL
@@ -68,6 +68,7 @@ func (b *Browser) reloadAction(ctx context.Context, action *protocol.Action, res
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
 	}
+	b.recordNavPreSequence(page)
 	waitUntil, err := navigationWaitUntil(action)
 	if err != nil {
 		return err
@@ -102,30 +103,4 @@ func navigationWaitUntil(action *protocol.Action) (*playwright.WaitUntilState, e
 	default:
 		return nil, fmt.Errorf("browser navigation params.wait_until must be load, domcontentloaded, networkidle, or commit, got %q", waitUntil)
 	}
-}
-
-func browserHistoryPopstateCount(page playwright.Page) int {
-	if page == nil {
-		return -1
-	}
-	raw, err := page.Evaluate(`() => {
-		if (typeof window.__apexloadHistoryPopstateCount !== "number") {
-			window.__apexloadHistoryPopstateCount = 0;
-		}
-		if (!window.__apexloadHistoryPopstateListenerInstalled) {
-			window.addEventListener("popstate", () => {
-				window.__apexloadHistoryPopstateCount += 1;
-			});
-			window.__apexloadHistoryPopstateListenerInstalled = true;
-		}
-		return window.__apexloadHistoryPopstateCount;
-	}`)
-	if err != nil {
-		return -1
-	}
-	value, ok := numberFromAny(raw)
-	if !ok {
-		return -1
-	}
-	return int(value)
 }

@@ -117,6 +117,7 @@ func (b *Browser) browserInteractionKind(action *protocol.Action) (string, bool)
 		"browser_click": "click", "browser_dblclick": "dblclick", "browser_tap": "tap", "browser_long_press": "long_press",
 		"browser_swipe": "swipe", "browser_hover": "hover", "browser_drag_and_drop": "drag", "browser_scroll": "scroll",
 		"browser_check": "check", "browser_press_key": "key", "browser_fill": "fill", "browser_select": "select", "browser_set_files": "set_files",
+		"browser_download": "download",
 	}[action.Type]
 	if ok && kind == "click" && b.touchMode {
 		kind = "tap"
@@ -190,8 +191,11 @@ type browserInteractionPage struct {
 // browserInteractionStart is the page as a gesture began: its document and
 // the element then focused.
 type browserInteractionStart struct {
-	page browserInteractionPage
-	read bool
+	page               browserInteractionPage
+	read               bool
+	authoredPageID     string
+	routeSeq           uint64
+	frameDepthExceeded bool
 }
 
 // browserInteractionSync is the outcome of a gesture's declared post-action
@@ -225,6 +229,22 @@ func (b *Browser) beginBrowserInteraction(ctx context.Context, action *protocol.
 		return nil
 	}
 	start := &browserInteractionStart{}
+	if b.interactionVersion >= protocol.BrowserInteractionVersion4 {
+		if binding := b.activePageBindingForPage(b.currentPage()); binding != nil && binding.State == "bound" {
+			start.authoredPageID = binding.PageID
+			start.routeSeq = binding.RouteSeq
+		}
+		selectors := b.actionFrameSelectors(action)
+		if len(selectors) > protocol.MaxBrowserInteractionFrameDepth {
+			start.frameDepthExceeded = true
+			return start
+		}
+		if len(selectors) > 0 {
+			err := b.drainBrowserInteractionFrameAs(ctx, action, generation, true, &start.page, kind, actionID)
+			start.read = err == nil && start.page.Doc != ""
+			return start
+		}
+	}
 	start.read = b.drainBrowserInteractionPageAs(ctx, generation, true, &start.page, kind, actionID) == nil && start.page.Doc != ""
 	return start
 }
@@ -233,6 +253,59 @@ func (b *Browser) beginBrowserInteraction(ctx context.Context, action *protocol.
 // a page whose main thread stays busy never stalls the VUser past it.
 func (b *Browser) drainBrowserInteractionPage(ctx context.Context, generation string, page *browserInteractionPage) error {
 	return b.drainBrowserInteractionPageAs(ctx, generation, false, page)
+}
+
+func (b *Browser) drainBrowserInteractionTargetPage(ctx context.Context, action *protocol.Action, generation string, page *browserInteractionPage) error {
+	if b.interactionVersion >= protocol.BrowserInteractionVersion4 {
+		selectors := b.actionFrameSelectors(action)
+		if len(selectors) > protocol.MaxBrowserInteractionFrameDepth {
+			return errors.New("frame depth exceeded")
+		}
+		if len(selectors) > 0 {
+			return b.drainBrowserInteractionFrameAs(ctx, action, generation, false, page)
+		}
+	}
+	return b.drainBrowserInteractionPage(ctx, generation, page)
+}
+
+func (b *Browser) drainBrowserInteractionFrameAs(ctx context.Context, action *protocol.Action, generation string, light bool, page *browserInteractionPage, kinds ...string) error {
+	locator, ok := b.actionLocator(action, ":root")
+	if !ok || locator == nil {
+		return errors.New("child frame locator unavailable")
+	}
+	readCtx, cancel := context.WithTimeout(ctx, interactionReadTimeout)
+	defer cancel()
+	done := make(chan error, 1)
+	var read browserInteractionPage
+	kind, actionID := "", ""
+	if len(kinds) > 0 {
+		kind = kinds[0]
+	}
+	if len(kinds) > 1 {
+		actionID = kinds[1]
+	}
+	go func() {
+		res, err := locator.First().Evaluate(fmt.Sprintf(`() => { const o = globalThis[%q]; return o ? o.drain(%t, %q, %q) : null }`, browserInteractionGlobal(generation), light, kind, actionID), nil, playwright.LocatorEvaluateOptions{Timeout: playwright.Float(float64(interactionReadTimeout / time.Millisecond))})
+		if err != nil {
+			done <- err
+			return
+		}
+		data, err := json.Marshal(res)
+		if err != nil {
+			done <- err
+			return
+		}
+		done <- json.Unmarshal(data, &read)
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			*page = read
+		}
+		return err
+	case <-readCtx.Done():
+		return readCtx.Err()
+	}
 }
 
 // drainBrowserInteractionPageAs drains the observer; a light read (at a
@@ -264,7 +337,7 @@ func (b *Browser) drainBrowserInteractionPageAs(ctx context.Context, generation 
 }
 
 // captureBrowserInteraction records one gesture after its action finished.
-func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, start *browserInteractionStart, sync browserInteractionSync) {
+func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, start *browserInteractionStart, sync browserInteractionSync, dialogOutcome, downloadOutcome *protocol.BrowserInteractionOutcome, assertionOutcomes []protocol.BrowserInteractionOutcome, navOutcome *protocol.BrowserInteractionOutcome) {
 	kind, gesture := b.browserInteractionKind(action)
 	if !gesture || !b.interactionsEnabled || ctx.Err() != nil {
 		return
@@ -295,7 +368,7 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 	framed := len(b.actionFrameSelectors(action)) > 0
 	if framed {
 		interaction.FrameScope = "child_frame"
-		if protocol.BrowserInteractionHasDispatch(b.interactionVersion) {
+		if protocol.BrowserInteractionHasDispatch(b.interactionVersion) && b.interactionVersion < protocol.BrowserInteractionVersion4 {
 			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
 		}
 	}
@@ -303,15 +376,27 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 	defer func() {
 		b.enrichBrowserInteractionDispatch(&interaction, action, page, start)
 		if protocol.BrowserInteractionHasDispatch(interaction.Version) {
-			if interaction.Version == protocol.BrowserInteractionVersion3 {
+			switch interaction.Version {
+			case protocol.BrowserInteractionVersion4:
+				interaction.Outcomes = browserInteractionOutcomesV4(interaction.Outcome, sync, dialogOutcome, downloadOutcome, assertionOutcomes, navOutcome)
+				interaction.Outcome = protocol.BrowserInteractionOutcome{}
+				for _, o := range interaction.Outcomes {
+					if o.Clock != nil && o.Clock.ObservedAt.After(interaction.CapturedAt) {
+						interaction.CapturedAt = o.Clock.ObservedAt
+					}
+					if o.ObservedAt != nil && o.ObservedAt.After(interaction.CapturedAt) {
+						interaction.CapturedAt = *o.ObservedAt
+					}
+				}
+			case protocol.BrowserInteractionVersion3:
 				interaction.Outcome = browserInteractionOutcomeV3(interaction.Outcome, sync)
-			} else {
+			default:
 				interaction.Outcome = browserInteractionOutcomeV2(ctx, interaction.Outcome, sync)
 			}
 		}
 		b.recordBrowserInteraction(interaction)
 	}()
-	if err := b.drainBrowserInteractionPage(ctx, generation, &page); err != nil || page.Doc == "" {
+	if err := b.drainBrowserInteractionTargetPage(ctx, action, generation, &page); err != nil || page.Doc == "" {
 		interaction.UnavailableReason = protocol.InteractionUnavailablePageState
 		return
 	}
@@ -337,7 +422,7 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 	interaction.Route = sanitizeBrowserRoute(b.redactRuntimeText(state.Path))
 	if protocol.BrowserInteractionPointerKind(kind) {
 		switch {
-		case framed:
+		case framed && b.interactionVersion < protocol.BrowserInteractionVersion4:
 			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
 		case navigated:
 			interaction.UnavailableReason = protocol.InteractionUnavailableDocumentChanged

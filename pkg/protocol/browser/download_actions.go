@@ -2,11 +2,13 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/mxschmitt/playwright-go"
@@ -31,25 +33,107 @@ func (b *Browser) downloadAction(ctx context.Context, action *protocol.Action, s
 		return fmt.Errorf("browser page is not initialized")
 	}
 	timeout := b.actionTimeout(action)
+	budgetMS := max(1, int(timeout/time.Millisecond))
+	budget := time.Duration(budgetMS) * time.Millisecond
+	var dlClock protocol.BrowserOutcomeClock
+	dlClock.Begin(budget)
+	var clickErr error
 	download, err := page.ExpectDownload(func() error {
-		return b.clickAction(ctx, action, selector)
+		clickErr = b.clickAction(ctx, action, selector)
+		return clickErr
 	}, playwright.PageExpectDownloadOptions{
-		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+		Timeout: playwright.Float(b.timeoutMS(ctx, budget)),
 		Predicate: func(download playwright.Download) bool {
 			return downloadMatches(download, matcher)
 		},
 	})
+	dlClock.Finish()
 	if err != nil {
+		switch {
+		case ctx.Err() != nil || errors.Is(err, context.Canceled):
+			b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+				Kind:       protocol.InteractionOutcomeKindDownload,
+				Declared:   "download",
+				DeadlineMS: budgetMS,
+				Observed:   protocol.InteractionOutcomeNotReached,
+				Reason:     "context_canceled",
+			})
+		case clickErr != nil && !errors.Is(clickErr, playwright.ErrTimeout) && !errors.Is(clickErr, context.DeadlineExceeded):
+			b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+				Kind:       protocol.InteractionOutcomeKindDownload,
+				Declared:   "download",
+				DeadlineMS: budgetMS,
+				Observed:   protocol.InteractionOutcomeNotReached,
+				Reason:     "action_failed",
+			})
+		case errors.Is(err, playwright.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout"):
+			if dlClock.ObservedAt.Before(dlClock.DeadlineAt) {
+				dlClock.ClampToDeadline()
+			}
+			b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+				Kind:       protocol.InteractionOutcomeKindDownload,
+				Declared:   "download",
+				DeadlineMS: budgetMS,
+				Observed:   protocol.InteractionOutcomeMissed,
+				Reason:     "deadline_missed",
+				Clock:      dlClock.Clone(),
+			})
+		default:
+			b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+				Kind:       protocol.InteractionOutcomeKindDownload,
+				Declared:   "download",
+				DeadlineMS: budgetMS,
+				Observed:   protocol.InteractionOutcomeNotReached,
+				Reason:     "action_failed",
+			})
+		}
 		return err
 	}
 	if failure := download.Failure(); failure != nil {
+		b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+			Kind:       protocol.InteractionOutcomeKindDownload,
+			Declared:   "download",
+			DeadlineMS: budgetMS,
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "download_failed",
+			Clock:      dlClock.Clone(),
+		})
 		return failure
 	}
 	evidence, err := b.downloadEvidence(action, download)
 	if err != nil {
+		b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+			Kind:       protocol.InteractionOutcomeKindDownload,
+			Declared:   "download",
+			DeadlineMS: budgetMS,
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "download_save_failed",
+			Clock:      dlClock.Clone(),
+		})
 		return err
 	}
-	result.ProtocolEvidence = map[string]any{"browser_download": evidence}
+	if !dlClock.ObservedAt.After(dlClock.DeadlineAt) {
+		b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+			Kind:       protocol.InteractionOutcomeKindDownload,
+			Declared:   "download",
+			DeadlineMS: budgetMS,
+			Observed:   protocol.InteractionOutcomeMet,
+			Clock:      dlClock.Clone(),
+		})
+	} else {
+		b.setLastDownloadOutcome(&protocol.BrowserInteractionOutcome{
+			Kind:       protocol.InteractionOutcomeKindDownload,
+			Declared:   "download",
+			DeadlineMS: budgetMS,
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "deadline_missed",
+			Clock:      dlClock.Clone(),
+		})
+	}
+	if result.ProtocolEvidence == nil {
+		result.ProtocolEvidence = map[string]any{}
+	}
+	result.ProtocolEvidence["browser_download"] = evidence
 	return nil
 }
 

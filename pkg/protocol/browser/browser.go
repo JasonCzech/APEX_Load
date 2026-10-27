@@ -95,7 +95,13 @@ type Browser struct {
 	// interactionsEnabled records gesture interaction evidence (E3).
 	interactionsEnabled  bool
 	interactionVersion   int
+	authoredPageVersion  int
 	interactions         browserInteractionState
+	currentNavPreSequence uint64
+	activePageBindings   map[playwright.Page]*protocol.BrowserAuthoredPageBinding
+	lifecycleRouteSeq    map[string]uint64
+	lastActionPopup      playwright.Page
+	lastDownloadOutcome  *protocol.BrowserInteractionOutcome
 	harMonitorStop       chan struct{}
 	harMonitorWG         sync.WaitGroup
 	harLimitExceeded     chan struct{}
@@ -361,6 +367,9 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	// actions until its dialog actually fires, so it must not fail or clear the
 	// following action the way the strict (default) immediate policy does.
 	dialogGuardsThisAction := dialogArmedBefore && dialogExpectImmediate && action.Type != "browser_handle_dialog"
+	b.clearActionTransientEvidence()
+	preActionPage := b.currentPage()
+	preActionNavSeq := b.recordNavPreSequence(preActionPage)
 	actionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var processBefore browserProcessSnapshot
@@ -394,23 +403,82 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	var interactionSync browserInteractionSync
 	if actionErr == nil {
 		var clock *protocol.BrowserOutcomeClock
-		if b.interactionsEnabled && b.interactionVersion == protocol.BrowserInteractionVersion3 {
+		if b.interactionsEnabled && (b.interactionVersion == protocol.BrowserInteractionVersion3 || b.interactionVersion == protocol.BrowserInteractionVersion4) {
 			clock = &protocol.BrowserOutcomeClock{}
 		}
 		actionErr = b.runPostActionSyncWithClock(actionCtx, action, clock)
 		interactionSync = browserInteractionSync{reached: true, err: actionErr, contextErr: actionCtx.Err(), clock: clock.Clone()}
 	}
-	if actionErr == nil && dialogGuardsThisAction {
-		actionErr = b.waitForPendingDialog(actionCtx, dialogWait)
-	} else if actionErr != nil && dialogGuardsThisAction {
-		b.clearPendingDialog()
+	var dialogOutcome *protocol.BrowserInteractionOutcome
+	if dialogGuardsThisAction {
+		dialogBudgetMS := max(1, int(dialogWait/time.Millisecond))
+		if actionErr == nil {
+			var dialogClock protocol.BrowserOutcomeClock
+			dialogWaitErr := b.waitForPendingDialogWithClock(actionCtx, time.Duration(dialogBudgetMS)*time.Millisecond, &dialogClock)
+			if dialogWaitErr == nil {
+				if b.peekDialogError() != nil {
+					dialogOutcome = &protocol.BrowserInteractionOutcome{
+						Kind:       protocol.InteractionOutcomeKindDialog,
+						Declared:   "dialog",
+						DeadlineMS: dialogBudgetMS,
+						Observed:   protocol.InteractionOutcomeMissed,
+						Reason:     "dialog_mismatch",
+						Clock:      dialogClock.Clone(),
+					}
+				} else {
+					dialogOutcome = &protocol.BrowserInteractionOutcome{
+						Kind:       protocol.InteractionOutcomeKindDialog,
+						Declared:   "dialog",
+						DeadlineMS: dialogBudgetMS,
+						Observed:   protocol.InteractionOutcomeMet,
+						Clock:      dialogClock.Clone(),
+					}
+				}
+			} else {
+				actionErr = dialogWaitErr
+				if actionCtx.Err() != nil || errors.Is(dialogWaitErr, context.Canceled) {
+					dialogOutcome = &protocol.BrowserInteractionOutcome{
+						Kind:       protocol.InteractionOutcomeKindDialog,
+						Declared:   "dialog",
+						DeadlineMS: dialogBudgetMS,
+						Observed:   protocol.InteractionOutcomeNotReached,
+						Reason:     "context_canceled",
+					}
+				} else {
+					if dialogClock.ObservedAt.Before(dialogClock.DeadlineAt) {
+						dialogClock.ClampToDeadline()
+					}
+					dialogOutcome = &protocol.BrowserInteractionOutcome{
+						Kind:       protocol.InteractionOutcomeKindDialog,
+						Declared:   "dialog",
+						DeadlineMS: dialogBudgetMS,
+						Observed:   protocol.InteractionOutcomeMissed,
+						Reason:     "deadline_missed",
+						Clock:      dialogClock.Clone(),
+					}
+				}
+			}
+		} else {
+			b.clearPendingDialog()
+			dialogOutcome = &protocol.BrowserInteractionOutcome{
+				Kind:       protocol.InteractionOutcomeKindDialog,
+				Declared:   "dialog",
+				DeadlineMS: dialogBudgetMS,
+				Observed:   protocol.InteractionOutcomeNotReached,
+				Reason:     "action_failed",
+			}
+		}
 	}
+	downloadOutcome := b.takeLastDownloadOutcome()
+	navOutcome := b.observeActionPageTransitionV3(actionCtx, action, result, preActionPage, preActionNavSeq)
 	actionDuration := time.Since(result.StartTime)
-	if actionErr == nil {
+	result.Duration = actionDuration
+	assertionOutcomes, assertionErr := b.evaluateBrowserAssertionsWithOutcomes(actionCtx, action, action.Assertions, result, actionErr != nil || b.peekDialogError() != nil)
+	if actionErr == nil && assertionErr == nil {
 		actionErr = b.afterActionDelay(actionCtx)
 	}
-	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
-	b.captureBrowserInteraction(actionCtx, action, result, actionErr, interactionStart, interactionSync)
+	b.finalizeActionResultWithAssertions(actionCtx, action, result, actionErr, assertionErr, true, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
+	b.captureBrowserInteraction(actionCtx, action, result, actionErr, interactionStart, interactionSync, dialogOutcome, downloadOutcome, assertionOutcomes, navOutcome)
 	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
 		b.noteHARSLABreach()
 	}

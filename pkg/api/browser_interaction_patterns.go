@@ -96,10 +96,11 @@ type BrowserInteractionCoverage struct {
 	// transfer, a refused receipt or an invalid artifact loses an unknown
 	// number: it only sets Incomplete, which says some source's evidence is
 	// missing.
-	Dropped      int64            `json:"dropped"`
-	Incomplete   bool             `json:"incomplete"`
-	ByProvenance map[string]int64 `json:"by_provenance"`
-	Mapped       int64            `json:"mapped"`
+	Dropped            int64            `json:"dropped"`
+	Incomplete         bool             `json:"incomplete"`
+	ByProvenance       map[string]int64 `json:"by_provenance"`
+	Mapped             int64            `json:"mapped"`
+	MappedViaTransform int64            `json:"mapped_via_transform,omitempty"`
 	// Excluded counts interactions no heatmap holds, by reason (the
 	// capture's unavailable reasons, no_points, no_viewport,
 	// outside_viewport, heatmaps_truncated).
@@ -292,6 +293,16 @@ func (a *interactionAnalyzer) add(evidence *protocol.BrowserInteractionEvidence)
 // table.
 func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	exclude := func(reason string) { a.analysis.Coverage.Excluded[reason]++ }
+	if i.Version >= protocol.BrowserInteractionVersion4 {
+		if i.UnavailableReason != "" {
+			exclude(i.UnavailableReason)
+			return
+		}
+		if i.GeometryProvenance == protocol.InteractionGeometryProvenancePostAction {
+			exclude("post_action_geometry")
+			return
+		}
+	}
 	if protocol.BrowserInteractionHasDispatch(i.Version) && i.Dispatch == nil {
 		exclude("dispatch_unavailable")
 		return
@@ -300,11 +311,44 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 		exclude(i.UnavailableReason)
 		return
 	}
-	// Current evidence has no child-frame-to-main-frame transform. Never
-	// interpret child-frame coordinates as main-frame viewport positions.
+	mappedViaTransform := false
 	if i.FrameScope != "main_frame" {
-		exclude(protocol.InteractionUnavailableChildFrame)
-		return
+		if i.Version < protocol.BrowserInteractionVersion4 {
+			exclude(protocol.InteractionUnavailableChildFrame)
+			return
+		}
+		if len(i.FrameChain) == 0 {
+			exclude("unmapped_frame")
+			return
+		}
+		if len(i.FrameChain) > protocol.MaxBrowserInteractionFrameDepth {
+			exclude(protocol.InteractionUnavailableFrameDepthExceeded)
+			return
+		}
+		for _, hop := range i.FrameChain {
+			if hop.CrossOrigin {
+				exclude(protocol.InteractionUnavailableCrossOriginAncestry)
+				return
+			}
+			if hop.Non2DTransform || !hop.Invertible2D() {
+				exclude(protocol.InteractionUnavailableNonAxisAlignedOr3DTransform)
+				return
+			}
+		}
+		if protocol.BrowserInteractionPointerKind(i.Kind) && len(i.Points) > 0 {
+			pt := i.Points[0]
+			for _, hop := range i.FrameChain {
+				var ok bool
+				pt, ok = hop.ApplyToPoint(pt)
+				if !ok {
+					exclude(protocol.InteractionUnavailableNonAxisAlignedOr3DTransform)
+					return
+				}
+			}
+			i.Points = append([]protocol.BrowserInteractionPoint(nil), i.Points...)
+			i.Points[0] = pt
+		}
+		mappedViaTransform = true
 	}
 	if i.LayoutRevision == "" {
 		exclude("layout_unknown")
@@ -389,6 +433,9 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	m.ByKind[i.Kind]++
 	m.Sources[i.Provenance]++
 	a.analysis.Coverage.Mapped++
+	if mappedViaTransform {
+		a.analysis.Coverage.MappedViaTransform++
+	}
 }
 
 // canonicalScroll treats signed zero as the same recorded CSS offset. Other
@@ -507,21 +554,27 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 		}
 		retryReported := map[string]bool{}
 		for index, g := range gestures {
+			primary := g.PrimaryOutcome()
 			switch {
 			case g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged:
 				// A gesture that navigated away is never a dead interaction.
 				// Navigating is normal (a recorded step waits for the next
 				// page's element); it is unexpected only when the element the
 				// step waited for never appeared.
-				if inPageOutcome(g.Outcome.Declared) && g.Outcome.Observed == protocol.InteractionOutcomeMissed {
+				if inPageOutcome(primary.Declared) && primary.Observed == protocol.InteractionOutcomeMissed {
 					patterns = append(patterns, interactionPattern(interactionPatternUnexpectedNavigation, []protocol.BrowserInteraction{g},
-						fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed within %d ms", g.Outcome.Declared, g.Outcome.DeadlineMS)))
+						fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed within %d ms", primary.Declared, primary.DeadlineMS)))
 				}
-			case g.Outcome.Observed == protocol.InteractionOutcomeMissed && pageResponseOutcome(g.Outcome.Declared):
-				// The authored outcome's deadline passed.
-				patterns = append(patterns, interactionPattern(interactionPatternDeadInteraction, []protocol.BrowserInteraction{g},
-					fmt.Sprintf("the declared %s outcome was not observed within %d ms", g.Outcome.Declared, g.Outcome.DeadlineMS)))
-				patterns[len(patterns)-1].Declared, patterns[len(patterns)-1].DeadlineMs = g.Outcome.Declared, g.Outcome.DeadlineMS
+			default:
+				for _, outcome := range g.DeclaredOutcomes() {
+					if outcome.Observed == protocol.InteractionOutcomeMissed && pageResponseOutcome(outcome.Declared) {
+						// The authored outcome's deadline passed.
+						patterns = append(patterns, interactionPattern(interactionPatternDeadInteraction, []protocol.BrowserInteraction{g},
+							fmt.Sprintf("the declared %s outcome was not observed within %d ms", outcome.Declared, outcome.DeadlineMS)))
+						patterns[len(patterns)-1].Declared, patterns[len(patterns)-1].DeadlineMs = outcome.Declared, outcome.DeadlineMS
+						break
+					}
+				}
 			}
 			// A failed gesture repeated at once by the same step is a retry
 			// (each engine retry is a new execution with its own action ID,
@@ -572,7 +625,7 @@ func sameInteractionStep(g, next protocol.BrowserInteraction) bool {
 // a pause says nothing about whether the page responded.
 func pageResponseOutcome(declared string) bool {
 	switch declared {
-	case "element_visible", "visible", "load", "domcontentloaded":
+	case "element_visible", "visible", "load", "domcontentloaded", "dialog", "download":
 		return true
 	}
 	return false

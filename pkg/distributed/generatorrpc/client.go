@@ -725,6 +725,7 @@ type sharedClientConnection struct {
 	browserNativeHAR           bool
 	browserInteractionV2       bool
 	browserInteractionV3       bool
+	browserInteractionV4       bool
 	browserInteractionObserved time.Time
 	runtimeResources           bool
 	runtimeResourcesObserved   time.Time
@@ -1064,11 +1065,18 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 		}
 		request.PrepareOnly = true
 	}
-	if assignment.PreferBrowserOutcomeClocks && request.GetBrowserInteractionEvidenceVersion() == 2 && c.browserOutcomeClocksNegotiated() {
-		request.BrowserInteractionEvidenceVersion = 3
+	if assignment.PreferBrowserOutcomeClocks && request.GetBrowserInteractionEvidenceVersion() == 2 {
+		if c.browserInteractionV4Negotiated() {
+			request.BrowserInteractionEvidenceVersion = 4
+		} else if c.browserOutcomeClocksNegotiated() {
+			request.BrowserInteractionEvidenceVersion = 3
+		}
 	}
-	if request.GetBrowserInteractionEvidenceVersion() > 3 {
+	if request.GetBrowserInteractionEvidenceVersion() > 4 {
 		return AssignmentResult{}, fmt.Errorf("unsupported browser interaction evidence version")
+	}
+	if request.GetBrowserInteractionEvidenceVersion() == 4 && !c.browserInteractionV4Negotiated() {
+		return AssignmentResult{}, fmt.Errorf("browser_interaction_v4_capability_not_negotiated")
 	}
 	if request.GetBrowserInteractionEvidenceVersion() == 3 && !c.browserOutcomeClocksNegotiated() {
 		return AssignmentResult{}, fmt.Errorf("browser_interaction_v3_capability_not_negotiated")

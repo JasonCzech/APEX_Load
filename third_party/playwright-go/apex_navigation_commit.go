@@ -5,8 +5,11 @@ package playwright
 // names its native request. Same-document and failed navigations still advance
 // Sequence and clear Request. A snapshot is not a DOM/lifecycle join by itself.
 type APEXNavigationCommit struct {
-	Sequence uint64
-	Request  Request
+	Sequence     uint64
+	Request      Request
+	NewDocument  bool
+	SameDocument bool
+	Failed       bool
 }
 
 // APEXFrameNavigationCommit returns only observed native events; initializers
@@ -19,5 +22,11 @@ func APEXFrameNavigationCommit(frame Frame) APEXNavigationCommit {
 	}
 	f.RLock()
 	defer f.RUnlock()
-	return APEXNavigationCommit{Sequence: f.navigationSequence, Request: f.navigationRequest}
+	return APEXNavigationCommit{
+		Sequence:     f.navigationSequence,
+		Request:      f.navigationRequest,
+		NewDocument:  f.navigationNewDocument,
+		SameDocument: f.navigationSameDocument,
+		Failed:       f.navigationFailed,
+	}
 }

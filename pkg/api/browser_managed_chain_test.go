@@ -302,8 +302,9 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	matches := 0
 	if _, err := forEachBrowserInteractionRecord(filepath.Join(archiveRecord.ArchivePath, manifest.BrowserInteractionsFile), func(e *protocol.BrowserInteractionEvidence) error {
 		for _, interaction := range e.Interactions {
-			if interaction.Version != protocol.BrowserInteractionVersion3 || !interaction.Outcome.Clock.Valid() || interaction.Outcome.Clock.ObservedAt.After(interaction.CapturedAt) || interaction.Outcome.Observed != protocol.InteractionOutcomeMet {
-				t.Fatalf("archive lost observed wait clock/result: %+v", interaction.Outcome)
+			primary := interaction.PrimaryOutcome()
+			if interaction.Version != protocol.BrowserInteractionVersion4 || !primary.Clock.Valid() || primary.Clock.ObservedAt.After(interaction.CapturedAt) || primary.Observed != protocol.InteractionOutcomeMet || interaction.AuthoredPageID != pageBinding.PageID {
+				t.Fatalf("archive lost observed wait clock/result: version=%d page=%q outcome=%+v", interaction.Version, interaction.AuthoredPageID, primary)
 			}
 			if !reflect.DeepEqual(interaction.AuthoredStep, replayStep) {
 				t.Fatalf("managed/replay original step mismatch: managed=%+v replay=%+v", interaction.AuthoredStep, replayStep)

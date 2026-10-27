@@ -105,6 +105,7 @@ func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result 
 	}
 
 	timeout := b.actionTimeout(action)
+	b.recordNavPreSequence(page)
 	response, err := page.Goto(resolvedTarget, playwright.PageGotoOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})

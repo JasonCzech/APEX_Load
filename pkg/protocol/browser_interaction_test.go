@@ -142,3 +142,135 @@ func TestSplitBrowserInteractionEvidenceKeepsEveryInteractionWithinTheBound(t *t
 		t.Fatalf("split kept %d of %d interactions", next, len(record.Interactions))
 	}
 }
+
+func TestBrowserInteractionV4OutcomesAndFrameChainContract(t *testing.T) {
+	gen := strings.Repeat("a", 32)
+	step := NewBrowserOriginalAuthoredStep(BrowserAuthoredDefinition{Version: 1, ScriptSHA256: strings.Repeat("b", 64), StructureSHA256: strings.Repeat("c", 64)}, "actions[1]")
+	pageID := BrowserAuthoredPageID(step)
+	start := time.Date(2026, 10, 27, 8, 0, 0, 0, time.UTC)
+	obs := start.Add(50 * time.Millisecond)
+	deadline := start.Add(1000 * time.Millisecond)
+	captured := start.Add(120 * time.Millisecond)
+	clock := &BrowserOutcomeClock{
+		Version:    1,
+		StartedAt:  start,
+		DeadlineAt: deadline,
+		ObservedAt: obs,
+		BudgetMS:   1000,
+		ElapsedMS:  50,
+	}
+	hop := BrowserInteractionFrameHop{
+		BoundingX:      40,
+		BoundingY:      30,
+		BoundingWidth:  200,
+		BoundingHeight: 100,
+		OffsetWidth:    400,
+		OffsetHeight:   200,
+		ClientLeft:     4,
+		ClientTop:      6,
+		PaddingLeft:    2,
+		PaddingTop:     4,
+		ScrollX:        10,
+		ScrollY:        20,
+		Matrix:         []float64{0.5, 0, 0, 0.5, 10, 20},
+	}
+	if !hop.Valid() || !hop.Invertible2D() {
+		t.Fatalf("valid hop rejected: %+v", hop)
+	}
+	mapped, ok := hop.ApplyToPoint(BrowserInteractionPoint{X: 100, Y: 50})
+	// px = 4 + 2 + 100 = 106, py = 6 + 4 + 50 = 60; scaled by 0.5 -> (53, 30) + Bounding(40, 30) = (93, 60)
+	if !ok || mapped.X != 93 || mapped.Y != 60 {
+		t.Fatalf("ApplyToPoint = (%v, %v), ok=%t, want (93, 60)", mapped.X, mapped.Y, ok)
+	}
+	v4 := BrowserInteraction{
+		Version:            BrowserInteractionVersion4,
+		SourceGeneration:   gen,
+		InteractionID:      gen + "-i1",
+		ActionID:           gen + "-a1",
+		DocumentID:         gen + "-d1",
+		FrameScope:         "child_frame",
+		Kind:               "download",
+		PointerType:        "mouse",
+		Points:             []BrowserInteractionPoint{{X: 100, Y: 50}},
+		ViewportWidth:      1280,
+		ViewportHeight:     720,
+		DeviceScaleFactor:  1,
+		LayoutRevision:     "0123456789abcdef",
+		Route:              "/files",
+		Provenance:         InteractionProvenanceScripted,
+		Success:            true,
+		CapturedAt:         captured,
+		GeometryProvenance: InteractionGeometryProvenanceDispatch,
+		AuthoredPageID:     pageID,
+		RouteSeq:           2,
+		FrameChain:         []BrowserInteractionFrameHop{hop},
+		AuthoredStep:       step,
+		Execution:          &BrowserActionExecution{Invocation: 1, Attempt: 1},
+		Dispatch: &BrowserInteractionDispatch{
+			At:           start,
+			TimeOriginMS: float64(start.UnixMilli()),
+			OffsetMS:     0,
+			DocumentID:   gen + "-d1",
+			LifecycleID:  gen + "-l1",
+		},
+		Outcomes: []BrowserInteractionOutcome{
+			{Kind: InteractionOutcomeKindSync, Declared: "element_visible", DeadlineMS: 1000, Observed: InteractionOutcomeMet, Clock: clock.Clone()},
+			{Kind: InteractionOutcomeKindDialog, Declared: "dialog", DeadlineMS: 1000, Observed: InteractionOutcomeMet, Clock: clock.Clone()},
+			{Kind: InteractionOutcomeKindDownload, Declared: "download", DeadlineMS: 1000, Observed: InteractionOutcomeMet, Clock: clock.Clone()},
+			{Kind: InteractionOutcomeKindAssertion, Declared: "element_visible", Observed: InteractionOutcomeMet, ObservedAt: &obs},
+			{Kind: InteractionOutcomeKindNavigation, Declared: BrowserAuthoredPageAssociationSameDocumentRoute, Observed: InteractionOutcomeMet, ObservedAt: &obs, NavigationSequence: 2, AuthoredPageID: pageID, RouteSeq: 2},
+		},
+	}
+	if !v4.Valid() {
+		t.Fatalf("valid v4 interaction rejected: %+v", v4)
+	}
+	if v4.PrimaryOutcome().Kind != InteractionOutcomeKindSync || len(v4.DeclaredOutcomes()) != 5 {
+		t.Fatalf("outcomes accessors: primary=%+v all=%+v", v4.PrimaryOutcome(), v4.DeclaredOutcomes())
+	}
+	evidence := &BrowserInteractionEvidence{Version: BrowserInteractionVersion4, SourceGeneration: gen, Interactions: []BrowserInteraction{v4}}
+	raw, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeBrowserInteractionEvidence(raw)
+	if err != nil || len(decoded.Interactions) != 1 || len(decoded.Interactions[0].Outcomes) != 5 || len(decoded.Interactions[0].FrameChain) != 1 {
+		t.Fatalf("v4 decode failed: %+v err=%v", decoded, err)
+	}
+	// Reject non-zero legacy Outcome on v4, or Outcomes on v3, or unmapped child_frame with Dispatch != nil.
+	badLegacy := v4
+	badLegacy.Outcome = BrowserInteractionOutcome{Observed: InteractionOutcomeNotDeclared}
+	if badLegacy.Valid() {
+		t.Fatal("v4 accepted non-zero legacy Outcome field")
+	}
+	badSingular := v4
+	singularHop := hop
+	singularHop.Matrix = []float64{1, 0, 1, 0, 0, 0}
+	badSingular.FrameChain = []BrowserInteractionFrameHop{singularHop}
+	if badSingular.Valid() {
+		t.Fatal("v4 accepted singular matrix on dispatch-qualified child frame")
+	}
+	badEmptyChain := v4
+	badEmptyChain.FrameChain = nil
+	if badEmptyChain.Valid() {
+		t.Fatal("v4 accepted empty FrameChain on dispatch-qualified child frame")
+	}
+	badDepthChain := v4
+	badDepthChain.FrameChain = make([]BrowserInteractionFrameHop, MaxBrowserInteractionFrameDepth+1)
+	for idx := range badDepthChain.FrameChain {
+		badDepthChain.FrameChain[idx] = hop
+	}
+	if badDepthChain.Valid() {
+		t.Fatal("v4 accepted FrameChain exceeding MaxBrowserInteractionFrameDepth")
+	}
+	depthExceeded := v4
+	depthExceeded.Dispatch = nil
+	depthExceeded.Points = nil
+	depthExceeded.PointerType = ""
+	depthExceeded.FrameChain = nil
+	depthExceeded.GeometryProvenance = InteractionGeometryProvenancePostAction
+	depthExceeded.UnavailableReason = InteractionUnavailableFrameDepthExceeded
+	depthExceeded.DispatchUnavailableReason = InteractionUnavailableFrameDepthExceeded
+	if !depthExceeded.Valid() {
+		t.Fatalf("valid frame_depth_exceeded v4 interaction rejected: %+v", depthExceeded)
+	}
+}

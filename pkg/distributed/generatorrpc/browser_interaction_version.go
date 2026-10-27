@@ -13,7 +13,7 @@ func validateBrowserInteractionVersion(request *pb.WorkAssignment) error {
 	switch request.GetBrowserInteractionEvidenceVersion() {
 	case 0, 1:
 		return nil
-	case 2, 3:
+	case 2, 3, 4:
 		if request.GetPrepareOnly() {
 			return nil
 		}
@@ -52,6 +52,7 @@ func (c *Client) observeBrowserInteractionVersion(pong *pb.HeartbeatPong) {
 	c.connection.browserNativeHAR = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserNativeHARV1)
 	c.connection.browserInteractionV2 = available
 	c.connection.browserInteractionV3 = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserInteractionEvidenceV3+"+"+FeatureBrowserInteractionEvidenceV2+"+"+FeaturePreparationV1)
+	c.connection.browserInteractionV4 = pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureBrowserInteractionEvidenceV4+"+"+FeatureBrowserInteractionEvidenceV3+"+"+FeatureBrowserInteractionEvidenceV2+"+"+FeaturePreparationV1)
 	c.connection.browserInteractionObserved = time.Now()
 	c.connection.mu.Unlock()
 }
@@ -84,4 +85,14 @@ func (c *Client) browserOutcomeClocksNegotiated() bool {
 	defer c.connection.mu.Unlock()
 	age := time.Since(c.connection.browserInteractionObserved)
 	return c.connection.browserInteractionV3 && age >= 0 && age <= 30*time.Second
+}
+
+func (c *Client) browserInteractionV4Negotiated() bool {
+	if c.connection == nil {
+		return false
+	}
+	c.connection.mu.Lock()
+	defer c.connection.mu.Unlock()
+	age := time.Since(c.connection.browserInteractionObserved)
+	return c.connection.browserInteractionV4 && age >= 0 && age <= 30*time.Second
 }

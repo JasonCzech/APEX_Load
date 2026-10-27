@@ -501,6 +501,12 @@ func (b *Browser) consumeDialogError() error {
 	return err
 }
 
+func (b *Browser) peekDialogError() error {
+	b.dialogMu.Lock()
+	defer b.dialogMu.Unlock()
+	return b.dialogErr
+}
+
 func (b *Browser) pendingDialogState() (armed bool, wait time.Duration, expectImmediate bool) {
 	b.dialogMu.Lock()
 	defer b.dialogMu.Unlock()
@@ -515,9 +521,15 @@ func (b *Browser) pendingDialogState() (armed bool, wait time.Duration, expectIm
 }
 
 func (b *Browser) waitForPendingDialog(ctx context.Context, timeout time.Duration) error {
+	return b.waitForPendingDialogWithClock(ctx, timeout, nil)
+}
+
+func (b *Browser) waitForPendingDialogWithClock(ctx context.Context, timeout time.Duration, clock *protocol.BrowserOutcomeClock) error {
 	if timeout <= 0 {
 		timeout = time.Second
 	}
+	clock.Begin(timeout)
+	defer clock.Finish()
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -566,7 +578,48 @@ func (b *Browser) setBrowserContext(browserContext playwright.BrowserContext) {
 	b.pwContext = browserContext
 	b.contextIterations = 0
 	b.lastSalesforceEPTMs = 0
+	b.activePageBindings = nil
+	b.lifecycleRouteSeq = nil
+	b.lastActionPopup = nil
+	b.lastDownloadOutcome = nil
 	b.mu.Unlock()
+}
+
+func (b *Browser) clearActionTransientEvidence() {
+	b.mu.Lock()
+	b.lastActionPopup = nil
+	b.lastDownloadOutcome = nil
+	b.mu.Unlock()
+}
+
+func (b *Browser) takeLastActionPopup() playwright.Page {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	p := b.lastActionPopup
+	b.lastActionPopup = nil
+	return p
+}
+
+func (b *Browser) setLastDownloadOutcome(outcome *protocol.BrowserInteractionOutcome) {
+	if outcome == nil {
+		return
+	}
+	cloned := outcome.Clone()
+	b.mu.Lock()
+	b.lastDownloadOutcome = &cloned
+	b.mu.Unlock()
+}
+
+func (b *Browser) takeLastDownloadOutcome() *protocol.BrowserInteractionOutcome {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := b.lastDownloadOutcome
+	b.lastDownloadOutcome = nil
+	if out == nil {
+		return nil
+	}
+	cloned := out.Clone()
+	return &cloned
 }
 
 // IterationTemperature reports the iteration about to run as cold, the first
@@ -614,6 +667,9 @@ func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGene
 			return
 		}
 		b.pages = append(b.pages, page)
+		if len(b.pages) > 1 {
+			b.lastActionPopup = page
+		}
 	}
 	if activate {
 		b.pwPage = page
@@ -648,6 +704,10 @@ func (b *Browser) removePage(page playwright.Page) {
 	b.mu.Lock()
 	delete(b.evidence.shapedPages, page)
 	delete(b.evidence.cdpPages, page)
+	delete(b.activePageBindings, page)
+	if b.lastActionPopup == page {
+		b.lastActionPopup = nil
+	}
 	for i, existing := range b.pages {
 		if existing != page {
 			continue

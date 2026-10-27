@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 
@@ -59,12 +60,15 @@ func (a *archiveAuthoredPageAccumulator) merge(tx TransactionEvent, sources map[
 		return
 	}
 	key := receipt.SourceGeneration + "/" + receipt.DocumentID + "/" + receipt.LifecycleID
+	if receipt.RouteSeq > 0 {
+		key = fmt.Sprintf("%s/%016x", key, receipt.RouteSeq)
+	}
 	if a.conflicts[key] {
 		a.unavailable["conflicting_binding"]++
 		return
 	}
 	if prior, ok := a.rows[key]; ok {
-		if prior.PageID != receipt.PageID || prior.RequestID != receipt.RequestID || prior.Version != receipt.Version || prior.Association != receipt.Association || prior.NavigationSequence != receipt.NavigationSequence {
+		if prior.PageID != receipt.PageID || prior.RequestID != receipt.RequestID || prior.Version != receipt.Version || prior.Association != receipt.Association || prior.NavigationSequence != receipt.NavigationSequence || prior.RouteSeq != receipt.RouteSeq {
 			delete(a.rows, key)
 			a.conflicts[key] = true
 			a.unavailable["conflicting_binding"]++
