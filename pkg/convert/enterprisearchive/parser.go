@@ -1074,7 +1074,8 @@ func extractItemData(fn *ParsedFunction, inner string) {
 			hasUnsupportedField = true
 			switch strings.ToLower(arg.Name) {
 			case "file":
-				current.file = strings.EqualFold(strings.TrimSpace(arg.Value), "yes")
+				trimmedFile := strings.TrimSpace(arg.Value)
+				current.file = strings.EqualFold(trimmedFile, "yes") || trimmedFile == "1" || strings.EqualFold(trimmedFile, "true")
 			case "filepath":
 				current.filePath = arg.Value
 			case "contenttype":

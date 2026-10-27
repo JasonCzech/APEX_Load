@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
@@ -33,6 +34,15 @@ type PreparedBrowserRecording struct {
 }
 
 func (s *Service) PrepareBrowserRecordingConversion(artifact *recbrowser.Session, info *BrowserRecordingSession, req BrowserRecordingConvertRequest, durable bool) (*PreparedBrowserRecording, *ConversionError) {
+	if _, err := sample.ValidateConversionPolicy(req.ConversionPolicy); err != nil {
+		return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if _, err := sample.ValidateCorrelationMode(req.CorrelationMode); err != nil {
+		return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if _, err := sample.ValidateResourceMode(req.ResourceMode); err != nil {
+		return nil, &ConversionError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
 	result := s.ConvertBrowserRecording(artifact, info, req)
 
 	// Store every generated script (one for the single-script path, several
@@ -93,13 +103,21 @@ func (s *Service) PrepareBrowserRecordingConversion(artifact *recbrowser.Session
 		// which carry no review sections; the preview route above is where the
 		// generated HTTP draft's sections are shown.
 		var generated BrowserHTTPScript
-		generated, err = s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, BrowserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID, HTTPVersionMode: req.HTTPVersionMode})
+		generated, err = s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, req.HTTPScriptOptions())
+		defer importreview.ClearCredentialRequirementValues(generated.ProtectedRequirements)
 		httpScript, httpWarnings = generated.Script, generated.Warnings
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript == nil {
 			warnings = append(warnings, "HTTP script generation skipped: conversion produced no script")
 		} else {
+			if len(generated.ProtectedRequirements) > 0 {
+				reqs := importreview.MergeReferencedImportCredentialRequirements([]*dsl.Script{httpScript}, generated.ProtectedRequirements)
+				if len(reqs) > 0 {
+					_, _ = importreview.AttachImportCredentialReview([]*dsl.Script{httpScript}, reqs)
+					importreview.ClearCredentialRequirementValues(reqs)
+				}
+			}
 			httpScriptIndex := len(result.Scripts)
 			httpScript, err = ApplyBrowserRecordingParameterizationSelections(
 				httpScript,

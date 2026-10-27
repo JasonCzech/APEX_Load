@@ -1,8 +1,10 @@
 package enterprisearchive
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -174,4 +176,219 @@ func TestMultipartItemDataIsSerialized(t *testing.T) {
 			t.Fatalf("body = %q, review = %v", action.Body, review)
 		}
 	})
+}
+
+func TestSourceSequenceChildClonesAttributionAndMultipartBody(t *testing.T) {
+	original := dsl.Action{
+		Name:           "upload",
+		Type:           "POST",
+		Method:         "POST",
+		Target:         "/upload",
+		ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1200},
+		ThinkTimeAfter: true,
+		Attribution: &dsl.AnalyticsAttribution{
+			HierarchyPath: "Orders/Upload",
+			PageName:      "UploadReceipt",
+		},
+		BodyMultipart: &dsl.MultipartBody{
+			Parts: []dsl.MultipartPart{{
+				Name:        "doc",
+				Value:       "{{file.upload_doc}}",
+				Filename:    "receipt.txt",
+				ContentType: "text/plain",
+				Headers:     map[string]string{"Content-Transfer-Encoding": "binary"},
+			}},
+		},
+	}
+
+	child := sourceSequenceChild(original)
+
+	// Mutating the source Action after projection must not mutate the sequence child.
+	original.Attribution.HierarchyPath = "Mutated"
+	original.BodyMultipart.Parts[0].Name = "mutated"
+	original.BodyMultipart.Parts[0].Headers["Content-Transfer-Encoding"] = "7bit"
+
+	if got, ok := child["think_time_after"].(bool); !ok || !got {
+		t.Fatalf("think_time_after = %#v, want true", child["think_time_after"])
+	}
+	attr, ok := child["attribution"].(*dsl.AnalyticsAttribution)
+	if !ok || attr == nil || attr.HierarchyPath != "Orders/Upload" || attr.PageName != "UploadReceipt" {
+		t.Fatalf("attribution = %#v, want deep-cloned Orders/Upload UploadReceipt", child["attribution"])
+	}
+	mp, ok := child["body_multipart"].(*dsl.MultipartBody)
+	if !ok || mp == nil || len(mp.Parts) != 1 || mp.Parts[0].Name != "doc" || mp.Parts[0].Headers["Content-Transfer-Encoding"] != "binary" {
+		t.Fatalf("body_multipart = %#v, want deep-cloned multipart body", child["body_multipart"])
+	}
+}
+
+func TestMultipartPreservedInHTTPSequenceAndConcurrentGroups(t *testing.T) {
+	files := map[string]string{"report.txt": "numbers\n"}
+
+	t.Run("multi-request transaction folds multipart upload into http_sequence and validates", func(t *testing.T) {
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		addFile := func(name, content string) {
+			w, err := zw.Create(name)
+			if err != nil {
+				t.Fatalf("Create(%q): %v", name, err)
+			}
+			if _, err := w.Write([]byte(content)); err != nil {
+				t.Fatalf("Write(%q): %v", name, err)
+			}
+		}
+		addFile("UploadFlow.usr", "[General]\nType=Web\n[Actions]\nvuser_init=vuser_init.c\nAction=Action.c\nvuser_end=vuser_end.c\n")
+		addFile("vuser_init.c", "vuser_init() { return 0; }\n")
+		addFile("vuser_end.c", "vuser_end() { return 0; }\n")
+		addFile("report.txt", "numbers\n")
+		addFile("UploadFlow.prm", "[parameter:Account]\nType=\"Table\"\nTable=\"account.dat\"\nColumnName=\"account\"\n")
+		addFile("account.dat", "account\nacme\n")
+		addFile("Action.c", `Action() {
+			lr_start_transaction("Upload_Order");
+			web_submit_data("upload",
+				"Action=https://x.test/upload",
+				"Method=POST",
+				"EncType=multipart/form-data",
+				ITEMDATA,
+				"Name=account", "Value={Account}", ENDITEM,
+				"Name=file", "Value=report.txt", "File=Yes", "ContentType=text/plain", "ContentTransferEncoding=binary", ENDITEM,
+				LAST);
+			lr_think_time(2);
+			web_url("confirm",
+				"URL=https://x.test/confirm",
+				"Resource=0",
+				LAST);
+			lr_end_transaction("Upload_Order", LR_AUTO);
+			return 0;
+		}`)
+		if err := zw.Close(); err != nil {
+			t.Fatalf("zw.Close: %v", err)
+		}
+
+		result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+		if err != nil {
+			t.Fatalf("ConvertZip: %v", err)
+		}
+		if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues(in-memory) = %v, want none", issues)
+		}
+		if len(result.Script.Actions) != 3 || result.Script.Actions[1].Type != "http_sequence" {
+			t.Fatalf("Actions = %#v, want start marker, http_sequence, and end marker", result.Script.Actions)
+		}
+		encoded, err := json.Marshal(result.Script)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+		var roundTripped dsl.Script
+		if err := json.Unmarshal(encoded, &roundTripped); err != nil {
+			t.Fatalf("json.Unmarshal: %v", err)
+		}
+		if issues := dsl.ValidateScriptIssues(&roundTripped); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues(round-trip) = %v, want none", issues)
+		}
+		children := decodeHTTPSequenceChildrenForTest(t, roundTripped.Actions[1])
+		if len(children) != 2 {
+			t.Fatalf("children = %#v, want 2 children", children)
+		}
+		first := children[0]
+		if !first.ThinkTimeAfter || first.ThinkTime.MeanMs != 2000 {
+			t.Fatalf("first child think_time = (%+v, after=%t), want 2000ms after=true", first.ThinkTime, first.ThinkTimeAfter)
+		}
+		if first.BodyMultipart == nil || len(first.BodyMultipart.Parts) != 2 {
+			t.Fatalf("first child body_multipart = %#v, want 2 parts", first.BodyMultipart)
+		}
+		if first.BodyMultipart.Parts[0].Value != "{{param.account}}" {
+			t.Fatalf("part[0].Value = %q, want rewritten {{param.account}}", first.BodyMultipart.Parts[0].Value)
+		}
+		if first.BodyMultipart.Parts[1].Value != "{{file.upload_file}}" || first.BodyMultipart.Parts[1].Filename != "report.txt" {
+			t.Fatalf("part[1] = %+v, want hoisted {{file.upload_file}} with filename report.txt", first.BodyMultipart.Parts[1])
+		}
+	})
+
+	t.Run("concurrent group and nested control flow preserve child body_multipart", func(t *testing.T) {
+		parsed, err := ParseActionFile("Action.c", `Action() {
+			web_concurrent_start(NULL);
+			web_submit_data("upload_concurrent",
+				"Action=https://x.test/upload",
+				"Method=POST",
+				"EncType=multipart/form-data",
+				ITEMDATA,
+				"Name=note", "Value=concurrent", ENDITEM,
+				"Name=file", "Value=report.txt", "File=Yes", "ContentType=text/plain", ENDITEM,
+				LAST);
+			web_url("status_concurrent",
+				"URL=https://x.test/status",
+				"Resource=0",
+				LAST);
+			web_concurrent_end(NULL);
+
+			if (atoi(lr_eval_string("{Flag}")) == 1) {
+				lr_start_transaction("Branch_Upload");
+				web_submit_data("upload_branch",
+					"Action=https://x.test/branch-upload",
+					"Method=POST",
+					"EncType=multipart/form-data",
+					ITEMDATA,
+					"Name=note", "Value=branch", ENDITEM,
+					LAST);
+				web_url("confirm_branch",
+					"URL=https://x.test/branch-confirm",
+					"Resource=0",
+					LAST);
+				lr_end_transaction("Branch_Upload", LR_AUTO);
+			}
+			return 0;
+		}`)
+		if err != nil {
+			t.Fatalf("ParseActionFile: %v", err)
+		}
+		result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{archiveFiles: files})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues = %v, want none", issues)
+		}
+		if len(result.Script.Actions) != 2 {
+			t.Fatalf("Actions = %#v, want concurrent http_sequence and control_if", result.Script.Actions)
+		}
+		concurrentGroup := result.Script.Actions[0]
+		if concurrentGroup.Type != "http_sequence" || concurrentGroup.Params["execution_mode"] != dsl.HTTPSequenceConcurrent {
+			t.Fatalf("concurrentGroup = %#v, want concurrent http_sequence", concurrentGroup)
+		}
+		concurrentChildren := decodeHTTPSequenceChildrenForTest(t, concurrentGroup)
+		if len(concurrentChildren) != 2 || concurrentChildren[0].BodyMultipart == nil {
+			t.Fatalf("concurrentChildren = %#v, want 2 children with BodyMultipart on first", concurrentChildren)
+		}
+		parts := multipartWire(t, concurrentChildren[0])
+		want := []wirePart{{"note", "", "", "", "concurrent"}, {"file", "report.txt", "text/plain", "", "numbers\n"}}
+		if len(parts) != 2 || parts[0] != want[0] || parts[1] != want[1] {
+			t.Fatalf("concurrent multipart wire = %#v, want %#v", parts, want)
+		}
+
+		branchIf := result.Script.Actions[1]
+		if branchIf.Type != "control_if" || branchIf.Control == nil || len(branchIf.Control.Steps) != 3 {
+			t.Fatalf("branchIf = %#v, want control_if with start marker, http_sequence, and end marker", branchIf)
+		}
+		branchSeq := branchIf.Control.Steps[1]
+		if branchSeq.Type != "http_sequence" {
+			t.Fatalf("branchSeq = %#v, want http_sequence", branchSeq)
+		}
+		branchChildren := decodeHTTPSequenceChildrenForTest(t, branchSeq)
+		if len(branchChildren) != 2 || branchChildren[0].BodyMultipart == nil {
+			t.Fatalf("branchChildren = %#v, want 2 children with BodyMultipart on first", branchChildren)
+		}
+	})
+}
+
+func decodeHTTPSequenceChildrenForTest(t *testing.T, seq dsl.Action) []dsl.Action {
+	t.Helper()
+	rawRequests, err := json.Marshal(seq.Params["requests"])
+	if err != nil {
+		t.Fatalf("json.Marshal(requests): %v", err)
+	}
+	var children []dsl.Action
+	if err := json.Unmarshal(rawRequests, &children); err != nil {
+		t.Fatalf("json.Unmarshal(requests): %v", err)
+	}
+	return children
 }

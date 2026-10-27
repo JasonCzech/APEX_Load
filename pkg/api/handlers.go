@@ -1107,7 +1107,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		importAttestationClaim = nil
 	}
 	if baseline != nil {
-		if err := s.persistRecordedBaseline(stored.ID, baseline.source, stored.Script, baseline.observations); err != nil {
+		if err := s.persistRecordedBaselineCounted(stored.ID, baseline.source, stored.Script, baseline.observations, baseline.count()); err != nil {
 			slog.Warn("failed to persist attested recorded baseline", "script_id", stored.ID, "error", err)
 		}
 	}

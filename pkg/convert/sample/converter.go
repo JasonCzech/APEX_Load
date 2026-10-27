@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/recordedshape"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
@@ -22,17 +23,43 @@ import (
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
+type SecretBinding struct {
+	RequirementID string `json:"requirement_id"`
+	SecretName    string `json:"secret_name"`
+}
+
 type ImportRequest struct {
-	Name            string         `json:"name,omitempty"`
-	ProjectID       string         `json:"project_id,omitempty"`
-	Format          string         `json:"format"`
-	Content         string         `json:"content"`
-	ResponseContent string         `json:"response_content,omitempty"`
-	Options         ConvertOptions `json:"options,omitempty"`
+	Name                       string               `json:"name,omitempty"`
+	ProjectID                  string               `json:"project_id,omitempty"`
+	RecordingProfileID         string               `json:"recording_profile_id,omitempty"`
+	ProfileID                  string               `json:"profile_id,omitempty"`
+	ConversionPolicy           string               `json:"conversion_policy,omitempty"`
+	CorrelationMode            string               `json:"correlation_mode,omitempty"`
+	ResourceMode               string               `json:"resource_mode,omitempty"`
+	HTTPVersionMode            string               `json:"http_version_mode,omitempty"`
+	IncludeAssertions          *bool                `json:"include_assertions,omitempty"`
+	InferExtractors            *bool                `json:"infer_extractors,omitempty"`
+	SanitizeSensitive          *bool                `json:"sanitize_sensitive,omitempty"`
+	IncludeStaticAssets        *bool                `json:"include_static_assets,omitempty"`
+	PageTitleChecks            *bool                `json:"page_title_checks,omitempty"`
+	AsyncScan                  *bool                `json:"async_scan,omitempty"`
+	DisableSalesforce          *bool                `json:"disable_salesforce,omitempty"`
+	SalesforceNative           *bool                `json:"salesforce_native,omitempty"`
+	AgentforceTransform        *bool                `json:"agentforce_transform,omitempty"`
+	Parameterize               bool                 `json:"parameterize,omitempty"`
+	ParameterizationSelections []paramize.Selection `json:"parameterization_selections,omitempty"`
+	SecretBindings             []SecretBinding      `json:"secret_bindings,omitempty"`
+	Format                     string               `json:"format"`
+	Content                    string               `json:"content"`
+	ResponseContent            string               `json:"response_content,omitempty"`
+	Options                    ConvertOptions       `json:"options,omitempty"`
 }
 
 type ConvertOptions struct {
 	BaseURL             string `json:"base_url,omitempty"`
+	RecordingProfileID  string `json:"recording_profile_id,omitempty"`
+	ConversionPolicy    string `json:"conversion_policy,omitempty"`
+	CorrelationMode     string `json:"correlation_mode,omitempty"`
 	IncludeAssertions   *bool  `json:"include_assertions,omitempty"`
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
@@ -72,11 +99,21 @@ type ConvertOptions struct {
 	// (correlate.HighConfidence); the rest stay review candidates. The proxy
 	// recorder sets it.
 	HighConfidenceOnly bool `json:"-"`
+	// ReviewOnlyCorrelations keeps every detected correlation in the review
+	// list without automatically attaching extractors or rewriting consumers.
+	ReviewOnlyCorrelations bool `json:"-"`
+	// EntryPoint identifies the authoring entry point that invoked conversion.
+	EntryPoint string `json:"-"`
 	// HTTPVersionMode (HAR input) maps captured HTTP versions to leaf
 	// policies: "upgrade" (default; captured h3 becomes auto+h3), "exact"
 	// (captured h3 becomes 3) or "inherit" (no leaf policy). Captured HTTP/2
 	// and HTTP/1.1 stay exact except under inherit.
-	HTTPVersionMode string `json:"http_version_mode,omitempty"`
+	HTTPVersionMode            string               `json:"http_version_mode,omitempty"`
+	DisableSalesforce          *bool                `json:"disable_salesforce,omitempty"`
+	SalesforceNative           *bool                `json:"salesforce_native,omitempty"`
+	AgentforceTransform        *bool                `json:"agentforce_transform,omitempty"`
+	Parameterize               bool                 `json:"parameterize,omitempty"`
+	ParameterizationSelections []paramize.Selection `json:"parameterization_selections,omitempty"`
 }
 
 type ConvertStats struct {
@@ -127,13 +164,14 @@ type Correlation struct {
 }
 
 type ConvertResult struct {
-	Document     *HARDocument       `json:"-"`
-	Script       *dsl.Script        `json:"script"`
-	Warnings     []string           `json:"warnings,omitempty"`
-	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
-	Stats        ConvertStats       `json:"stats"`
-	Correlations []Correlation      `json:"correlations,omitempty"`
-	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+	Document          *HARDocument       `json:"-"`
+	Script            *dsl.Script        `json:"script"`
+	Warnings          []string           `json:"warnings,omitempty"`
+	Unsupported       diag.Diagnostics   `json:"unsupported,omitempty"`
+	Stats             ConvertStats       `json:"stats"`
+	Correlations      []Correlation      `json:"correlations,omitempty"`
+	SourceReview      *sourceview.Review `json:"source_review,omitempty"`
+	EffectiveSettings *EffectiveSettings `json:"effective_settings,omitempty"`
 
 	// ProtectedRequirements is a one-shot adapter-to-API handoff for source
 	// values needed to bind the generated {{secret.*}} references. It is never
@@ -213,20 +251,98 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if strings.TrimSpace(req.Content) == "" {
 		return nil, errors.New("content is required")
 	}
+	if req.Options.RecordingProfileID == "" {
+		req.Options.RecordingProfileID = convertutil.FirstNonEmpty(req.RecordingProfileID, req.ProfileID)
+	}
+	if req.Options.ConversionPolicy == "" {
+		req.Options.ConversionPolicy = req.ConversionPolicy
+	}
+	if req.Options.CorrelationMode == "" {
+		req.Options.CorrelationMode = req.CorrelationMode
+	}
+	if req.Options.ResourceMode == "" {
+		req.Options.ResourceMode = req.ResourceMode
+	}
+	if req.Options.HTTPVersionMode == "" {
+		req.Options.HTTPVersionMode = req.HTTPVersionMode
+	}
+	if req.Options.IncludeAssertions == nil {
+		req.Options.IncludeAssertions = req.IncludeAssertions
+	}
+	if req.Options.InferExtractors == nil {
+		req.Options.InferExtractors = req.InferExtractors
+	}
+	if req.Options.SanitizeSensitive == nil {
+		req.Options.SanitizeSensitive = req.SanitizeSensitive
+	}
+	if req.Options.IncludeStaticAssets == nil {
+		req.Options.IncludeStaticAssets = req.IncludeStaticAssets
+	}
+	if req.Options.PageTitleChecks == nil {
+		req.Options.PageTitleChecks = req.PageTitleChecks
+	}
+	if req.Options.AsyncScan == nil {
+		req.Options.AsyncScan = req.AsyncScan
+	}
+	if req.Options.DisableSalesforce == nil {
+		req.Options.DisableSalesforce = req.DisableSalesforce
+	}
+	if req.Options.SalesforceNative == nil {
+		req.Options.SalesforceNative = req.SalesforceNative
+	}
+	if req.Options.AgentforceTransform == nil {
+		req.Options.AgentforceTransform = req.AgentforceTransform
+	}
+	if !req.Options.Parameterize {
+		req.Options.Parameterize = req.Parameterize
+	}
+	if len(req.Options.ParameterizationSelections) == 0 {
+		req.Options.ParameterizationSelections = req.ParameterizationSelections
+	}
+
+	var highConfidencePtr *bool
+	if req.Options.HighConfidenceOnly {
+		hc := true
+		highConfidencePtr = &hc
+	}
+	entryPoint := req.Options.EntryPoint
+	if entryPoint == "" {
+		entryPoint = EntryPointImportSample
+	}
+	effectiveSettings, err := ResolveConversionPolicy(PolicyResolutionInput{
+		EntryPoint:             entryPoint,
+		Format:                 format,
+		ConversionPolicy:       req.Options.ConversionPolicy,
+		CorrelationMode:        req.Options.CorrelationMode,
+		IncludeAssertions:      req.Options.IncludeAssertions,
+		InferExtractors:        req.Options.InferExtractors,
+		IncludeStaticAssets:    req.Options.IncludeStaticAssets,
+		PageTitleChecks:        req.Options.PageTitleChecks,
+		ResourceMode:           req.Options.ResourceMode,
+		AsyncScan:              req.Options.AsyncScan,
+		HTTPVersionMode:        req.Options.HTTPVersionMode,
+		HighConfidenceOnly:     highConfidencePtr,
+		ReviewOnlyCorrelations: req.Options.ReviewOnlyCorrelations,
+		DisableSalesforce:      req.Options.DisableSalesforce,
+		SalesforceNative:       req.Options.SalesforceNative,
+		AgentforceTransform:    req.Options.AgentforceTransform,
+		Parameterize:           req.Options.Parameterize || len(req.Options.ParameterizationSelections) > 0,
+		RecordingProfileID:     req.Options.RecordingProfileID,
+		Profile:                req.Options.Profile,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	var (
 		exchanges   []exchange
 		warnings    []string
-		err         error
 		diagnostics diag.Collector
 		filtered    int
 		skipped     int
 	)
 
-	httpVersionMode, err := requestimport.NormalizeHTTPVersionMode(req.Options.HTTPVersionMode)
-	if err != nil {
-		return nil, err
-	}
+	httpVersionMode := effectiveSettings.HTTPVersionMode
 	var document *HARDocument
 	var pageResources map[int][]any
 	switch format {
@@ -237,13 +353,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		includeStatic := convertutil.BoolOption(req.Options.IncludeStaticAssets, false) || strings.EqualFold(req.Options.ResourceMode, "separate")
+		includeStatic := convertutil.BoolOption(req.Options.IncludeStaticAssets, false) || strings.EqualFold(effectiveSettings.ResourceMode, "separate")
 		document, err = ParseHARDocument(req.Content)
 		if err != nil {
 			break
 		}
 		exchanges, warnings, filtered, skipped, err = document.parse(includeStatic, httpVersionMode, &diagnostics)
-		if err == nil && !includeStatic && strings.EqualFold(req.Options.ResourceMode, "in_step") {
+		if err == nil && !includeStatic && strings.EqualFold(effectiveSettings.ResourceMode, "in_step") {
 			pageResources = document.inStepResources()
 		}
 	default:
@@ -283,9 +399,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 	}
 
-	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
-	inferExtractors := convertutil.BoolOption(req.Options.InferExtractors, true)
-	pageTitleChecks := includeAssertions && convertutil.BoolOption(req.Options.PageTitleChecks, true)
+	includeAssertions := effectiveSettings.IncludeAssertions
+	inferExtractors := effectiveSettings.InferExtractors
+	pageTitleChecks := effectiveSettings.PageTitleChecks
 	baseURL := strings.TrimSpace(req.Options.BaseURL)
 	if baseURL == "" {
 		baseURL = detectBaseURL(exchanges)
@@ -300,17 +416,19 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	extraCorrelationExtractors := map[int][]dsl.Extractor{}
 	if inferExtractors {
 		var analysisWarnings []string
+		var settings *recordingprofile.CorrelationSettings
+		if req.Options.Profile != nil {
+			settings = &req.Options.Profile.Correlation
+		}
 		if format == "har" {
-			var settings *recordingprofile.CorrelationSettings
-			if req.Options.Profile != nil {
-				settings = &req.Options.Profile.Correlation
-			}
 			var omission correlate.StaticEvidenceOmission
 			correlations, analysisWarnings, omission, err = detectHARCorrelationsWithSettings(exchanges, settings)
 			if note := omission.Note(); note != "" {
 				warnings = append(warnings, note)
 				diagnostics.Add(diag.Info, "HAR correlation evidence", "HAR import", note)
 			}
+		} else if settings != nil {
+			correlations, analysisWarnings, _, err = detectHARCorrelationsWithSettings(exchanges, settings)
 		} else {
 			correlations, err = detectCorrelationsChecked(exchanges)
 		}
@@ -324,7 +442,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			warnings = append(warnings, fmt.Sprintf("correlation analysis was not completed and no automatic correlation rewrites were applied: %v", err))
 		}
 		correlations = collapseSameSourceDuplicateCorrelations(exchanges, correlations)
-		if req.Options.HighConfidenceOnly {
+		if effectiveSettings.ReviewOnlyCorrelations {
+			for index := range correlations {
+				correlations[index].reviewOnly = true
+			}
+		} else if effectiveSettings.HighConfidenceOnly {
 			for index := range correlations {
 				correlations[index].reviewOnly = !correlate.HighConfidence(correlate.Correlation{Confidence: correlations[index].Confidence})
 			}
@@ -652,7 +774,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		var shapeWarnings []string
 		var newIndex []int
 		var startedAt []time.Time
-		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, document, convertutil.BoolOption(req.Options.AsyncScan, true), req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
+		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
 		result.Warnings = append(result.Warnings, shapeWarnings...)
 		if len(req.Options.Transactions) > 0 {
 			if newIndex == nil {
@@ -696,6 +818,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if !req.Options.OmitSourceReview {
 		result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
 	}
+	result.EffectiveSettings = effectiveSettings
 	return result, nil
 }
 

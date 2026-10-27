@@ -71,6 +71,32 @@ func translateJavaScriptWebArchive(files map[string]string, projectFileName stri
 			warnings = append(warnings, fmt.Sprintf("%s %s; it imports as a review step", name, note))
 		}
 	}
+	// Translate auxiliary JavaScript callback files (e.g. AsyncCallbacks.js,
+	// WebSocketCallbacks.js) when no C counterpart exists so locateSourceCallback
+	// can inspect their translated function bodies. VuGen keeps those files
+	// beside the .usr, so JavaScript elsewhere in the archive (data files,
+	// recorded page assets) is left alone.
+	projectDir := path.Dir(projectFileName)
+	auxNames := make([]string, 0, len(files))
+	for name := range files {
+		if strings.EqualFold(path.Ext(name), ".js") && path.Dir(name) == projectDir {
+			auxNames = append(auxNames, name)
+		}
+	}
+	sort.Strings(auxNames)
+	for _, name := range auxNames {
+		twin := strings.TrimSuffix(name, path.Ext(name)) + ".c"
+		if _, exists := out[twin]; exists {
+			continue
+		}
+		// An untranslatable helper is not an error here: a callback the import
+		// cannot find is already reported, as a review step, where it is used.
+		source, _, err := translateJavaScriptToC(name, files[name])
+		if err != nil || strings.TrimSpace(source) == "" {
+			continue
+		}
+		out[twin] = source
+	}
 	out[projectFileName] = rewriteJavaScriptProject(files[projectFileName], renames)
 	return out, warnings, ""
 }

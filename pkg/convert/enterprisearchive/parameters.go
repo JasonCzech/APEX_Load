@@ -654,6 +654,9 @@ func rewriteKnownParameterReferencesAction(action *dsl.Action, names map[string]
 	action.Value = rewriteKnownParameterReferences(action.Value, names)
 	action.Body = rewriteKnownParameterReferences(action.Body, names)
 	action.BodyFile = rewriteKnownParameterReferences(action.BodyFile, names)
+	if action.BodyMultipart != nil {
+		rewriteKnownParameterReferencesMultipart(action.BodyMultipart, names)
+	}
 	for key, value := range action.Headers {
 		action.Headers[key] = rewriteKnownParameterReferences(value, names)
 	}
@@ -760,6 +763,12 @@ func rewriteKnownParameterReferencesAny(value any, names map[string]struct{}) an
 			typed[index].Value = rewriteKnownParameterReferences(typed[index].Value, names)
 		}
 		return typed
+	case *dsl.MultipartBody:
+		rewriteKnownParameterReferencesMultipart(typed, names)
+		return typed
+	case dsl.MultipartBody:
+		rewriteKnownParameterReferencesMultipart(&typed, names)
+		return typed
 	case map[string]any:
 		for key, item := range typed {
 			typed[key] = rewriteKnownParameterReferencesAny(item, names)
@@ -767,6 +776,28 @@ func rewriteKnownParameterReferencesAny(value any, names map[string]struct{}) an
 		return typed
 	default:
 		return value
+	}
+}
+
+func rewriteKnownParameterReferencesMultipart(body *dsl.MultipartBody, names map[string]struct{}) {
+	if body == nil {
+		return
+	}
+	for index := range body.Parts {
+		part := &body.Parts[index]
+		part.Name = rewriteKnownParameterReferences(part.Name, names)
+		if !strings.EqualFold(strings.TrimSpace(part.ValueEncoding), "base64") {
+			part.Value = rewriteKnownParameterReferences(part.Value, names)
+		}
+		part.Filename = rewriteKnownParameterReferences(part.Filename, names)
+		part.ContentType = rewriteKnownParameterReferences(part.ContentType, names)
+		for key, value := range part.Headers {
+			rewrittenKey := rewriteKnownParameterReferences(key, names)
+			if rewrittenKey != key {
+				delete(part.Headers, key)
+			}
+			part.Headers[rewrittenKey] = rewriteKnownParameterReferences(value, names)
+		}
 	}
 }
 

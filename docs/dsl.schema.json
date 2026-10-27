@@ -32,7 +32,7 @@
                 "type": "string"
               },
               "body_multipart": {
-                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps and http_sequence children.",
                 "type": "object"
               },
               "header_list": {
@@ -127,7 +127,7 @@
                 "type": "string"
               },
               "body_multipart": {
-                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps and http_sequence children.",
                 "type": "object"
               },
               "header_list": {
@@ -222,7 +222,7 @@
                 "type": "string"
               },
               "body_multipart": {
-                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps and http_sequence children.",
                 "type": "object"
               },
               "header_list": {
@@ -317,7 +317,7 @@
                 "type": "string"
               },
               "body_multipart": {
-                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps and http_sequence children.",
                 "type": "object"
               },
               "header_list": {
@@ -412,7 +412,7 @@
                 "type": "string"
               },
               "body_multipart": {
-                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps and http_sequence children.",
                 "type": "object"
               },
               "header_list": {
@@ -507,7 +507,7 @@
                 "type": "string"
               },
               "body_multipart": {
-                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps and http_sequence children.",
                 "type": "object"
               },
               "header_list": {
@@ -602,7 +602,7 @@
                 "type": "string"
               },
               "body_multipart": {
-                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps and http_sequence children.",
                 "type": "object"
               },
               "header_list": {

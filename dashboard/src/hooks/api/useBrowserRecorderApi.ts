@@ -4,6 +4,7 @@ import { type StoredScript } from '../../types'
 import type { RecordingEnvironment } from '../../types/recordingEnvironment'
 import type { ApplyParameterizationRequest, ApplyParameterizationResponse, ApplySecretBindingsRequest, ApplySecretBindingsResponse } from '../../types/scriptImports'
 import {
+  type ConversionPolicy,
   type RecorderImportResult,
   type SecretBindingSelection,
 } from '../../types/scriptImports'
@@ -157,10 +158,24 @@ export type BrowserRecorderConvertRequest = {
   also_create_http_script?: boolean
   /** "url" (default) replays recorded URLs; "html" turns link, image and form clicks into HTML-mode steps. */
   http_script_level?: 'url' | 'html'
+  /** Negotiated conversion policy for the HAR-derived HTTP script. */
+  conversion_policy?: ConversionPolicy
+  correlation_mode?: string
   /** Project recording profile the HAR-derived HTTP script applies. */
+  profile_id?: string
   recording_profile_id?: string
+  resource_mode?: 'runtime' | 'in_step' | 'separate' | (string & {})
+  /** Whether background polling requests are folded into async conversations in the HTTP script. */
+  async_scan?: boolean
+  page_title_checks?: boolean
+  include_assertions?: boolean
+  infer_extractors?: boolean
+  include_static_assets?: boolean
   /** How the HTTP script maps captured HTTP versions: upgrade (default), exact or inherit. */
   http_version_mode?: 'upgrade' | 'exact' | 'inherit'
+  disable_salesforce?: boolean
+  salesforce_native?: boolean
+  agentforce_transform?: boolean
   parameterize?: boolean
   // Save-only override applied to the fresh server conversion before its
   // create transaction. The script index binds each opaque requirement ID to

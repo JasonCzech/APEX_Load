@@ -33,6 +33,7 @@ type DraftAttestation struct {
 	Script                  *dsl.Script
 	RecordingSessionID      string
 	RecordingSnapshotDigest string
+	RecordingBaseline       *RecordingBaseline
 	ExpiresAt               time.Time
 	ExpirationDisabled      bool
 	Claimed                 bool
@@ -105,6 +106,7 @@ type DraftAttachOptions struct {
 	Scope                                       DraftScope
 	DisableExpiration                           bool
 	RecordingSessionID, RecordingSnapshotDigest string
+	RecordingBaseline                           *RecordingBaseline
 	TextMemo                                    *ImportProjectionTextMemo
 }
 type MemoryDraftClaim struct {
@@ -112,6 +114,7 @@ type MemoryDraftClaim struct {
 	Script                                                                                                   *dsl.Script
 	ExpirationDisabled                                                                                       bool
 	RecordingSessionID, RecordingSnapshotDigest, AttestedExecutionGraphDigest, SubmittedExecutionGraphDigest string
+	RecordingBaseline                                                                                        *RecordingBaseline
 	JavaClasspathReviewChecked                                                                               bool
 }
 
@@ -165,7 +168,7 @@ func PrepareDraftAttestation(script *dsl.Script, options DraftAttachOptions) (*D
 	if exact == nil {
 		return nil, nil, errors.New("failed to clone import draft")
 	}
-	return &DraftAttestation{Profile: profile, ProjectID: normalizeDraftProject(options.Scope.ProjectID), Actor: options.Scope.Actor, Protocol: strings.ToLower(strings.TrimSpace(script.Protocol)), CredentialDigests: fingerprint.CredentialDigests, StructureDigest: fingerprint.StructureDigest, ExecutionGraphDigest: fingerprint.ExecutionGraphDigest, FullDigest: fingerprint.FullDigest, HasUnavailableCredentialValues: unavailable, Script: exact, RecordingSessionID: recordingID, RecordingSnapshotDigest: digest, ExpirationDisabled: options.DisableExpiration}, projection.Script(), nil
+	return &DraftAttestation{Profile: profile, ProjectID: normalizeDraftProject(options.Scope.ProjectID), Actor: options.Scope.Actor, Protocol: strings.ToLower(strings.TrimSpace(script.Protocol)), CredentialDigests: fingerprint.CredentialDigests, StructureDigest: fingerprint.StructureDigest, ExecutionGraphDigest: fingerprint.ExecutionGraphDigest, FullDigest: fingerprint.FullDigest, HasUnavailableCredentialValues: unavailable, Script: exact, RecordingSessionID: recordingID, RecordingSnapshotDigest: digest, RecordingBaseline: options.RecordingBaseline.Clone(), ExpirationDisabled: options.DisableExpiration}, projection.Script(), nil
 }
 func (o *MemoryDraftOwner) Attach(script *dsl.Script, options DraftAttachOptions) (time.Time, *dsl.Script, error) {
 	record, projection, err := PrepareDraftAttestation(script, options)
@@ -258,6 +261,7 @@ func (o *MemoryDraftOwner) Claim(scope DraftScope, script *dsl.Script, transform
 	if lineage {
 		claim.RecordingSessionID = record.RecordingSessionID
 		claim.RecordingSnapshotDigest = record.RecordingSnapshotDigest
+		claim.RecordingBaseline = record.RecordingBaseline.Clone()
 	}
 	return claim, nil
 }
@@ -312,7 +316,7 @@ func (o *MemoryDraftOwner) Rotate(scope DraftScope, claim *MemoryDraftClaim, scr
 	if claim == nil {
 		return time.Time{}, nil
 	}
-	expires, _, err := o.Attach(script, DraftAttachOptions{Scope: scope, DisableExpiration: claim.ExpirationDisabled, RecordingSessionID: claim.RecordingSessionID, RecordingSnapshotDigest: claim.RecordingSnapshotDigest})
+	expires, _, err := o.Attach(script, DraftAttachOptions{Scope: scope, DisableExpiration: claim.ExpirationDisabled, RecordingSessionID: claim.RecordingSessionID, RecordingSnapshotDigest: claim.RecordingSnapshotDigest, RecordingBaseline: claim.RecordingBaseline})
 	if err != nil {
 		return time.Time{}, err
 	}

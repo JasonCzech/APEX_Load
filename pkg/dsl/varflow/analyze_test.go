@@ -497,6 +497,62 @@ func TestAnalyzeScalarAndArrayWritesCoexist(t *testing.T) {
 	}
 }
 
+func TestAnalyzeHTTPSequenceChildBodyMultipart(t *testing.T) {
+	t.Parallel()
+	script := &dsl.Script{
+		Protocol: "http",
+		Parameters: []dsl.Parameter{
+			{Name: "declared_param", Type: "custom", Values: []string{"ok"}},
+		},
+		Actions: []dsl.Action{
+			{
+				Name:   "Grouped Upload",
+				Type:   "http_sequence",
+				Target: "/upload/{{var.wrapper_target_ignored}}",
+				Params: map[string]any{
+					"requests": []any{
+						map[string]any{
+							"name":   "Step 1",
+							"type":   "request",
+							"method": "GET",
+							"target": "/seed",
+							"extractors": []any{
+								map[string]any{"name": "csrf_token", "source": "body", "type": "regex", "expression": "csrf=(.+)"},
+							},
+						},
+						map[string]any{
+							"name":   "Step 2 Multipart",
+							"type":   "request",
+							"method": "POST",
+							"target": "/upload",
+							"body_multipart": map[string]any{
+								"parts": []any{
+									map[string]any{"name": "csrf", "value": "{{var.csrf_token}}"},
+									map[string]any{"name": "ok_param", "value": "{{param.declared_param}}"},
+									map[string]any{"name": "missing_var", "value": "{{var.unproduced_field}}"},
+									map[string]any{"name": "missing_param", "value": "{{param.undeclared_param}}"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	got := Analyze(script, nil)
+	wantMissing := []string{"undeclared_param", "unproduced_field"}
+	if !reflect.DeepEqual(got.Missing, wantMissing) {
+		t.Fatalf("missing = %#v, want %#v (byAction = %#v)", got.Missing, wantMissing, got.ByAction)
+	}
+	wantByChild := []string{"undeclared_param", "unproduced_field"}
+	if !reflect.DeepEqual(got.ByAction["actions[0].params.requests[1]"], wantByChild) {
+		t.Fatalf("byAction[actions[0].params.requests[1]] = %#v, want %#v", got.ByAction["actions[0].params.requests[1]"], wantByChild)
+	}
+	if !reflect.DeepEqual(got.ParamBlocking, []string{"undeclared_param"}) {
+		t.Fatalf("paramBlocking = %#v, want [undeclared_param]", got.ParamBlocking)
+	}
+}
+
 func nonNil(values []string) []string {
 	if values == nil {
 		return []string{}

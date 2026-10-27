@@ -143,3 +143,194 @@ func TestHTTPSequenceRequestTransactionsReadsTypedAndStoredGroups(t *testing.T) 
 		t.Fatal("non-text transaction name admitted")
 	}
 }
+
+func TestHTTPSequenceChildBodyMultipartAndAttributionValidation(t *testing.T) {
+	validMultipart := &MultipartBody{
+		Parts: []MultipartPart{
+			{Name: "note", Value: "hello {{var.user}}"},
+			{Name: "attachment", Value: "{{file.upload_doc}}", Filename: "report.txt", ContentType: "text/plain", Headers: map[string]string{"Content-Transfer-Encoding": "binary"}},
+		},
+	}
+	validDataSources := []DataSource{{
+		Name:       "upload_doc",
+		Type:       "file",
+		FileName:   "report.txt",
+		InlineData: "bnVtYmVycwo=",
+		Encoding:   "base64",
+	}}
+
+	for _, tc := range []struct {
+		name     string
+		mode     string
+		requests any
+	}{
+		{
+			name: "sequential map slice with typed pointers",
+			requests: []map[string]any{{
+				"name":             "Upload",
+				"type":             "POST",
+				"method":           "POST",
+				"target":           "/upload",
+				"body_multipart":   validMultipart,
+				"think_time_after": true,
+				"attribution":      &AnalyticsAttribution{HierarchyPath: "Checkout/Upload", PageName: "UploadPage"},
+			}},
+		},
+		{
+			name: "concurrent Action slice",
+			mode: HTTPSequenceConcurrent,
+			requests: []Action{{
+				Name:          "Upload",
+				Type:          "POST",
+				Method:        "POST",
+				Target:        "/upload",
+				BodyMultipart: validMultipart,
+				Attribution:   &AnalyticsAttribution{HierarchyPath: "Checkout/Upload", PageName: "UploadPage"},
+			}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := map[string]any{"requests": tc.requests}
+			if tc.mode != "" {
+				params["execution_mode"] = tc.mode
+			}
+			script := &Script{
+				Name:        "seq-multipart",
+				Protocol:    "http",
+				Config:      ScriptConfig{BaseURL: "https://example.test"},
+				DataSources: validDataSources,
+				Actions: []Action{{
+					Name:   "tx",
+					Type:   "http_sequence",
+					Method: "SEQUENCE",
+					Target: "/upload",
+					Params: params,
+				}},
+			}
+			if issues := ValidateScriptIssues(script); len(issues) != 0 {
+				t.Fatalf("ValidateScriptIssues(in-memory) = %v, want none", issues)
+			}
+			encoded, err := json.Marshal(script)
+			if err != nil {
+				t.Fatalf("json.Marshal: %v", err)
+			}
+			var decoded Script
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatalf("json.Unmarshal: %v", err)
+			}
+			if issues := ValidateScriptIssues(&decoded); len(issues) != 0 {
+				t.Fatalf("ValidateScriptIssues(round-trip) = %v, want none", issues)
+			}
+
+			// Removing the file data source must fail file reference validation across both forms.
+			scriptNoDS := *script
+			scriptNoDS.DataSources = nil
+			if issues := ValidateScriptIssues(&scriptNoDS); !strings.Contains(strings.Join(issues, "\n"), `references unknown file asset "upload_doc"`) {
+				t.Fatalf("ValidateScriptIssues(in-memory missing file) = %v, want unknown file asset issue", issues)
+			}
+			decoded.DataSources = nil
+			if issues := ValidateScriptIssues(&decoded); !strings.Contains(strings.Join(issues, "\n"), `references unknown file asset "upload_doc"`) {
+				t.Fatalf("ValidateScriptIssues(round-trip missing file) = %v, want unknown file asset issue", issues)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name            string
+		child           map[string]any
+		wantIssueSubstr string
+	}{
+		{
+			name: "multipart with body",
+			child: map[string]any{
+				"name": "Upload", "method": "POST", "target": "/upload",
+				"body":           "conflict",
+				"body_multipart": &MultipartBody{Parts: []MultipartPart{{Name: "a", Value: "b"}}},
+			},
+			wantIssueSubstr: "body_multipart replaces body, body_file and body_encoding",
+		},
+		{
+			name: "multipart with empty parts",
+			child: map[string]any{
+				"name": "Upload", "method": "POST", "target": "/upload",
+				"body_multipart": &MultipartBody{},
+			},
+			wantIssueSubstr: "body_multipart needs 1 to ",
+		},
+		{
+			name: "multipart with bad encoding",
+			child: map[string]any{
+				"name": "Upload", "method": "POST", "target": "/upload",
+				"body_multipart": &MultipartBody{Parts: []MultipartPart{{Name: "a", Value: "b", ValueEncoding: "hex"}}},
+			},
+			wantIssueSubstr: "value_encoding must be base64, windows-1252 or empty",
+		},
+		{
+			name: "multipart with malformed shape",
+			child: map[string]any{
+				"name": "Upload", "method": "POST", "target": "/upload",
+				"body_multipart": "not-an-object",
+			},
+			wantIssueSubstr: "body_multipart must be a valid multipart body",
+		},
+		{
+			name: "attribution with oversized page_name",
+			child: map[string]any{
+				"name": "Upload", "method": "POST", "target": "/upload",
+				"attribution": &AnalyticsAttribution{PageName: strings.Repeat("p", 513)},
+			},
+			wantIssueSubstr: "attribution page_name must not exceed 512 bytes",
+		},
+		{
+			name: "attribution with malformed shape",
+			child: map[string]any{
+				"name": "Upload", "method": "POST", "target": "/upload",
+				"attribution": "not-an-object",
+			},
+			wantIssueSubstr: "attribution must be a valid attribution object",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script := &Script{
+				Name:     "invalid-seq-child",
+				Protocol: "http",
+				Config:   ScriptConfig{BaseURL: "https://example.test"},
+				Actions: []Action{{
+					Name:   "tx",
+					Type:   "http_sequence",
+					Params: map[string]any{"requests": []map[string]any{tc.child}},
+				}},
+			}
+			issues := ValidateScriptIssues(script)
+			if len(issues) == 0 {
+				t.Fatalf("expected validation issue containing %q for %s, got none", tc.wantIssueSubstr, tc.name)
+			}
+			joined := strings.Join(issues, "\n")
+			if !strings.Contains(joined, tc.wantIssueSubstr) {
+				t.Fatalf("ValidateScriptIssues(%s) = %v, want substring %q", tc.name, issues, tc.wantIssueSubstr)
+			}
+		})
+	}
+
+	// Same-group extractor dependency inside a concurrent child's body_multipart must be rejected.
+	concurrentDeps := []Action{
+		{
+			Name: "first", Type: "GET", Method: "GET", Target: "/token",
+			Extractors: []Extractor{{Name: "csrf", Source: "body", Type: "regex", Expression: "token=(.+)"}},
+		},
+		{
+			Name: "second", Type: "POST", Method: "POST", Target: "/upload",
+			BodyMultipart: &MultipartBody{Parts: []MultipartPart{{Name: "csrf", Value: "{{var.csrf}}"}}},
+		},
+	}
+	if err := ValidateHTTPConcurrentChildren(concurrentDeps); err == nil || !strings.Contains(err.Error(), "cannot depend on group extractor outputs") {
+		t.Fatalf("ValidateHTTPConcurrentChildren(multipart dependency) = %v, want group extractor dependency rejection", err)
+	}
+	if err := ValidateHTTPConcurrentChild(Action{
+		Name: "conflict", Type: "POST", Method: "POST", Target: "/upload",
+		Body:          "raw",
+		BodyMultipart: &MultipartBody{Parts: []MultipartPart{{Name: "a", Value: "b"}}},
+	}); err == nil {
+		t.Fatal("ValidateHTTPConcurrentChild admitted child combining body and body_multipart")
+	}
+}

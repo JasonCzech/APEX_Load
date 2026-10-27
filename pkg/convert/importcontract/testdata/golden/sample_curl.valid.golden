@@ -1,4 +1,18 @@
 {
+  "effective_settings": {
+    "agentforce_transform": false,
+    "async_scan": false,
+    "conversion_policy": "legacy",
+    "correlation_mode": "all",
+    "high_confidence_only": false,
+    "http_version_mode": "upgrade",
+    "include_assertions": true,
+    "infer_extractors": true,
+    "page_title_checks": true,
+    "resource_mode": "runtime",
+    "salesforce_native": false,
+    "source_entry_point": "import_sample"
+  },
   "script": {
     "actions": [
       {

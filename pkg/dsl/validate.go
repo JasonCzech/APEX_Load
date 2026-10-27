@@ -273,8 +273,24 @@ func inspectRunIDActionScope(action Action, depth int) runTemplateScanResult {
 	inert.Headers, inert.HeaderList, inert.Params, inert.Metadata = nil, nil, nil, nil
 	inert.WaitFor, inert.Sync, inert.Attribution = nil, nil, nil
 	inert.Extractors, inert.Assertions, inert.Auth, inert.SOAP, inert.Control = nil, nil, nil, nil, nil
+	inert.BodyMultipart = nil
 	if runIDTemplateInValue(inert) {
 		return runTemplateUnsupported
+	}
+	if action.BodyMultipart != nil {
+		for _, part := range action.BodyMultipart.Parts {
+			if runIDTemplateInString(part.ValueEncoding) {
+				return runTemplateUnsupported
+			}
+			if strings.EqualFold(strings.TrimSpace(part.ValueEncoding), "base64") && runIDTemplateInString(part.Value) {
+				return runTemplateUnsupported
+			}
+			for name := range part.Headers {
+				if runIDTemplateInString(name) {
+					return runTemplateUnsupported
+				}
+			}
+		}
 	}
 	for name := range action.Headers {
 		if runIDTemplateInString(name) {
@@ -1270,6 +1286,62 @@ func appendFileTemplateRefsFromAny(refs []string, value any) []string {
 	switch typed := value.(type) {
 	case string:
 		return appendFileTemplateRefs(refs, typed)
+	case Action:
+		return append(refs, collectActionFileReferences(typed)...)
+	case *Action:
+		if typed != nil {
+			return append(refs, collectActionFileReferences(*typed)...)
+		}
+	case []Action:
+		for _, item := range typed {
+			refs = append(refs, collectActionFileReferences(item)...)
+		}
+	case []*Action:
+		for _, item := range typed {
+			if item != nil {
+				refs = append(refs, collectActionFileReferences(*item)...)
+			}
+		}
+	case MultipartBody:
+		for _, item := range typed.MultipartTemplateStrings() {
+			refs = appendFileTemplateRefs(refs, item)
+		}
+	case *MultipartBody:
+		for _, item := range typed.MultipartTemplateStrings() {
+			refs = appendFileTemplateRefs(refs, item)
+		}
+	case []MultipartPart:
+		for _, item := range (&MultipartBody{Parts: typed}).MultipartTemplateStrings() {
+			refs = appendFileTemplateRefs(refs, item)
+		}
+	case MultipartPart:
+		for _, item := range (&MultipartBody{Parts: []MultipartPart{typed}}).MultipartTemplateStrings() {
+			refs = appendFileTemplateRefs(refs, item)
+		}
+	case map[string]string:
+		return appendFileTemplateRefsFromStringMap(refs, typed)
+	case HeaderList:
+		for _, header := range typed {
+			refs = appendFileTemplateRefs(refs, header.Name)
+			refs = appendFileTemplateRefs(refs, header.Value)
+		}
+	case []HeaderEntry:
+		for _, header := range typed {
+			refs = appendFileTemplateRefs(refs, header.Name)
+			refs = appendFileTemplateRefs(refs, header.Value)
+		}
+	case AuthConfig:
+		refs = appendFileTemplateRefs(refs, typed.Username)
+		refs = appendFileTemplateRefs(refs, typed.Password)
+		refs = appendFileTemplateRefs(refs, typed.Token)
+		refs = appendFileTemplateRefs(refs, typed.Domain)
+	case *AuthConfig:
+		if typed != nil {
+			refs = appendFileTemplateRefs(refs, typed.Username)
+			refs = appendFileTemplateRefs(refs, typed.Password)
+			refs = appendFileTemplateRefs(refs, typed.Token)
+			refs = appendFileTemplateRefs(refs, typed.Domain)
+		}
 	case []any:
 		for _, item := range typed {
 			refs = appendFileTemplateRefsFromAny(refs, item)
@@ -1281,6 +1353,15 @@ func appendFileTemplateRefsFromAny(refs []string, value any) []string {
 	case map[string]any:
 		for key, item := range typed {
 			refs = appendFileTemplateRefs(refs, key)
+			if key == "body_multipart" && item != nil {
+				var multipart MultipartBody
+				if decodeHTTPSequenceChildField(item, &multipart) == nil {
+					for _, tpl := range multipart.MultipartTemplateStrings() {
+						refs = appendFileTemplateRefs(refs, tpl)
+					}
+					continue
+				}
+			}
 			refs = appendFileTemplateRefsFromAny(refs, item)
 		}
 	}

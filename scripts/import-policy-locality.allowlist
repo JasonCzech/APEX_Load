@@ -135,6 +135,14 @@ policy:pkg/convert/enterprisearchive/masked_payload.go:applyMaskedBodyReference
 policy:pkg/convert/enterprisearchive/masked_payload.go:maskedBodySecretReference
 policy:pkg/convert/enterprisearchive/masked_payload.go:secretNameForLRUnmaskLocation
 policy:pkg/convert/enterprisearchive/parameters.go:normalizeParameterHeader
+
+# pkg/convert/enterprisearchive/parameters.go
+# LoadRunner's {Param} template grammar: the multipart variant applies the same
+# known-parameter rewrite to {{param.X}} as rewriteKnownParameterReferences
+# does for every other action field, skipping base64-encoded part values. It
+# classifies, sanitizes and redacts nothing.
+policy:pkg/convert/enterprisearchive/parameters.go:rewriteKnownParameterReferencesMultipart
+
 # Delegates the sensitivity decision to credential.SensitiveName; the only local
 # knowledge is which LoadRunner .prm keys (ParamName/ColumnName/...) name a
 # parameter, which is format-specific by definition.

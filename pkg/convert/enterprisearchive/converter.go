@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -480,6 +481,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				pendingHeaders = make(map[string]string)
 			}
 			for k, v := range fn.Headers {
+				deleteHeaderCaseInsensitive(pendingHeaders, k)
 				pendingHeaders[k] = convertParamReferences(v)
 			}
 			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "contributor", "Applied to the next converted request action.", SourceFunctionSupportExecutable))
@@ -491,6 +493,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				autoHeaders = make(map[string]string)
 			}
 			for k, v := range fn.Headers {
+				deleteHeaderCaseInsensitive(autoHeaders, k)
 				autoHeaders[k] = convertParamReferences(v)
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Applied as a persistent auto header until reverted.", SourceFunctionSupportExecutable))
@@ -885,9 +888,19 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					if action.Headers == nil {
 						action.Headers = make(map[string]string)
 					}
-					for k, v := range pendingHeaders {
-						if _, exists := action.Headers[k]; !exists {
+					hasList := len(action.HeaderList) > 0
+					keys := make([]string, 0, len(pendingHeaders))
+					for k := range pendingHeaders {
+						keys = append(keys, k)
+					}
+					sort.Strings(keys)
+					for _, k := range keys {
+						v := pendingHeaders[k]
+						if _, exists := headerValueCaseInsensitive(action.Headers, k); !exists {
 							action.Headers[k] = v
+							if hasList {
+								action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: k, Value: v})
+							}
 						}
 					}
 					pendingHeaders = nil
@@ -896,9 +909,19 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					if action.Headers == nil {
 						action.Headers = make(map[string]string)
 					}
-					for k, v := range autoHeaders {
+					hasList := len(action.HeaderList) > 0
+					keys := make([]string, 0, len(autoHeaders))
+					for k := range autoHeaders {
+						keys = append(keys, k)
+					}
+					sort.Strings(keys)
+					for _, k := range keys {
+						v := autoHeaders[k]
 						if _, exists := headerValueCaseInsensitive(action.Headers, k); !exists {
 							action.Headers[k] = v
+							if hasList {
+								action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: k, Value: v})
+							}
 						}
 					}
 				}
@@ -1190,8 +1213,16 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	for _, fn := range sourceRuntimeControls {
 		reapplySourceRuntimeControlConfig(result, fn)
 	}
-	result.Stats.Extractors -= len(pruneUnusedWholeBodyExtractors(result.Script))
 	if !opts.deferArchiveFinalization {
+		removed := len(pruneUnusedWholeBodyExtractors(result.Script))
+		if removed > 0 {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%d unused whole-response extractors were omitted to keep large responses within runtime extraction bounds", removed))
+			if result.Stats.Extractors >= removed {
+				result.Stats.Extractors -= removed
+			} else {
+				result.Stats.Extractors = 0
+			}
+		}
 		applyEnterpriseRuntimeBindings(
 			result,
 			[]*dsl.Script{result.Script},

@@ -53,7 +53,7 @@ func NewMemoryDraftPorts(owner *importreview.MemoryDraftOwner, scope DraftScopeR
 		}
 		if !opts.SkipDraftAttestation {
 			for _, script := range importreview.UniqueImportDraftScripts(importreview.ImportDraftScriptPointers(opts.Script, opts.Scripts)) {
-				expiry, projection, err := owner.Attach(script, importreview.DraftAttachOptions{Scope: scope(r, script), DisableExpiration: opts.DisableDraftExpiration, RecordingSessionID: opts.RecordingSessionID, RecordingSnapshotDigest: opts.RecordingSnapshotDigest, TextMemo: opts.TextMemo})
+				expiry, projection, err := owner.Attach(script, importreview.DraftAttachOptions{Scope: scope(r, script), DisableExpiration: opts.DisableDraftExpiration, RecordingSessionID: opts.RecordingSessionID, RecordingSnapshotDigest: opts.RecordingSnapshotDigest, RecordingBaseline: opts.RecordingBaseline, TextMemo: opts.TextMemo})
 				if err != nil {
 					rollback()
 					return map[string]any{draftResponseFailureKey: true, draftResponseFailureErrorKey: err}

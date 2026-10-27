@@ -313,6 +313,58 @@ export interface ApplySecretBindingsResponse {
   import_draft_expires_at?: string
 }
 
+export type ConversionPolicy = 'legacy' | 'unified_v1' | (string & {})
+
+export interface ImportEffectiveSettings {
+  conversion_policy?: ConversionPolicy
+  correlation_mode?: string
+  high_confidence_only?: boolean
+  review_only_correlations?: boolean
+  include_assertions?: boolean
+  infer_extractors?: boolean
+  page_title_checks?: boolean
+  resource_mode?: string
+  async_scan?: boolean
+  http_version_mode?: string
+  disable_salesforce?: boolean
+  salesforce_native?: boolean
+  agentforce_transform?: boolean
+  parameterize?: boolean
+  recording_profile_id?: string
+  recording_profile_name?: string
+  source_entry_point?: string
+  capability_notes?: string[]
+  [key: string]: unknown
+}
+
+export interface RecorderParameterizationSelection {
+  id?: string
+  suggestion_id?: string
+  script_index?: number
+  selected_ids?: string[]
+}
+
+export interface RecorderConversionOptions {
+  name?: string
+  parameterize?: boolean
+  conversion_policy?: ConversionPolicy
+  correlation_mode?: string
+  profile_id?: string
+  recording_profile_id?: string
+  resource_mode?: 'runtime' | 'in_step' | 'separate' | (string & {})
+  async_scan?: boolean
+  page_title_checks?: boolean
+  include_assertions?: boolean
+  infer_extractors?: boolean
+  include_static_assets?: boolean
+  http_version_mode?: 'upgrade' | 'exact' | 'inherit' | (string & {})
+  disable_salesforce?: boolean
+  salesforce_native?: boolean
+  agentforce_transform?: boolean
+  parameterization_selections?: Array<string | RecorderParameterizationSelection>
+  secret_bindings?: Array<SecretBindingSelection & { script_index?: number }>
+}
+
 export interface JMeterReviewSummary {
   blocking_behaviors: number
   review_behaviors: number
@@ -330,6 +382,7 @@ export interface ScriptImportResult<
 > {
   scripts: TScript[]
   script?: TScript
+  http_script?: TScript
   scenario_draft?: TScenarioDraft
   scenario_drafts?: TScenarioDraft[]
   warnings: string[]
@@ -342,14 +395,18 @@ export interface ScriptImportResult<
   correlations: TCorrelation[]
   stats: TStats
   summary: TSummary
+  conversion_policy?: ConversionPolicy
+  effective_settings?: ImportEffectiveSettings
   detected_protocol?: DetectedSourceProtocol
   fidelity_report?: EnterpriseArchiveFidelityReport
   review_artifact?: EnterpriseArchiveReviewArtifact
   source_review?: SourceReview
   trueclient2_compat_report?: TrueClient2CompatReport
   parameterization?: Parameterization
+  http_parameterization?: Parameterization
   shared_values?: SharedValues
   secret_binding_requirements?: SecretBindingRequirement[]
+  http_secret_binding_requirements?: SecretBindingRequirement[]
   secret_store?: {
     provider: string
     writable: boolean
@@ -365,6 +422,7 @@ export interface ScriptImportResult<
   expires_at?: string
   import_draft_expires_at?: string
   preflight?: ReplayPreflight
+  http_preflight?: ReplayPreflight
   /** Positional with scripts: the earlier imported script each one would
    * update as a new version, or null. Absent when nothing matches. */
   existing_scripts?: (ImportExistingScript | null)[]

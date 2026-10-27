@@ -128,9 +128,6 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 	method := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringAnyValue(request["method"]), stringAnyValue(request["type"]))))
 	target := stringAnyValue(request["target"])
 	childLabel := fmt.Sprintf("%s.params.requests[%d] %q", label, requestIndex, name)
-	if _, multipart := request["body_multipart"]; multipart {
-		issues = append(issues, childLabel+": body_multipart is not supported in an http_sequence child; use a top-level request step")
-	}
 	payload, marshalErr := json.Marshal(request)
 	var decodedChild Action
 	childDecodeErr := marshalErr
@@ -138,6 +135,37 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 		childDecodeErr = json.Unmarshal(payload, &decodedChild)
 	}
 	knownMalformedField := false
+	if raw, exists := request["body_multipart"]; exists && raw != nil {
+		var multipart MultipartBody
+		if err := decodeHTTPSequenceChildField(raw, &multipart); err != nil {
+			knownMalformedField = true
+			issues = append(issues, fmt.Sprintf("%s.body_multipart must be a valid multipart body", childLabel))
+		} else {
+			issues = append(issues, validateMultipartBodyIssues("http", childLabel, Action{
+				Type:          method,
+				Method:        method,
+				Target:        target,
+				Body:          stringAnyValue(request["body"]),
+				BodyFile:      stringAnyValue(request["body_file"]),
+				BodyEncoding:  stringAnyValue(request["body_encoding"]),
+				BodyMultipart: &multipart,
+			})...)
+		}
+	}
+	if raw, exists := request["attribution"]; exists && raw != nil {
+		var attribution AnalyticsAttribution
+		if err := decodeHTTPSequenceChildField(raw, &attribution); err != nil {
+			knownMalformedField = true
+			issues = append(issues, fmt.Sprintf("%s.attribution must be a valid attribution object", childLabel))
+		} else {
+			if len(attribution.HierarchyPath) > 2048 {
+				issues = append(issues, fmt.Sprintf("%s: attribution hierarchy_path must not exceed 2048 bytes", childLabel))
+			}
+			if len(attribution.PageName) > 512 {
+				issues = append(issues, fmt.Sprintf("%s: attribution page_name must not exceed 512 bytes", childLabel))
+			}
+		}
+	}
 	if raw, exists := request["http_version"]; exists {
 		var version OptionalHTTPVersion
 		if err := decodeHTTPSequenceChildField(raw, &version); err != nil {

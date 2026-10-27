@@ -390,7 +390,11 @@ func applyPersistentCookies(action *dsl.Action, cookies []ParsedCookie, rawURL s
 		matches = append([]string{existing}, matches...)
 		deleteHeaderCaseInsensitive(action.Headers, "Cookie")
 	}
-	action.Headers["Cookie"] = strings.Join(matches, "; ")
+	cookieValue := strings.Join(matches, "; ")
+	action.Headers["Cookie"] = cookieValue
+	if len(action.HeaderList) > 0 {
+		action.HeaderList = append(filterHeaderListCaseInsensitive(action.HeaderList, "Cookie"), dsl.HeaderEntry{Name: "Cookie", Value: cookieValue})
+	}
 }
 
 // isHTMLModeNavigationFunction reports whether a request-shaped source function is

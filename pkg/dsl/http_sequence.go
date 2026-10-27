@@ -188,6 +188,9 @@ func ValidateHTTPConcurrentChild(action Action) error {
 	if action.Control != nil || action.BodyFile != "" {
 		return fmt.Errorf("concurrent child must be an inline HTTP request")
 	}
+	if action.BodyMultipart != nil && (action.Body != "" || action.BodyFile != "" || action.BodyEncoding != "") {
+		return fmt.Errorf("concurrent child cannot combine body_multipart with body, body_file, or body_encoding")
+	}
 	if strings.TrimSpace(action.Target) == "" {
 		return fmt.Errorf("concurrent child requires a target")
 	}

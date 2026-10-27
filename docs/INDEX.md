@@ -111,6 +111,7 @@ not the source of truth for current API or DSL contracts.
 | Document | Status |
 | --- | --- |
 | [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Open implementation and qualification ledger for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
+| [HTTP_AUTHORING_UNIFICATION_PLAN.md](HTTP_AUTHORING_UNIFICATION_PLAN.md) | Proposed HAR/proxy/browser HTTP equivalence, LoadRunner request conformance, shared policy and workflow composition, and adjacent importer consolidation |
 | [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) | HTTP/3 delivery status, quic-go contract, test fixture, and transport decision records (timing, retries, socket ownership, defaults) |
 | [ROADMAP.md](ROADMAP.md) | Remaining engineering work and qualification gates; dated delivery history is archived |
 | [ROADMAP_IMPLEMENTATION_SPEC.md](ROADMAP_IMPLEMENTATION_SPEC.md) | Proposed implementation delta against current main for all remaining roadmap tracks except Messaging and CloudTest outcome parity; dependencies, compatibility and acceptance gates |

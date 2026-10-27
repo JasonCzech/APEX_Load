@@ -107,7 +107,13 @@ func (t *jsTranslator) function(function *ast.FunctionLiteral) {
 	t.locals = map[string]bool{}
 	collectJSLoopLocals(function.Body, t.locals)
 	t.moveTo(function.Function)
-	t.write(string(function.Name.Name) + "()\n{")
+	var params []string
+	for _, binding := range function.ParameterList.List {
+		if ident, ok := binding.Target.(*ast.Identifier); ok && ident.Name != "" {
+			params = append(params, string(ident.Name))
+		}
+	}
+	t.write(string(function.Name.Name) + "(" + strings.Join(params, ", ") + ")\n{")
 	if len(t.locals) > 0 {
 		names := make([]string, 0, len(t.locals))
 		for local := range t.locals {
@@ -189,7 +195,16 @@ func (t *jsTranslator) statement(statement ast.Statement) {
 		t.write(text + ";")
 	case *ast.ReturnStatement:
 		t.moveTo(s.Return)
-		t.write("return 0;")
+		if s.Argument == nil {
+			t.write("return 0;")
+			return
+		}
+		value, reason := t.expression(s.Argument)
+		if reason != "" {
+			t.unsupported(statement, "its return value uses "+reason)
+			return
+		}
+		t.write("return " + value + ";")
 	case *ast.IfStatement:
 		condition, reason := t.expression(s.Test)
 		if reason != "" {
@@ -351,6 +366,9 @@ func (t *jsTranslator) call(call *ast.CallExpression) (string, string) {
 		return "", "a call to " + object + "." + method
 	}
 	function := object + "_" + snakeCase(method)
+	if strings.HasPrefix(function, "web_web_socket_") {
+		function = "web_websocket_" + strings.TrimPrefix(function, "web_web_socket_")
+	}
 	if object == "web" && len(call.ArgumentList) == 1 {
 		if literal, isObject := call.ArgumentList[0].(*ast.ObjectLiteral); isObject {
 			return t.webCall(function, literal)
@@ -419,7 +437,7 @@ func (t *jsTranslator) webCall(function string, literal *ast.ObjectLiteral) (str
 			args = append(args, items...)
 			continue
 		}
-		value, reason := t.attributeValue(keyed.Value)
+		value, reason := t.attributeValueFor(attribute, keyed.Value)
 		if reason != "" {
 			return "", reason
 		}
@@ -450,15 +468,26 @@ func (t *jsTranslator) itemList(expression ast.Expression) ([]string, string) {
 			if !ok || keyed.Computed {
 				return nil, "an item property the JavaScript import does not translate"
 			}
-			value, reason := t.attributeValue(keyed.Value)
+			attribute := jsAttributeName(jsPropertyName(keyed.Key))
+			value, reason := t.attributeValueFor(attribute, keyed.Value)
 			if reason != "" {
 				return nil, reason
 			}
-			out = append(out, cStringLiteral(jsAttributeName(jsPropertyName(keyed.Key))+"="+value))
+			out = append(out, cStringLiteral(attribute+"="+value))
 		}
 		out = append(out, "ENDITEM")
 	}
 	return out, ""
+}
+
+func (t *jsTranslator) attributeValueFor(attribute string, expression ast.Expression) (string, string) {
+	if boolean, ok := expression.(*ast.BooleanLiteral); ok && (strings.EqualFold(attribute, "File") || strings.EqualFold(attribute, "SelectAll")) {
+		if boolean.Value {
+			return "Yes", ""
+		}
+		return "No", ""
+	}
+	return t.attributeValue(expression)
 }
 
 // attributeValue is the text of an attribute value: a string, number or
@@ -501,6 +530,9 @@ func (t *jsTranslator) expression(expression ast.Expression) (string, string) {
 		if ok {
 			if constant, known := jsConstants[object+"."+member]; known {
 				return constant, ""
+			}
+			if object == "web" && strings.HasPrefix(member, "WEB_") {
+				return member, ""
 			}
 		}
 		return "", t.text(e)

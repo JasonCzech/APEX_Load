@@ -4,6 +4,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 type SalesforceHARAugmentation struct {
@@ -17,12 +18,20 @@ type SalesforceHARAugmentation struct {
 }
 
 func AugmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool) SalesforceHARAugmentation {
-	return augmentHARImportWithSalesforce(result, data, projectID, sourceName, source, buildNative, agentforce, requireDetected, salesforce.Analyze)
+	return AugmentHARImportWithSalesforceProfile(result, data, projectID, sourceName, source, buildNative, agentforce, requireDetected, nil)
+}
+
+func AugmentHARImportWithSalesforceProfile(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool, profile *recordingprofile.Profile) SalesforceHARAugmentation {
+	return augmentHARImportWithSalesforceProfile(result, data, projectID, sourceName, source, buildNative, agentforce, requireDetected, profile, salesforce.Analyze)
 }
 
 // Keep the analyzer callback local to one augmentation; concurrent imports do
 // not depend on mutable package-level analysis state.
 func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool, analyze func(*dsl.Script, salesforce.AnalyzeOptions) (*salesforce.Review, error)) SalesforceHARAugmentation {
+	return augmentHARImportWithSalesforceProfile(result, data, projectID, sourceName, source, buildNative, agentforce, requireDetected, nil, analyze)
+}
+
+func augmentHARImportWithSalesforceProfile(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool, profile *recordingprofile.Profile, analyze func(*dsl.Script, salesforce.AnalyzeOptions) (*salesforce.Review, error)) SalesforceHARAugmentation {
 	augmentation := SalesforceHARAugmentation{
 		Script:         result.Script,
 		Correlations:   any(result.Correlations),
@@ -30,17 +39,30 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 		Summary:        HarImportSummary(result),
 		Source:         source,
 	}
-	// Optional review callers stop before matching or correlation when detection
-	// is negative. A detected capture is analyzed only once, including its native
-	// preview; native preparation failures retain the completed review.
-	review, err := analyze(result.Script, salesforce.AnalyzeOptions{
+	analyzeOpts := salesforce.AnalyzeOptions{
 		HARData:               data,
 		Document:              result.Document,
 		RequireDetected:       requireDetected,
 		SkipUndetectedReview:  requireDetected,
 		BuildNativeIfDetected: buildNative,
 		Source:                source,
-	})
+	}
+	if profile != nil {
+		analyzeOpts.CorrelationSettings = &profile.Correlation
+	}
+	if result != nil && result.EffectiveSettings != nil {
+		infer := result.EffectiveSettings.InferExtractors
+		// The generic HAR threshold (HighConfidenceOnly) is false for legacy
+		// HAR imports; native rewrites keep their own threshold.
+		highConf := result.EffectiveSettings.NativeHighConfidenceOnly
+		analyzeOpts.InferExtractors = &infer
+		analyzeOpts.HighConfidenceOnly = &highConf
+		analyzeOpts.ReviewOnlyCorrelations = result.EffectiveSettings.ReviewOnlyCorrelations
+	}
+	// Optional review callers stop before matching or correlation when detection
+	// is negative. A detected capture is analyzed only once, including its native
+	// preview; native preparation failures retain the completed review.
+	review, err := analyze(result.Script, analyzeOpts)
 	if err != nil {
 		if review != nil {
 			result.Warnings = append(result.Warnings, "Salesforce native preview failed: "+err.Error())
@@ -62,8 +84,13 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 	nativeApplied := false
 	if buildNative && review != nil && review.NativePreview != nil && review.NativePreview.Script != nil {
 		augmentation.Script = review.NativePreview.Script
-		augmentation.Source = "salesforce_har"
+		if source == "recorder" {
+			augmentation.Source = "recorder"
+		} else {
+			augmentation.Source = "salesforce_har"
+		}
 		augmentation.Correlations = review.NativePreview.Correlations
+		result.Baseline = review.NativePreview.RemapBaselineObservations(result.Baseline)
 		if augmentation.Script != nil {
 			augmentation.Script.ProjectID = NormalizeProjectID(projectID)
 			// The native builder starts from the HAR script and therefore
@@ -77,7 +104,11 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 			if augmentation.Script.Metadata.Import == nil {
 				augmentation.Script.Metadata.Import = &dsl.ImportMetadata{}
 			}
-			augmentation.Script.Metadata.Import.Source = "salesforce"
+			if source == "recorder" {
+				augmentation.Script.Metadata.Import.Source = "recorder"
+			} else {
+				augmentation.Script.Metadata.Import.Source = "salesforce"
+			}
 		}
 		nativeApplied = true
 	}
