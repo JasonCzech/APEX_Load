@@ -37,7 +37,7 @@ import ScriptImportReview from './ScriptImportReview'
 import { countLabel } from '../utils/numberFormat'
 import { buildImportSaveChoices, importMatchesIdentity, type ImportSaveChoice } from './importReimport'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
-import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
+import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome, archiveScriptFidelityReport } from './enterpriseArchiveReviewOutcome'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, importReviewFindings, readinessCounts, readinessSummaryText, unresolvedIssueCount, type ImportReadiness, type IssueCategory } from './importReviewIssues'
 import SharedAssetsDialog from './SharedAssetsDialog'
@@ -1642,7 +1642,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const dependencyBundle = javaDependencyInventory(reviewArtifact?.metadata)?.classification === 'java_dependency_bundle'
-  const fidelityReport = result?.fidelity_report ?? result?.summary?.fidelity_report ?? null
+  const fidelityReport = archiveScriptFidelityReport(importedScript, result)
   const currentRequiredFileCandidates = useMemo(
     () => parseRequiredJavaFilesFromFidelityBlockers(fidelityReport?.blockers || []),
     [fidelityReport?.blockers],
@@ -4678,7 +4678,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     setReviewArtifactPersistenceInProgress(true)
     setError('')
     try {
-      const currentFidelityReport = currentResult?.fidelity_report ?? currentResult?.summary?.fidelity_report ?? null
+      const currentFidelityReport = archiveScriptFidelityReport(preparedDraft, currentResult)
       const currentCombinedJavaVuser = currentDetectedProtocol?.import_mode === 'external_runner_required' && (
         currentDetectedProtocol?.apexload_protocol === 'java_vuser' ||
         currentDetectedProtocol?.canonical_source_protocol === 'java_vuser' ||
@@ -5672,7 +5672,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               // The repair re-discovers this one script, so the server numbers its requirements from 0.
               const repairedRequirements = repaired.secret_binding_requirements.map(requirement => ({ ...requirement, script_index: selectedResultScriptIndex, script_name: reviewedName }))
               nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
-              markReviewedDraftEdit(selectedItem.id, { result: { ...result, script: nextScripts[0], scripts: nextScripts, import_draft_expires_at: repaired.expires_at, fidelity_report: repaired.fidelity_report, secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, selectedResultScriptIndex, importedScript, repairedRequirements) }, replayValidationLoading: false, replayValidationError: '', replayValidationWarnings: [], replayValidationSession: null, replayReviewGeneration: -1, replayScriptIndex: -1, replayProjectId: '', notice: 'Repair applied. Requirements were refreshed from the protected draft.' })
+              markReviewedDraftEdit(selectedItem.id, { result: { ...result, script: nextScripts[0], scripts: nextScripts, import_draft_expires_at: repaired.expires_at, ...(nextScripts.length === 1 ? { fidelity_report: repaired.fidelity_report } : {}), secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, selectedResultScriptIndex, importedScript, repairedRequirements) }, replayValidationLoading: false, replayValidationError: '', replayValidationWarnings: [], replayValidationSession: null, replayReviewGeneration: -1, replayScriptIndex: -1, replayProjectId: '', notice: 'Repair applied. Requirements were refreshed from the protected draft.' })
             }} />}
             <div
               className="lr-validation-review-overview"

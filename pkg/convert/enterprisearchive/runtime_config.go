@@ -4596,10 +4596,10 @@ func isSourceTLSMigration(v string) bool {
 
 func sourceTLSMigrationWarning(v string) string {
 	if strings.EqualFold(strings.TrimSpace(v), "auto") {
-		return fmt.Sprintf("Automatic SSL/TLS selection %q was replaced with TLS 1.3; replay requires a TLS 1.3-capable endpoint instead of the original automatic protocol selection.", v)
+		return fmt.Sprintf("Automatic SSL/TLS selection %q was replaced with TLS 1.3 as an import-time default instead of the original automatic protocol selection; replay requires an endpoint compatible with the final configured TLS range.", v)
 	}
 	if isLegacySSLVersion(v) {
-		return fmt.Sprintf("Legacy SSL version %q was replaced with TLS 1.3; replay requires a TLS 1.3-capable endpoint and does not reproduce the original SSL handshake.", v)
+		return fmt.Sprintf("Legacy SSL version %q was replaced with TLS 1.3 as an import-time default; replay requires an endpoint compatible with the final configured TLS range and does not reproduce the original SSL handshake.", v)
 	}
 	return fmt.Sprintf("Unsupported SSL/TLS version %q; leaving APEX TLS defaults unchanged and requiring review.", v)
 }
