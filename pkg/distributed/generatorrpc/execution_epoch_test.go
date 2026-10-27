@@ -458,7 +458,10 @@ func TestExecutionEpochDelayedSameGenerationClaimCannotShortenExpiry(t *testing.
 
 func TestExecutionEpochExpiryAlsoStopsStrandedLegacyWork(t *testing.T) {
 	service := newEpochTestService(t, filepath.Join(t.TempDir(), "epoch.json"))
-	if ack := claimEpoch(t, service, 8, 80*time.Millisecond); !ack.GetAccepted() {
+	// A claim is accepted only if it is still unexpired once its epoch state
+	// is durable; 80 ms did not cover that under the race detector on CI. The
+	// expiry wait below allows 2 s.
+	if ack := claimEpoch(t, service, 8, 500*time.Millisecond); !ack.GetAccepted() {
 		t.Fatalf("claim rejected: %s", ack.GetErrorMessage())
 	}
 	service.mu.Lock()
