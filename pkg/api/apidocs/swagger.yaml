@@ -365012,9 +365012,6 @@ paths:
                             rss_per_vuser_target_bytes:
                               type: integer
                               format: int64
-                            rss_per_vuser_target_mb:
-                              type: integer
-                              format: int64
                           required:
                             - action_overhead_target_ms
                             - launch_p50_target_ms
@@ -370539,9 +370536,6 @@ paths:
                             rss_attribution:
                               type: string
                             rss_per_vuser_target_bytes:
-                              type: integer
-                              format: int64
-                            rss_per_vuser_target_mb:
                               type: integer
                               format: int64
                           required:

@@ -230,34 +230,48 @@ The default browser envelope remains:
 
 The published Chromium target of **less than 250 MB** means **less than
 250,000,000 bytes**, not 250 MiB (262,144,000 bytes). The benchmark acceptance API
-retains the decimal `rss_per_vuser_target_mb` field and adds the authoritative
-`rss_per_vuser_target_bytes` with measurement version
-`apexload.browser_benchmark.v2`. The target and five-repetition/density requirements
-are unchanged.
+publishes the authoritative `rss_per_vuser_target_bytes` (`250000000`) and omits
+the legacy ambiguous `rss_per_vuser_target_mb` field under measurement version
+`apexload.browser_benchmark.v3`. Capacity planning converts the decimal MB tier
+budgets (`180`, `220`, `260`, `280` decimal MB around the `250,000,000`-byte
+target) into binary MiB (`browserDecimalMBToMiB`) to match `Generator.MemoryMB`
+(`8192` MiB = 8 GiB), and observer-group scaling caps `observerMaxVUsers` at `5`
+to match `MaximumClaimedVUsersPerGenerator: 5`. The target and
+five-repetition/density requirements are unchanged.
 
 Historical `apexload.browser_benchmark.v1` artifacts calculated `peak_rss_mb` and
-host `memory_mb` in binary MiB despite those field names. Keep those files and
+host `memory_mb` in binary MiB despite those field names, and `apexload.browser_benchmark.v2`
+included a transitional host `memory_mib` field. Keep those historical files and
 their hashes intact; interpret their recorded values using 1 MiB = 1,048,576
-bytes. New v2 artifacts retain `peak_rss_bytes`, or null when no process could be
-read, and host `memory_bytes` plus an explicit `memory_mib` display. They count
-all attempted RSS snapshots, including partial and unavailable samples and name the observed process population.
-New Go benchmark output uses `rss_bytes/op` and `rss_mib/op`; it refuses an
-unavailable or non-finite process snapshot instead of reporting a measured zero.
-Its byte display preserves the platform sampler's resolution (for example,
-KiB from `ps`); converting units does not add measurement precision.
+bytes. New `apexload.browser_benchmark.v3` artifacts emit only byte-denominated
+memory fields (`per_vuser_rss_bytes`, optional Linux `per_vuser_pss_bytes`,
+`fixed_overhead_bytes`, `peak_rss_bytes`, and host `memory_bytes`), or null when
+unavailable, along with `rss_attribution` (`cdp_renderer_per_vuser` on Chromium,
+`unavailable` on WebKit) and `action_overhead_ms` / `action_overhead_kind`. They
+count all attempted RSS snapshots, including partial and unavailable samples, and
+name the observed process population. New Go benchmark output uses `rss_bytes/op`,
+`per_vuser_rss_bytes/op`, `fixed_overhead_bytes/op`, and `action_overhead_ms/op`;
+it refuses an unavailable or non-finite process snapshot instead of reporting a
+measured zero. Its byte display preserves the platform sampler's resolution (for
+example, KiB from `ps` or `/proc/<pid>/smaps_rollup`); converting units does not
+add measurement precision.
 
-`TestBrowserBenchmark` samples the test process's observed descendants, including
-the Playwright driver and browser. Its maximum is the largest observed snapshot,
-not a continuously measured peak or independent per-VUser attribution. Process
-creation/exit and enumeration can omit work; partial or unavailable samples cannot
-establish an upper memory bound. The separate Chromium Go RSS benchmark observes
-the shared Playwright driver's descendant process tree (or the driver if no
-children are observed). Concurrent sessions and shared process costs must be
-isolated or accounted for before claiming per-VUser density. These values cannot substitute
-for a qualified per-VUser reference measurement. WebKit RSS benchmark qualification
-stays unavailable. Acceptance requests remain pending review or failed, never
-passed automatically. See the [units review](qa/reviews/roadmap-browser-benchmark-units-2026-10-20/README.md)
-for local contract tests; reference-host qualification remains pending.
+For Chromium profiles (`desktop_1080p`, `pixel_8`), `TestBrowserBenchmark`,
+`BenchmarkBrowserRSSPerChromiumDeviceProfile`, and `TestBrowserVUserMarginalRSS`
+query `SystemInfo.getProcessInfo` over a browser-level CDP session before and
+after creating isolated `BrowserContext`s, attributing newly spawned `renderer`
+PIDs to `per_vuser_rss_bytes` (plus Linux `/proc/<pid>/smaps_rollup` `Pss` in
+`per_vuser_pss_bytes`) while partitioning the Playwright driver and shared
+`browser` / `gpu` / `utility` / `zygote` processes into `fixed_overhead_bytes`.
+`TestBrowserBenchmark` also retains the combined descendant-tree peak in
+`peak_rss_bytes` with `rss_population: "observed_test_process_descendants"`.
+WebKit exposes neither `Browser.NewBrowserCDPSession` nor `SystemInfo.getProcessInfo`,
+so WebKit profiles explicitly record `rss_attribution: "unavailable"`, leave
+`per_vuser_rss_bytes`, `fixed_overhead_bytes`, and `peak_rss_bytes` null, and keep
+`rss_per_vuser_target_bytes` omitted (`0`). Acceptance requests remain pending
+review or failed, never passed automatically. See the [units review](qa/reviews/roadmap-browser-benchmark-units-2026-10-20/README.md)
+and [per-VUser attribution review](qa/reviews/roadmap-browser-vuser-attribution-2026-10-26/README.md)
+for local contract tests; reference-host qualification remains pending (`BE-C2`).
 
 ##### Desktop Chromium 1080p
 
@@ -266,8 +280,8 @@ for local contract tests; reference-host qualification remains pending.
 | Profile ID | `desktop_chromium_1080p` |
 | Browser engine | Chromium |
 | Device profile | `desktop_1080p` |
-| Acceptance | Launch p50 < 3000 ms, action overhead < 10 ms, Chromium RSS < 250 MB per browser VUser |
-| RSS attribution | Observed shared Playwright driver descendants, with driver fallback; not per-VUser attribution |
+| Acceptance | Launch p50 < 3000 ms, action overhead < 10 ms, Chromium RSS < 250 MB (250,000,000 bytes) per browser VUser |
+| RSS attribution | `cdp_renderer_per_vuser` (`SystemInfo.getProcessInfo` renderer PIDs per `BrowserContext`, separate from `fixed_overhead_bytes`) |
 | Evidence level | Code + docs + release artifact required |
 
 ##### Mobile Chromium Pixel 8
@@ -277,8 +291,8 @@ for local contract tests; reference-host qualification remains pending.
 | Profile ID | `mobile_chromium_pixel_8` |
 | Browser engine | Chromium |
 | Device profile | `pixel_8` |
-| Acceptance | Launch p50 < 3000 ms, touch overhead < 10 ms, Chromium RSS < 250 MB per browser VUser |
-| RSS attribution | Observed shared Playwright driver descendants, with driver fallback; not per-VUser attribution |
+| Acceptance | Launch p50 < 3000 ms, touch overhead < 10 ms, Chromium RSS < 250 MB (250,000,000 bytes) per browser VUser |
+| RSS attribution | `cdp_renderer_per_vuser` (`SystemInfo.getProcessInfo` renderer PIDs per `BrowserContext`, separate from `fixed_overhead_bytes`) |
 | Evidence level | Code + docs + release artifact required |
 
 ##### Mobile WebKit iPhone 15 Pro
@@ -289,7 +303,7 @@ for local contract tests; reference-host qualification remains pending.
 | Browser engine | WebKit |
 | Device profile | `iphone_15_pro` |
 | Acceptance | Launch p50 < 3000 ms, touch overhead < 10 ms |
-| RSS attribution | Not qualified by this benchmark; use host-level memory telemetry |
+| RSS attribution | `unavailable` (WebKit has no CDP `SystemInfo.getProcessInfo`; use launch/action latency plus host-level memory telemetry) |
 | Evidence level | Code + docs + release artifact required |
 
 #### Environment Matrix
@@ -314,7 +328,7 @@ The benchmark suite covers:
 - touch or click action latency against a local HTML fixture
 - Chromium browser-process RSS per device profile when `browser.client_metrics` is enabled
 
-WebKit profiles are included for launch and action-latency coverage. This RSS benchmark runs only for the declared Chromium profiles and reads the OS process tree rooted at the shared Playwright driver; it is not a CDP or per-VUser memory measurement. WebKit RSS qualification remains pending.
+WebKit profiles are included for launch and action-latency coverage. The RSS benchmark runs only for the declared Chromium profiles and attributes per-context renderer RSS (`per_vuser_rss_bytes/op`) separately from shared browser/driver overhead (`fixed_overhead_bytes/op`) via CDP `SystemInfo.getProcessInfo`. WebKit RSS attribution remains `"unavailable"`.
 
 ### Prerequisites
 
@@ -353,7 +367,7 @@ Use the conservative targets from `docs/ROADMAP.md#browser-and-mobile` until mea
 |:---|:---|
 | Browser init with device profile | p50 under 3s on the benchmark host |
 | Touch action latency over click baseline | under 10ms additional median latency |
-| Chromium RSS per mobile browser VUser | under 250 MB per browser process |
+| Chromium RSS per mobile browser VUser | under 250 MB (250,000,000 bytes) per browser VUser |
 
 Treat failures as capacity guidance, not necessarily product defects. The first response should be to lower concurrent browser VUser recommendations for that host class.
 

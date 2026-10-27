@@ -478,3 +478,24 @@ func TestDistributeTargetVUsersForGoalObserverOnly(t *testing.T) {
 		t.Errorf("observer-only distribution = %v, want pinned 3", targets)
 	}
 }
+
+func TestObserverGroupMaxVUsersMatchesCanaryEnvelope(t *testing.T) {
+	envelope := browserDiagnosticCanaryEnvelope()
+	if observerMaxVUsers != 5 || observerMaxVUsers != envelope.MaximumClaimedVUsersPerGenerator {
+		t.Fatalf("observerMaxVUsers = %d, want 5 matching MaximumClaimedVUsersPerGenerator (%d)", observerMaxVUsers, envelope.MaximumClaimedVUsersPerGenerator)
+	}
+	test := &ManagedTest{
+		ID:       "run",
+		Status:   "RUNNING",
+		Duration: time.Minute,
+		Groups:   []TestGroup{{Name: "canary", Role: GroupRoleObserver, VUsers: 2}},
+	}
+	atCap := 5
+	if _, _, err := applyRuntimeAdjustmentRequest(test, RuntimeAdjustmentRequest{Groups: []RuntimeAdjustmentGroupRequest{{Name: "canary", TargetDuration: "1m", TargetVUsers: &atCap}}}); err != nil {
+		t.Fatalf("expected observer group at 5 VUsers to pass: %v", err)
+	}
+	overCap := 6
+	if _, _, err := applyRuntimeAdjustmentRequest(test, RuntimeAdjustmentRequest{Groups: []RuntimeAdjustmentGroupRequest{{Name: "canary", TargetDuration: "1m", TargetVUsers: &overCap}}}); err == nil {
+		t.Fatal("expected observer group at 6 VUsers to be rejected")
+	}
+}

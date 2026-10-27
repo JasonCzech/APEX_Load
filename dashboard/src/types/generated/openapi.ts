@@ -66411,7 +66411,6 @@ export interface operations {
                 "required_raw_run_count": number;
                 "rss_attribution": string;
                 "rss_per_vuser_target_bytes"?: number;
-                "rss_per_vuser_target_mb"?: number;
               };
               "artifact_path": string;
               "benchmark_commands": Array<string>;
@@ -73056,7 +73055,6 @@ export interface operations {
                 "required_raw_run_count": number;
                 "rss_attribution": string;
                 "rss_per_vuser_target_bytes"?: number;
-                "rss_per_vuser_target_mb"?: number;
               };
               "artifact_path": string;
               "benchmark_commands": Array<string>;
