@@ -23,17 +23,21 @@ func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, sele
 			Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 		})
 	}
+	timeout := b.actionTimeout(action)
+	if err := b.waitVisibleWithTimeout(ctx, selector, timeout); err != nil {
+		return err
+	}
 	page := b.currentPage()
 	if page == nil {
 		return fmt.Errorf("browser tap failed: no active page")
 	}
 	return firstMatch(page, selector).Tap(playwright.LocatorTapOptions{
-		Timeout: playwright.Float(b.timeoutMS(ctx, b.actionTimeout(action))),
+		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})
 }
 
 func (b *Browser) shouldUseSyntheticTap() bool {
-	return true
+	return !b.touchMode
 }
 
 func syntheticTapOperation() string {

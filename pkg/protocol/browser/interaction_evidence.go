@@ -426,11 +426,10 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
 		case navigated:
 			interaction.UnavailableReason = protocol.InteractionUnavailableDocumentChanged
+		case b.syntheticGesture(kind):
+			interaction.UnavailableReason = protocol.InteractionUnavailableSyntheticDispatch
 		default:
 			interaction.Points, interaction.PointerType = browserInteractionPoints(kind, page)
-			if len(interaction.Points) == 0 && b.syntheticGesture(kind) {
-				interaction.UnavailableReason = protocol.InteractionUnavailableSyntheticDispatch
-			}
 		}
 	}
 	// Keyboard-style gestures (and a check) name their target; a scroll

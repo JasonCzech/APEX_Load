@@ -71,10 +71,11 @@ type cdpRequestRecord struct {
 	wallMS                       float64
 	// timestampS is the monotonic request time; startMS is Playwright's
 	// start (wall time shifted by the response's requestTime) once known.
-	timestampS                     float64
-	startMS                        float64
-	initiatorType, initiatorOrigin string
-	cacheKnown, cached             bool
+	timestampS                        float64
+	startMS                           float64
+	initiatorType, initiatorOrigin    string
+	cacheKnown, cached                bool
+	serviceWorkerKnown, serviceWorker bool
 	// protocol is CDP's Response.protocol, bounded; responded records that
 	// a responseReceived event arrived at all.
 	protocol  string
@@ -313,7 +314,8 @@ func (b *Browser) observeCDPRequest(state *cdpEvidencePage, params map[string]an
 	}
 	// A redirect ends the previous hop of the same CDP request.
 	if previous := state.latest[requestID]; previous != nil && redirect != nil {
-		previous.cacheKnown, previous.cached = true, cdpCached(redirect)
+		previous.cacheKnown, previous.cached = true, cdpCached(redirect) || state.served[requestID]
+		previous.serviceWorkerKnown, previous.serviceWorker = true, cdpServiceWorker(redirect)
 		previous.startMS = cdpStartMS(previous, redirect, state.served[requestID])
 		recordCDPProtocol(previous, redirect)
 	}
@@ -330,6 +332,11 @@ func cdpCached(response map[string]any) bool {
 	disk, _ := response["fromDiskCache"].(bool)
 	prefetch, _ := response["fromPrefetchCache"].(bool)
 	return disk || prefetch
+}
+
+func cdpServiceWorker(response map[string]any) bool {
+	sw, _ := response["fromServiceWorker"].(bool)
+	return sw
 }
 
 // cdpStartMS reproduces Playwright's request start: the wall time shifted
@@ -356,6 +363,7 @@ func (b *Browser) observeCDPResponse(state *cdpEvidencePage, params map[string]a
 	}
 	if record := state.latest[requestID]; record != nil && response != nil {
 		record.cacheKnown, record.cached = true, cdpCached(response) || state.served[requestID]
+		record.serviceWorkerKnown, record.serviceWorker = true, cdpServiceWorker(response)
 		record.startMS = cdpStartMS(record, response, state.served[requestID])
 		recordCDPProtocol(record, response)
 	}
@@ -384,6 +392,9 @@ func (b *Browser) observeCDPCacheHit(state *cdpEvidencePage, params map[string]a
 	state.served[requestID] = true
 	if record := state.latest[requestID]; record != nil {
 		record.cacheKnown, record.cached = true, true
+		if !record.serviceWorkerKnown {
+			record.serviceWorkerKnown, record.serviceWorker = true, false
+		}
 		record.startMS = record.wallMS
 	}
 }
@@ -615,7 +626,14 @@ func (b *Browser) associateCDPLocked(v *protocol.BrowserResourceEvidence, join r
 	if !pwKnown && len(s.pwFrameCDP) < browserFrameIdentityLimit {
 		s.pwFrameCDP[join.frame], s.cdpFramePW[record.frameID] = record.frameID, join.frame
 	}
-	v.Protocol, v.ProtocolUnavailableReason = browserResourceProtocol(record.protocol, record.responded, record.cacheKnown && record.cached, v.ServiceWorker)
+	if record.serviceWorkerKnown {
+		sw := record.serviceWorker
+		if v.ServiceWorker != nil && *v.ServiceWorker {
+			sw = true
+		}
+		v.ServiceWorker, v.ServiceWorkerUnavailableReason = &sw, ""
+	}
+	v.Protocol, v.ProtocolUnavailableReason = browserResourceProtocol(record.protocol, record.responded || (record.cacheKnown && record.cached), record.cacheKnown && record.cached, v.ServiceWorker)
 	if record.cacheKnown {
 		cached := record.cached
 		v.Cache, v.CacheUnavailableReason = &cached, ""

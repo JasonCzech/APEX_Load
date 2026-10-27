@@ -1,0 +1,244 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interaction Groups Ground Truth Fixture</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="fixture-status">initializing</div>
+  <div id="cls-banner"></div>
+  <div id="ig-grid"></div>
+  <div id="frame-slot"></div>
+  <div id="cls-stage">
+    <div id="cls-box">CLS Session Window Target</div>
+  </div>
+  <script>
+    (() => {
+      const groundTruth = [];
+      window.__apexGroundTruth = groundTruth;
+      const supported = (typeof PerformanceObserver === 'function' && Array.isArray(PerformanceObserver.supportedEntryTypes))
+        ? PerformanceObserver.supportedEntryTypes.slice()
+        : [];
+      let observedShifts = 0;
+
+      const clsBanner = document.getElementById('cls-banner');
+      const clsBox = document.getElementById('cls-box');
+      let shiftsDone = !supported.includes('layout-shift');
+      let shiftsStarted = false;
+      let swDone = false;
+      let frameDone = false;
+      let waitTicks = 0;
+      let shiftStage = 0;
+      const checkReady = () => {
+        if (swDone && frameDone && !shiftsStarted) {
+          shiftsStarted = true;
+          runShifts();
+        }
+        if (!shiftsDone || !swDone || !frameDone) {
+          waitTicks++;
+          document.getElementById('fixture-status').textContent = 'waiting:' + observedShifts + ':' + waitTicks;
+          requestAnimationFrame(() => setTimeout(checkReady, 40));
+          return;
+        }
+        document.getElementById('fixture-status').textContent = 'ready_for_interactions';
+      };
+
+      if (supported.includes('layout-shift')) {
+        new PerformanceObserver(list => {
+          for (const e of list.getEntries()) {
+            groundTruth.push({
+              kind: 'layout_shift',
+              value: e.value,
+              start_time_ms: e.startTime,
+              had_recent_input: Boolean(e.hadRecentInput)
+            });
+            if (!e.hadRecentInput) {
+              observedShifts++;
+              if (shiftStage === 1) {
+                shiftStage = 2;
+                setTimeout(() => {
+                  clsBanner.style.height = '110px';
+                  clsBox.style.top = '115px';
+                }, 200);
+              } else if (shiftStage === 2) {
+                shiftStage = 3;
+                setTimeout(() => {
+                  clsBanner.style.height = '20px';
+                  clsBox.style.top = '55px';
+                }, 1350);
+              } else if (shiftStage === 3 && observedShifts >= 3) {
+                shiftsDone = true;
+              }
+            }
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+      }
+
+      let minInteraction = Infinity;
+      let maxInteraction = 0;
+      if (supported.includes('event')) {
+        new PerformanceObserver(list => {
+          for (const e of list.getEntries()) {
+            if (e.interactionId) {
+              minInteraction = Math.min(minInteraction, e.interactionId);
+              maxInteraction = Math.max(maxInteraction, e.interactionId);
+            }
+            groundTruth.push({
+              kind: 'event_timing',
+              interaction_id: e.interactionId || 0,
+              duration_ms: e.duration,
+              start_time_ms: e.startTime,
+              name: e.name || ''
+            });
+          }
+        }).observe({ type: 'event', buffered: true, durationThreshold: 0 });
+      }
+
+      const currentInteractionCount = () => {
+        if ('interactionCount' in performance && performance.interactionCount > 0) {
+          return performance.interactionCount;
+        }
+        return maxInteraction ? Math.round((maxInteraction - minInteraction) / 7) + 1 : 0;
+      };
+
+      const seenGroups = new Set();
+      let settled = false;
+      const maybeSettleInteractions = () => {
+        if (settled || seenGroups.size < 52) {
+          return;
+        }
+        settled = true;
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            groundTruth.push({
+              kind: 'summary',
+              interaction_count: currentInteractionCount(),
+              distinct_groups: seenGroups.size,
+              supported_entry_types: supported
+            });
+            document.getElementById('fixture-status').textContent = 'interactions_settled';
+          }, 120);
+        });
+      };
+
+      window.__apexRecordInteraction = (groupID, targetType, frameScope, isTrusted, delayMS) => {
+        if (delayMS > 0) {
+          const end = performance.now() + delayMS;
+          while (performance.now() < end) {}
+        }
+        seenGroups.add(groupID);
+        groundTruth.push({
+          kind: 'interaction',
+          group_id: groupID,
+          target_type: targetType,
+          frame_scope: frameScope,
+          is_trusted: Boolean(isTrusted),
+          seeded_delay_ms: delayMS,
+          at_ms: performance.now()
+        });
+        maybeSettleInteractions();
+      };
+
+      const grid = document.getElementById('ig-grid');
+      for (let i = 1; i <= 50; i++) {
+        let el;
+        let id;
+        let targetType;
+        if (i <= 40) {
+          el = document.createElement('button');
+          id = 'grp-btn-' + i;
+          targetType = 'button';
+          el.textContent = 'B' + i;
+        } else if (i <= 45) {
+          el = document.createElement('a');
+          id = 'grp-link-' + i;
+          targetType = 'link';
+          el.href = '#g' + i;
+          el.textContent = 'L' + i;
+        } else {
+          el = document.createElement('input');
+          id = 'grp-input-' + i;
+          targetType = 'input';
+          el.type = 'button';
+          el.value = 'I' + i;
+        }
+        el.id = id;
+        el.className = 'ig-target';
+        el.setAttribute('data-group', String(i));
+        const delayMS = i === 1 ? 350 : (i === 2 ? 250 : (i === 50 ? 64 : 0));
+        el.addEventListener('click', event => {
+          if (targetType === 'link') {
+            event.preventDefault();
+          }
+          window.__apexRecordInteraction(id, targetType, 'main_frame', Boolean(event.isTrusted), delayMS);
+        });
+        grid.appendChild(el);
+      }
+
+      const runShifts = () => {
+        if (!supported.includes('layout-shift')) {
+          shiftsDone = true;
+          return;
+        }
+        shiftStage = 1;
+        let pulse = false;
+        const kickFirstShift = () => {
+          if (shiftStage !== 1) {
+            return;
+          }
+          pulse = !pulse;
+          clsBanner.style.height = pulse ? '45px' : '10px';
+          clsBox.style.top = pulse ? '45px' : '10px';
+          setTimeout(kickFirstShift, 180);
+        };
+        setTimeout(kickFirstShift, 180);
+      };
+
+      const attachChildFrame = () => {
+        const iframe = document.createElement('iframe');
+        iframe.id = 'child-frame';
+        iframe.src = '/frame.html';
+        iframe.addEventListener('load', () => {
+          frameDone = true;
+          checkReady();
+        });
+        document.getElementById('frame-slot').appendChild(iframe);
+      };
+      if (document.readyState === 'complete') {
+        attachChildFrame();
+      } else {
+        window.addEventListener('load', attachChildFrame, { once: true });
+      }
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+          .then(() => navigator.serviceWorker.ready)
+          .then(() => new Promise(resolve => {
+            if (navigator.serviceWorker.controller) {
+              resolve();
+              return;
+            }
+            navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true });
+          }))
+          .then(() => fetch('/sw-cached.json'))
+          .then(r => r.text())
+          .then(text => {
+            groundTruth.push({ kind: 'service_worker', path: '/sw-cached.json', payload: text });
+            swDone = true;
+            checkReady();
+          })
+          .catch(err => {
+            groundTruth.push({ kind: 'service_worker', path: '/sw-cached.json', payload: 'error:' + err });
+            swDone = true;
+            checkReady();
+          });
+      } else {
+        swDone = true;
+        checkReady();
+      }
+    })();
+  </script>
+</body>
+</html>
