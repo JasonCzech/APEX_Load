@@ -672,3 +672,29 @@ it('opens a configuration reference reached from its step as the configuration c
     expectConfigurationIssue()
   } finally { await act(async () => root.unmount()); container.remove(); mock.request.mockReset(); vi.clearAllMocks() }
 })
+
+it.each(['legacy_tls_replacement', 'diagnostic:warnings:tls', 'diagnostic:warnings:migration'])('edits %s inline without protected repair storage', async code => {
+ const { ImportSettingsProvider } = await import('./ImportSettingsContext')
+ const script = { name: 'TLS draft', version: '1', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'signed:tls' } } } } as unknown as ScriptDefinition
+ const detail = code.endsWith('migration') ? 'Automatic SSL/TLS selection "AUTO" was replaced with TLS 1.3' : 'web_set_sockets_option SSL_VERSION="AUTO" is unsupported; select a supported TLS range'
+ const finding = { code, action_path: 'init[0]', detail, gate: code.startsWith('diagnostic:') ? 'promotion' : 'execution' }
+ const issue = groupImportFindings([finding], script)[0]
+ const container = document.createElement('div'); document.body.append(container); const root = createRoot(container)
+ const button = (text: string) => [...container.querySelectorAll('button')].find(b => b.textContent === text)!
+ try {
+  await act(async () => root.render(<ImportSettingsProvider script={script} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportGuidedRepair script={script} projectId="p" issues={[issue]} regroup={() => []} onApplied={vi.fn()} /></ImportSettingsProvider>))
+  await act(async () => container.querySelector<HTMLButtonElement>('.lr-issue-row')!.click())
+  expect(container.querySelector('[aria-label="TLS settings"]')).toBeTruthy()
+  expect(container.textContent).not.toContain('Open all runtime settings')
+  await act(async () => button('Edit HTTP here').click())
+  const minimum = container.querySelector<HTMLSelectElement>('[aria-label="HTTP: Minimum TLS version"]')!
+  await choose(minimum, '1.3')
+  await act(async () => button('Preview HTTP changes').click())
+  expect(mock.request).not.toHaveBeenCalled()
+  expect(container.querySelector('[aria-label="HTTP change preview"]')?.textContent).toContain('1.3')
+  mock.request.mockResolvedValue({ script, findings: [], readiness: {}, secret_binding_requirements: [] })
+  await act(async () => button('Apply HTTP changes').click())
+  expect(mock.request.mock.calls[0][0]).toBe('/scripts/import/settings')
+  expect(JSON.parse(mock.request.mock.calls[0][1].body).changes).toEqual([{path:'config.http.tls.min_version', value:'1.3'}])
+ } finally { await act(async () => root.unmount()); container.remove(); mock.request.mockReset() }
+})

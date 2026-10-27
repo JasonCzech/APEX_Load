@@ -305,7 +305,7 @@ func applySourceSocketOptionConfig(result *ConvertResult, fn ParsedFunction) map
 			result.Script.Config.HTTP.TLS.MaxVersion = mapped
 			details["mapped_to"] = "config.http.tls"
 			details["mapped_value"] = mapped
-			if isLegacySSLVersion(value) {
+			if isSourceTLSMigration(value) {
 				details["migration_warning"] = sourceTLSMigrationWarning(value)
 			}
 		} else {

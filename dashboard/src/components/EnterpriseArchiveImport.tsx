@@ -4529,6 +4529,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     _selectedIds: string[],
     importDraftExpiresAt?: string,
     refreshedRequirements?: EnterpriseArchiveImportResult['secret_binding_requirements'],
+    refreshedFidelity?: EnterpriseArchiveImportResult['fidelity_report'],
   ) => {
     if (!selectedItem || !result || !importedScript) return
     const nextScripts = resultScripts.map((script, index) => index === activeResultScriptIndex ? parameterizedScript : script)
@@ -4537,7 +4538,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       ...(refreshedRequirements ? { secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, activeResultScriptIndex, parameterizedScript, refreshedRequirements.map(requirement => ({ ...requirement, script_index: activeResultScriptIndex }))) } : {}),
       script: nextScripts[0],
       scripts: nextScripts,
-      ...(nextScripts.length === 1 ? { import_draft_expires_at: importDraftExpiresAt } : {}),
+      ...(nextScripts.length === 1 ? { import_draft_expires_at: importDraftExpiresAt, ...(refreshedFidelity ? { fidelity_report: refreshedFidelity } : {}) } : {}),
     }
     latestPreparedReviewRef.current = {
       itemId: selectedItem.id,
@@ -5588,7 +5589,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             onParameterizationApplied={handleParameterizationApplied}
             onSettingsBusyChange={setSettingsEditing}
             onSettingsApplied={updated => {
-              handleParameterizationApplied(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])
+              handleParameterizationApplied(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [], updated.fidelity_report)
               setProtectedReview(null)
               if (selectedItem) updateImportItem(selectedItem.id, { reviewMode: 'conversion', status: 'converted', notice: 'Settings applied to the reviewed draft.' })
             }}

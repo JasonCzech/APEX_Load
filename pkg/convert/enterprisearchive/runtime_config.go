@@ -4573,7 +4573,7 @@ func cloneStringMap(values map[string]string) map[string]string {
 
 // mapSSLVersion converts source SSL version identifiers to standard version strings.
 func mapSSLVersion(v string) string {
-	if isLegacySSLVersion(v) {
+	if isSourceTLSMigration(v) {
 		return "1.3"
 	}
 	mapped, _ := mapSSLVersionExact(v)
@@ -4590,7 +4590,14 @@ func isLegacySSLVersion(v string) bool {
 	}
 }
 
+func isSourceTLSMigration(v string) bool {
+	return isLegacySSLVersion(v) || strings.EqualFold(strings.TrimSpace(v), "auto")
+}
+
 func sourceTLSMigrationWarning(v string) string {
+	if strings.EqualFold(strings.TrimSpace(v), "auto") {
+		return fmt.Sprintf("Automatic SSL/TLS selection %q was replaced with TLS 1.3; replay requires a TLS 1.3-capable endpoint instead of the original automatic protocol selection.", v)
+	}
 	if isLegacySSLVersion(v) {
 		return fmt.Sprintf("Legacy SSL version %q was replaced with TLS 1.3; replay requires a TLS 1.3-capable endpoint and does not reproduce the original SSL handshake.", v)
 	}

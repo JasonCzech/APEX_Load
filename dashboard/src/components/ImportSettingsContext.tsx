@@ -2,12 +2,12 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError, request } from '../hooks/apiClient'
 import type { ScriptDefinition } from '../types/scripts'
-import type { SecretBindingRequirement } from '../types/scriptImports'
+import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '../types/scriptImports'
 import type { ImportFinding } from './importReviewIssues'
 import { thinkTimeConfigForType } from './thinkTimeConfig'
 import './ImportSettingsTables.css'
 
-export type SettingsResult = { script: ScriptDefinition; import_draft_expires_at?: string; validation_issues: string[]; findings: ImportFinding[]; readiness: { replay_ready: boolean; promotion_ready: boolean; unresolved_bindings?: number }; secret_binding_requirements: SecretBindingRequirement[] }
+export type SettingsResult = { fidelity_report?: EnterpriseArchiveFidelityReport; script: ScriptDefinition; import_draft_expires_at?: string; validation_issues: string[]; findings: ImportFinding[]; readiness: { replay_ready: boolean; promotion_ready: boolean; unresolved_bindings?: number }; secret_binding_requirements: SecretBindingRequirement[] }
 export type SettingChange = { path: string; parameter?: string; value: unknown }
 type Editor = { changes: Record<string, SettingChange>; errors: Record<string, string> }
 export type ImportDataView = 'parameters' | 'sources' | 'allocation'
