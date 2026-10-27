@@ -26,6 +26,7 @@ export type ScheduleDraft = {
   availability_windows: ScheduleWindowDraft[]
   disabled_from: string
   disabled_until: string
+  analysis_policy_selections?: RunAnalysisPolicySelections
 }
 export interface NewTestDraft {
   version: 1
@@ -80,6 +81,7 @@ function validDraft(value: unknown): value is NewTestDraft {
   const schedule = value.scheduleDraft
   if (!['name', 'cron_expr', 'timezone', 'release_id', 'timeslot_id', 'run_name_template', 'approval_policy', 'missed_run_policy', 'disabled_from', 'disabled_until'].every(field => typeof schedule[field] === 'string')) return false
   if (schedule.revision !== undefined && (!Number.isInteger(schedule.revision) || Number(schedule.revision) < 1)) return false
+  if (schedule.analysis_policy_selections !== undefined && runPolicySelectionProblem(schedule.analysis_policy_selections)) return false
   if (typeof schedule.enabled !== 'boolean') return false
   return ['blackout_windows', 'maintenance_windows', 'availability_windows'].every(field => {
     const windows = schedule[field]

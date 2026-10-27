@@ -53,6 +53,10 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 	if err != nil {
 		return fmt.Errorf("marshal scenario schedule availability windows: %w", err)
 	}
+	analysisPolicySelectionsJSON, err := json.Marshal(schedule.AnalysisPolicySelections)
+	if err != nil {
+		return fmt.Errorf("marshal scenario schedule analysis policy selections: %w", err)
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -61,18 +65,19 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 	if err := bindScenarioScheduleParent(tx, schedule); err != nil {
 		return err
 	}
-	result, err := tx.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := tx.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, analysis_policy_selections_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET revision=excluded.revision, name=excluded.name, cron_expr=excluded.cron_expr,
 		timezone=excluded.timezone, release_id=excluded.release_id, timeslot_id=excluded.timeslot_id, run_name_template=excluded.run_name_template,
 		enabled=excluded.enabled, approval_policy=excluded.approval_policy, missed_run_policy=excluded.missed_run_policy,
 		conflict_summary=excluded.conflict_summary, next_required_action=excluded.next_required_action, pending_approval_id=excluded.pending_approval_id,
 		owner_subject=excluded.owner_subject, owner_display_name=excluded.owner_display_name,
 		governance_json=excluded.governance_json, blackout_windows_json=excluded.blackout_windows_json,
-		maintenance_windows_json=excluded.maintenance_windows_json, availability_windows_json=excluded.availability_windows_json, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
+		maintenance_windows_json=excluded.maintenance_windows_json, availability_windows_json=excluded.availability_windows_json,
+		analysis_policy_selections_json=excluded.analysis_policy_selections_json, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
 		next_run_at=excluded.next_run_at, disabled_from=excluded.disabled_from, disabled_until=excluded.disabled_until, last_error=excluded.last_error, updated_at=excluded.updated_at
 		WHERE scenario_schedules.scenario_id=excluded.scenario_id AND scenario_schedules.project_id=excluded.project_id`,
-		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, string(governanceJSON), string(blackoutWindowsJSON), string(maintenanceWindowsJSON), string(availabilityWindowsJSON),
+		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, string(governanceJSON), string(blackoutWindowsJSON), string(maintenanceWindowsJSON), string(availabilityWindowsJSON), string(analysisPolicySelectionsJSON),
 		nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
 	if err != nil {
 		return err
@@ -91,7 +96,7 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 // pending approval as one durable unit. This prevents a crash or partial write
 // from leaving pending_approval_id dangling.
 func (s *SQLiteStore) SaveScenarioScheduleWithApproval(schedule *ScenarioSchedule, approval *ScenarioScheduleApproval, expectedRevision int) (bool, error) {
-	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, err := prepareScenarioSchedule(schedule)
+	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON, err := prepareScenarioSchedule(schedule)
 	if err != nil {
 		return false, err
 	}
@@ -116,16 +121,16 @@ func (s *SQLiteStore) SaveScenarioScheduleWithApproval(schedule *ScenarioSchedul
 	approval.ProjectID = schedule.ProjectID
 	var result sql.Result
 	if expectedRevision == 0 {
-		result, err = tx.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		result, err = tx.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, analysis_policy_selections_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
-			schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON,
+			schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON,
 			nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
 	} else {
 		schedule.Revision = expectedRevision + 1
 		approval.ScheduleRevision = schedule.Revision
-		result, err = tx.Exec(`UPDATE scenario_schedules SET revision=?, name=?, cron_expr=?, timezone=?, release_id=?, timeslot_id=?, run_name_template=?, enabled=?, approval_policy=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, pending_approval_id=?, owner_subject=?, owner_display_name=?, governance_json=?, blackout_windows_json=?, maintenance_windows_json=?, availability_windows_json=?, last_run_test_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, updated_at=? WHERE id=? AND scenario_id=? AND project_id=? AND COALESCE(revision, 1)=?`,
-			schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.UpdatedAt, schedule.ID, schedule.ScenarioID, schedule.ProjectID, expectedRevision)
+		result, err = tx.Exec(`UPDATE scenario_schedules SET revision=?, name=?, cron_expr=?, timezone=?, release_id=?, timeslot_id=?, run_name_template=?, enabled=?, approval_policy=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, pending_approval_id=?, owner_subject=?, owner_display_name=?, governance_json=?, blackout_windows_json=?, maintenance_windows_json=?, availability_windows_json=?, analysis_policy_selections_json=?, last_run_test_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, updated_at=? WHERE id=? AND scenario_id=? AND project_id=? AND COALESCE(revision, 1)=?`,
+			schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON, nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.UpdatedAt, schedule.ID, schedule.ScenarioID, schedule.ProjectID, expectedRevision)
 	}
 	if err != nil {
 		return false, err
@@ -188,17 +193,17 @@ func (s *SQLiteStore) CreateScenarioScheduleIfAbsent(schedule *ScenarioSchedule)
 }
 
 func createScenarioScheduleIfAbsentWithExecutor(executor testSaveExecutor, schedule *ScenarioSchedule) (bool, error) {
-	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, err := prepareScenarioSchedule(schedule)
+	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON, err := prepareScenarioSchedule(schedule)
 	if err != nil {
 		return false, err
 	}
 	if err := bindScenarioScheduleParent(executor, schedule); err != nil {
 		return false, err
 	}
-	result, err := executor.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := executor.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, analysis_policy_selections_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
-		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON,
+		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON,
 		nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
 	if err != nil {
 		return false, err
@@ -236,7 +241,7 @@ func (s *SQLiteStore) UpdateScenarioScheduleIfRevision(schedule *ScenarioSchedul
 }
 
 func updateScenarioScheduleIfRevisionWithExecutor(executor testSaveExecutor, schedule *ScenarioSchedule, expectedRevision int) (bool, error) {
-	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, err := prepareScenarioSchedule(schedule)
+	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON, err := prepareScenarioSchedule(schedule)
 	if err != nil {
 		return false, err
 	}
@@ -247,8 +252,8 @@ func updateScenarioScheduleIfRevisionWithExecutor(executor testSaveExecutor, sch
 		return false, err
 	}
 	nextRevision := expectedRevision + 1
-	result, err := executor.Exec(`UPDATE scenario_schedules SET revision=?, name=?, cron_expr=?, timezone=?, release_id=?, timeslot_id=?, run_name_template=?, enabled=?, approval_policy=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, pending_approval_id=?, owner_subject=?, owner_display_name=?, governance_json=?, blackout_windows_json=?, maintenance_windows_json=?, availability_windows_json=?, last_run_test_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, updated_at=? WHERE id=? AND scenario_id=? AND project_id=? AND COALESCE(revision, 1)=?`,
-		nextRevision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON,
+	result, err := executor.Exec(`UPDATE scenario_schedules SET revision=?, name=?, cron_expr=?, timezone=?, release_id=?, timeslot_id=?, run_name_template=?, enabled=?, approval_policy=?, missed_run_policy=?, conflict_summary=?, next_required_action=?, pending_approval_id=?, owner_subject=?, owner_display_name=?, governance_json=?, blackout_windows_json=?, maintenance_windows_json=?, availability_windows_json=?, analysis_policy_selections_json=?, last_run_test_id=?, last_run_at=?, next_run_at=?, disabled_from=?, disabled_until=?, last_error=?, updated_at=? WHERE id=? AND scenario_id=? AND project_id=? AND COALESCE(revision, 1)=?`,
+		nextRevision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON,
 		nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.UpdatedAt,
 		schedule.ID, schedule.ScenarioID, schedule.ProjectID, expectedRevision)
 	if err != nil {
@@ -347,15 +352,15 @@ func (s *SQLiteStore) mutateScenarioScheduleIfLeaseHeld(leaseName, leaseOwnerID 
 	return true, nil
 }
 
-func prepareScenarioSchedule(schedule *ScenarioSchedule) (string, string, string, string, error) {
+func prepareScenarioSchedule(schedule *ScenarioSchedule) (string, string, string, string, string, error) {
 	if schedule == nil {
-		return "", "", "", "", errors.New("schedule is required")
+		return "", "", "", "", "", errors.New("schedule is required")
 	}
 	if strings.TrimSpace(schedule.ID) == "" || strings.TrimSpace(schedule.ScenarioID) == "" {
-		return "", "", "", "", errors.New("schedule id and scenario_id are required")
+		return "", "", "", "", "", errors.New("schedule id and scenario_id are required")
 	}
 	if strings.TrimSpace(schedule.Name) == "" || strings.TrimSpace(schedule.CronExpr) == "" {
-		return "", "", "", "", errors.New("schedule name and cron_expr are required")
+		return "", "", "", "", "", errors.New("schedule name and cron_expr are required")
 	}
 	if schedule.CreatedAt.IsZero() {
 		schedule.CreatedAt = time.Now()
@@ -369,21 +374,25 @@ func prepareScenarioSchedule(schedule *ScenarioSchedule) (string, string, string
 	}
 	governanceJSON, err := json.Marshal(schedule.Governance)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("marshal scenario schedule governance: %w", err)
+		return "", "", "", "", "", fmt.Errorf("marshal scenario schedule governance: %w", err)
 	}
 	blackoutJSON, err := json.Marshal(schedule.BlackoutWindows)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("marshal scenario schedule blackout windows: %w", err)
+		return "", "", "", "", "", fmt.Errorf("marshal scenario schedule blackout windows: %w", err)
 	}
 	maintenanceJSON, err := json.Marshal(schedule.MaintenanceWindows)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("marshal scenario schedule maintenance windows: %w", err)
+		return "", "", "", "", "", fmt.Errorf("marshal scenario schedule maintenance windows: %w", err)
 	}
 	availabilityJSON, err := json.Marshal(schedule.AvailabilityWindows)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("marshal scenario schedule availability windows: %w", err)
+		return "", "", "", "", "", fmt.Errorf("marshal scenario schedule availability windows: %w", err)
 	}
-	return string(governanceJSON), string(blackoutJSON), string(maintenanceJSON), string(availabilityJSON), nil
+	analysisPolicySelectionsJSON, err := json.Marshal(schedule.AnalysisPolicySelections)
+	if err != nil {
+		return "", "", "", "", "", fmt.Errorf("marshal scenario schedule analysis policy selections: %w", err)
+	}
+	return string(governanceJSON), string(blackoutJSON), string(maintenanceJSON), string(availabilityJSON), string(analysisPolicySelectionsJSON), nil
 }
 
 // bindScenarioScheduleParent derives project ownership from the durable
@@ -470,12 +479,12 @@ func bindScenarioScheduleParent(executor testSaveExecutor, schedule *ScenarioSch
 }
 
 func (s *SQLiteStore) GetScenarioSchedule(id string) (*ScenarioSchedule, error) {
-	row := s.db.QueryRow(`SELECT id, scenario_id, COALESCE(project_id, ''), COALESCE(revision, 1), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(timeslot_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(approval_policy, ''), COALESCE(missed_run_policy, ''), COALESCE(conflict_summary, ''), COALESCE(next_required_action, ''), COALESCE(pending_approval_id, ''), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(maintenance_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, disabled_from, disabled_until, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, scenario_id, COALESCE(project_id, ''), COALESCE(revision, 1), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(timeslot_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(approval_policy, ''), COALESCE(missed_run_policy, ''), COALESCE(conflict_summary, ''), COALESCE(next_required_action, ''), COALESCE(pending_approval_id, ''), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(maintenance_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(analysis_policy_selections_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, disabled_from, disabled_until, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE id = ?`, id)
 	return scanScenarioSchedule(row)
 }
 
 func (s *SQLiteStore) ListScenarioSchedules(scenarioID string) ([]*ScenarioSchedule, error) {
-	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), COALESCE(revision, 1), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(timeslot_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(approval_policy, ''), COALESCE(missed_run_policy, ''), COALESCE(conflict_summary, ''), COALESCE(next_required_action, ''), COALESCE(pending_approval_id, ''), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(maintenance_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, disabled_from, disabled_until, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE scenario_id = ? ORDER BY created_at ASC`, scenarioID)
+	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), COALESCE(revision, 1), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(timeslot_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(approval_policy, ''), COALESCE(missed_run_policy, ''), COALESCE(conflict_summary, ''), COALESCE(next_required_action, ''), COALESCE(pending_approval_id, ''), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(maintenance_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(analysis_policy_selections_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, disabled_from, disabled_until, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE scenario_id = ? ORDER BY created_at ASC`, scenarioID)
 	if err != nil {
 		return nil, err
 	}
@@ -484,7 +493,7 @@ func (s *SQLiteStore) ListScenarioSchedules(scenarioID string) ([]*ScenarioSched
 }
 
 func (s *SQLiteStore) ListAllScenarioSchedules() ([]*ScenarioSchedule, error) {
-	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), COALESCE(revision, 1), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(timeslot_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(approval_policy, ''), COALESCE(missed_run_policy, ''), COALESCE(conflict_summary, ''), COALESCE(next_required_action, ''), COALESCE(pending_approval_id, ''), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(maintenance_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, disabled_from, disabled_until, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules ORDER BY created_at ASC`)
+	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), COALESCE(revision, 1), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(timeslot_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(approval_policy, ''), COALESCE(missed_run_policy, ''), COALESCE(conflict_summary, ''), COALESCE(next_required_action, ''), COALESCE(pending_approval_id, ''), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(maintenance_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(analysis_policy_selections_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, disabled_from, disabled_until, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1464,6 +1473,7 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 	var blackoutWindowsJSON string
 	var maintenanceWindowsJSON string
 	var availabilityWindowsJSON string
+	var analysisPolicySelectionsJSON string
 	err := row.Scan(
 		&schedule.ID,
 		&schedule.ScenarioID,
@@ -1487,6 +1497,7 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 		&blackoutWindowsJSON,
 		&maintenanceWindowsJSON,
 		&availabilityWindowsJSON,
+		&analysisPolicySelectionsJSON,
 		&schedule.LastRunTestID,
 		&schedule.LastRunAt,
 		&schedule.NextRunAt,
@@ -1524,6 +1535,11 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 	if availabilityWindowsJSON != "" && availabilityWindowsJSON != "null" {
 		if err := json.Unmarshal([]byte(availabilityWindowsJSON), &schedule.AvailabilityWindows); err != nil {
 			return nil, fmt.Errorf("decode scenario schedule %s availability_windows_json: %w", schedule.ID, err)
+		}
+	}
+	if analysisPolicySelectionsJSON != "" && analysisPolicySelectionsJSON != "null" {
+		if err := json.Unmarshal([]byte(analysisPolicySelectionsJSON), &schedule.AnalysisPolicySelections); err != nil {
+			return nil, fmt.Errorf("decode scenario schedule %s analysis_policy_selections_json: %w", schedule.ID, err)
 		}
 	}
 	return &schedule, nil

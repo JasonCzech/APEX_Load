@@ -3,8 +3,10 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -199,5 +201,273 @@ func TestRunAnalysisPolicySelectionRequestUsesClosedContract(t *testing.T) {
 		if request.AnalysisPolicySelections == nil {
 			t.Fatal("explicit selection lost")
 		}
+		var scheduleRequest CreateScenarioScheduleRequest
+		if err := json.Unmarshal([]byte(`{"name":"Nightly","cron_expr":"0 9 * * *","analysis_policy_selections":`+value+`}`), &scheduleRequest); err != nil {
+			t.Fatal(value, err)
+		}
+		if scheduleRequest.AnalysisPolicySelections == nil {
+			t.Fatal("explicit schedule selection lost")
+		}
+	}
+}
+
+func TestScenarioScheduleAnalysisPolicySelectionValidationMaterializationAndTombstone(t *testing.T) {
+	t.Setenv(config.EnvArchiveDir, t.TempDir())
+	server, store := newAuditTestServer(t)
+	t.Cleanup(func() { _ = store.Close() })
+	runner := server.runner
+	script := httpScript("schedule-analysis-policy-script", "Schedule analysis policy")
+	script.ProjectID = storage.DefaultProjectID
+	runner.StoreScript(script)
+
+	browser := storage.AnalysisDefinition{
+		ID:         "chosen-browser",
+		ProjectID:  storage.DefaultProjectID,
+		Kind:       storage.AnalysisDefinitionKindBrowserPolicy,
+		Name:       "Chosen Browser v1",
+		Definition: json.RawMessage(selectedBrowserPolicyJSON),
+	}
+	if _, err := store.SaveAnalysisDefinition(browser, 0); err != nil {
+		t.Fatal(err)
+	}
+	browser.Name = "Chosen Browser v2"
+	if _, err := store.SaveAnalysisDefinition(browser, 1); err != nil {
+		t.Fatal(err)
+	}
+	journey := storage.AnalysisDefinition{
+		ID:         "chosen-journey",
+		ProjectID:  storage.DefaultProjectID,
+		Kind:       storage.AnalysisDefinitionKindJourneyPolicy,
+		Name:       "Chosen Journey v1",
+		Definition: json.RawMessage(`{"version":1,"journeys":[{"id":"checkout","name":"Checkout","start":{"transaction":"Browse"},"success":{"transaction":"Submit"},"weight":1}]}`),
+	}
+	if _, err := store.SaveAnalysisDefinition(journey, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	createdScenario := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios", map[string]any{
+		"name":     "Scheduled analysis policy scenario",
+		"duration": "1m",
+		"groups":   []map[string]any{{"name": "Shop", "script_id": script.ID, "vusers": 1}},
+	}, "")
+	if createdScenario.Code != http.StatusCreated {
+		t.Fatalf("scenario create: %d %s", createdScenario.Code, createdScenario.Body.String())
+	}
+	scenario := decodeScenarioResponse(t, createdScenario)
+	t.Cleanup(func() {
+		runner.mu.Lock()
+		if runner.scenarios[scenario.ID] != nil {
+			runner.scenarios[scenario.ID].Schedules = nil
+		}
+		runner.mu.Unlock()
+	})
+
+	for _, badSelection := range []map[string]any{
+		{"browser": map[string]any{"id": browser.ID, "revision": 0}},
+		{"browser": map[string]any{"id": browser.ID, "revision": 99}},
+		{"browser": map[string]any{"id": journey.ID, "revision": 1}},
+		{"journey": map[string]any{"id": browser.ID, "revision": 1}},
+		{"browser": map[string]any{"id": "missing-policy", "revision": 1}},
+	} {
+		previewResp := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules/preview", map[string]any{
+			"name":                       "Invalid preview",
+			"cron_expr":                  "0 9 * * *",
+			"timezone":                   "UTC",
+			"analysis_policy_selections": badSelection,
+		}, "")
+		if previewResp.Code != http.StatusConflict {
+			t.Fatalf("invalid schedule preview selection %+v: got %d %s, want 409", badSelection, previewResp.Code, previewResp.Body.String())
+		}
+		createResp := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", map[string]any{
+			"name":                       "Invalid create",
+			"cron_expr":                  "0 9 * * *",
+			"timezone":                   "UTC",
+			"analysis_policy_selections": badSelection,
+		}, "")
+		if createResp.Code != http.StatusConflict {
+			t.Fatalf("invalid schedule create selection %+v: got %d %s, want 409", badSelection, createResp.Code, createResp.Body.String())
+		}
+	}
+
+	validSelections := map[string]any{
+		"browser": map[string]any{"id": browser.ID, "revision": 1},
+		"journey": map[string]any{"id": journey.ID, "revision": 1},
+	}
+	runner.mu.Lock()
+	runner.testStore = unavailablePolicyStore{store}
+	runner.mu.Unlock()
+	outagePreview := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules/preview", map[string]any{
+		"name":                       "Outage preview",
+		"cron_expr":                  "0 9 * * *",
+		"timezone":                   "UTC",
+		"analysis_policy_selections": validSelections,
+	}, "")
+	if outagePreview.Code != http.StatusServiceUnavailable {
+		t.Fatalf("outage schedule preview: got %d %s, want 503", outagePreview.Code, outagePreview.Body.String())
+	}
+	runner.mu.Lock()
+	runner.testStore = store
+	runner.mu.Unlock()
+
+	previewResp := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules/preview", map[string]any{
+		"name":                       "Nightly pinned",
+		"cron_expr":                  "0 9 * * *",
+		"timezone":                   "UTC",
+		"analysis_policy_selections": validSelections,
+	}, "")
+	if previewResp.Code != http.StatusOK {
+		t.Fatalf("valid schedule preview: %d %s", previewResp.Code, previewResp.Body.String())
+	}
+
+	createResp := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", map[string]any{
+		"name":                       "Nightly pinned",
+		"cron_expr":                  "0 9 * * *",
+		"timezone":                   "UTC",
+		"analysis_policy_selections": validSelections,
+	}, "")
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("valid schedule create: %d %s", createResp.Code, createResp.Body.String())
+	}
+	var createdSchedule storage.ScenarioSchedule
+	if err := json.Unmarshal(createResp.Body.Bytes(), &createdSchedule); err != nil {
+		t.Fatal(err)
+	}
+	decodedCreated := decodeStoredRunAnalysisPolicySelections(createdSchedule.AnalysisPolicySelections)
+	if decodedCreated == nil || decodedCreated.Browser == nil || decodedCreated.Browser.ID != browser.ID || decodedCreated.Browser.Revision != 1 ||
+		decodedCreated.Journey == nil || decodedCreated.Journey.ID != journey.ID || decodedCreated.Journey.Revision != 1 {
+		t.Fatalf("created schedule lost policy selections: %+v", createdSchedule.AnalysisPolicySelections)
+	}
+
+	// Partial update omitting analysis_policy_selections preserves existing selections.
+	preserveResp := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+createdSchedule.ID, map[string]any{
+		"name":              "Nightly pinned renamed",
+		"cron_expr":         "0 9 * * *",
+		"timezone":          "UTC",
+		"expected_revision": createdSchedule.Revision,
+	}, "")
+	if preserveResp.Code != http.StatusOK {
+		t.Fatalf("schedule preserve update: %d %s", preserveResp.Code, preserveResp.Body.String())
+	}
+	var preservedSchedule storage.ScenarioSchedule
+	if err := json.Unmarshal(preserveResp.Body.Bytes(), &preservedSchedule); err != nil {
+		t.Fatal(err)
+	}
+	decodedPreserved := decodeStoredRunAnalysisPolicySelections(preservedSchedule.AnalysisPolicySelections)
+	if decodedPreserved == nil || decodedPreserved.Browser == nil || decodedPreserved.Browser.Revision != 1 || decodedPreserved.Journey == nil || decodedPreserved.Journey.Revision != 1 {
+		t.Fatalf("omitted analysis_policy_selections failed to preserve existing selection: %+v", preservedSchedule.AnalysisPolicySelections)
+	}
+
+	// Explicit empty object {} clears selections back to project defaults (nil).
+	clearResp := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+createdSchedule.ID, map[string]any{
+		"name":                       "Nightly defaults",
+		"cron_expr":                  "0 9 * * *",
+		"timezone":                   "UTC",
+		"expected_revision":          preservedSchedule.Revision,
+		"analysis_policy_selections": map[string]any{},
+	}, "")
+	if clearResp.Code != http.StatusOK {
+		t.Fatalf("schedule clear update: %d %s", clearResp.Code, clearResp.Body.String())
+	}
+	var clearedSchedule storage.ScenarioSchedule
+	if err := json.Unmarshal(clearResp.Body.Bytes(), &clearedSchedule); err != nil {
+		t.Fatal(err)
+	}
+	if clearedSchedule.AnalysisPolicySelections != nil {
+		t.Fatalf("expected nil AnalysisPolicySelections after explicit empty selection, got %+v", clearedSchedule.AnalysisPolicySelections)
+	}
+
+	// Re-apply explicit revision 1 selections for materialization.
+	restoreResp := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+createdSchedule.ID, map[string]any{
+		"name":                       "Nightly pinned",
+		"cron_expr":                  "0 9 * * *",
+		"timezone":                   "UTC",
+		"expected_revision":          clearedSchedule.Revision,
+		"analysis_policy_selections": validSelections,
+	}, "")
+	if restoreResp.Code != http.StatusOK {
+		t.Fatalf("schedule restore update: %d %s", restoreResp.Code, restoreResp.Body.String())
+	}
+	createdSchedule = storage.ScenarioSchedule{}
+	if err := json.Unmarshal(restoreResp.Body.Bytes(), &createdSchedule); err != nil {
+		t.Fatal(err)
+	}
+
+	backend := newTelemetryPolicyBarrierBackend(t)
+	runner.setExecutionBackend(backend)
+	now := time.Now().UTC()
+	due := now.Truncate(time.Minute).Add(-time.Minute)
+	schedule := createdSchedule
+	schedule.NextRunAt = &due
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(&schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatal(err)
+	}
+	prepared, runErr := runner.runScenarioScheduleLocked(&schedule, now)
+	runner.mu.Unlock()
+	if runErr != nil || prepared == nil {
+		t.Fatalf("scheduled materialization with pinned revision 1 failed: prepared=%+v err=%v", prepared, runErr)
+	}
+	go runner.runScenarioScheduledTestWithTerm(prepared, executionLeaseTerm{})
+	backend.expected.Store(true)
+	waitTelemetryBackend(t, backend)
+	record, err := store.GetTest(prepared.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := decodeStoredInitialProvenance(record.InitialProvenance)
+	if initial == nil || len(initial.PolicyPins) != 2 {
+		t.Fatalf("expected 2 pinned policies on materialized scheduled run, got %+v", initial)
+	}
+	for _, pin := range initial.PolicyPins {
+		if pin.Source != "run_selection" || pin.Revision != 1 {
+			t.Fatalf("materialized scheduled run did not freeze selected revision 1: %+v", pin)
+		}
+	}
+	finishTelemetryBackend(t, backend)
+
+	// Tombstone the chosen browser policy; preview/update must reject with 409,
+	// and the next due occurrence must record Status="failed", ReasonCode="analysis_policy_unavailable".
+	browser.Deleted = true
+	if _, err := store.SaveAnalysisDefinition(browser, 2); err != nil {
+		t.Fatal(err)
+	}
+	tombstonedPreview := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules/preview", map[string]any{
+		"name":                       "Nightly pinned",
+		"cron_expr":                  "0 9 * * *",
+		"timezone":                   "UTC",
+		"analysis_policy_selections": validSelections,
+	}, "")
+	if tombstonedPreview.Code != http.StatusConflict {
+		t.Fatalf("tombstoned policy preview: got %d %s, want 409", tombstonedPreview.Code, tombstonedPreview.Body.String())
+	}
+	tombstonedUpdate := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+schedule.ID, map[string]any{
+		"name":              "Nightly pinned",
+		"cron_expr":         "0 9 * * *",
+		"timezone":          "UTC",
+		"expected_revision": schedule.Revision,
+	}, "")
+	if tombstonedUpdate.Code != http.StatusConflict {
+		t.Fatalf("tombstoned policy update: got %d %s, want 409", tombstonedUpdate.Code, tombstonedUpdate.Body.String())
+	}
+
+	nextDue := now.Truncate(time.Minute)
+	schedule.NextRunAt = &nextDue
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(&schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatal(err)
+	}
+	_, tombstonedRunErr := runner.runScenarioScheduleLocked(&schedule, now.Add(time.Minute))
+	runner.mu.Unlock()
+	if !errors.Is(tombstonedRunErr, errRunPolicyConfiguration) || !errors.Is(tombstonedRunErr, errAnalysisPolicySelectionUnavailable) {
+		t.Fatalf("expected analysis_policy_unavailable error on tombstoned scheduled occurrence, got %v", tombstonedRunErr)
+	}
+	failedOccurrence, err := store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, nextDue)
+	if err != nil || failedOccurrence == nil {
+		t.Fatalf("GetScenarioScheduleOccurrenceByScheduleAndPlannedAt: %+v %v", failedOccurrence, err)
+	}
+	if failedOccurrence.Status != "failed" || failedOccurrence.ReasonCode != "analysis_policy_unavailable" {
+		t.Fatalf("expected failed occurrence with ReasonCode=analysis_policy_unavailable, got %+v", failedOccurrence)
 	}
 }

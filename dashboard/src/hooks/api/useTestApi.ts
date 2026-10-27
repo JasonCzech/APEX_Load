@@ -16,6 +16,7 @@ import {
   ReportAnnotationsInput,
   ReportAnnotationsResponse,
   RemoteRunProxyResponse,
+  RunAnalysisPolicySelections,
   RunArchiveAnalysisResponse,
   RunArchiveIntegrityReport,
   RunArchiveManifest,
@@ -205,7 +206,8 @@ type ScenarioScheduleRequest = {
   availability_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
   disabled_from?: string
   disabled_until?: string
-	 expected_revision?: number
+  analysis_policy_selections?: RunAnalysisPolicySelections
+  expected_revision?: number
 }
 
 type ScenarioScheduleListResponse = {

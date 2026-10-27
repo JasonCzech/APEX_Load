@@ -1444,8 +1444,10 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
-	if err := tr.validateSelectedRunAnalysisPolicies(projectID, policySelections); err != nil {
-		return nil, err
+	if !req.skipAnalysisPolicySelectionCheck {
+		if err := tr.validateSelectedRunAnalysisPolicies(projectID, policySelections); err != nil {
+			return nil, err
+		}
 	}
 	traceContext, err := normalizeRunTraceContext(req.TraceContext)
 	if err != nil {

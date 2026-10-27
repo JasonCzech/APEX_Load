@@ -39,13 +39,17 @@ describe('New Test draft storage and presentation', () => {
 describe('run policy selection drafts', () => {
   it('preserves immutable revisions and explicit project-default clears', () => {
     for (const analysisPolicySelections of [{}, { browser: { id: 'browser', revision: 2 }, journey: { id: 'journey', revision: 1 } }]) {
-      const draft = { ...draftFixture(), analysisPolicySelections }
+      const draft = { ...draftFixture(), analysisPolicySelections, scheduleDraft: { ...draftFixture().scheduleDraft, analysis_policy_selections: analysisPolicySelections } }
       saveNewTestDraft(draft)
-      expect(readNewTestDraft('project', 'app')?.analysisPolicySelections).toEqual(analysisPolicySelections)
+      const restored = readNewTestDraft('project', 'app')
+      expect(restored?.analysisPolicySelections).toEqual(analysisPolicySelections)
+      expect(restored?.scheduleDraft.analysis_policy_selections).toEqual(analysisPolicySelections)
     }
   })
   it('refuses a malformed stored selection without restoring a default draft', () => {
     window.sessionStorage.setItem('apexload.newTest.draft.v1.project.app', JSON.stringify({ ...draftFixture(), analysisPolicySelections: { browser: { id: 'browser', revision: 0 } } }))
+    expect(readNewTestDraft('project', 'app')).toBeNull()
+    window.sessionStorage.setItem('apexload.newTest.draft.v1.project.app', JSON.stringify({ ...draftFixture(), scheduleDraft: { ...draftFixture().scheduleDraft, analysis_policy_selections: { journey: { id: 'journey', revision: 0 } } } }))
     expect(readNewTestDraft('project', 'app')).toBeNull()
   })
 })

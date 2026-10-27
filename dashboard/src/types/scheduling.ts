@@ -1,3 +1,4 @@
+import type { RunAnalysisPolicySelections } from './analysisPolicies'
 import type { GeneratorShardSummary, TestGroup } from './testConfiguration'
 import type {
   SystemInventoryController,
@@ -33,6 +34,7 @@ export interface ScenarioSchedule {
   // open-ended pause. Stored/served as RFC3339 UTC instants.
   disabled_from?: string
   disabled_until?: string
+  analysis_policy_selections?: RunAnalysisPolicySelections
   last_run_test_id?: string
   last_run_at?: string
   next_run_at?: string

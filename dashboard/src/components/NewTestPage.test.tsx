@@ -5022,6 +5022,84 @@ describe('NewTestPage', () => {
     expect(container.querySelector('details.new-test-monitoring > summary small')?.textContent).toBe('2 monitor bindings from the scenario')
   })
 
+  it('pins and clears browser and journey policy revisions on recurring scenario schedules', async () => {
+    const respond = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input)
+      if (url.includes('/api/v1/analysis/policies') && url.includes('kind=browser_policy')) {
+        return respond([{ id: 'browser-policy-1', project_id: 'project-1', kind: 'browser_policy', name: 'Core Web Vitals', revision: 2, deleted: false }])
+      }
+      if (url.includes('/api/v1/analysis/policies') && url.includes('kind=journey_policy')) {
+        return respond([{ id: 'journey-policy-1', project_id: 'project-1', kind: 'journey_policy', name: 'Checkout Funnel', revision: 1, deleted: false }])
+      }
+      return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } })
+    }))
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    apiMock.listScenarioSchedules.mockResolvedValue({
+      schedules: [{
+        ...scheduleWithDistinctWindowTimezones(),
+        release_id: 'release-1',
+        analysis_policy_selections: {
+          browser: { id: 'browser-policy-1', revision: 1 },
+          journey: { id: 'journey-policy-1', revision: 1 },
+        },
+      }],
+      count: 1,
+    })
+    apiMock.updateScenarioSchedule.mockResolvedValue({ id: 'schedule-1' })
+
+    await renderAuditPage()
+    await act(async () => auditButton('Schedules')?.click())
+    await flushPromises()
+
+    expect(container.querySelectorAll('details.run-policy-selector')).toHaveLength(1)
+    expect(container.textContent).toContain('browser policy r1')
+    expect(container.textContent).toContain('journey policy r1')
+
+    await act(async () => {
+      const details = container.querySelector<HTMLDetailsElement>('details.run-policy-selector')!
+      details.open = true
+      details.dispatchEvent(new Event('toggle', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const browserSelect = findControlByLabel<HTMLSelectElement>(container, 'Browser policy', 'select')
+      || Array.from(container.querySelectorAll<HTMLSelectElement>('details.run-policy-selector select'))[0]
+    await act(async () => setSelectValue(browserSelect, 'browser-policy-1'))
+    const revisionInput = container.querySelector<HTMLInputElement>('details.run-policy-selector input[type="number"]')!
+    expect(revisionInput.value).toBe('2')
+    await act(async () => setInputValue(revisionInput, '1'))
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!, 'release-1'))
+    await flushDebouncedPreflight()
+
+    expect(apiMock.previewScenarioSchedule).toHaveBeenLastCalledWith('scenario-1', expect.objectContaining({
+      analysis_policy_selections: { browser: { id: 'browser-policy-1', revision: 1 } },
+    }), 5)
+
+    await act(async () => auditButton('Create schedule')?.click())
+    await flushPromises()
+    expect(apiMock.createScenarioSchedule).toHaveBeenCalledWith('scenario-1', expect.objectContaining({
+      analysis_policy_selections: { browser: { id: 'browser-policy-1', revision: 1 } },
+    }))
+
+    await act(async () => auditButton('Edit')?.click())
+    await flushPromises()
+    expect(browserSelect.value).toBe('browser-policy-1')
+    const journeySelect = Array.from(container.querySelectorAll<HTMLSelectElement>('details.run-policy-selector select'))[1]
+    expect(journeySelect.value).toBe('journey-policy-1')
+    await act(async () => {
+      setSelectValue(browserSelect, '')
+      setSelectValue(journeySelect, '')
+    })
+    await flushDebouncedPreflight()
+    await act(async () => auditButton('Save schedule')?.click())
+    await flushPromises()
+    expect(apiMock.updateScenarioSchedule).toHaveBeenCalledWith('scenario-1', 'schedule-1', expect.objectContaining({
+      analysis_policy_selections: {},
+      expected_revision: 4,
+    }))
+  })
+
 })
 
 async function selectLaunchRelease() {

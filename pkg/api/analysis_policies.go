@@ -986,7 +986,7 @@ func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *Ru
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
 		if selections != nil && (selections.Browser != nil || selections.Journey != nil) {
-			return nil, nil, nil, fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration)
+			return nil, nil, nil, wrapAnalysisPolicySelectionError(fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration))
 		}
 		if selectedAcceptance != "" {
 			return nil, nil, nil, fmt.Errorf("%w: the run's chosen telemetry acceptance policy cannot be read here", errRunPolicyConfiguration)

@@ -290,6 +290,10 @@ func (unavailablePolicyStore) ListLatestAnalysisDefinitions(string, string) ([]s
 	return nil, errors.New("database is locked")
 }
 
+func (unavailablePolicyStore) GetAnalysisPolicyRevision(string, string, int64) (*storage.AnalysisDefinition, *storage.AnalysisDefinition, error) {
+	return nil, nil, errors.New("database is locked")
+}
+
 // A chosen policy that cannot be read is answered 503, retryable, on both
 // run-creating routes, never as the caller's mistake.
 func TestChosenTelemetryAcceptancePolicyStoreOutageIs503(t *testing.T) {

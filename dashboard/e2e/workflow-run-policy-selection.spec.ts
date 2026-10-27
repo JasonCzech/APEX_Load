@@ -159,3 +159,81 @@ test('journey policy editing preserves history and the selected run revision', a
   expect((await json(await request.get(`/api/v1/tests/${run}`))).analysis_policy_selections).toEqual(chosen)
   expect(target.count()).toBe(0)
 })
+
+test('recurring scenario schedules pin, restore, and clear immutable browser and journey policy revisions', async ({ page, target }, testInfo) => {
+  test.setTimeout(180_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace, 'Schedule_policy_HTTP', target.url)
+  const scenarioId = await seedScenario(request, workspace, scriptId, 'Schedule policy scenario')
+  const policyScope = `project_id=${encodeURIComponent(workspace.projectId)}`
+  const browserDef = { version: 1, baseline: { mode: 'none' }, metrics: [{ metric: 'lcp', good: 2500, poor: 4000, weight: 1 }] }
+  const browserPolicy = await json(await request.post(`/api/v1/analysis/policies?${policyScope}`, { data: { kind: 'browser_policy', name: 'Schedule Browser Policy', definition: browserDef } }))
+  await json(await request.put(`/api/v1/analysis/policies/${browserPolicy.id}?${policyScope}`, { data: { kind: 'browser_policy', revision: 1, name: 'Schedule Browser Policy v2', definition: browserDef } }))
+  const journeyDef = {
+    version: 1,
+    step_risk_enabled: true,
+    journeys: [{ id: 'checkout', name: 'Checkout', weight: 1, start: { action: 'GET /', step_path: 'actions[0]' }, success: { action: 'GET /', step_path: 'actions[0]' } }],
+  }
+  const journeyPolicy = await json(await request.post(`/api/v1/analysis/policies?${policyScope}`, { data: { kind: 'journey_policy', name: 'Schedule Journey Policy', definition: journeyDef } }))
+  const selection = {
+    browser: { id: browserPolicy.id, revision: 1 },
+    journey: { id: journeyPolicy.id, revision: 1 },
+  }
+
+  await page.goto(`/#/new-test?${scopeQuery(workspace)}&scenarioId=${scenarioId}`)
+  await page.reload()
+  await page.getByRole('button', { name: 'Schedules', exact: true }).click()
+  const scheduleLayout = page.locator('.new-test-schedules-layout')
+  await scheduleLayout.getByLabel('Schedule name', { exact: true }).fill('Nightly pinned policy schedule')
+  await scheduleLayout.getByLabel('Release', { exact: true }).selectOption(workspace.releaseId)
+  await scheduleLayout.getByText('Browser and journey policies', { exact: true }).click()
+  await scheduleLayout.getByRole('combobox', { name: 'Browser policy', exact: true }).selectOption(String(browserPolicy.id))
+  await expect(scheduleLayout.getByRole('spinbutton', { name: 'Browser policy revision', exact: true })).toHaveValue('2')
+  await scheduleLayout.getByRole('spinbutton', { name: 'Browser policy revision', exact: true }).fill('1')
+  await scheduleLayout.getByRole('combobox', { name: 'Journey policy', exact: true }).selectOption(String(journeyPolicy.id))
+  await expect(scheduleLayout.getByRole('spinbutton', { name: 'Journey policy revision', exact: true })).toHaveValue('1')
+
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.reload()
+  await page.getByRole('button', { name: 'Restore saved draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Schedules', exact: true }).click()
+  await scheduleLayout.getByText('Browser and journey policies', { exact: true }).click()
+  await expect(scheduleLayout.getByRole('combobox', { name: 'Browser policy', exact: true })).toHaveValue(String(browserPolicy.id))
+  await expect(scheduleLayout.getByRole('spinbutton', { name: 'Browser policy revision', exact: true })).toHaveValue('1')
+  await expect(scheduleLayout.getByRole('combobox', { name: 'Journey policy', exact: true })).toHaveValue(String(journeyPolicy.id))
+  await expect(scheduleLayout.getByRole('spinbutton', { name: 'Journey policy revision', exact: true })).toHaveValue('1')
+  await page.screenshot({ path: testInfo.outputPath('schedule-policy-selection.png'), animations: 'disabled' })
+
+  const createResponsePromise = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenarioId}/schedules`)
+  await expect(scheduleLayout.getByRole('button', { name: 'Create schedule', exact: true })).toBeEnabled()
+  await scheduleLayout.getByRole('button', { name: 'Create schedule', exact: true }).click()
+  const createResponse = await createResponsePromise
+  expect(createResponse.ok(), await createResponse.text()).toBeTruthy()
+  expect(createResponse.request().postDataJSON().analysis_policy_selections).toEqual(selection)
+  const createdSchedule = await createResponse.json()
+  expect(createdSchedule.analysis_policy_selections).toEqual(selection)
+
+  const schedulesRegion = page.getByRole('region', { name: 'Selected scenario schedules', exact: true })
+  await expect(schedulesRegion).toContainText('browser policy r1')
+  await expect(schedulesRegion).toContainText('journey policy r1')
+  const catalogRegion = page.getByRole('region', { name: 'All scenario schedules', exact: true })
+  await expect(catalogRegion).toContainText('Browser policy r1 · Journey policy r1')
+
+  await schedulesRegion.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(scheduleLayout.getByRole('combobox', { name: 'Browser policy', exact: true })).toHaveValue(String(browserPolicy.id))
+  await scheduleLayout.getByRole('combobox', { name: 'Browser policy', exact: true }).selectOption('')
+  await scheduleLayout.getByRole('combobox', { name: 'Journey policy', exact: true }).selectOption('')
+
+  const updateResponsePromise = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenarioId}/schedules/${createdSchedule.id}`)
+  await expect(scheduleLayout.getByRole('button', { name: 'Save schedule', exact: true })).toBeEnabled()
+  await scheduleLayout.getByRole('button', { name: 'Save schedule', exact: true }).click()
+  const updateResponse = await updateResponsePromise
+  expect(updateResponse.ok(), await updateResponse.text()).toBeTruthy()
+  expect(updateResponse.request().postDataJSON().analysis_policy_selections).toEqual({})
+  const updatedSchedule = await updateResponse.json()
+  expect(updatedSchedule.analysis_policy_selections).toBeUndefined()
+  await expect(schedulesRegion).not.toContainText('browser policy r1')
+  expect(target.count()).toBe(0)
+})

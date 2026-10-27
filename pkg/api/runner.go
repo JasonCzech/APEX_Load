@@ -2436,6 +2436,12 @@ type CreateTestRequest struct {
 	// plan entry's secret preflight), which does not depend on the run's
 	// telemetry policy. Launch preflight and real creates judge it.
 	skipTelemetryPolicyCheck bool
+	// skipAnalysisPolicySelectionCheck skips policy-store validation when
+	// building a schedule capacity/conflict preview so a deleted or
+	// unreadable analysis policy records a failed occurrence with
+	// ReasonCode = "analysis_policy_unavailable" rather than failing the
+	// capacity preview first.
+	skipAnalysisPolicySelectionCheck bool
 
 	scriptShakeoutProvided   bool
 	resourceBaselineProvided bool

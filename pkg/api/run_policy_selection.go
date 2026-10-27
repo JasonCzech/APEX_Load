@@ -10,6 +10,30 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+// errAnalysisPolicySelectionUnavailable marks an authored browser or journey
+// policy revision choice as missing, invalid, tombstoned, or unreadable so
+// recurring schedule materialization can record a dedicated occurrence reason.
+var errAnalysisPolicySelectionUnavailable = errors.New("analysis policy selection is unavailable")
+
+type analysisPolicySelectionError struct {
+	err error
+}
+
+func (e analysisPolicySelectionError) Error() string {
+	return e.err.Error()
+}
+
+func (e analysisPolicySelectionError) Unwrap() []error {
+	return []error{e.err, errAnalysisPolicySelectionUnavailable}
+}
+
+func wrapAnalysisPolicySelectionError(err error) error {
+	if err == nil || errors.Is(err, errAnalysisPolicySelectionUnavailable) {
+		return err
+	}
+	return analysisPolicySelectionError{err: err}
+}
+
 // RunAnalysisPolicySelection is an authored immutable revision request. Only
 // admission creates a RunPolicyPin with the server-computed definition digest.
 type RunAnalysisPolicySelection struct {
@@ -60,7 +84,7 @@ func normalizeRunAnalysisPolicySelections(in *RunAnalysisPolicySelections) (*Run
 			continue
 		}
 		if choice.ID == "" || choice.ID != strings.TrimSpace(choice.ID) || len(choice.ID) > 256 || choice.Revision < 1 {
-			return nil, fmt.Errorf("%w: policy selection needs an ID and a positive immutable revision", errRunPolicyConfiguration)
+			return nil, wrapAnalysisPolicySelectionError(fmt.Errorf("%w: policy selection needs an ID and a positive immutable revision", errRunPolicyConfiguration))
 		}
 	}
 	return cloneRunAnalysisPolicySelections(in), nil
@@ -106,20 +130,20 @@ func runAnalysisPolicySelectionsForStorage(in *RunAnalysisPolicySelections) any 
 func selectedRunAnalysisPolicy(store storage.AnalysisDefinitionStore, project, kind string, choice *RunAnalysisPolicySelection) (*storage.AnalysisDefinition, error) {
 	reader, ok := store.(storage.AnalysisPolicySelectionStore)
 	if !ok {
-		return nil, fmt.Errorf("%w: storage does not support immutable run policy selection", errRunPolicyConfiguration)
+		return nil, wrapAnalysisPolicySelectionError(fmt.Errorf("%w: storage does not support immutable run policy selection", errRunPolicyConfiguration))
 	}
 	selected, latest, err := reader.GetAnalysisPolicyRevision(project, choice.ID, choice.Revision)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: selected policy revision is unavailable in this project", errRunPolicyConfiguration)
+		return nil, wrapAnalysisPolicySelectionError(fmt.Errorf("%w: selected policy revision is unavailable in this project", errRunPolicyConfiguration))
 	}
 	if err != nil {
-		return nil, err
+		return nil, wrapAnalysisPolicySelectionError(err)
 	}
 	if selected == nil || latest == nil || selected.Deleted || latest.Deleted || selected.ProjectID != project || latest.ProjectID != project || selected.ID != choice.ID || latest.ID != choice.ID || selected.Kind != kind || latest.Kind != kind || selected.Revision != choice.Revision || latest.Revision < selected.Revision {
-		return nil, fmt.Errorf("%w: selected policy revision is unavailable in this project", errRunPolicyConfiguration)
+		return nil, wrapAnalysisPolicySelectionError(fmt.Errorf("%w: selected policy revision is unavailable in this project", errRunPolicyConfiguration))
 	}
 	if _, err := decodeAnalysisPolicy(kind, selected.Definition); err != nil {
-		return nil, fmt.Errorf("%w: selected policy revision is invalid", errRunPolicyConfiguration)
+		return nil, wrapAnalysisPolicySelectionError(fmt.Errorf("%w: selected policy revision is invalid", errRunPolicyConfiguration))
 	}
 	return selected, nil
 }
@@ -130,14 +154,35 @@ func (tr *TestRunner) validateSelectedRunAnalysisPolicies(project string, select
 	}
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
-		return fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration)
+		return wrapAnalysisPolicySelectionError(fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration))
 	}
 	for _, kind := range []string{storage.AnalysisDefinitionKindBrowserPolicy, storage.AnalysisDefinitionKindJourneyPolicy} {
 		if choice := selections.forKind(kind); choice != nil {
 			if _, err := selectedRunAnalysisPolicy(store, normalizeProjectID(project), kind, choice); err != nil {
-				return err
+				if !errors.Is(err, errRunPolicyConfiguration) {
+					return wrapAnalysisPolicySelectionError(fmt.Errorf("%w: %v", errRunPolicyStoreUnavailable, err))
+				}
+				return wrapAnalysisPolicySelectionError(err)
 			}
 		}
 	}
 	return nil
+}
+
+func (tr *TestRunner) resolveScenarioScheduleAnalysisPolicySelections(projectID string, existing any, requested *RunAnalysisPolicySelections) (*RunAnalysisPolicySelections, error) {
+	candidate := requested
+	if candidate == nil {
+		candidate = decodeStoredRunAnalysisPolicySelections(existing)
+	}
+	selections, err := normalizeRunAnalysisPolicySelections(candidate)
+	if err != nil {
+		return nil, err
+	}
+	if selections == nil || (selections.Browser == nil && selections.Journey == nil) {
+		return nil, nil
+	}
+	if err := tr.validateSelectedRunAnalysisPolicies(projectID, selections); err != nil {
+		return nil, err
+	}
+	return selections, nil
 }

@@ -20495,6 +20495,7 @@ export interface operations {
               }) | null;
               "scenario_mode"?: string;
               "schedules"?: Array<({
+                "analysis_policy_selections"?: unknown;
                 "approval_policy"?: string;
                 "availability_windows"?: Array<Record<string, unknown>>;
                 "blackout_windows"?: Array<Record<string, unknown>>;
@@ -24908,6 +24909,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -26057,6 +26059,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -44957,6 +44960,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -45515,6 +45519,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "approval_policy"?: string;
           "availability_windows"?: Array<{
             "days_of_week"?: Array<number>;
@@ -45555,6 +45569,7 @@ export interface operations {
       "201": {
         content: {
           "application/json": ({
+            "analysis_policy_selections"?: unknown;
             "approval_policy"?: string;
             "availability_windows"?: Array<{
               "days_of_week"?: Array<number>;
@@ -86955,6 +86970,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -161049,6 +161065,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "approval_policy"?: string;
           "availability_windows"?: Array<{
             "days_of_week"?: Array<number>;
@@ -188650,6 +188676,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -189340,6 +189367,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "approval_policy"?: string;
           "availability_windows"?: Array<{
             "days_of_week"?: Array<number>;
@@ -189380,6 +189417,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": ({
+            "analysis_policy_selections"?: unknown;
             "approval_policy"?: string;
             "availability_windows"?: Array<{
               "days_of_week"?: Array<number>;

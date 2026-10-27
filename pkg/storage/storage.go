@@ -937,10 +937,11 @@ type ScenarioSchedule struct {
 	OwnerSubject        string                      `json:"owner_subject,omitempty"`
 	OwnerDisplayName    string                      `json:"owner_display_name,omitempty"`
 	Governance          *ScenarioScheduleGovernance `json:"governance,omitempty"`
-	BlackoutWindows     []ScenarioScheduleWindow    `json:"blackout_windows,omitempty"`
-	MaintenanceWindows  []ScenarioScheduleWindow    `json:"maintenance_windows,omitempty"`
-	AvailabilityWindows []ScenarioScheduleWindow    `json:"availability_windows,omitempty"`
-	LastRunTestID       string                      `json:"last_run_test_id,omitempty"`
+	BlackoutWindows          []ScenarioScheduleWindow    `json:"blackout_windows,omitempty"`
+	MaintenanceWindows       []ScenarioScheduleWindow    `json:"maintenance_windows,omitempty"`
+	AvailabilityWindows      []ScenarioScheduleWindow    `json:"availability_windows,omitempty"`
+	AnalysisPolicySelections any                         `json:"analysis_policy_selections,omitempty"`
+	LastRunTestID            string                      `json:"last_run_test_id,omitempty"`
 	LastRunAt           *time.Time                  `json:"last_run_at,omitempty"`
 	NextRunAt           *time.Time                  `json:"next_run_at,omitempty"`
 	// DisabledFrom/DisabledUntil define an optional date-range pause: while a

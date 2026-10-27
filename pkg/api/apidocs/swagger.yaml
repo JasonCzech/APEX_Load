@@ -167901,6 +167901,7 @@ paths:
                         items:
                           type: object
                           properties:
+                            analysis_policy_selections: {}
                             approval_policy:
                               type: string
                             availability_windows:
@@ -171272,6 +171273,7 @@ paths:
                         items:
                           type: object
                           properties:
+                            analysis_policy_selections: {}
                             approval_policy:
                               type: string
                             availability_windows:
@@ -177846,6 +177848,7 @@ paths:
                     items:
                       type: object
                       properties:
+                        analysis_policy_selections: {}
                         approval_policy:
                           type: string
                         availability_windows:
@@ -181096,6 +181099,7 @@ paths:
                     items:
                       type: object
                       properties:
+                        analysis_policy_selections: {}
                         approval_policy:
                           type: string
                         availability_windows:
@@ -185210,6 +185214,7 @@ paths:
                     items:
                       type: object
                       properties:
+                        analysis_policy_selections: {}
                         approval_policy:
                           type: string
                         availability_windows:
@@ -187913,6 +187918,7 @@ paths:
                         items:
                           type: object
                           properties:
+                            analysis_policy_selections: {}
                             approval_policy:
                               type: string
                             availability_windows:
@@ -188592,6 +188598,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 approval_policy:
                   type: string
                 availability_windows:
@@ -188688,6 +188716,7 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections: {}
                   approval_policy:
                     type: string
                   availability_windows:
@@ -189034,6 +189063,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 approval_policy:
                   type: string
                 availability_windows:
@@ -189131,6 +189182,7 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections: {}
                   approval_policy:
                     type: string
                   availability_windows:
@@ -189870,6 +189922,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 approval_policy:
                   type: string
                 availability_windows:
