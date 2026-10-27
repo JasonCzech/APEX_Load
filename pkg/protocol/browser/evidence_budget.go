@@ -426,26 +426,71 @@ func (b *Browser) applyEvidenceOutcome(result *protocol.Result) {
 	}
 }
 
+// browserMemoryBreakdown records the measured generator, Playwright/browser
+// process-tree VmRSS/PSS, and cgroup memory figures backing an admission check.
+type browserMemoryBreakdown struct {
+	TotalBytes               int64 `json:"total_bytes"`
+	GeneratorRSSBytes        int64 `json:"generator_rss_bytes"`
+	GeneratorPSSBytes        int64 `json:"generator_pss_bytes"`
+	TreeBytes                int64 `json:"tree_bytes"`
+	TreeVmRSSBytes           int64 `json:"tree_vm_rss_bytes"`
+	TreePSSBytes             int64 `json:"tree_pss_bytes"`
+	TreePIDCount             int   `json:"tree_pid_count"`
+	CgroupMemoryCurrentBytes int64 `json:"cgroup_memory_current_bytes"`
+	CgroupMemoryLimitBytes   int64 `json:"cgroup_memory_limit_bytes"`
+}
+
 // measureBrowserMemoryUsage is the resident memory of the Playwright driver,
-// every browser process it started and this generator process.
+// every browser process it started and this generator process. On Linux, it
+// prefers /proc/<pid>/smaps_rollup Pss over VmRSS so shared Zygote pages are
+// not multiplied across child processes.
 func measureBrowserMemoryUsage(ctx context.Context) (int64, error) {
-	self, err := process.NewProcessWithContext(ctx, int32(os.Getpid()))
+	breakdown, err := measureBrowserMemoryBreakdown(ctx)
 	if err != nil {
 		return 0, err
+	}
+	return breakdown.TotalBytes, nil
+}
+
+func measureBrowserMemoryBreakdown(ctx context.Context) (browserMemoryBreakdown, error) {
+	self, err := process.NewProcessWithContext(ctx, int32(os.Getpid()))
+	if err != nil {
+		return browserMemoryBreakdown{}, err
 	}
 	info, err := self.MemoryInfoWithContext(ctx)
 	if err != nil {
-		return 0, err
+		return browserMemoryBreakdown{}, err
 	}
-	total := int64(info.RSS)
+	genRSS := int64(info.RSS)
+	genEffective := genRSS
+	var genPSS int64
+	if pssBytes, err := readLinuxProcessPSSBytes(int32(os.Getpid())); err == nil && pssBytes > 0 {
+		genPSS = int64(pssBytes)
+		genEffective = genPSS
+	}
+	out := browserMemoryBreakdown{
+		TotalBytes:               genEffective,
+		GeneratorRSSBytes:        genRSS,
+		GeneratorPSSBytes:        genPSS,
+		CgroupMemoryCurrentBytes: cgroupMemoryCurrent(),
+		CgroupMemoryLimitBytes:   cgroupMemoryLimit(),
+	}
 	if driver := playwrightDriverPID(); driver > 0 {
-		tree, err := processTreeRSSBytes(ctx, driver)
+		samples, err := listProcessTreeSamples(ctx, driver)
 		if err != nil {
-			return 0, err
+			return browserMemoryBreakdown{}, err
 		}
-		total += tree
+		if !slices.ContainsFunc(samples, func(sample processSample) bool { return sample.PID == driver }) {
+			return browserMemoryBreakdown{}, fmt.Errorf("process %d is not in the process list", driver)
+		}
+		treeBytes, vmRSSBytes, pssBytes, pidCount := processTreeMemoryTotals(samples, driver)
+		out.TreeBytes = treeBytes
+		out.TreeVmRSSBytes = vmRSSBytes
+		out.TreePSSBytes = pssBytes
+		out.TreePIDCount = pidCount
+		out.TotalBytes += treeBytes
 	}
-	return total, nil
+	return out, nil
 }
 
 // processTreeRSSBytes sums the resident memory of rootPID and its descendants.
@@ -461,8 +506,10 @@ func processTreeRSSBytes(ctx context.Context, rootPID int) (int64, error) {
 	return processTreeRSS(samples, rootPID), nil
 }
 
-// readProcProcessSamples reads each process's stat file once. A process that
-// exits, or whose file cannot be read or parsed, meanwhile is left out.
+// readProcProcessSamples reads each process's stat file once and, when
+// /proc/<pid>/smaps_rollup is available, prefers Pss over VmRSS to avoid
+// Zygote shared-page over-counting. A process that exits, or whose stat file
+// cannot be read or parsed, meanwhile is left out.
 func readProcProcessSamples(ctx context.Context, root string) ([]processSample, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -478,11 +525,20 @@ func readProcProcessSamples(ctx context.Context, root string) ([]processSample, 
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		data, err := os.ReadFile(root + "/" + entry.Name() + "/stat")
+		procDir := root + "/" + entry.Name()
+		data, err := os.ReadFile(procDir + "/stat")
 		if err != nil {
 			continue
 		}
 		if sample, ok := parseProcStat(pid, string(data), pageKB); ok {
+			sample.VmRSSKB = sample.RSSKB
+			if rollup, err := os.ReadFile(procDir + "/smaps_rollup"); err == nil {
+				if pssBytes, ok := parseLinuxSmapsPSSBytes(string(rollup)); ok && pssBytes > 0 {
+					sample.PSSKB = float64(pssBytes) / 1024
+					sample.PSSKnown = true
+					sample.RSSKB = sample.PSSKB
+				}
+			}
 			samples = append(samples, sample)
 		}
 	}
@@ -518,6 +574,11 @@ func parseProcStat(pid int, line string, pageKB float64) (processSample, bool) {
 
 // processTreeRSS sums the resident memory of rootPID and every descendant.
 func processTreeRSS(samples []processSample, rootPID int) int64 {
+	total, _, _, _ := processTreeMemoryTotals(samples, rootPID)
+	return total
+}
+
+func processTreeMemoryTotals(samples []processSample, rootPID int) (effectiveBytes, vmRSSBytes, pssBytes int64, pidCount int) {
 	children := map[int][]processSample{}
 	var root *processSample
 	for _, sample := range samples {
@@ -528,9 +589,10 @@ func processTreeRSS(samples []processSample, rootPID int) int64 {
 		children[sample.PPID] = append(children[sample.PPID], sample)
 	}
 	if root == nil {
-		return 0
+		return 0, 0, 0, 0
 	}
-	total, queue, seen := 0.0, []processSample{*root}, map[int]bool{}
+	var totalKB, totalVmKB, totalPSSKB float64
+	queue, seen := []processSample{*root}, map[int]bool{}
 	for len(queue) > 0 {
 		sample := queue[0]
 		queue = queue[1:]
@@ -538,10 +600,19 @@ func processTreeRSS(samples []processSample, rootPID int) int64 {
 			continue
 		}
 		seen[sample.PID] = true
-		total += sample.RSSKB
+		pidCount++
+		totalKB += sample.RSSKB
+		vmKB := sample.VmRSSKB
+		if vmKB <= 0 {
+			vmKB = sample.RSSKB
+		}
+		totalVmKB += vmKB
+		if sample.PSSKnown {
+			totalPSSKB += sample.PSSKB
+		}
 		queue = append(queue, children[sample.PID]...)
 	}
-	return int64(total * 1024)
+	return int64(totalKB * 1024), int64(totalVmKB * 1024), int64(totalPSSKB * 1024), pidCount
 }
 
 var browserMemoryLimitOnce struct {
@@ -582,6 +653,20 @@ func cgroupMemoryLimit() int64 {
 		if text == "max" {
 			return 0
 		}
+		if value, err := strconv.ParseInt(text, 10, 64); err == nil && value > 0 && value < 1<<60 {
+			return value
+		}
+	}
+	return 0
+}
+
+func cgroupMemoryCurrent() int64 {
+	for _, path := range []string{"/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		text := strings.TrimSpace(string(data))
 		if value, err := strconv.ParseInt(text, 10, 64); err == nil && value > 0 && value < 1<<60 {
 			return value
 		}
