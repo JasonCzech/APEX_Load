@@ -1,6 +1,6 @@
-import type { EnterpriseArchiveImportResult } from '../types/scriptImports'
+import type { EnterpriseArchiveFidelityReport, EnterpriseArchiveImportResult } from '../types/scriptImports'
 import type { ReplayPreflight, ScriptDefinition } from '../types/scripts'
-import type { ImportReadiness } from './importReviewIssues'
+import { draftImportFindings, type ImportReadiness } from './importReviewIssues'
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 
 // The archive review's unsaved-work guard. An editor opened from the review
@@ -12,6 +12,39 @@ export const ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID = 'enterprise-archive-import'
 // (pkg/api import_repairs.go recomputedFidelityBlocker). Every other line is
 // a converter sentence.
 const GATE_BACKED_FIDELITY_BLOCKER = /^\S+( at \S+)?$/
+
+// Initial archive reports may be copied to every generated lane. A gate-backed
+// line is only a summary of the current lane's action findings, so rebuild those
+// lines from its current gates. Keep converter sentences: repairing one lane
+// must never erase an archive-level limitation or another lane's own gates.
+export function archiveScriptFidelityReport(script: ScriptDefinition | null, result: EnterpriseArchiveImportResult | null): EnterpriseArchiveFidelityReport | null {
+  const retained = script?.metadata?.import?.preserved?.fidelity_report
+  const original = retained && typeof retained === 'object' && !Array.isArray(retained)
+    ? retained as EnterpriseArchiveFidelityReport
+    : result?.fidelity_report ?? result?.summary?.fidelity_report ?? null
+  if (!script || !original) return original
+  const archive = result?.fidelity_report ?? result?.summary?.fidelity_report
+  const lanes = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
+  // A legacy response can contain a blocker only in its aggregate report. Do
+  // not clear that evidence until a lane supplies an updated server report.
+  const updated = archive && [...lanes, script].some(lane => {
+    const report = lane.metadata?.import?.preserved?.fidelity_report
+    if (!report || typeof report !== 'object' || Array.isArray(report)) return false
+    const current = report as EnterpriseArchiveFidelityReport
+    return current.promotion_status !== archive.promotion_status || JSON.stringify(current.blockers || []) !== JSON.stringify(archive.blockers || [])
+  })
+  if (!updated) return original
+  const findings = draftImportFindings(script)
+  const blockers = [...new Set([
+    ...(original.blockers || []).filter(blocker => !GATE_BACKED_FIDELITY_BLOCKER.test(blocker)),
+    ...findings.filter(finding => finding.gate === 'execution').map(finding => `${finding.code} at ${finding.action_path}`),
+  ])]
+  const replacedGates = original.blockers?.some(blocker => GATE_BACKED_FIDELITY_BLOCKER.test(blocker))
+  const promotionStatus = blockers.length ? 'blocked' : replacedGates
+    ? findings.some(finding => finding.gate === 'promotion') ? 'blocked' : 'promotable'
+    : original.promotion_status
+  return { ...original, blockers, promotion_status: promotionStatus }
+}
 
 interface ReviewState {
   result: EnterpriseArchiveImportResult | null
@@ -43,14 +76,14 @@ export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string,
   if (protocol?.import_mode === 'external_runner_required') return protocol.apexload_protocol === 'java_vuser' ? 'Needs runner / approval' : 'Review only'
   if (protocol && protocol.import_mode !== 'executable') return 'Review only'
   if (scripts.length === 0) return 'Review required'
-  const fidelity = result.fidelity_report ?? result.summary?.fidelity_report
+  const reports = scripts.map(script => archiveScriptFidelityReport(script, result))
   // Promotion is also held by review codes that never refuse replay (a value
   // sent as placeholder text, a review decision) and by the converter's
   // archive-level sentences, which hold promotion and load-test launch only.
   // Only a blocker that names a step gate, or the runtime migration policy,
   // makes the held status a blocker.
-  const promotionHeld = fidelity?.promotion_status === 'blocked'
-  if ((promotionHeld && (fidelity?.blockers || []).some(blocker => GATE_BACKED_FIDELITY_BLOCKER.test(blocker))) || result.summary?.migration_readiness?.blocked) return 'Blocker'
+  const promotionHeld = reports.some(report => report?.promotion_status === 'blocked')
+  if (reports.some(report => report?.promotion_status === 'blocked' && (report.blockers || []).some(blocker => GATE_BACKED_FIDELITY_BLOCKER.test(blocker))) || result.summary?.migration_readiness?.blocked) return 'Blocker'
   if (scripts.some(script => {
     const preflight = (script.metadata?.import?.preserved?.replay_preflight ?? result.preflight) as ReplayPreflight | undefined
     // As the review counts credentials (importReviewFindings): an inspection's
