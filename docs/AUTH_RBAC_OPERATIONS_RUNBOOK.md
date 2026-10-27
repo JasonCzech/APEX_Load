@@ -127,7 +127,7 @@ must be granted access to break the chicken-and-egg. How that works depends on t
 When the controller reports `auth.mode = dev`, the dashboard sidebar shows a dev-only Admin/User segmented control:
 
 - `Admin` is the default and preserves local development bypass behavior.
-- `User` sends `X-APEX Load-Dev-View: user` and the active project id as `X-APEX Load-Dev-Project-ID`.
+- `User` sends `X-APEXLoad-Dev-View: user` and the active project id as `X-APEXLoad-Dev-Project-ID`.
 - User preview simulates subject `dev-user` with global `viewer` and active-project `editor` roles.
 - User preview keeps script, scenario, run, replay, and application authoring controls available for the active project while hiding system administration and project-governance controls.
 - Backend RBAC still enforces protected APIs in User preview, returning normal `403` responses for admin-only operations.
@@ -193,8 +193,8 @@ Common filters:
 
 Dashboard path:
 
-1. Open Settings -> General.
-2. Use the Recent Audit Events filters.
+1. Open **Settings → Governance audit** (`#/settings?setting=audit`).
+2. Use the Audit Filters.
 3. Click Export CSV to download the currently filtered evidence set.
 
 Keep exported audit CSV files with the external incident, change, or release record when auth or RBAC configuration changes are part of the work.
@@ -206,75 +206,3 @@ Keep exported audit CSV files with the external incident, change, or release rec
 - Issuer discovery failure: confirm controller egress to the issuer and that `issuer_url` points at the provider metadata root.
 - Missing trusted-header identity: open the dashboard through the protected ingress, not the raw controller origin.
 - Missing RBAC roles: verify the subject has local APEX Load role bindings in Access. Upstream role claims/headers do not grant access after first-admin bootstrap.
-
-## Open work / backlog
-
-Source note: condensed 2026-09-24 from the former `AUTH_RBAC_BACKLOG.md`. Completed work (Phases 1-3, Phase-4 B1/B2/A17, the A16 utility extraction, A18 atomic user onboarding, C11 effective-access simulator, C12 service-account owner metadata, C4-MVP access-review report, A5 bootstrap admin, A15 API-key rate-limit fallback, B3 broad-scope deprecation) is not listed here. Everything below is deferred. Anchors are symbol names; line numbers drift, so search by symbol. Routes named here that do not exist yet are proposals, described in prose rather than as route references.
-
-Effort: S (half a day or less), M (1-2 days), L (about a week), XL (multi-week). Status: TODO (do when prioritized), DEMAND-GATED (build when a deal or user needs it), WONT-DO (decided against; kept so it is not re-raised).
-
-| ID | Item | Effort | Status | Depends on |
-| --- | --- | --- | --- | --- |
-| A16b | Split `AccessPage.tsx` into workspace components | L | TODO | Utilities already extracted |
-| A14 | Explicit service-account scopes and freshness enforcement | S/M | TODO (low value) | Route-catalog scope foundation (shipped) |
-| A20 | Usage-accounting ramp/abort accuracy and archive-bytes cache | M | TODO | ManagedTest schema |
-| A19 | Unify audit views (Settings vs Access) | - | WONT-DO | - |
-| A21 | Move logout CSRF token out of the status body | - | WONT-DO | - |
-| A22 | Per-session GitHub identity in bypass mode | - | WONT-DO | - |
-| C1 | Group/team RBAC (IdP-claim mapping, then native groups) | L | TODO | - |
-| C7 | Bulk binding / CSV import | M | TODO | C1 (native groups optional) |
-| C3b | Full session-management console | L | TODO | Phase-2 `session_epoch` MVP (shipped) |
-| C2 | SCIM 2.0 provisioning and deprovisioning | XL | DEMAND-GATED | C1 |
-| C4b | Access-recertification campaigns | M+ | TODO | C4-MVP report (shipped) |
-| C5 | Time-bound / JIT grants and break-glass | M | TODO | - |
-| C6 | Audit retention policy and SIEM/webhook streaming | M | TODO | Phase-2 retention (shipped) |
-| C8 | Per-account rate limits and IP allowlist for service accounts | M | TODO | - |
-| C9 | Custom / cloneable roles with editable permission matrix | XL | DEMAND-GATED | B1 (shipped) |
-| C10 | Guided "Connect identity provider" wizard | M | TODO | - |
-
-### Maintainability
-
-**A16b - split `AccessPage.tsx`.** The safe half of A16 shipped (types, utilities and `SortHeader.tsx` extracted), but `AccessPage.tsx` has grown back to about 2,760 lines. The remaining split into `UsersWorkspace`, `ServiceAccountsWorkspace` and `ActivityWorkspace` is a deep state restructure with regression risk and should be its own reviewable change.
-
-- Approach: parent owns shared data (`users`, `accounts`, `usersTotal`, `activityEvents`, `activityUsage`, `accessReview`), their loaders, the tab bar, role/scope filter options and the `accessReviewAttention` memo; each workspace owns only UI state and rendering. Extract one workspace at a time (Activity, then Service Accounts, then Users), keeping `AccessPage.test.tsx` green after each step, and reduce `AccessPage` to a thin tab shell plus permission gate.
-- Cross-tab coupling: the attention badge derives from `accessReview` (keep it and its load/refresh effects in the parent); the simulator stays in the Activity workspace; the Service Accounts attention banner needs `accessReviewAttention` plus an open-review callback; tab counts need the parent to own the data arrays; `loadActivity` moves with `activityFilter` if that state moves, with the parent receiving events via a callback.
-- Acceptance: `AccessPage.tsx` under about 450 lines, three workspace files, all AccessPage/Settings tests pass unchanged (they query `.access-tab`, `.access-workspace[aria-label=...]`, `.access-inspector`, `.access-attention-badge`, `.access-simulator`, so class names and aria-labels must be preserved), tsc and eslint clean, full vitest green.
-- Anchors: `dashboard/src/components/AccessPage.tsx`, `accessUtils.ts`, `accessTypes.ts`, `AccessPage.test.tsx`.
-
-### Low-severity polish
-
-**A14 - explicit service-account scopes (low value).** The route-catalog scope foundation shipped (`ServiceAccountScope` on `accessRequirement`, `withRouteServiceAccountScope`, catalog-derived `requiredServiceAccountScope` before the legacy prefix fallback). Service-account scopes are a second gate after the RBAC role check, so a coarse default can only fail to narrow, never escalate. Remaining: many routes still inherit scopes from the legacy prefix table. Convert them to explicit declarations where useful, add a freshness test that every service-account-reachable route has an explicit scope or an intentional fallback, then decide whether the non-catalog catch-all should fail closed. Anchors: `pkg/api/route_catalog.go`, `pkg/api/auth_resolution.go` (`requiredServiceAccountScope`, `serviceAccountAllowsRequest`, `normalizeAuthenticatedServiceAccountScopes`), `pkg/api/middleware.go` (`grantIfScopeAllows`).
-
-**A20 - usage-accounting accuracy and archive-bytes cache.** `usageAccountingFromTests` bills total VUsers times planned duration, ignoring ramp and early abort (a 1,000-VU, 10-minute test aborted at 2 minutes with 200 VUs bills 600k VU-seconds, not 24k). Fixing this needs the run record to capture provisioned VUs and actual duration, a schema change with historical-reconciliation implications. Separately, `usageArchiveBytes` walks the filesystem on every usage-accounting request. Approach: capture ramp/abort state and bill provisioned times actual; cache archive bytes in run metadata and recompute only on archive finalization (independent, safe to do first). Anchors: `pkg/api/usage_accounting.go`.
-
-**Won't do (do not re-raise):**
-
-- A19 unify audit views: Settings audit (global governance, action/actor/status filters, limit 20) and Access Activity (scoped user activity, actor/domain/project/time filters, limit 50) serve different audiences on purpose.
-- A21 logout CSRF token in the status body: the token is HMAC-signed, user-bound, 10-minute TTL and returned in the authenticated status response for resubmission on logout, the standard SPA double-submit pattern. An `HttpOnly` cookie would be contradictory because frontend JS must read it. Anchors: `handleGetAuthStatus`, `issueOIDCLogoutCSRFToken`.
-- A22 per-session GitHub identity in bypass mode: `githubUserKey` returns `"local"` only when no user is authenticated (dev-bypass, single operator); per-session keying would force GitHub re-auth every session. Production paths key by real subject/ID. Anchor: `pkg/api/github_oauth.go`.
-- Refuted during the original audit: GitHub project-policy/sync mutations are audited; there is no project/domain owner model to transfer.
-
-### Enterprise-governance roadmap (Phase 5)
-
-Dependency-ordered; C1 unlocks the most.
-
-- **C1 - group/team RBAC (L, foundation for C2 and C7).** `UserRoleBinding` is keyed only by `UserID`, so onboarding a team means N x M manual bindings. Form (a), recommended first: map OIDC/trusted-header group claims to roles during `applyLocalUserBindings`. Form (b): native admin-managed groups (`storage.Group` plus `GroupRoleBinding`) with effective access as the union of direct and group bindings. Acceptance: group grants resolve in effective access and enforcement; admin UI for form (b). Anchors: `pkg/api/auth_resolution.go` (`applyLocalUserBindings`, `authenticatedUserFromStoredUser`), `pkg/storage`.
-- **C7 - bulk binding / CSV import (M).** Proposed: a bulk-binding endpoint under the auth API (not yet implemented, so not a catalogued route) that accepts a list or parsed CSV (`subject,scope_type,scope_id,role`), applies it transactionally with a per-row result, plus bulk-assign and CSV upload on the onboard sub-tab. Additive; pairs well with C1.
-- **C3b - session-management console (L).** Phase-2 per-user `session_epoch` "revoke all sessions" shipped. Remaining: a storage-backed session registry (id, subject, issued/last-seen, ip, user agent, revoked_at) checked per request, a per-session revoke action plus revoke-all-for-user, and a Sessions sub-tab under Activity. Anchors: `pkg/api/auth_resolution.go`, `pkg/storage`.
-- **C2 - SCIM 2.0 provisioning (XL, demand-gated, needs C1).** Unknown subjects are rejected today, but leavers keep a valid local identity until manually disabled (sharpest in trusted-header mode). Implement SCIM Users and Groups endpoints (token-auth, SystemAdmin-gated) onto `User` and `Group`; deprovision calls `UpdateUserActive(false)`.
-- **C4b - recertification campaigns (M+).** Layer `AccessReviewCampaign` and `AccessReviewItem` (generated from current bindings) over the shipped report in `pkg/api/access_review.go`; reviewers keep or revoke (revoke reuses `DeleteUserRoleBinding`), decisions are audit events, plus a Reviews sub-tab.
-- **C5 - time-bound / JIT grants and break-glass (M).** Add optional `ExpiresAt` to `UserRoleBinding` (mind the Postgres `rewriteSQL` bool/datetime gotcha) and filter expired bindings during effective-access resolution; add self-service elevation requests with auto-expiry and audit, and a pre-created expiring break-glass SystemAdmin grant.
-- **C6 - audit retention and SIEM/webhook streaming (M).** Retention prune shipped (`APEXLOAD_AUDIT_RETENTION_DAYS`). Add an `AuditExportTarget` setting (webhook/syslog plus secret) and emit each `SaveAuditEvent` asynchronously, reusing the GitHub webhook delivery-log pattern for retry and visibility. Anchors: `pkg/api/audit_retention.go`, `pkg/api/github_enterprise.go`.
-- **C8 - per-account rate limits and IP allowlist (M).** Add `RateLimitPerMinute` and `AllowedCIDRs []string` to `storage.ServiceAccount`; enforce per account (preferred over the global default) and the CIDR check in the auth path beside the scope check. Anchors: `pkg/storage` (`ServiceAccount`), `pkg/api/auth_resolution.go`, `pkg/api/middleware.go`.
-- **C9 - custom / cloneable roles (XL, demand-gated).** Introduce `storage.Role` keyed to access-matrix resource/action IDs, have `authorizeAccessRequirement` consult role permissions instead of fixed strings, and seed the four built-ins as immutable cloneable roles. B1 (matrix-to-route consistency test plus `authAccessMatrix`) is the shipped prerequisite. Defer until a deal needs it.
-- **C10 - guided "Connect identity provider" wizard (M).** Preset, then issuer/client/redirect (live URL validation exists), a pre-save diagnostics test against draft values, confirmation and copy-to-clipboard callback URL. Enhancement; the plumbing exists. Anchors: `dashboard/src/components/SettingsPage.tsx`, `pkg/api/handlers_auth.go` (`handleGetAuthDiagnostics`).
-
-### Cross-cutting conventions for backlog work
-
-- New routes: add to `pkg/api/route_catalog.go` (resolver plus `accessRequirement`) and `server.go`; run `go generate ./pkg/api` (`TestSwaggerYAMLIsFresh`); add the golden fingerprint to `accessRequirementGolden` in `route_catalog_characterization_test.go`. Public (no-auth) routes go in `intentionallyPublicAPIRoutes` in `route_coverage_test.go`, not the route catalog.
-- New SQLite columns/tables: the Postgres schema is runtime-translated by `rewriteSQL()`. TEXT columns pass through; INTEGER-bool and DATETIME columns need coordinated `rewriteSQL` entries (CREATE, ALTER, comparisons) or Postgres breaks. New indexes go in `schemaIndexes`.
-- New Store interface methods: update the test doubles (`metricsStoreSpy` in `runner_test.go`) or `pkg/api` will not build.
-- Periodic/background jobs (retention, notifiers, prune) run only on the HA execution leader (`isExecutionLeader()`, reuse the `audit_retention.go` cadence pattern).
-- WebSocket admin signals: the hub `Client` has no identity beyond `testID`/`projectID`. Use `broadcast_all` only for content-free global signals (it no-ops if the message carries a `test_id`/`project_id`); detailed admin payloads need per-client identity routing, which is not built. Fleet-management events broadcast to every socket (`fleet_event` with `broadcast_all`) are therefore content-free refresh signals: clients refetch through the system-admin fleet APIs. The run-scoped `fleet_degraded` event keeps its details because it goes only to that run's project and test streams.
-- Test identity stays in its project: deleting a test records its ID and project (`deleted_test_identities`), and a create that requests that ID (`requested_test_id`) for another project is refused with 409. Same-project re-creation, such as a CI idempotency key, is allowed. Test streams also drop events that name a project other than the one the stream was authorized for.
-- Frontend: lifecycle/admin API calls live in `dashboard/src/hooks/api/useSystemApi.ts`; UI gating reads the effective-access endpoint and `isEffectiveOperationAllowed` (default-deny). Run the full `vitest` suite when touching cross-cutting auth/permission defaults, and verify dashboard changes in a browser, not just `tsc`.

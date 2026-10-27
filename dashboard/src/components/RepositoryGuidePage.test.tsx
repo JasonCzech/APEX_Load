@@ -8,7 +8,7 @@ import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import ApiGuidePage from './ApiGuidePage'
 import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
-import { parseMarkdown } from './repositoryGuideMarkdown'
+import { markdownPlainText, parseMarkdown } from './repositoryGuideMarkdown'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -75,6 +75,15 @@ describe('parseMarkdown', () => {
   it('treats a pipe-prefixed non-table line as paragraph text', () => {
     const blocks = parseMarkdown(['| this is not a table', 'continued text'].join('\n'))
     expect(blocks).toEqual([{ kind: 'paragraph', text: '| this is not a table continued text' }])
+  })
+
+  it('parses horizontal rules and blockquotes as dedicated blocks', () => {
+    const blocks = parseMarkdown(['Paragraph before.', '', '---', '', '> Important note', '> continued on next line'].join('\n'))
+    expect(blocks).toEqual([
+      { kind: 'paragraph', text: 'Paragraph before.' },
+      { kind: 'hr' },
+      { kind: 'blockquote', text: 'Important note continued on next line' },
+    ])
   })
 
   // The guides wrap bullets across several source lines. Terminating the list at the
@@ -201,4 +210,5 @@ it('gives repeated reference headings unique section IDs and preserves escaped t
   const blocks = parseMarkdown('## Fields\n\n## Fields\n\n## Fields-1\n\n| Mode | Detail |\n| --- | --- |\n| `admin\\|user` | Two modes |')
   expect(blocks.filter(block => block.kind === 'heading').map(block => block.id)).toEqual(['fields', 'fields-1', 'fields-1-1'])
   expect(blocks.find(block => block.kind === 'table')).toMatchObject({ headers: ['Mode', 'Detail'], rows: [['`admin|user`', 'Two modes']] })
+  expect(markdownPlainText('Use *italic*, `__*delimiter*__`, and */…/*ERROR*/')).toBe('Use italic, __*delimiter*__, and */…/*ERROR*/')
 })

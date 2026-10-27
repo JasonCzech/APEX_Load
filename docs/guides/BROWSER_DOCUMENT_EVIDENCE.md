@@ -1,6 +1,6 @@
 # Browser document evidence
 
-Status: Guide — optional document evidence v2, request evidence v3 with request-to-document association, and bounded live/archive inspection. This delivered slice is part of the [feature completion program](../FEATURE_COMPLETION_SPEC.md#6-browser-evidence-completion); it does not certify the full browser evidence, intelligence, HAR or performance program.
+Status: Guide — optional document evidence v2, request evidence v3 with request-to-document association, and bounded live/archive inspection. This delivered slice does not certify the full browser evidence, intelligence, HAR or performance program.
 
 ## Evidence guide map
 
@@ -82,7 +82,7 @@ Comparisons, native panels and root-cause analysis read final document measureme
 
 ## Qualification and remaining work
 
-The retained [review and acceptance record](../archive/qa-reviews/BROWSER_2026-10.md#feature-completion-browser-document-2026-10-05) separates genuine native acquisition from bounded transport/UI fixtures. Local Chromium and WebKit correctness fixtures cover same-URL frames/reload, no-interaction metrics, action-spanning requests and cancellation/blocked drain. Chromium also exercises genuine layout-shift session ground truth and 50 trusted interaction rank/outlier ground truth. These tests are not performance or whole-page coverage benchmarks.
+Qualification separates genuine native acquisition from bounded transport/UI fixtures. Local Chromium and WebKit correctness fixtures cover same-URL frames/reload, no-interaction metrics, action-spanning requests and cancellation/blocked drain. Chromium also exercises genuine layout-shift session ground truth and 50 trusted interaction rank/outlier ground truth. These tests are not performance or whole-page coverage benchmarks.
 
 Chromium and WebKit fixtures also cover five hidden/resume cycles (LCP final at `hidden`, progress revisions counted once) and a back/forward-cache entry and restore (the navigation lifecycle final at `pagehide`, then a separate `bfcache_restore` lifecycle in the same document). They dispatch the visibility and page-transition events themselves, because under Playwright a back navigation reloads the page in both engines rather than restoring it from the cache and a headless page is never hidden; the library, bootstrap and evidence path run in the real engine. A WebKit fixture checks that process CPU/RSS stay unavailable with process attribution enabled.
 

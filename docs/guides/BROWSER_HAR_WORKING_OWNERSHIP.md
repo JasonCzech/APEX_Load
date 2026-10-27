@@ -1,9 +1,8 @@
 # Native HAR working-file ownership
 
-This guide describes the narrow native HAR working-file safety implementation.
+This guide describes the native HAR working-file safety implementation.
 It does not mark the complete browser evidence program or native archive
-transfer/export complete. Qualification for this candidate is recorded in
-[the scoped QA bundle](../qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.md).
+transfer/export complete.
 
 The existing browser HAR capture policies remain opt-in: off, always, on_error,
 on_sla_breach, and manual. The browser_har_dir setting selects an existing
@@ -33,8 +32,7 @@ or closed context and is never accepted as proof. Prior ordinary/server entry
 or unsupported owned-close capability remains an explicit failure, preserving
 its lease and charge. Repeat owned callers join the retained same result. An unfinished repeat on
 the synchronous SDK dispatcher returns an explicit error so it cannot block
-the first owner’s native acknowledgment; it does not alter that owner’s result. See
-[the pinned SDK patch and license](../../third_party/playwright-go/APEX_PATCHES.md). Initialization errors, oversized capture
+the first owner’s native acknowledgment; it does not alter that owner’s result (see `third_party/playwright-go/APEX_PATCHES.md`). Initialization errors, oversized capture
 termination and ordinary teardown share that close-once owner. Document
 finalizer cancellation uses the same owner. Native workers, the finalizer,
 CDP detachment and the HAR flush must join before retirement is accepted.
@@ -68,9 +66,8 @@ is preserved and reported as unproven. Once every writer and worker has joined,
 raw retirement can still proceed under its separately bounded namespace wait,
 even when capture publication was refused. An artifact already qualified and
 published within the deadline stays valid during later retirement or retries.
-These finalization guards have [local deterministic qualification](../qa/reviews/roadmap-har-finalization-budget-2026-10-19/README.md),
-and native [Linux](../qa/reviews/roadmap-browser-linux-har-crash-2026-10-26/README.md) and
-[Windows](../qa/reviews/windows-native-har-2026-10-16/README.md) crash qualification are recorded separately.
+These finalization guards have local deterministic qualification, and native Linux and
+Windows crash qualification are verified in CI.
 
 ### Outstanding request limit
 
@@ -92,9 +89,8 @@ outstanding-request limit closes the context. Sessions without active HAR captur
 resource limits. No new request routing is installed and HTTP cache behavior
 is unchanged. Cancellation racing overflow uses the same exact close owner;
 a caller timeout retains the working file, lease and charge until physical join.
-The [outstanding-request review](../qa/reviews/roadmap-har-inflight-2026-10-20/README.md)
-retains local Chromium/WebKit flood, cancellation and import-compatibility
-results; it does not qualify other native platforms.
+Local Chromium and WebKit flood, cancellation and import-compatibility
+tests verify these bounds.
 
 After successful join, scrubbed output is written and synced in private staging,
 then linked to a fresh flat apexload_browser_<generation>_scrubbed.har name
@@ -614,8 +610,7 @@ limiter still cannot observe all native in-memory buffering.
 
 This implementation uses Go's secure os.Root operations with each platform's
 owner identity checks: Linux/macOS owner UIDs and modes, and on Windows
-security descriptors and handle file IDs (Windows qualified by three green
-runs in a row in CI: see the [Windows record](../qa/reviews/windows-native-har-2026-10-16/README.md)).
+security descriptors and handle file IDs.
 Other platforms reject native HAR ownership until their private ACL, lock and
 durable publication behavior is qualified. `browser.NativeHARSupported()`
 gives each platform's answer. Where it is false, a HAR-recording browser
@@ -625,12 +620,9 @@ exhausted HAR budget does; nothing creates, cleans or reads a HAR directory's
 staging (published-artifact reads fail with "native HAR capture is not
 supported"); and a browser replay asked for `record_har: true` is refused
 with 422 before it starts. The coordinated local runtime acceptance host is
-macOS, where the ownership, crash-reclamation and real-driver tests run;
-results are recorded separately in the QA bundle. CI runs the same suites,
-real-driver crash test included, on Linux (the race lane, with Chromium and
-WebKit, recorded in the [Linux record](../qa/reviews/roadmap-browser-linux-har-crash-2026-10-26/README.md))
-and on Windows (the Windows leg of `desktop.yml`, recorded in the
-[Windows record](../qa/reviews/windows-native-har-2026-10-16/README.md)). The
+macOS, where the ownership, crash-reclamation and real-driver tests run. CI runs the same suites,
+real-driver crash test included, on Linux (with Chromium and
+WebKit) and on Windows. The
 filesystems and peer processes must honor the existing descriptor-lock
 contract. Only scrubbed, completed HARs leave a generator; raw working files
 never do.

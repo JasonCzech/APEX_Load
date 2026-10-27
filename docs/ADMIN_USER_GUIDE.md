@@ -302,7 +302,7 @@ Start with [Choose an installation](../deployments/README.md) for the environmen
 - [Generator restart controls](CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls)
 - [SQLite to PostgreSQL migration](ENTERPRISE_PLATFORM_RUNBOOK.md#sqlite-to-postgresql-migration-guide)
 - [Telemetry configuration](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing)
-- [Support escalation template](HELP_CENTER.md#build-and-run-your-first-test)
+- [Support escalation template](HELP_CENTER.md#prepare-a-support-request)
 
 For upgrades, record the current build, review the deployment release notes and storage compatibility, back up metadata and archives, verify a restore in an isolated environment, and follow your deployment's rollout/rollback procedure. Recheck identity, generator readiness and one small test after rollout. The runbooks above describe deployment-specific requirements; do not assume a database rollback is safe after a schema migration.
 
@@ -342,16 +342,6 @@ The replacement API uses an assignment revision to reject stale writes. See the
 [generated API specification](swagger.yaml) and
 [endpoint catalog](api-endpoint-catalog.json) for the request and response contracts.
 API and CLI execution clients retain their existing placement rules.
-
-### Validation record
-
-Point-in-time record (2026-09-19) for the folder-move and assignment feature; the full suites were not green at that time because of unrelated baseline failures.
-
-- **Feature checks passed:** SQLite assignment tests (replacement/clearing, project and release ownership, archived retention, stale revisions, concurrent editors, deletion dependencies, migration from version 9, restart persistence); PostgreSQL 16 integration tests (concurrent revision checks, release-family resolution); preservation tests (script content, scenario composition, historical runs, saved schedules, unassigned clones); API/RBAC contract tests; regenerated OpenAPI, frontend contracts, endpoint catalogs, QA contract matrix and dashboard; new dev-admin and local-auth browser workflows (persistence, bulk failure recovery, filtering, launch release selection/overrides, viewer restrictions).
-- **Baseline failures not caused by this feature:** `ux/Structure.test.tsx` toolbar filter markup; `TestExecutionCharts.interaction.test.tsx` slider; `TestDistributedExecutionBackendRunsRemoteMultiGroupEngine` timing (passes in isolation); `TestOptInSuiteInventoryIsDocumented`; `TestContainerBuildIsSelfContainedAndProfiled`; eight dev-admin browser workflows (command-center details, landing, live metrics, both run lifecycle workflows, workspace hierarchy, authoring scope/history, guided workspace setup) and two local-auth workflows (workspace sign-in/build/import journey; an authoring timeout that passed on rerun).
-- **Fixed during validation:** a launch placement hydration race (explicit operator choices are now preserved during workspace hydration and late assignment loading), and a review follow-up covering late scenario metadata overwriting an explicit application override, workspace refresh clearing an explicit schedule release, duplicate/stale release-creation submissions, a release-list read erasing a newly created release, and stale suggestion tracking after a project change. Six regression tests were added.
-- **Final results:** dashboard cycle 4,296 unit tests passing (plus the two baseline failures); 77 launch and eight shared-dialog unit tests pass; lint, type checking, embedded build and `git diff --check` pass; dev-admin profile 111 passed / eight baseline failures / three skipped; local-auth profile 36 passed / two baseline failures; SQLite, PostgreSQL, API/RBAC, generated-contract, deletion-coverage and QA-dashboard freshness checks pass.
-
 
 ## Application and Project Secrets
 

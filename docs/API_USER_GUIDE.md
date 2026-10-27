@@ -666,7 +666,7 @@ Use the REST API for integrations, the CLI for pipelines, or MCP for agent-drive
 
 ### Connect and verify access
 
-Use the controller's reachable origin plus `/api/v1`. Hosted deployments usually use HTTPS through their configured ingress. `http://localhost:8080/api/v1` is a local example, not a universal production address. The dashboard development server normally proxies `/api` from localhost:4000.
+Use the controller's reachable origin plus `/api/v1`. Hosted deployments usually use HTTPS through their configured ingress. The default `localhost:8080` address is a local example, not a universal production address. The dashboard development server normally proxies `/api` from localhost:4000.
 
 Ask an authorized administrator for a service-account key with the project roles and token scopes needed for your task. Set `APEXLOAD_API_KEY` in your shell or CI secret store. A key is shown only once when created or rotated. Never paste it into a shared script or report. See [API authentication](API_USER_GUIDE.md#authentication).
 

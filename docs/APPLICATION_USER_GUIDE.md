@@ -580,7 +580,7 @@ The replay debugger gives you:
   Vitals as evidence.
 
 Script Editor keys: `Cmd/Ctrl` + `S` saves, `F5` starts or resumes replay,
-`Shift` + `F5` stops, `F10` steps over, `F11` steps into, `Shift` + `F11` steps out,
+`Shift` + `F5` stops, `F10` steps into, `F11` steps over a block, `Shift` + `F11` finishes the current loop,
 `Cmd/Ctrl` + `B` toggles a breakpoint, and `Escape` closes the panel.
 
 Validate first, replay second, then promote the script into a scenario.
@@ -1634,12 +1634,12 @@ GitHub.com with OIDC and GHES with a scoped API key.
 
 | Integration | What it gives you | Configured under |
 | --- | --- | --- |
-| **Prometheus** | Controller and generator metrics scraped into your own monitoring | Settings → Integrations → Prometheus |
-| **Grafana** | Import an existing Grafana dashboard so live run panels appear alongside APEX Load metrics | Settings → Integrations → Dashboards |
-| **Power BI** | Per-run publishing to a push dataset for business reporting | Settings → Integrations → Power BI |
-| **Dynatrace** | Native SaaS Classic/Grail test monitoring; separate webhook notifications | [Monitoring setup](DYNATRACE.md), Settings → Integrations → Notifications |
+| **Prometheus** | Controller and generator metrics scraped into your own monitoring | [Settings → Prometheus test monitoring](#/settings?setting=prometheus-capture) |
+| **Grafana** | Import an existing Grafana dashboard so live run panels appear alongside APEX Load metrics | [Monitoring → Dashboards](#/monitoring?section=dashboards) |
+| **Power BI** | Per-run publishing to a push dataset for business reporting | [Settings → Power BI](#/settings?setting=powerbi) |
+| **Dynatrace** | Native SaaS Classic/Grail test monitoring; separate webhook notifications | [Monitoring setup](DYNATRACE.md), [Settings → Notification routes](#/settings?setting=notifications) |
 | **OpenTelemetry** | Opt-in OTLP traces from standalone controller and generators; metrics remain Prometheus, with no native OTLP metrics/log export | Deployment configuration |
-| **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | Settings → Integrations → GitHub |
+| **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | [Settings → GitHub](#/settings?setting=github) |
 | **Kubernetes clusters** | Register AKS/EKS/generic control planes so an administrator can place generator pools on them with per-pool CPU, memory, and node placement | Admin cluster registry |
 
 Each has its own reference document: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [Power BI](OBSERVABILITY_INTEGRATIONS.md#power-bi-publishing-workflow), [Dynatrace webhooks and monitoring](DYNATRACE.md), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [GitHub integration](CICD_INTEGRATION.md#github-enterprise-integration), and [Cluster connections](CLUSTERS_AND_CLOUD.md#cluster-connections--host-resource-allocation).

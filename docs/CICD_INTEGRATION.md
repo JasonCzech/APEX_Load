@@ -94,7 +94,7 @@ accepted only for explicit non-production development.
 
 | System | File | Notes |
 | --- | --- | --- |
-| GitHub Actions | [`.github/actions/apexload-run/action.yml`](../.github/actions/apexload-run/action.yml) | Canonical versioned composite action; emits JSON/JUnit paths for a caller-selected artifact action. |
+| GitHub Actions | `.github/actions/apexload-run/action.yml` | Canonical versioned composite action; emits JSON/JUnit paths for a caller-selected artifact action. |
 
 GitHub Actions is the sole supported CI/CD path. Obsolete Jenkins, Azure
 Pipelines, and copy-to-activate workflow templates have been removed so the
@@ -249,11 +249,11 @@ consumer checkouts and not rebuilt application artifacts).
 
 | System | File | Target | Notes |
 | --- | --- | --- | --- |
-| GitHub Actions | [`.github/workflows/release.yml`](../.github/workflows/release.yml) | Release assets and registries | Signed tags; build once; SBOM, scan, sign, draft-then-publish. |
-| GitHub Actions | [`.github/workflows/deploy-aks.yml`](../.github/workflows/deploy-aks.yml) | AKS | Signed manifest and image-digest Helm deployment with rollback. |
-| GitHub Actions | [`.github/workflows/deploy-appservice.yml`](../.github/workflows/deploy-appservice.yml) | Azure App Service | Verified release zip, staging validation, slot swap, and swap-back. |
-| GitHub Actions | [`.github/workflows/publish-onprem.yml`](../.github/workflows/publish-onprem.yml) | On-prem registry | Mirror, scan, sign, then expose immutable release tags. |
-| GitHub Actions | [`.github/workflows/infra-azure.yml`](../.github/workflows/infra-azure.yml) | Azure infrastructure | Default-branch `repository_dispatch`; encrypted saved-plan handoff with independent apply approval. |
+| GitHub Actions | `.github/workflows/release.yml` | Release assets and registries | Signed tags; build once; SBOM, scan, sign, draft-then-publish. |
+| GitHub Actions | `.github/workflows/deploy-aks.yml` | AKS | Signed manifest and image-digest Helm deployment with rollback. |
+| GitHub Actions | `.github/workflows/deploy-appservice.yml` | Azure App Service | Verified release zip, staging validation, slot swap, and swap-back. |
+| GitHub Actions | `.github/workflows/publish-onprem.yml` | On-prem registry | Mirror, scan, sign, then expose immutable release tags. |
+| GitHub Actions | `.github/workflows/infra-azure.yml` | Azure infrastructure | Default-branch `repository_dispatch`; encrypted saved-plan handoff with independent apply approval. |
 
 ### App Service deployment notes
 
@@ -306,47 +306,6 @@ apexctl qa acceptance --api "$APEX_URL" --requirement BE-4 --feature browser-har
 
 Each command refuses flags that do not apply to it. Deleting evidence files does not withdraw a claim; record a `revoked` result instead. The status endpoint returns at most 5,000 subjects and says when it truncated.
 
-## Migration history
-
-GitHub Actions is the sole CI/CD system for APEX Load; Jenkins, Azure Pipelines
-templates, and dormant copy-to-activate deployment templates were removed when
-the active workflows replaced them. The cutover is complete only after observed
-parity, not merely after workflow files merge:
-
-1. Establish a clean `main` baseline and run the authoritative `CI` workflow on
-   five representative documentation, Go, dashboard, deployment, and protocol
-   changes. Resolve flakes before enforcement.
-2. Configure the `main` ruleset and merge queue to require only `CI / Required`
-   (a stable aggregate that avoids branch-protection drift). Keep the default
-   `GITHUB_TOKEN` read-only.
-3. Publish a signed `v1.0.0-rc.1`, then invoke the canonical
-   `owner/repository/.github/actions/apexload-run@v1.0.0-rc.1` from a separate
-   fixture repository with no APEX source and no Go toolchain.
-4. Complete GitHub.com and GHES staging release, controller-backed execution,
-   deployment, evidence, and rollback drills
-   ([GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md](GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md)).
-5. Publish the signed stable release, move the protected signed `v1` action tag,
-   and activate production environment reviewers and tag restrictions.
-6. Confirm no workflow, documentation example, or deployment path invokes
-   Jenkins or Azure Pipelines.
-
-Trust rules that survive the cutover: fork pull requests are untrusted and run
-only `fork-static` (patch-whitespace and JSON/DSL syntax checks using
-runner-provided `git` and `jq`; no checked-out scripts, binaries, tests, or
-source), all full CI lanes must be skipped, and `CI / Required` verifies that
-exact success/skipped contract. Same-repository pull requests, including
-Dependabot, get full CI. GitHub.com uses only the hard-coded ephemeral
-`ubuntu-24.04` runner; GHES requires a dedicated ephemeral pool labelled
-`apexload-ci-unprivileged` and never falls back to a trusted runner. Trusted
-self-hosted runner groups are restricted at the organization/enterprise layer to
-selected workflows pinned to protected refs; controller-backed performance gates
-need a trusted same-repository ref or a protected manual workflow with
-independent approval; `pull_request_target` is prohibited for any workflow that
-checks out or executes repository content. Required reviewers, prevent-self-review,
-protected-tag deployment restrictions, OIDC federated credentials, GitHub App
-permissions, rulesets, and KMS/HSM identities live outside Git and must be
-configured and audited by administrators before production activation.
-
 ## GitHub Enterprise Integration
 
 APEX Load treats GitHub Enterprise Server (GHES) as a first-class source-control
@@ -370,7 +329,7 @@ and push actions, and a PAT can be configured only as a headless fallback.
 
 ### Global Settings
 
-Dashboard -> Settings -> Integrations -> GitHub Script Sync:
+**Settings → GitHub** (`#/settings?setting=github`):
 
 | Field | Example | Notes |
 | --- | --- | --- |
@@ -392,7 +351,7 @@ the broader SSRF guard.
 
 ### Project Policy
 
-Settings -> Projects & Compliance -> GitHub Project Policy defines the server
+**Settings → Project GitHub policy** (`#/settings?setting=github-policy`) defines the server
 authority for each project:
 
 - Allowed repositories and branches, including glob patterns such as

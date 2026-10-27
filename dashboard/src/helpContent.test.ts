@@ -61,17 +61,43 @@ describe('Help catalogue and content contracts', () => {
   it('keeps repository-style fragments navigable across every bundled help source', async () => {
     for (const article of helpArticles) {
       const source = await loadHelpSource(article)
-      for (const match of source.matchAll(/\]\(([^)]+)\)/g)) {
+      const withoutCode = source.replace(/```[\s\S]*?```/g, '')
+      for (const match of withoutCode.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
         const href = match[1]
+        expect(href, `${article.path}: ${href}`).not.toMatch(/github\.com|admhelp\.microfocus\.com/i)
         if (/^(https?:|mailto:|#\/)/.test(href)) continue
         const destination = resolveHelpLink(href, article, source)
+        expect(destination, `${article.path}: ${href}`).not.toBe('')
         if (!destination.startsWith('#/docs?')) continue
         const params = new URLSearchParams(destination.split('?')[1])
+        const target = helpArticles.find(candidate => candidate.id === params.get('article'))!
+        expect(target, `${article.path}: ${href}`).toBeDefined()
         const section = params.get('section')
         if (!section) continue // a link to a whole article has no section to resolve
-        const target = helpArticles.find(candidate => candidate.id === params.get('article'))!
-        expect(articleForSection(target.path, section, await loadHelpSource(target)), `${article.path}: ${href}`).toBeDefined()
+        expect(articleForSection(target.path, section, await loadHelpSource(target))?.id, `${article.path}: ${href}`).toBe(target.id)
       }
+    }
+  })
+  it('blocks GitHub repository and LoadRunner documentation URLs while allowing monitoring tool references', () => {
+    expect(resolveHelpLink('https://github.com/JasonCzech/APEX_Load/blob/main/docs/LOADRUNNER_COVERAGE.md', first, '')).toBe('')
+    expect(resolveHelpLink('https://admhelp.microfocus.com/lr/en/latest/help/WebHelp/Content/VuGen/t_HowToCreateJavaScript.htm', first, '')).toBe('')
+    expect(resolveHelpLink('https://docs.dynatrace.com/docs/platform/grail/dynatrace-query-language/commands/smartscape-commands', first, '')).toBe(
+      'https://docs.dynatrace.com/docs/platform/grail/dynatrace-query-language/commands/smartscape-commands',
+    )
+  })
+  it('routes non-admin links to shared sources to user-guide articles and bundles EKS and Java Vuser coverage', async () => {
+    const webApi = helpArticles.find(a => a.id === 'web-api-support')!
+    const webApiSource = await loadHelpSource(webApi)
+    expect(resolveHelpLink('guides/HTTP3_AND_QUIC.md', webApi, webApiSource)).toBe('#/docs?guide=user-guide&article=http3-quic')
+    const dynatrace = helpArticles.find(a => a.id === 'dynatrace-monitoring')!
+    const dynatraceSource = await loadHelpSource(dynatrace)
+    expect(resolveHelpLink('OBSERVABILITY_INTEGRATIONS.md#governed-provider-registry', dynatrace, dynatraceSource)).toBe(
+      '#/docs?guide=user-guide&article=monitoring-governance&section=governed-provider-registry',
+    )
+    for (const id of ['install-eks', 'install-aws-terraform', 'lr-java-vuser']) {
+      const article = helpArticles.find(a => a.id === id)!
+      expect(article, id).toBeDefined()
+      expect(articleBlocks(article, await loadHelpSource(article)).length, id).toBeGreaterThan(0)
     }
   })
   it('resolves punctuation and duplicate repository headings without changing existing help IDs', () => {

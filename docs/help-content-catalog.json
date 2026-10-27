@@ -18,6 +18,7 @@
     "sections": [
       "What APEX Load Does",
       "Ways To Use APEX Load",
+      "Quick Start: Your First Test",
       "Signing In And Getting Oriented",
       "The Dashboard"
     ]
@@ -154,35 +155,40 @@
     "area": "user-guide",
     "title": "Browser document evidence",
     "path": "docs/guides/BROWSER_DOCUMENT_EVIDENCE.md",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "group": "Analysis and evidence"
   },
   {
     "id": "browser-intelligence",
     "area": "user-guide",
     "title": "Browser intelligence workflows",
     "path": "docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "group": "Analysis and evidence"
   },
   {
     "id": "browser-interaction-evidence",
     "area": "user-guide",
     "title": "Browser interaction evidence",
     "path": "docs/guides/BROWSER_INTERACTION_EVIDENCE.md",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "group": "Analysis and evidence"
   },
   {
     "id": "browser-har-ownership",
     "area": "user-guide",
     "title": "Native HAR working-file ownership",
     "path": "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "group": "Analysis and evidence"
   },
   {
     "id": "telemetry-policy-receipts",
     "area": "user-guide",
     "title": "Telemetry budget policy receipts",
     "path": "docs/guides/TELEMETRY_POLICY_RECEIPTS.md",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "group": "Analysis and evidence"
   },
   {
     "id": "authoring-scenario-fidelity",
@@ -227,7 +233,10 @@
     "title": "Backup, recovery & retention",
     "path": "docs/ENTERPRISE_PLATFORM_RUNBOOK.md",
     "owner": "APEX Load maintainers",
-    "group": "Runbooks"
+    "group": "Runbooks",
+    "sections": [
+      "Enterprise Data Platform Operations Runbook"
+    ]
   },
   {
     "id": "platform",
@@ -235,7 +244,10 @@
     "title": "Deployment & HA",
     "path": "docs/ENTERPRISE_PLATFORM_RUNBOOK.md",
     "owner": "APEX Load maintainers",
-    "group": "Runbooks"
+    "group": "Runbooks",
+    "sections": [
+      "Enterprise Platform Architecture Runbook"
+    ]
   },
   {
     "id": "http3-operations",
@@ -246,6 +258,7 @@
     "group": "Runbooks",
     "sections": [
       "Enable HTTP/3 execution",
+      "Scenario preflight",
       "Network egress and UDP buffers"
     ]
   },
@@ -265,7 +278,8 @@
     "owner": "APEX Load maintainers",
     "group": "Runbooks",
     "sections": [
-      "Cluster connections & host resource allocation"
+      "Cluster connections & host resource allocation",
+      "Multi-cloud PaaS compute"
     ]
   },
   {
@@ -308,6 +322,7 @@
     "path": "docs/API_USER_GUIDE.md",
     "owner": "APEX Load maintainers",
     "sections": [
+      "Base URL",
       "Start with the REST API"
     ]
   },
@@ -318,7 +333,8 @@
     "path": "docs/API_USER_GUIDE.md",
     "owner": "APEX Load maintainers",
     "sections": [
-      "Authentication"
+      "Authentication",
+      "Dev Preview Headers"
     ]
   },
   {
@@ -360,7 +376,16 @@
     "area": "general",
     "title": "CI pipeline examples",
     "path": "docs/CICD_INTEGRATION.md",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Building blocks",
+      "Patterns",
+      "Supported integration",
+      "Copy-ready GitHub Actions gates",
+      "Deployment pipelines",
+      "Publishing the JUnit report",
+      "Feature acceptance evidence"
+    ]
   },
   {
     "id": "mcp",
@@ -505,7 +530,8 @@
     "group": "Reference",
     "owner": "APEX Load maintainers",
     "sections": [
-      "Power BI publishing workflow"
+      "Power BI publishing workflow",
+      "Confluence Cloud result publishing"
     ]
   },
   {
@@ -587,6 +613,22 @@
     ]
   },
   {
+    "id": "install-eks",
+    "title": "Amazon EKS",
+    "path": "deployments/k8s/eks/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Overview",
+      "How the AWS pieces map to APEX Load config",
+      "Apply",
+      "The two things that differ most from AKS",
+      "Deployment controls and optional add-ons",
+      "Integration readiness"
+    ]
+  },
+  {
     "id": "install-helm",
     "title": "Helm installation",
     "path": "deployments/helm/apexload/README.md",
@@ -611,6 +653,17 @@
     "owner": "APEX Load maintainers",
     "sections": [
       "Azure Terraform"
+    ]
+  },
+  {
+    "id": "install-aws-terraform",
+    "title": "AWS infrastructure",
+    "path": "deployments/k8s/eks/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "AWS Terraform"
     ]
   },
   {
@@ -666,6 +719,17 @@
     "owner": "APEX Load maintainers"
   },
   {
+    "id": "lr-java-vuser",
+    "title": "LoadRunner Java VUser coverage",
+    "path": "docs/LOADRUNNER_COVERAGE.md",
+    "sections": [
+      "Java Vuser import coverage"
+    ],
+    "area": "user-guide",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "sap-gui",
     "area": "user-guide",
     "title": "SAP GUI runner specification",
@@ -690,6 +754,7 @@
     "title": "HTTP/3 and QUIC",
     "path": "docs/guides/HTTP3_AND_QUIC.md",
     "owner": "APEX Load maintainers",
+    "group": "Reference",
     "sections": [
       "Choose a policy",
       "Worked examples",
@@ -744,6 +809,7 @@
     "group": "Reference",
     "owner": "APEX Load maintainers",
     "sections": [
+      "Retired monitoring integration",
       "Run-bound monitoring storage and signing",
       "Prometheus target-system test monitoring",
       "Governed provider registry"

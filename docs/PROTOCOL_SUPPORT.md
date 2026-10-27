@@ -435,12 +435,6 @@ APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'B
 
 Update density guidance only when repeated controlled runs justify it.
 
-### Detailed Planning References
-
-The following files are retained for implementation history and tactical detail:
-
-- [ROADMAP.md](ROADMAP.md#browser-and-mobile)
-
 
 ## Broker and messaging support
 
@@ -479,7 +473,7 @@ populate them. Deeper broker-native parity remains uneven by provider, especiall
 for offset/queue-depth semantics, DLQ/retry details, transactions, and
 provider-specific management-plane probes.
 
-The optional messaging management evidence contract is separate from load action results. It preserves exact decimal positions/populations, unavailable inventory, source identity and collection ownership through run artifacts and a dedicated archive sidecar. The foundation registered no provider; the subsequent Kafka slice supplies the executable `kafka-offsets` reader with explicit TLS trust, numeric routes and pinned SASL identities. Capability responses distinguish contract availability from the actual registered pack list; the executable Service Bus `servicebus-runtime` reader uses fixed approved HTTPS entity descriptions, and the `solace-semp` reader polls exact individual queue/topic-endpoint depths under pinned Basic identity and durable provider-session quarantine. Its compiled reader and controlled local tests are separate from pending live broker and restarted-source qualification; see the [Solace verification record](archive/qa-reviews/MESSAGING_2026-10.md#feature-completion-solace-management-2026-10-04). Service Bus collection, SQLite/API, full Go, targeted races and full dashboard checks pass in both auth profiles; PostgreSQL and live Azure qualification remain pending in [its verification record](archive/qa-reviews/MESSAGING_2026-10.md#feature-completion-servicebus-management-2026-10-04). The Apache Kafka 3.9.2 single-broker authentication/offset and open-transaction visibility fixture passed, as did the final browser workflows in both auth profiles. The full Go repository gate also passed; broader provider qualification remains pending in its verification record. See [exact management evidence](MONITORING_AND_PREPARATION.md#exact-messaging-management-evidence).
+The optional messaging management evidence contract is separate from load action results. It preserves exact decimal positions/populations, unavailable inventory, source identity and collection ownership through run artifacts and a dedicated archive sidecar. The foundation registered no provider; the subsequent Kafka slice supplies the executable `kafka-offsets` reader with explicit TLS trust, numeric routes and pinned SASL identities. Capability responses distinguish contract availability from the actual registered pack list; the executable Service Bus `servicebus-runtime` reader uses fixed approved HTTPS entity descriptions, and the `solace-semp` reader polls exact individual queue/topic-endpoint depths under pinned Basic identity and durable provider-session quarantine. Its compiled reader and controlled local tests are separate from pending live broker and restarted-source qualification. Service Bus collection, SQLite/API, full Go, targeted races and full dashboard checks pass in both auth profiles; PostgreSQL and live Azure qualification remain pending. The Apache Kafka 3.9.2 single-broker authentication/offset and open-transaction visibility fixture passed, as did the final browser workflows in both auth profiles. The full Go repository gate also passed; broader provider qualification remains pending. See [exact management evidence](MONITORING_AND_PREPARATION.md#exact-messaging-management-evidence).
 
 Standalone Event Hubs processor progress now retains ownership generations, inventory, delivered/rejected/redelivered counts, checkpoint outcomes/timing/retry provenance and separate delivered/checkpoint/tail positions across live, history, archives, reports and bounded API/CLI reads. Sequences/backlog are exact decimal strings; provider offsets are opaque. Cumulative rows merge by latest revision, including idle/final evidence, instead of adding repeated snapshot populations.
 
@@ -498,7 +492,6 @@ Tail queries are disabled by default. Explicit `observe_partition_tail` adds bou
 The following files are retained for deeper implementation history and parity
 work:
 
-- [ROADMAP.md](ROADMAP.md#messaging)
 - [Web/API execution matrix](PROTOCOL_SUPPORT.md#webapi-execution-support-matrix)
 
 ### JMS sidecar
@@ -614,7 +607,7 @@ The fixture preserves 100/50/50 threads, one-second thread ramps, 300-second lin
 - JAAS parsing accepts a bounded set of options and never loads uploaded Java classes. Nonstandard option names, malformed/unknown options, unsupported serializers/callbacks/configuration, unresolved variables and missing credentials retain source-linked blockers.
 - East/west Event Hubs bindings are distinct. Messaging source redaction checks decoded XML attributes as well as text, including credentials duplicated in message element names.
 - Preview shows three workload curves, planned samples, affinity, preserved Kafka overrides and explicit converted-versus-runnable status. Warnings include static data, unused counters, literal-Z assumptions, partition availability, View Results Tree and missing downstream verification.
-- The pinned reference installation starts and loads the synthetic JMX. See [reference evidence](../scripts/README.md#jmeter-messaging-reference-baseline). This is startup/formatter and deterministic parameter evidence only.
+- The pinned reference installation starts and loads the synthetic JMX (`scripts/README.md#jmeter-messaging-reference-baseline`). This is startup/formatter and deterministic parameter evidence only.
 
 #### Execution boundary
 
@@ -633,45 +626,11 @@ Existing scripts with none of these compatibility settings retain their existing
 
 Do not clear compatibility blockers merely because credentials are bound or a warning was acknowledged. Do not enable the disabled CSV, add business assertions, transmit the ineffective Header Manager, or change message volume without explicit review.
 
-#### Validation evidence for this implementation
-
-- Conversion of the supplied file: 3/3 enabled workload samplers mapped to Kafka/Event Hubs/Event Hubs; all three remain blocked drafts. Threads 100/50/50, one-second ramps, 3,900-second duration and single-generator affinity are preserved.
-- Focused converter, import-contract, DSL, Kafka, Event Hubs and engine suites pass. API tests cover attested save/reload, blocked launch, source/schedule tampering and affinity/loss rejection.
-- Shared parameter tests pass under the race detector, including 100 concurrent users, exact counter wrap counts, Java oracle vectors and run/plan isolation. Real-adapter build-tag suites pass; these are not live-service conformance results.
-- The messaging browser workflow passes in both dev-admin and local-auth profiles, including workload display, effective settings, scenario persistence and blocked launch. A fresh dashboard build and visual inspection of the three-curve preview passed.
-- The full dashboard cycle did not pass: review/credential tests hit standard timeouts. Their 106-test diagnostic rerun passed with a 30-second timeout. A separate local-auth HTTP JMeter repair workflow also hit a click timeout. These diagnostic passes do not replace the required normal full cycle.
-- Full repository Go validation has not yet produced a clean result. The initial run timed out in the large API suite; Git-dependent QA checks in the isolated validation copy were subsequently corrected and passed. Do not report the entire repository or the full plan as verified from focused checks alone.
-
-#### Two-pass code review follow-up
-
-Both passes included regression tests for their findings. Fixes:
-
-- Reject retained sampler pacing and per-user source counter identities even after the profile/metadata is removed, including direct engine callers.
-- Bound standalone compatibility validation and include parallel branches in structural validation and blocker traversal.
-- Require complete source identities and schedules on messaging scenario save; reject duplicate or omitted source groups.
-- Redact credential-valued Kafka extra properties from source review. Omit source review when unsupported JAAS escaping cannot be decoded safely.
-- Normalize numeric Kafka acknowledgement aliases while retaining their authored values in effective-settings evidence.
-- Detect structured Event Hubs message options instead of silently ignoring nonempty collection properties.
-- Preserve each sampler's native configuration, retain the first script configuration, and explicitly block unsupported differing producer configurations. Credential requirement identities use source-node identities rather than display names.
-- Reject unsupported multi-JMX messaging scenario assembly instead of inheriting the first document's timing and affinity.
-- Use the longest messaging schedule for scenario duration; do not invent a five-minute duration when no source schedule exists.
-- Keep shared parameter generation bound to its session definition and reject unnamed sessions.
-- Require one complete XML document and bound depth/node count before recursive conversion and source review.
-
-These fixes do not enable the unfinished compatibility runtime or establish live parity.
-
-Review validation: focused converter/import-contract, DSL, engine and API regressions pass, as do shared-state race tests and Kafka/Event Hubs build-tag tests. The full dashboard cycle passed type checking and lint, then reported 4,464 passing tests and one standard-timeout failure in `ScriptImportReview`; all 40 tests in that file passed on a normal-timeout rerun. A fresh dashboard build passed. The frozen full Go run stopped during linking with `no space left on device`, so repository-wide Go validation remains incomplete. These results do not establish live-service parity.
-
-The fresh full browser run completed: dev-admin 136 passed / 4 skipped / 1 failed; local-auth 56 passed / 1 skipped / 1 failed. Both failures are the LoadRunner review scroll-position assertion at `dashboard/e2e/workflow-loadrunner-review.spec.ts:789` (outside these messaging changes). All three JMeter workflows passed in both profiles, including messaging save/reopen and blocked launch. The messaging screenshot was visually inspected. Full browser logs: `/tmp/apex-messaging-implementation/review-browser.log`; full Go environmental failure: `/tmp/apex-messaging-implementation/review-go-frozen.log`.
-
 #### Throughput calculation continuation
 
 Implemented a session-owned, concurrency-safe admission calculation state using the pinned TST 2.6 per-second behavior. Definitions are copied, conflicting shared identities are rejected, separate source plans/runs cannot share permits, and unused capacity does not carry into later seconds. Java rate and delay oracle vectors match exactly (7,804 rate values and 448 delay values); full-duration virtual-clock tests cover both workload curves. The reference final endpoint is inclusive: schedule exhaustion is first observed at second 3,901. The nominal authored duration remains 3,900 seconds.
 
 This is calculation conformance only. A component wait loop now applies multiple timers in source order, notifies registered waiters, tracks contention, and cleans up on cancellation; these behaviors have focused concurrent tests. The state was subsequently wired to pre-sampler execution and the engine's active pause clock (see the continuation below). Reference stop escalation and end-to-end timing still require verification. No compatibility blocker was removed.
-
-Continuation validation: `go test -p 1 -timeout 30m ./...` passed, the full engine suite passed after the final component changes, and `go test -race ./pkg/engine -run TestSamplerSchedule -count=1` passed. Oracle regeneration and altered-classpath rejection passed. These results supersede the earlier incomplete full Go attempts for this checkout, but do not establish live messaging parity. No dashboard behavior or public DSL contract changed in this continuation.
-
 
 #### Runtime continuation — not certified for strict replay
 
@@ -696,31 +655,9 @@ Remaining delivery work:
 
 The operator has no authorized Kafka/OAuth or Event Hubs endpoints available. Continue local implementation and reference tests; live-service conformance remains **unverified**, and no mock result clears that status.
 
-
 Additional pinned evidence: the actual Kafka 3.3.1 callback matches seven HTTP wire-format vectors, including Java whitespace and form-encoding behavior. The actual DI sampler record builder matches four key/partition vectors without opening a broker connection. It converts an empty string to a null Kafka key and retains whitespace-only keys. The source's authored empty value remains visible in the draft.
 
-Latest browser validation: 4,472 unit tests passed. Dev-admin completed with 136 passed, four skipped and one failure in the general scenario-builder chart/legend placement assertion (three-pixel overlap); local-auth completed with 57 passed and one skipped. All three JMeter workflows passed in both profiles. The messaging preview screenshot was visually inspected. The full dashboard cycle is therefore not a clean pass.
-
-Latest stable validation: the complete `go test -p 1 -timeout 30m ./...` run passed on the final Go tree. Full race suites passed for HTTP OAuth, Kafka, Event Hubs and engine, and both real-adapter build-tag suites passed. These supersede the earlier interrupted Go runs. The dashboard cycle result above remains unchanged: one general scenario chart/legend overlap failure, with all JMeter workflows passing.
-
 Offline PNOP lifecycle evidence now executes the actual pinned sampler while substituting SDK transport methods and forbidding network access. Five cases cover repeated successful three-message samples, creation failure, send failure and close failure. They confirm per-sample producer ownership, success timing before close and zero completed sample time on creation/send failure. They also expose an outstanding difference: PNOP lets a close exception escape; APEX records a failed protocol result. Strict replay stays blocked. See `scripts/jmeter-reference/eventhubs-lifecycle-evidence.json` and its accompanying vectors; deterministic regeneration and changed-classpath rejection passed. This evidence does not certify actual Azure SDK or live-service behavior.
-
-#### Repeated code review of runtime continuation
-
-Two corrective passes and a subsequent review covered the uncommitted importer, runtime, credential, affinity, metric and reference-harness changes. Regression tests now cover:
-
-- Independent Kafka source configurations cannot inherit OAuth/TLS fields from the preceding producer. Distinct configuration identities remain distinct even with identical effective settings; unsupported multiple producer lifetimes stay blocked.
-- Positive metadata/buffer admission deadlines cannot be bypassed by a late metadata response. Zero-wait cached-metadata admission remains supported.
-- Parallel branches inherit the parent iteration's shared parameter values without consuming new sequence values. Pending sampler gates observe group cancellation even outside the ordinary VUser run wrapper.
-- Event Hubs restores the VUser client after a cleanup panic and rejects a nil sample factory result.
-- Native Kafka batch settings cannot override a stricter protocol size cap.
-- Shared Kafka owner cleanup preserves cancellation classification without exposing adapter error text. Already-cancelled OAuth callers cannot obtain cached tokens.
-
-The subsequent code review found no additional actionable defects in these changes. This does not remove the separately documented implementation gaps or certify strict replay.
-
-A further edge-case pass reproduced an unsaveable blocked draft when an Event Hubs sampler contained no messages. The importer now retains that sampler, its zero-message source evidence and its specific execution blocker without emitting an invalid native message-list parameter. The regression fails before the fix and passes after it; a subsequent review found no further actionable issues. Final validation was restarted after this correction.
-
-Final review validation: the complete Go suite passed on the final production tree. Full engine/HTTP OAuth/Kafka/Event Hubs race suites and both messaging real-adapter tag suites passed; cancellation/shared-parameter regressions also passed 20 repeated race runs. All four pinned offline oracle vector/evidence sets reproduced exactly. The full dashboard cycle passed type checking, lint, 4,472 unit tests, the fresh embedded build, and dev-admin workflows (137 passed, four skipped). Local-auth reported 56 passed, one skipped, and one Author editor validation-message click timeout at `workflow-author-experience.spec.ts:51`, outside the messaging changes. That exact workflow passed three consecutive reruns at the normal timeout. This diagnostic pass does not make the full dashboard cycle a clean pass. No frontend behavior was modified during this review, and strict/live conformance remains unverified.
 
 ##### Distributed source ownership and atomic repair batches
 

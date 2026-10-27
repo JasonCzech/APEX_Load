@@ -1,6 +1,6 @@
 # Retained resource inspection
 
-This guide describes bounded inspection of retained archive resource observations. Document lifecycle measurements have a separate [browser document evidence guide](BROWSER_DOCUMENT_EVIDENCE.md). The repository's [feature completion program](../FEATURE_COMPLETION_SPEC.md#6-browser-evidence-completion) records full browser evidence and intelligence acceptance. That planning document is not bundled in dashboard Help.
+This guide describes bounded inspection of retained archive resource observations. Document lifecycle measurements have a separate [browser document evidence guide](BROWSER_DOCUMENT_EVIDENCE.md).
 
 ## Open a completed run
 

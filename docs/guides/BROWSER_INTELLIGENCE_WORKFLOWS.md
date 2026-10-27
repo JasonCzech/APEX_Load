@@ -1,6 +1,6 @@
 # Browser intelligence workflows
 
-Status: implemented (Wave 5, E6). This guide covers BI-4 of the [feature completion specification](../FEATURE_COMPLETION_SPEC.md#bi-4-user-workflows-and-acceptance): where a run's browser intelligence is read, how its policies are edited, and what reports, the CLI and MCP tools carry. The results themselves are described in [browser findings](#browser-findings-and-qualified-scores), [interaction evidence](BROWSER_INTERACTION_EVIDENCE.md) and [journey accounting](#journey-accounting).
+Status: implemented. This guide covers where a run's browser intelligence is read, how its policies are edited, and what reports, the CLI and MCP tools carry. The results themselves are described in [browser findings](#browser-findings-and-qualified-scores), [interaction evidence](BROWSER_INTERACTION_EVIDENCE.md) and [journey accounting](#journey-accounting).
 
 ## Guide map
 
@@ -84,7 +84,7 @@ Each section reads its result when the report is exported. A section whose resul
 
 ## Acceptance
 
-[Browser intelligence acceptance](../qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md) lists the tests that accept each of these behaviors, including a golden page run in Chromium and WebKit against measured ground truth.
+Automated acceptance suites verify each of these behaviors, including a golden page run in Chromium and WebKit against measured ground truth.
 
 ## Browser findings and qualified scores
 

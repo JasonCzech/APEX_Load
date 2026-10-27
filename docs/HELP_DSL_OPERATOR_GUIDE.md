@@ -25,7 +25,7 @@ These are orientation aids, not promises that every imported feature behaves ide
 | Transaction markers / Transaction Controller | Named reporting units and automatic transaction settings | Choose the reporting scope and compare equivalent measurements. |
 | If / Loop Controllers | `control_if`, `control_loop` | Use explicit nested `control.steps`; indentation alone does not define scope. |
 
-For JMeter's original terminology and scoping rules, see the [Apache JMeter test-plan manual](https://jmeter.apache.org/usermanual/test_plan.html). LoadRunner migration details are in [LoadRunner web coverage](LOADRUNNER_COVERAGE.md) and [Runtime settings support](RUNTIME_SETTINGS_PARITY.md).
+For JMeter's original terminology and scoping rules, see the [Apache JMeter test-plan manual](https://jmeter.apache.org/usermanual/test_plan.html) and [Import fidelity and repairs](IMPORT_FIDELITY_AND_REPAIRS.md#jmeter-source-plan-execution-and-reviewed-batch-repairs). LoadRunner migration details are in [LoadRunner web coverage](LOADRUNNER_COVERAGE.md) and [Runtime settings support](RUNTIME_SETTINGS_PARITY.md).
 
 ## Understand how one user runs
 

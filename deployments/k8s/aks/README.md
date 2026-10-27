@@ -11,7 +11,7 @@ Controller-loss fencing is mandatory. Follow the maintenance-window rollout
 gate and acceptance drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision)
 when upgrading from a tokenless release.
 
-The matching infrastructure lives in [`deployments/azure/terraform`](../../azure/terraform) (see [Azure Terraform](#azure-terraform)).
+The matching infrastructure lives in `deployments/azure/terraform` (see [Azure Terraform](#azure-terraform)).
 
 ```
                         ┌─ AKS (apexload namespace) ─────────────────────┐
@@ -42,18 +42,18 @@ so generators that KEDA adds or removes join/leave the fleet automatically —
 no static pod list, no controller restart.
 
 Audited Kubernetes restart controls are enabled by default through
-[restart-controls.yaml](restart-controls.yaml). Only the controller mounts a
+`restart-controls.yaml`. Only the controller mounts a
 default Kubernetes API token. Generator pods receive no Kubernetes API token or
 restart RBAC; the workload-identity webhook separately injects its cloud-audience
 token for Azure APIs. See
-[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md).
+[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls).
 
 ## Fresh deployment
 
 1. **Provision** — `terraform apply` in `deployments/azure/terraform`, then
    `$(terraform output -raw kubeconfig_command)`.
 2. **Images** — `make docker-push-acr ACR_NAME=<registry>` (or let CI do it;
-   see [deploy-aks.yml](../../../.github/workflows/deploy-aks.yml)).
+   see `.github/workflows/deploy-aks.yml`).
 3. **Configure** — prefer the render script below. If you edit manifests
    directly, replace the `CHANGE-ME` values in `configmap.yaml`,
    `kustomization.yaml` (ACR login server), and `controller-ingress.yaml`
@@ -87,7 +87,7 @@ token for Azure APIs. See
 
 ## Migrating from on-prem Kubernetes
 
-The on-prem manifests (`deployments/k8s/local`, `ha`) and these AKS manifests
+The on-prem manifests (`deployments/k8s/onprem`, `onprem-ha`) and these AKS manifests
 run the same images with the same env contract, so migration is configuration
 + data movement, not a re-platform.
 
@@ -131,7 +131,7 @@ deleting the on-prem copies.
 
 ### 4. Migrate script secrets
 
-Use Settings → Projects & Compliance → Project Secrets to create or rotate
+Use Shared assets → Project secrets (`#/shared-assets?section=secrets`) to create or rotate
 logical values. The controller writes them through workload identity; values
 are never returned to the browser. Existing values can still be provisioned
 out of band with `az keyvault secret set`.
@@ -212,8 +212,7 @@ has passed a production AKS disruption test.
 
 ### Verified Baseline
 
-The following checks were last run against the repository during the AKS
-readiness pass (run date not recorded; this table was last edited in commit `098986604`, 2026-07-20, and the checks were not re-run as part of the 2026-09-24 documentation review):
+The following checks verify the AKS overlay and Terraform configuration:
 
 | Check | Result |
 | --- | --- |

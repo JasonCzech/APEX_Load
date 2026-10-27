@@ -5,6 +5,8 @@ export type MarkdownListBlock = { kind: 'list'; ordered: boolean; start?: number
 export type MarkdownBlock =
   | { kind: 'heading'; level: number; text: string; id: string }
   | { kind: 'paragraph'; text: string }
+  | { kind: 'blockquote'; text: string }
+  | { kind: 'hr' }
   | { kind: 'code'; language: string; code: string }
   | MarkdownListBlock
   | { kind: 'table'; headers: string[]; rows: string[][] }
@@ -14,12 +16,16 @@ const ORDERED_MARKER = /^(\s*)(\d+)[.)]\s+(.*)$/
 
 type ListMarker = { indent: number; ordered: boolean; number?: number; text: string }
 
-/** The visible text of inline Markdown: code, bold and link syntax removed. */
+/** The visible text of inline Markdown: code, bold, italic and link syntax removed. */
 export function markdownPlainText(text: string) {
   return text
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*((?:[^*`]|`[^`]+`)+)\*\*/g, '$1')
+    .split(/(`[^`]+`)/)
+    .map((part, index) => index % 2
+      ? part.slice(1, -1)
+      : part.replace(/(?<![*\w/`])\*([^*`\s/]|[^*`\s/][^*`\n]*?[^*`\s/])\*(?![*\w/`])/g, '$1'))
+    .join('')
 }
 
 function slugify(text: string) {
@@ -51,9 +57,18 @@ function matchCodeFence(line: string) {
   return line.match(/^```([^`]*)\s*$/)
 }
 
+function isHorizontalRule(line: string) {
+  return /^\s*(?:-\s*-\s*-[-\s]*|\*\s*\*\s*\**[*\s]*|_\s*_\s*_[_\s]*)$/.test(line)
+}
+
+function matchBlockquote(line: string) {
+  return line.match(/^\s*>\s?(.*)$/)
+}
+
 // A bullet line and a table separator can look alike (`- - -`), and the table
 // branch runs first, so only lines that fail `isTableStart` reach this.
 function matchListMarker(line: string): ListMarker | null {
+  if (isHorizontalRule(line)) return null
   const bullet = line.match(BULLET_MARKER)
   if (bullet) return { indent: bullet[1].length, ordered: false, text: bullet[2].trim() }
   const ordered = line.match(ORDERED_MARKER)
@@ -86,6 +101,8 @@ function endsListContinuation(lines: string[], index: number) {
     || /^(#{1,6})\s+/.test(line)
     || matchCodeFence(line) !== null
     || isTableStart(lines, index)
+    || isHorizontalRule(line)
+    || matchBlockquote(line) !== null
     || commentEnd(lines, index) !== -1
   )
 }
@@ -206,6 +223,25 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       continue
     }
 
+    if (isHorizontalRule(line)) {
+      blocks.push({ kind: 'hr' })
+      index += 1
+      continue
+    }
+
+    const quoteMatch = matchBlockquote(line)
+    if (quoteMatch) {
+      const quoteLines: string[] = []
+      while (index < lines.length) {
+        const nextQuote = matchBlockquote(lines[index])
+        if (!nextQuote) break
+        if (nextQuote[1].trim()) quoteLines.push(nextQuote[1].trim())
+        index += 1
+      }
+      blocks.push({ kind: 'blockquote', text: quoteLines.join(' ') })
+      continue
+    }
+
     const listMarker = matchListMarker(line)
     if (listMarker) {
       const { block, nextIndex } = parseList(lines, index, listMarker.indent)
@@ -222,6 +258,8 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       && !matchCodeFence(lines[index])
       && !matchListMarker(lines[index])
       && !isTableStart(lines, index)
+      && !isHorizontalRule(lines[index])
+      && !matchBlockquote(lines[index])
       && commentEnd(lines, index) === -1
     ) {
       paragraphLines.push(lines[index].trim())
