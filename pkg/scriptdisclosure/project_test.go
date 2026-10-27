@@ -1468,3 +1468,27 @@ func TestProjectShortNamedHeaderAndFieldValues(t *testing.T) {
 		t.Fatalf("long and password-like values were not matched: %#v", params)
 	}
 }
+
+func TestIgnoredProxySourceRemainsProtectedAfterExclusion(t *testing.T) {
+	const value = "ignored-proxy-username-canary"
+	script := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{ProxyMode: "none"}}, Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "enterprise_script_archive", Preserved: map[string]any{
+		dsl.ImportPreservedCredentialPolicyKey:        dsl.ImportPreservedCredentialPolicyPreserve,
+		dsl.ImportPreservedIgnoredProxyCredentialsKey: map[string]any{"version": 1, "values_base64": []string{base64.StdEncoding.EncodeToString([]byte(value))}},
+		"source_review": map[string]any{"source_files": []map[string]string{{"path": "default.cfg", "content": "ProxyUserName=" + value}}},
+	}}}}
+	projected, err := Project(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), value) || strings.Contains(string(raw), base64.StdEncoding.EncodeToString([]byte(value))) {
+		t.Fatal("omitted proxy source credential was disclosed")
+	}
+	original, _ := json.Marshal(script)
+	if !strings.Contains(string(original), value) {
+		t.Fatal("disclosure changed the protected original")
+	}
+}

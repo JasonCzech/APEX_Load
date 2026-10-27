@@ -1342,3 +1342,26 @@ func TestImportedLegacyBodyCredentialsSkipShortNamedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestIgnoredProxyCredentialsAreDisclosureOnly(t *testing.T) {
+	const value = "omitted-proxy-user-canary"
+	script := &dsl.Script{Protocol: "http", Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "enterprise_script_archive", Preserved: map[string]any{
+		dsl.ImportPreservedCredentialPolicyKey:        dsl.ImportPreservedCredentialPolicyPreserve,
+		dsl.ImportPreservedIgnoredProxyCredentialsKey: map[string]any{"version": 1, "values_base64": []string{base64.StdEncoding.EncodeToString([]byte(value))}},
+	}}}}
+	disclosed, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disclosed) != 1 || disclosed[0] != value {
+		t.Fatal("omitted source credential lost its disclosure protection")
+	}
+	runtimeValues, err := ImportedCredentialValues(script)
+	if err != nil || len(runtimeValues) != 0 {
+		t.Fatal("omitted proxy credential entered runtime resolution")
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedIgnoredProxyCredentialsKey] = map[string]any{"version": 1, "values_base64": []string{"malformed-base64!"}}
+	if _, err := ImportedCredentialValuesForDisclosure(script); err == nil {
+		t.Fatal("malformed protected evidence did not fail closed")
+	}
+}

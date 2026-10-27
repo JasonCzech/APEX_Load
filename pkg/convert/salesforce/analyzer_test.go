@@ -3186,3 +3186,24 @@ func TestNativePreviewRemapBaselineObservations(t *testing.T) {
 		t.Fatalf("remapped[1] = %#v, want ID 1", remapped[1])
 	}
 }
+
+func TestAnalyzeDetectionOnlyDoesNotAssessOrGenerateReplay(t *testing.T) {
+	for _, target := range []string{"/home", "/aura", "/services/data/v60.0/sobjects/Account"} {
+		t.Run(target, func(t *testing.T) {
+			script := &dsl.Script{Name: "source", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"}, Actions: []dsl.Action{{Type: "GET", Target: target}}}
+			review, err := Analyze(script, AnalyzeOptions{DetectionOnly: true, BuildNative: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !review.Detected || len(review.Domains) == 0 || review.HARMatchCoverage.ImportedRequests != 1 {
+				t.Fatalf("missing traffic classification: %#v", review)
+			}
+			if len(review.Blockers) != 0 || len(review.Warnings) != 0 || len(review.NextActions) != 0 || review.NativePreview != nil || review.AuraOutcomes != nil || len(review.Parameterizations) != 0 {
+				t.Fatalf("detection assessed or generated replay: %#v", review)
+			}
+			if script.GeneratedBy != "" || script.Metadata != nil {
+				t.Fatal("detection changed the source script")
+			}
+		})
+	}
+}

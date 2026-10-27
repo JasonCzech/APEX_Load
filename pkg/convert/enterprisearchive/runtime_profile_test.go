@@ -1589,6 +1589,7 @@ ProxyHTTPHost=stale-proxy.example.test
 ProxyHTTPPort=3128
 ProxyUserName=stale-user
 ProxyPassword=stale-password
+ProxyPasswordIsEncrypted=true
 `,
 	}, nil)
 	if cfgName != "profiles/disabled.cfg" {

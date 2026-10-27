@@ -213,6 +213,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.lr-salesforce-description,
+.lr-har-panel p.lr-salesforce-description {
+  margin: 4px 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
 .lr-har-actions {
   display: flex;
   align-items: center;

@@ -1074,6 +1074,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const [classpathUploadInProgress, setClasspathUploadInProgress] = useState(false)
   const classpathUploadInFlightRef = useRef<object | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [showSalesforceOptions, setShowSalesforceOptions] = useState(false)
   // Destructured for stable callback identity — the native drop handler is a
   // useDesktopFileDrop dependency and must not change every render.
   const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
@@ -5105,14 +5106,22 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             <label className="lr-checkbox">
               <input type="checkbox" checked={options.expire_draft} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, expire_draft: e.target.checked })} />
               <span>Expire converted drafts after 30 minutes</span>
-            </label></details>
-            <details className="lr-har-panel" open={Boolean(options.salesforce_native || selectedHARFile || salesforceReview)}><summary>Salesforce-specific options</summary>
+            </label>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={showSalesforceOptions} disabled={sourceMutationLocked} onChange={e => setShowSalesforceOptions(e.target.checked)} />
+              <span>Show Salesforce migration options</span>
+            </label>
+            <p className="lr-salesforce-description">Salesforce options appear automatically after validation detects Salesforce traffic. Show them manually to attach capture evidence before validation.</p>
+            </details>
+            {(salesforceReview?.detected || showSalesforceOptions || options.salesforce_native || selectedHARFile) && <details className="lr-har-panel" open={Boolean(options.salesforce_native || selectedHARFile || salesforceReview)}><summary>Salesforce migration options</summary>
+              <p className="lr-salesforce-description">Attach a HAR from the same recording to enrich the imported script’s review with request matches, correlation candidates, and Aura results.</p>
               <label className="lr-checkbox">
                 <input type="checkbox" checked={options.salesforce_native} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
-                <span>Build Salesforce native preview</span>
+                <span>Use Salesforce-aware HTTP draft</span>
               </label>
+              <p className="lr-salesforce-description">When selected, conversion builds and selects the Salesforce-aware HTTP draft as the import output. Leave this unchecked to keep the original conversion and enrich its review only. The generated draft still requires review and validation before replay.</p>
               <div>
-                <h4>Salesforce HAR (optional)</h4>
+                <h4>Salesforce HAR (same recording)</h4>
                 <p>{selectedHARFile ? selectedHARFile.name : 'No HAR attached to the selected script'}</p>
               </div>
               <div className="lr-har-actions">
@@ -5125,7 +5134,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   </button>
                 )}
               </div>
-            </details>
+            </details>}
           </div>
           {queuedFileCount > 1 && (
             <p className="lr-subtitle">Each archive keeps its detected script name in a batch. Rename individual scripts after import.</p>

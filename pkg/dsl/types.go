@@ -59,6 +59,10 @@ const (
 	// in executable HTTP config. The proxy stays disabled and review-gated; the
 	// protected record avoids forcing the operator to re-enter its credentials.
 	ImportPreservedEnterpriseUnsupportedProxySourceKey = "enterprise_unsupported_proxy_source"
+	// ImportPreservedIgnoredProxyCredentialsKey retains inert, protected source
+	// credential values for disclosure matching after a proxy is excluded. It
+	// creates no execution credential or secret-binding requirement.
+	ImportPreservedIgnoredProxyCredentialsKey = "ignored_proxy_credential_source"
 	// ImportPreservedEnterpriseJavaVMSourceKey retains exact source JVM rows
 	// that could not be parsed or executed as-is. Values are base64 encoded and
 	// inert; trusted persistence keeps them for repair while all disclosure

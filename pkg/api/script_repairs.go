@@ -69,12 +69,14 @@ func writeScriptRevisionsUnavailable(w http.ResponseWriter) {
 // storage outside an import session, and allocation preview reads data rows
 // rather than repairing a finding, so both stay import-only.
 var storedScriptRepairOperations = map[string]bool{
-	"select_tls":           true,
-	"replace_proxy_secret": true,
-	"bind_variable":        true,
-	"add_parameter":        true,
-	"add_extractor":        true,
-	"inspect":              true,
+	"select_tls":             true,
+	"replace_proxy_secret":   true,
+	"omit_proxy_credentials": true,
+	"disable_imported_proxy": true,
+	"bind_variable":          true,
+	"add_parameter":          true,
+	"add_extractor":          true,
+	"inspect":                true,
 }
 
 func (s *Server) handlePreviewScriptRepair(w http.ResponseWriter, r *http.Request) {
@@ -376,6 +378,9 @@ func storedRepairCredentialComparison(prior, draft *dsl.Script, operation string
 		}
 	case "replace_proxy_secret":
 		allowance.Config.HTTP.Proxy.Password = draft.Config.HTTP.Proxy.Password
+	case "omit_proxy_credentials", "disable_imported_proxy":
+		allowance.Config.HTTP.ProxyMode = draft.Config.HTTP.ProxyMode
+		allowance.Config.HTTP.Proxy = draft.Config.HTTP.Proxy
 	}
 	return candidate, allowance
 }
