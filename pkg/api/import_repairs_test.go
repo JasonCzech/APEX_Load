@@ -872,7 +872,7 @@ func TestImportRepairSelectTLSOnValidatedArchiveSavesRepairedDraft(t *testing.T)
 	writer := zip.NewWriter(&archive)
 	for name, content := range map[string]string{
 		"TLSRepair.usr": "[General]\nType=Web\n[Actions]\nvuser_init=vuser_init.c\nAction=Action.c\nvuser_end=vuser_end.c\n",
-		"vuser_init.c":  "vuser_init()\n{\n\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-next\");\n\tweb_url(\"home\", \"URL=https://example.test/\", \"Resource=0\", LAST);\n\tweb_set_sockets_option(\"SSL_VERSION\", \"AUTO\");\n\treturn 0;\n}\n",
+		"vuser_init.c":  "vuser_init()\n{\n\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-next\");\n\tweb_url(\"home\", \"URL=https://example.test/\", \"Resource=0\", LAST);\n\tweb_set_sockets_option(\"SSL_VERSION\", \"TLS-future\");\n\treturn 0;\n}\n",
 		// The credential makes the draft a protected candidate, as guided
 		// repair requires.
 		"Action.c":    "Action()\n{\n\tweb_add_header(\"Authorization\", \"Bearer tls-repair-synthetic-token\");\n\tweb_url(\"orders\", \"URL=https://example.test/orders\", \"Resource=0\", LAST);\n\treturn 0;\n}\n",

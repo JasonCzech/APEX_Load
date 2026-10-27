@@ -48,6 +48,7 @@ type ImportSettingsResponse struct {
 	Script                    *dsl.Script                `json:"script"`
 	ImportDraftExpiresAt      *time.Time                 `json:"import_draft_expires_at,omitempty"`
 	ValidationIssues          []string                   `json:"validation_issues"`
+	FidelityReport            map[string]any             `json:"fidelity_report,omitempty"`
 	Findings                  []importreview.Finding     `json:"findings"`
 	Readiness                 importreview.Readiness     `json:"readiness"`
 	SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
@@ -92,11 +93,7 @@ func (s *Server) handleImportSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, map[string]any{"error": "Check the highlighted settings", "field_errors": fieldErrors})
 		return
 	}
-	findings, err := importreview.RefreshDependencies(draft)
-	if err != nil {
-		writeError(w, 422, "Cannot evaluate draft dependencies")
-		return
-	}
+
 	// Rebuild runtime coverage from the current draft; preserved source files remain untouched.
 	if draft.Metadata != nil && draft.Metadata.Import != nil && draft.Metadata.Import.Preserved["runtime_settings_parity"] != nil {
 		parity := buildValidationRuntimeSettingsParity(draft)
@@ -107,9 +104,23 @@ func (s *Server) handleImportSettings(w http.ResponseWriter, r *http.Request) {
 			draft.Metadata.Import.Preserved["runtime_settings_parity"] = parity
 		}
 	}
+	findings, err := importreview.RefreshDependencies(draft)
+	if err != nil {
+		writeError(w, 422, "Cannot evaluate draft dependencies")
+		return
+	}
 	issues := dsl.ValidateScriptIssuesWithPreservedImportCredentials(draft)
 	requirements := discoverSecretBindingRequirements(draft, 0)
 	readiness, err := importreview.EvaluateScript(draft, importreview.EvaluationInput{ValidationIssues: issues, UnresolvedBindings: len(requirements)})
+	var report map[string]any
+	if importSettingsSelectsTLS(req.Changes) && err == nil {
+		resolver := s.runner.secretResolverForProject(draft.ProjectID)
+		findings, requirements, readiness, report, err = evaluateRepairedScript(draft, resolver)
+		issues = dsl.ValidateScriptIssuesWithPreservedImportCredentials(draft)
+		if err == nil {
+			attachImportReplayPreflight(draft, profile, repairReplayPreflight(draft, target, resolver))
+		}
+	}
 	if err != nil {
 		writeError(w, 422, "Cannot evaluate draft readiness")
 		return
@@ -127,7 +138,7 @@ func (s *Server) handleImportSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.recordAuditEvent(r, "script.import.settings", "success", "script", draft.Name, draft.ProjectID, map[string]any{"category": req.Category, "changes": len(req.Changes)})
-	writeJSON(w, 200, ImportSettingsResponse{Script: repairDisclosure(draft), ImportDraftExpiresAt: expiry, ValidationIssues: issues, Findings: findings, Readiness: readiness, SecretBindingRequirements: requirements})
+	writeJSON(w, 200, ImportSettingsResponse{FidelityReport: report, Script: repairDisclosure(draft), ImportDraftExpiresAt: expiry, ValidationIssues: issues, Findings: findings, Readiness: readiness, SecretBindingRequirements: requirements})
 }
 
 func applyImportSettings(source *dsl.Script, category string, changes []ImportSettingsChange) (*dsl.Script, map[string]string) {
@@ -239,7 +250,42 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 	if len(errors) > 0 {
 		return nil, errors
 	}
+	// TLS selection is an intentional script-wide migration. Resolve only TLS
+	// gates, through the same operation as the protected guided-repair flow.
+	if importSettingsSelectsTLS(changes) {
+		findings, err := importreview.FindingsFromScript(&draft)
+		if err != nil {
+			return nil, map[string]string{"category": "Cannot inspect TLS requirements"}
+		}
+		for _, finding := range findings {
+			if finding.Code != "legacy_tls_replacement" {
+				continue
+			}
+			minimum, maximum := draft.Config.HTTP.TLS.MinVersion, draft.Config.HTTP.TLS.MaxVersion
+			if minimum == "" {
+				minimum = "1.2"
+			}
+			if maximum == "" {
+				maximum = "1.3"
+			}
+			_, err := applyImportRepair(&draft, ImportRepairRequest{Finding: finding.Code, ActionPath: finding.ActionPath, Operation: ImportRepairOperation{Type: "select_tls", TLSMin: minimum, TLSMax: maximum}})
+			if err != nil {
+				return nil, map[string]string{"category": err.Error()}
+			}
+			break
+		}
+	}
 	return &draft, errors
+}
+
+// A reset to defaults is not an explicit replacement for a gated source policy.
+func importSettingsSelectsTLS(changes []ImportSettingsChange) bool {
+	for _, change := range changes {
+		if change.Parameter == "" && string(bytes.TrimSpace(change.Value)) != "null" && (change.Path == "config.http.tls.min_version" || change.Path == "config.http.tls.max_version") {
+			return true
+		}
+	}
+	return false
 }
 
 // Keep integer tokens exact while editing the untyped tree, including unrelated

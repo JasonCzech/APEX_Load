@@ -736,7 +736,7 @@ func finalizeEnterpriseArchiveImportResult(
 		requestimport.HoistMultipartFiles(script)
 	}
 	result.Warnings = append(result.Warnings, ctx.InlineWarnings...)
-	if ctx.RuntimeConfig != nil && isLegacySSLVersion(ctx.RuntimeConfig.SSLVersion) {
+	if ctx.RuntimeConfig != nil && isSourceTLSMigration(ctx.RuntimeConfig.SSLVersion) {
 		result.Warnings = append(result.Warnings, sourceTLSMigrationWarning(ctx.RuntimeConfig.SSLVersion))
 	}
 	if note := recordingSnapshotNote(ctx.Files, ctx.ParsedActions); note != "" {

@@ -7,7 +7,7 @@ import (
 )
 
 func TestLegacySSLImportMigratesToTLS13WithWarning(t *testing.T) {
-	for _, value := range []string{"SSL", "2", "3", "2&3", "SSL2", "SSL3", "SSLv2", "SSLv3", "SSL 2.0", "SSL 3.0", "SSLv2.0", "SSLv3.0", "SSL2&3", " ssl3 "} {
+	for _, value := range []string{"SSL", "2", "3", "2&3", "SSL2", "SSL3", "SSLv2", "SSLv3", "SSL 2.0", "SSL 3.0", "SSLv2.0", "SSLv3.0", "SSL2&3", " ssl3 ", "AUTO", " auto "} {
 		t.Run(value, func(t *testing.T) {
 			for _, source := range []string{"runtime", "socket"} {
 				t.Run(source, func(t *testing.T) {
@@ -56,7 +56,7 @@ func TestLegacySSLImportMigratesToTLS13WithWarning(t *testing.T) {
 
 func TestTLSImportKeepsExplicitVersionsAndUnknownDefaults(t *testing.T) {
 	for _, tt := range []struct{ value, want string }{
-		{"TLS1.0", "1.0"}, {"TLS1.1", "1.1"}, {"TLS1.2", "1.2"}, {"TLS1.3", "1.3"}, {"TLS", "1.2"}, {"", ""}, {"AUTO", ""}, {"TLS-next", ""},
+		{"TLS1.0", "1.0"}, {"TLS1.1", "1.1"}, {"TLS1.2", "1.2"}, {"TLS1.3", "1.3"}, {"TLS", "1.2"}, {"", ""}, {"TLS-future", ""}, {"TLS-next", ""},
 	} {
 		t.Run(tt.value, func(t *testing.T) {
 			rc := ParseRuntimeCfg("[SSL]\nSSLVersion=" + tt.value + "\n")
