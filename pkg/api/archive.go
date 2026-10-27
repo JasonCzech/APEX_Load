@@ -49,9 +49,10 @@ type RunArchiveSourceCoverage = archivecontract.RunArchiveSourceCoverage
 type RunArchiveSource = archivecontract.RunArchiveSource
 
 type RunArchiveManifest struct {
-	BrowserProofExpectedOwners []string                    `json:"browser_proof_expected_owners,omitempty"`
-	BrowserProofAuthorityMode  string                      `json:"browser_proof_authority_mode,omitempty"`
-	SourceCoverage             *RunArchiveSourceCoverage   `json:"source_coverage,omitempty"`
+	BrowserProofExpectedOwners []string                                  `json:"browser_proof_expected_owners,omitempty"`
+	BrowserProofAuthorityMode  string                                    `json:"browser_proof_authority_mode,omitempty"`
+	BrowserProofClockEnvelope  *protocol.BrowserDistributedClockEnvelope `json:"browser_proof_clock_envelope,omitempty"`
+	SourceCoverage             *RunArchiveSourceCoverage                 `json:"source_coverage,omitempty"`
 	CSVExports                 []RunArchiveCSVExportStatus `json:"csv_exports,omitempty"`
 	CSVExportIncomplete        string                      `json:"csv_export_incomplete,omitempty"`
 	TerminationReason          string                      `json:"termination_reason,omitempty"`

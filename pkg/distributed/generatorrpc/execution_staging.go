@@ -810,6 +810,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if prepared != nil && prepared.writer != nil {
 		prepared.writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName(), ArchiveSourceIdentity(request.GetTestId(), request.GetRunSupervisionToken(), request.GetArchiveSourceTarget()))
 		prepared.writer.bindBrowserDocumentCapture(prepared.browserDocumentCaptureRequested)
+		prepared.writer.bindBrowserDocumentProofVersion(assignedBrowserDocumentProofVersion(request))
 	}
 	coordinator.scheduleStageExpiryLocked(service, request.GetTestId())
 	return service.metricsBatchLocked(request.GetTestId()), service.availableCapacityLocked(), nil
@@ -1294,6 +1295,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if archiveErr != nil {
 		return nil, status.Errorf(codes.Internal, "initialize archive recorder: %v", archiveErr)
 	}
+	writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName(), ArchiveSourceIdentity(request.GetTestId(), request.GetRunSupervisionToken(), request.GetArchiveSourceTarget()))
+	writer.bindBrowserDocumentCapture(prepared.browserDocumentCaptureRequested)
+	writer.bindBrowserDocumentProofVersion(assignedBrowserDocumentProofVersion(request))
 	prepared.writer = writer
 	prepared.createdWriter = created
 	if engine.HasAllocatedParameters(&script) && (request.GetParameterPopulation() == 0 || uint64(request.GetParameterOffset())+uint64(request.GetVuserCount()) > uint64(request.GetParameterPopulation())) {

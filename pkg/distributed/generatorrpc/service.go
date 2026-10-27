@@ -1436,7 +1436,7 @@ func (s *Service) beginHeartbeatStream() (func(), error) {
 	}, nil
 }
 
-func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtifactRequest) (*pb.ArchiveArtifact, error) {
+func (s *Service) GetArchiveArtifact(ctx context.Context, request *pb.ArchiveArtifactRequest) (*pb.ArchiveArtifact, error) {
 	releaseTransfer, err := s.beginArchiveTransfer(true)
 	if err != nil {
 		return nil, err
@@ -1447,6 +1447,7 @@ func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtif
 		return nil, err
 	}
 	defer release()
+	s.sendTestBrowserClockBracketHeader(ctx, request.GetTestId())
 	if artifact.info.Size() > archiveArtifactUnaryMaxSize {
 		return nil, status.Errorf(codes.ResourceExhausted, "archive artifact is %d bytes; use StreamArchiveArtifact", artifact.info.Size())
 	}
@@ -1474,6 +1475,11 @@ func (s *Service) StreamArchiveArtifact(request *pb.ArchiveArtifactRequest, stre
 		return err
 	}
 	defer release()
+	if sample, ok := s.archiveManager.sampleBrowserClockBracket(request.GetTestId()); ok {
+		if encoded, valid := encodeBrowserClockBracketHeader(request.GetTestId(), sample); valid {
+			_ = stream.SendHeader(metadata.Pairs(browserClockBracketMetadataKey, encoded))
+		}
+	}
 	totalSize := artifact.info.Size()
 	if totalSize == 0 {
 		return stream.Send(&pb.ArchiveArtifactChunk{
@@ -1550,6 +1556,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		return err
 	}
 	defer releaseStream()
+	headerSent := false
 	for {
 		_, err := stream.Recv()
 		if err == io.EOF {
@@ -1615,6 +1622,12 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		}
 		s.mu.RUnlock()
 		generatorNow := generatorPublishedClock.at(wallNow)
+		if !headerSent {
+			headerSent = true
+			if md := s.activeTestsBrowserClockBracketMetadata(activeTestIDs); len(md) > 0 {
+				_ = stream.SendHeader(md)
+			}
+		}
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,
 			JavaHost:                       javaHosts,

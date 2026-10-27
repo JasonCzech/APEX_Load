@@ -1291,6 +1291,19 @@ groupLoop:
 				if preparedGroup.group.RampUp > 0 && len(preparedGroup.users) > 1 {
 					rampDelay = preparedGroup.group.RampUp / time.Duration(len(preparedGroup.users))
 				}
+				if rampDelay == 0 {
+					deadline := loadEpochActive + preparedGroup.group.StartOffset
+					if !mge.waitUntilActive(mge.launchCtx, deadline) {
+						mge.abortPreparedVUsers(preparedGroup.users)
+						return
+					}
+					if err := mge.WaitIfPaused(mge.launchCtx); err != nil {
+						mge.abortPreparedVUsers(preparedGroup.users)
+						return
+					}
+					mge.activatePreparedVUserBatchWithAdmission(preparedGroup.users, mge.launchCtx)
+					return
+				}
 				for index, prepared := range preparedGroup.users {
 					deadline := loadEpochActive + preparedGroup.group.StartOffset + time.Duration(index)*rampDelay
 					if !mge.waitUntilActive(mge.launchCtx, deadline) {
@@ -2298,8 +2311,56 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 	mge.markVUserRunningLocked(prepared.identity.handle)
 	mge.signalVUserChangeLocked()
 	mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
+	mge.tryFinishClosedInitialRampLocked()
 	mge.mu.Unlock()
 
+	mge.spawnPreparedVUser(prepared)
+	return true
+}
+
+func (mge *MultiGroupEngine) activatePreparedVUserBatchWithAdmission(users []*preparedVUser, admissionCtx context.Context) bool {
+	if len(users) == 0 {
+		return true
+	}
+	if admissionCtx != nil && admissionCtx.Err() != nil {
+		mge.abortPreparedVUsers(users)
+		return false
+	}
+	for _, prepared := range users {
+		if prepared == nil || prepared.vuCtx.Err() != nil {
+			mge.abortPreparedVUsers(users)
+			return false
+		}
+	}
+
+	mge.mu.Lock()
+	if !mge.launchOpen || (admissionCtx != nil && admissionCtx.Err() != nil) {
+		mge.mu.Unlock()
+		mge.abortPreparedVUsers(users)
+		return false
+	}
+	for _, prepared := range users {
+		if prepared == nil || prepared.vuCtx.Err() != nil {
+			mge.mu.Unlock()
+			mge.abortPreparedVUsers(users)
+			return false
+		}
+	}
+	for _, prepared := range users {
+		mge.markVUserRunningLocked(prepared.identity.handle)
+	}
+	mge.signalVUserChangeLocked()
+	mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
+	mge.tryFinishClosedInitialRampLocked()
+	mge.mu.Unlock()
+
+	for _, prepared := range users {
+		mge.spawnPreparedVUser(prepared)
+	}
+	return true
+}
+
+func (mge *MultiGroupEngine) spawnPreparedVUser(prepared *preparedVUser) {
 	go func() {
 		var vu *VUser
 		redaction := func() *RedactionConfig {
@@ -2314,7 +2375,6 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 		vu = mge.newPreparedVUser(prepared)
 		vu.Run(prepared.vuCtx)
 	}()
-	return true
 }
 
 // newPreparedVUser builds the startup state outside the parked goroutine's
@@ -3568,9 +3628,32 @@ func (mge *MultiGroupEngine) waitUntilActive(ctx context.Context, deadline time.
 	}
 }
 
+func (mge *MultiGroupEngine) tryFinishClosedInitialRampLocked() {
+	if !mge.initialRampInProgress || !mge.controlsReady {
+		return
+	}
+	total := 0
+	for _, g := range mge.groups {
+		if isOpenWorkload(g.Script) {
+			return
+		}
+		total += g.VUsers
+	}
+	if total > 0 && mge.runningVUserCount() == total {
+		mge.finishInitialRampLocked()
+	}
+}
+
 func (mge *MultiGroupEngine) finishInitialRamp() {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
+	mge.finishInitialRampLocked()
+}
+
+func (mge *MultiGroupEngine) finishInitialRampLocked() {
+	if !mge.initialRampInProgress {
+		return
+	}
 	mge.initialRampInProgress = false
 	defer mge.signalVUserChangeLocked()
 	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.loopCtx == nil || mge.loopCtx.Err() != nil || !mge.controlsReady {

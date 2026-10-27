@@ -198,6 +198,7 @@ func (b *distributedExecutionBackend) observeGeneratorClocks(ctx context.Context
 			observation.Controller = term.ownerID
 			tr.recordClockObservation(test.ID, observation)
 			tr.recordClockCalibration(test, target, sample.Offset, sample.Uncertainty, interval, time.Now())
+			test.recordBrowserClockBrackets(sample.BrowserBrackets)
 		}
 		select {
 		case <-ctx.Done():

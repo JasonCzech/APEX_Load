@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/grpcclient"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -111,6 +112,9 @@ type WorkCommitResult struct {
 	ErrorMessage        string
 	RunSupervisionArmed bool
 	RunSupervisionTTL   time.Duration
+	SentAt              time.Time
+	ReceivedAt          time.Time
+	BrowserBrackets     []ObservedBrowserClockBracket
 }
 
 type RunSupervisionClaim struct {
@@ -727,6 +731,8 @@ type sharedClientConnection struct {
 	javaHostCaps               *pb.JavaHostCapabilities
 	javaHostObserved           time.Time
 	javaHostPrepared           bool
+	browserBrackets            map[string][]ObservedBrowserClockBracket
+	browserBracketOrder        []string
 	mu                         sync.Mutex
 	refs                       int
 	closed                     bool
@@ -737,22 +743,29 @@ type HeartbeatStream struct {
 	stream pb.GeneratorControl_HeartbeatClient
 	owner  *Client
 
-	clockMu           sync.Mutex
-	clockSentAt       time.Time
-	clockPingUnixMS   int64
-	clockSampleActive bool
-	lastClock         generatorClockEstimate
-	lastRoundTrip     time.Duration
+	clockMu             sync.Mutex
+	clockSentAt         time.Time
+	clockPingUnixMS     int64
+	clockSampleActive   bool
+	headerObserved      bool
+	lastClock           generatorClockEstimate
+	lastRoundTrip       time.Duration
+	lastSentAt          time.Time
+	lastReceivedAt      time.Time
+	lastBrowserBrackets []ObservedBrowserClockBracket
 }
 
 // ClockSample is one heartbeat's measurement of a generator's clock: the
 // generator's clock minus the controller's, the exchange's round trip, and the
 // uncertainty that bounds the offset error (half the round trip).
 type ClockSample struct {
-	Offset      time.Duration
-	RoundTrip   time.Duration
-	Uncertainty time.Duration
-	ObservedAt  time.Time
+	Offset          time.Duration
+	RoundTrip       time.Duration
+	Uncertainty     time.Duration
+	ObservedAt      time.Time
+	SentAt          time.Time
+	ReceivedAt      time.Time
+	BrowserBrackets []ObservedBrowserClockBracket
 }
 
 // ClockQuality qualifies a duration measured across two hosts' clocks. It is
@@ -1154,15 +1167,22 @@ func (c *Client) commitWorkAt(ctx context.Context, testID string, generation uin
 			clockEstimate.uncertainty,
 		)
 	}
-	ack, err := c.rpc.CommitWork(ctx, request)
+	var header metadata.MD
+	sentAt := time.Now()
+	ack, err := c.rpc.CommitWork(ctx, request, grpc.Header(&header))
+	receivedAt := time.Now()
 	if err != nil {
 		return WorkCommitResult{}, err
 	}
+	brackets := c.observeBrowserClockBracketMetadata(header, sentAt, receivedAt)
 	return WorkCommitResult{
 		Accepted:            ack.GetAccepted(),
 		ErrorMessage:        ack.GetErrorMessage(),
 		RunSupervisionArmed: ack.GetRunSupervisionArmed(),
 		RunSupervisionTTL:   time.Duration(ack.GetRunSupervisionTtlMilliseconds()) * time.Millisecond,
+		SentAt:              sentAt,
+		ReceivedAt:          receivedAt,
+		BrowserBrackets:     brackets,
 	}, nil
 }
 
@@ -1445,13 +1465,17 @@ func (c *Client) StopTestAtGeneration(ctx context.Context, testID string, gracef
 }
 
 func (c *Client) StopTestAtGenerationWithToken(ctx context.Context, testID string, graceful bool, generation uint64, token []byte) (StopResult, error) {
+	var header metadata.MD
+	sentAt := time.Now()
 	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{
 		TestId: testID, Graceful: graceful, ExecutionGeneration: generation,
 		RunSupervisionToken: append([]byte(nil), token...),
-	})
+	}, grpc.Header(&header))
+	receivedAt := time.Now()
 	if err != nil {
 		return StopResult{}, err
 	}
+	c.observeBrowserClockBracketMetadata(header, sentAt, receivedAt)
 
 	if ack.GetAcknowledged() {
 		c.sourcePlans.Range(func(key, _ any) bool {
@@ -1469,17 +1493,22 @@ func (c *Client) StopTestAtGenerationWithToken(ctx context.Context, testID strin
 }
 
 func (c *Client) GetArchiveArtifact(ctx context.Context, request ArchiveArtifactRequest) ([]byte, error) {
+	var header metadata.MD
+	sentAt := time.Now()
 	artifact, err := c.rpc.GetArchiveArtifact(
 		ctx,
 		&pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name, SourceIdentity: request.SourceIdentity},
 		grpc.MaxCallRecvMsgSize(grpcMessageSize(archiveArtifactUnaryReceiveMaxSize)),
+		grpc.Header(&header),
 	)
+	receivedAt := time.Now()
 	if err != nil {
 		return nil, err
 	}
 	if request.SourceIdentity != "" && artifact.GetSourceIdentity() != request.SourceIdentity {
 		return nil, fmt.Errorf("generator did not confirm the requested archive source identity")
 	}
+	c.observeBrowserClockBracketMetadata(header, sentAt, receivedAt)
 	return artifact.GetContent(), nil
 }
 
@@ -1493,14 +1522,16 @@ func (c *Client) StreamArchiveArtifact(ctx context.Context, request ArchiveArtif
 	if maxBytes <= 0 {
 		return 0, fmt.Errorf("archive artifact max bytes must be positive")
 	}
+	sentAt := time.Now()
 	stream, err := c.rpc.StreamArchiveArtifact(ctx, &pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name, SourceIdentity: request.SourceIdentity})
 	if err != nil {
 		return 0, err
 	}
 
 	var (
-		written      int64
-		declaredSize int64 = -1
+		written        int64
+		declaredSize   int64 = -1
+		headerObserved bool
 	)
 	for {
 		chunk, recvErr := stream.Recv()
@@ -1515,6 +1546,13 @@ func (c *Client) StreamArchiveArtifact(ctx context.Context, request ArchiveArtif
 		}
 		if chunk.GetName() != request.Name {
 			return written, fmt.Errorf("archive artifact stream name %q does not match %q", chunk.GetName(), request.Name)
+		}
+		if !headerObserved {
+			headerObserved = true
+			receivedAt := time.Now()
+			if md, headerErr := safeStreamHeader(stream); headerErr == nil {
+				c.observeBrowserClockBracketMetadata(md, sentAt, receivedAt)
+			}
 		}
 		if chunk.GetTotalSize() < 0 {
 			return written, fmt.Errorf("archive artifact stream declared a negative size")
@@ -1599,7 +1637,15 @@ func (s *HeartbeatStream) ClockSample() (ClockSample, bool) {
 	if !s.lastClock.known {
 		return ClockSample{}, false
 	}
-	return ClockSample{Offset: s.lastClock.offset, RoundTrip: s.lastRoundTrip, Uncertainty: s.lastClock.uncertainty, ObservedAt: s.lastClock.observedAt}, true
+	return ClockSample{
+		Offset:          s.lastClock.offset,
+		RoundTrip:       s.lastRoundTrip,
+		Uncertainty:     s.lastClock.uncertainty,
+		ObservedAt:      s.lastClock.observedAt,
+		SentAt:          s.lastSentAt,
+		ReceivedAt:      s.lastReceivedAt,
+		BrowserBrackets: append([]ObservedBrowserClockBracket(nil), s.lastBrowserBrackets...),
+	}, true
 }
 
 func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
@@ -1622,8 +1668,16 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	sentAt := s.clockSentAt
 	pingUnixMS := s.clockPingUnixMS
 	sampleActive := s.clockSampleActive
+	headerObserved := s.headerObserved
+	s.headerObserved = true
 	s.clockSampleActive = false
 	s.clockMu.Unlock()
+	var brackets []ObservedBrowserClockBracket
+	if !headerObserved && sampleActive && s.owner != nil {
+		if md, headerErr := safeStreamHeader(s.stream); headerErr == nil {
+			brackets = s.owner.observeBrowserClockBracketMetadata(md, sentAt, receivedAt)
+		}
+	}
 	if sampleActive && s.owner != nil {
 		generatorAt := time.Time{}
 		if pong.GetTimestampUnixNano() > 0 {
@@ -1639,6 +1693,8 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 			if sample, ok := generatorClockSample(sentAt, receivedAt, generatorAt); ok {
 				s.clockMu.Lock()
 				s.lastClock, s.lastRoundTrip = sample, receivedAt.Sub(sentAt)
+				s.lastSentAt, s.lastReceivedAt = sentAt, receivedAt
+				s.lastBrowserBrackets = brackets
 				s.clockMu.Unlock()
 			}
 		}

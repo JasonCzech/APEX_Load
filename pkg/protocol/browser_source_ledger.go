@@ -103,6 +103,7 @@ type BrowserSourceJournal struct {
 	start           time.Time
 	emit            func(*BrowserDocumentReceiptEvidence) error
 	sequence, total uint64
+	lastAtNS        int64
 	vusers          int
 	active          map[string]*BrowserSourceLease
 	failure         error
@@ -179,7 +180,9 @@ func (j *BrowserSourceJournal) writeLocked(kind, slot string, success bool, e *B
 		}
 		e.Version = 3
 	}
-	e.Source = &BrowserSourceEvent{Authority: j.authority, OwnerID: j.owner, Kind: kind, SlotID: slot, Sequence: j.sequence, AtNS: int64(time.Since(j.start)), ExpectedSlots: j.total, Successful: success, VUsers: j.vusers}
+	atNS := max(j.lastAtNS, int64(time.Since(j.start)))
+	j.lastAtNS = atNS
+	e.Source = &BrowserSourceEvent{Authority: j.authority, OwnerID: j.owner, Kind: kind, SlotID: slot, Sequence: j.sequence, AtNS: atNS, ExpectedSlots: j.total, Successful: success, VUsers: j.vusers}
 	if l := j.active[slot]; l != nil {
 		if context, ok := l.contexts[e.SourceGeneration]; ok {
 			e.Source.SourceOriginNS = context.originNS
@@ -318,4 +321,27 @@ func (j *BrowserSourceJournal) Invalidate() error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.writeLocked("unknown", "", false, nil)
+}
+
+// SampleClockBracket samples the journal's monotonic elapsed nanoseconds in its
+// own authority domain, including after Seal so a post-terminal RPC can bracket
+// owner_terminal.AtNS.
+func (j *BrowserSourceJournal) SampleClockBracket() (BrowserClockBracketSample, bool) {
+	if j == nil {
+		return BrowserClockBracketSample{}, false
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.failure != nil || !j.authority.Valid() || j.owner == "" {
+		return BrowserClockBracketSample{}, false
+	}
+	monoNS := max(j.lastAtNS, int64(time.Since(j.start)))
+	if monoNS < 0 {
+		return BrowserClockBracketSample{}, false
+	}
+	return BrowserClockBracketSample{
+		Authority: j.authority,
+		OwnerID:   j.owner,
+		MonoNS:    monoNS,
+	}, true
 }

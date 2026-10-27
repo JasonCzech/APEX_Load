@@ -1755,6 +1755,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		return
 	}
+	test.initBrowserClockTracker()
 	if err := b.commitDistributedWork(executionCtx, test.ID, executionGeneration, commitStartAt, assignedClients, runSupervisionToken[:]); err != nil {
 		message := fmt.Sprintf("commit distributed work: %v", err)
 		if terminalErr := b.failClosedDistributedCommit(tr, test, message); terminalErr != nil {
@@ -1762,6 +1763,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		return
 	}
+	test.harvestClientBrowserClockBrackets(assignedClients)
 	activate()
 	tr.retainRunRendezvousUntil(remoteLifecycleCtx, test.ID, rendezvousTerm)
 	rendezvousTransferred = true

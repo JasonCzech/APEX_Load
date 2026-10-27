@@ -107,6 +107,9 @@ func (w *archiveRecorder) BrowserDocumentSourceJournal() (*protocol.BrowserSourc
 			return nil, err
 		}
 		w.browserProofJournal = journal
+		if w.onBrowserJournalCreated != nil {
+			w.onBrowserJournalCreated(journal)
+		}
 	}
 	return w.browserProofJournal, nil
 }

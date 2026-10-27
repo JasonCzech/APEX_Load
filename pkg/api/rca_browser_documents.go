@@ -128,6 +128,15 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 	// Remote owner clocks retain their evidence, but cannot be substituted for
 	// the controller authority without a separately acquired causal envelope.
 	localProof := proofErr == nil && proof != nil && manifest.BrowserProofAuthorityMode == "local" && len(manifest.BrowserProofExpectedOwners) == 1 && manifest.BrowserProofExpectedOwners[0] == "controller"
+	var clockUnavailableReason string
+	distributedProof := false
+	if proofErr == nil && proof != nil && !localProof {
+		if manifest.BrowserProofAuthorityMode == "distributed_envelope" && manifest.BrowserProofClockEnvelope != nil {
+			distributedProof, clockUnavailableReason = proof.ValidateDistributedClocks()
+		} else {
+			clockUnavailableReason = "browser_clock_envelope_missing"
+		}
+	}
 	// The journal must cover raw sources too, including censored observations.
 	if proof != nil {
 		for _, measurement := range accumulator.measurements {
@@ -147,19 +156,22 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			if !known {
 				proof = nil
 				localProof = false
+				distributedProof = false
 				break
 			}
 		}
 	}
+	hasClockProof := localProof || distributedProof
 	finals, _ := browserDocumentFinals(accumulator, rcaBrowserDocumentMetrics, func(o protocol.BrowserDocumentObservation) bool {
-		return localProof || !o.WindowEnd.Before(from) && o.WindowEnd.Before(to)
+		return hasClockProof || !o.WindowEnd.Before(from) && o.WindowEnd.Before(to)
 	})
-	clockProofComplete := localProof
+	clockProofComplete := hasClockProof
 	type tupleSeries struct {
-		tuple   protocol.BrowserDocumentMetricSummary
-		buckets map[int]*protocol.BrowserMetricDistribution
-		windows map[int]rca.DocumentWindow
-		mapped  bool
+		tuple            protocol.BrowserDocumentMetricSummary
+		buckets          map[int]*protocol.BrowserMetricDistribution
+		windows          map[int]rca.DocumentWindow
+		mapped           bool
+		clockUncertainty time.Duration
 	}
 	tuples := map[string]*tupleSeries{}
 	for _, f := range finals {
@@ -168,6 +180,7 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		}
 		mappedVUsers := 0
 		mappedSpanID := ""
+		var clockUncertainty time.Duration
 		if localProof {
 			window, spans, mapErr := proof.Map(f.observation)
 			if mapErr == nil {
@@ -187,9 +200,30 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			if mapErr != nil {
 				clockProofComplete = false
 			}
+		} else if distributedProof {
+			window, uncertainty, spans, mapErr := proof.MapDistributed(f.observation)
+			if mapErr == nil {
+				clockUncertainty = uncertainty
+				authorityStart := manifest.BrowserProofClockEnvelope.AuthorityStartedAt.UTC()
+				f.start = authorityStart.Add(time.Duration(window.StartNS))
+				f.at = authorityStart.Add(time.Duration(window.EndNS))
+				for _, span := range spans {
+					if protocol.ContainedInBrowserSteadySpan(window, []protocol.BrowserMonotonicSpan{span.BrowserMonotonicSpan}) {
+						mappedVUsers = span.VUsers
+						mappedSpanID = sha256BytesHex([]byte(fmt.Sprintf("%s/%s/%s/%d/%d", span.Authority.RunID, span.Authority.Incarnation, span.Authority.DomainID, span.StartNS, span.EndNS)))
+						break
+					}
+				}
+			}
+			if mapErr != nil {
+				clockProofComplete = false
+				if clockUnavailableReason == "" {
+					clockUnavailableReason = "browser_clock_projection_failed"
+				}
+			}
 		}
 		if f.at.Before(from) || !f.at.Before(to) {
-			if localProof {
+			if hasClockProof {
 				clockProofComplete = false
 			}
 			continue
@@ -197,8 +231,11 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 
 		t := tuples[f.key]
 		if t == nil {
-			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}, windows: map[int]rca.DocumentWindow{}, mapped: localProof}
+			t = &tupleSeries{tuple: f.tuple, buckets: map[int]*protocol.BrowserMetricDistribution{}, windows: map[int]rca.DocumentWindow{}, mapped: hasClockProof}
 			tuples[f.key] = t
+		}
+		if clockUncertainty > t.clockUncertainty {
+			t.clockUncertainty = clockUncertainty
 		}
 		i := int(f.at.Sub(from) / bucket)
 		if t.buckets[i] == nil {
@@ -216,8 +253,12 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		w.MonotonicVerified = validMap
 		w.MonotonicVUsers = mappedVUsers
 		w.MonotonicSpanID = mappedSpanID
+		if distributedProof && clockUncertainty > bucket {
+			w.Invalid = true
+			w.InvalidReason = "observation_window_exceeds_bucket"
+		}
 		t.mapped = t.mapped && clockProofComplete
-		w.Invalid = w.Invalid || localProof && !validMap
+		w.Invalid = w.Invalid || hasClockProof && !validMap
 		w.Invalid = w.Invalid || f.start.IsZero() || f.at.IsZero() || f.at.Before(f.start)
 		t.windows[i] = w
 	}
@@ -243,6 +284,9 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		if t.mapped && clockProofComplete {
 			s.Document.ClockQualification = rca.BrowserEvidenceQualified
 			s.Document.TimelineQualification = rca.BrowserEvidenceUnavailable
+			s.Document.ClockUncertainty = t.clockUncertainty
+		} else if clockUnavailableReason != "" {
+			s.Document.ClockUnavailableReason = clockUnavailableReason
 		}
 		if proof != nil && proofErr == nil {
 			s.Document.SourceCoverageQualification = rca.BrowserEvidenceQualified

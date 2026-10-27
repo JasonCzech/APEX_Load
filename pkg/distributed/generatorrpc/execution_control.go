@@ -566,6 +566,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 		}
 		switch transition.kind {
 		case commitTransitionAccepted:
+			service.sendTestBrowserClockBracketHeader(ctx, request.GetTestId())
 			return &pb.WorkCommitAck{Accepted: true, RuntimeResourceAdmissions: resourceAdmissions, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
 		case commitTransitionRejected:
 			return &pb.WorkCommitAck{Accepted: false, ErrorMessage: transition.errorMessage}, nil
@@ -581,6 +582,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 				return nil, status.FromContextError(ctx.Err()).Err()
 			}
 		case commitTransitionApply:
+			service.prepareTestBrowserClockBracketOnCommit(ctx, request.GetTestId())
 			for _, event := range transition.starts {
 				service.startExecutionEvent(event)
 			}
@@ -791,7 +793,11 @@ func (service *Service) StopTest(ctx context.Context, request *pb.StopRequest) (
 			return nil, err
 		}
 	}
-	return service.stopTest(ctx, request, false, false, 0)
+	ack, err := service.stopTest(ctx, request, false, false, 0)
+	if err == nil && request != nil {
+		service.sendTestBrowserClockBracketHeader(ctx, request.GetTestId())
+	}
+	return ack, err
 }
 
 func (service *Service) stopTest(ctx context.Context, request *pb.StopRequest, bypassExecutionFence bool, enforceMaximumGeneration bool, maximumGeneration uint64) (*pb.StopAck, error) {

@@ -167,6 +167,12 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	manifest := mergeRemoteArchiveManifest(tr, test, bundles, finalStatus, finalError, completedAt)
 	manifest.SourceCoverage = coverage
 	manifest.BrowserProofAuthorityMode = "distributed"
+	if !recovered {
+		if envelope := test.browserDistributedClockEnvelope(); envelope != nil {
+			manifest.BrowserProofAuthorityMode = "distributed_envelope"
+			manifest.BrowserProofClockEnvelope = envelope
+		}
+	}
 	intent, intentErr := tr.runArchiveCollectionIntent(test)
 	if intentErr != nil {
 		return nil, intentErr
@@ -725,6 +731,9 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 			}
 			if cache != nil && cached == nil && err == nil && !missing {
 				err = cache.save(ctx, bundle)
+			}
+			if provider, ok := clients[target].(browserClockBracketProvider); ok {
+				test.recordBrowserClockBrackets(provider.BrowserClockBrackets(test.ID))
 			}
 			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}
 		}(index, target)

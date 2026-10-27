@@ -157,10 +157,12 @@ type DocumentCohort struct {
 	// These states are set by the trusted archive adapter after validating
 	// source-bound evidence for the entire retained population. Zero values,
 	// local execution, and absence of reported loss are not positive proof.
-	TimelineQualification       string `json:"timeline_qualification,omitempty"`
-	ClockQualification          string `json:"clock_qualification"`
-	SourceCoverageQualification string `json:"source_coverage_qualification"`
-	Metric                      string `json:"metric"`
+	TimelineQualification       string        `json:"timeline_qualification,omitempty"`
+	ClockQualification          string        `json:"clock_qualification"`
+	ClockUnavailableReason      string        `json:"clock_unavailable_reason,omitempty"`
+	ClockUncertainty            time.Duration `json:"clock_uncertainty,omitempty"`
+	SourceCoverageQualification string        `json:"source_coverage_qualification"`
+	Metric                      string        `json:"metric"`
 	// Group is the scenario group that measured the document.
 	Group      string            `json:"group,omitempty"`
 	Family     string            `json:"family"`
@@ -182,9 +184,10 @@ type DocumentWindow struct {
 	MonotonicVUsers   int    `json:"monotonic_vusers,omitempty"`
 	MonotonicVerified bool   `json:"monotonic_verified,omitempty"`
 
-	Start   time.Time `json:"start"`
-	End     time.Time `json:"end"`
-	Invalid bool      `json:"invalid,omitempty"`
+	Start         time.Time `json:"start"`
+	End           time.Time `json:"end"`
+	Invalid       bool      `json:"invalid,omitempty"`
+	InvalidReason string    `json:"invalid_reason,omitempty"`
 }
 
 // BrowserBaseline is the detector's output for one assessment.

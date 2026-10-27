@@ -632,6 +632,7 @@ type ManagedTest struct {
 	telemetryStages       *telemetryStageRecorder                  // per-stage latency distributions; created on first sample
 	historyTrimmed        int64                                    // history points dropped by the in-memory bounds
 	clockCalibrations     *clockCalibrations                       // current generator clock offsets; created on first probe
+	browserClockTracker   *browserClockTracker                     // controller-bracketed generator monotonic readings for distributed browser proof
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
 	Duration              time.Duration                            `json:"duration_ns"`

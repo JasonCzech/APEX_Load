@@ -410,9 +410,11 @@ type archiveTelemetryHealth struct {
 }
 
 type archiveRecorder struct {
-	browserProofMu      sync.Mutex
-	browserProofJournal *protocol.BrowserSourceJournal
-	browserProofSealed  bool
+	browserProofMu              sync.Mutex
+	browserProofJournal         *protocol.BrowserSourceJournal
+	browserProofSealed          bool
+	browserDocumentProofVersion int
+	onBrowserJournalCreated     func(*protocol.BrowserSourceJournal)
 	// harMu serializes HAR moves with Finalize and Discard; it is taken
 	// before mu.
 	harMu    sync.Mutex
