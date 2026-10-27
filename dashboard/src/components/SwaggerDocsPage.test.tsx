@@ -250,8 +250,8 @@ paths:
       firstDetails.dispatchEvent(new Event('toggle', { bubbles: true }))
     })
     expect(container.textContent).toContain('Operation ID')
-    expect(container.textContent).toContain('Access Control')
-    expect(container.textContent).toContain('OpenAPI Tags')
+    expect(container.textContent).toContain('Access control')
+    expect(container.textContent).toContain('OpenAPI tags')
 
     const ciRunSummary = Array.from(container.querySelectorAll('.swagger-operation-card summary'))
       .find(summary => summary.textContent?.includes('/api/v1/ci/runs') && summary.textContent?.includes('POST'))
@@ -263,7 +263,7 @@ paths:
       details.open = true
       details.dispatchEvent(new Event('toggle', { bubbles: true }))
     })
-    expect(container.textContent).toContain('Request Body (required)')
+    expect(container.textContent).toContain('Request body (required)')
     expect(container.textContent).toContain('project_id')
 
     const categorySelect = container.querySelector('.swagger-docs-controls select') as HTMLSelectElement | null
@@ -328,7 +328,7 @@ paths:
 
     await renderSwaggerDocsPage()
 
-    expect(container.textContent).toContain('API Docs Unavailable')
+    expect(container.textContent).toContain('API docs unavailable')
     expect(container.textContent).toContain('swagger route unavailable')
     expect(container.querySelector('.swagger-docs-results')).toBeNull()
     expect(container.querySelector('.swagger-docs-controls')).toBeNull()

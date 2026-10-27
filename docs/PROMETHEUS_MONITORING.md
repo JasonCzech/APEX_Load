@@ -6,7 +6,7 @@ This workflow is separate from **APEX platform graphs**, the controller `/metric
 
 ## Set up a connection
 
-1. A project administrator opens **Settings → Integrations → Prometheus test monitoring**. **Monitoring → Telemetry** also provides a connection summary and manage link.
+1. A project administrator opens **Settings → Prometheus test monitoring** (`#/settings?setting=prometheus-capture`). **Monitoring → Telemetry** also provides a connection summary and manage link.
 2. Save a disabled connection with a name. Incomplete drafts are permitted. Complete its endpoint, backend profile, authentication, transport policy and execution location before testing it.
 3. Use an origin such as `https://metrics.example.com`. A reverse proxy prefix belongs in the separate context-path field, for example `/prometheus`. Embedded credentials, query strings, fragments, redirects and insecure TLS bypasses are rejected.
 4. Select direct controller collection or an enrolled collector. A private endpoint must be verified from the selected execution location. The collector must approve that exact origin locally, advertise `prometheus-query.v1`, and retain its enrolled encryption key.

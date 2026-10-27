@@ -134,7 +134,7 @@ export default function SwaggerDocsPage({
       <h2 className="sr-only">API Reference (OpenAPI)</h2>
       {!docsState && (
         <section className="api-guide-callout">
-          <h3>{loadError ? 'API Docs Unavailable' : 'Loading API Docs'}</h3>
+          <h3>{loadError ? 'API docs unavailable' : 'Loading API docs'}</h3>
           <p role={loadError ? 'alert' : 'status'}>{loadError || 'Loading the controller-backed OpenAPI document and endpoint catalog.'}</p>
           {loadError && <button type="button" onClick={() => setLoadAttempt(value => value + 1)}>Retry API reference</button>}
         </section>
@@ -157,7 +157,7 @@ export default function SwaggerDocsPage({
       <section className="swagger-docs-controls" aria-label="Swagger documentation filters">
         <label>
           <span>Search APIs</span>
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search method, path, category, role..." />
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search method, path, category, role…" />
         </label>
         <label>
           <span>Category</span>
@@ -187,7 +187,7 @@ export default function SwaggerDocsPage({
         </div>
         {filteredOperations.length === 0 ? (
           <div className="api-guide-callout">
-            <h3>No APIs Found</h3>
+            <h3>No APIs found</h3>
             <p>Clear the search or choose another category to see the generated OpenAPI endpoints.</p>
           </div>
         ) : Object.entries(groupedOperations).map(([group, operations]) => (
@@ -246,7 +246,7 @@ function SwaggerOperationCard({
               <dd><code>{operation.operationId || 'n/a'}</code></dd>
             </div>
             <div>
-              <dt>Access Control</dt>
+              <dt>Access control</dt>
               <dd>{operation.roles || 'Public or inherited'}</dd>
             </div>
             <div>
@@ -254,13 +254,13 @@ function SwaggerOperationCard({
               <dd>{catalogRoute?.category || operation.category}</dd>
             </div>
             <div>
-              <dt>OpenAPI Tags</dt>
+              <dt>OpenAPI tags</dt>
               <dd>{operation.tags.length ? operation.tags.join(', ') : 'None'}</dd>
             </div>
           </dl>
           {operation.requestBody && (
             <div className="swagger-request-body-detail">
-              <h5>Request Body {operation.requestBody.required ? '(required)' : '(optional)'}</h5>
+              <h5>Request body {operation.requestBody.required ? '(required)' : '(optional)'}</h5>
               {operation.requestBody.media.map(media => (
                 <div key={`${operation.operationId}-${media.mediaType}`}>
                   <p><code>{media.mediaType}</code>{media.schemaRef ? <> · <code>{media.schemaRef}</code></> : media.schemaType ? ` · ${media.schemaType}` : ''}</p>

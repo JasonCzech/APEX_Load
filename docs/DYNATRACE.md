@@ -8,7 +8,7 @@ Shared pipeline ownership and provider qualification are in [observability integ
 ## Set up a connection
 
 1. Store credentials in the project's secret provider. Use a read-only Environment API token for selected Classic capabilities. Metrics, entity discovery, problems and events need their corresponding read permissions. Platform/Grail needs separate authentication: a dedicated OAuth client with client ID, client secret, resource and approved read scopes, or an explicitly configured Platform token. Grant only selected dataset and bucket access. Availability also depends on tenant configuration, data retention and licensing.
-2. Open **Settings → Connections → Dynatrace test capture**. **Monitoring → Telemetry** provides a management link. A disabled draft needs only a name. Select the capabilities to verify and enter the appropriate SaaS origins: `https://<tenant>.live.dynatrace.com` for Classic and `https://<tenant>.apps.dynatrace.com` for Platform. Managed/on-premises Dynatrace environments are outside this implementation.
+2. Open **Settings → Dynatrace test capture** (`#/settings?setting=dynatrace-capture`). **Monitoring → Telemetry** provides a management link. A disabled draft needs only a name. Select the capabilities to verify and enter the appropriate SaaS origins: `https://<tenant>.live.dynatrace.com` for Classic and `https://<tenant>.apps.dynatrace.com` for Platform. Managed/on-premises Dynatrace environments are outside this implementation.
 3. Enter logical project-secret references, never token values. Public responses expose only credential-presence flags. Blank replacement inputs retain references only while endpoint/account/authentication identity remains compatible. Identity changes require replacement credentials and verification.
 4. Choose **Direct from controller** or **Assigned collector**. A collector must belong to the project, advertise Dynatrace and the current batch contract, have an enrolled credential-sealing key, trust the shared signing configuration, and locally approve the exact SaaS origins. The load generators do not call Dynatrace. Both modes use the same adapter and normalization.
 5. Set request and Grail scan budgets. Defaults are 60 requests/minute per Environment identity and 60 per Platform credential identity; actual upstream restrictions still apply. Grail defaults are 1 GB scanned per query and 10 GB per source/run, including a 2 GB final-collection reserve. Administrators may lower limits or explicitly raise the scan limits up to the bounded API maxima of 100 GB/query and 1 TB/source/run. Charges apply to repeated/retried/preview queries, not just returned rows. Unknown cost remains charged against its reservation.
@@ -17,7 +17,7 @@ Shared pipeline ownership and provider qualification are in [observability integ
 
 TLS uses hostname verification and approved public SaaS origins. Redirects, embedded credentials, non-HTTPS provider URLs, unexpected ports, URL queries/fragments, insecure TLS bypasses and private/metadata/link-local/loopback destinations are rejected. DNS results are validated when connecting. Controller and Platform credentials cannot be sent to one another's origin.
 
-Select only the read permissions needed by the approved sources. Classic token scopes are documented in [Dynatrace access tokens](https://docs.dynatrace.com/docs/manage/identity-access-management/access-tokens-and-oauth-clients/access-tokens); Grail additionally needs access to the selected data buckets and tables under [Grail permissions](https://docs.dynatrace.com/docs/platform/grail/organize-data/assign-permissions-in-grail).
+Select only the read permissions needed by the approved sources. Classic [token scopes](https://docs.dynatrace.com/docs/discover-dynatrace/references/dynatrace-api/basics/dynatrace-api-authentication#token-scopes) are listed below; Grail additionally needs access to the selected data buckets and tables under your tenant's [Grail permissions](https://docs.dynatrace.com/docs/manage/identity-access-management/permission-management/manage-user-permissions-policies#grail-permissions).
 
 | Selected capability | Read scope / permission |
 |---|---|
@@ -30,7 +30,7 @@ Select only the read permissions needed by the approved sources. Classic token s
 | Grail entity functions / Smartscape | `storage:entities:read` / `storage:smartscape:read` |
 | Queried Grail buckets | `storage:buckets:read`, constrained to approved datasets |
 
-Smartscape node and edge queries use the [Smartscape DQL commands](https://docs.dynatrace.com/docs/platform/grail/dynatrace-query-language/commands/smartscape-commands). Permission requirements describe upstream contracts; connection verification and later real-tenant qualification establish which selected capabilities work in an APEX deployment.
+Smartscape node and edge queries use [Smartscape DQL commands](https://docs.dynatrace.com/docs/platform/grail/dynatrace-query-language/commands/smartscape-commands). Permission requirements describe upstream contracts; connection verification and later real-tenant qualification establish which selected capabilities work in an APEX deployment.
 
 ## Select sources for tests
 
@@ -91,7 +91,7 @@ APEX Load sends lifecycle and telemetry-health notifications to Dynatrace throug
 ### Setup
 
 1. Create a Dynatrace API token with event-ingest permissions.
-2. In APEX Load settings, add a notification webhook with format `dynatrace`.
+2. In **Settings → Notification routes** (`#/settings?setting=notifications`), add a notification webhook with format `dynatrace`.
 3. Use the Dynatrace Events API endpoint, for example `https://<tenant>/api/v2/events/ingest`.
 4. Paste the API token once. The settings API stores it server-side and returns only `has_api_token: true`; the raw token is write-only.
 5. Optionally set `entity_selector` and `timeout_minutes`.

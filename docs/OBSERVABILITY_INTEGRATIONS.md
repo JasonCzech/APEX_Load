@@ -15,7 +15,7 @@ HA controller replicas must share the database and durable monitoring artifacts.
 
 ## Prometheus target-system test monitoring
 
-Project administrators configure **Settings → Integrations → Prometheus test monitoring**, verify the saved revision at its selected direct or collector location, and create `prometheus-query` sources in **Monitoring → Telemetry**. Typed PromQL queries retain approved labels, units, semantics, query identity, optional freshness companions and scoped target/alert summaries. Tests and scenarios select sources explicitly; preparation freezes revisions and acceptance rules without SUT traffic.
+Project administrators configure **Settings → Prometheus test monitoring** (`#/settings?setting=prometheus-capture`), verify the saved revision at its selected direct or collector location, and create `prometheus-query` sources in **Monitoring → Telemetry**. Typed PromQL queries retain approved labels, units, semantics, query identity, optional freshness companions and scoped target/alert summaries. Tests and scenarios select sources explicitly; preparation freezes revisions and acceptance rules without SUT traffic.
 
 Live timelines, five-minute maximum delayed-data reconciliation, canonical archives, analysis and terminal criteria use the common durable provider pipeline. Missing required evidence remains Inconclusive and cannot pass CI. Existing APEX platform graphs, `/metrics`, imported dashboard behavior and the legacy collector `prometheus` pack remain separate. Explicit dashboard adoption resolves a reviewed disabled source draft without copying credentials or thresholds.
 
@@ -47,9 +47,7 @@ model the provider's documented contract, which does not establish
 compatibility with a licensed tenant. A `docs/qa` test requires a record for
 every provider in the registry, covering the capabilities the registry
 declares, with evidence that names existing test functions, and keeps this
-table in step with the records. Gate C needs a record for every provider in
-the RCA evaluation corpus; when that corpus's manifest lands (WP3.9), the test
-must also read its providers. Update a record when a
+table in step with the records. Update a record when a
 qualification succeeds, then regenerate the table with
 `APEXLOAD_UPDATE_QUALIFICATION_TABLE=1 go test ./docs/qa -run TestQualificationTableMatchesRecords`.
 
@@ -98,7 +96,7 @@ See [Bucketed Elasticsearch capture](ELASTIC.md#bucketed-elasticsearch-capture) 
 
 ## Confluence Cloud result publishing
 
-Project administrators configure **Settings → Connections → Confluence** with an HTTPS Cloud site URL, Atlassian account email, numeric space and parent page IDs, and the name of an API token held in the project's secret provider. The token value is never saved in the connection or returned by the API. Save the connection, then use **Test saved connection** to check that the account can read the parent page in the selected space. The account also needs permission to create and update pages there. Confluence Cloud's REST API supports page creation beneath a parent using `spaceId` and `parentId` ([Atlassian API reference](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/)); API-token authentication uses the account email and token ([Atlassian authentication guide](https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/)).
+Project administrators configure **Settings → Confluence** (`#/settings?setting=confluence`) with an HTTPS Cloud site URL, Atlassian account email, numeric space and parent page IDs, and the name of an API token held in the project's secret provider. The token value is never saved in the connection or returned by the API. Save the connection, then use **Test saved connection** to check that the account can read the parent page in the selected space. The account also needs permission to create and update pages there. Confluence Cloud's REST API supports page creation beneath a parent using `spaceId` and `parentId` ([Atlassian API reference](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/)); API-token authentication uses the account email and token ([Atlassian authentication guide](https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/)).
 
 Editors can open an archived run's report, expand **Publish to Confluence**, choose an enabled connection, and publish. Each run has one page per connection. The page contains the execution outcome, verdict, overview metrics, up to 100 named transaction rows, and a link to the full APEX Load report. Publishing again updates the same page. If a page creation response is uncertain, APEX Load looks for the run's stable title beneath the configured parent before attempting another create.
 
@@ -548,7 +546,7 @@ Full time-series data is *not* pushed; the run row carries a deep link (`apexloa
 
 ### APEX Load configuration (system admin)
 
-Settings → Integrations → **Power BI**:
+Settings → **Power BI** (`#/settings?setting=powerbi`):
 
 | Field | Notes |
 |---|---|

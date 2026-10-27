@@ -10,15 +10,15 @@ when upgrading from a tokenless release.
 
 | Control | Where |
 |---|---|
-| mTLS + bearer-token auth on controller↔generator gRPC | `APEXLOAD_GRPC_*` in configmap/statefulset; certs via [certificates.example.yaml](certificates.example.yaml) |
-| TLS-terminating ingress (no plaintext dashboard/API) | [controller-ingress.yaml](controller-ingress.yaml) |
-| Metrics on a dedicated port, scoped to the monitoring namespace | `APEXLOAD_METRICS_ADDR`, [network-policy.yaml](network-policy.yaml), optional [servicemonitor.yaml](servicemonitor.yaml) |
-| Pod Security Admission `restricted` enforced on the namespace | [namespace.yaml](namespace.yaml) |
-| Dedicated ServiceAccounts; controller-only namespaced API token | [serviceaccounts.yaml](serviceaccounts.yaml), [restart-controls.yaml](restart-controls.yaml) |
-| Scoped ingress NetworkPolicies + opt-in egress templates | [network-policy.yaml](network-policy.yaml), [egress-policies.example.yaml](egress-policies.example.yaml) |
-| Default audited pod/workload restart controls | [restart-controls.yaml](restart-controls.yaml), [Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md) |
+| mTLS + bearer-token auth on controller↔generator gRPC | `APEXLOAD_GRPC_*` in configmap/statefulset; certs via `certificates.example.yaml` |
+| TLS-terminating ingress (no plaintext dashboard/API) | `controller-ingress.yaml` |
+| Metrics on a dedicated port, scoped to the monitoring namespace | `APEXLOAD_METRICS_ADDR`, `network-policy.yaml`, optional `servicemonitor.yaml` |
+| Pod Security Admission `restricted` enforced on the namespace | `namespace.yaml` |
+| Dedicated ServiceAccounts; controller-only namespaced API token | `serviceaccounts.yaml`, `restart-controls.yaml` |
+| Scoped ingress NetworkPolicies + opt-in egress templates | `network-policy.yaml`, `egress-policies.example.yaml` |
+| Default audited pod/workload restart controls | `restart-controls.yaml`, [Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls) |
 | ephemeral-storage limits + bounded emptyDirs (no DiskPressure evictions) | deployment/statefulset |
-| PDBs for controller and generators | [pdb.yaml](pdb.yaml) |
+| PDBs for controller and generators | `pdb.yaml` |
 | Fail-closed production posture (`APEXLOAD_ENV=production`) | deployment/statefulset env |
 
 ## Deployment order
@@ -27,16 +27,16 @@ when upgrading from a tokenless release.
    (see `../ha/redis-valkey.example.yaml` for an in-cluster Valkey), and S3-compatible
    object storage (MinIO/Ceph RGW) or a shared RWX volume for archives.
 2. **Images** — publish a signed semantic release through
-   [release.yml](../../../.github/workflows/release.yml), then mirror its exact
+   `.github/workflows/release.yml`, then mirror its exact
    manifest digests with
-   [publish-onprem.yml](../../../.github/workflows/publish-onprem.yml). The
+   `.github/workflows/publish-onprem.yml`. The
    workflow scans and signs candidate digests before exposing release tags.
-3. **Certificates** — apply [certificates.example.yaml](certificates.example.yaml)
+3. **Certificates** — apply `certificates.example.yaml`
    (cert-manager) or provision `apexload-generator-grpc-tls` /
    `apexload-controller-grpc-tls` secrets from your PKI (`tls.crt`/`tls.key`/`ca.crt`).
    Rotation needs no pod restart: the generator re-reads its cert per TLS
    handshake and the controller re-reads per dial.
-4. **Secrets** — create `apexload-data-platform` per [secret.example.yaml](secret.example.yaml)
+4. **Secrets** — create `apexload-data-platform` per `secret.example.yaml`
    (DSN, Redis URL, gRPC token, Project Secrets wrapping key, object-store
    keys). The wrapping key enables encrypted database-backed Project Secrets
    even when Bruno execution is disabled.
@@ -87,7 +87,7 @@ kubectl -n apexload run netpol-probe --rm -it --restart=Never \
 
 The default posture leaves egress open because generators must reach the
 systems under test. On a shared cluster, apply
-[egress-policies.example.yaml](egress-policies.example.yaml) after filling in
+`egress-policies.example.yaml` after filling in
 your service/node CIDRs — it stops a mistyped target from load-testing
 kube-dns or the apiserver, and confines a compromised controller to its
 enumerable destination set (DB, cache, generators, HTTPS).

@@ -229,8 +229,8 @@ retained source evidence. Successor recovery continues to use its existing
 all-participant process-fence protocol. Terminal/stale-runtime cleanup and runs
 without an eligible evacuation journal retain their existing cleanup contracts.
 
-The [same-leader intervention review](qa/reviews/roadmap-same-leader-intervention-2026-10-19/README.md)
-records the local failure, persistence and authorization regressions. Deployed
+The same-leader intervention review records the local failure, persistence and
+authorization regressions. Deployed
 multi-host failure qualification remains pending. Historical successor proof
 wording remains readable. Older controllers do not recognize the new same-leader
 proof for post-terminal cleanup; retain the record and upgrade the cleanup owner
@@ -247,20 +247,11 @@ instead of erasing its journal or inventing another acknowledgement.
 | Archive writer restarts mid-run | Preserve partial files for diagnosis; final manifest is written only after successful finalize |
 | Dashboard static assets missing | API remains available; readiness reports dashboard/static asset state once that check is added |
 
-### Production Readiness Endpoint
+### Production Readiness Surface
 
-`GET /api/v1/system/readiness` returns a machine-readable readiness response:
+`GET /api/v1/system/readiness` returns a machine-readable readiness response (see [Readiness Gate](#readiness-gate) for the expected production check states). Overall status is `ready`, `degraded`, or `not_ready`; `not_ready` returns HTTP 503 so Kubernetes readiness probes can hold traffic away from an unsafe controller.
 
-- `metadata_store`: metadata store is configured and probeable.
-- `archive_writer`: archive root exists and is writable.
-- `generator_rpc`: local mode is accepted; distributed mode requires at least one reachable generator.
-- `telemetry_fanout`: WebSocket hub and metrics interval are initialized.
-- `auth_mode`: production auth modes are ready; bypass/dev modes are degraded.
-- `scheduler_state`: scheduler is initialized and reports enabled, due, and errored schedule counts.
-
-Overall status is `ready`, `degraded`, or `not_ready`. `not_ready` returns HTTP 503 so Kubernetes readiness probes can hold traffic away from an unsafe controller.
-
-The dashboard renders this payload in Settings > General and as a compact Monitoring card, including the aggregate state, per-check state, messages, and detail fields. Use these surfaces before release windows or controller maintenance to confirm the backend readiness probe matches what platform users will see.
+The dashboard renders this payload in **Settings → Controller & runtime** (`#/settings?setting=platform`) and as a compact Monitoring card, including the aggregate state, per-check state, messages, and detail fields. Use these surfaces before release windows or controller maintenance to confirm the backend readiness probe matches what platform users will see.
 
 ### Upgrade And Migration Policy
 
@@ -321,16 +312,6 @@ Before promoting an environment:
    verify the shared PostgreSQL/Redis/archive backends, active EndpointSlice,
    durable generator state, and failover evidence in
    the AKS README [Integration readiness](../deployments/k8s/aks/README.md#integration-readiness) section.
-
-### Plan Mapping
-
-| Plan item | Status | Artifact |
-| --- | --- | --- |
-| P1.1 Control-plane boundaries | Complete | This runbook |
-| P1.2 HA controller behavior | Opt-in implementation complete; production AKS disruption evidence remains an operational gate | HA behavior and restart contract sections; [AKS README, Integration readiness](../deployments/k8s/aks/README.md#integration-readiness) |
-| P1.3 Production readiness checks | Complete for initial API surface and dashboard operator visibility; extend as new dependencies land | `/api/v1/system/readiness`, Settings > General, Monitoring |
-| P1.4 Upgrade and migration policy | Complete | Upgrade and migration policy section |
-| P1.5 Operator architecture runbook | Complete | This runbook |
 
 
 ## SQLite To PostgreSQL Migration Guide

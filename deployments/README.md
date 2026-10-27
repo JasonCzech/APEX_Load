@@ -44,7 +44,10 @@ helm template apexload deployments/helm/apexload
 
 The `make k8s-*` targets (`k8s-local-*`, `k8s-kind-*`, `k8s-onprem-*`, `k8s-aks-*`,
 `k8s-eks-*`, and `k8s-smoke-test`) wrap the apply, status, and delete steps for
-these overlays; see the `Makefile` for the exact commands.
+these overlays, and `scripts/render-onprem-manifests.sh`,
+`scripts/render-aks-manifests.sh`, and `scripts/render-eks-manifests.sh` render
+validated manifests with environment values; see the `Makefile` for the exact
+commands.
 
 ## AI provider setup for local Kubernetes
 

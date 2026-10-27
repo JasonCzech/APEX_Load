@@ -1,15 +1,17 @@
 # APEX Load on Amazon EKS — deployment guide
 
+## Overview
+
 Production-grade manifests for running APEX Load on EKS with the full AWS data
 platform: RDS PostgreSQL, ElastiCache Redis, S3 archives, Secrets Manager script
 secrets (IRSA — no static keys), a KEDA-autoscaled generator fleet, and
 DNS-based fleet discovery.
 
 Controller-loss fencing is mandatory. Follow the maintenance-window rollout
-gate and acceptance drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision)
+gate and acceptance drill in [Generator restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls)
 when upgrading from a tokenless release.
 
-The matching infrastructure lives in [`deployments/aws/terraform`](../../aws/terraform) (see [AWS Terraform](#aws-terraform)).
+The matching infrastructure lives in `deployments/aws/terraform` (see [AWS Terraform](#aws-terraform)).
 
 ```
                         ┌─ EKS (apexload namespace) ─────────────────────┐
@@ -56,7 +58,7 @@ generic key, the generator pods would match no node and sit `Pending` forever.
 **2. Authentication is two-stage.** The controller presigns an STS
 `GetCallerIdentity` URL as its bearer token. STS accepting that credential and
 the cluster authorizing the resulting ARN are separate things, and both fail
-with `401`. Use **Fleet → Clusters → Test**: the `sts_identity` probe reports the
+with `401`. Use **Settings → Kubernetes clusters → Test**: the `sts_identity` probe reports the
 caller ARN, and when it passes while `api_server` fails, the message names the
 missing EKS access entry directly.
 
@@ -176,9 +178,10 @@ An EKS environment is ready for cutover only when all gates below pass:
   ignored by the ALB controller.
 - **An ingress controller is not included.** EKS ships none; install the AWS
   Load Balancer Controller before applying the overlay.
-- **No AWS-native compute provisioner.** Like the Azure path, this is EKS over
-  the Kubernetes API. There is no EC2 Auto Scaling Group or ECS/Fargate
-  generator backend; `GeneratorProvisioner` remains the seam for that work.
+- **Overlay scope vs. ECS Fargate compute.** This Kustomize overlay provisions
+  an EKS cluster scaled over the Kubernetes API (not an EC2 Auto Scaling Group).
+  For serverless AWS ECS Fargate generator pools, see
+  [Multi-cloud PaaS compute](../../../docs/CLUSTERS_AND_CLOUD.md#multi-cloud-paas-compute).
 - **Event Hubs / Service Bus have no AWS twin here.** They remain supported
   protocol targets, but the module provisions nothing for them.
 
@@ -242,7 +245,7 @@ file and in any CI log that prints outputs. Sync them into the
 
 ### Registering the cluster in APEX Load
 
-After apply, register the cluster under **Fleet → Clusters**:
+After apply, register the cluster under **Settings → Kubernetes clusters** (`#/settings?setting=clusters`):
 
 | Field | Value |
 |---|---|
