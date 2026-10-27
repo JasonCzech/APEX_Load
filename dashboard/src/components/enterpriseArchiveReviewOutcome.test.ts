@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
+import { archiveReviewOutcome, archiveScriptFidelityReport } from './enterpriseArchiveReviewOutcome'
 
 function state(protocol = 'http'): Parameters<typeof archiveReviewOutcome>[0] {
   return {
@@ -144,5 +144,47 @@ describe('archive queue review outcome', () => {
     expect(outcome(item)).toBe('Saved 1 of 2')
     item.savedResultScripts[1] = {}
     expect(outcome(item)).toBe('Saved')
+  })
+})
+
+describe('multi-lane fidelity after a TLS repair', () => {
+  it('does not resurrect an aggregate TLS gate copied to a clean sibling', () => {
+    const item = state()
+    const original = { promotion_status: 'blocked', blockers: ['legacy_tls_replacement at init[0]'] }
+    const first = item.result!.scripts![0]
+    const sibling = { ...first, name: 'Sibling', metadata: { import: { preserved: { fidelity_report: original } } } }
+    item.result!.scripts = [{ ...first, metadata: { import: { preserved: { fidelity_report: { promotion_status: 'promotable', blockers: [] } } } } }, sibling]
+    item.result!.script = item.result!.scripts[0]
+    item.result!.fidelity_report = original
+    expect(outcome(item)).toBe('Ready to save')
+    expect(original.blockers).toEqual(['legacy_tls_replacement at init[0]'])
+  })
+
+  it('keeps live sibling gates and non-gate archive limitations after repairing the first lane', () => {
+    const item = state()
+    const limitation = 'One or more source request bodies were detected but not converted.'
+    const original = { promotion_status: 'blocked', blockers: ['legacy_tls_replacement at init[0]', limitation] }
+    const first = item.result!.scripts![0]
+    const sibling = { ...first, name: 'Sibling', init: [{ name: 'Other requirement', type: 'source_review', target: '', metadata: { execution_blocker: 'unrelated_requirement' } }], metadata: { import: { preserved: { fidelity_report: original } } } }
+    item.result!.scripts = [{ ...first, metadata: { import: { preserved: { fidelity_report: { promotion_status: 'promotable', blockers: [] } } } } }, sibling]
+    item.result!.script = item.result!.scripts[0]
+    item.result!.fidelity_report = original
+    expect(outcome(item)).toBe('Blocker')
+    const report = archiveScriptFidelityReport(sibling, item.result)
+    expect(report?.blockers).toEqual([limitation, 'unrelated_requirement at init[0]'])
+    expect(archiveScriptFidelityReport(item.result!.scripts[0], item.result)?.promotion_status).toBe('promotable')
+  })
+
+  it('keeps archive-only limitations as review requirements for a clean sibling', () => {
+    const item = state()
+    const limitation = 'One or more source request bodies were detected but not converted.'
+    const original = { promotion_status: 'blocked', blockers: ['legacy_tls_replacement at init[0]', limitation] }
+    const first = item.result!.scripts![0]
+    const sibling = { ...first, name: 'Sibling' }
+    item.result!.scripts = [{ ...first, metadata: { import: { preserved: { fidelity_report: { promotion_status: 'promotable', blockers: [] } } } } }, sibling]
+    item.result!.script = item.result!.scripts[0]
+    item.result!.fidelity_report = original
+    expect(outcome(item)).toBe('Needs review')
+    expect(archiveScriptFidelityReport(sibling,item.result)?.blockers).toEqual([limitation])
   })
 })

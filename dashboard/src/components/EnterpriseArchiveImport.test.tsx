@@ -1604,6 +1604,43 @@ describe('EnterpriseArchiveImport', () => {
     }
   })
 
+  it.each([false, true])('refreshes multi-lane TLS fidelity without losing sibling gates (sibling blocked: %s)', async siblingBlocked => {
+    const originalReport = { promotion_status: 'blocked', blockers: ['legacy_tls_replacement at init[0]'] }
+    const first = legacyTLSDraft('TLS lane', 'signed:tls')
+    Object.assign(first.metadata.import.preserved, { fidelity_report: originalReport })
+    const sibling = { ...legacyTLSDraft('Sibling', 'signed:sibling', { min_version: '1.2', max_version: '1.3' }),
+      init: siblingBlocked ? [{ name: 'Sibling requirement', type: 'source_review', metadata: { execution_blocker: 'sibling_requirement' } }] : [],
+      metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: 'signed:sibling', fidelity_report: originalReport } } },
+    }
+    const repaired = legacyTLSDraft('TLS lane', 'signed:tls:updated', { min_version: '1.3', max_version: '1.3' })
+    const refreshedReport = { promotion_status: 'promotable', blockers: [] }
+    Object.assign(repaired.metadata.import.preserved, { fidelity_report: refreshedReport, replay_preflight: { valid: true, checks: [] } })
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(first, { scripts: [first, sibling], fidelity_report: originalReport }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith('/scripts/import/settings')
+      ? { script: repaired, fidelity_report: refreshedReport, findings: [], readiness: { replay_ready: true, promotion_ready: true }, secret_binding_requirements: [] }
+      : { error: 'not stubbed' }), { status: String(input).endsWith('/scripts/import/settings') ? 200 : 404, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await addArchiveFiles(container, [new File(['zip'], 'multi-lane.zip', { type: 'application/zip' })])
+      await clickImportAction(container, 'Validate Only')
+      const issue = Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-issue-row')).find(row => row.textContent?.includes('Choose supported TLS settings'))!
+      await clickButton(issue)
+      await clickButton(findButton(container, 'Edit HTTP here')!)
+      const minimum = container.querySelector<HTMLSelectElement>('[aria-label="HTTP: Minimum TLS version"]')!
+      await act(async () => { minimum.value = '1.3'; minimum.dispatchEvent(new Event('change', { bubbles: true })) })
+      await clickButton(findButton(container, 'Preview HTTP changes')!)
+      await clickButton(findButton(container, 'Apply HTTP changes')!)
+      await settle(() => container.textContent?.includes('Settings applied to the reviewed draft.') === true)
+      expect(container.querySelector('.lr-tab-readiness')?.textContent).toContain('0 block replay')
+      await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="Review generated script Sibling"]')!)
+      expect(container.querySelector('.lr-tab-readiness')?.textContent).toContain(siblingBlocked ? '1 blocks replay' : '0 block replay')
+      if (siblingBlocked) expect(container.querySelector('.lr-issue-queue')?.textContent).toContain('sibling requirement')
+      expect(originalReport.blockers).toEqual(['legacy_tls_replacement at init[0]'])
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('saves a validated draft with an applied guided TLS repair without converting the archive again', async () => {
     const repairs = stubTLSRepairEndpoints()
     apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(legacyTLSDraft('TLS archive'), {

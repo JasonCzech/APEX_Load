@@ -29,7 +29,7 @@ func TestLegacySSLImportMigratesToTLS13WithWarning(t *testing.T) {
 						t.Fatalf("TLS = %#v, want exact TLS 1.3", tls)
 					}
 					warnings := strings.Join(result.Warnings, "\n")
-					if !strings.Contains(warnings, "replaced with TLS 1.3") || !strings.Contains(warnings, strings.TrimSpace(value)) || !strings.Contains(warnings, "TLS 1.3-capable endpoint") {
+					if !strings.Contains(warnings, "replaced with TLS 1.3") || !strings.Contains(warnings, strings.TrimSpace(value)) || !strings.Contains(warnings, "endpoint compatible with the final configured TLS range") {
 						t.Fatalf("missing migration warning: %s", warnings)
 					}
 					for _, action := range result.Script.Actions {
@@ -70,6 +70,27 @@ func TestTLSImportKeepsExplicitVersionsAndUnknownDefaults(t *testing.T) {
 			}
 			if strings.Contains(strings.Join(result.Warnings, "\n"), "replaced with TLS 1.3") {
 				t.Fatalf("unexpected migration warning: %#v", result.Warnings)
+			}
+		})
+	}
+}
+
+func TestTLSMigrationWarningDescribesImportTimeDefault(t *testing.T) {
+	for _, value := range []string{"AUTO", "SSL3"} {
+		t.Run(value, func(t *testing.T) {
+			result := convertSourceExecutionFixture(t, fmt.Sprintf(`Action() {
+web_set_sockets_option("SSL_VERSION", %q);
+web_set_sockets_option("SSL_VERSION", "TLS1.2");
+web_url("request", "URL=https://example.test/", LAST);
+return 0;
+}`, value))
+			tls := result.Script.Config.HTTP.TLS
+			if tls.MinVersion != "1.2" || tls.MaxVersion != "1.2" {
+				t.Fatalf("TLS = %#v, want explicit TLS 1.2", tls)
+			}
+			warnings := strings.Join(result.Warnings, "\n")
+			if !strings.Contains(warnings, "import-time default") || !strings.Contains(warnings, "final configured TLS range") || strings.Contains(warnings, "requires a TLS 1.3-capable endpoint") {
+				t.Fatalf("warning contradicts effective TLS policy: %s", warnings)
 			}
 		})
 	}

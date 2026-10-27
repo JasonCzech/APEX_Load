@@ -1,3 +1,4 @@
+import { draftImportFindings } from '../src/components/importReviewIssues'
 import { canonicalImportDraft } from './support/importResponse'
 import type { Page } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
@@ -1125,3 +1126,50 @@ for (const scenario of [
     } else expect(record.script.config.http?.proxy?.url).toBe('http://proxy.example.test:8080')
   })
 }
+
+test('LoadRunner multi-lane TLS repair refreshes each lane without stale aggregate gates', async ({ page }) => {
+ if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+ const workspace = await createWorkspace(page.context().request)
+ const archive = storedZip([
+  {name:'TLSReview.usr',content:'[General]\nType=Web\n[Actions]\nAction1=Action.c\n'},
+  {name:'Action.c',content:'Action()\n{\n web_set_sockets_option("SSL_VERSION", "TLS-future");\n web_url("home", "URL=https://example.invalid/", LAST);\n return 0;\n}\n'},
+ ])
+ // Keep the primary draft/candidate server-backed. Add a read-only sibling
+ // carrying the initial copied report, as multi-lane conversion responses do.
+ await page.route(url => url.pathname === '/api/v1/scripts/import/enterprise-script-archive/validate', async route => {
+  const response = await route.fetch()
+  expect(response.ok()).toBeTruthy()
+  const result = await response.json()
+  const primary = canonicalImportDraft(result)
+  const sibling = structuredClone(primary)
+  sibling.name = 'Clean sibling'
+  sibling.init = []
+  sibling.actions = primary.actions.filter(action => action.name === 'home')
+  expect(sibling.actions).toHaveLength(1)
+  expect(draftImportFindings(sibling)).toEqual([])
+  const preserved = sibling.metadata!.import!.preserved!
+  preserved.server_import_attestation_v1 = 'signed:synthetic-read-only-sibling'
+  preserved.replay_preflight = {valid:true, checks:[], action_count:1, expected_action_count:1}
+  result.scripts.push(sibling)
+  await route.fulfill({response,json:result})
+ })
+ await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+ if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+ await page.getByRole('tab',{name:'Import',exact:true}).click()
+ await page.getByRole('button',{name:/LoadRunner Script Archive/}).click()
+ await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles({name:'multi-lane.usz',mimeType:'application/zip',buffer:archive})
+ await page.getByRole('button',{name:'Validate Script',exact:true}).click()
+ await page.locator('.lr-issue-row',{hasText:'Choose supported TLS settings'}).first().click()
+ const issue = page.getByRole('region',{name:'Selected issue',exact:true})
+ await issue.getByRole('button',{name:'Edit HTTP here',exact:true}).click()
+ await issue.getByRole('combobox',{name:'HTTP: Minimum TLS version',exact:true}).selectOption('1.3')
+ await issue.getByRole('combobox',{name:'HTTP: Maximum TLS version',exact:true}).selectOption('1.3')
+ await issue.getByRole('button',{name:'Preview HTTP changes',exact:true}).click()
+ await issue.getByRole('button',{name:'Apply HTTP changes',exact:true}).click()
+ await expect(page.locator('.lr-tab-readiness')).toContainText('0 block replay')
+ await page.getByRole('button',{name:'Review generated script Clean sibling',exact:true}).click()
+ await expect(page.locator('.lr-tab-readiness')).toContainText('0 block replay')
+ await expect(page.locator('.lr-issue-row .import-issue-severity-tag.blocker')).toHaveCount(0)
+ await expect(page.locator('.lr-file-row .import-issue-severity-tag.blocker')).toHaveCount(0)
+ await expect(page.getByRole('tab',{name:/^Review(,|$)/})).toHaveAttribute('aria-selected','true')
+})
