@@ -1172,6 +1172,7 @@ func IsOpaqueImportSourcePayloadKey(key string) bool {
 	case "jsr223sources", "k6gatedsource", "postmaneventsources",
 		"credentialtraversalsourcesnapshotbase64", "devwebgatedsource",
 		"jmeterjdbcsources", "enterpriseunsupportedproxysource",
+		NormalizeScriptFieldName(dsl.ImportPreservedIgnoredProxyCredentialsKey),
 		NormalizeScriptFieldName(dsl.ImportPreservedEnterpriseJavaVMSourceKey),
 		NormalizeScriptFieldName(dsl.ImportPreservedEnterpriseJavaJDBCSourceKey):
 		return true

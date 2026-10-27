@@ -300,6 +300,9 @@ func TestOpaqueImportSourcePayloadsAreAttestedAndRetainedDurably(t *testing.T) {
 		{key: "credential_traversal_source_snapshot_base64"},
 		{key: dsl.ImportPreservedJMeterJDBCSourcesKey},
 		{key: dsl.ImportPreservedEnterpriseUnsupportedProxySourceKey},
+		{key: dsl.ImportPreservedIgnoredProxyCredentialsKey, payload: func(canary string) any {
+			return map[string]any{"version": 1, "values_base64": []string{base64.StdEncoding.EncodeToString([]byte(canary))}}
+		}},
 		{
 			key: dsl.ImportPreservedEnterpriseJavaVMSourceKey,
 			payload: func(canary string) any {

@@ -71,6 +71,7 @@ describe('import issue queue', () => {
     expect(issueRepairOptions('missing_producer:tstamp').map(o => o.value)).toEqual(['bind_variable', 'add_parameter', 'add_extractor'])
     expect(issueRepairOptions('restored_body_required').map(o => o.value)).toEqual(['restore_body'])
     expect(issueRepairOptions('legacy_tls_replacement').map(o => o.value)).toEqual(['select_tls'])
+    expect(issueRepairOptions('encrypted_proxy_password').map(o => o.value)).toEqual(['replace_proxy_secret', 'omit_proxy_credentials', 'disable_imported_proxy'])
     expect(issueRepairOptions('unknown_unsupported')).toEqual([])
   })
   it('offers a saved script every repair but restoring a protected body', () => {
@@ -89,6 +90,7 @@ describe('import issue queue', () => {
     expect(buildRepairOperation('', undefined, fields)).toEqual({ type: 'select_tls', tls_min: '1.2', tls_max: '1.3' })
     expect(buildRepairOperation('restore_body', { code: 'restored_body_required' }, { ...fields, value: '{"a":1}' })).toEqual({ type: 'restore_body', body: '{"a":1}' })
     expect(buildRepairOperation('replace_proxy_secret', { code: 'encrypted_proxy_password' }, { ...fields, value: 'PROXY_PASSWORD' })).toEqual({ type: 'replace_proxy_secret', secret_name: 'PROXY_PASSWORD' })
+    for (const type of ['omit_proxy_credentials', 'disable_imported_proxy']) expect(buildRepairOperation(type, { code: 'encrypted_proxy_password' }, fields)).toEqual({ type })
     expect(buildRepairOperation('bind_variable', value, { ...fields, value: 'existingToken' })).toEqual({ type: 'bind_variable', producer: 'existingToken' })
     expect(buildRepairOperation('add_parameter', value, { ...fields, value: 'one\ntwo' })).toEqual({
       type: 'add_parameter', parameter: { name: 'c_token', type: 'list', values: ['one', 'two'], update: 'once', selection: 'sequential' },

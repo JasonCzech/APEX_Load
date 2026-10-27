@@ -139,9 +139,6 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	if len(scripts) == 0 && result.Script != nil {
 		scripts = []*dsl.Script{result.Script}
 	}
-	if !importReq.SalesforceNative && len(importReq.HARData) == 0 {
-		return
-	}
 	reviewScript := result.Script
 	if reviewScript == nil && len(scripts) > 0 {
 		reviewScript = scripts[0]
@@ -151,6 +148,7 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	}
 	review, err := salesforce.Analyze(reviewScript, salesforce.AnalyzeOptions{
 		BuildNative:          importReq.SalesforceNative,
+		DetectionOnly:        !importReq.SalesforceNative && len(importReq.HARData) == 0,
 		HARData:              importReq.HARData,
 		RequireDetected:      !importReq.SalesforceNative,
 		SkipUndetectedReview: !importReq.SalesforceNative,

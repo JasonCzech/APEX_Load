@@ -7,6 +7,39 @@ import { test, expect, mutation, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import { storedZip } from './support/zip'
 
+test('LoadRunner reveals Salesforce options after detection without selecting a new output', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  const archive = storedZip([
+    { name: 'Salesforce.usr', content: '[General]\nType=Web\n[Actions]\nAction1=Action.c\n' },
+    { name: 'Action.c', content: 'Action() { web_url("Accounts", "URL=https://acme.my.salesforce.com/home", LAST); return 0; }' },
+  ])
+  await page.goto(`/#/scripts?mode=import&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await expect(page.locator('.lr-har-panel')).toHaveCount(0)
+  await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles({ name: 'salesforce.usz', mimeType: 'application/zip', buffer: archive })
+  const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
+  await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
+  const result = await json(await validated)
+  expect(result.summary).toMatchObject({ salesforce_review: { detected: true } })
+  expect(result.summary).not.toHaveProperty('salesforce_review.blockers.0')
+  const draft = canonicalImportDraft(result)
+  expect(draft.generated_by).not.toBe('apexload-salesforce-builder')
+  const setup = page.locator('.lr-completed-setup')
+  await setup.locator(':scope > summary').click()
+  const options = setup.locator('.lr-har-panel')
+  await expect(options).toBeVisible()
+  await expect(options.getByRole('checkbox', { name: 'Use Salesforce-aware HTTP draft' })).not.toBeChecked()
+  await expect(options.getByRole('button', { name: 'Attach HAR' })).toBeVisible()
+  const outputExplanation = options.getByText('When selected, conversion builds', { exact: false })
+  expect(await outputExplanation.evaluate(element => {
+    const range = document.createRange()
+    range.selectNodeContents(element)
+    return range.getClientRects().length
+  })).toBeGreaterThan(1)
+  await setup.screenshot({ path: testInfo.outputPath('salesforce-detected-options.png') })
+})
+
 test('LoadRunner validation identifies the JSON Content-Type header on an XML request', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const workspace = await createWorkspace(page.context().request)
@@ -62,13 +95,19 @@ for (const scenario of [
     await page.getByRole('tab', { name: 'Import', exact: true }).click()
     await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
     const conversionOptions = page.locator('#migration-block-policy-options')
-    const salesforceOptions = conversionOptions.locator('.lr-advanced-policy + .lr-har-panel')
-    await expect(salesforceOptions.locator('summary')).toHaveText('Salesforce-specific options')
+    await expect(conversionOptions.locator('.lr-har-panel')).toHaveCount(0)
+    const advanced = conversionOptions.locator('.lr-advanced-policy')
+    await advanced.locator('summary').click()
+    const override = advanced.getByRole('checkbox', { name: 'Show Salesforce migration options' })
+    await override.check()
+    const salesforceOptions = conversionOptions.locator('.lr-har-panel')
     await salesforceOptions.locator('summary').click()
-    await expect(salesforceOptions.getByRole('checkbox', { name: 'Build Salesforce native preview' })).toBeVisible()
+    await expect(salesforceOptions.getByRole('checkbox', { name: 'Use Salesforce-aware HTTP draft' })).not.toBeChecked()
+    await expect(salesforceOptions).toContainText('selects the Salesforce-aware HTTP draft as the import output')
     await expect(salesforceOptions.getByRole('button', { name: 'Attach HAR' })).toBeVisible()
-    await expect(page.locator('.lr-import-actions-card .lr-har-panel')).toHaveCount(0)
-    await salesforceOptions.locator('summary').click()
+    await override.uncheck()
+    await expect(salesforceOptions).toHaveCount(0)
+    await advanced.locator('summary').click()
     if (scenario.file === 'transaction-labels.zip') {
       const advancedPolicy = conversionOptions.locator('.lr-advanced-policy')
       await advancedPolicy.locator('summary').click()
@@ -1027,3 +1066,62 @@ test('LoadRunner TLS settings can be previewed and applied while remaining on Re
  await expect(page.getByRole('tab',{name:/^Review(,|$)/})).toHaveAttribute('aria-selected','true')
  await page.screenshot({path:testInfo.outputPath('inline-tls-review-narrow.png'),fullPage:true})
 })
+
+for (const scenario of [
+  { operation: 'omit_proxy_credentials', label: 'Import proxy without credentials', mode: 'custom', settings: '[Proxy]\nMode=custom\nProxyServer=http://proxy.example.test:8080\nProxyUserName=synthetic-user\nProxyPassword=synthetic-encrypted-value\nProxyPasswordIsEncrypted=true\n' },
+  { operation: 'disable_imported_proxy', label: 'Ignore imported proxy settings', mode: 'none', settings: '[WEB]\nProxyUseBrowser=0\nProxyUseProxy=0\nProxyUseProxyServer=0\nProxyUseAutoConfigScript=1\nProxyAutoConfigScriptURL=https://proxy.example.test/config.pac\nProxyUserName=synthetic-user\nProxyPassword=synthetic-encrypted-value\nProxyPasswordIsEncrypted=true\n' },
+]) {
+  test(`LoadRunner optional proxy settings: ${scenario.operation} survives save and reopen`, async ({ page }, testInfo) => {
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+    const workspace = await createWorkspace(page.context().request)
+    const archive = storedZip([
+      { name: 'OptionalProxy.usr', content: '[General]\nType=Web\nRuntimeSettings=default.cfg\n[Actions]\nAction1=Action.c\n' },
+      { name: 'Action.c', content: 'Action() { web_url("Home", "URL=https://example.invalid/home", LAST); return 0; }' },
+      { name: 'default.cfg', content: scenario.settings },
+    ])
+    await page.goto(`/#/scripts?mode=import&${scopeQuery(workspace)}`)
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+    await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles({ name: 'optional-proxy.usz', mimeType: 'application/zip', buffer: archive })
+    const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
+    await page.getByRole('button', { name: 'Validate Script', exact: true }).click()
+    const imported = canonicalImportDraft(await json(await validated))
+    expect(imported.config.http?.proxy?.password).toContain('ENTERPRISE_PROXY_PASSWORD')
+    const repair = page.getByRole('region', { name: 'Guided import repair' })
+    await repair.getByRole('button', { name: /Replace encrypted proxy password/ }).click()
+    const operation = repair.getByRole('combobox', { name: 'Repair operation' })
+    await expect(operation).toHaveValue('replace_proxy_secret')
+    await operation.selectOption({ label: scenario.label })
+    await expect(repair.getByRole('textbox', { name: 'Repair value' })).toHaveCount(0)
+    const previewed = mutation(page, 'POST', '/api/v1/scripts/import/repairs/preview')
+    await repair.getByRole('button', { name: 'Preview repair', exact: true }).click()
+    const preview = await json(await previewed)
+    const draft = preview.script as ScriptDefinition
+    expect(draft.config.http?.proxy?.username || '').toBe('')
+    expect(draft.config.http?.proxy?.password || '').toBe('')
+    expect(draft.config.http?.proxy_mode).toBe(scenario.mode)
+    // Compare the same disclosure projection: repair responses redact source
+    // evidence more strictly than the original credential-preserving import.
+    expect(draft.metadata?.import?.preserved?.source_review).toEqual((preview.before as ScriptDefinition).metadata?.import?.preserved?.source_review)
+    await repair.screenshot({ path: testInfo.outputPath(`${scenario.operation}-preview.png`) })
+    const applied = mutation(page, 'POST', '/api/v1/scripts/import/repairs/apply')
+    await repair.getByRole('button', { name: 'Apply reviewed repair', exact: true }).click()
+    expect((await applied).ok()).toBeTruthy()
+    await expect(repair.getByRole('button', { name: /Replace encrypted proxy password/ })).toHaveCount(0)
+    const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
+    await page.locator('.script-import-review-actions').getByRole('button', { name: 'Save draft', exact: true }).click()
+    const response = await saved
+    expect(response.ok(), await response.text()).toBeTruthy()
+    const payload = await json(response)
+    const stored = (payload.scripts as { id: string; script: ScriptDefinition }[])[0]
+    const reopened = await page.context().request.get(`/api/v1/scripts/${stored.id}`)
+    expect(reopened.ok()).toBeTruthy()
+    const record = await reopened.json() as { script: ScriptDefinition }
+    expect(record.script.config.http?.proxy_mode).toBe(scenario.mode)
+    expect(record.script.config.http?.proxy?.password || '').toBe('')
+    expect(record.script.config.http?.proxy?.username || '').toBe('')
+    if (scenario.operation === 'disable_imported_proxy') {
+      expect(record.script.config.http?.proxy?.url || '').toBe('')
+      expect(record.script.config.http?.proxy?.pac_url || '').toBe('')
+    } else expect(record.script.config.http?.proxy?.url).toBe('http://proxy.example.test:8080')
+  })
+}

@@ -243,7 +243,11 @@ export function issueRepairOptions(code: string): { value: string; label: string
     { value: 'bind_variable', label: 'Bind existing value' }, { value: 'add_parameter', label: 'Add parameter' }, { value: 'add_extractor', label: 'Configure response extractor' },
   ]
   if (code === 'restored_body_required') return [{ value: 'restore_body', label: 'Supply restored request body' }]
-  if (code === 'encrypted_proxy_password') return [{ value: 'replace_proxy_secret', label: 'Choose proxy secret binding' }]
+  if (code === 'encrypted_proxy_password') return [
+    { value: 'replace_proxy_secret', label: 'Import proxy with replacement credentials' },
+    { value: 'omit_proxy_credentials', label: 'Import proxy without credentials' },
+    { value: 'disable_imported_proxy', label: 'Ignore imported proxy settings' },
+  ]
   if (code === 'legacy_tls_replacement') return [{ value: 'select_tls', label: 'Select supported TLS' }]
   return []
 }
@@ -266,6 +270,8 @@ export function buildRepairOperation(kind: string, finding: Pick<ImportFinding, 
   switch (kind) {
     case 'restore_body': return { type: kind, body: value }
     case 'replace_proxy_secret': return { type: kind, secret_name: value }
+    case 'omit_proxy_credentials':
+    case 'disable_imported_proxy': return { type: kind }
     case 'bind_variable': return { type: kind, producer: value }
     case 'add_parameter': return { type: kind, parameter: { name: variable, type: 'list', values: value.split('\n'), update: 'once', selection: 'sequential' } }
     case 'add_extractor': return { type: kind, response_path: responsePath, extractor: { name: variable, type: extractorType, source: 'body', expression: value, on_miss: 'fail' } }
