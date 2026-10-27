@@ -14,7 +14,8 @@ Each BI-4 golden behavior names the tests that accept it. **Chromium and WebKit*
 |  | `TestBrowserActualInteractionOutcomesTargetsAndNavigation` (`pkg/protocol/browser/interaction_actual_integration_test.go`) | Chromium and WebKit |
 |  | `TestBrowserActualKeyboardTargetsAfterTheGesture` (`pkg/protocol/browser/interaction_actual_integration_test.go`) | Chromium and WebKit |
 |  | `TestRetriesDeadInteractionsAndUnexpectedNavigation` (`pkg/api/browser_interaction_patterns_test.go`) | Unit (no browser) |
-| Regressions against a baseline | `TestBrowserBaselineFindsASeededRegression` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
+| Regressions against a baseline | `TestBrowserSeededRegressionProductionPath` (`pkg/api/rca_browser_seeded_regression_test.go`) | Chromium (the only engine exposing it) |
+|  | `TestBrowserBaselineFindsASeededRegression` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
 |  | `TestBrowserBaselineNeedsAPracticalEffect` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
 |  | `TestBrowserBaselineFollowsThePinnedBrowserPolicy` (`pkg/rca/browser_baseline_test.go`) | Unit (no browser) |
 |  | `TestBrowserEffectFloorOnlyRaisesTimingAndCLSDefaults` (`pkg/rca/browser_effect_floor_test.go`) | Unit (no browser) |
@@ -86,4 +87,4 @@ These Playwright tests run in both authentication profiles (default and local-au
 - one failed checkout journey attempt and a weighted failure index of 1;
 - the fixture server saw the page and its hero once each: capture and analysis added no target traffic.
 
-With `APEXLOAD_BI_ACCEPTANCE_OUT` it writes `browser-intelligence-golden.json` there. When `APEXLOAD_COMMIT_SHA` names the measured commit, it also writes `browser-intelligence-acceptance-requests.json`: one F4 feature acceptance request per engine (`BI-4`, `browser-intelligence-golden`), naming the results' SHA-256. A request is `pending` when the engine's golden held, for a reviewer to record against a release binary, and `failed` when it did not; it never claims a pass by itself. An operator posts the requests to `/api/v1/system/acceptance-records`. Baseline regressions are accepted by unit tests over seeded series: no two real runs at different load levels are compared here.
+With `APEXLOAD_BI_ACCEPTANCE_OUT` it writes `browser-intelligence-golden.json` there. When `APEXLOAD_COMMIT_SHA` names the measured commit, it also writes `browser-intelligence-acceptance-requests.json`: one F4 feature acceptance request per engine (`BI-4`, `browser-intelligence-golden`), naming the results' SHA-256. A request is `pending` when the engine's golden held, for a reviewer to record against a release binary, and `failed` when it did not; it never claims a pass by itself. An operator posts the requests to `/api/v1/system/acceptance-records`. Baseline regressions against a real managed baseline run and all five baseline refusal cases are accepted through the production `latest_compatible` admission, async RCA worker, and `browser_findings.v2` path by `TestBrowserSeededRegressionProductionPath`, alongside unit tests over seeded series.
