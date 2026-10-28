@@ -934,6 +934,48 @@ func TestJourneyAccountingZeroDurationLoopTieBreaking(t *testing.T) {
 	if loopTx.Completed != 2 || loopTx.Aborted != 0 || loopTx.Steps != 4 {
 		t.Fatalf("loop-tx zero-duration tie-breaking failed: %+v", loopTx)
 	}
+
+	// Mixed boundary kind (transaction start + action success without auto-tx on confirm)
+	// and a zero-duration pre-transaction step at the same nanosecond.
+	mixedPolicy := JourneyPolicyDefinition{
+		Version: analysisPolicyVersion,
+		Journeys: []JourneyDefinition{
+			{
+				ID:      "mixed-loop",
+				Name:    "Mixed Loop",
+				Start:   JourneyBoundary{Transaction: "OpenTx", StepPath: "actions[1].control.steps[0]"},
+				Success: JourneyBoundary{Action: "confirm", StepPath: "actions[1].control.steps[1]"},
+				Weight:  1,
+			},
+		},
+	}
+	stepPre := protocol.NewBrowserAuthoredStep(digest, "actions[0]")
+	stepLoopOpen := protocol.NewBrowserAuthoredStep(digest, "actions[1].control.steps[0]")
+	stepLoopConfirm := protocol.NewBrowserAuthoredStep(digest, "actions[1].control.steps[1]")
+	mixedRows := []TransactionEvent{
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "pre_step", AuthoredStep: stepPre, Success: false},
+		// Pass 1:
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "open", AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "OpenTx", BusinessTransaction: true, AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "confirm", AuthoredStep: stepLoopConfirm, Success: true},
+		// Pass 2:
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "open", AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "OpenTx", BusinessTransaction: true, AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "confirm", AuthoredStep: stepLoopConfirm, Success: true, EndsIteration: true},
+	}
+	mixedReport := accountJourneyRows(mixedPolicy, mixedRows)
+	mixed := journeyByID(t, mixedReport, "mixed-loop")
+	if mixed.Completed != 2 || mixed.Aborted != 0 || mixed.Failed != 0 || mixed.Steps != 4 || mixed.StepFailures != 0 {
+		t.Fatalf("mixed-loop zero-duration tie-breaking failed: %+v", mixed)
+	}
+
+	// Legacy archive with zero AuthoredStep rows and zero boundary matches must downgrade MatchMode to "name".
+	legacyUnmatched := accountJourneyRows(mixedPolicy, []TransactionEvent{
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "unrelated", Success: true, EndsIteration: true},
+	})
+	if got := journeyByID(t, legacyUnmatched, "mixed-loop"); got.MatchMode != "name" {
+		t.Fatalf("expected legacy archive without AuthoredStep to report match_mode=name, got %+v", got)
+	}
 }
 
 func TestListAnalysisJourneyStepsAndBoundaryValidation(t *testing.T) {

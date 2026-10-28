@@ -28,7 +28,13 @@ func (s *Server) startReplayArtifactCleanup() {
 					slog.Warn("replay artifact cleanup remains pending")
 				}
 			}
-			_, _ = browser.ReclaimRuntimeHARWorking(ctx, strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_HAR_DIR")), 128)
+			envDir := strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_HAR_DIR"))
+			_, _ = browser.ReclaimRuntimeHARWorking(ctx, envDir, 128)
+			if s.runner != nil {
+				if settingsDir := strings.TrimSpace(s.runner.GetSystemSettings().ArchiveRetention.HARArtifactDir); settingsDir != "" && settingsDir != envDir {
+					_, _ = browser.ReclaimRuntimeHARWorking(ctx, settingsDir, 128)
+				}
+			}
 		}
 		sweep()
 		for {

@@ -11,7 +11,7 @@ This record covers the `BE-B1` (`be-b1-linux-har-crash`) slice for Linux `/proc/
 2. **Authoritative Linux CI Gate**:
    - Added the `Native HAR ownership (Linux)` step (`if: matrix.lane == 'race'`, `APEXLOAD_BROWSER_TESTS: require`) in [ci.yml](../../../../.github/workflows/ci.yml) running `go test -race -count=1 -v -timeout=30m ./pkg/protocol/browser -run 'HAR'` and `go test -count=1 -v -timeout=30m ./pkg/api -run 'HAR|BrowserReplay'`.
 3. **Documentation Alignment**:
-   - Updated [BROWSER_HAR_WORKING_OWNERSHIP.md](../../../guides/BROWSER_HAR_WORKING_OWNERSHIP.md) at lines 71–73, 160–167, 381–387, and 595–601 to document Linux `'Z'`/`'X'`/`'x'` process-state reclamation, the `1,024` outstanding-request replay bound, and the Linux crash qualification record.
+   - Updated [BROWSER_HAR_WORKING_OWNERSHIP.md](../../../guides/BROWSER_HAR_WORKING_OWNERSHIP.md) to document Linux `'Z'`/`'X'`/`'x'` process-state reclamation, the `1,024` outstanding-request replay bound, the Script Debugger synthetic HAR export contract (`GET /api/v1/script-debug/sessions/{session_id}/export` with `?format=har`, governed by `runtime_profile.har_options`), and the Linux crash qualification record.
 
 ## Verification & Repeat Runs
 

@@ -38,9 +38,23 @@ func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, sele
 	err := targetLocator.Tap(playwright.LocatorTapOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, tapTimeout)),
 	})
-	if err != nil && b.engine == "webkit" && strings.Contains(err.Error(), "intercepts pointer events") {
-		if b.webkitElementUnoccludedAtCenter(ctx, targetLocator, timeout) {
-			return b.runTouchScript(ctx, action, selector, syntheticTapOperation(), "browser tap")
+	if err != nil && b.engine == "webkit" {
+		if strings.Contains(err.Error(), "intercepts pointer events") && b.webkitElementUnoccludedAtCenter(ctx, targetLocator, timeout) {
+			return targetLocator.Tap(playwright.LocatorTapOptions{
+				Force:   playwright.Bool(true),
+				Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+			})
+		}
+		if timeout > tapTimeout && ctx.Err() == nil {
+			err = targetLocator.Tap(playwright.LocatorTapOptions{
+				Timeout: playwright.Float(b.timeoutMS(ctx, timeout-tapTimeout)),
+			})
+			if err != nil && strings.Contains(err.Error(), "intercepts pointer events") && b.webkitElementUnoccludedAtCenter(ctx, targetLocator, timeout) {
+				return targetLocator.Tap(playwright.LocatorTapOptions{
+					Force:   playwright.Bool(true),
+					Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
+				})
+			}
 		}
 	}
 	return err
@@ -155,7 +169,7 @@ func (b *Browser) runTouchScript(ctx context.Context, action *protocol.Action, s
 		if page == nil {
 			return fmt.Errorf("%s failed: no active page", label)
 		}
-		locator = page.Locator(selector)
+		locator = firstMatch(page, selector)
 	}
 
 	expression := fmt.Sprintf(`(el) => {

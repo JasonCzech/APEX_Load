@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	playwright "github.com/mxschmitt/playwright-go"
@@ -13,9 +14,10 @@ import (
 )
 
 var (
-	globalPlaywright *playwright.Playwright
-	globalBrowsers   = make(map[string]playwright.Browser)
-	globalMutex      sync.Mutex
+	globalPlaywright     *playwright.Playwright
+	globalBrowsers       = make(map[string]playwright.Browser)
+	globalMutex          sync.Mutex
+	activePoolOperations atomic.Int64
 	// testChromiumLaunchArgs lets integration tests add Chromium flags, such
 	// as trusting a fixture certificate for QUIC. It is part of the pool key
 	// and is never set outside tests. Guarded by globalMutex.
@@ -34,7 +36,7 @@ func getBrowserInstance(engine string, headless bool, quic ...string) (playwrigh
 	globalMutex.Lock()
 	defer globalMutex.Unlock()
 
-	if globalPlaywright != nil && pendingHAROwnerNeedsDriverInheritance(globalPlaywright.Pid()) && browserEvidenceBudget.liveCount() <= 1 {
+	if globalPlaywright != nil && pendingHAROwnerNeedsDriverInheritance(globalPlaywright.Pid()) && !browserEvidenceBudget.hasOpenContext() && activePoolOperations.Load() == 0 {
 		pw := globalPlaywright
 		globalPlaywright = nil
 		closers := make([]func() error, 0, len(globalBrowsers))

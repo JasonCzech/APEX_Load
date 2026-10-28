@@ -886,6 +886,16 @@ func TestReplayArtifactCloudEmulatorsCrashAndRestart(t *testing.T) {
 				t.Setenv("APEXLOAD_ARCHIVE_PREFIX", "tenant-a/replays")
 			},
 		},
+		{
+			name: "gcs-storage-emulator-host",
+			setup: func(t *testing.T) {
+				t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "gcs")
+				t.Setenv("APEXLOAD_ARCHIVE_BUCKET", "replay-gcs-emu-bucket")
+				t.Setenv("APEXLOAD_ARCHIVE_ENDPOINT", "")
+				t.Setenv("STORAGE_EMULATOR_HOST", strings.TrimPrefix(strings.TrimPrefix(gcsEndpoint, "http://"), "https://"))
+				t.Setenv("APEXLOAD_ARCHIVE_PREFIX", "tenant-a/replays")
+			},
+		},
 	}
 
 	for _, tc := range backends {

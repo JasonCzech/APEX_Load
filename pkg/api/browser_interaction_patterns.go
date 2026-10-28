@@ -589,7 +589,10 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 			if g.Version >= protocol.BrowserInteractionVersion4 {
 				navigated := g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged
 				for _, outcome := range g.DeclaredOutcomes() {
-					if outcome.Kind == protocol.InteractionOutcomeKindNavigation && (outcome.Observed == protocol.InteractionOutcomeMet || outcome.Reason == "unexpected_navigation") {
+					if outcome.Kind == protocol.InteractionOutcomeKindNavigation &&
+						outcome.Declared != "same_document_route" &&
+						outcome.Declared != "opened_by_action" &&
+						(outcome.Observed == protocol.InteractionOutcomeMet || outcome.Reason == "unexpected_navigation") {
 						navigated = true
 						break
 					}
@@ -605,7 +608,7 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 							detail = fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed within %d ms", outcome.Declared, outcome.DeadlineMS)
 						}
 						patterns = append(patterns, interactionOutcomePattern(interactionPatternUnexpectedNavigation, g, outcomeIndex, outcome, detail))
-					case !navigated && outcomeIsPageResponse(outcome):
+					case outcomeIsPageResponse(outcome):
 						detail := fmt.Sprintf("the declared %s outcome was not observed", outcome.Declared)
 						if outcome.DeadlineMS > 0 {
 							detail = fmt.Sprintf("the declared %s outcome was not observed within %d ms", outcome.Declared, outcome.DeadlineMS)
@@ -810,6 +813,13 @@ func sameInteractionFrameChain(a, b []protocol.BrowserInteractionFrameHop) bool 
 			x.ClientTop == y.ClientTop &&
 			x.PaddingLeft == y.PaddingLeft &&
 			x.PaddingTop == y.PaddingTop &&
+			x.ScrollX == y.ScrollX &&
+			x.ScrollY == y.ScrollY &&
+			x.VisualViewportX == y.VisualViewportX &&
+			x.VisualViewportY == y.VisualViewportY &&
+			x.VisualScale == y.VisualScale &&
+			x.TransformOriginX == y.TransformOriginX &&
+			x.TransformOriginY == y.TransformOriginY &&
 			x.CrossOrigin == y.CrossOrigin &&
 			x.Non2DTransform == y.Non2DTransform &&
 			slices.Equal(x.Matrix, y.Matrix)

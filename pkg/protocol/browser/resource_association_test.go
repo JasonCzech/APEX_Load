@@ -635,3 +635,47 @@ func TestUnexaminedRequestEvidenceKeepsVersionTwo(t *testing.T) {
 		}
 	}
 }
+
+func TestCachedRedirectHopDoesNotMarkUncachedFinalHopAsCached(t *testing.T) {
+	b, state, page, main, _ := associationBrowser(t)
+	origin := 1_800_000_000_000.0
+	cdpRequest(b, state, "L1", "L1", "F", "GET", "http://a.test/", origin+1, map[string]any{"type": "other"})
+	mainDoc := loadDocument(b, state, "F", "L1", 1, main, page, origin)
+	requestID := "req-cached-redirect"
+	cdpRequest(b, state, requestID, "L1", "F", "GET", "http://a.test/old", origin+10, map[string]any{"type": "script"})
+	b.observeCDPCacheHit(state, map[string]any{"requestId": requestID}, b.evidence.generation)
+	b.observeCDPRequest(state, map[string]any{
+		"requestId": requestID,
+		"loaderId":  "L1",
+		"frameId":   "F",
+		"wallTime":  (origin + 20) / 1000,
+		"request":   map[string]any{"url": "http://a.test/new", "method": "GET"},
+		"redirectResponse": map[string]any{
+			"url":           "http://a.test/old",
+			"status":        float64(301),
+			"protocol":      "h2",
+			"fromDiskCache": false,
+		},
+	}, b.evidence.generation)
+	b.observeCDPResponse(state, map[string]any{
+		"requestId": requestID,
+		"response": map[string]any{
+			"url":               "http://a.test/new",
+			"status":            float64(200),
+			"protocol":          "h2",
+			"fromDiskCache":     false,
+			"fromPrefetchCache": false,
+			"fromServiceWorker": false,
+		},
+	}, b.evidence.generation)
+
+	gen := b.evidence.generation
+	hop1 := b.associateResourceEvidence(associationEvidence(t, b, origin+10), resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/old"), ordinal: 1}, gen)
+	if hop1.DocumentID != mainDoc || hop1.Cache == nil || !*hop1.Cache {
+		t.Fatalf("expected cached redirect hop1 to have Cache=true, got %+v", hop1)
+	}
+	hop2 := b.associateResourceEvidence(associationEvidence(t, b, origin+20), resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/new"), ordinal: 1}, gen)
+	if hop2.DocumentID != mainDoc || hop2.Cache == nil || *hop2.Cache {
+		t.Fatalf("expected uncached final hop2 after cached redirect to have Cache=false, got %+v", hop2)
+	}
+}

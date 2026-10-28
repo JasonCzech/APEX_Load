@@ -17,7 +17,7 @@ This slice implements structural intra-iteration journey boundaries (`BI-B3`) ac
   - Updated `JourneyBoundary.matches` and `JourneyAccounting.MatchMode` (`"step_path"` vs `"name"`): when `StepPath` is configured and `event.AuthoredStep` is present, matching requires `event.AuthoredStep.StepPath == b.StepPath` (and `SourceStructureSHA256 == b.StructureSHA256` when pinned), disambiguating duplicate display names and surviving non-structural script edits; legacy archives without `AuthoredStep` fall back to `Name` only when `StructureSHA256` is not pinned and disclose `match_mode: "name"`.
   - Updated `closeIteration` (`pkg/api/journey_accounting.go`) with `beginOrdinal` / `seq` ordering so zero-duration (`begin == end`) loop passes complete each attempt before the next pass opens while zero-duration transaction wrappers open before and close after their enclosed steps.
 - **Dashboard Editor & Run Report (`dashboard/src`)**:
-  - Extended `JourneyDraft`, `JourneyPolicyFields` (`AnalysisPoliciesPanel.tsx`), and `analysisPoliciesApi.listJourneySteps` (`analysisPoliciesApi.ts`) with a structural script step picker alongside `step_path` and `structure_sha256` fields.
+  - Extended `JourneyDraft`, `JourneyPolicyFields` (`AnalysisPoliciesPanel.tsx`), and `analysisPoliciesApi.listJourneySteps` (`analysisPoliciesApi.ts`) with a structural script step picker and `step_path` inputs while preserving any existing `structure_sha256` on the policy revision until the step path is edited.
   - Updated `journeyRiskModel.ts` and `JourneyRiskPanel.tsx` to format structural `step_path` boundaries and display `Step path` vs `Name fallback` match modes.
 
 ## Verification Evidence

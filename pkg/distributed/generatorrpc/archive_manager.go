@@ -486,6 +486,17 @@ func (manager *archiveManager) sampleBrowserClockBracket(testID string) (protoco
 	return journal.SampleClockBracket()
 }
 
+func (manager *archiveManager) deleteBrowserJournal(testID string) {
+	if manager == nil || testID == "" {
+		return
+	}
+	manager.mu.Lock()
+	if _, retained := manager.records[testID]; !retained {
+		delete(manager.browserJournals, testID)
+	}
+	manager.mu.Unlock()
+}
+
 func (manager *archiveManager) takeWriter(testID string) *archiveRecorder {
 	if manager == nil {
 		return nil

@@ -413,9 +413,11 @@ administrator) access to the project.
   is refused with 422 and the replay does not start. Without it a replay records only when the script's own
   capture policy does (and serves that HAR as its native one); otherwise it
   serves the synthetic HAR built from its network entries. The Script
-  Editor's debugger runs replays as script debug sessions, which offer no
-  HAR: one the script's own capture policy records is retired when the
-  session ends. Classic replays (`POST /api/v1/scripts/replay` and
+  Editor's debugger runs replays as script debug sessions, which retire any
+  native HAR recorded by the script's own capture policy when the session
+  ends and instead export a synthetic HAR 1.2 of retained session traffic via
+  `GET /api/v1/script-debug/sessions/{session_id}/export` with `?format=har`
+  governed by `runtime_profile.har_options`. Classic replays (`POST /api/v1/scripts/replay` and
   `/api/v1/scripts/{id}/replay`) offer none either and retire such a HAR
   too. When the replay's browser closes, the
   controller copies the published HAR into its own directory (under the

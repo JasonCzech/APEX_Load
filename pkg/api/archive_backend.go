@@ -89,6 +89,7 @@ func currentArchiveBackend() archiveBackendRuntime {
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
 	case archiveBackendGCS:
 		runtime.Bucket = strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET"))
+		runtime.Endpoint = normalizeGCSEmulatorEndpoint(firstNonEmpty(runtime.Endpoint, strings.TrimSpace(os.Getenv("STORAGE_EMULATOR_HOST"))))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
 	default:
 		runtime.Backend = archiveBackendFilesystem
@@ -161,6 +162,19 @@ func cleanArchivePrefix(prefix string) string {
 		return "apexload/archives"
 	}
 	return prefix
+}
+
+func normalizeGCSEmulatorEndpoint(raw string) string {
+	endpoint := strings.TrimSpace(raw)
+	if endpoint == "" {
+		return ""
+	}
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "http://" + endpoint
+	}
+	endpoint = strings.TrimRight(endpoint, "/")
+	endpoint = strings.TrimSuffix(endpoint, "/storage/v1")
+	return strings.TrimRight(endpoint, "/")
 }
 
 func joinArchiveURI(base string, parts ...string) string {
@@ -371,7 +385,7 @@ func (b archiveBackendRuntime) bucketURL() string {
 				if scheme := strings.ToLower(parsed.Scheme); scheme == "http" || scheme == "https" {
 					params = append(params, "protocol="+url.QueryEscape(scheme))
 				}
-				if strings.HasPrefix(parsed.Host, "127.0.0.1") || strings.HasPrefix(parsed.Host, "localhost") || strings.Trim(parsed.Path, "/") != "" {
+				if strings.HasPrefix(parsed.Host, "127.0.0.1") || strings.HasPrefix(parsed.Host, "localhost") || strings.HasPrefix(parsed.Host, "[::1]") || strings.EqualFold(parsed.Scheme, "http") || parsed.Port() != "" || strings.Trim(parsed.Path, "/") != "" {
 					params = append(params, "localemu=true")
 				}
 			} else {

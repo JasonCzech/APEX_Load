@@ -151,9 +151,16 @@ func BenchmarkBrowserTouchOrClickActionLatency(b *testing.B) {
 				}
 				b.StopTimer()
 				if target.actionType == "browser_tap" {
+					br.mu.Lock()
+					savedTouch := br.touchMode
+					br.touchMode = false
+					br.mu.Unlock()
 					baselineStart := time.Now()
 					baseRes, baseErr := br.Execute(ctx, &protocol.Action{Name: "click baseline", Type: "browser_click", Target: "#target"})
 					baselineMs := benchmarkMs(time.Since(baselineStart))
+					br.mu.Lock()
+					br.touchMode = savedTouch
+					br.mu.Unlock()
 					if baseErr != nil || baseRes == nil || baseRes.ErrorMessage != "" {
 						b.Fatalf("click baseline(%s): %v %+v", target.name, baseErr, baseRes)
 					}

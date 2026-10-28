@@ -3559,6 +3559,7 @@ func (s *Service) finalizeArchiveWriter(writer *archiveRecorder, status string, 
 		writer.retireRegisteredHARSources()
 	}
 	if err != nil {
+		s.archiveManager.deleteBrowserJournal(writer.manifest.TestID)
 		discardErr := writer.Discard()
 		removeErr := writer.removeFinalizedRun()
 		if cleanupErr := errors.Join(discardErr, removeErr); cleanupErr != nil {

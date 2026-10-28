@@ -388,6 +388,24 @@ func (s *SQLiteStore) LatestCompletedRCAAnalysis(project, test string) (*RCAAnal
 	return analysis, err
 }
 
+// CompletedRCAAnalyses returns a run's completed analyses from newest to oldest.
+func (s *SQLiteStore) CompletedRCAAnalyses(project, test string) ([]*RCAAnalysis, error) {
+	rows, err := s.db.Query(`SELECT `+rcaAnalysisColumns+` FROM rca_analyses WHERE project_id = ? AND test_id = ? AND state = ? ORDER BY revision DESC LIMIT ?`, project, test, RCAStateCompleted, MaxRCARevisionsPerRun)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*RCAAnalysis
+	for rows.Next() {
+		analysis, scanErr := scanRCAAnalysis(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, analysis)
+	}
+	return out, rows.Err()
+}
+
 // RCARunAnalyses are a run's newest analysis of any state and its newest
 // completed one (the same analysis when the newest has completed). Neither
 // carries its payload: a caller reads a completed one's assessment with

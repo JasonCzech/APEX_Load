@@ -353,13 +353,6 @@ func (b *Browser) waitForDOMStable(ctx context.Context, stableWindow time.Durati
 
 func (b *Browser) waitForNetworkQuiet(ctx context.Context, quietWindow time.Duration) error {
 	started := time.Now()
-	b.mu.Lock()
-	inFlight := b.evidence.inFlight
-	lastActivity := b.evidence.lastNetworkActivity
-	b.mu.Unlock()
-	if inFlight == 0 && quietWindow <= 0 {
-		return nil
-	}
 	if quietWindow <= 0 {
 		quietWindow = 50 * time.Millisecond
 	}
@@ -367,8 +360,8 @@ func (b *Browser) waitForNetworkQuiet(ctx context.Context, quietWindow time.Dura
 	defer ticker.Stop()
 	for {
 		b.mu.Lock()
-		inFlight = b.evidence.inFlight
-		lastActivity = b.evidence.lastNetworkActivity
+		inFlight := b.evidence.inFlight
+		lastActivity := b.evidence.lastNetworkActivity
 		b.mu.Unlock()
 		quietSince := started
 		if lastActivity.After(quietSince) {

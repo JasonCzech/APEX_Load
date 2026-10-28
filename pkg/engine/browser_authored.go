@@ -228,7 +228,7 @@ type ScriptJourneyStep struct {
 // browser structure digest alongside the structural step boundaries editors
 // can bind in a journey_policy.
 func ScriptJourneySteps(script *dsl.Script) (string, []ScriptJourneyStep) {
-	if script == nil {
+	if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
 		return "", nil
 	}
 	structureSHA256 := browserAuthoredStructureDigest(script)

@@ -233,6 +233,9 @@ func (s *optionalEvidenceSource) fetch(ctx context.Context, testID, name, source
 		if err == nil || s.client == nil {
 			return copied, err
 		}
+		if copied > 0 && budget != nil {
+			budget.release(copied)
+		}
 		_ = os.Remove(path)
 	}
 	if s.client == nil {

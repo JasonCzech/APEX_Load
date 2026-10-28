@@ -804,6 +804,7 @@ func (b *Browser) tryCloseWindow(ctx context.Context, action *protocol.Action) (
 	if err := targetPage.Close(); err != nil {
 		return fmt.Errorf("browser_close_window failed to close page: %w", err), false
 	}
+	b.censorDocumentEvidence(targetPage, "context_closed")
 	b.removePage(targetPage)
 	b.mu.Lock()
 	if b.refusedPage == targetPage {
@@ -893,6 +894,10 @@ func (b *Browser) finalizePageDocuments(ctx context.Context, page playwright.Pag
 	}
 	finalizeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+	stopClose := context.AfterFunc(finalizeCtx, func() {
+		_ = page.Close()
+	})
+	defer stopClose()
 	b.finalizeDocumentFrameBatch(finalizeCtx, page.Frames(), finalizer)
 }
 

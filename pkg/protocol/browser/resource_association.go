@@ -318,6 +318,7 @@ func (b *Browser) observeCDPRequest(state *cdpEvidencePage, params map[string]an
 		previous.serviceWorkerKnown, previous.serviceWorker = true, cdpServiceWorker(redirect)
 		previous.startMS = cdpStartMS(previous, redirect, state.served[requestID])
 		recordCDPProtocol(previous, redirect)
+		delete(state.served, requestID)
 	}
 	if state.count >= resourceAssociationLimit {
 		state.truncated = true

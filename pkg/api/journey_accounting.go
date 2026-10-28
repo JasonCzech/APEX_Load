@@ -167,6 +167,7 @@ type journeyEvent struct {
 	// generator's own resource limit caused.
 	interrupted bool
 	name        string
+	stepPath    string
 	starts      uint64 // journeys this row is the start boundary of
 	finishes    uint64 // journeys this row is the success boundary of
 }
@@ -215,12 +216,15 @@ type journeyAccumulator struct {
 	vusers  map[journeyVUserKey]*journeyVUserState
 	// started marks, per journey, the groups that ever started it; skipped
 	// counts iterations without a start per group, kept only for those.
-	started  []map[string]bool
-	skipped  []map[string]int64
-	buffered int
-	ordinal  int64
-	report   *JourneyRiskReport
-	identity bool
+	started           []map[string]bool
+	skipped           []map[string]int64
+	matchedByName     []bool
+	matchedByStepPath []bool
+	hasAuthoredSteps  bool
+	buffered          int
+	ordinal           int64
+	report            *JourneyRiskReport
+	identity          bool
 	// lifetimes says any row carries a VUser lifetime; rowsWithoutLifetime
 	// counts the VUsers' action rows that do not (an older generator's).
 	// Lifecycle rows of a group's once-only init/teardown VUser carry none.
@@ -234,7 +238,13 @@ type journeyVUserKey struct {
 }
 
 func newJourneyAccumulator(policy JourneyPolicyDefinition, report *JourneyRiskReport) *journeyAccumulator {
-	acc := &journeyAccumulator{policy: policy, vusers: map[journeyVUserKey]*journeyVUserState{}, report: report}
+	acc := &journeyAccumulator{
+		policy:            policy,
+		vusers:            map[journeyVUserKey]*journeyVUserState{},
+		report:            report,
+		matchedByName:     make([]bool, len(policy.Journeys)),
+		matchedByStepPath: make([]bool, len(policy.Journeys)),
+	}
 	for _, journey := range policy.Journeys {
 		matchMode := "name"
 		if journey.Start.StepPath != "" && journey.Success.StepPath != "" {
@@ -297,8 +307,33 @@ func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored b
 		event := &state.events[i]
 		event.beginOrdinal = event.ordinal
 		if !event.step {
-			for k := i - 1; k >= 0 && state.events[k].step && state.events[k].begin >= event.begin; k-- {
-				event.beginOrdinal = state.events[k].ordinal
+			if i > 0 && state.events[i-1].step && state.events[i-1].begin >= event.begin &&
+				((event.stepPath != "" && state.events[i-1].stepPath == event.stepPath) ||
+					(event.stepPath == "" && event.begin == event.end && state.events[i-1].name == event.name)) {
+				event.beginOrdinal = state.events[i-1].ordinal
+			} else {
+				seenPaths := map[string]bool{}
+				seenNames := map[string]bool{}
+				for k := i - 1; k >= 0 && state.events[k].step && state.events[k].begin >= event.begin; k-- {
+					if k < i-1 && state.events[k].begin == event.begin && (state.events[k].starts != 0 || state.events[k].finishes != 0) {
+						break
+					}
+					if state.events[k].stepPath != "" {
+						if seenPaths[state.events[k].stepPath] {
+							break
+						}
+						seenPaths[state.events[k].stepPath] = true
+					} else if state.events[k].begin == event.begin && state.events[k].name != "" {
+						if seenNames[state.events[k].name] {
+							break
+						}
+						seenNames[state.events[k].name] = true
+					}
+					event.beginOrdinal = state.events[k].ordinal
+					if state.events[k].begin == event.begin && (state.events[k].starts != 0 || state.events[k].finishes != 0) {
+						break
+					}
+				}
 			}
 		}
 		points = append(points, journeyPoint{at: event.begin, seq: event.beginOrdinal, kind: journeyPointBegin, event: event})
@@ -480,18 +515,29 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 	if event.EndsIteration && !event.Interrupted {
 		state.ended = true
 	}
+	if event.AuthoredStep != nil {
+		a.hasAuthoredSteps = true
+	}
 	var starts, finishes uint64
 	for j, journey := range a.policy.Journeys {
 		if ok, mode := journey.Start.matches(event); ok {
 			starts |= uint64(1) << uint(j)
-			if mode == "name" {
+			switch mode {
+			case "name":
+				a.matchedByName[j] = true
 				a.results[j].MatchMode = "name"
+			case "step_path":
+				a.matchedByStepPath[j] = true
 			}
 		}
 		if ok, mode := journey.Success.matches(event); ok {
 			finishes |= uint64(1) << uint(j)
-			if mode == "name" {
+			switch mode {
+			case "name":
+				a.matchedByName[j] = true
 				a.results[j].MatchMode = "name"
+			case "step_path":
+				a.matchedByStepPath[j] = true
 			}
 		}
 	}
@@ -504,9 +550,13 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 		return
 	}
 	a.buffered++
+	stepPath := ""
+	if event.AuthoredStep != nil {
+		stepPath = event.AuthoredStep.StepPath
+	}
 	// A transaction's interval is its wall-clock span (its duration can
 	// exclude think time inside it).
-	state.events = append(state.events, journeyEvent{ordinal: a.ordinal, begin: begin, end: end, step: step, success: event.Success, interrupted: event.Interrupted && !event.Success, name: event.ActionName, starts: starts, finishes: finishes})
+	state.events = append(state.events, journeyEvent{ordinal: a.ordinal, begin: begin, end: end, step: step, success: event.Success, interrupted: event.Interrupted && !event.Success, name: event.ActionName, stepPath: stepPath, starts: starts, finishes: finishes})
 }
 
 // finish settles the run's end: each VUser lifetime's last iteration is
@@ -537,6 +587,9 @@ func (a *journeyAccumulator) finish() {
 	weightedFailed, weightedEligible, weightedStepFailures, weightedSteps := 0.0, 0.0, 0.0, 0.0
 	for j := range a.results {
 		result := &a.results[j]
+		if a.matchedByName[j] || (!a.matchedByStepPath[j] && !a.hasAuthoredSteps) {
+			result.MatchMode = "name"
+		}
 		for group, count := range a.skipped[j] {
 			if a.started[j][group] {
 				result.Skipped += count

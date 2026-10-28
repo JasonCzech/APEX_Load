@@ -498,7 +498,7 @@ func coalesceTruClientDownloadStep(clickAction *dsl.Action, downloadStep truXMLS
 		applyTruClientSemanticGate(clickAction, "truclient_step_arguments_require_review", "The recorded browser download step arguments require an explicit replacement.")
 		result.Warnings = append(result.Warnings, "TruClient step arguments were preserved for review instead of guessing executable behavior.")
 	}
-	applyTruClientStepContract(clickAction, downloadStep)
+	applyTruClientDownloadStepContract(clickAction, downloadStep)
 	if clickAction.Sync == nil {
 		applyTruClientCompletionContract(clickAction, downloadStep, state.descriptors)
 	}

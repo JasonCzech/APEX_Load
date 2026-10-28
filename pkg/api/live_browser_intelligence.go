@@ -909,7 +909,8 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 				PolicyPins: pins,
 			},
 		}
-		if _, _, _, status, err := resolveJourneyPolicy(store, normalizeProjectID(test.ProjectID), syntheticManifest, requestedID, requestedRevision); err != nil {
+		_, ref, _, status, err := resolveJourneyPolicy(store, normalizeProjectID(test.ProjectID), syntheticManifest, requestedID, requestedRevision)
+		if err != nil {
 			return nil, status, err, true
 		}
 		if state != nil {
@@ -919,6 +920,14 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 			state.mu.Unlock()
 			return report, http.StatusOK, nil, true
 		}
+		if snap != nil && snap.Journeys != nil &&
+			snap.Journeys.Policy.ID == ref.ID && snap.Journeys.Policy.Revision == ref.Revision {
+			out := *snap.Journeys
+			out.Provisional = true
+			out.LiveTruncated = snap.LiveTruncated
+			return &out, http.StatusOK, nil, true
+		}
+		return nil, 0, nil, false
 	}
 	if snap != nil && snap.Journeys != nil {
 		out := *snap.Journeys

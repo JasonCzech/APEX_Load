@@ -428,9 +428,22 @@ func (b *Browser) observeActionPageTransitionV3(ctx context.Context, action *pro
 			}
 		}
 		commit := playwright.APEXFrameNavigationCommit(popup.MainFrame())
-		seq := commit.Sequence
-		if seq == 0 {
-			seq = 1
+		if commit.Failed {
+			return &protocol.BrowserInteractionOutcome{
+				Kind:       protocol.InteractionOutcomeKindNavigation,
+				Declared:   protocol.BrowserAuthoredPageAssociationOpenedByAction,
+				Observed:   protocol.InteractionOutcomeMissed,
+				Reason:     "navigation_failed",
+				ObservedAt: &observedAt,
+			}
+		}
+		if commit.Sequence == 0 {
+			return &protocol.BrowserInteractionOutcome{
+				Kind:     protocol.InteractionOutcomeKindNavigation,
+				Declared: protocol.BrowserAuthoredPageAssociationOpenedByAction,
+				Observed: protocol.InteractionOutcomeNotReached,
+				Reason:   receipt.Reason,
+			}
 		}
 		return &protocol.BrowserInteractionOutcome{
 			Kind:               protocol.InteractionOutcomeKindNavigation,
@@ -438,7 +451,7 @@ func (b *Browser) observeActionPageTransitionV3(ctx context.Context, action *pro
 			Observed:           protocol.InteractionOutcomeMet,
 			Reason:             receipt.Reason,
 			ObservedAt:         &observedAt,
-			NavigationSequence: seq,
+			NavigationSequence: commit.Sequence,
 		}
 	}
 	if browserPageNavigation(action.Type) || prePage == nil || prePage.MainFrame() == nil {

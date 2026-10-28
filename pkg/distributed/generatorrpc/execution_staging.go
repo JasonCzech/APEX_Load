@@ -1612,6 +1612,7 @@ func (service *Service) cleanupPreparedAssignmentStage(plan *assignmentStagePlan
 	}
 	testID := plan.validated.request.GetTestId()
 	if writer := service.archiveManager.takeWriterIf(testID, prepared.writer); writer != nil {
+		service.archiveManager.deleteBrowserJournal(testID)
 		if err := writer.Discard(); err != nil {
 			slog.Warn("discard failed execution archive", "test_id", testID, "error", err)
 		}

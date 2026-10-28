@@ -128,11 +128,15 @@ func preflightGroupBrowserSessions(ctx context.Context, group GroupConfig) error
 }
 
 // browserSessionPreflightConfig is the group's load-run browser config with
-// HAR capture off: a preflight page is not run evidence.
+// HAR and document/interaction evidence capture off: a preflight page is not
+// run evidence.
 func browserSessionPreflightConfig(group GroupConfig) map[string]any {
 	base := buildGroupProtoConfig(group, "load")
 	base["browser_har_capture"] = browserprotocol.HARCaptureOff
 	delete(base, "browser_har_capture_policy")
+	delete(base, "browser_document_source_journal")
+	base["browser_capture_document_metrics"] = false
+	base["browser_capture_interaction_metrics"] = false
 	return base
 }
 

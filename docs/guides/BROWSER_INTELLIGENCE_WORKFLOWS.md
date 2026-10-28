@@ -169,7 +169,7 @@ reported in the finding's `quality`, never in its value.
 
 | Rule | Category | Produces |
 | --- | --- | --- |
-| `threshold` | application outcome | `active` with severity `needs_improvement` (p75 above good) or `poor` (above poor); `suppressed` outside applicability; `unscored` when the metric was not observed or has no qualified final observation. Within good, there is no finding. |
+| `threshold` | application outcome | `active` with severity `needs_improvement` (p75 above good, or within good when its evaluated baseline status is `regressed`) or `poor` (above poor); `suppressed` outside applicability; `unscored` when the metric was not observed or has no qualified final observation. Within good and not regressed against the baseline, there is no finding. |
 | `collection.incomplete` | collection health | `active` when the run's document evidence lost observations. |
 | `collection.absent` | collection health | `active` when document evidence was requested and none was retained. |
 

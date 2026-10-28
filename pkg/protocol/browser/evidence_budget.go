@@ -252,6 +252,17 @@ func (e *evidenceBudget) liveCount() int {
 	return len(e.live)
 }
 
+func (e *evidenceBudget) hasOpenContext() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for b := range e.live {
+		if b != nil && b.currentBrowserContext() != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // refreshSample measures when the sample is stale; only one measurement runs
 // at a time. Admitters that find no usable sample while another measures
 // wait for it rather than being admitted unmeasured. A failed measurement

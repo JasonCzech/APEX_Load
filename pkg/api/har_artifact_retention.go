@@ -72,6 +72,9 @@ func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSetti
 	}
 	dir := strings.TrimSpace(settings.HARArtifactDir)
 	if dir == "" {
+		dir = strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_HAR_DIR"))
+	}
+	if dir == "" {
 		dir = os.TempDir()
 	}
 	candidates := make([]HARArtifactPruneCandidate, 0)

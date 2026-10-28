@@ -87,7 +87,6 @@ func closeWindowAction(context string, name string) (dsl.Action, bool) {
 		return action, true
 	}
 	action.Target = context
-	action.Params = map[string]any{"target": context}
 	return action, true
 }
 

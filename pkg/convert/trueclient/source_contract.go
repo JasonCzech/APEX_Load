@@ -88,6 +88,64 @@ func applyTruClientStepContract(action *dsl.Action, step truXMLStep) {
 	}
 }
 
+func applyTruClientDownloadStepContract(action *dsl.Action, step truXMLStep) {
+	if action == nil {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	if step.Optional {
+		action.Metadata["source_download_optional"] = true
+		applyTruClientSemanticGate(action, "truclient_optional_step_requires_review", "Optional step failure handling has no verified per-step equivalent.")
+	}
+	if step.Unfinalized {
+		action.Metadata["source_download_unfinalized"] = true
+		applyTruClientSemanticGate(action, "truclient_unfinalized_step_requires_review", "The source step was not finalized for replay.")
+	}
+	if event := strings.TrimSpace(step.EndEvent); event != "" {
+		action.Metadata["source_download_end_event"] = event
+		if existing, _ := action.Metadata["source_end_event"].(string); existing == "" || existing == "Action completed" {
+			action.Metadata["source_end_event"] = event
+		}
+		switch event {
+		case "Action completed", "Object Exists", "Document Loaded", "DOM content loaded", "Step network completed":
+		default:
+			applyTruClientSemanticGate(action, "truclient_completion_event_requires_review", "The source completion event requires a verified browser synchronization contract.")
+		}
+	}
+	if step.EndEventArgs != "" {
+		action.Metadata["source_download_end_event_arguments"] = step.EndEventArgs
+	}
+	if step.ObjectTimeout != "" {
+		action.Metadata["source_download_object_timeout_seconds"] = step.ObjectTimeout
+	}
+	if step.ManualDuration != "" {
+		action.Metadata["source_download_manual_duration"] = step.ManualDuration
+		if step.ManualDuration != "0" {
+			applyTruClientSemanticGate(action, "truclient_manual_duration_requires_review", "The explicit source minimum step duration requires review.")
+		}
+	}
+	if step.RecordedDuration != "" {
+		action.Metadata["source_download_recorded_duration"] = step.RecordedDuration
+	}
+	if len(step.AdditionalAttributes) > 0 {
+		attributes := map[string]string{}
+		for _, attr := range step.AdditionalAttributes {
+			attributes[attr.Name.Local] = attr.Value
+		}
+		action.Metadata["source_download_step_attributes"] = attributes
+	}
+	if values, err := parseArgumentValues(step.Arguments); err == nil {
+		for _, value := range values {
+			if value.EvalJavaScript {
+				applyTruClientSemanticGate(action, "truclient_argument_javascript_requires_review", "A source argument evaluates JavaScript and requires an explicit native replacement.")
+				break
+			}
+		}
+	}
+}
+
 func applyTruClientCompletionContract(action *dsl.Action, step truXMLStep, descriptors []ObjectDescriptor) {
 	if action == nil {
 		return
@@ -136,29 +194,33 @@ func applyXMLAnchoredTransactions(result *ConvertResult, transactions []truXMLTr
 		first, last int
 		valid       bool
 	}
-	spans := map[string]span{}
-	recordSpan := func(id string, i int) {
+	startSpans := map[string]span{}
+	endSpans := map[string]span{}
+	recordSpan := func(target map[string]span, id string, i int) {
 		if id == "" {
 			return
 		}
-		s, ok := spans[id]
+		s, ok := target[id]
 		if !ok {
-			spans[id] = span{i, i, true}
+			target[id] = span{i, i, true}
 		} else if s.last == i-1 {
 			s.last = i
-			spans[id] = s
+			target[id] = s
 		} else {
 			s.valid = false
-			spans[id] = s
+			target[id] = s
 		}
 	}
 	for i, action := range result.Script.Actions {
 		id, _ := action.Metadata["source_step_id"].(string)
-		recordSpan(id, i)
 		downloadID, _ := action.Metadata["source_download_step_id"].(string)
 		if downloadID != "" && downloadID != id {
-			recordSpan(downloadID, i)
+			recordSpan(startSpans, id, i)
+			recordSpan(endSpans, downloadID, i)
+			continue
 		}
+		recordSpan(startSpans, id, i)
+		recordSpan(endSpans, id, i)
 	}
 	before, after := map[int][]dsl.Action{}, map[int][]dsl.Action{}
 	gates := []dsl.Action{}
@@ -170,16 +232,19 @@ func applyXMLAnchoredTransactions(result *ConvertResult, transactions []truXMLTr
 		start, end := -1, -1
 		valid := strings.TrimSpace(transaction.Name) != "" && len(transaction.Vertices) == 2 && names[strings.ToLower(strings.TrimSpace(transaction.Name))] == 1
 		for _, vertex := range transaction.Vertices {
-			s, ok := spans[vertex.Step]
-			if !ok || !s.valid {
-				valid = false
-				continue
-			}
 			switch {
 			case vertex.Type == "start" && vertex.ProgressType == "Step started" && start < 0:
-				start = s.first
+				if s, ok := startSpans[vertex.Step]; ok && s.valid {
+					start = s.first
+				} else {
+					valid = false
+				}
 			case vertex.Type == "end" && vertex.ProgressType == "After step ended" && end < 0:
-				end = s.last
+				if s, ok := endSpans[vertex.Step]; ok && s.valid {
+					end = s.last
+				} else {
+					valid = false
+				}
 			default:
 				valid = false
 			}

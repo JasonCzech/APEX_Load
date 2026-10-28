@@ -289,6 +289,35 @@ func rcaBrowserBaselineMatchesPolicy(manifest *RunArchiveManifest, payload rcaAn
 	return false
 }
 
+func rcaBrowserBaselineMatchesPolicyDefinition(manifest *RunArchiveManifest, payload rcaAnalysisPayload, ref BrowserPolicyRef, policy BrowserPolicyDefinition) bool {
+	if !rcaBrowserBaselineMatchesPolicy(manifest, payload, ref) {
+		return false
+	}
+	switch policy.Baseline.Mode {
+	case "latest_compatible":
+		if payload.BrowserSelection == nil || strings.TrimSpace(payload.Inputs.BrowserSelection) == "" {
+			return false
+		}
+		return strings.TrimSpace(payload.Request.BaselineTestID) == strings.TrimSpace(payload.BrowserSelection.SelectedTestID)
+	case "pinned_run":
+		if strings.TrimSpace(payload.Request.BaselineTestID) != strings.TrimSpace(policy.Baseline.RunID) {
+			return false
+		}
+		if payload.Assessment != nil && payload.Assessment.BrowserBaseline != nil {
+			for _, lim := range payload.Assessment.BrowserBaseline.Limitations {
+				if lim.Code == rca.BrowserBaselinePolicyPinnedRun {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+type completedRCAAnalysesReader interface {
+	CompletedRCAAnalyses(project, test string) ([]*storage.RCAAnalysis, error)
+}
+
 func rcaCoverageBaselineQualification(coverages []rca.Coverage) (string, []string) {
 	for _, c := range coverages {
 		if c.Evidence != "baseline" {
@@ -437,33 +466,64 @@ func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string
 
 	archiveDigest, archiveDigestErr := rcaEvidenceDigest(manifest)
 	if rcaStore, ok := s.store.(storage.RCAStore); ok && archiveDigestErr == nil {
-		latest, rcaErr := rcaStore.LatestCompletedRCAAnalysis(projectID, test.ID)
-		if rcaErr == nil && latest != nil {
-			payload := rcaAnalysisPayloadOf(latest)
-			switch {
-			case payload.Assessment == nil:
-				inputs.baselineMismatchReason = preRCAMismatch
-			case payload.Inputs.Archive != archiveDigest:
-				inputs.baselineMismatchReason = "rca_archive_mismatch"
-			case !rcaBrowserBaselineMatchesPolicy(manifest, payload, inputs.ref):
-				inputs.baselineMismatchReason = "rca_policy_mismatch"
-			default:
-				inputs.rcaAnalysisID = latest.ID
-				inputs.rcaRevision = latest.Revision
-				inputs.selectionReceiptSHA256 = payload.Inputs.BrowserSelection
-				inputs.browserSelection = payload.BrowserSelection
-				inputs.browserBaseline = payload.Assessment.BrowserBaseline
-				if payload.Assessment.BrowserBaseline != nil && payload.Assessment.BrowserBaseline.Baseline.TestID != "" {
-					inputs.baselineRunID = payload.Assessment.BrowserBaseline.Baseline.TestID
-					inputs.baselineQualification = payload.Assessment.BrowserBaseline.Baseline.Qualification
-					inputs.baselineReasons = slices.Clone(payload.Assessment.BrowserBaseline.Baseline.Reasons)
-				} else if payload.Request.BaselineTestID != "" {
-					inputs.baselineRunID = payload.Request.BaselineTestID
-					inputs.baselineQualification, inputs.baselineReasons = rcaCoverageBaselineQualification(payload.Assessment.Coverage)
+		var candidates []*storage.RCAAnalysis
+		if reader, ok := rcaStore.(completedRCAAnalysesReader); ok {
+			candidates, _ = reader.CompletedRCAAnalyses(projectID, test.ID)
+		}
+		if len(candidates) == 0 {
+			if latest, rcaErr := rcaStore.LatestCompletedRCAAnalysis(projectID, test.ID); rcaErr == nil && latest != nil {
+				candidates = []*storage.RCAAnalysis{latest}
+			}
+		}
+		if len(candidates) > 0 {
+			var matched *storage.RCAAnalysis
+			var matchedPayload rcaAnalysisPayload
+			mismatchReason := preRCAMismatch
+			for _, cand := range candidates {
+				if cand == nil {
+					continue
+				}
+				payload := rcaAnalysisPayloadOf(cand)
+				switch {
+				case payload.Assessment == nil:
+					if mismatchReason == preRCAMismatch {
+						mismatchReason = preRCAMismatch
+					}
+				case payload.Inputs.Archive != archiveDigest:
+					if mismatchReason == preRCAMismatch {
+						mismatchReason = "rca_archive_mismatch"
+					}
+				case !rcaBrowserBaselineMatchesPolicyDefinition(manifest, payload, inputs.ref, inputs.policy):
+					if mismatchReason == preRCAMismatch {
+						mismatchReason = "rca_policy_mismatch"
+					}
+				default:
+					matched = cand
+					matchedPayload = payload
+				}
+				if matched != nil {
+					break
+				}
+			}
+			if matched != nil {
+				inputs.rcaAnalysisID = matched.ID
+				inputs.rcaRevision = matched.Revision
+				inputs.selectionReceiptSHA256 = matchedPayload.Inputs.BrowserSelection
+				inputs.browserSelection = matchedPayload.BrowserSelection
+				inputs.browserBaseline = matchedPayload.Assessment.BrowserBaseline
+				if matchedPayload.Assessment.BrowserBaseline != nil && matchedPayload.Assessment.BrowserBaseline.Baseline.TestID != "" {
+					inputs.baselineRunID = matchedPayload.Assessment.BrowserBaseline.Baseline.TestID
+					inputs.baselineQualification = matchedPayload.Assessment.BrowserBaseline.Baseline.Qualification
+					inputs.baselineReasons = slices.Clone(matchedPayload.Assessment.BrowserBaseline.Baseline.Reasons)
+				} else if matchedPayload.Request.BaselineTestID != "" {
+					inputs.baselineRunID = matchedPayload.Request.BaselineTestID
+					inputs.baselineQualification, inputs.baselineReasons = rcaCoverageBaselineQualification(matchedPayload.Assessment.Coverage)
 				}
 				if inputs.baselineRunID != "" {
-					inputs.baselineArchiveSHA256 = payload.Inputs.Baseline
+					inputs.baselineArchiveSHA256 = matchedPayload.Inputs.Baseline
 				}
+			} else {
+				inputs.baselineMismatchReason = mismatchReason
 			}
 		} else {
 			inputs.baselineMismatchReason = preRCAMismatch

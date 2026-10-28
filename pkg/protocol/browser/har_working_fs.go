@@ -41,6 +41,9 @@ func validHARGeneration(s string) bool {
 
 func openHARPublishedRoot(dir string) (string, *os.Root, error) {
 	if strings.TrimSpace(dir) == "" {
+		dir = strings.TrimSpace(os.Getenv("APEXLOAD_BROWSER_HAR_DIR"))
+	}
+	if strings.TrimSpace(dir) == "" {
 		dir = os.TempDir()
 	}
 	abs, err := filepath.Abs(dir)

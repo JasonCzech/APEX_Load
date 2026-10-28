@@ -169,14 +169,29 @@ func TestBrowserBenchmark(t *testing.T) {
 							switch mode {
 							case "plain":
 								action = append(action, benchmarkMs(elapsed))
+								b.mu.Lock()
+								savedTouch := b.touchMode
+								b.touchMode = false
+								b.mu.Unlock()
 								clickStarted := time.Now()
-								if clickRes, clickErr := b.Execute(ctx, &protocol.Action{Name: "click baseline", Type: "browser_click", Target: "#target"}); clickErr == nil && clickRes != nil && clickRes.Success {
-									clickBaseline = append(clickBaseline, benchmarkMs(time.Since(clickStarted)))
+								clickRes, clickErr := b.Execute(ctx, &protocol.Action{Name: "click baseline", Type: "browser_click", Target: "#target"})
+								clickElapsed := time.Since(clickStarted)
+								b.mu.Lock()
+								b.touchMode = savedTouch
+								b.mu.Unlock()
+								if clickErr == nil && clickRes != nil && clickRes.Success {
+									clickBaseline = append(clickBaseline, benchmarkMs(clickElapsed))
+								} else {
+									t.Logf("%s/%s %s click baseline failed: %v %+v", engine, target.label, mode, clickErr, clickRes)
+									result.Failures++
 								}
 								if target.hasTouch {
 									tapStarted := time.Now()
 									if tapRes, tapErr := b.Execute(ctx, &protocol.Action{Name: "touch action", Type: "browser_tap", Target: "#target"}); tapErr == nil && tapRes != nil && tapRes.Success {
 										touchAction = append(touchAction, benchmarkMs(time.Since(tapStarted)))
+									} else {
+										t.Logf("%s/%s %s touch action failed: %v %+v", engine, target.label, mode, tapErr, tapRes)
+										result.Failures++
 									}
 								}
 							case "captured":
@@ -185,6 +200,9 @@ func TestBrowserBenchmark(t *testing.T) {
 									clickStarted := time.Now()
 									if clickRes, clickErr := b.Execute(ctx, &protocol.Action{Name: "captured click", Type: "browser_click", Target: "#target"}); clickErr == nil && clickRes != nil && clickRes.Success {
 										capturedClick = append(capturedClick, benchmarkMs(time.Since(clickStarted)))
+									} else {
+										t.Logf("%s/%s %s captured click failed: %v %+v", engine, target.label, mode, clickErr, clickRes)
+										result.Failures++
 									}
 								}
 							case "throttled":

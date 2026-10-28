@@ -153,7 +153,7 @@ func TestTruClientReplayPrimitivesLiveChromiumAndWebKit(t *testing.T) {
 						Type:      dslAction.Sync.Type,
 						Value:     dslAction.Sync.Value,
 						TimeoutMs: 10000,
-						StableMs:  150,
+						StableMs:  dslAction.Sync.StableMs,
 					}
 				}
 				if dslAction.Type == "browser_click" && dslAction.Selector == "#net-btn" {

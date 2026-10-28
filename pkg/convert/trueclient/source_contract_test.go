@@ -244,6 +244,9 @@ func TestTruClientReplayPrimitivesAppendTypingCloseTabDownloadAndNetworkIdle(t *
 			if tc.wantIndex != nil && got.Params["index"] != tc.wantIndex {
 				t.Fatalf("got index=%v want=%v", got.Params["index"], tc.wantIndex)
 			}
+			if _, hasParamTarget := got.Params["target"]; hasParamTarget {
+				t.Fatalf("unexpected undeclared params.target on browser_close_window: %+v", got.Params)
+			}
 		})
 	}
 
@@ -312,5 +315,35 @@ func TestTruClientReplayPrimitivesAppendTypingCloseTabDownloadAndNetworkIdle(t *
 	}
 	if len(nonCoalescedResult.Script.Actions) != 4 {
 		t.Fatalf("non-coalesced actions=%+v, want 4 separate actions", nonCoalescedResult.Script.Actions)
+	}
+
+	// 5. Split transaction anchor ending on the coalesced Click step (excluding Wait for File Download) must be gated.
+	splitAnchorDoc := `<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step action="Click" stepId="click-dl" objectTimeout="7" arguments='{"Selector":{"value":"\"#download-csv\""}}' />
+    <step action="Wait for File Download" stepId="wait-dl" objectTimeout="25" arguments='{"File Name":{"value":"\"report.csv\""}}' />
+  </step>
+  <transactions>
+    <transaction name="SplitExport">
+      <vertex type="start" progressType="Step started" step="click-dl" />
+      <vertex type="end" progressType="After step ended" step="click-dl" />
+    </transaction>
+  </transactions>
+</truScript>`
+	splitResult, err := ConvertArchive(map[string]string{"default.xml": splitAnchorDoc}, ConvertOptions{
+		ScriptName:               "SplitCoalescedAnchor",
+		PreserveTransactions:     true,
+		PreserveUnsupportedSteps: true,
+	})
+	if err != nil {
+		t.Fatalf("ConvertArchive split anchor: %v", err)
+	}
+	if splitResult.Stats.ReviewOnlySteps != 1 {
+		t.Fatalf("expected split transaction anchor to produce 1 review gate, got stats=%+v actions=%+v", splitResult.Stats, splitResult.Script.Actions)
+	}
+	if len(splitResult.Script.Actions) != 2 ||
+		splitResult.Script.Actions[1].Metadata["source_object_timeout_seconds"] != "7" ||
+		splitResult.Script.Actions[1].Metadata["source_download_object_timeout_seconds"] != "25" {
+		t.Fatalf("expected click and download object timeouts to stay distinct: %+v", splitResult.Script.Actions)
 	}
 }

@@ -589,3 +589,63 @@ func TestRepetitionLeavesOutNonClickGestures(t *testing.T) {
 		}
 	}
 }
+
+func TestV4SameDocumentRouteAndMultiOutcomeNavigatedDeadInteractions(t *testing.T) {
+	routeClick := v4InteractionFixture(1, 0)
+	rStart := routeClick.Dispatch.At
+	rNavObs := rStart.Add(20 * time.Millisecond)
+	routeClick.CapturedAt = rStart.Add(2 * time.Second)
+	routeClick.Outcomes = []protocol.BrowserInteractionOutcome{
+		{
+			Kind:               protocol.InteractionOutcomeKindNavigation,
+			Declared:           "same_document_route",
+			Observed:           protocol.InteractionOutcomeMet,
+			ObservedAt:         &rNavObs,
+			NavigationSequence: 1,
+			AuthoredPageID:     routeClick.AuthoredPageID,
+			RouteSeq:           1,
+		},
+		{
+			Kind:       protocol.InteractionOutcomeKindSync,
+			Declared:   "element_visible",
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "deadline_missed",
+			DeadlineMS: 1000,
+			Clock: &protocol.BrowserOutcomeClock{
+				Version: 1, StartedAt: rStart, DeadlineAt: rStart.Add(time.Second), ObservedAt: rStart.Add(time.Second), BudgetMS: 1000, ElapsedMS: 1000,
+			},
+		},
+	}
+	if !routeClick.Valid() {
+		t.Fatal("routeClick invalid")
+	}
+	routeGot := analyzeV3(routeClick)
+	if len(routeGot.Patterns) != 1 || routeGot.Patterns[0].Kind != interactionPatternDeadInteraction {
+		t.Fatalf("expected same_document_route missed element_visible to classify as dead_interaction, got %+v", routeGot.Patterns)
+	}
+
+	navDownloadClick := v4InteractionFixture(2, time.Second)
+	nStart := navDownloadClick.Dispatch.At
+	navDownloadClick.Points = nil
+	navDownloadClick.UnavailableReason = protocol.InteractionUnavailableDocumentChanged
+	navDownloadClick.CapturedAt = nStart.Add(2 * time.Second)
+	navDownloadClick.Outcomes = []protocol.BrowserInteractionOutcome{
+		{
+			Kind:       protocol.InteractionOutcomeKindDownload,
+			Declared:   "download",
+			Observed:   protocol.InteractionOutcomeMissed,
+			Reason:     "deadline_missed",
+			DeadlineMS: 1000,
+			Clock: &protocol.BrowserOutcomeClock{
+				Version: 1, StartedAt: nStart, DeadlineAt: nStart.Add(time.Second), ObservedAt: nStart.Add(time.Second), BudgetMS: 1000, ElapsedMS: 1000,
+			},
+		},
+	}
+	if !navDownloadClick.Valid() {
+		t.Fatal("navDownloadClick invalid")
+	}
+	navGot := analyzeV3(navDownloadClick)
+	if len(navGot.Patterns) != 1 || navGot.Patterns[0].Kind != interactionPatternDeadInteraction {
+		t.Fatalf("expected missed download on document change to still emit dead_interaction, got %+v", navGot.Patterns)
+	}
+}
