@@ -11,6 +11,8 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -418,4 +420,93 @@ func TestEachJournalVersionCheckRefusesANewerVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEvacuationExitAsymmetricPartitionsAndDeposedLeaderReturn(t *testing.T) {
+	t.Run("controller_partitioned_from_source_fences_via_lease_before_replacement_commits", func(t *testing.T) {
+		f, _ := newEvacuationRestartFixture(t, restartOptions{})
+		f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED
+		oldOwner, oldGen := f.tr.leadership.executionLeaseTerm()
+		if err := f.tr.adoptOrphanedRuns(); err != nil {
+			t.Fatal(err)
+		}
+		f.assertRestartIntent(t, oldGen)
+		// Source was never claimed by the successor because SourceFencedAt is durable.
+		if f.sourceGen.claimCount() != 0 {
+			t.Fatalf("partitioned fenced source received %d epoch claims, want 0", f.sourceGen.claimCount())
+		}
+		if ok, _ := f.restartPhaseB(t); !ok {
+			t.Fatal("Phase B replacement restart under source partition failed")
+		}
+		// Deposed leader returns and attempts stale CAS checkpoint write and status transition.
+		casRes, err := f.store.CompareAndSwapTestContinuityCheckpointIfLeaseHeld(
+			f.test.ID,
+			f.test.continuityCheckpoint,
+			`{"version":1}`,
+			executionLeaseName,
+			"deposed-leader-"+oldOwner,
+		)
+		if err != nil || casRes == storage.TestStatusTransitionUpdated {
+			t.Fatalf("deposed leader checkpoint CAS succeeded: res=%s err=%v", casRes, err)
+		}
+		now := time.Now().UTC()
+		res, err := f.store.UpdateTestStatusIfActiveAndLeaseHeld(
+			f.test.ID,
+			"FAILED",
+			&now,
+			"stale deposed leader stop",
+			executionLeaseName,
+			"deposed-leader-"+oldOwner,
+		)
+		if err != nil || res == storage.TestStatusTransitionUpdated {
+			t.Fatalf("deposed leader status transition succeeded: res=%s err=%v", res, err)
+		}
+	})
+
+	t.Run("controller_partitioned_from_replacement_after_commit_sent_holds_without_duplicate_restart", func(t *testing.T) {
+		f := newEvacuationRollForwardFixture(t, rollForwardOptions{})
+		f.tr.evacuationReplacementRestart = true
+		// Replacement is partitioned when successor tries to roll forward replacement_committing.
+		f.spareDown = true
+		_, generation := f.tr.leadership.executionLeaseTerm()
+		if err := f.tr.adoptOrphanedRuns(); err != nil {
+			t.Fatal(err)
+		}
+		// Must hold STOPPING rather than starting a second replacement while the first may be running.
+		f.assertFailedRollForwardHeld(t, generation, "gen-b: replacement unreachable", true, false)
+		record, err := f.store.GetTest(f.test.ID)
+		if err != nil || record.Status != "STOPPING" {
+			t.Fatalf("expected STOPPING hold when replacement is partitioned after CommitWork sent: %+v %v", record, err)
+		}
+	})
+
+	t.Run("deposed_leader_late_generator_rpcs_rejected_after_handoff", func(t *testing.T) {
+		f := newEvacuationRollForwardFixture(t, rollForwardOptions{})
+		oldGen := uint64(1)
+		if err := f.tr.adoptOrphanedRuns(); err != nil {
+			t.Fatal(err)
+		}
+		_, activeGen := f.tr.leadership.executionLeaseTerm()
+		if activeGen <= oldGen {
+			t.Fatalf("activeGen=%d want > %d", activeGen, oldGen)
+		}
+		// Late deposed leader attempts ReservePodCapacity in store under old generation/owner.
+		err := f.store.ReservePodCapacity([]storage.PodCapacityReservation{{
+			ReservationID: "stale-attempt",
+			Revision:      1,
+			Target:        "gen-b",
+			TestID:        f.test.ID,
+			Incarnation:   "pod-b",
+			Generation:    oldGen,
+			State:         "pending",
+			ModelVersion:  protocol.CapacityReservationModel,
+			Budget:        rollbackBudget,
+			Demand:        rollbackDemand,
+			GroupPeaks:    map[string]int32{"ga": 5},
+			GroupDemands:  map[string]protocol.CapacityVector{"ga": rollbackDemand},
+		}}, executionLeaseName, "deposed-owner", oldGen)
+		if err == nil {
+			t.Fatal("expected deposed leader ReservePodCapacity to be rejected by lease check")
+		}
+	})
 }

@@ -41035,6 +41035,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -49544,6 +49553,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -74750,6 +74768,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -92842,6 +92869,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -104636,6 +104672,7 @@ export interface operations {
                   "elk_capture"?: (Record<string, unknown>) | null;
                   "ended_at"?: (string) | null;
                   "error"?: string;
+                  "evacuation_quarantine"?: (Record<string, unknown>) | null;
                   "execution_plan"?: (Record<string, unknown>) | null;
                   "execution_plan_approval"?: (Record<string, unknown>) | null;
                   "folder_id"?: (string) | null;
@@ -116289,6 +116326,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -136009,6 +136055,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -138402,6 +138457,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -140795,6 +140859,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -143188,6 +143261,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -145581,6 +145663,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -150343,6 +150434,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -178176,6 +178276,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;

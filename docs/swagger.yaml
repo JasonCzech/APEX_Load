@@ -65128,6 +65128,11 @@ paths:
                                   nullable: true
                                 error:
                                   type: string
+                                evacuation_quarantine:
+                                  type: object
+                                  description: 'Go type: RunEvacuationQuarantine'
+                                  additionalProperties: true
+                                  nullable: true
                                 execution_plan:
                                   type: object
                                   description: 'Go type: TestExecutionPlanLink'
@@ -95834,6 +95839,33 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      evacuation_quarantine:
+                        type: object
+                        properties:
+                          max_retries:
+                            type: integer
+                            format: int64
+                          next_retry_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_cause:
+                            type: string
+                          quarantined_owners:
+                            type: array
+                            items:
+                              type: string
+                          required_intervention_action:
+                            type: string
+                          retries_exhausted:
+                            type: boolean
+                          retry_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_retries
+                          - retry_count
+                        nullable: true
                       execution_plan:
                         type: object
                         properties:
@@ -103336,6 +103368,33 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      evacuation_quarantine:
+                        type: object
+                        properties:
+                          max_retries:
+                            type: integer
+                            format: int64
+                          next_retry_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_cause:
+                            type: string
+                          quarantined_owners:
+                            type: array
+                            items:
+                              type: string
+                          required_intervention_action:
+                            type: string
+                          retries_exhausted:
+                            type: boolean
+                          retry_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_retries
+                          - retry_count
+                        nullable: true
                       execution_plan:
                         type: object
                         properties:
@@ -110833,6 +110892,33 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      evacuation_quarantine:
+                        type: object
+                        properties:
+                          max_retries:
+                            type: integer
+                            format: int64
+                          next_retry_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_cause:
+                            type: string
+                          quarantined_owners:
+                            type: array
+                            items:
+                              type: string
+                          required_intervention_action:
+                            type: string
+                          retries_exhausted:
+                            type: boolean
+                          retry_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_retries
+                          - retry_count
+                        nullable: true
                       execution_plan:
                         type: object
                         properties:
@@ -118342,6 +118428,33 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      evacuation_quarantine:
+                        type: object
+                        properties:
+                          max_retries:
+                            type: integer
+                            format: int64
+                          next_retry_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_cause:
+                            type: string
+                          quarantined_owners:
+                            type: array
+                            items:
+                              type: string
+                          required_intervention_action:
+                            type: string
+                          retries_exhausted:
+                            type: boolean
+                          retry_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_retries
+                          - retry_count
+                        nullable: true
                       execution_plan:
                         type: object
                         properties:
@@ -125851,6 +125964,33 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      evacuation_quarantine:
+                        type: object
+                        properties:
+                          max_retries:
+                            type: integer
+                            format: int64
+                          next_retry_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_cause:
+                            type: string
+                          quarantined_owners:
+                            type: array
+                            items:
+                              type: string
+                          required_intervention_action:
+                            type: string
+                          retries_exhausted:
+                            type: boolean
+                          retry_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_retries
+                          - retry_count
+                        nullable: true
                       execution_plan:
                         type: object
                         properties:
@@ -133360,6 +133500,33 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      evacuation_quarantine:
+                        type: object
+                        properties:
+                          max_retries:
+                            type: integer
+                            format: int64
+                          next_retry_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_cause:
+                            type: string
+                          quarantined_owners:
+                            type: array
+                            items:
+                              type: string
+                          required_intervention_action:
+                            type: string
+                          retries_exhausted:
+                            type: boolean
+                          retry_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_retries
+                          - retry_count
+                        nullable: true
                       execution_plan:
                         type: object
                         properties:
@@ -140869,6 +141036,33 @@ paths:
                         nullable: true
                       error:
                         type: string
+                      evacuation_quarantine:
+                        type: object
+                        properties:
+                          max_retries:
+                            type: integer
+                            format: int64
+                          next_retry_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_cause:
+                            type: string
+                          quarantined_owners:
+                            type: array
+                            items:
+                              type: string
+                          required_intervention_action:
+                            type: string
+                          retries_exhausted:
+                            type: boolean
+                          retry_count:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_retries
+                          - retry_count
+                        nullable: true
                       execution_plan:
                         type: object
                         properties:
@@ -379326,6 +379520,33 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  evacuation_quarantine:
+                    type: object
+                    properties:
+                      max_retries:
+                        type: integer
+                        format: int64
+                      next_retry_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      original_cause:
+                        type: string
+                      quarantined_owners:
+                        type: array
+                        items:
+                          type: string
+                      required_intervention_action:
+                        type: string
+                      retries_exhausted:
+                        type: boolean
+                      retry_count:
+                        type: integer
+                        format: int64
+                    required:
+                      - max_retries
+                      - retry_count
+                    nullable: true
                   execution_plan:
                     type: object
                     properties:
@@ -396922,6 +397143,33 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  evacuation_quarantine:
+                    type: object
+                    properties:
+                      max_retries:
+                        type: integer
+                        format: int64
+                      next_retry_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      original_cause:
+                        type: string
+                      quarantined_owners:
+                        type: array
+                        items:
+                          type: string
+                      required_intervention_action:
+                        type: string
+                      retries_exhausted:
+                        type: boolean
+                      retry_count:
+                        type: integer
+                        format: int64
+                    required:
+                      - max_retries
+                      - retry_count
+                    nullable: true
                   execution_plan:
                     type: object
                     properties:
@@ -452830,6 +453078,33 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  evacuation_quarantine:
+                    type: object
+                    properties:
+                      max_retries:
+                        type: integer
+                        format: int64
+                      next_retry_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      original_cause:
+                        type: string
+                      quarantined_owners:
+                        type: array
+                        items:
+                          type: string
+                      required_intervention_action:
+                        type: string
+                      retries_exhausted:
+                        type: boolean
+                      retry_count:
+                        type: integer
+                        format: int64
+                    required:
+                      - max_retries
+                      - retry_count
+                    nullable: true
                   execution_plan:
                     type: object
                     properties:
@@ -470263,6 +470538,33 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  evacuation_quarantine:
+                    type: object
+                    properties:
+                      max_retries:
+                        type: integer
+                        format: int64
+                      next_retry_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      original_cause:
+                        type: string
+                      quarantined_owners:
+                        type: array
+                        items:
+                          type: string
+                      required_intervention_action:
+                        type: string
+                      retries_exhausted:
+                        type: boolean
+                      retry_count:
+                        type: integer
+                        format: int64
+                    required:
+                      - max_retries
+                      - retry_count
+                    nullable: true
                   execution_plan:
                     type: object
                     properties:
@@ -493760,6 +494062,33 @@ paths:
                     nullable: true
                   error:
                     type: string
+                  evacuation_quarantine:
+                    type: object
+                    properties:
+                      max_retries:
+                        type: integer
+                        format: int64
+                      next_retry_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      original_cause:
+                        type: string
+                      quarantined_owners:
+                        type: array
+                        items:
+                          type: string
+                      required_intervention_action:
+                        type: string
+                      retries_exhausted:
+                        type: boolean
+                      retry_count:
+                        type: integer
+                        format: int64
+                    required:
+                      - max_retries
+                      - retry_count
+                    nullable: true
                   execution_plan:
                     type: object
                     properties:

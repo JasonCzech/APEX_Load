@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -355,5 +356,195 @@ func TestSameLeaderEvacuationAttestationSurvivesSuccessorReload(t *testing.T) {
 	failure, err := store.GetRunArchiveFailure(test.ID)
 	if err != nil || failure.Reason != storage.RunArchiveFailureRemoteCollection {
 		t.Fatalf("archive failure disclosure=%+v %v", failure, err)
+	}
+}
+
+func TestSuccessiveLeaderEvacuationQuarantineConvergenceAndAttestation(t *testing.T) {
+	for _, mode := range []string{"attested_on_third_leader", "partition_heals_on_third_leader"} {
+		t.Run(mode, func(t *testing.T) {
+			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+			markEvacuationRecoveryRunStarted(t, store, test)
+			tr.armRunContinuity(context.Background(), test, generation, owner, token, previous)
+			if _, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next, runEvacuationCapacity{}); err != nil {
+				t.Fatal(err)
+			}
+			source := newFaultEvacuationGeneratorClient("gen-a", 5)
+			replacement := newFaultEvacuationGeneratorClient("gen-b", 5)
+			source.loseInitialStopResponses = 1 << 30
+			replacement.loseInitialStopResponses = 1 << 30
+			backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 10*time.Millisecond, nil)
+			tr.execution = backend
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			tr.mu.Lock()
+			test.executionCtx, test.cancel = ctx, cancel
+			test.executionGeneration = generation
+			fenceErr := tr.claimTestExecutionFence(test)
+			tr.mu.Unlock()
+			if fenceErr != nil {
+				t.Fatal(fenceErr)
+			}
+
+			uncertain := &distributedEvacuationUncertainError{
+				testID:             test.ID,
+				participantClients: map[string]generatorClient{"gen-a": source, "gen-b": replacement},
+				err:                errors.New("replacement generation rejected after restart"),
+			}
+			if err := backend.failClosedUncertainEvacuation(tr, test, uncertain, nil, nil); err == nil {
+				t.Fatal("expected unproven stop")
+			}
+
+			waitRetryWorkerRetired := func(key string) {
+				t.Helper()
+				deadline := time.Now().Add(8 * time.Second)
+				for time.Now().Before(deadline) {
+					tr.terminalRetryMu.Lock()
+					_, pending := tr.terminalRetrying[key]
+					tr.terminalRetryMu.Unlock()
+					if !pending {
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				t.Fatalf("retry worker %s did not retire within budget", key)
+			}
+
+			waitRetryWorkerRetired("evacuation:" + test.ID)
+			snap1, ok := tr.GetTest(test.ID)
+			if !ok || snap1.EvacuationQuarantine == nil {
+				t.Fatalf("leader 1 quarantine snapshot=%+v ok=%v", snap1, ok)
+			}
+			if !snap1.EvacuationQuarantine.RetriesExhausted ||
+				snap1.EvacuationQuarantine.RetryCount != maxSameLeaderEvacuationCleanupRetries ||
+				snap1.EvacuationQuarantine.MaxRetries != maxSameLeaderEvacuationCleanupRetries ||
+				snap1.EvacuationQuarantine.NextRetryAt != nil ||
+				len(snap1.EvacuationQuarantine.QuarantinedOwners) != 2 ||
+				snap1.EvacuationQuarantine.QuarantinedOwners[0] != "gen-a" ||
+				snap1.EvacuationQuarantine.QuarantinedOwners[1] != "gen-b" ||
+				!strings.Contains(snap1.EvacuationQuarantine.OriginalCause, "replacement generation rejected after restart") ||
+				!strings.Contains(snap1.EvacuationQuarantine.RequiredInterventionAction, "/interrupted-stop/resolve") {
+				t.Fatalf("leader 1 structured quarantine mismatch: %+v", snap1.EvacuationQuarantine)
+			}
+
+			// Hand off to Leader 2 while gen-b remains unreachable.
+			if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+				t.Fatal(err)
+			}
+			leader2 := newExecutionLeadership(store, "leader-2")
+			leader2.tick()
+			owner2, gen2 := leader2.executionLeaseTerm()
+			if owner2 == "" || gen2 <= generation {
+				t.Fatalf("leader 2 term=(%q,%d), prior=%d", owner2, gen2, generation)
+			}
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reloaded2 := managedTestFromRecord(record)
+			var genBReachable atomic.Bool
+			genAClient := newRollbackGeneratorClient(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, "pod-a")
+			genBClient := newRollbackGeneratorClient(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, "pod-b")
+			tr.execution = newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 10*time.Millisecond, func(_ context.Context, target string) (generatorClient, error) {
+				if target == "gen-a" {
+					return genAClient, nil
+				}
+				if target == "gen-b" && genBReachable.Load() {
+					return genBClient, nil
+				}
+				return nil, errors.New("gen-b partitioned")
+			})
+			tr.mu.Lock()
+			tr.leadership = leader2
+			tr.tests[test.ID] = reloaded2
+			reconcileErr := tr.reconcileStoredActiveTest(reloaded2)
+			simNext := time.Now().UTC().Add(evacuationQuarantineRetryDelay(1))
+			reloaded2.evacuationQuarantineRetries = 1
+			reloaded2.evacuationQuarantineNextRetryAt = &simNext
+			activeStatus2 := runEvacuationQuarantineStatusLocked(reloaded2)
+			tr.mu.Unlock()
+			if reconcileErr != nil {
+				t.Fatal(reconcileErr)
+			}
+			if activeStatus2 == nil || activeStatus2.RetriesExhausted || activeStatus2.RetryCount != 1 || activeStatus2.NextRetryAt == nil || !activeStatus2.NextRetryAt.Equal(simNext) {
+				t.Fatalf("successor active retry status masked by prior leader exhaustion: %+v", activeStatus2)
+			}
+			tr.resumeInterruptedRunEvacuations()
+			waitRetryWorkerRetired("evacuation-guard:" + test.ID)
+
+			record2, err := store.GetTest(test.ID)
+			if err != nil || record2.Status != "STOPPING" || record2.EndTime != nil ||
+				!strings.Contains(record2.Error, "replacement generation rejected after restart") ||
+				strings.Count(record2.Error, sameLeaderEvacuationCleanupExhausted) != 1 ||
+				!strings.Contains(record2.Error, "gen-b") {
+				t.Fatalf("leader 2 quarantine persistence=%+v err=%v", record2, err)
+			}
+			snap2, ok := tr.GetTest(test.ID)
+			if !ok || snap2.EvacuationQuarantine == nil ||
+				!snap2.EvacuationQuarantine.RetriesExhausted ||
+				snap2.EvacuationQuarantine.RetryCount != maxSameLeaderEvacuationCleanupRetries ||
+				!strings.Contains(snap2.EvacuationQuarantine.OriginalCause, "replacement generation rejected after restart") {
+				t.Fatalf("leader 2 structured quarantine=%+v ok=%v", snap2, ok)
+			}
+
+			// Hand off to Leader 3.
+			if err := store.ReleaseSchedulerLease(executionLeaseName, owner2); err != nil {
+				t.Fatal(err)
+			}
+			leader3 := newExecutionLeadership(store, "leader-3")
+			leader3.tick()
+			owner3, gen3 := leader3.executionLeaseTerm()
+			if owner3 == "" || gen3 <= gen2 {
+				t.Fatalf("leader 3 term=(%q,%d), prior=%d", owner3, gen3, gen2)
+			}
+			reloaded3 := managedTestFromRecord(record2)
+			tr.mu.Lock()
+			tr.leadership = leader3
+			tr.tests[test.ID] = reloaded3
+			reconcileErr = tr.reconcileStoredActiveTest(reloaded3)
+			tr.mu.Unlock()
+			if reconcileErr != nil {
+				t.Fatal(reconcileErr)
+			}
+
+			if mode == "partition_heals_on_third_leader" {
+				genBReachable.Store(true)
+				tr.resumeInterruptedRunEvacuations()
+				waitRetryWorkerRetired("evacuation-guard:" + test.ID)
+				record3, err := store.GetTest(test.ID)
+				if err != nil || record3.Status != "FAILED" || record3.EndTime == nil ||
+					!strings.HasPrefix(record3.Error, interruptedEvacuationFenceProof) ||
+					!strings.Contains(record3.Error, "replacement generation rejected after restart") ||
+					strings.Contains(record3.Error, sameLeaderEvacuationCleanupExhausted) ||
+					strings.Contains(record3.Error, uncertainEvacuationIntervention) {
+					t.Fatalf("leader 3 automatic convergence=%+v err=%v", record3, err)
+				}
+				snap3, ok := tr.GetTest(test.ID)
+				if !ok || snap3.EvacuationQuarantine != nil {
+					t.Fatalf("terminal run still exposes quarantine: %+v ok=%v", snap3, ok)
+				}
+				return
+			}
+
+			server := &Server{runner: tr, leadership: leader3, store: store}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+test.ID+"/interrupted-stop/resolve", strings.NewReader(`{"attestation":"all-generator-processes-stopped","note":"third leader operator attestation"}`))
+			req.SetPathValue("id", test.ID)
+			server.handleResolveInterruptedRun(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("leader 3 attestation=%d %s", rec.Code, rec.Body.String())
+			}
+			waitRetryWorkerRetired("evacuation-guard:" + test.ID)
+			record3, err := store.GetTest(test.ID)
+			if err != nil || record3.Status != "FAILED" || record3.EndTime == nil ||
+				!strings.HasPrefix(record3.Error, interruptedEvacuationAttestedProof) ||
+				!strings.Contains(record3.Error, "replacement generation rejected after restart") ||
+				strings.Contains(record3.Error, uncertainEvacuationIntervention) {
+				t.Fatalf("leader 3 attested terminal outcome=%+v err=%v", record3, err)
+			}
+			snap3, ok := tr.GetTest(test.ID)
+			if !ok || snap3.EvacuationQuarantine != nil {
+				t.Fatalf("terminal attested run still exposes quarantine: %+v ok=%v", snap3, ok)
+			}
+		})
 	}
 }

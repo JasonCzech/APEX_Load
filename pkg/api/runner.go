@@ -617,8 +617,9 @@ type ManagedTest struct {
 	GoalTargets           map[string]GoalTargetStatus       `json:"goal_targets,omitempty"`
 	// Continuity is the HA run-continuity state (docs/HA_RUN_CONTINUITY_PLAN.md);
 	// derived on read, never persisted from this field.
-	Continuity     *RunContinuityStatus `json:"continuity,omitempty"`
-	TrafficProfile *TrafficProfile      `json:"traffic_profile,omitempty"`
+	Continuity           *RunContinuityStatus     `json:"continuity,omitempty"`
+	EvacuationQuarantine *RunEvacuationQuarantine `json:"evacuation_quarantine,omitempty"`
+	TrafficProfile       *TrafficProfile          `json:"traffic_profile,omitempty"`
 	// JointEvidence is the run's joint evidence v4 projection (B5), frozen
 	// into provenance at Start.
 	JointEvidence         *engine.JointProjection  `json:"joint_evidence,omitempty"`
@@ -702,9 +703,11 @@ type ManagedTest struct {
 	// absent). Set both through setContinuityCheckpointLocked. adoptedResume is
 	// set between a successful adoption claim and the runtime rebuild that
 	// follows admission (run_adoption.go).
-	continuityCheckpoint      string
-	continuityArmedGeneration uint64
-	adoptedResume             *adoptedRunResume
+	continuityCheckpoint            string
+	continuityArmedGeneration       uint64
+	evacuationQuarantineRetries     int
+	evacuationQuarantineNextRetryAt *time.Time
+	adoptedResume                   *adoptedRunResume
 	// stageScheduleResume makes stage schedules started after adoption
 	// fast-forward to the run clock instead of replaying from stage 0.
 	stageScheduleResume bool

@@ -1781,6 +1781,9 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 			test.remoteMetricsStreamsByTarget[target] = stream
 		}
 		test.remoteControlGeneration++
+		nextAt := time.Now().UTC().Add(executionPlanRetryInitialDelay)
+		test.evacuationQuarantineRetries = 0
+		test.evacuationQuarantineNextRetryAt = &nextAt
 		persistErr = retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 		tr.cancelAllVUserScaleRampsLocked(test)
 		cancel = test.cancel
@@ -1799,6 +1802,11 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 		cancel()
 	}
 	if stopErr == nil {
+		tr.mu.Lock()
+		if tr.tests[test.ID] == test {
+			test.evacuationQuarantineNextRetryAt = nil
+		}
+		tr.mu.Unlock()
 		if active {
 			noteUnreachableEvacuationParticipants(tr, test, unreachableErr)
 			finalizeErr := b.finalizeFailClosedEvacuation(tr, test)
@@ -1841,9 +1849,21 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 			if retryErr != nil {
 				retryAttempts++
 				lastStopError = retryErr
+				nextAt := time.Now().UTC().Add(evacuationQuarantineRetryDelay(retryAttempts))
+				tr.mu.Lock()
+				if tr.tests[test.ID] == test {
+					test.evacuationQuarantineRetries = retryAttempts
+					test.evacuationQuarantineNextRetryAt = &nextAt
+				}
+				tr.mu.Unlock()
 				unlock()
 				return retryErr
 			}
+			tr.mu.Lock()
+			if tr.tests[test.ID] == test {
+				test.evacuationQuarantineNextRetryAt = nil
+			}
+			tr.mu.Unlock()
 			unlock()
 			if active {
 				noteUnreachableEvacuationParticipants(tr, test, retryUnreachableErr)

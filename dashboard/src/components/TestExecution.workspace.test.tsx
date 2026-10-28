@@ -134,6 +134,28 @@ describe('TestExecution advanced details', () => {
     expect(container.querySelectorAll('[aria-label="Run preparation"]')).toHaveLength(1)
   })
 
+  it('renders the structured evacuation quarantine banner when a run is held in stopping quarantine', async () => {
+    configure({
+      ...makeTest('STOPPING'),
+      evacuation_quarantine: {
+        quarantined_owners: ['gen-a:7000', 'gen-b:7000'],
+        retry_count: 5,
+        max_retries: 5,
+        retries_exhausted: true,
+        required_intervention_action: 'POST /api/v1/tests/run-1/interrupted-stop/resolve',
+        original_cause: 'generator evacuation state is uncertain: replacement generation rejected after restart',
+      },
+    })
+    await render()
+    const banner = container.querySelector('[aria-label="Evacuation quarantine status"]')
+    expect(banner).not.toBeNull()
+    expect(banner?.textContent).toContain('Load generator quarantine requires administrator intervention')
+    expect(banner?.textContent).toContain('replacement generation rejected after restart')
+    expect(banner?.textContent).toContain('gen-a:7000, gen-b:7000')
+    expect(banner?.textContent).toContain('Cleanup retries: 5 / 5')
+    expect(banner?.textContent).toContain('POST /api/v1/tests/run-1/interrupted-stop/resolve')
+  })
+
   async function render(props: Partial<Parameters<typeof TestExecution>[0]> = {}) {
     await act(async () => root.render(<TopbarContributionProvider><Topbar /><TestExecution testId="run-1" history={[]} onBack={vi.fn()} onEditScript={vi.fn()} onSelectTest={vi.fn()} onOpenCommandCenter={vi.fn()} {...props} /></TopbarContributionProvider>))
   }

@@ -848,6 +848,8 @@ export interface TestSummary {
   goal_targets?: Record<string, GoalTargetStatus>
   /** HA run continuity; absent for fail-policy runs that never failed over. */
   continuity?: RunContinuityStatus
+  /** Structured quarantine diagnostics while a run is held STOPPING awaiting generator stop/fence proof (REC-B1). */
+  evacuation_quarantine?: RunEvacuationQuarantine
   live_metrics?: LiveMetrics
   sparkline?: TestSparklinePoint[]
   telemetry_health?: TelemetryRunHealth
@@ -897,6 +899,17 @@ export interface RunArchiveRecovery {
   verified_sources?: number
   updated_at?: string
   retry_window_ends_at?: string
+}
+
+/** Structured quarantine diagnostics while a distributed run is held STOPPING awaiting generator stop/fence proof (REC-B1). */
+export interface RunEvacuationQuarantine {
+  quarantined_owners?: string[]
+  retry_count: number
+  max_retries: number
+  retries_exhausted?: boolean
+  next_retry_at?: string
+  required_intervention_action?: string
+  original_cause?: string
 }
 
 /** Observed collection failure; this is separate from archive publication retries. */
