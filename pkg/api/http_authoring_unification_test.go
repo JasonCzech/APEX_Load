@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
+	"github.com/jasonczech/apexload/pkg/selector"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -79,7 +81,7 @@ const testBrowserDualScriptHAR = `{
       {
         "request": {
           "method": "POST",
-          "url": "https://shop.example.test/api/orders/confirm",
+          "url": "https://shop.example.test/api/orders/confirm?email=buyer%40example.com",
           "headers": [{"name": "Content-Type", "value": "application/json"}],
           "httpVersion": "HTTP/1.1",
           "postData": {"text": "{\"customer_email\":\"buyer@example.com\",\"sku\":\"SKU-998877\"}"}
@@ -314,6 +316,43 @@ func TestHTTPAuthoringUnifiedPolicyAndSalesforceProfileEnforcement(t *testing.T)
 			t.Fatalf("salesforce login extractors = %#v, want none when profile disables correlation", sfOut.Script.Actions[0].Extractors)
 		}
 	})
+
+	t.Run("import/salesforce respects disable_salesforce and clears native and agentforce flags", func(t *testing.T) {
+		sfBody := mustMarshalJSONForTest(t, map[string]any{
+			"project_id":           storage.DefaultProjectID,
+			"content":              testSalesforceHAR,
+			"disable_salesforce":   true,
+			"salesforce_native":    true,
+			"agentforce_transform": true,
+		})
+		sfReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/salesforce", bytes.NewReader(sfBody))
+		sfReq.Header.Set("Content-Type", "application/json")
+		sfResp := httptest.NewRecorder()
+		server.mux.ServeHTTP(sfResp, sfReq)
+		if sfResp.Code != http.StatusOK {
+			t.Fatalf("salesforce import with disable_salesforce status = %d body=%s", sfResp.Code, sfResp.Body.String())
+		}
+		var sfOut struct {
+			Script            dsl.Script                `json:"script"`
+			ReviewSections    []map[string]any          `json:"review_sections"`
+			EffectiveSettings *sample.EffectiveSettings `json:"effective_settings"`
+		}
+		if err := json.Unmarshal(sfResp.Body.Bytes(), &sfOut); err != nil {
+			t.Fatal(err)
+		}
+		if sfOut.EffectiveSettings == nil || !sfOut.EffectiveSettings.DisableSalesforce ||
+			sfOut.EffectiveSettings.SalesforceNative || sfOut.EffectiveSettings.AgentforceTransform {
+			t.Fatalf("effective_settings with disable_salesforce = %#v, want DisableSalesforce=true, SalesforceNative=false, AgentforceTransform=false", sfOut.EffectiveSettings)
+		}
+		if sfOut.Script.GeneratedBy == "apexload-salesforce-builder" {
+			t.Fatalf("expected raw HAR script when disable_salesforce=true, got GeneratedBy=%q", sfOut.Script.GeneratedBy)
+		}
+		for _, section := range sfOut.ReviewSections {
+			if section["key"] == "salesforce_review" {
+				t.Fatalf("unexpected salesforce_review section when disable_salesforce=true: %#v", section)
+			}
+		}
+	})
 }
 
 func TestRecorderPreviewAndSavePreservesOptionResolvedBaselineAndEffectiveSettings(t *testing.T) {
@@ -462,6 +501,55 @@ func TestRecorderPreviewAndSavePreservesOptionResolvedBaselineAndEffectiveSettin
 	if !ok || restoredSettings.ResourceMode != "separate" || restoredSettings.ConversionPolicy != "unified_v1" {
 		t.Fatalf("restored effective_settings after PUT = %#v (ok=%v)", restoredSettings, ok)
 	}
+
+	// Verify unattested default conversion via POST /api/v1/scripts overwrites forged effective_settings with server-computed converted.EffectiveSettings.
+	defaultConverted := recorder.ConvertSession(session, "Checkout default unattested")
+	if defaultConverted == nil || defaultConverted.Script == nil {
+		t.Fatal("expected defaultConverted script")
+	}
+	forgedScript := cloneScriptDefinition(defaultConverted.Script)
+	sample.AttachEffectiveSettings(forgedScript, &sample.EffectiveSettings{
+		ConversionPolicy:     sample.ConversionPolicyLegacy,
+		CorrelationMode:      sample.CorrelationModeHighConfidence,
+		HighConfidenceOnly:   true,
+		IncludeAssertions:    true,
+		InferExtractors:      true,
+		PageTitleChecks:      true,
+		ResourceMode:         "runtime",
+		AsyncScan:            true,
+		HTTPVersionMode:      "upgrade",
+		RecordingProfileName: "Forged Profile Name",
+		SourceEntryPoint:     "forged_entry_point",
+		CapabilityNotes:      []string{"forged-capability-note"},
+	})
+	forgedCreatePayload := mustMarshalJSONForTest(t, map[string]any{
+		"project_id":                  storage.DefaultProjectID,
+		"source_recording_session_id": session.ID,
+		"script":                      forgedScript,
+	})
+	forgedCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(forgedCreatePayload))
+	forgedCreateReq.Header.Set("Content-Type", "application/json")
+	forgedCreateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(forgedCreateResp, forgedCreateReq)
+	if forgedCreateResp.Code != http.StatusCreated {
+		t.Fatalf("unattested default save status = %d body=%s", forgedCreateResp.Code, forgedCreateResp.Body.String())
+	}
+	var forgedSaved StoredScript
+	if err := json.Unmarshal(forgedCreateResp.Body.Bytes(), &forgedSaved); err != nil {
+		t.Fatal(err)
+	}
+	persistedDefault, err := store.GetScript(forgedSaved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actualDefaultSettings, ok := sample.ReadEffectiveSettings(persistedDefault)
+	if !ok || actualDefaultSettings == nil {
+		t.Fatalf("expected server-computed effective_settings on unattested default save, got %#v (ok=%v)", actualDefaultSettings, ok)
+	}
+	if actualDefaultSettings.RecordingProfileName != "" ||
+		actualDefaultSettings.SourceEntryPoint != sample.EntryPointRecorderConvert || len(actualDefaultSettings.CapabilityNotes) != 0 {
+		t.Fatalf("forged effective_settings were not overwritten by server-computed settings: %#v", actualDefaultSettings)
+	}
 }
 
 func TestBrowserDualScriptHTTPCompanionPreviewAndTargetedVerify(t *testing.T) {
@@ -474,8 +562,18 @@ func TestBrowserDualScriptHTTPCompanionPreviewAndTargetedVerify(t *testing.T) {
 	stubBrowserRecordingDependencyProbe(t, nil)
 	server := NewServer(ServerConfig{Store: store})
 	browserSession := stopBrowserRecordingFixture(t, server, &recbrowser.Session{
-		StartURL: "https://shop.example.test",
-		HAR:      []byte(testBrowserDualScriptHAR),
+		StartURL:  "https://shop.example.test/login?user_id=12345",
+		NavEvents: []recbrowser.NavEvent{{URL: "https://shop.example.test/login?user_id=12345"}},
+		Steps: []recbrowser.Step{
+			{
+				Seq:     1,
+				Kind:    recbrowser.StepFill,
+				URL:     "https://shop.example.test/login?user_id=12345",
+				Element: &selector.ElementMetadata{Name: "email", Type: "email"},
+				Value:   "buyer@example.com",
+			},
+		},
+		HAR: []byte(testBrowserDualScriptHAR),
 	}, storage.DefaultProjectID, "BrowserDual")
 
 	previewBody := mustMarshalJSONForTest(t, map[string]any{
@@ -495,7 +593,18 @@ func TestBrowserDualScriptHTTPCompanionPreviewAndTargetedVerify(t *testing.T) {
 		t.Fatalf("browser preview status = %d body=%s", previewResp.Code, previewResp.Body.String())
 	}
 	var previewOut struct {
-		HTTPParameterization          map[string]any             `json:"http_parameterization"`
+		Parameterization struct {
+			Suggestions []struct {
+				ID         string `json:"id"`
+				ScriptName string `json:"script_name"`
+			} `json:"suggestions"`
+		} `json:"parameterization"`
+		HTTPParameterization struct {
+			Suggestions []struct {
+				ID        string `json:"id"`
+				AutoApply bool   `json:"auto_apply"`
+			} `json:"suggestions"`
+		} `json:"http_parameterization"`
 		HTTPPreflight                 map[string]any             `json:"http_preflight"`
 		HTTPSecretBindingRequirements []SecretBindingRequirement `json:"http_secret_binding_requirements"`
 		EffectiveSettings             *sample.EffectiveSettings  `json:"effective_settings"`
@@ -503,8 +612,8 @@ func TestBrowserDualScriptHTTPCompanionPreviewAndTargetedVerify(t *testing.T) {
 	if err := json.Unmarshal(previewResp.Body.Bytes(), &previewOut); err != nil {
 		t.Fatal(err)
 	}
-	if previewOut.HTTPParameterization == nil {
-		t.Fatal("expected http_parameterization in dual-script browser preview")
+	if len(previewOut.HTTPParameterization.Suggestions) == 0 {
+		t.Fatal("expected http_parameterization suggestions in dual-script browser preview")
 	}
 	if previewOut.HTTPPreflight == nil {
 		t.Fatal("expected http_preflight in dual-script browser preview")
@@ -516,12 +625,40 @@ func TestBrowserDualScriptHTTPCompanionPreviewAndTargetedVerify(t *testing.T) {
 		t.Fatalf("browser preview effective_settings = %#v", previewOut.EffectiveSettings)
 	}
 
+	var browserSuggestionID string
+	for _, sug := range previewOut.Parameterization.Suggestions {
+		if sug.ScriptName == "Browser Checkout" {
+			browserSuggestionID = sug.ID
+			break
+		}
+	}
+	if browserSuggestionID == "" {
+		t.Fatalf("expected browser script parameterization suggestion in preview, got %#v", previewOut.Parameterization.Suggestions)
+	}
+	httpSuggestionID := previewOut.HTTPParameterization.Suggestions[0].ID
+	for _, sug := range previewOut.HTTPParameterization.Suggestions {
+		if sug.AutoApply {
+			httpSuggestionID = sug.ID
+			break
+		}
+	}
+
 	reqID := previewOut.HTTPSecretBindingRequirements[0].ID
 	convertBody := mustMarshalJSONForTest(t, map[string]any{
 		"name":                    "Browser Checkout",
 		"also_create_http_script": true,
 		"conversion_policy":       "unified_v1",
 		"parameterize":            true,
+		"parameterization_selections": []map[string]any{
+			{
+				"script_index": 0,
+				"selected_ids": []string{browserSuggestionID},
+			},
+			{
+				"script_index": 1,
+				"selected_ids": []string{httpSuggestionID},
+			},
+		},
 		"secret_bindings": []map[string]any{{
 			"requirement_id": reqID,
 			"secret_name":    "BROWSER_API_TOKEN",
@@ -541,6 +678,104 @@ func TestBrowserDualScriptHTTPCompanionPreviewAndTargetedVerify(t *testing.T) {
 	}
 	if !strings.Contains(convertResp.Body.String(), "{{secret.BROWSER_API_TOKEN}}") {
 		t.Fatalf("converted http_script did not receive targeted secret binding: %s", convertResp.Body.String())
+	}
+	var convertOut struct {
+		Scripts []struct {
+			Script dsl.Script `json:"script"`
+		} `json:"scripts"`
+	}
+	if err := json.Unmarshal(convertResp.Body.Bytes(), &convertOut); err != nil {
+		t.Fatal(err)
+	}
+	if len(convertOut.Scripts) != 2 {
+		t.Fatalf("len(convertOut.Scripts) = %d, want 2", len(convertOut.Scripts))
+	}
+	if httpSettings, ok := sample.ReadEffectiveSettings(&convertOut.Scripts[1].Script); !ok || httpSettings == nil || !httpSettings.Parameterize {
+		t.Fatalf("converted HTTP companion script effective_settings = %#v (ok=%v), want Parameterize=true", httpSettings, ok)
+	}
+
+	// Verify per-script parameterization selection scoping: when parameterization_selections
+	// only targets script_index 0 and parameterize:true is set, script 0 gets the explicit
+	// selection without 409 Conflict while script 1 (HTTP companion) still gets auto-parameterized.
+	browserSessionPartial := stopBrowserRecordingFixture(t, server, &recbrowser.Session{
+		StartURL:  "https://shop.example.test/login?user_id=12345",
+		NavEvents: []recbrowser.NavEvent{{URL: "https://shop.example.test/login?user_id=12345"}},
+		Steps: []recbrowser.Step{
+			{
+				Seq:     1,
+				Kind:    recbrowser.StepFill,
+				URL:     "https://shop.example.test/login?user_id=12345",
+				Element: &selector.ElementMetadata{Name: "email", Type: "email"},
+				Value:   "buyer@example.com",
+			},
+		},
+		HAR: []byte(testBrowserDualScriptHAR),
+	}, storage.DefaultProjectID, "BrowserDualPartial")
+
+	partialPreviewReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+browserSessionPartial.ID+"/convert/preview",
+		bytes.NewReader(mustMarshalJSONForTest(t, map[string]any{
+			"name":                    "Browser Checkout",
+			"also_create_http_script": true,
+			"conversion_policy":       "unified_v1",
+			"parameterize":            true,
+		})),
+	)
+	partialPreviewReq.Header.Set("Content-Type", "application/json")
+	partialPreviewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(partialPreviewResp, partialPreviewReq)
+	if partialPreviewResp.Code != http.StatusOK {
+		t.Fatalf("partial browser preview status = %d body=%s", partialPreviewResp.Code, partialPreviewResp.Body.String())
+	}
+	var partialPreviewOut struct {
+		HTTPSecretBindingRequirements []SecretBindingRequirement `json:"http_secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(partialPreviewResp.Body.Bytes(), &partialPreviewOut); err != nil {
+		t.Fatal(err)
+	}
+	partialConvertBody := mustMarshalJSONForTest(t, map[string]any{
+		"name":                    "Browser Checkout",
+		"also_create_http_script": true,
+		"conversion_policy":       "unified_v1",
+		"parameterize":            true,
+		"parameterization_selections": []map[string]any{
+			{
+				"script_index": 0,
+				"selected_ids": []string{browserSuggestionID},
+			},
+		},
+		"secret_bindings": []map[string]any{{
+			"requirement_id": partialPreviewOut.HTTPSecretBindingRequirements[0].ID,
+			"secret_name":    "BROWSER_API_TOKEN",
+			"script_index":   1,
+		}},
+	})
+	partialConvertReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+browserSessionPartial.ID+"/convert",
+		bytes.NewReader(partialConvertBody),
+	)
+	partialConvertReq.Header.Set("Content-Type", "application/json")
+	partialConvertResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(partialConvertResp, partialConvertReq)
+	if partialConvertResp.Code != http.StatusCreated {
+		t.Fatalf("partial browser convert status = %d body=%s", partialConvertResp.Code, partialConvertResp.Body.String())
+	}
+	var partialConvertOut struct {
+		Scripts []struct {
+			Script dsl.Script `json:"script"`
+		} `json:"scripts"`
+	}
+	if err := json.Unmarshal(partialConvertResp.Body.Bytes(), &partialConvertOut); err != nil {
+		t.Fatal(err)
+	}
+	if len(partialConvertOut.Scripts) != 2 {
+		t.Fatalf("len(partialConvertOut.Scripts) = %d, want 2", len(partialConvertOut.Scripts))
+	}
+	httpScriptBytes := mustMarshalJSONForTest(t, partialConvertOut.Scripts[1].Script)
+	if !strings.Contains(string(httpScriptBytes), "{{data.recorded_inputs.email}}") {
+		t.Fatalf("expected HTTP companion script (index 1) to still be auto-parameterized when selections only targeted script 0: %s", string(httpScriptBytes))
 	}
 }
 
@@ -658,14 +893,26 @@ func TestExplicitIncludeStaticAssetsFalseOverridesProfileAndUnifiedParameterizeP
 	}
 	defer store.Close()
 
-	stubBrowserRecordingDependencyProbe(t, nil)
-	server := NewServer(ServerConfig{Store: store})
-
 	createdProfile := &recordingprofile.Profile{
 		ID:           "sep-profile",
 		Name:         "Separate Assets Profile",
 		ResourceMode: "separate",
 	}
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{
+		ID:        storage.DefaultProjectID,
+		Name:      "Default",
+		CreatedAt: now,
+		UpdatedAt: now,
+		Settings: storage.ProjectSettings{
+			RecordingProfiles: []recordingprofile.Profile{*createdProfile},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProject with recording profile: %v", err)
+	}
+
+	stubBrowserRecordingDependencyProbe(t, nil)
+	server := NewServer(ServerConfig{Store: store})
 
 	// 1. Explicit include_static_assets:false overrides profile ResourceMode:"separate" on both HAR and proxy conversion.
 	f := false
@@ -715,6 +962,96 @@ func TestExplicitIncludeStaticAssetsFalseOverridesProfileAndUnifiedParameterizeP
 	}
 	if len(proxyRes.Script.Actions) != 1 {
 		t.Fatalf("proxy Actions len = %d, want 1 (static asset omitted)", len(proxyRes.Script.Actions))
+	}
+
+	const harWithStaticAsset = `{
+  "log": {
+    "version": "1.2",
+    "creator": {"name": "test", "version": "1.0"},
+    "entries": [
+      {
+        "startedDateTime": "2026-04-20T12:00:00.000Z",
+        "time": 10,
+        "request": {
+          "method": "GET",
+          "url": "https://shop.example.test/search?email=alice%40example.test",
+          "httpVersion": "HTTP/1.1",
+          "headers": [{"name": "Accept", "value": "text/html"}],
+          "queryString": [],
+          "headersSize": -1,
+          "bodySize": 0
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "headers": [{"name": "Content-Type", "value": "text/html"}],
+          "content": {"size": 32, "mimeType": "text/html", "text": "<html><title>Search</title></html>"},
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 32
+        },
+        "cache": {},
+        "timings": {"send": 1, "wait": 8, "receive": 1}
+      },
+      {
+        "startedDateTime": "2026-04-20T12:00:00.050Z",
+        "time": 5,
+        "request": {
+          "method": "GET",
+          "url": "https://shop.example.test/static/app.js",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "headersSize": -1,
+          "bodySize": 0
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "headers": [{"name": "Content-Type", "value": "application/javascript"}],
+          "content": {"size": 15, "mimeType": "application/javascript", "text": "console.log(1);"},
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 15
+        },
+        "cache": {},
+        "timings": {"send": 1, "wait": 3, "receive": 1}
+      }
+    ]
+  }
+}`
+	harOverrideReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/har",
+		bytes.NewReader(mustMarshalJSONForTest(t, map[string]any{
+			"project_id":            storage.DefaultProjectID,
+			"name":                  "HARStaticOverride",
+			"content":               harWithStaticAsset,
+			"conversion_policy":     "unified_v1",
+			"recording_profile_id":  createdProfile.ID,
+			"include_static_assets": false,
+		})),
+	)
+	harOverrideReq.Header.Set("Content-Type", "application/json")
+	harOverrideResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(harOverrideResp, harOverrideReq)
+	if harOverrideResp.Code != http.StatusOK {
+		t.Fatalf("HAR override status = %d body=%s", harOverrideResp.Code, harOverrideResp.Body.String())
+	}
+	var harOverrideOut struct {
+		Script            dsl.Script                `json:"script"`
+		EffectiveSettings *sample.EffectiveSettings `json:"effective_settings"`
+	}
+	if err := json.Unmarshal(harOverrideResp.Body.Bytes(), &harOverrideOut); err != nil {
+		t.Fatal(err)
+	}
+	if harOverrideOut.EffectiveSettings == nil || harOverrideOut.EffectiveSettings.ResourceMode != "runtime" {
+		t.Fatalf("HAR EffectiveSettings.ResourceMode = %#v, want runtime when include_static_assets=false overrides separate profile", harOverrideOut.EffectiveSettings)
+	}
+	if len(harOverrideOut.Script.Actions) != 1 {
+		t.Fatalf("HAR Actions len = %d, want 1 (static asset omitted)", len(harOverrideOut.Script.Actions))
 	}
 
 	// 2. Unified parameterization parity across proxy conversion and browser HTTP conversion.
@@ -793,5 +1130,157 @@ func TestExplicitIncludeStaticAssetsFalseOverridesProfileAndUnifiedParameterizeP
 	}
 	if !strings.Contains(browserPreviewResp.Body.String(), "{{data.recorded_inputs.email}}") {
 		t.Fatalf("browser HTTP preview did not parameterize email query: %s", browserPreviewResp.Body.String())
+	}
+
+	// 3. Proxy recorder preview with explicit parameterization_selections and parameterize:false
+	// still marks EffectiveSettings.Parameterize = true.
+	proxyInitialPreviewReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/recorder/"+proxySession.ID+"/convert/preview",
+		bytes.NewReader(mustMarshalJSONForTest(t, map[string]any{
+			"name":                  "Proxy Selection Only",
+			"include_static_assets": false,
+			"parameterize":          false,
+		})),
+	)
+	proxyInitialPreviewReq.Header.Set("Content-Type", "application/json")
+	proxyInitialPreviewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(proxyInitialPreviewResp, proxyInitialPreviewReq)
+	if proxyInitialPreviewResp.Code != http.StatusOK {
+		t.Fatalf("proxy initial preview status = %d body=%s", proxyInitialPreviewResp.Code, proxyInitialPreviewResp.Body.String())
+	}
+	var proxyInitialPreviewOut struct {
+		Parameterization *paramize.Result `json:"parameterization"`
+	}
+	if err := json.Unmarshal(proxyInitialPreviewResp.Body.Bytes(), &proxyInitialPreviewOut); err != nil {
+		t.Fatal(err)
+	}
+	if proxyInitialPreviewOut.Parameterization == nil || len(proxyInitialPreviewOut.Parameterization.Suggestions) == 0 {
+		t.Fatalf("expected parameterization suggestions on proxy preview: %#v", proxyInitialPreviewOut.Parameterization)
+	}
+	proxySelectionPreviewReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/recorder/"+proxySession.ID+"/convert/preview",
+		bytes.NewReader(mustMarshalJSONForTest(t, map[string]any{
+			"name":                  "Proxy Selection Only",
+			"include_static_assets": false,
+			"parameterize":          false,
+			"parameterization_selections": []map[string]any{{
+				"script_index": 0,
+				"selected_ids": []string{proxyInitialPreviewOut.Parameterization.Suggestions[0].ID},
+			}},
+		})),
+	)
+	proxySelectionPreviewReq.Header.Set("Content-Type", "application/json")
+	proxySelectionPreviewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(proxySelectionPreviewResp, proxySelectionPreviewReq)
+	if proxySelectionPreviewResp.Code != http.StatusOK {
+		t.Fatalf("proxy selection preview status = %d body=%s", proxySelectionPreviewResp.Code, proxySelectionPreviewResp.Body.String())
+	}
+	var proxySelectionPreviewOut struct {
+		EffectiveSettings *sample.EffectiveSettings `json:"effective_settings"`
+	}
+	if err := json.Unmarshal(proxySelectionPreviewResp.Body.Bytes(), &proxySelectionPreviewOut); err != nil {
+		t.Fatal(err)
+	}
+	if proxySelectionPreviewOut.EffectiveSettings == nil || !proxySelectionPreviewOut.EffectiveSettings.Parameterize {
+		t.Fatalf("proxy selection EffectiveSettings = %#v, want Parameterize=true when parameterization_selections are applied", proxySelectionPreviewOut.EffectiveSettings)
+	}
+
+	// 4. Sample import normalizes top-level and options parameterization_selections consistently
+	// even when one of the two carries an entry with empty selected_ids.
+	sampleInitialReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/sample",
+		bytes.NewReader(mustMarshalJSONForTest(t, map[string]any{
+			"project_id": storage.DefaultProjectID,
+			"name":       "Sample Selection Precedence",
+			"format":     "har",
+			"content":    emailHAR,
+		})),
+	)
+	sampleInitialReq.Header.Set("Content-Type", "application/json")
+	sampleInitialResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(sampleInitialResp, sampleInitialReq)
+	if sampleInitialResp.Code != http.StatusOK {
+		t.Fatalf("sample initial status = %d body=%s", sampleInitialResp.Code, sampleInitialResp.Body.String())
+	}
+	var sampleInitialOut struct {
+		Parameterization *paramize.Result `json:"parameterization"`
+	}
+	if err := json.Unmarshal(sampleInitialResp.Body.Bytes(), &sampleInitialOut); err != nil {
+		t.Fatal(err)
+	}
+	if sampleInitialOut.Parameterization == nil || len(sampleInitialOut.Parameterization.Suggestions) == 0 {
+		t.Fatalf("expected parameterization suggestions on sample import: %#v", sampleInitialOut.Parameterization)
+	}
+	sampleSugID := sampleInitialOut.Parameterization.Suggestions[0].ID
+
+	for _, tc := range []struct {
+		name    string
+		payload map[string]any
+	}{
+		{
+			name: "top_level_non_empty_with_empty_options_slice",
+			payload: map[string]any{
+				"project_id": storage.DefaultProjectID,
+				"name":       "Sample Selection Precedence",
+				"format":     "har",
+				"content":    emailHAR,
+				"parameterization_selections": []map[string]any{{
+					"script_index": 0,
+					"selected_ids": []string{sampleSugID},
+				}},
+				"options": map[string]any{
+					"parameterization_selections": []map[string]any{{
+						"script_index": 0,
+						"selected_ids": []string{},
+					}},
+				},
+			},
+		},
+		{
+			name: "options_non_empty_with_empty_top_level_slice",
+			payload: map[string]any{
+				"project_id": storage.DefaultProjectID,
+				"name":       "Sample Selection Precedence",
+				"format":     "har",
+				"content":    emailHAR,
+				"parameterization_selections": []map[string]any{{
+					"script_index": 0,
+					"selected_ids": []string{},
+				}},
+				"options": map[string]any{
+					"parameterization_selections": []map[string]any{{
+						"script_index": 0,
+						"selected_ids": []string{sampleSugID},
+					}},
+				},
+			},
+		},
+	} {
+		sampleSelReq := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/scripts/import/sample",
+			bytes.NewReader(mustMarshalJSONForTest(t, tc.payload)),
+		)
+		sampleSelReq.Header.Set("Content-Type", "application/json")
+		sampleSelResp := httptest.NewRecorder()
+		server.mux.ServeHTTP(sampleSelResp, sampleSelReq)
+		if sampleSelResp.Code != http.StatusOK {
+			t.Fatalf("%s status = %d body=%s", tc.name, sampleSelResp.Code, sampleSelResp.Body.String())
+		}
+		var sampleSelOut struct {
+			EffectiveSettings *sample.EffectiveSettings `json:"effective_settings"`
+		}
+		if err := json.Unmarshal(sampleSelResp.Body.Bytes(), &sampleSelOut); err != nil {
+			t.Fatal(err)
+		}
+		if sampleSelOut.EffectiveSettings == nil || !sampleSelOut.EffectiveSettings.Parameterize {
+			t.Fatalf("%s EffectiveSettings = %#v, want Parameterize=true", tc.name, sampleSelOut.EffectiveSettings)
+		}
+		if !strings.Contains(sampleSelResp.Body.String(), "{{var.email}}") {
+			t.Fatalf("%s expected explicit selection to be applied in script: %s", tc.name, sampleSelResp.Body.String())
+		}
 	}
 }

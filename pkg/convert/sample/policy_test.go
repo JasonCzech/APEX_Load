@@ -76,6 +76,24 @@ func TestResolveConversionPolicyPrecedenceAndEntryPoints(t *testing.T) {
 		}
 	})
 
+	t.Run("disable_salesforce clears both salesforce_native and agentforce_transform", func(t *testing.T) {
+		tr := true
+		settings, err := ResolveConversionPolicy(PolicyResolutionInput{
+			EntryPoint:          EntryPointImportSalesforce,
+			Format:              "har",
+			ConversionPolicy:    ConversionPolicyUnifiedV1,
+			DisableSalesforce:   &tr,
+			SalesforceNative:    &tr,
+			AgentforceTransform: &tr,
+		})
+		if err != nil {
+			t.Fatalf("ResolveConversionPolicy error: %v", err)
+		}
+		if !settings.DisableSalesforce || settings.SalesforceNative || settings.AgentforceTransform {
+			t.Fatalf("settings = %#v, want DisableSalesforce=true, SalesforceNative=false, AgentforceTransform=false", settings)
+		}
+	})
+
 	t.Run("recording profile disables correlation and supplies generation defaults", func(t *testing.T) {
 		pageTitleChecks := false
 		asyncScan := false

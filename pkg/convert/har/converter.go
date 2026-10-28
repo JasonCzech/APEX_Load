@@ -119,7 +119,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if opts.PageTitleChecks == nil {
 			opts.PageTitleChecks = profile.PageTitleChecks
 		}
-		if opts.ResourceMode == "" {
+		if opts.ResourceMode == "" && opts.IncludeStaticAssets == nil {
 			opts.ResourceMode = profile.ResourceMode
 		}
 		if opts.AsyncScan == nil {

@@ -248,6 +248,7 @@ func ResolveConversionPolicy(input PolicyResolutionInput) (*EffectiveSettings, e
 	}
 	if disableSalesforce {
 		salesforceNative = false
+		agentforceTransform = false
 	}
 	if format != "har" {
 		salesforceNative = false

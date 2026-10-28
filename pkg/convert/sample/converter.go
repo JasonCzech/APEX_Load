@@ -296,7 +296,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if !req.Options.Parameterize {
 		req.Options.Parameterize = req.Parameterize
 	}
-	if len(req.Options.ParameterizationSelections) == 0 {
+	if len(paramize.SelectedIDsForScript(req.Options.ParameterizationSelections, 0)) == 0 &&
+		(len(paramize.SelectedIDsForScript(req.ParameterizationSelections, 0)) > 0 || len(req.Options.ParameterizationSelections) == 0) {
 		req.Options.ParameterizationSelections = req.ParameterizationSelections
 	}
 
@@ -326,7 +327,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		DisableSalesforce:      req.Options.DisableSalesforce,
 		SalesforceNative:       req.Options.SalesforceNative,
 		AgentforceTransform:    req.Options.AgentforceTransform,
-		Parameterize:           req.Options.Parameterize || len(req.Options.ParameterizationSelections) > 0,
+		Parameterize:           req.Options.Parameterize || len(paramize.SelectedIDsForScript(req.Options.ParameterizationSelections, 0)) > 0,
 		RecordingProfileID:     req.Options.RecordingProfileID,
 		Profile:                req.Options.Profile,
 	})

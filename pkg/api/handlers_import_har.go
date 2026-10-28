@@ -105,11 +105,12 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 			applyClientTimestamps(s, importReq.Data, result)
 			*warnings = result.Warnings
 			*unsupported = result.Unsupported
-			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && len(importReq.Opts.ParameterizationSelections) == 0 {
+			hasSelectedIDs := len(paramize.SelectedIDsForScript(importReq.Opts.ParameterizationSelections, 0)) > 0
+			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && !hasSelectedIDs {
 				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
 				*warnings = result.Warnings
 			}
-			if len(importReq.Opts.ParameterizationSelections) > 0 {
+			if hasSelectedIDs {
 				if _, err := importreview.ApplyParameterizationSelectionsToScript(s, 0, importReq.Opts.ParameterizationSelections); err != nil {
 					return err
 				}
@@ -255,7 +256,8 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 		if param := firstNonNilBool(req.Parameterize, parseOptionalBool(upload.Value("parameterize"))); param != nil {
 			req.Options.Parameterize = *param
 		}
-		if len(req.ParameterizationSelections) > 0 {
+		if len(paramize.SelectedIDsForScript(req.ParameterizationSelections, 0)) > 0 ||
+			(len(paramize.SelectedIDsForScript(req.Options.ParameterizationSelections, 0)) == 0 && len(req.ParameterizationSelections) > 0) {
 			req.Options.ParameterizationSelections = req.ParameterizationSelections
 		}
 		if !validHTTPVersionMode(w, req.Options.HTTPVersionMode) || !validHARImportPolicyOptions(w, req.Options) {

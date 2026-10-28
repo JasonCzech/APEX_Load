@@ -103,7 +103,7 @@ func (s *Service) PrepareBrowserRecordingConversion(artifact *recbrowser.Session
 		// which carry no review sections; the preview route above is where the
 		// generated HTTP draft's sections are shown.
 		var generated BrowserHTTPScript
-		generated, err = s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, req.HTTPScriptOptions())
+		generated, err = s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, req.HTTPScriptOptionsForIndex(len(result.Scripts)))
 		defer importreview.ClearCredentialRequirementValues(generated.ProtectedRequirements)
 		httpScript, httpWarnings = generated.Script, generated.Warnings
 		if err != nil {
