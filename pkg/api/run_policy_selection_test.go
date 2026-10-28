@@ -599,4 +599,3 @@ func TestCIRunCarriesTheChosenAnalysisPolicySelections(t *testing.T) {
 		t.Fatalf("exact idempotency retry after tombstone/lockdown failed: %d %s", status, body)
 	}
 }
-

@@ -29,12 +29,12 @@ func (d BrowserClockDomain) Valid() bool {
 }
 
 const (
-	DefaultBrowserClockMaxSkewPPM   int64 = 200
-	MaxBrowserClockMaxSkewPPM       int64 = 1000
-	DefaultBrowserClockMaxBracketRTTNS    = int64(time.Second)
-	DefaultBrowserClockMaxBracketGapNS    = int64(45 * time.Second)
-	MaxBrowserClockMaxBracketGapNS        = int64(60 * time.Second)
-	MaxBrowserClockBracketsPerOwner       = 1024
+	DefaultBrowserClockMaxSkewPPM      int64 = 200
+	MaxBrowserClockMaxSkewPPM          int64 = 1000
+	DefaultBrowserClockMaxBracketRTTNS       = int64(time.Second)
+	DefaultBrowserClockMaxBracketGapNS       = int64(45 * time.Second)
+	MaxBrowserClockMaxBracketGapNS           = int64(60 * time.Second)
+	MaxBrowserClockBracketsPerOwner          = 1024
 )
 
 func NewBrowserClockDomain(runID string) (BrowserClockDomain, error) {

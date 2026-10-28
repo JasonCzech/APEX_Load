@@ -3454,7 +3454,7 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 		DisabledUntil:            disabledUntil,
 		AnalysisPolicySelections: runAnalysisPolicySelectionsForStorage(policySelections),
 	}
-	occurrences := make([]time.Time, 0, count)
+	occurrences := []time.Time{}
 	previewFrom := time.Now().UTC()
 	cursor := previewFrom
 	if !executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil, cursor) {

@@ -492,7 +492,6 @@ func (s *liveBrowserIntelligenceState) evaluateSnapshotWithDomainEvidence(tr *Te
 	}, adopted, hasDocEvidence, hasInteractionEvidence, hasJourneyEvidence
 }
 
-
 func (s *liveBrowserIntelligenceState) evaluateFindingsLocked(tr *TestRunner, store storage.AnalysisDefinitionStore, now time.Time, allSourcesObserved bool) *RunBrowserFindingsResponse {
 	resp := &RunBrowserFindingsResponse{
 		RunID:         s.testID,

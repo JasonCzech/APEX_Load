@@ -357,4 +357,3 @@ func TestBrowserIntelligenceReportSectionsCarryV2ProvenanceAndDeepLinks(t *testi
 		t.Fatal("word/document.xml missing from DOCX archive")
 	}
 }
-

@@ -19,13 +19,13 @@ type frameImpl struct {
 	navigationSameDocument bool
 	navigationFailed       bool
 	detached               bool
-	page               *pageImpl
-	name               string
-	url                string
-	parentFrame        Frame
-	childFrames        []Frame
-	loadStates         mapset.Set[string]
-	loadStateMu        sync.Mutex // Serializes native state changes with waiter registration.
+	page                   *pageImpl
+	name                   string
+	url                    string
+	parentFrame            Frame
+	childFrames            []Frame
+	loadStates             mapset.Set[string]
+	loadStateMu            sync.Mutex // Serializes native state changes with waiter registration.
 }
 
 func newFrame(parent *channelOwner, objectType string, guid string, initializer map[string]any) *frameImpl {

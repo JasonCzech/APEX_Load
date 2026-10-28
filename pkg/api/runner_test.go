@@ -7020,6 +7020,21 @@ func TestPreviewScenarioScheduleRuns(t *testing.T) {
 	if !reflect.DeepEqual(kinds["repeated"], []string{"01:00", "01:30"}) || !reflect.DeepEqual(kinds["skipped"], []string{"02:00", "02:30"}) {
 		t.Fatalf("chicago clock changes = %+v, want repeated 01:00/01:30 and skipped 02:00/02:30", chicago.ClockChanges)
 	}
+	past := time.Now().UTC().Add(-time.Hour)
+	paused, err := runner.PreviewScenarioScheduleRuns(scenario.ID, CreateScenarioScheduleRequest{CronExpr: "0 9 * * *", Timezone: "UTC", DisabledFrom: &past}, 5)
+	if err != nil {
+		t.Fatalf("paused preview: %v", err)
+	}
+	if paused.Occurrences == nil || len(paused.Occurrences) != 0 {
+		t.Fatalf("paused preview occurrences = %#v, want non-nil empty slice", paused.Occurrences)
+	}
+	pausedJSON, err := json.Marshal(paused)
+	if err != nil {
+		t.Fatalf("marshal paused preview: %v", err)
+	}
+	if !strings.Contains(string(pausedJSON), `"occurrences":[]`) {
+		t.Fatalf("paused preview JSON = %s, want non-null empty occurrences array", string(pausedJSON))
+	}
 }
 
 func TestNextScenarioScheduleRunAliasesAndMacros(t *testing.T) {

@@ -390,6 +390,7 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   // A newer terminal publication can retire the session, but its stale false
   // privacy flag still cannot restore cached detail or historical values.
   sendProgress!({ type: 'script_debug_completed', debug_session_id: sessionId, report: terminal, session: terminalSession('3') })
+  await expectDebugOutcome(page, 'passed')
   await expect(page.locator('.topbar-debug-action-run')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Export session', exact: true })).toBeEnabled()
   await expect(watches).toContainText('Runtime variable evidence unavailable')
@@ -406,6 +407,7 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   // Recent runs exclude the current run. A clean second run exposes the
   // first run as history and proves the unavailable flag remains run-scoped.
   await page.locator('.topbar-debug-action-run').click()
+  await expectDebugOutcome(page, 'passed')
   await expect(watches).toContainText('This is historical evidence, not current engine state.')
   await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('current')
   await expect(watches).toContainText('Current state unavailable: the session has ended.')

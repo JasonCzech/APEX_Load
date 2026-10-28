@@ -20,6 +20,7 @@ type browserSeenMeasurement struct {
 	terminal bool
 	digest   [32]byte
 }
+
 // LiveBrowserDocumentEvidenceSink receives scrubbed incremental and final
 // browser document evidence for provisional live evaluation without writing to
 // the durable archive sidecar.

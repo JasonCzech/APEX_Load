@@ -707,5 +707,3 @@ func TestBrowserInteractionAnalysisSevenBoundsAndCSVReportParity(t *testing.T) {
 		t.Fatalf("unsupported format = %d", badRec.Code)
 	}
 }
-
-

@@ -1343,6 +1343,3 @@ func TestLiveBrowserIntelligenceRound3Fixes(t *testing.T) {
 		t.Fatalf("expected teardownActiveTestsAfterLeadershipLoss to clear residual provisionalBrowserIntelligence even when liveBrowserIntelligence == nil, got %+v", residualAfterLoss)
 	}
 }
-
-
-

@@ -340,4 +340,3 @@ func TestRootCauseSectionRendersBrowserSelectionWithoutBaselineInEveryFormat(t *
 		}
 	}
 }
-
