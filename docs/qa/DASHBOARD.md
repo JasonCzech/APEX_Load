@@ -45,7 +45,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 772 | 0 | 0 | 772 |
+| 774 | 0 | 0 | 774 |
 
 ## Last verified executions
 
