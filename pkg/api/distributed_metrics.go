@@ -278,7 +278,32 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			}
 			groupMetricsByName[name] = append(groupMetricsByName[name], rawGroups...)
 		}
-		telemetry.add(batch.LifecycleState, batch.Telemetry)
+		batchTelemetry := batch.Telemetry
+		if batchTelemetry != nil {
+			if (batchTelemetry.WindowMs == 0 && batch.WindowMs > 0) || (batchTelemetry.OldestObservationStartBoundUnixMs <= 0 && len(batch.CollectionWindows) > 0) {
+				copied := *batchTelemetry
+				if copied.WindowMs == 0 && batch.WindowMs > 0 {
+					copied.WindowMs = batch.WindowMs
+				}
+				if copied.OldestObservationStartBoundUnixMs <= 0 && len(batch.CollectionWindows) > 0 && (copied.CollectedAtQuality == nil || copied.CollectedAtQuality.Qualified) {
+					var minStart time.Time
+					for _, w := range batch.CollectionWindows {
+						if !w.Start.IsZero() && (minStart.IsZero() || w.Start.Before(minStart)) {
+							minStart = w.Start
+						}
+					}
+					if !minStart.IsZero() {
+						var uncertainty float64
+						if copied.CollectedAtQuality != nil {
+							uncertainty = copied.CollectedAtQuality.UncertaintyMs
+						}
+						copied.OldestObservationStartBoundUnixMs = timeToUnixMillisFloat(minStart) - copied.CollectedAtOffsetMs - uncertainty
+					}
+				}
+				batchTelemetry = &copied
+			}
+		}
+		telemetry.add(batch.LifecycleState, batchTelemetry)
 	}
 	// Joint evidence v4 merges by exact tuple across generators; a generator
 	// without it leaves the fleet window incomplete, never zero.

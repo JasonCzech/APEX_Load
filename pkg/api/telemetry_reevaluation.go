@@ -259,7 +259,7 @@ func telemetryReevaluationFingerprint(projectID string, inputs *telemetryReevalu
 // absent budget takes the built-in default (never the current system
 // settings, which can change), so the result depends on the revision alone.
 func resolveTelemetryReevaluationPolicy(definition *storage.AnalysisDefinition, payload TelemetryPolicyDefinition, digest string) TelemetryReevaluationPolicy {
-	policy := TelemetryReevaluationPolicy{ID: definition.ID, Name: definition.Name, Revision: definition.Revision, SHA256: digest, SustainedBreachWindowMs: telemetrySustainedBreachWindow.Milliseconds()}
+	policy := TelemetryReevaluationPolicy{ID: scrubTelemetryIdentity(definition.ID), Name: telemetryTextScrubber{}.label(definition.Name), Revision: definition.Revision, SHA256: digest, SustainedBreachWindowMs: telemetrySustainedBreachWindow.Milliseconds()}
 	if payload.SustainedWindowSeconds != nil {
 		policy.SustainedBreachWindowMs = int64(*payload.SustainedWindowSeconds) * 1000
 	}
@@ -520,10 +520,10 @@ func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []Int
 	// nothing could be classified (a missing clock quality, every budget
 	// disabled, ...).
 	if len(conditions) > 0 {
-		out.StageConditions = conditions
+		out.StageConditions = scrubTelemetryCounts(conditions)
 	}
 	if len(unscoredByStage) > 0 {
-		out.StageUnscored = unscoredByStage
+		out.StageUnscored = scrubTelemetryCounts(unscoredByStage)
 	}
 }
 

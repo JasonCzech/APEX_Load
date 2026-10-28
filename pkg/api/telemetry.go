@@ -660,6 +660,12 @@ func cloneTelemetryRunHealth(in *TelemetryRunHealth) *TelemetryRunHealth {
 	if in.Unscored != nil {
 		out.Unscored = append([]string(nil), in.Unscored...)
 	}
+	if in.ConditionLabels != nil {
+		out.ConditionLabels = append([]string(nil), in.ConditionLabels...)
+	}
+	if in.StageBudgets != nil {
+		out.StageBudgets = append([]TelemetryStageBudget(nil), in.StageBudgets...)
+	}
 	if in.BreachStartedAt != nil {
 		startedAt := *in.BreachStartedAt
 		out.BreachStartedAt = &startedAt
@@ -675,6 +681,7 @@ func archivedTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 	if out != nil {
 		// Run-cumulative records are in the manifest, not on every row.
 		out.Coverage, out.StageDistributions, out.Acceptance, out.RenderPopulation = nil, nil, nil, nil
+		out.PolicySegments, out.StageBudgets, out.ValidityFindings = nil, nil, nil
 	}
 	return out
 }
@@ -693,6 +700,20 @@ func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 	out.Acceptance = cloneTelemetryAcceptanceVerdict(in.Acceptance)
 	out.Publication = in.Publication.clone()
 	out.RenderPopulation = in.RenderPopulation.clone()
+	if in.PolicySegments != nil {
+		out.PolicySegments = make([]TelemetryPolicySegmentReceipt, len(in.PolicySegments))
+		for i, seg := range in.PolicySegments {
+			seg.Policy = cloneTelemetryBudgetPolicy(seg.Policy)
+			out.PolicySegments[i] = seg
+		}
+	}
+	if in.StageBudgets != nil {
+		out.StageBudgets = append([]TelemetryStageBudget(nil), in.StageBudgets...)
+	}
+	if in.IntervalConditionLabels != nil {
+		out.IntervalConditionLabels = append([]string(nil), in.IntervalConditionLabels...)
+	}
+	out.ValidityFindings = cloneTelemetryValidityFindings(in.ValidityFindings)
 	if in.Coverage != nil {
 		coverage := *in.Coverage
 		coverage.Sources = append([]TelemetrySourceCoverage(nil), in.Coverage.Sources...)
@@ -1060,15 +1081,18 @@ func (tr *TestRunner) broadcastTelemetryHealthTransition(test *ManagedTest, prev
 	if eventType == "" {
 		return
 	}
+	scrubber := newManagedTestTelemetryTextScrubber(test)
+	scrubbedCurrent := scrubTelemetryRunHealth(current, scrubber)
+	testName := scrubTelemetryIdentity(scrubber.text(test.Name))
 
 	message := map[string]any{
 		"type":       "telemetry_health_changed",
 		"event_type": eventType,
 		"test_id":    test.ID,
 		"project_id": normalizeProjectID(test.ProjectID),
-		"test_name":  test.Name,
+		"test_name":  testName,
 		"timestamp":  now,
-		"data":       current,
+		"data":       scrubbedCurrent,
 	}
 	if tr.hub != nil {
 		tr.hub.BroadcastJSON(message)
@@ -1078,11 +1102,11 @@ func (tr *TestRunner) broadcastTelemetryHealthTransition(test *ManagedTest, prev
 			Type:       eventType,
 			TestID:     test.ID,
 			ProjectID:  normalizeProjectID(test.ProjectID),
-			TestName:   test.Name,
-			Status:     current.Status,
-			Severity:   current.Severity,
-			Summary:    current.Summary,
-			Conditions: append([]string(nil), current.Conditions...),
+			TestName:   testName,
+			Status:     scrubbedCurrent.Status,
+			Severity:   scrubbedCurrent.Severity,
+			Summary:    scrubbedCurrent.Summary,
+			Conditions: append([]string(nil), scrubbedCurrent.Conditions...),
 			Timestamp:  now,
 		})
 	}

@@ -5478,6 +5478,35 @@ export interface operations {
                 "sources"?: Array<Record<string, unknown>>;
               }) | null;
               "status"?: string;
+              "telemetry_acceptance"?: ({
+                "criteria"?: Array<{
+                  "advisory"?: boolean;
+                  "bound"?: string;
+                  "comparator"?: string;
+                  "criterion"?: string;
+                  "denominator"?: (number) | null;
+                  "numerator"?: (number) | null;
+                  "observed"?: (number) | null;
+                  "outcome"?: string;
+                  "reason"?: string;
+                  "threshold"?: number;
+                  "unit"?: string;
+                }>;
+                "exclusions"?: Array<string>;
+                "mode"?: string;
+                "outcome"?: string;
+                "policy"?: ({
+                  "applied"?: boolean;
+                  "id"?: string;
+                  "kind"?: string;
+                  "name"?: string;
+                  "revision"?: number;
+                  "sha256"?: string;
+                  "source"?: string;
+                }) | null;
+                "provisional"?: boolean;
+                "reasons"?: Array<string>;
+              }) | null;
               "telemetry_coverage"?: ({
                 "algorithm"?: string;
                 "breached_known_fraction"?: (number) | null;
@@ -5501,8 +5530,10 @@ export interface operations {
                   "window_ms"?: number;
                   "window_start"?: string;
                 };
+                "coverage_rule"?: string;
                 "degraded_ms"?: number;
                 "healthy_ms"?: number;
+                "qualified_collections"?: number;
                 "retained_intervals"?: number;
                 "segments"?: Array<{
                   "breached_ms"?: number;
@@ -5511,12 +5542,17 @@ export interface operations {
                   "healthy_ms"?: number;
                   "legacy"?: boolean;
                   "policy_hash"?: string;
+                  "qualified_collections"?: number;
                   "sequence"?: number;
+                  "source_window_ms"?: number;
                   "start"?: string;
                   "unavailable"?: string;
                 }>;
                 "unknown_ms"?: number;
+                "unqualified_clock_collections"?: number;
+                "unscored_boundary_collections"?: number;
               }) | null;
+              "telemetry_evidence_file"?: string;
               "telemetry_loss"?: ({
                 "dropped_results"?: ({
                   "reason"?: string;
@@ -5582,6 +5618,7 @@ export interface operations {
                 "ineligible"?: number;
                 "last_sequence"?: number;
                 "population"?: string;
+                "prior_epochs"?: Array<Record<string, unknown>>;
                 "published_eligible"?: number;
                 "reference_client"?: string;
                 "rendered"?: number;
@@ -5605,8 +5642,14 @@ export interface operations {
               "telemetry_stage_distributions"?: Array<{
                 "advisory"?: boolean;
                 "availability"?: string;
+                "delivery_signal"?: string;
+                "eligible_publications"?: number;
                 "excluded"?: Record<string, number>;
                 "max_ms"?: (number) | null;
+                "newest_observation_max_ms"?: (number) | null;
+                "newest_observation_p50_ms"?: (number) | null;
+                "newest_observation_p95_ms"?: (number) | null;
+                "newest_observation_p99_ms"?: (number) | null;
                 "p50_ms"?: (number) | null;
                 "p95_ms"?: (number) | null;
                 "p99_ms"?: (number) | null;
@@ -5615,6 +5658,15 @@ export interface operations {
                 "samples"?: number;
                 "stage"?: string;
                 "unit"?: string;
+              }>;
+              "telemetry_validity_findings"?: Array<{
+                "compliant"?: boolean;
+                "criterion"?: string;
+                "details"?: Array<string>;
+                "observed_ms"?: (number) | null;
+                "status"?: string;
+                "summary"?: string;
+                "threshold_ms"?: number;
               }>;
               "termination_reason"?: string;
               "test_id"?: string;
@@ -6660,6 +6712,51 @@ export interface operations {
               "provisional"?: boolean;
               "reasons"?: Array<string>;
             }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm"?: string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms"?: number;
+              "classified_intervals"?: number;
+              "classified_ms"?: number;
+              "coverage"?: {
+                "observed_ms"?: number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources"?: Array<{
+                  "observed_ms"?: number;
+                  "required_ms"?: number;
+                  "source"?: string;
+                  "truncated"?: boolean;
+                  "unknown_ms"?: number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms"?: number;
+                "window_end"?: string;
+                "window_ms"?: number;
+                "window_start"?: string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms"?: number;
+              "healthy_ms"?: number;
+              "qualified_collections"?: number;
+              "retained_intervals"?: number;
+              "segments"?: Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end"?: string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start"?: string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms"?: number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
             "telemetry_policy"?: ({
               "availability"?: string;
               "policy"?: ({
@@ -6708,6 +6805,52 @@ export interface operations {
               "requested_by"?: string;
               "sequence"?: number;
               "source"?: string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible"?: number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population"?: string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible"?: number;
+              "reference_client"?: string;
+              "rendered"?: number;
+              "sampled_from"?: (string) | null;
+              "superseded"?: number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported"?: number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability"?: string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples"?: number;
+              "stage"?: string;
+              "unit"?: string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant"?: boolean;
+              "criterion"?: string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status"?: string;
+              "summary"?: string;
+              "threshold_ms"?: number;
             }>;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count"?: number;
@@ -10070,8 +10213,154 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_acceptance_policy_id"?: string;
             "telemetry_budget_policy_id"?: string;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -31225,6 +31514,152 @@ export interface operations {
             "presented": boolean;
             "revision"?: number;
             "state": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
           };
         };
       };
@@ -37490,8 +37925,154 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_acceptance_policy_id"?: string;
             "telemetry_budget_policy_id"?: string;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -42893,6 +43474,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -42926,6 +43508,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -42947,6 +43530,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -42955,6 +43543,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -42986,12 +43575,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -43765,6 +44360,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -43798,6 +44394,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -43819,6 +44416,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -43827,6 +44429,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -43858,12 +44461,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -44216,12 +44825,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -52187,6 +52802,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -52220,11 +52836,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -52235,6 +52853,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -52262,6 +52881,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -52270,6 +52894,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -52301,12 +52926,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -54984,6 +55615,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -55017,11 +55649,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -55032,6 +55691,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -55059,11 +55719,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -55080,6 +55751,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -55111,12 +55791,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -55920,12 +56606,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -69590,8 +70282,154 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_acceptance_policy_id"?: string;
             "telemetry_budget_policy_id"?: string;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -72530,6 +73368,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -72563,11 +73402,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -72578,6 +73419,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -72605,6 +73447,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -72613,6 +73460,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -72644,12 +73492,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -75323,6 +76177,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -75356,11 +76211,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -75371,6 +76253,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -75398,11 +76281,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -75419,6 +76313,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -75450,12 +76353,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -76692,6 +77601,152 @@ export interface operations {
             "presented": boolean;
             "revision"?: number;
             "state": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
           };
         };
       };
@@ -76734,6 +77789,152 @@ export interface operations {
             "presented": boolean;
             "revision"?: number;
             "state": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
           };
         };
       };
@@ -78338,6 +79539,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -78371,6 +79573,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -78392,6 +79595,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -78400,6 +79608,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -78431,12 +79640,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -79210,6 +80425,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -79243,6 +80459,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -79264,6 +80481,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -79272,6 +80494,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -79303,12 +80526,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -79661,12 +80890,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -82953,6 +84188,35 @@ export interface operations {
               }>;
             }) | null;
             "status"?: string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_coverage"?: ({
               "algorithm": string;
               "breached_known_fraction"?: (number) | null;
@@ -82976,8 +84240,10 @@ export interface operations {
                 "window_ms": number;
                 "window_start": string;
               };
+              "coverage_rule"?: string;
               "degraded_ms": number;
               "healthy_ms": number;
+              "qualified_collections"?: number;
               "retained_intervals": number;
               "segments": Array<{
                 "breached_ms"?: number;
@@ -82986,12 +84252,17 @@ export interface operations {
                 "healthy_ms"?: number;
                 "legacy"?: boolean;
                 "policy_hash"?: string;
+                "qualified_collections"?: number;
                 "sequence"?: number;
+                "source_window_ms"?: number;
                 "start": string;
                 "unavailable"?: string;
               }>;
               "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
             }) | null;
+            "telemetry_evidence_file"?: string;
             "telemetry_loss"?: ({
               "dropped_results"?: ({
                 "reason"?: string;
@@ -83057,6 +84328,7 @@ export interface operations {
               "ineligible"?: number;
               "last_sequence"?: number;
               "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
               "published_eligible": number;
               "reference_client"?: string;
               "rendered": number;
@@ -83083,8 +84355,14 @@ export interface operations {
             "telemetry_stage_distributions"?: Array<{
               "advisory"?: boolean;
               "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
               "excluded"?: Record<string, number>;
               "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
               "p50_ms"?: (number) | null;
               "p95_ms"?: (number) | null;
               "p99_ms"?: (number) | null;
@@ -83093,6 +84371,15 @@ export interface operations {
               "samples": number;
               "stage": string;
               "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
             }>;
             "termination_reason"?: string;
             "test_id": string;
@@ -88614,6 +89901,35 @@ export interface operations {
                 }>;
               }) | null;
               "status"?: string;
+              "telemetry_acceptance"?: ({
+                "criteria": Array<{
+                  "advisory"?: boolean;
+                  "bound"?: string;
+                  "comparator": string;
+                  "criterion": string;
+                  "denominator"?: (number) | null;
+                  "numerator"?: (number) | null;
+                  "observed"?: (number) | null;
+                  "outcome": string;
+                  "reason"?: string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
+                "exclusions"?: Array<string>;
+                "mode": string;
+                "outcome": string;
+                "policy"?: ({
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                }) | null;
+                "provisional"?: boolean;
+                "reasons"?: Array<string>;
+              }) | null;
               "telemetry_coverage"?: ({
                 "algorithm": string;
                 "breached_known_fraction"?: (number) | null;
@@ -88637,8 +89953,10 @@ export interface operations {
                   "window_ms": number;
                   "window_start": string;
                 };
+                "coverage_rule"?: string;
                 "degraded_ms": number;
                 "healthy_ms": number;
+                "qualified_collections"?: number;
                 "retained_intervals": number;
                 "segments": Array<{
                   "breached_ms"?: number;
@@ -88647,12 +89965,17 @@ export interface operations {
                   "healthy_ms"?: number;
                   "legacy"?: boolean;
                   "policy_hash"?: string;
+                  "qualified_collections"?: number;
                   "sequence"?: number;
+                  "source_window_ms"?: number;
                   "start": string;
                   "unavailable"?: string;
                 }>;
                 "unknown_ms": number;
+                "unqualified_clock_collections"?: number;
+                "unscored_boundary_collections"?: number;
               }) | null;
+              "telemetry_evidence_file"?: string;
               "telemetry_loss"?: ({
                 "dropped_results"?: ({
                   "reason"?: string;
@@ -88718,6 +90041,7 @@ export interface operations {
                 "ineligible"?: number;
                 "last_sequence"?: number;
                 "population": string;
+                "prior_epochs"?: Array<Record<string, unknown>>;
                 "published_eligible": number;
                 "reference_client"?: string;
                 "rendered": number;
@@ -88741,8 +90065,14 @@ export interface operations {
               "telemetry_stage_distributions"?: Array<{
                 "advisory"?: boolean;
                 "availability": string;
+                "delivery_signal"?: string;
+                "eligible_publications"?: number;
                 "excluded"?: Record<string, number>;
                 "max_ms"?: (number) | null;
+                "newest_observation_max_ms"?: (number) | null;
+                "newest_observation_p50_ms"?: (number) | null;
+                "newest_observation_p95_ms"?: (number) | null;
+                "newest_observation_p99_ms"?: (number) | null;
                 "p50_ms"?: (number) | null;
                 "p95_ms"?: (number) | null;
                 "p99_ms"?: (number) | null;
@@ -88751,6 +90081,15 @@ export interface operations {
                 "samples": number;
                 "stage": string;
                 "unit": string;
+              }>;
+              "telemetry_validity_findings"?: Array<{
+                "compliant": boolean;
+                "criterion": string;
+                "details"?: Array<string>;
+                "observed_ms"?: (number) | null;
+                "status": string;
+                "summary": string;
+                "threshold_ms"?: number;
               }>;
               "termination_reason"?: string;
               "test_id": string;
@@ -89954,6 +91293,51 @@ export interface operations {
               "provisional"?: boolean;
               "reasons"?: Array<string>;
             }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
             "telemetry_policy"?: ({
               "availability": string;
               "policy"?: ({
@@ -90002,6 +91386,52 @@ export interface operations {
               "requested_by"?: string;
               "sequence": number;
               "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
             }>;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count": number;
@@ -98215,6 +99645,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -98248,11 +99679,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -98263,6 +99696,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -98290,6 +99724,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -98298,6 +99737,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -98329,12 +99769,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -101012,6 +102458,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -101045,11 +102492,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -101060,6 +102534,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -101087,11 +102562,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -101108,6 +102594,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -101139,12 +102634,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -101948,12 +103449,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -122642,6 +124149,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -122675,11 +124183,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -122690,6 +124200,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -122717,6 +124228,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -122725,6 +124241,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -122756,12 +124273,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -125439,6 +126962,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -125472,11 +126996,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -125487,6 +127038,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -125514,11 +127066,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -125535,6 +127098,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -125566,12 +127138,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -126375,12 +127953,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -142523,6 +144107,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -142556,6 +144141,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -142577,6 +144163,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -142585,6 +144176,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -142616,12 +144208,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -143395,6 +144993,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -143428,6 +145027,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -143449,6 +145049,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -143457,6 +145062,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -143488,12 +145094,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -143846,12 +145458,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -145097,6 +146715,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -145130,6 +146749,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -145151,6 +146771,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -145159,6 +146784,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -145190,12 +146816,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -145969,6 +147601,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -146002,6 +147635,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -146023,6 +147657,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -146031,6 +147670,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -146062,12 +147702,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -146420,12 +148066,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -147671,6 +149323,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -147704,6 +149357,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -147725,6 +149379,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -147733,6 +149392,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -147764,12 +149424,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -148543,6 +150209,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -148576,6 +150243,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -148597,6 +150265,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -148605,6 +150278,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -148636,12 +150310,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -148994,12 +150674,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -150245,6 +151931,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -150278,6 +151965,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -150299,6 +151987,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -150307,6 +152000,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -150338,12 +152032,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -151117,6 +152817,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -151150,6 +152851,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -151171,6 +152873,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -151179,6 +152886,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -151210,12 +152918,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -151568,12 +153282,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -152819,6 +154539,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -152852,6 +154573,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -152873,6 +154595,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -152881,6 +154608,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -152912,12 +154640,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -153691,6 +155425,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -153724,6 +155459,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -153745,6 +155481,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -153753,6 +155494,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -153784,12 +155526,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -154142,12 +155890,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -156061,14 +157815,26 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "calibration"?: ({
+            "client_recv_mono_ms"?: (number) | null;
+            "client_send_mono_ms"?: number;
+            "controller_recv_unix_ms"?: (number) | null;
+            "controller_send_unix_ms"?: (number) | null;
+          }) | null;
           "client_id"?: string;
+          "client_recv_mono_ms"?: (number) | null;
+          "client_send_mono_ms"?: (number) | null;
           "samples"?: Array<{
+            "delivery_signal"?: string;
             "observed_at"?: string;
+            "presentation_proof"?: string;
             "publication"?: ({
               "epoch"?: string;
               "sequence"?: number;
             }) | null;
             "receive_to_render_ms"?: number;
+            "received_mono_ms"?: (number) | null;
+            "rendered_mono_ms"?: (number) | null;
             "state"?: string;
           }>;
         };
@@ -156079,6 +157845,7 @@ export interface operations {
         content: {
           "application/json": {
             "accepted": number;
+            "clock_calibration"?: (Array<number>) | null;
             "excluded"?: Record<string, number>;
           };
         };
@@ -158366,6 +160133,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -158399,11 +160167,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -158414,6 +160184,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -158441,6 +160212,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -158449,6 +160225,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -158480,12 +160257,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -161163,6 +162946,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -161196,11 +162980,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -161211,6 +163022,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -161238,11 +163050,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -161259,6 +163082,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -161290,12 +163122,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -162099,12 +163937,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -186982,6 +188826,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -187015,11 +188860,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -187030,6 +188877,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -187057,6 +188905,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -187065,6 +188918,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -187096,12 +188950,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -189779,6 +191639,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -189812,11 +191673,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -189827,6 +191715,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -189854,11 +191743,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -189875,6 +191775,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -189906,12 +191815,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -190715,12 +192630,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;

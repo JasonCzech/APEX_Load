@@ -512,12 +512,29 @@ export default function TestExecution({
     ? {
         ...metrics,
         ...latestMetrics,
+        telemetry_policy: latestMetrics.telemetry_policy ?? metrics?.telemetry_policy,
+        telemetry_status: latestMetrics.telemetry_status ?? metrics?.telemetry_status,
         telemetry: {
           ...metrics?.telemetry,
           ...latestMetrics.telemetry,
         },
       }
     : metrics
+
+  const livePolicySegments = statusMetrics?.telemetry?.policy_segments ?? test.telemetry_policy_segments
+  const liveStageBudgets =
+    statusMetrics?.telemetry?.stage_budgets ??
+    statusMetrics?.telemetry_status?.stage_budgets ??
+    statusMetrics?.telemetry_policy?.policy?.budgets
+  const liveConditionLabels =
+    statusMetrics?.telemetry?.interval_condition_labels ??
+    statusMetrics?.telemetry_status?.condition_labels ??
+    test.telemetry_health?.condition_labels
+  const hasLiveTelemetrySegmentSummary = Boolean(
+    (Array.isArray(livePolicySegments) && livePolicySegments.length > 0) ||
+    (Array.isArray(liveStageBudgets) && liveStageBudgets.length > 0) ||
+    (Array.isArray(liveConditionLabels) && liveConditionLabels.length > 0),
+  )
 
   const summaryTransactions = statusMetrics?.transactions ? Object.values(statusMetrics.transactions) : transactions
 
@@ -996,6 +1013,50 @@ export default function TestExecution({
           groupColors={GROUP_COLORS}
           canChangeTelemetryPolicy={canManageTests}
         />
+        {hasLiveTelemetrySegmentSummary && (
+          <div className="goal-status-card" data-testid="live-telemetry-segment-view" aria-label="Telemetry segment conditions">
+            <div className="goal-status-header">
+              <div>
+                <h3 className="goal-status-title">Telemetry segment conditions</h3>
+                <p className="goal-status-subtitle">Active in-run policy segments, current stage budgets, and interval condition labels.</p>
+              </div>
+            </div>
+            <div className="goal-status-grid">
+              {Array.isArray(livePolicySegments) && livePolicySegments.length > 0 && (
+                <div className="goal-status-metric" data-testid="live-telemetry-policy-segments">
+                  <span className="goal-status-label">Active policy segments</span>
+                  <span className="goal-status-value">
+                    {livePolicySegments
+                      .map(seg => `Segment ${seg.sequence} (${seg.policy_id || seg.policy?.policy_id || seg.source})`)
+                      .join(' · ')}
+                  </span>
+                </div>
+              )}
+              {Array.isArray(liveStageBudgets) && liveStageBudgets.length > 0 && (
+                <div className="goal-status-metric" data-testid="live-telemetry-stage-budgets">
+                  <span className="goal-status-label">Current stage budgets</span>
+                  <span className="goal-status-value">
+                    {liveStageBudgets
+                      .map(b => `${b.stage}: ${b.enabled ? `<= ${b.limit_ms} ms` : 'disabled'}`)
+                      .join(' · ')}
+                  </span>
+                </div>
+              )}
+              {Array.isArray(liveConditionLabels) && liveConditionLabels.length > 0 && (
+                <div className="goal-status-metric" data-testid="live-telemetry-condition-labels">
+                  <span className="goal-status-label">Interval condition labels</span>
+                  <span className="goal-status-value">
+                    {liveConditionLabels.map(label => (
+                      <span key={label} data-condition-label={label} style={{ marginRight: 6 }}>
+                        {label}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <GRPCDiagnosticsPanel transactions={summaryTransactions} />
         <WebSocketDiagnosticsPanel transactions={summaryTransactions} />
         </>

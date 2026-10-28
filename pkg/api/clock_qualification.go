@@ -167,7 +167,7 @@ func (tr *TestRunner) recordClockCalibration(test *ManagedTest, source string, o
 // the stages stay as measured, unqualified, and a negative one is unavailable
 // (zero). A corrected transport lag below zero by more than its uncertainty
 // is implausible and unavailable.
-func qualifyCrossHostTelemetry(telemetry *generatorrpc.MetricsTelemetry, offsetMs float64, quality generatorrpc.ClockQuality) {
+func qualifyCrossHostTelemetry(telemetry *generatorrpc.MetricsTelemetry, offsetMs float64, quality generatorrpc.ClockQuality, windows ...generatorrpc.MetricsCollectionWindow) {
 	if telemetry == nil {
 		return
 	}
@@ -194,6 +194,24 @@ func qualifyCrossHostTelemetry(telemetry *generatorrpc.MetricsTelemetry, offsetM
 		telemetry.CollectedAtQuality = &collected
 		if quality.Qualified {
 			telemetry.CollectedAtOffsetMs = offsetMs
+			telemetry.NewestCollectedAtControllerUnixMs = float64(telemetry.CollectedAtUnixMs) - offsetMs
+			var minStart time.Time
+			for _, w := range windows {
+				if !w.Start.IsZero() && (minStart.IsZero() || w.Start.Before(minStart)) {
+					minStart = w.Start
+				}
+			}
+			if minStart.IsZero() {
+				if window, ok := generatorrpc.MetricsCollectionWindowFromTelemetry(telemetry); ok && !window.Start.IsZero() {
+					minStart = window.Start
+				}
+			}
+			if !minStart.IsZero() {
+				telemetry.OldestObservationStartBoundUnixMs = timeToUnixMillisFloat(minStart) - offsetMs - quality.UncertaintyMs
+			}
+		} else {
+			telemetry.OldestObservationStartBoundUnixMs = 0
+			telemetry.NewestCollectedAtControllerUnixMs = 0
 		}
 	}
 }

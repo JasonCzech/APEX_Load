@@ -283,13 +283,14 @@ type telemetrySourceKey struct {
 }
 
 type telemetrySourceLedger struct {
-	collections           []TelemetryCollectionEvidence
-	collectionsTruncated  bool
-	mu                    sync.Mutex
-	epochs                map[telemetrySourceKey]*TelemetrySourceEpoch
-	truncated             bool
-	jointStreams          map[telemetrySourceKey]*telemetryJointStream
-	jointStreamsTruncated bool
+	collections              []TelemetryCollectionEvidence
+	collectionsTruncated     bool
+	restoredRenderPopulation *durableRenderPopulation
+	mu                       sync.Mutex
+	epochs                   map[telemetrySourceKey]*TelemetrySourceEpoch
+	truncated                bool
+	jointStreams             map[telemetrySourceKey]*telemetryJointStream
+	jointStreamsTruncated    bool
 	// coverage is each source's observed wall time, requirements when each
 	// had to be observed and cursors its last sequenced publication (see
 	// telemetry_coverage.go).
@@ -299,6 +300,15 @@ type telemetrySourceLedger struct {
 	// adopted records a controller discontinuity. Committed earlier spans
 	// may survive recovery, but the unobserved takeover gap remains unknown.
 	adopted bool
+}
+
+func (l *telemetrySourceLedger) collectionsSnapshot() []TelemetryCollectionEvidence {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return cloneTelemetryCollections(l.collections)
 }
 
 // markAdopted records that this controller adopted the run.

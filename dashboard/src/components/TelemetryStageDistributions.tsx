@@ -7,6 +7,7 @@ const STAGE_LABELS: Record<string, string> = {
   controller_fanout: 'Controller fan-out',
   sample_age: 'Sample age (end to end)',
   browser_render: 'Browser render',
+  end_to_end: 'Observation to render (end to end)',
 }
 
 const EXCLUSION_LABELS: Record<string, string> = {
@@ -63,6 +64,11 @@ export default function TelemetryStageDistributions({ stages, startedAt }: { sta
             const measured = stage.availability === 'measured'
             const notes = [
               stage.advisory ? 'advisory, not run health' : '',
+              stage.delivery_signal === 'verified_frame_presentation'
+                ? 'verified frame presentation'
+                : stage.delivery_signal === 'post_commit_paint_opportunity'
+                  ? 'post-commit paint opportunity'
+                  : '',
               measured ? '' : 'not sampled',
               describeStageExclusions(stage.excluded) ? `excluded: ${describeStageExclusions(stage.excluded)}` : '',
             ].filter(Boolean).join(' · ')

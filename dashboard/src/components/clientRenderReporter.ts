@@ -16,12 +16,23 @@ import { clientTelemetryReceiptResolved, clientTelemetryReceiptVisible, discardL
 
 export const CLIENT_RENDER_FLUSH_MS = 3000
 export const CLIENT_RENDER_MAX_SAMPLES = 64
+export const CLIENT_RENDER_CALIBRATION_INTERVAL_MS = 30000
+
+export interface ClientRenderClockCalibration {
+  client_send_mono_ms: number
+  client_recv_mono_ms: number
+  controller_recv_unix_ms: number
+  controller_send_unix_ms: number
+}
 
 export interface ClientRenderSample {
   receive_to_render_ms: number
   state: 'visible' | 'background' | 'superseded'
   observed_at: string
   publication?: ClientTelemetryPublication
+  received_mono_ms?: number
+  rendered_mono_ms?: number
+  delivery_signal?: 'post_commit_paint_opportunity' | 'verified_frame_presentation'
 }
 
 // Wall time labels the observation only; it never measures the interval.
@@ -36,7 +47,14 @@ export function renderSample(receivedMonotonicMs: number, callbackMonotonicMs: n
     receive_to_render_ms: elapsedMs,
     state: visible ? 'visible' : 'background',
     observed_at: new Date(observedAtMs).toISOString(),
-    ...(publication ? { publication } : {}),
+    ...(publication
+      ? {
+          publication,
+          received_mono_ms: Math.round(receivedMonotonicMs * 1000) / 1000,
+          rendered_mono_ms: Math.round(callbackMonotonicMs * 1000) / 1000,
+          delivery_signal: 'post_commit_paint_opportunity' as const,
+        }
+      : {}),
   }
 }
 
@@ -68,10 +86,23 @@ function newClientID(): string {
   return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function postClientRenderReport(testId: string, clientID: string, samples: ClientRenderSample[]) {
-  return request<{ accepted: number; excluded?: Record<string, number> }>(
+export function postClientRenderReport(
+  testId: string,
+  clientID: string,
+  samples: ClientRenderSample[],
+  options?: { clientSendMonoMs?: number; calibration?: ClientRenderClockCalibration },
+) {
+  return request<{ accepted: number; excluded?: Record<string, number>; clock_calibration?: [number, number, number] }>(
     `/tests/${encodeURIComponent(testId)}/telemetry/client-render`,
-    { method: 'POST', body: JSON.stringify({ client_id: clientID, samples }) },
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        client_id: clientID,
+        samples,
+        ...(options?.clientSendMonoMs !== undefined ? { client_send_mono_ms: options.clientSendMonoMs } : {}),
+        ...(options?.calibration ? { calibration: options.calibration } : {}),
+      }),
+    },
   )
 }
 
@@ -87,6 +118,8 @@ export function useClientRenderReporter(testId: string, enabled: boolean, latest
   const sampledReceiptsRef = useRef(new WeakSet<ClientTelemetryReceipt>())
   const sessionRef = useRef<string | null>(null)
   const measuredRef = useRef(false)
+  const lastCalibrationMonoRef = useRef<number | null>(null)
+  const latestCalibrationRef = useRef<ClientRenderClockCalibration | undefined>(undefined)
   const active = enabled && Boolean(testId) && stoppedForRef.current !== testId
   const receipt = getClientTelemetryReceipt(latestMetrics?.telemetry)
 
@@ -98,6 +131,8 @@ export function useClientRenderReporter(testId: string, enabled: boolean, latest
     sessionRef.current = session
     queueRef.current = []
     measuredRef.current = false
+    lastCalibrationMonoRef.current = null
+    latestCalibrationRef.current = undefined
     if (session) discardLoggedReceipts(session, receipt)
   }, [testId, active, receipt])
   useEffect(() => {
@@ -152,7 +187,37 @@ export function useClientRenderReporter(testId: string, enabled: boolean, latest
       const samples = queueRef.current
       queueRef.current = []
       inFlight = true
-      postClientRenderReport(testId, clientIDRef.current, samples)
+      const hasNamedSample = samples.some(sample => Boolean(sample.publication))
+      const nowMono = Math.round(performance.now() * 1000) / 1000
+      const canCalibrate = hasNamedSample && (
+        lastCalibrationMonoRef.current === null
+        || nowMono - lastCalibrationMonoRef.current >= CLIENT_RENDER_CALIBRATION_INTERVAL_MS
+      )
+      if (canCalibrate) lastCalibrationMonoRef.current = nowMono
+      const pendingRefinement = !canCalibrate ? latestCalibrationRef.current : undefined
+      if (pendingRefinement) latestCalibrationRef.current = undefined
+      postClientRenderReport(
+        testId,
+        clientIDRef.current,
+        samples,
+        hasNamedSample
+          ? {
+              ...(canCalibrate ? { clientSendMonoMs: nowMono } : {}),
+              ...(pendingRefinement ? { calibration: pendingRefinement } : {}),
+            }
+          : undefined,
+      )
+        .then(res => {
+          const echo = res?.clock_calibration
+          if (Array.isArray(echo) && echo.length === 3 && echo.every(v => typeof v === 'number' && Number.isFinite(v))) {
+            latestCalibrationRef.current = {
+              client_send_mono_ms: echo[0],
+              client_recv_mono_ms: Math.round(performance.now() * 1000) / 1000,
+              controller_recv_unix_ms: echo[1],
+              controller_send_unix_ms: echo[2],
+            }
+          }
+        })
         .catch((error: unknown) => {
           if (!cancelled && error instanceof ApiError && error.status === 409) stoppedForRef.current = testId
           // Other failures drop the batch: render evidence is best-effort.

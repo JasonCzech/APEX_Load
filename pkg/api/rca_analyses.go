@@ -187,7 +187,13 @@ type RCAAnalysisResponse struct {
 
 	// ArchiveChanged says the run's archive changed after the analysis read
 	// it, as when late monitoring evidence arrives; it is not in the analysis.
-	ArchiveChanged bool `json:"archive_changed,omitempty"`
+	ArchiveChanged              bool                            `json:"archive_changed,omitempty"`
+	TelemetryAcceptance         *TelemetryAcceptanceVerdict     `json:"telemetry_acceptance,omitempty"`
+	TelemetryStageDistributions []TelemetryStageDistribution    `json:"telemetry_stage_distributions,omitempty"`
+	TelemetryRenderPopulation   *TelemetryRenderPopulation      `json:"telemetry_render_population,omitempty"`
+	TelemetryCoverage           *TelemetryCoverageRecord        `json:"telemetry_coverage,omitempty"`
+	TelemetryPolicySegments     []TelemetryPolicySegmentReceipt `json:"telemetry_policy_segments,omitempty"`
+	TelemetryValidityFindings   []TelemetryValidityFinding      `json:"telemetry_validity_findings,omitempty"`
 }
 
 // RCABundle is an analysis with its evidence, bounded for agents and export
@@ -262,6 +268,7 @@ func rcaEvidenceDigest(manifest *RunArchiveManifest) (string, error) {
 	read.ExemplarsFile, read.ExemplarCount, read.ExemplarsTruncated = "", 0, false
 	read.ClockObservationsFile, read.ClockObservationCount, read.ClockObservationsTruncated = "", 0, false
 	read.TelemetrySourcesFile, read.TelemetrySourceEpochCount, read.TelemetrySourcesTruncated = "", 0, false
+	read.TelemetryEvidenceFile, read.TelemetryValidityFindings, read.TelemetryAcceptance = "", nil, nil
 	read.JointIntervalsFile, read.JointIntervalsParquetFile, read.JointIntervalCount, read.JointIntervalsTruncated, read.JointTruncatedWindows = "", "", 0, false, nil
 	read.TelemetryCoverage, read.TelemetryStageDistributions, read.TelemetryStageDigests, read.TelemetryLoss, read.TelemetryRenderPopulation = nil, nil, nil, nil, nil
 	// Written with the coverage, after the main manifest.
@@ -661,7 +668,9 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	if analysis.State == storage.RCAStateQueued {
 		s.wakeRCAWorker()
 	}
-	writeJSON(w, status, rcaAnalysisResponse(analysis, projectAnalysisGates(s.store, project)))
+	out := rcaAnalysisResponse(analysis, projectAnalysisGates(s.store, project))
+	s.attachRCAAnalysisTelemetry(r.Context(), test.ID, &out)
+	writeJSON(w, status, out)
 }
 
 type rcaBaselineInput struct {
@@ -740,7 +749,30 @@ func (s *Server) currentRCAAnalysisResponse(ctx context.Context, analysis *stora
 	if out.Assessment != nil {
 		out.ArchiveChanged = s.rcaArchiveChanged(ctx, analysis.TestID, rcaAnalysisPayloadOf(analysis))
 	}
+	s.attachRCAAnalysisTelemetry(ctx, analysis.TestID, &out)
 	return out
+}
+
+func (s *Server) attachRCAAnalysisTelemetry(ctx context.Context, testID string, out *RCAAnalysisResponse) {
+	if s == nil || out == nil || strings.TrimSpace(testID) == "" {
+		return
+	}
+	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, testID)
+	if !ok || record == nil {
+		return
+	}
+	manifest, err := s.archiveReadCaches().cachedRunArchiveManifest(record)
+	if err != nil || manifest == nil {
+		return
+	}
+	scrubber := newTelemetryTextScrubber(manifest)
+	masked := scrubTelemetryText(manifest, scrubber)
+	out.TelemetryAcceptance = masked.TelemetryAcceptance
+	out.TelemetryStageDistributions = masked.TelemetryStageDistributions
+	out.TelemetryRenderPopulation = masked.TelemetryRenderPopulation
+	out.TelemetryCoverage = masked.TelemetryCoverage
+	out.TelemetryPolicySegments = masked.TelemetryPolicySegments
+	out.TelemetryValidityFindings = masked.TelemetryValidityFindings
 }
 
 // rcaArchiveChanged reports whether the archive evidence an analysis read is
@@ -826,7 +858,9 @@ func (s *Server) handleGetRCAAssessmentV2(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if latest == nil {
-		writeJSON(w, http.StatusOK, rcaGatedResponse("none", projectAnalysisGates(s.store, project)))
+		out := rcaGatedResponse("none", projectAnalysisGates(s.store, project))
+		s.attachRCAAnalysisTelemetry(r.Context(), test.ID, &out)
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.currentRCAAnalysisResponse(r.Context(), latest))

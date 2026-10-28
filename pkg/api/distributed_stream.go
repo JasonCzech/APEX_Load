@@ -671,6 +671,9 @@ func recordDistributedMetricsReceipt(batch *generatorrpc.MetricsBatch, receivedA
 	if batch.Telemetry == nil {
 		batch.Telemetry = &generatorrpc.MetricsTelemetry{DroppedResultsUnavailable: true}
 	}
+	if batch.Telemetry.WindowMs == 0 && batch.WindowMs > 0 {
+		batch.Telemetry.WindowMs = batch.WindowMs
+	}
 	batch.Telemetry.ControllerReceivedAtUnixMs = receivedAtUnixMs
 	if batch.Telemetry.PublishedAtUnixMs > 0 {
 		batch.Telemetry.TransportLagMs = float64(receivedAtUnixMs - batch.Telemetry.PublishedAtUnixMs)
@@ -686,7 +689,7 @@ func qualifyRemoteMetricsReceipt(tr *TestRunner, test *ManagedTest, target strin
 	calibrations := test.clockCalibrations
 	tr.mu.RUnlock()
 	offset, clockQuality := calibrations.quality(target, receivedAt)
-	qualifyCrossHostTelemetry(batch.Telemetry, offset, clockQuality)
+	qualifyCrossHostTelemetry(batch.Telemetry, offset, clockQuality, batch.CollectionWindows...)
 	if batch.Telemetry != nil {
 		batch.Telemetry.ReceivedAt, batch.Telemetry.ReceivedMonotonic = receivedAt.Round(0), receivedAt.Sub(clockProcessStart)
 	}
@@ -2068,7 +2071,11 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			value.Telemetry = &telemetry
 		}
 		if value.Telemetry != nil {
-			timings[key] = distributedPublicationTiming{lifecycleState: value.LifecycleState, telemetry: *value.Telemetry}
+			timingTelemetry := *value.Telemetry
+			if timingTelemetry.WindowMs == 0 && value.WindowMs > 0 {
+				timingTelemetry.WindowMs = value.WindowMs
+			}
+			timings[key] = distributedPublicationTiming{lifecycleState: value.LifecycleState, telemetry: timingTelemetry}
 		}
 		batches[key] = value
 	}

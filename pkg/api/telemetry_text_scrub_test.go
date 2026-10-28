@@ -436,3 +436,539 @@ func TestRunCalendarTopologyScrubsGeneratorTargets(t *testing.T) {
 		t.Fatal("the calendar scrubbed the caller's manifest")
 	}
 }
+
+// TestTelemetryTenConsumerParityAndSentinelMatrix verifies that all 10 telemetry
+// consumer projections expose consistent telemetry SLA verdicts, stage
+// distributions, render populations, coverage, policy segments, and validity
+// findings while scrubbing every credential and run-rule sentinel (TEL-B2).
+func TestTelemetryTenConsumerParityAndSentinelMatrix(t *testing.T) {
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 28, 16, 0, 0, 0, time.UTC)
+	start := now.Add(-10 * time.Second)
+
+	manifest := telemetrySentinelManifest(true)
+	manifest.CompletedAt = now
+	manifest.Provenance.StartedAt = &start
+	manifest.Provenance.ProjectID = storage.DefaultProjectID
+	manifest.Provenance.RunIncarnation = "incarnation-parity-1"
+	manifest.Provenance.Groups[0].RuntimeSettings = &RuntimeSettingsOverride{
+		RedactionRules: []engine.RedactionRule{{Pattern: "GROUP_RULE_[A-Z]+"}},
+	}
+
+	// Inject additional sentinels into PolicySegments, PriorEpochs, ValidityFindings, and StageDistributions.
+	p99 := 2450.0
+	manifest.TelemetryStageDistributions = append(manifest.TelemetryStageDistributions, TelemetryStageDistribution{
+		Stage:                telemetryStageEndToEnd,
+		Unit:                 "ms",
+		Availability:         "measured",
+		Samples:              50,
+		EligiblePublications: 50,
+		P99Ms:                &p99,
+		DeliverySignal:       "verified_frame_presentation?token=DELIVERY_TOKEN",
+		Reason:               "e2e Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.E2E_BEARER_SECRET GROUP_RULE_SECRET",
+		Excluded:             map[string]int64{"superseded api_key=SUPER_SECRET": 1},
+	})
+	manifest.TelemetryRenderPopulation.PriorEpochs = []TelemetryRenderPopulation{
+		{
+			Population:        telemetryRenderPopulationName,
+			Epoch:             "epoch-prior?client_secret=PRIOR_EPOCH_SECRET",
+			ReferenceClient:   "prior-ref password=PRIOR_REF_SECRET",
+			PublishedEligible: 10,
+			Eligible:          10,
+			Rendered:          9,
+			Unqualified:       map[string]int64{"hidden token=PRIOR_UNQ_SECRET": 1},
+		},
+	}
+	segPolicy := &TelemetryBudgetPolicy{
+		SchemaVersion:   "telemetry_policy.v1",
+		PolicyID:        "seg-policy?api_key=SEGPOL_SECRET",
+		Revision:        2,
+		Hash:            "seghash?token=SEGHASH2_SECRET",
+		CadenceScope:    "https://user:SEGCAD_PASS@gen.example",
+		CoverageRule:    "qualified_source_windows",
+		CaptureBoundary: "run_admission",
+		Budgets:         []TelemetryStageBudget{{Stage: "sample_age?password=SEGSTAGE_SECRET", LimitMs: 1000, Enabled: true}},
+	}
+	manifest.TelemetryPolicySegments = []TelemetryPolicySegmentReceipt{
+		{
+			Sequence:    1,
+			EffectiveAt: start,
+			Source:      "admission?token=SEGSOURCE_SECRET",
+			PolicyID:    "seg-policy?api_key=SEGPOL_SECRET",
+			RequestedBy: "operator access_token=REQBY_BEARER_SECRET SENTINEL_PRIVATE GROUP_RULE_SECRET",
+			Policy:      segPolicy,
+		},
+		{
+			Sequence:    2,
+			EffectiveAt: start.Add(5 * time.Second),
+			Source:      "run_selection?token=SEGSOURCE2_SECRET",
+			PolicyID:    "seg-policy?api_key=SEGPOL_SECRET",
+			RequestedBy: "operator access_token=REQBY_BEARER_SECRET",
+			Policy:      segPolicy,
+		},
+	}
+	manifest.TelemetryValidityFindings = []TelemetryValidityFinding{
+		{
+			Criterion: "stage_budget_health",
+			Status:    "passed",
+			Compliant: true,
+			Summary:   "stage health summary password=VAL_SUMMARY_SECRET SENTINEL_PRIVATE GROUP_RULE_SECRET",
+			Details:   []string{"detail client_secret=VAL_DETAIL_SECRET"},
+		},
+		{
+			Criterion:   "end_to_end_sample_age",
+			Status:      "failed",
+			Compliant:   false,
+			ThresholdMs: 2000,
+			ObservedMs:  &p99,
+			Summary:     "e2e sample age summary api_key=VAL_E2E_SECRET",
+		},
+	}
+	manifest.TelemetryAcceptance = telemetryAcceptanceForManifest(manifest)
+	manifest.TelemetryEvidenceFile = telemetryEvidenceFileName
+
+	evidenceDoc := TelemetryEvidenceDocument{
+		SchemaVersion:      telemetryEvidenceSchema,
+		TestID:             manifest.TestID,
+		CapturedAt:         now,
+		CoverageAlgorithm:  telemetryCoverageAlgorithm,
+		CoverageRule:       "qualified_source_windows",
+		Coverage:           manifest.TelemetryCoverage,
+		PolicySegments:     manifest.TelemetryPolicySegments,
+		SegmentCoverage:    manifest.TelemetryCoverage.Segments,
+		Intervals:          []TelemetryEvidenceInterval{{StartAt: start, EndAt: now, DurationMs: 10000, PolicySegment: 1, PolicyHash: "hash?token=IVHASH_SECRET", Status: "degraded", ConditionLabels: []string{"degraded_stage_budget"}, Unscored: []string{"unscored password=IVUNSCORED_SECRET SENTINEL_PRIVATE"}}},
+		ResourceSamples:    []TelemetryResourceSample{{Timestamp: now, Component: "generator", Source: "https://user:RES_PASS@gen.example:9090", QueueDepth: 4, ByteVolume: 1024, CPUPercent: 15, RSSBytes: 4096}},
+		RenderPopulation:   manifest.TelemetryRenderPopulation,
+		StageDistributions: manifest.TelemetryStageDistributions,
+		ValidityFindings:   manifest.TelemetryValidityFindings,
+		Acceptance:         manifest.TelemetryAcceptance,
+	}
+	evidenceBytes, err := json.MarshalIndent(evidenceDoc, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, telemetryEvidenceFileName), evidenceBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile = "transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl"
+	for _, name := range []string{manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest.Artifacts = []RunArchiveArtifact{
+		{Name: telemetryEvidenceFileName, Kind: "evidence", Format: "json", SizeBytes: int64(len(evidenceBytes)), SHA256: sha256BytesHex(evidenceBytes)},
+	}
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	allSentinels := append([]string{
+		"SENTINEL_PRIVATE",
+		"GROUP_RULE_SECRET",
+		"DELIVERY_TOKEN",
+		"E2E_BEARER_SECRET",
+		"SUPER_SECRET",
+		"PRIOR_EPOCH_SECRET",
+		"PRIOR_REF_SECRET",
+		"PRIOR_UNQ_SECRET",
+		"SEGPOL_SECRET",
+		"SEGHASH2_SECRET",
+		"SEGCAD_PASS",
+		"SEGSTAGE_SECRET",
+		"SEGSOURCE_SECRET",
+		"SEGSOURCE2_SECRET",
+		"REQBY_BEARER_SECRET",
+		"VAL_SUMMARY_SECRET",
+		"VAL_DETAIL_SECRET",
+		"VAL_E2E_SECRET",
+		"IVHASH_SECRET",
+		"IVUNSCORED_SECRET",
+		"RES_PASS",
+		"DIAG_SUMMARY_SECRET",
+		"DIAG_COND_SECRET",
+		"DIAG_ISSUE_SECRET",
+		"HEALTH_SUMMARY_SECRET",
+	}, telemetryCredentialSentinels...)
+
+	server, store := baselineTestServer(t)
+	record := &storage.RunArchiveRecord{
+		TestID:         manifest.TestID,
+		ArchivePath:    dir,
+		ManifestPath:   manifestPath,
+		ManifestSHA256: sha256BytesHex(manifestBytes),
+	}
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:        manifest.TestID,
+		ProjectID: storage.DefaultProjectID,
+		Name:      manifest.TestName,
+		Status:    "COMPLETE",
+		StartTime: start,
+		EndTime:   &now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRunArchive(record); err != nil {
+		t.Fatal(err)
+	}
+
+	liveHealth := &TelemetryHealth{
+		CollectedAt:        now.Add(-500 * time.Millisecond),
+		PublishedAt:        now,
+		Coverage:           &manifest.TelemetryCoverage.Coverage,
+		Loss:               manifest.TelemetryLoss.clone(),
+		StageDistributions: cloneTelemetryStageDistributions(manifest.TelemetryStageDistributions),
+		Acceptance:         cloneTelemetryAcceptanceVerdict(manifest.TelemetryAcceptance),
+		RenderPopulation:   manifest.TelemetryRenderPopulation.clone(),
+		PolicySegments:     append([]TelemetryPolicySegmentReceipt(nil), manifest.TelemetryPolicySegments...),
+		ValidityFindings:   cloneTelemetryValidityFindings(manifest.TelemetryValidityFindings),
+	}
+	runHealth := &TelemetryRunHealth{
+		Status:         "degraded",
+		Severity:       "warning",
+		Summary:        "health summary password=HEALTH_SUMMARY_SECRET SENTINEL_PRIVATE GROUP_RULE_SECRET",
+		Conditions:     []string{"condition token=DIAG_COND_SECRET"},
+		Unscored:       []string{"unscored password=IVUNSCORED_SECRET"},
+		PolicySegment:  1,
+		LastObservedAt: now,
+		announce:       true,
+	}
+	livePoint := &LiveMetrics{
+		Timestamp:       now,
+		ActiveVUsers:    5,
+		TotalTx:         100,
+		TPS:             10,
+		Telemetry:       liveHealth,
+		TelemetryStatus: runHealth,
+		TelemetryPolicy: &TelemetryPolicyEvidence{Availability: "available", Policy: segPolicy},
+	}
+
+	managed := &ManagedTest{
+		ID:                       manifest.TestID,
+		ProjectID:                storage.DefaultProjectID,
+		Name:                     manifest.TestName,
+		Status:                   "COMPLETE",
+		StartedAt:                &start,
+		EndedAt:                  &now,
+		RuntimeSettings:          manifest.Provenance.RuntimeSettings,
+		Groups:                   manifest.Provenance.Groups,
+		initialArchiveProvenance: manifest.InitialProvenance,
+		telemetryPolicySegments:  manifest.TelemetryPolicySegments,
+		TelemetryPolicySegments:  manifest.TelemetryPolicySegments,
+		LiveMetrics:              livePoint,
+		History:                  []*LiveMetrics{livePoint},
+		TelemetryHealth:          runHealth,
+		Archive:                  record,
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[manifest.TestID] = managed
+	server.runner.mu.Unlock()
+
+	checkParity := func(consumer string, verdict *TelemetryAcceptanceVerdict, stages []TelemetryStageDistribution, pop *TelemetryRenderPopulation, segs []TelemetryPolicySegmentReceipt, findings []TelemetryValidityFinding) {
+		t.Helper()
+		if verdict == nil || verdict.Outcome != TelemetryAcceptanceFail {
+			t.Fatalf("%s: expected telemetry_acceptance outcome=fail, got %+v", consumer, verdict)
+		}
+		if len(stages) < 3 {
+			t.Fatalf("%s: expected >=3 stage_distributions, got %d", consumer, len(stages))
+		}
+		if pop == nil || len(pop.PriorEpochs) != 1 {
+			t.Fatalf("%s: expected render_population with 1 prior epoch, got %+v", consumer, pop)
+		}
+		if len(segs) != 2 {
+			t.Fatalf("%s: expected 2 policy_segments, got %d", consumer, len(segs))
+		}
+		if len(findings) != 2 {
+			t.Fatalf("%s: expected 2 validity_findings, got %d", consumer, len(findings))
+		}
+	}
+
+	// 1. Consumer 1: Live WebSocket broadcasts (metrics_update, telemetry_diagnostic, telemetry_health_changed).
+	testHub := NewHub()
+	origHub := server.runner.hub
+	server.runner.hub = testHub
+	defer func() {
+		server.runner.hub = origHub
+	}()
+
+	scrubber := newManagedTestTelemetryTextScrubber(managed)
+	scrubbedBroadcastLive := cloneRunLiveMetrics(managed)
+	diag := &TelemetryDiagnostic{
+		Severity:   "warning",
+		Summary:    "diag summary password=DIAG_SUMMARY_SECRET SENTINEL_PRIVATE GROUP_RULE_SECRET",
+		Conditions: []string{"cond token=DIAG_COND_SECRET"},
+		Samples:    []DiagnosticSample{{Issue: "issue api_key=DIAG_ISSUE_SECRET", Transaction: "tx password=TX_SECRET"}},
+	}
+	scrubbedDiag := scrubTelemetryDiagnostic(diag, scrubbedBroadcastLive.Telemetry, scrubber)
+	server.runner.hub.BroadcastScopedJSON(manifest.TestID, storage.DefaultProjectID, map[string]any{
+		"type":       "metrics_update",
+		"test_id":    manifest.TestID,
+		"project_id": storage.DefaultProjectID,
+		"test_name":  scrubTelemetryIdentity(scrubber.text(managed.Name)),
+		"timestamp":  now,
+		"data":       scrubbedBroadcastLive,
+	})
+	server.runner.hub.BroadcastScopedJSON(manifest.TestID, storage.DefaultProjectID, map[string]any{
+		"type":       "telemetry_diagnostic",
+		"test_id":    manifest.TestID,
+		"project_id": storage.DefaultProjectID,
+		"test_name":  scrubTelemetryIdentity(scrubber.text(managed.Name)),
+		"timestamp":  now,
+		"data":       scrubbedDiag,
+	})
+	server.runner.broadcastTelemetryHealthTransition(managed, &TelemetryRunHealth{Status: "healthy"}, runHealth, now)
+
+	for i := 0; i < 3; i++ {
+		select {
+		case rawMsg := <-testHub.broadcast:
+			requireNoTelemetrySentinel(t, fmt.Sprintf("Consumer 1 WebSocket message %d", i+1), string(rawMsg.payload), append([]string{"NAME_SECRET", "TX_SECRET"}, allSentinels...)...)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for WebSocket broadcast message %d", i+1)
+		}
+	}
+	checkParity("Consumer 1 (WebSocket metrics_update)", scrubbedBroadcastLive.Telemetry.Acceptance, scrubbedBroadcastLive.Telemetry.StageDistributions, scrubbedBroadcastLive.Telemetry.RenderPopulation, scrubbedBroadcastLive.Telemetry.PolicySegments, scrubbedBroadcastLive.Telemetry.ValidityFindings)
+	checkParity("Consumer 1 (WebSocket telemetry_diagnostic)", scrubbedDiag.Telemetry.Acceptance, scrubbedDiag.Telemetry.StageDistributions, scrubbedDiag.Telemetry.RenderPopulation, scrubbedDiag.Telemetry.PolicySegments, scrubbedDiag.Telemetry.ValidityFindings)
+
+	// 2. Consumer 2: GET /api/v1/tests/{id}
+	respTest := httptest.NewRecorder()
+	server.mux.ServeHTTP(respTest, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID, nil))
+	if respTest.Code != http.StatusOK {
+		t.Fatalf("Consumer 2 GET /api/v1/tests/{id} = %d %s", respTest.Code, respTest.Body.String())
+	}
+	requireNoTelemetrySentinel(t, "Consumer 2 GET /api/v1/tests/{id}", respTest.Body.String(), allSentinels...)
+	var testView ManagedTest
+	if err := json.Unmarshal(respTest.Body.Bytes(), &testView); err != nil {
+		t.Fatal(err)
+	}
+	checkParity("Consumer 2 (GET /api/v1/tests/{id})", testView.LiveMetrics.Telemetry.Acceptance, testView.LiveMetrics.Telemetry.StageDistributions, testView.LiveMetrics.Telemetry.RenderPopulation, testView.TelemetryPolicySegments, testView.LiveMetrics.Telemetry.ValidityFindings)
+
+	// 3. Consumer 3: GET /api/v1/tests/{id}/metrics
+	respMetrics := httptest.NewRecorder()
+	server.mux.ServeHTTP(respMetrics, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/metrics", nil))
+	if respMetrics.Code != http.StatusOK {
+		t.Fatalf("Consumer 3 GET /api/v1/tests/{id}/metrics = %d %s", respMetrics.Code, respMetrics.Body.String())
+	}
+	requireNoTelemetrySentinel(t, "Consumer 3 GET /api/v1/tests/{id}/metrics", respMetrics.Body.String(), allSentinels...)
+	var metricsView struct {
+		Metrics *LiveMetrics   `json:"metrics"`
+		History []*LiveMetrics `json:"history"`
+	}
+	if err := json.Unmarshal(respMetrics.Body.Bytes(), &metricsView); err != nil {
+		t.Fatal(err)
+	}
+	checkParity("Consumer 3 (GET /api/v1/tests/{id}/metrics)", metricsView.Metrics.Telemetry.Acceptance, metricsView.Metrics.Telemetry.StageDistributions, metricsView.Metrics.Telemetry.RenderPopulation, metricsView.Metrics.Telemetry.PolicySegments, metricsView.Metrics.Telemetry.ValidityFindings)
+
+	// 4. Consumer 4: Telemetry notifications (webhook + durable outbox publication).
+	cleanManifestForOutbox := *manifest
+	cleanManifestForOutbox.TestName = "Run password=NAME_SECRET SENTINEL_PRIVATE GROUP_RULE_SECRET"
+	cleanManifestForOutbox.Provenance.PolicyPins = append([]RunPolicyPin(nil), manifest.Provenance.PolicyPins...)
+	cleanManifestForOutbox.Provenance.PolicyPins[0].ID = "gate-clean-id"
+	cleanTap := *manifest.Provenance.TelemetryAcceptancePolicy
+	cleanTap.Pin.ID = "gate-clean-id"
+	cleanManifestForOutbox.Provenance.TelemetryAcceptancePolicy = &cleanTap
+	cleanManifestForOutbox.TelemetryAcceptance = nil
+	pub, err := server.telemetryNotificationPublication(t.Context(), manifest.TestID, &cleanManifestForOutbox)
+	if err != nil || pub.Event == nil {
+		t.Fatalf("Consumer 4 durable outbox publication failed: dec=%q err=%v", pub.Decision, err)
+	}
+	requireNoTelemetrySentinel(t, "Consumer 4 durable notification outbox", string(pub.Event.Payload), append([]string{"NAME_SECRET"}, allSentinels...)...)
+	if pub.Event.Outcome != TelemetryAcceptanceFail {
+		t.Fatalf("Consumer 4 notification outcome = %q, want fail", pub.Event.Outcome)
+	}
+
+	// 5. Consumer 5: GET /api/v1/tests/{id}/archive/manifest
+	respManifest := httptest.NewRecorder()
+	server.mux.ServeHTTP(respManifest, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/archive/manifest", nil))
+	if respManifest.Code != http.StatusOK {
+		t.Fatalf("Consumer 5 GET /api/v1/tests/{id}/archive/manifest = %d %s", respManifest.Code, respManifest.Body.String())
+	}
+	requireNoTelemetrySentinel(t, "Consumer 5 GET /api/v1/tests/{id}/archive/manifest", respManifest.Body.String(), allSentinels...)
+	var manifestView RunArchiveManifest
+	if err := json.Unmarshal(respManifest.Body.Bytes(), &manifestView); err != nil {
+		t.Fatal(err)
+	}
+	checkParity("Consumer 5 (GET /api/v1/tests/{id}/archive/manifest)", manifestView.TelemetryAcceptance, manifestView.TelemetryStageDistributions, manifestView.TelemetryRenderPopulation, manifestView.TelemetryPolicySegments, manifestView.TelemetryValidityFindings)
+
+	// 6. Consumer 6: GET /api/v1/tests/{id}/archive/files/telemetry_evidence.json
+	respEvidenceFile := httptest.NewRecorder()
+	server.mux.ServeHTTP(respEvidenceFile, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/archive/files/"+telemetryEvidenceFileName, nil))
+	if respEvidenceFile.Code != http.StatusOK {
+		t.Fatalf("Consumer 6 GET /api/v1/tests/{id}/archive/files/telemetry_evidence.json = %d %s", respEvidenceFile.Code, respEvidenceFile.Body.String())
+	}
+	requireNoTelemetrySentinel(t, "Consumer 6 GET /api/v1/tests/{id}/archive/files/telemetry_evidence.json", respEvidenceFile.Body.String(), allSentinels...)
+	var sidecarView TelemetryEvidenceDocument
+	if err := json.Unmarshal(respEvidenceFile.Body.Bytes(), &sidecarView); err != nil {
+		t.Fatal(err)
+	}
+	checkParity("Consumer 6 (telemetry_evidence.json)", sidecarView.Acceptance, sidecarView.StageDistributions, sidecarView.RenderPopulation, sidecarView.PolicySegments, sidecarView.ValidityFindings)
+
+	// 7. Consumer 7: GET /api/v1/tests/{id}/archive/report & GET /api/v1/tests/{id}/report
+	respArchiveReport := httptest.NewRecorder()
+	server.mux.ServeHTTP(respArchiveReport, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/archive/report", nil))
+	if respArchiveReport.Code != http.StatusOK {
+		t.Fatalf("Consumer 7 GET /api/v1/tests/{id}/archive/report = %d %s", respArchiveReport.Code, respArchiveReport.Body.String())
+	}
+	requireNoTelemetrySentinel(t, "Consumer 7 GET /api/v1/tests/{id}/archive/report", respArchiveReport.Body.String(), allSentinels...)
+	var reportView RunArchiveReport
+	if err := json.Unmarshal(respArchiveReport.Body.Bytes(), &reportView); err != nil {
+		t.Fatal(err)
+	}
+	checkParity("Consumer 7 (GET /api/v1/tests/{id}/archive/report)", reportView.TelemetryAcceptance, reportView.TelemetryStageDistributions, reportView.TelemetryRenderPopulation, reportView.TelemetryPolicySegments, reportView.TelemetryValidityFindings)
+
+	respHTMLReport := httptest.NewRecorder()
+	server.mux.ServeHTTP(respHTMLReport, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/report", nil))
+	if respHTMLReport.Code != http.StatusOK {
+		t.Fatalf("Consumer 7 GET /api/v1/tests/{id}/report = %d", respHTMLReport.Code)
+	}
+	requireNoTelemetrySentinel(t, "Consumer 7 GET /api/v1/tests/{id}/report HTML", respHTMLReport.Body.String(), allSentinels...)
+
+	// 8. Consumer 8: Root-cause endpoints (/archive/root-cause and /archive/root-cause/v2)
+	respRCA := httptest.NewRecorder()
+	server.mux.ServeHTTP(respRCA, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/archive/root-cause", nil))
+	if respRCA.Code != http.StatusOK {
+		t.Fatalf("Consumer 8 GET /api/v1/tests/{id}/archive/root-cause = %d %s", respRCA.Code, respRCA.Body.String())
+	}
+	requireNoTelemetrySentinel(t, "Consumer 8 GET /api/v1/tests/{id}/archive/root-cause", respRCA.Body.String(), allSentinels...)
+
+	respRCAV2 := httptest.NewRecorder()
+	server.mux.ServeHTTP(respRCAV2, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/archive/root-cause/v2", nil))
+	if respRCAV2.Code != http.StatusOK {
+		t.Fatalf("Consumer 8 GET /api/v1/tests/{id}/archive/root-cause/v2 = %d %s", respRCAV2.Code, respRCAV2.Body.String())
+	}
+	requireNoTelemetrySentinel(t, "Consumer 8 GET /api/v1/tests/{id}/archive/root-cause/v2", respRCAV2.Body.String(), allSentinels...)
+	var rcaV2View RCAAnalysisResponse
+	if err := json.Unmarshal(respRCAV2.Body.Bytes(), &rcaV2View); err != nil {
+		t.Fatal(err)
+	}
+	checkParity("Consumer 8 (GET /api/v1/tests/{id}/archive/root-cause/v2)", rcaV2View.TelemetryAcceptance, rcaV2View.TelemetryStageDistributions, rcaV2View.TelemetryRenderPopulation, rcaV2View.TelemetryPolicySegments, rcaV2View.TelemetryValidityFindings)
+
+	// 9. Consumer 9: apexctl CLI / CI output (ciRunResponse + GitHub check lines)
+	ciResp := ciRunResponse{Status: "COMPLETE", SLAEvaluated: true}
+	ciEvidence := newCIValidatedArchiveEvidence(manifest, nil, &ciRunValidity{Verdict: rca.ValiditySuspect, Reasons: []string{"reason password=VAL_SUMMARY_SECRET SENTINEL_PRIVATE GROUP_RULE_SECRET"}}, false)
+	applyCITerminalEvidence(&ciResp, ciEvidence, nil)
+	finalizeCIRunOutcome(&ciResp, ciRunMetadata{})
+	ciBytes, err := json.Marshal(ciResp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNoTelemetrySentinel(t, "Consumer 9 CI run response", string(ciBytes), allSentinels...)
+	requireNoTelemetrySentinel(t, "Consumer 9 CI GitHub check lines", strings.Join(ciGitHubCheckTelemetryLines(ciResp.TelemetryVerdict), "\n"), allSentinels...)
+	checkParity("Consumer 9 (CI / apexctl output)", ciResp.TelemetryAcceptance, ciResp.TelemetryStageDistributions, ciResp.TelemetryRenderPopulation, ciResp.TelemetryPolicySegments, ciResp.TelemetryValidityFindings)
+
+	// 10. Consumer 10: MCP tool surface (get_test, get_test_metrics, get_test_archive_manifest, get_test_archive_file, get_test_archive_report, get_test_root_cause, get_test_root_cause_v2)
+	mcpRoutes := []string{
+		"/api/v1/tests/" + manifest.TestID,
+		"/api/v1/tests/" + manifest.TestID + "/metrics",
+		"/api/v1/tests/" + manifest.TestID + "/archive/manifest",
+		"/api/v1/tests/" + manifest.TestID + "/archive/files/" + telemetryEvidenceFileName,
+		"/api/v1/tests/" + manifest.TestID + "/archive/report",
+		"/api/v1/tests/" + manifest.TestID + "/archive/root-cause",
+		"/api/v1/tests/" + manifest.TestID + "/archive/root-cause/v2",
+	}
+	for _, route := range mcpRoutes {
+		rec := httptest.NewRecorder()
+		server.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, route, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Consumer 10 MCP route %s = %d %s", route, rec.Code, rec.Body.String())
+		}
+		requireNoTelemetrySentinel(t, "Consumer 10 MCP "+route, rec.Body.String(), allSentinels...)
+	}
+
+	// Verify buildRunRootCauseSummary deep-clones telemetry fields so mutating summary.Report does not alias report.
+	rcaSummary := buildRunRootCauseSummary(manifest.TestID, &reportView)
+	if stages, ok := rcaSummary.Report["telemetry_stage_distributions"].([]TelemetryStageDistribution); ok && len(stages) > 0 {
+		stages[0].Reason = "MUTATED_REASON"
+		if reportView.TelemetryStageDistributions[0].Reason == "MUTATED_REASON" {
+			t.Fatal("buildRunRootCauseSummary aliased TelemetryStageDistributions slice")
+		}
+	}
+	if verdict, ok := rcaSummary.Report["telemetry_acceptance"].(*TelemetryAcceptanceVerdict); ok && verdict != nil && len(verdict.Reasons) > 0 {
+		verdict.Reasons[0] = "MUTATED_VERDICT"
+		if reportView.TelemetryAcceptance.Reasons[0] == "MUTATED_VERDICT" {
+			t.Fatal("buildRunRootCauseSummary aliased TelemetryAcceptance")
+		}
+	}
+	if cov, ok := rcaSummary.Report["telemetry_coverage"].(*TelemetryCoverageRecord); ok && cov != nil && len(cov.Coverage.Sources) > 0 {
+		cov.Coverage.Sources[0].Source = "MUTATED_SOURCE"
+		if reportView.TelemetryCoverage.Coverage.Sources[0].Source == "MUTATED_SOURCE" {
+			t.Fatal("buildRunRootCauseSummary aliased TelemetryCoverage")
+		}
+	}
+	if segs, ok := rcaSummary.Report["telemetry_policy_segments"].([]TelemetryPolicySegmentReceipt); ok && len(segs) > 0 {
+		segs[0].RequestedBy = "MUTATED_ACTOR"
+		if reportView.TelemetryPolicySegments[0].RequestedBy == "MUTATED_ACTOR" {
+			t.Fatal("buildRunRootCauseSummary aliased TelemetryPolicySegments")
+		}
+	}
+	if findings, ok := rcaSummary.Report["telemetry_validity_findings"].([]TelemetryValidityFinding); ok && len(findings) > 0 {
+		findings[0].Summary = "MUTATED_FINDING"
+		if reportView.TelemetryValidityFindings[0].Summary == "MUTATED_FINDING" {
+			t.Fatal("buildRunRootCauseSummary aliased TelemetryValidityFindings")
+		}
+	}
+
+	// Verify buildRunArchiveReport preserves stored manifest.TelemetryAcceptance when Provenance.TelemetryAcceptancePolicy is nil.
+	storedVerdictManifest := *manifest
+	storedVerdictManifest.Provenance.TelemetryAcceptancePolicy = nil
+	storedVerdictManifest.Provenance.PolicyPins = nil
+	storedDir := t.TempDir()
+	for _, name := range []string{storedVerdictManifest.TransactionsFile, storedVerdictManifest.ResourceSamplesFile, storedVerdictManifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(storedDir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(storedDir, telemetryEvidenceFileName), evidenceBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	storedManifestBytes, err := json.MarshalIndent(storedVerdictManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedManifestPath := filepath.Join(storedDir, "manifest.json")
+	if err := os.WriteFile(storedManifestPath, storedManifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	storedReport, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: storedDir, ManifestPath: storedManifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport with stored verdict only: %v", err)
+	}
+	if storedReport.TelemetryAcceptance == nil || storedReport.TelemetryAcceptance.Outcome != TelemetryAcceptanceFail {
+		t.Fatalf("expected stored TelemetryAcceptance to be preserved when TelemetryAcceptancePolicy is nil, got %+v", storedReport.TelemetryAcceptance)
+	}
+	storedReportJSON, err := json.Marshal(storedReport.TelemetryAcceptance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNoTelemetrySentinel(t, "stored TelemetryAcceptance fallback in buildRunArchiveReport", string(storedReportJSON), allSentinels...)
+
+	// Verify sanitizedRunArchiveArtifact fails closed (500) on corrupt telemetry_evidence.json and returns 404 when missing.
+	if err := os.WriteFile(filepath.Join(dir, telemetryEvidenceFileName), []byte("{corrupt Bearer E2E_BEARER_SECRET SENTINEL_PRIVATE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server.archiveReadCaches().forgetRunArchiveCache(manifest.TestID)
+	for _, artifactName := range []string{runArchiveManifestFileName, telemetryEvidenceFileName} {
+		rec := httptest.NewRecorder()
+		server.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/archive/files/"+artifactName, nil))
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("corrupt telemetry_evidence.json: GET /archive/files/%s status = %d, want 500; body=%s", artifactName, rec.Code, rec.Body.String())
+		}
+		requireNoTelemetrySentinel(t, "corrupt telemetry_evidence.json fail-closed "+artifactName, rec.Body.String(), allSentinels...)
+	}
+
+	if err := os.Remove(filepath.Join(dir, telemetryEvidenceFileName)); err != nil {
+		t.Fatal(err)
+	}
+	server.archiveReadCaches().forgetRunArchiveCache(manifest.TestID)
+	recMissing := httptest.NewRecorder()
+	server.mux.ServeHTTP(recMissing, httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+manifest.TestID+"/archive/files/"+telemetryEvidenceFileName, nil))
+	if recMissing.Code != http.StatusNotFound {
+		t.Fatalf("missing telemetry_evidence.json: GET /archive/files/%s status = %d, want 404; body=%s", telemetryEvidenceFileName, recMissing.Code, recMissing.Body.String())
+	}
+}

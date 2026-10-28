@@ -631,6 +631,8 @@ type ManagedTest struct {
 	clockObservations     *clockObservationLog                     // measured source clocks; created on first observation
 	telemetrySources      *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
 	telemetryStages       *telemetryStageRecorder                  // per-stage latency distributions; created on first sample
+	telemetryResourceSamples          []TelemetryResourceSample    // bounded controller/generator resource samples (TEL-B1)
+	telemetryResourceSamplesTruncated bool                         // true when older telemetry resource samples were evicted
 	historyTrimmed        int64                                    // history points dropped by the in-memory bounds
 	clockCalibrations              *clockCalibrations                       // current generator clock offsets; created on first probe
 	browserClockTracker            *browserClockTracker                     // controller-bracketed generator monotonic readings for distributed browser proof
@@ -1320,16 +1322,22 @@ type TelemetryHealth struct {
 	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
 	// Publication identifies this live publication to dashboard viewers, and
 	// RenderPopulation is the run's render accounting so far (TEL-A).
-	Publication      *TelemetryPublication      `json:"publication,omitempty"`
-	RenderPopulation *TelemetryRenderPopulation `json:"render_population,omitempty"`
+	Publication             *TelemetryPublication           `json:"publication,omitempty"`
+	RenderPopulation        *TelemetryRenderPopulation      `json:"render_population,omitempty"`
+	PolicySegments          []TelemetryPolicySegmentReceipt `json:"policy_segments,omitempty"`
+	StageBudgets            []TelemetryStageBudget          `json:"stage_budgets,omitempty"`
+	IntervalConditionLabels []string                        `json:"interval_condition_labels,omitempty"`
+	ValidityFindings        []TelemetryValidityFinding      `json:"validity_findings,omitempty"`
 	// publicationRepeated is set by a distributed install guard when every
 	// collection the point carries was already published; newestCollectedAt is
 	// a fleet point's newest contributing collection time; collectedAtAssumed
 	// marks a point whose collection time was not reported (the publication
 	// time stands in).
-	publicationRepeated bool
-	newestCollectedAt   time.Time
-	collectedAtAssumed  bool
+	publicationRepeated         bool
+	newestCollectedAt           time.Time
+	oldestObservationStartAt    time.Time
+	newestCollectedControllerAt time.Time
+	collectedAtAssumed          bool
 	// restoredFromHistory marks health rebuilt from a stored interval
 	// summary (a restarted controller, a follower): it carries none of the
 	// loss, coverage or stage evidence a verdict reads, so none is shown.
@@ -1377,7 +1385,9 @@ type TelemetryRunHealth struct {
 	// interval (TEL-B; 1 is the admission receipt). It is absent for an
 	// interval a segment boundary fell inside, which no segment classifies,
 	// and for a run without a receipt.
-	PolicySegment int64 `json:"policy_segment,omitempty"`
+	PolicySegment   int64                  `json:"policy_segment,omitempty"`
+	ConditionLabels []string               `json:"condition_labels,omitempty"`
+	StageBudgets    []TelemetryStageBudget `json:"stage_budgets,omitempty"`
 	// recovered: this healthy status ends a degraded or breached spell that
 	// was announced (an unscored stretch in between does not end it);
 	// announce: this degraded or breached status is not the one announced.

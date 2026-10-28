@@ -121,12 +121,20 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 	}
 	if snap.Telemetry != nil {
+		var oldestObsStart time.Time
+		if snap.Window > 0 && !snap.Timestamp.IsZero() {
+			oldestObsStart = snap.Timestamp.Add(-snap.Window).UTC()
+		} else if !snap.Timestamp.IsZero() {
+			oldestObsStart = snap.Timestamp.UTC()
+		}
 		live.Telemetry = &TelemetryHealth{
-			DroppedResults:          snap.Telemetry.DroppedResults,
-			DroppedResultsAvailable: true,
-			SheddedArrivals:         snap.Telemetry.SheddedArrivals,
-			CollectedAt:             snap.Timestamp,
-			Loss:                    localTelemetryLossTotals(snap.Telemetry.DroppedResults, snap.Telemetry.SheddedArrivals),
+			DroppedResults:              snap.Telemetry.DroppedResults,
+			DroppedResultsAvailable:     true,
+			SheddedArrivals:             snap.Telemetry.SheddedArrivals,
+			CollectedAt:                 snap.Timestamp,
+			oldestObservationStartAt:    oldestObsStart,
+			newestCollectedControllerAt: snap.Timestamp.UTC(),
+			Loss:                        localTelemetryLossTotals(snap.Telemetry.DroppedResults, snap.Telemetry.SheddedArrivals),
 		}
 	}
 
@@ -567,6 +575,8 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		// step.
 		live.Telemetry.collectedAtQuality = &generatorrpc.ClockQuality{Reason: clockReasonStep}
 		live.Telemetry.collectedAtOffsetMs, live.Telemetry.collectedAtBoundUnixMs = 0, 0
+		live.Telemetry.oldestObservationStartAt = time.Time{}
+		live.Telemetry.newestCollectedControllerAt = time.Time{}
 	}
 	if !live.Telemetry.CollectedAt.IsZero() {
 		live.Telemetry.SampleAgeMs = float64(now.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
@@ -576,6 +586,35 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 			boundAgeMs = float64(now.UnixMilli()) - live.Telemetry.collectedAtBoundUnixMs
 		}
 		live.Telemetry.SampleAgeMs, live.Telemetry.SampleAgeQuality = sampleAgeQualified(live.Telemetry.SampleAgeMs, live.Telemetry.collectedAtOffsetMs, live.Telemetry.collectedAtQuality, boundAgeMs)
+		if !live.Telemetry.collectedAtAssumed && live.Telemetry.oldestObservationStartAt.IsZero() {
+			windowDur := time.Duration(0)
+			if live.SampleWindowSeconds > 0 {
+				windowDur = time.Duration(live.SampleWindowSeconds * float64(time.Second))
+			}
+			if live.Telemetry.collectedAtQuality == nil {
+				live.Telemetry.oldestObservationStartAt = live.Telemetry.CollectedAt.Add(-windowDur).UTC()
+				if live.Telemetry.newestCollectedControllerAt.IsZero() {
+					if !live.Telemetry.newestCollectedAt.IsZero() {
+						live.Telemetry.newestCollectedControllerAt = live.Telemetry.newestCollectedAt.UTC()
+					} else {
+						live.Telemetry.newestCollectedControllerAt = live.Telemetry.CollectedAt.UTC()
+					}
+				}
+			} else if live.Telemetry.collectedAtQuality.Qualified {
+				startGenMs := float64(live.Telemetry.CollectedAt.Add(-windowDur).UnixMilli())
+				live.Telemetry.oldestObservationStartAt = unixMillisFloatToTime(startGenMs - live.Telemetry.collectedAtOffsetMs - live.Telemetry.collectedAtQuality.UncertaintyMs)
+				if live.Telemetry.newestCollectedControllerAt.IsZero() {
+					newestRaw := live.Telemetry.newestCollectedAt
+					if newestRaw.IsZero() {
+						newestRaw = live.Telemetry.CollectedAt
+					}
+					live.Telemetry.newestCollectedControllerAt = unixMillisFloatToTime(float64(newestRaw.UnixMilli()) - live.Telemetry.collectedAtOffsetMs)
+				}
+			}
+		} else if live.Telemetry.collectedAtQuality != nil && !live.Telemetry.collectedAtQuality.Qualified {
+			live.Telemetry.oldestObservationStartAt = time.Time{}
+			live.Telemetry.newestCollectedControllerAt = time.Time{}
+		}
 	}
 	live.Telemetry.WebsocketClients = hubStats.ConnectedClients
 	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages
@@ -634,8 +673,18 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 			test.telemetryDiagnostic.Health.PolicySegment = policyInterval.segment.Sequence
 		}
 	}
+	if telemetryRunHealth != nil {
+		telemetryRunHealth.ConditionLabels = deriveTelemetryIntervalConditionLabels(live, telemetryRunHealth)
+		if test.telemetryDiagnostic.Health != nil {
+			test.telemetryDiagnostic.Health.ConditionLabels = append([]string(nil), telemetryRunHealth.ConditionLabels...)
+		}
+		if live.Telemetry != nil {
+			live.Telemetry.IntervalConditionLabels = append([]string(nil), telemetryRunHealth.ConditionLabels...)
+		}
+	}
 	test.telemetryLastClassifiedAt = now
 	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
+	recordTelemetryResourceSamplesLocked(test, live, now)
 	live.CapacityStatus = buildLiveCapacityStatus(test, live, tests)
 	tr.appendLiveErrorEvidenceLocked(test, live.ErrorEvidence)
 	test.errorPatterns = updateLiveErrorPatterns(test.errorPatterns, live, test.ID)
@@ -692,24 +741,27 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	artifacts.recordLiveMetrics(test, goalConfig, publishedLive)
 
 	// Detailed native selections travel on the bounded query path, not every websocket tick.
+	scrubber := newManagedTestTelemetryTextScrubber(test)
+	scrubbedTestName := scrubTelemetryIdentity(scrubber.text(testName))
 	broadcastLive := *snapshot.LiveMetrics
 	broadcastLive.NativeEvidence = nil
 	tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
 		"type":       "metrics_update",
 		"test_id":    testID,
 		"project_id": projectID,
-		"test_name":  testName,
+		"test_name":  scrubbedTestName,
 		"timestamp":  publishedLive.Timestamp,
 		"data":       &broadcastLive,
 	})
 	if publishDiagnostic {
+		scrubbedDiagnostic := scrubTelemetryDiagnostic(diagnostic, broadcastLive.Telemetry, scrubber)
 		tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
 			"type":       "telemetry_diagnostic",
 			"test_id":    testID,
 			"project_id": projectID,
-			"test_name":  testName,
+			"test_name":  scrubbedTestName,
 			"timestamp":  now,
-			"data":       diagnostic,
+			"data":       scrubbedDiagnostic,
 		})
 	}
 	tr.broadcastTelemetryHealthTransition(test, previousTelemetryRunHealth, telemetryRunHealth, now)

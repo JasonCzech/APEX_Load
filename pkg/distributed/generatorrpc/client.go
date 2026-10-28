@@ -342,6 +342,15 @@ type MetricsTelemetry struct {
 	// NewestCollectedAtUnixMs is a fleet aggregate's newest contributing
 	// collection time (CollectedAtUnixMs is its oldest). Controller-internal.
 	NewestCollectedAtUnixMs int64 `json:"-"`
+	// OldestObservationStartBoundUnixMs, on a single batch or fleet aggregate,
+	// is the earliest controller-clock instant at which any included
+	// MetricsCollectionWindow started (start - offset - uncertainty).
+	// Controller-internal.
+	OldestObservationStartBoundUnixMs float64 `json:"-"`
+	// NewestCollectedAtControllerUnixMs, on a single batch or fleet aggregate,
+	// is the newest contributing collection time mapped to the controller's
+	// clock (collected - offset). Controller-internal.
+	NewestCollectedAtControllerUnixMs float64 `json:"-"`
 	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
 	// It is cumulative for the target stream and remains zero for older
 	// generators that do not publish a sequence.

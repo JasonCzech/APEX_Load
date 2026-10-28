@@ -135,16 +135,22 @@ type telemetryIntervalPolicy struct {
 // and on its generator's for a distributed one, with that generator's clock
 // offset and quality.
 type telemetryMeasurement struct {
-	collectedAt time.Time
-	offsetMs    float64
-	quality     *generatorrpc.ClockQuality
+	collectedAt              time.Time
+	oldestObservationStartAt time.Time
+	offsetMs                 float64
+	quality                  *generatorrpc.ClockQuality
 }
 
 func telemetryMeasurementOf(live *LiveMetrics) telemetryMeasurement {
 	if live == nil || live.Telemetry == nil || live.Telemetry.SampleAgeUnavailable {
 		return telemetryMeasurement{}
 	}
-	return telemetryMeasurement{collectedAt: live.Telemetry.CollectedAt, offsetMs: live.Telemetry.collectedAtOffsetMs, quality: live.Telemetry.collectedAtQuality}
+	return telemetryMeasurement{
+		collectedAt:              live.Telemetry.CollectedAt,
+		oldestObservationStartAt: live.Telemetry.oldestObservationStartAt,
+		offsetMs:                 live.Telemetry.collectedAtOffsetMs,
+		quality:                  live.Telemetry.collectedAtQuality,
+	}
 }
 
 // start is the earliest controller-clock instant the measurements may have
@@ -153,7 +159,7 @@ func telemetryMeasurementOf(live *LiveMetrics) telemetryMeasurement {
 // measures nothing earlier than the interval (zero, known). A distributed
 // sample on an unqualified clock cannot be placed (known false).
 func (m telemetryMeasurement) start(distributed bool) (time.Time, bool) {
-	if m.collectedAt.IsZero() {
+	if m.collectedAt.IsZero() && m.oldestObservationStartAt.IsZero() {
 		return time.Time{}, true
 	}
 	if !distributed {
@@ -161,6 +167,9 @@ func (m telemetryMeasurement) start(distributed bool) (time.Time, bool) {
 	}
 	if m.quality == nil || !m.quality.Qualified {
 		return time.Time{}, false
+	}
+	if !m.oldestObservationStartAt.IsZero() {
+		return m.oldestObservationStartAt, true
 	}
 	corrected := float64(m.collectedAt.UnixMicro())/1000 - m.offsetMs - m.quality.UncertaintyMs
 	return time.UnixMicro(int64(corrected * 1000)), true

@@ -222,6 +222,10 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	}
 	if data, info, handled, err := s.archiveReadCaches().sanitizedRunArchiveArtifact(prepCtx, record, manifest, name); handled {
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				writeError(w, http.StatusNotFound, "archive artifact not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to prepare safe archive artifact: "+err.Error())
 			return
 		}

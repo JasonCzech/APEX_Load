@@ -115,6 +115,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 83, Name: "scenario-telemetry-budget-policy", Fingerprint: "6affb200788aa566108f0530bf4ef81389b39a874333caaa7339fa76c02cc585"},
 	{Version: 84, Name: "telemetry-policy-segments", Fingerprint: "a043a0e7fe7a36f8b64c7e44265f5b3fe8b34a4e42a1229b2ba50a2e26559900"},
 	{Version: 85, Name: "scenario-schedule-analysis-policy-selections", Fingerprint: "e40819e161ae55df70b7a459e6ec18892cc80e11ba9b877a181998c93029e3d7"},
+	{Version: 86, Name: "durable-telemetry-render-population", Fingerprint: "4c953fdf61a2762bfcafc2faa98f613a6079a5444ca579dc74940c78d2b870e4"},
 }
 
 type SchemaMigrationRecord struct {
@@ -192,6 +193,7 @@ func schemaConvergenceFingerprint() string {
 		"durable-script-content-revision-immediate-tracking",
 		"durable-scenario-content-revision-immediate-tracking",
 		"live-table-optional-seed-binding",
+		"durable-telemetry-render-population",
 	} {
 		write("phase", phase, "")
 	}

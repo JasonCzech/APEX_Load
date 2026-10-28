@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,33 +28,50 @@ const (
 	clientRenderMaxSamples   = 64
 	// clientRenderMinInterval is the least time between accepted reports
 	// from one viewer's tab.
-	clientRenderMinInterval  = 2 * time.Second
-	clientRenderMaxReporters = 1024
+	clientRenderMinInterval = 2 * time.Second
+	// clientRenderCalibrationMinInterval bounds authenticated controller ↔
+	// browser clock calibration exchanges to at most one every 30 seconds
+	// per viewer/client (TEL-A1).
+	clientRenderCalibrationMinInterval = 30 * time.Second
+	clientRenderMaxReporters           = 1024
 	// A viewer's samples across all their tabs refill at
 	// clientRenderViewerSamplesPerSecond up to one full report.
 	clientRenderViewerSamplesPerSecond = 8
 	clientRenderViewerBurst            = clientRenderMaxSamples
 )
 
+type clientRenderCalibrationRequest struct {
+	ClientSendMonoMs     float64  `json:"client_send_mono_ms"`
+	ClientRecvMonoMs     *float64 `json:"client_recv_mono_ms,omitempty"`
+	ControllerRecvUnixMs *float64 `json:"controller_recv_unix_ms,omitempty"`
+	ControllerSendUnixMs *float64 `json:"controller_send_unix_ms,omitempty"`
+}
+
 type clientRenderReport struct {
-	ClientID string               `json:"client_id"`
-	Samples  []clientRenderSample `json:"samples"`
+	ClientID         string                          `json:"client_id"`
+	Samples          []clientRenderSample            `json:"samples"`
+	ClientSendMonoMs *float64                        `json:"client_send_mono_ms,omitempty"`
+	ClientRecvMonoMs *float64                        `json:"client_recv_mono_ms,omitempty"`
+	Calibration      *clientRenderCalibrationRequest `json:"calibration,omitempty"`
 }
 
 // ClientRenderReportResult says how many samples entered the distribution.
 type ClientRenderReportResult struct {
-	Accepted int              `json:"accepted"`
-	Excluded map[string]int64 `json:"excluded,omitempty"`
+	Accepted         int              `json:"accepted"`
+	Excluded         map[string]int64 `json:"excluded,omitempty"`
+	ClockCalibration *[3]float64      `json:"clock_calibration,omitempty"`
 }
 
 // clientRenderLimiter remembers each reporter's last accepted report and
 // each viewer's sample budget.
 type clientRenderLimiter struct {
-	mu      sync.Mutex
-	last    map[string]time.Time
-	order   []string
-	viewers map[string]*clientRenderBudget
-	vorder  []string
+	mu           sync.Mutex
+	last         map[string]time.Time
+	order        []string
+	calibrations map[string]time.Time
+	corder       []string
+	viewers      map[string]*clientRenderBudget
+	vorder       []string
 }
 
 type clientRenderBudget struct {
@@ -109,6 +127,29 @@ func (l *clientRenderLimiter) allow(key string, now time.Time) (bool, time.Durat
 		}
 	}
 	l.last[key] = now
+	return true, 0
+}
+
+// allowCalibration admits at most one browser clock calibration exchange
+// per 30 seconds for key at now, or returns how long to wait.
+func (l *clientRenderLimiter) allowCalibration(key string, now time.Time) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.calibrations == nil {
+		l.calibrations = map[string]time.Time{}
+	}
+	if previous, ok := l.calibrations[key]; ok {
+		if wait := clientRenderCalibrationMinInterval - now.Sub(previous); wait > 0 {
+			return false, wait
+		}
+	} else {
+		l.corder = append(l.corder, key)
+		if len(l.corder) > clientRenderMaxReporters {
+			delete(l.calibrations, l.corder[0])
+			l.corder = l.corder[1:]
+		}
+	}
+	l.calibrations[key] = now
 	return true, 0
 }
 
@@ -176,9 +217,30 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 		return
 	}
 	report.ClientID = strings.TrimSpace(report.ClientID)
-	if report.ClientID == "" || len(report.ClientID) > 64 || !utf8.ValidString(report.ClientID) || len(report.Samples) == 0 || len(report.Samples) > clientRenderMaxSamples {
+	hasCalibration := report.ClientSendMonoMs != nil || report.Calibration != nil
+	if report.ClientID == "" || len(report.ClientID) > 64 || !utf8.ValidString(report.ClientID) || (len(report.Samples) == 0 && !hasCalibration) || len(report.Samples) > clientRenderMaxSamples {
 		writeError(w, http.StatusBadRequest, "a client render report needs a client_id and 1 to 64 samples")
 		return
+	}
+	var calSendMonoMs float64
+	var calRecvMonoMs *float64
+	if hasCalibration {
+		switch {
+		case report.ClientSendMonoMs != nil:
+			calSendMonoMs = *report.ClientSendMonoMs
+			calRecvMonoMs = report.ClientRecvMonoMs
+		case report.Calibration != nil:
+			calSendMonoMs = report.Calibration.ClientSendMonoMs
+			calRecvMonoMs = report.Calibration.ClientRecvMonoMs
+		}
+		if math.IsNaN(calSendMonoMs) || math.IsInf(calSendMonoMs, 0) || calSendMonoMs < 0 {
+			writeError(w, http.StatusBadRequest, "invalid browser clock calibration timestamp")
+			return
+		}
+		if calRecvMonoMs != nil && (math.IsNaN(*calRecvMonoMs) || math.IsInf(*calRecvMonoMs, 0) || *calRecvMonoMs < calSendMonoMs) {
+			writeError(w, http.StatusBadRequest, "invalid browser clock calibration receive timestamp")
+			return
+		}
 	}
 	// Every sample that can reach the stage spends the viewer's sample budget:
 	// a visible render, and any unnamed sample. A named publication's
@@ -203,23 +265,54 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 	}
 	now := time.Now()
 	viewer := testID + "\x00" + subject
-	if allowed, wait := s.clientRenderReports.spend(viewer, charged, now); !allowed {
-		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
-		writeError(w, http.StatusTooManyRequests, "client render samples are limited per viewer across all tabs")
-		return
-	}
-	if allowed, wait := s.clientRenderReports.allow(viewer+"\x00"+report.ClientID, now); !allowed {
-		s.clientRenderReports.release(viewer, charged)
-		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
-		writeError(w, http.StatusTooManyRequests, "client render reports are limited to one every 2 seconds per tab")
-		return
-	}
 	if !clientRenderEvidenceEnabled(s.runner, projectID) {
 		writeError(w, http.StatusConflict, "client render evidence is not enabled for this project")
 		return
 	}
+	clientKey := subject + "\x00" + report.ClientID
+	isRefinementAttempt := report.ClientSendMonoMs == nil &&
+		report.Calibration != nil &&
+		(report.Calibration.ControllerRecvUnixMs != nil || report.Calibration.ControllerSendUnixMs != nil)
+	isInitialCalibration := hasCalibration && !isRefinementAttempt
+	if isInitialCalibration {
+		if allowed, wait := s.clientRenderReports.allowCalibration(viewer+"\x00"+report.ClientID, now); !allowed {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
+			writeError(w, http.StatusTooManyRequests, "browser clock calibration is limited to one exchange every 30 seconds per client")
+			return
+		}
+	}
+	if len(report.Samples) > 0 || isRefinementAttempt {
+		if allowed, wait := s.clientRenderReports.spend(viewer, charged, now); !allowed {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
+			writeError(w, http.StatusTooManyRequests, "client render samples are limited per viewer across all tabs")
+			return
+		}
+		if allowed, wait := s.clientRenderReports.allow(viewer+"\x00"+report.ClientID, now); !allowed {
+			s.clientRenderReports.release(viewer, charged)
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
+			writeError(w, http.StatusTooManyRequests, "client render reports are limited to one every 2 seconds per tab")
+			return
+		}
+	}
 	result := ClientRenderReportResult{}
+	if isRefinementAttempt &&
+		report.Calibration.ClientRecvMonoMs != nil &&
+		report.Calibration.ControllerRecvUnixMs != nil &&
+		report.Calibration.ControllerSendUnixMs != nil {
+		recorder.refineBrowserCalibration(
+			clientKey,
+			calSendMonoMs,
+			*report.Calibration.ClientRecvMonoMs,
+			*report.Calibration.ControllerRecvUnixMs,
+			*report.Calibration.ControllerSendUnixMs,
+		)
+	}
+	if isInitialCalibration {
+		echo := recorder.recordBrowserCalibration(clientKey, calSendMonoMs, calRecvMonoMs, now, time.Now())
+		result.ClockCalibration = &echo
+	}
 	var outcomes []clientRenderOutcome
+	var outcomeSamples []int
 	// A named publication's unmeasured outcome excludes a render from the
 	// stage only for the reference client: another tab's would count again
 	// publications the reference tab accounts for.
@@ -228,10 +321,10 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 	// ledger recorded it. A visible render that fails admission (stalled,
 	// implausibly timed) is excluded for every tab, as an unnamed sample is.
 	unmeasured := map[int]string{}
-	for _, sample := range report.Samples {
+	for sampleIndex, sample := range report.Samples {
 		outcome := telemetryRenderRendered
 		if visible, reason := admitClientRenderSample(sample, started, now); visible {
-			recorder.observe(telemetryStageBrowserRender, sample.ReceiveToRenderMs)
+			recorder.observeBrowserRenderSample(sample)
 			result.Accepted++
 		} else {
 			outcome = reason
@@ -247,14 +340,20 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 		}
 		if sample.Publication != nil {
 			outcomes = append(outcomes, clientRenderOutcome{publication: *sample.Publication, outcome: outcome})
+			outcomeSamples = append(outcomeSamples, sampleIndex)
 		}
 	}
 	// The reference client is the viewer's tab, so another viewer cannot
 	// report as it by reusing its tab identifier.
-	recorded := recorder.renderOutcomes(subject+"\x00"+report.ClientID, outcomes)
+	recorded := recorder.renderOutcomes(clientKey, outcomes)
 	for index, reason := range unmeasured {
 		if recorded[index] {
 			recorder.exclude(telemetryStageBrowserRender, reason)
+		}
+	}
+	for index, ok := range recorded {
+		if ok && outcomes[index].outcome == telemetryRenderRendered {
+			recorder.observeReferencePublicationEndToEnd(clientKey, report.Samples[outcomeSamples[index]], now)
 		}
 	}
 	writeJSON(w, http.StatusAccepted, result)

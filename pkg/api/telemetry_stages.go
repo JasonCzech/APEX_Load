@@ -2,6 +2,7 @@ package api
 
 import (
 	"math"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,6 +26,13 @@ const (
 	telemetryStageControllerFanout    = "controller_fanout"
 	telemetryStageSampleAge           = "sample_age"
 	telemetryStageBrowserRender       = "browser_render"
+	telemetryStageEndToEnd            = "end_to_end"
+
+	telemetryDeliverySignalPostCommitPaintOpportunity = "post_commit_paint_opportunity"
+	telemetryDeliverySignalVerifiedFramePresentation  = "verified_frame_presentation"
+
+	DeliverySignalPostCommitPaintOpportunity = telemetryDeliverySignalPostCommitPaintOpportunity
+	DeliverySignalVerifiedFramePresentation  = telemetryDeliverySignalVerifiedFramePresentation
 
 	telemetryStageCompression = 100
 	// telemetryStageMaxMs bounds a plausible stage sample (one hour).
@@ -33,7 +41,7 @@ const (
 	telemetryStageSequenceSources = 1024
 )
 
-var telemetryStageOrder = []string{telemetryStageGeneratorProcessing, telemetryStageTransport, telemetryStageControllerFanout, telemetryStageSampleAge, telemetryStageBrowserRender}
+var telemetryStageOrder = []string{telemetryStageGeneratorProcessing, telemetryStageTransport, telemetryStageControllerFanout, telemetryStageSampleAge, telemetryStageBrowserRender, telemetryStageEndToEnd}
 
 // TelemetryStageDistribution is one stage's sampled distribution so far.
 type TelemetryStageDistribution struct {
@@ -50,6 +58,21 @@ type TelemetryStageDistribution struct {
 	P95Ms    *float64         `json:"p95_ms,omitempty"`
 	P99Ms    *float64         `json:"p99_ms,omitempty"`
 	MaxMs    *float64         `json:"max_ms,omitempty"`
+	// NewestObservation* report the separate newest_observation ->
+	// first_visible_paint age percentiles for end_to_end alongside the
+	// primary oldest_included_observation -> first_visible_paint bounds.
+	NewestObservationP50Ms *float64 `json:"newest_observation_p50_ms,omitempty"`
+	NewestObservationP95Ms *float64 `json:"newest_observation_p95_ms,omitempty"`
+	NewestObservationP99Ms *float64 `json:"newest_observation_p99_ms,omitempty"`
+	NewestObservationMaxMs *float64 `json:"newest_observation_max_ms,omitempty"`
+	// EligiblePublications is the full eligible publication denominator
+	// against which end_to_end exclusion bounds are evaluated.
+	EligiblePublications int64 `json:"eligible_publications,omitempty"`
+	// DeliverySignal identifies how browser presentation was observed:
+	// "post_commit_paint_opportunity" (advisory rAF/timer callback) or
+	// "verified_frame_presentation" (authenticated presentation harness proof
+	// attached to the publication correlation ID).
+	DeliverySignal string `json:"delivery_signal,omitempty"`
 	// Advisory marks a stage that never affects run health (browser
 	// render: a viewer's tab is not the system under test).
 	Advisory bool `json:"advisory,omitempty"`
@@ -73,13 +96,29 @@ type telemetryStageDigest struct {
 	excluded map[string]int64
 }
 
+type browserClockCalibration struct {
+	clientSendMonoMs     float64
+	controllerRecvUnixMs float64
+	controllerSendUnixMs float64
+	offsetMs             float64
+	uncertaintyMs        float64
+	calibratedAt         time.Time
+}
+
 // telemetryStageRecorder keeps a run's stage digests. It is safe for
 // concurrent use.
 type telemetryStageRecorder struct {
-	mu       sync.Mutex
-	since    time.Time
-	stages   map[string]*telemetryStageDigest
-	lastSeen map[string]generatorBatchPosition
+	mu                  sync.Mutex
+	since               time.Time
+	stages              map[string]*telemetryStageDigest
+	endToEndNewest      *telemetryStageDigest
+	browserRenderSignal string
+	endToEndSignal      string
+	browserClocks       map[string]browserClockCalibration
+	cborder             []string
+	presentationProofs  map[string]string
+	pborder             []string
+	lastSeen            map[string]generatorBatchPosition
 	// render is the run's publication ledger and reference-client render
 	// accounting (TEL-A).
 	render telemetryRenderLedger
@@ -122,12 +161,207 @@ func (r *telemetryStageRecorder) adopted(at time.Time) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	var priors []TelemetryRenderPopulation
+	if len(r.render.priorEpochs) > 0 {
+		priors = append(priors, r.render.priorEpochs...)
+	}
+	if r.render.epoch != "" {
+		if pop := r.renderPopulationLocked(); pop != nil {
+			pop.PriorEpochs = nil
+			if pop.PublishedEligible > pop.Eligible {
+				pop.Unreported += pop.PublishedEligible - pop.Eligible
+			}
+			priors = append(priors, *pop)
+		}
+	}
 	if r.since.Before(at) {
 		r.since = at.UTC()
 	}
 	// Its publications start a new epoch: the reference client and the
-	// accounting of the earlier ownership do not carry over (TEL-A).
-	r.render = telemetryRenderLedger{}
+	// accounting of the earlier ownership do not carry over into the active
+	// epoch, while prior epochs remain recorded as durable provenance (TEL-A1).
+	r.render = telemetryRenderLedger{priorEpochs: priors}
+}
+
+func presentationProofKey(epoch string, sequence uint64) string {
+	return epoch + "\x00" + strconv.FormatUint(sequence, 10)
+}
+
+// RegisterPresentationProof registers an authenticated presentation harness
+// proof for a publication correlation ID (epoch + sequence).
+func (r *telemetryStageRecorder) RegisterPresentationProof(epoch string, sequence uint64, proof string) {
+	if r == nil || epoch == "" || sequence == 0 || proof == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.presentationProofs == nil {
+		r.presentationProofs = map[string]string{}
+	}
+	key := presentationProofKey(epoch, sequence)
+	if _, exists := r.presentationProofs[key]; !exists {
+		r.pborder = append(r.pborder, key)
+		if len(r.pborder) > telemetryRenderLedgerSize {
+			delete(r.presentationProofs, r.pborder[0])
+			r.pborder = r.pborder[1:]
+		}
+	}
+	r.presentationProofs[key] = proof
+}
+
+func (r *telemetryStageRecorder) resolveSampleDeliverySignalLocked(sample clientRenderSample) string {
+	if sample.DeliverySignal != telemetryDeliverySignalVerifiedFramePresentation || sample.Publication == nil || !sample.Publication.valid() || sample.PresentationProof == "" {
+		return telemetryDeliverySignalPostCommitPaintOpportunity
+	}
+	expected, ok := r.presentationProofs[presentationProofKey(sample.Publication.Epoch, sample.Publication.Sequence)]
+	if !ok || expected != sample.PresentationProof {
+		return telemetryDeliverySignalPostCommitPaintOpportunity
+	}
+	return telemetryDeliverySignalVerifiedFramePresentation
+}
+
+func mergeDeliverySignal(current, sampleSignal string) string {
+	normalized := telemetryDeliverySignalPostCommitPaintOpportunity
+	if sampleSignal == telemetryDeliverySignalVerifiedFramePresentation {
+		normalized = telemetryDeliverySignalVerifiedFramePresentation
+	}
+	if current == "" {
+		return normalized
+	}
+	if current == telemetryDeliverySignalVerifiedFramePresentation && normalized == telemetryDeliverySignalVerifiedFramePresentation {
+		return telemetryDeliverySignalVerifiedFramePresentation
+	}
+	return telemetryDeliverySignalPostCommitPaintOpportunity
+}
+
+const clientRenderCalibrationTTL = 5 * time.Minute
+
+func (r *telemetryStageRecorder) recordBrowserCalibration(clientKey string, clientSendMonoMs float64, clientRecvMonoMs *float64, controllerRecv, controllerSend time.Time) [3]float64 {
+	recvMs := float64(controllerRecv.UTC().UnixNano()) / 1e6
+	sendMs := float64(controllerSend.UTC().UnixNano()) / 1e6
+	if sendMs < recvMs {
+		sendMs = recvMs
+	}
+	echo := [3]float64{clientSendMonoMs, math.Round(recvMs*1000) / 1000, math.Round(sendMs*1000) / 1000}
+	if r == nil {
+		return echo
+	}
+	offsetMs := recvMs - clientSendMonoMs
+	uncertaintyMs := max(0, sendMs-recvMs)
+	if clientRecvMonoMs != nil && !math.IsNaN(*clientRecvMonoMs) && !math.IsInf(*clientRecvMonoMs, 0) && *clientRecvMonoMs >= clientSendMonoMs {
+		rttMs := max(0, (*clientRecvMonoMs-clientSendMonoMs)-(sendMs-recvMs))
+		uncertaintyMs = rttMs/2 + max(0, sendMs-recvMs)/2
+		offsetMs = (recvMs+sendMs)/2 - (clientSendMonoMs+*clientRecvMonoMs)/2
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.browserClocks == nil {
+		r.browserClocks = map[string]browserClockCalibration{}
+	}
+	if _, exists := r.browserClocks[clientKey]; !exists {
+		r.cborder = append(r.cborder, clientKey)
+		if len(r.cborder) > clientRenderMaxReporters {
+			delete(r.browserClocks, r.cborder[0])
+			r.cborder = r.cborder[1:]
+		}
+	}
+	r.browserClocks[clientKey] = browserClockCalibration{
+		clientSendMonoMs:     clientSendMonoMs,
+		controllerRecvUnixMs: echo[1],
+		controllerSendUnixMs: echo[2],
+		offsetMs:             offsetMs,
+		uncertaintyMs:        uncertaintyMs,
+		calibratedAt:         controllerRecv.UTC(),
+	}
+	return echo
+}
+
+func (r *telemetryStageRecorder) refineBrowserCalibration(clientKey string, clientSendMonoMs, clientRecvMonoMs, controllerRecvUnixMs, controllerSendUnixMs float64) bool {
+	if r == nil || math.IsNaN(clientRecvMonoMs) || math.IsInf(clientRecvMonoMs, 0) || clientRecvMonoMs < clientSendMonoMs {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cal, ok := r.browserClocks[clientKey]
+	if !ok {
+		return false
+	}
+	if math.Abs(cal.clientSendMonoMs-clientSendMonoMs) > 0.001 ||
+		math.Abs(cal.controllerRecvUnixMs-controllerRecvUnixMs) > 0.001 ||
+		math.Abs(cal.controllerSendUnixMs-controllerSendUnixMs) > 0.001 {
+		return false
+	}
+	rttMs := max(0, (clientRecvMonoMs-clientSendMonoMs)-(controllerSendUnixMs-controllerRecvUnixMs))
+	cal.uncertaintyMs = rttMs/2 + max(0, controllerSendUnixMs-controllerRecvUnixMs)/2
+	cal.offsetMs = (controllerRecvUnixMs+controllerSendUnixMs)/2 - (clientSendMonoMs+clientRecvMonoMs)/2
+	r.browserClocks[clientKey] = cal
+	return true
+}
+
+func (r *telemetryStageRecorder) observeBrowserRenderSample(sample clientRenderSample) {
+	if r == nil {
+		return
+	}
+	r.observe(telemetryStageBrowserRender, sample.ReceiveToRenderMs)
+	r.mu.Lock()
+	signal := r.resolveSampleDeliverySignalLocked(sample)
+	r.browserRenderSignal = mergeDeliverySignal(r.browserRenderSignal, signal)
+	r.mu.Unlock()
+}
+
+func (r *telemetryStageRecorder) observeReferencePublicationEndToEnd(clientKey string, sample clientRenderSample, now time.Time) {
+	if r == nil || sample.Publication == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.render.epoch == "" || sample.Publication.Epoch != r.render.epoch || !r.render.eligible[sample.Publication.Sequence] {
+		return
+	}
+	timing, hasTiming := r.render.timings[sample.Publication.Sequence]
+	cal, hasCal := r.browserClocks[clientKey]
+	if hasCal && now.Sub(cal.calibratedAt) > clientRenderCalibrationTTL {
+		hasCal = false
+	}
+	if !hasTiming || !timing.clockQualified || !hasCal {
+		r.excludeLocked(r.stageLocked(telemetryStageEndToEnd), "clock_unqualified")
+		return
+	}
+	pubMs := float64(timing.publishedAt.UnixNano()) / 1e6
+	reportRecvMs := float64(now.UTC().UnixNano()) / 1e6
+	var rxUpperMs float64
+	switch {
+	case sample.ReceivedMonoMs != nil:
+		rxUpperMs = *sample.ReceivedMonoMs + cal.offsetMs + cal.uncertaintyMs
+		if rxUpperMs < pubMs {
+			rxUpperMs = pubMs
+		}
+	case sample.RenderedMonoMs != nil:
+		rxMono := *sample.RenderedMonoMs - sample.ReceiveToRenderMs
+		rxUpperMs = max(pubMs, rxMono+cal.offsetMs+cal.uncertaintyMs)
+	default:
+		rxUpperMs = max(pubMs+cal.uncertaintyMs, reportRecvMs-sample.ReceiveToRenderMs)
+	}
+	oldestStartMs := float64(timing.oldestObservationStartAt.UnixNano()) / 1e6
+	newestCtrlMs := float64(timing.newestCollectedControllerAt.UnixNano()) / 1e6
+	if newestCtrlMs <= 0 {
+		newestCtrlMs = oldestStartMs
+	}
+	e2eOldestMs := max(0, rxUpperMs-oldestStartMs) + sample.ReceiveToRenderMs
+	e2eNewestMs := max(0, rxUpperMs-newestCtrlMs) + sample.ReceiveToRenderMs
+	current := r.stageLocked(telemetryStageEndToEnd)
+	if !validTelemetryStageMs(e2eOldestMs) || !validTelemetryStageMs(e2eNewestMs) {
+		r.excludeLocked(current, "invalid")
+		return
+	}
+	current.digest.Add(e2eOldestMs)
+	current.max = max(current.max, e2eOldestMs)
+	if r.endToEndNewest == nil {
+		r.endToEndNewest = &telemetryStageDigest{digest: engine.NewTDigest(telemetryStageCompression)}
+	}
+	r.endToEndNewest.digest.Add(e2eNewestMs)
+	r.endToEndNewest.max = max(r.endToEndNewest.max, e2eNewestMs)
+	r.endToEndSignal = mergeDeliverySignal(r.endToEndSignal, r.resolveSampleDeliverySignalLocked(sample))
 }
 
 func (r *telemetryStageRecorder) stageLocked(stage string) *telemetryStageDigest {
@@ -241,6 +475,76 @@ func (r *telemetryStageRecorder) snapshot() []TelemetryStageDistribution {
 				quantile := func(q float64) *float64 { value := math.Round(current.digest.Quantile(q)*1000) / 1000; return &value }
 				maxValue := current.max
 				distribution.Availability, distribution.P50Ms, distribution.P95Ms, distribution.P99Ms, distribution.MaxMs = "measured", quantile(0.50), quantile(0.95), quantile(0.99), &maxValue
+			}
+		}
+		switch stage {
+		case telemetryStageBrowserRender:
+			if distribution.Samples > 0 {
+				signal := r.browserRenderSignal
+				if signal == "" {
+					signal = telemetryDeliverySignalPostCommitPaintOpportunity
+				}
+				distribution.DeliverySignal = signal
+				distribution.Advisory = signal != telemetryDeliverySignalVerifiedFramePresentation
+			}
+		case telemetryStageEndToEnd:
+			denom := max(r.render.published, r.render.counts.Eligible)
+			for _, prior := range r.render.priorEpochs {
+				denom += max(prior.PublishedEligible, prior.Eligible)
+			}
+			hasRenderActivity := distribution.Samples > 0 || len(distribution.Excluded) > 0 || r.render.reference != ""
+			if hasRenderActivity && denom > 0 {
+				distribution.EligiblePublications = denom
+				if distribution.Excluded == nil {
+					distribution.Excluded = map[string]int64{}
+				}
+				if r.render.counts.Superseded > 0 {
+					distribution.Excluded["superseded"] += r.render.counts.Superseded
+				}
+				for reason, count := range r.render.counts.Unqualified {
+					if count > 0 {
+						distribution.Excluded[reason] += count
+					}
+				}
+				for _, prior := range r.render.priorEpochs {
+					if prior.Superseded > 0 {
+						distribution.Excluded["superseded"] += prior.Superseded
+					}
+					for reason, count := range prior.Unqualified {
+						if count > 0 {
+							distribution.Excluded[reason] += count
+						}
+					}
+				}
+				var accountedExcluded int64
+				for _, count := range distribution.Excluded {
+					accountedExcluded += count
+				}
+				if unreported := denom - distribution.Samples - accountedExcluded; unreported > 0 {
+					distribution.Excluded["unreported"] += unreported
+				}
+				if len(distribution.Excluded) == 0 {
+					distribution.Excluded = nil
+				}
+			}
+			if distribution.Samples > 0 {
+				signal := r.endToEndSignal
+				if signal == "" {
+					signal = telemetryDeliverySignalPostCommitPaintOpportunity
+				}
+				distribution.DeliverySignal = signal
+				distribution.Advisory = signal != telemetryDeliverySignalVerifiedFramePresentation
+				if r.endToEndNewest != nil && r.endToEndNewest.digest.Count() > 0 {
+					newestQuantile := func(q float64) *float64 {
+						value := math.Round(r.endToEndNewest.digest.Quantile(q)*1000) / 1000
+						return &value
+					}
+					newestMax := r.endToEndNewest.max
+					distribution.NewestObservationP50Ms = newestQuantile(0.50)
+					distribution.NewestObservationP95Ms = newestQuantile(0.95)
+					distribution.NewestObservationP99Ms = newestQuantile(0.99)
+					distribution.NewestObservationMaxMs = &newestMax
+				}
 			}
 		}
 		out = append(out, distribution)
@@ -374,7 +678,7 @@ func cloneTelemetryStageDistributions(in []TelemetryStageDistribution) []Telemet
 				out[i].Excluded[reason] = count
 			}
 		}
-		for _, field := range []**float64{&out[i].P50Ms, &out[i].P95Ms, &out[i].P99Ms, &out[i].MaxMs} {
+		for _, field := range []**float64{&out[i].P50Ms, &out[i].P95Ms, &out[i].P99Ms, &out[i].MaxMs, &out[i].NewestObservationP50Ms, &out[i].NewestObservationP95Ms, &out[i].NewestObservationP99Ms, &out[i].NewestObservationMaxMs} {
 			if *field != nil {
 				value := **field
 				*field = &value
@@ -424,6 +728,16 @@ type clientRenderSample struct {
 	ReceiveToRenderMs float64   `json:"receive_to_render_ms"`
 	State             string    `json:"state"` // visible, background, disconnected, superseded
 	ObservedAt        time.Time `json:"observed_at"`
+	// ReceivedMonoMs and RenderedMonoMs are the browser's performance.now()
+	// monotonic timestamps when the publication arrived and when its paint
+	// callback fired (TEL-A1).
+	ReceivedMonoMs *float64 `json:"received_mono_ms,omitempty"`
+	RenderedMonoMs *float64 `json:"rendered_mono_ms,omitempty"`
+	// DeliverySignal is "post_commit_paint_opportunity" (default rAF/timer
+	// callback, advisory) or "verified_frame_presentation" (authenticated
+	// presentation harness proof attached to the publication correlation ID).
+	DeliverySignal    string `json:"delivery_signal,omitempty"`
+	PresentationProof string `json:"presentation_proof,omitempty"`
 	// Publication names the live publication the sample is about; a newer
 	// tab reports it, an older one does not (TEL-A).
 	Publication *clientRenderPublication `json:"publication,omitempty"`
@@ -457,6 +771,27 @@ func admitClientRenderSample(sample clientRenderSample, runStarted, now time.Tim
 		return false, "unknown_state"
 	}
 	if !validTelemetryStageMs(sample.ReceiveToRenderMs) {
+		return false, "invalid"
+	}
+	if sample.ReceivedMonoMs != nil && (math.IsNaN(*sample.ReceivedMonoMs) || math.IsInf(*sample.ReceivedMonoMs, 0) || *sample.ReceivedMonoMs < 0) {
+		return false, "invalid"
+	}
+	if sample.RenderedMonoMs != nil && (math.IsNaN(*sample.RenderedMonoMs) || math.IsInf(*sample.RenderedMonoMs, 0) || *sample.RenderedMonoMs < 0) {
+		return false, "invalid"
+	}
+	if sample.ReceivedMonoMs != nil && sample.RenderedMonoMs != nil {
+		monoInterval := *sample.RenderedMonoMs - *sample.ReceivedMonoMs
+		if monoInterval < 0 || math.Abs(monoInterval-sample.ReceiveToRenderMs) > 1.0 {
+			return false, "invalid"
+		}
+	}
+	switch sample.DeliverySignal {
+	case "", telemetryDeliverySignalPostCommitPaintOpportunity:
+	case telemetryDeliverySignalVerifiedFramePresentation:
+		if sample.Publication == nil || !sample.Publication.valid() {
+			return false, "invalid"
+		}
+	default:
 		return false, "invalid"
 	}
 	if sample.ReceiveToRenderMs > clientRenderCeilingMs {

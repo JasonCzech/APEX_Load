@@ -196,6 +196,12 @@ type RunArchiveManifest struct {
 	// TelemetryLoss is the run's total of each loss counter at finalize:
 	// exact, an observed lower bound or unavailable, with the reason.
 	TelemetryLoss *TelemetryLossAccounting `json:"telemetry_loss,omitempty"`
+	// TelemetryEvidenceFile holds the versioned telemetry evidence sidecar
+	// (telemetry_evidence.json) with segment coverage, interval condition
+	// labels, bounded resource samples, and validity findings (TEL-B1).
+	TelemetryEvidenceFile     string                      `json:"telemetry_evidence_file,omitempty"`
+	TelemetryValidityFindings []TelemetryValidityFinding  `json:"telemetry_validity_findings,omitempty"`
+	TelemetryAcceptance       *TelemetryAcceptanceVerdict `json:"telemetry_acceptance,omitempty"`
 	// PhaseEventsFile holds generated load-phase transitions and their sink
 	// outcomes (apexload.phase_event.v1), apart from analyst annotations.
 	PhaseEventsFile      string `json:"phase_events_file,omitempty"`
@@ -713,7 +719,11 @@ type RunArchiveReport struct {
 
 	// TelemetryAcceptance is the run's telemetry verdict under its pinned
 	// acceptance policy, apart from the application verdict (C7).
-	TelemetryAcceptance *TelemetryAcceptanceVerdict `json:"telemetry_acceptance,omitempty"`
+	TelemetryAcceptance         *TelemetryAcceptanceVerdict  `json:"telemetry_acceptance,omitempty"`
+	TelemetryStageDistributions []TelemetryStageDistribution `json:"telemetry_stage_distributions,omitempty"`
+	TelemetryRenderPopulation   *TelemetryRenderPopulation   `json:"telemetry_render_population,omitempty"`
+	TelemetryCoverage           *TelemetryCoverageRecord     `json:"telemetry_coverage,omitempty"`
+	TelemetryValidityFindings   []TelemetryValidityFinding   `json:"telemetry_validity_findings,omitempty"`
 	// BrowserIntelligence holds the browser findings, interaction patterns
 	// and journey accounting a report renders (the browser baseline is in
 	// the root-cause section). It is attached only for an export that
