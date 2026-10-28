@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Generated dashboard build output (npm run build). Minified chunks keep
+# whitespace that is part of template-literal string values, so patch
+# whitespace checks (git diff --check) do not apply to them.
+pkg/api/static/** -whitespace

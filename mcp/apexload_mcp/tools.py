@@ -460,7 +460,7 @@ def register_endpoint_tools(mcp: Any) -> None:
         options: dict[str, Any] | None = None,
         confirm: bool = False,
     ) -> str:
-        """Import an Enterprise Script Archive, JMeter, DevWeb, HAR, OpenAPI, or WSDL file. Mutates APEX Load and requires confirm=true."""
+        """Import an Enterprise Script Archive, JMeter, DevWeb, HAR, recorder, OpenAPI, or WSDL file. Mutates APEX Load and requires confirm=true."""
         return await run_file_import_tool(importer, file_path, options=options, confirm=confirm)
 
     async def script_validate_import_file(

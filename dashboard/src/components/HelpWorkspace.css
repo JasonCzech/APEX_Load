@@ -15,6 +15,7 @@
 .help-search-results li { padding: 12px 0; border-bottom: 1px solid var(--border); }
 .help-search-results p { line-height: 1.5; overflow-wrap: anywhere; }
 .help-search-results li p { margin: 5px 0; color: var(--text-secondary, var(--text-primary)); font-size: 13px; }
+.help-sidebar { max-height: var(--help-sidebar-max-height, calc(100vh - 96px)); }
 .help-sidebar ul { list-style: none; padding: 0; margin: 0; }
 .help-article-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; margin-bottom: 12px; }
 .help-article-header [role="status"]:empty { display: none; }

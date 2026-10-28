@@ -210,9 +210,30 @@ requirement — not optional. When adding or modifying code:
 - Do not mock internal packages unless required for isolation; prefer testing against real implementations.
 
 ## Commit Policy
-Before any commit, agents **must** run a code review of the changes being committed and fix
-every finding, low severity included. Repeat the review and fix cycle until a review round
-finds no issues, and commit only then.
+Before any commit, agents **must** obtain an independent, adversarial code review of the
+exact changes being committed (isolated via staged diff, commit diff, or explicit file scope)
+from a fresh reviewer subagent (`Model: "pro"` when supported; or a separate review session if
+subagents are unsupported) other than the agent that authored the changes; self-review or
+reusing a prior review thread does not satisfy this requirement. Fix every valid finding, low
+severity included (or provide a concrete, technically verified refutation if a finding is
+factually incorrect, and pass that refutation to the next fresh reviewer for verification).
+Repeat the independent review and fix cycle with a fresh reviewer each round until an
+independent review round finds no issues. Re-verify affected tests and builds against the
+final changes (if re-verification requires any code or generated-artifact changes, obtain a
+fresh review round on the updated changes), and commit only then.
+
+Every independent review round **must** follow this protocol and include the written
+**Verification Proof** in its review report (returned in-band via subagent message or session
+output; do not create `docs/qa/reviews/` files for routine commit reviews) before reporting
+any verdict:
+1. **Read beyond the diff**: Read the full file for every modified function, type, or component, and trace at least one level of callers and callees across packages. Do not review diff hunks in isolation.
+2. **Treat prior-round fixes and refutations as highest risk**: Assume bugs exist and try to falsify the code or refutation. Scrutinize lines added or changed to fix previous review findings—and independently verify any author refutations against the codebase—rather than merely checking whether prior comments were addressed.
+3. **Required Verification Proof** (must be written out with `file:line` citations before listing findings or concluding zero findings; for non-code, documentation, or configuration changes, verify document links, referenced commands, and pipeline schemas, explicitly marking inapplicable code invariants as N/A):
+   - **State & concurrency trace**: Every mutated struct, map, slice, channel, database row, or UI state; lock/transaction ownership; and behavior under concurrent access or mid-operation context cancellation.
+   - **Boundary & failure matrix**: Behavior on `nil`/empty/zero inputs, numeric/size bounds, partial I/O, timeouts, and duplicate or retried execution.
+   - **Contract & invariant check**: Caller/callee contracts, SQLite + PostgreSQL parity, OpenAPI/TypeScript/DSL schema parity, security/trust boundaries (`netpolicy`, `secretstore`, `scriptdisclosure`), and cleanup paths.
+   - **Test falsification**: Concrete production failure modes or boundary cases that the current unit/E2E tests would fail to catch if the implementation were subtly broken.
+4. **Actionable findings**: Order findings by severity (Critical, High, Medium, Low), each with exact `file:line`, a concrete trigger scenario, and the required fix.
 
 ## QA Review Records
 Review records under `docs/qa/reviews/` and `docs/archive/qa-reviews/` are Markdown only, apart from
