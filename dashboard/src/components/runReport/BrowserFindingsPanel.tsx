@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { getErrorMessage } from '../../utils/errorUtils'
 import {
@@ -25,14 +25,30 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
   const [loading, setLoading] = useState(true)
   const [queueing, setQueueing] = useState(false)
   const [reload, setReload] = useState(0)
+  const loadedKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
+    const key = `${projectId}\x00${testId}`
+    if (loadedKeyRef.current !== key) {
+      setState(null)
+      setLoading(true)
+    }
     setError('')
     browserFindingsApi.get(testId, { signal: controller.signal, projectId })
-      .then(next => { if (!controller.signal.aborted) setState(next) })
-      .catch(err => { if (!controller.signal.aborted) { setState(null); setError(getErrorMessage(err, 'Unable to load browser findings')) } })
+      .then(next => {
+        if (!controller.signal.aborted) {
+          loadedKeyRef.current = key
+          setState(next)
+        }
+      })
+      .catch(err => {
+        if (!controller.signal.aborted) {
+          loadedKeyRef.current = null
+          setState(null)
+          setError(getErrorMessage(err, 'Unable to load browser findings'))
+        }
+      })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [testId, projectId, reload])

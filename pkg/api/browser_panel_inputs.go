@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -110,7 +111,31 @@ func (s *Server) verifyAndPopulateBrowserPanelV2(ctx context.Context, projectID 
 				policyOK := true
 				for _, pin := range response.Current.policyPins {
 					if pin.Kind == storage.AnalysisDefinitionKindBrowserPolicy {
-						policyOK = rcaBrowserBaselineMatchesPolicy(response.Current.manifest, payload, BrowserPolicyRef{SHA256: pin.SHA256})
+						ref := BrowserPolicyRef{ID: pin.ID, Revision: pin.Revision, SHA256: pin.SHA256}
+						var policy BrowserPolicyDefinition
+						var loadedPolicy bool
+						if hasDefStore {
+							if revDef, revErr := defStore.GetAnalysisDefinition(projectID, pin.ID, pin.Revision); revErr == nil && revDef != nil && json.Unmarshal(revDef.Definition, &policy) == nil {
+								if policy.Baseline.Mode == "pinned_run" && strings.TrimSpace(policy.Baseline.RunID) != "" && s.store != nil {
+									if run, lookupErr := s.store.GetTest(strings.TrimSpace(policy.Baseline.RunID)); lookupErr == nil && run != nil && normalizeProjectID(run.ProjectID) == normalizeProjectID(projectID) {
+										policy.Baseline.RunID = run.ID
+									}
+								}
+								loadedPolicy = true
+							}
+						}
+						if loadedPolicy {
+							if payload.BrowserSelection != nil {
+								policyOK = rcaBrowserBaselineMatchesPolicyDefinition(response.Current.manifest, payload, ref, policy)
+							} else {
+								policyOK = rcaBrowserBaselineMatchesPolicy(response.Current.manifest, payload, ref)
+								if policyOK && policy.Baseline.Mode == "pinned_run" && strings.TrimSpace(payload.Request.BaselineTestID) != "" {
+									policyOK = strings.TrimSpace(payload.Request.BaselineTestID) == strings.TrimSpace(policy.Baseline.RunID)
+								}
+							}
+						} else {
+							policyOK = rcaBrowserBaselineMatchesPolicy(response.Current.manifest, payload, ref)
+						}
 						break
 					}
 				}

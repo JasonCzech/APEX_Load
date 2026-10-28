@@ -61,6 +61,51 @@ func cloneProvisionalBrowserIntelligenceSnapshot(src *ProvisionalBrowserIntellig
 	return &dst
 }
 
+func cloneProvisionalFindingsReport(src *RunBrowserFindingsResponse) *RunBrowserFindingsResponse {
+	if src == nil {
+		return nil
+	}
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return nil
+	}
+	var dst RunBrowserFindingsResponse
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		return nil
+	}
+	return &dst
+}
+
+func cloneProvisionalInteractionAnalysis(src *BrowserInteractionAnalysis) *BrowserInteractionAnalysis {
+	if src == nil {
+		return nil
+	}
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return nil
+	}
+	var dst BrowserInteractionAnalysis
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		return nil
+	}
+	return &dst
+}
+
+func cloneProvisionalJourneysReport(src *JourneyRiskReport) *JourneyRiskReport {
+	if src == nil {
+		return nil
+	}
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return nil
+	}
+	var dst JourneyRiskReport
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		return nil
+	}
+	return &dst
+}
+
 type liveBrowserIntelligenceState struct {
 	mu                       sync.Mutex
 	testID                   string
@@ -127,9 +172,17 @@ func markProvisionalSnapshotTruncated(snap *ProvisionalBrowserIntelligenceSnapsh
 	}
 	if snap.Interactions != nil {
 		snap.Interactions.LiveTruncated = true
+		snap.Interactions.Coverage.Incomplete = true
 	}
 	if snap.Journeys != nil {
 		snap.Journeys.LiveTruncated = true
+		snap.Journeys.Incomplete = true
+		if !slices.Contains(snap.Journeys.IncompleteReasons, "live_truncated") {
+			snap.Journeys.IncompleteReasons = append(snap.Journeys.IncompleteReasons, "live_truncated")
+		}
+		if reason != "" && !slices.Contains(snap.Journeys.IncompleteReasons, reason) {
+			snap.Journeys.IncompleteReasons = append(snap.Journeys.IncompleteReasons, reason)
+		}
 	}
 }
 
@@ -185,10 +238,6 @@ func newLiveBrowserIntelligenceState(test *ManagedTest, expectedTargets []string
 		state.markTruncatedLocked("controller_failover")
 	}
 	return state
-}
-
-func (s *liveBrowserIntelligenceState) hasEvidenceLocked() bool {
-	return s.documentRecords > 0 || s.interactionRecords > 0 || s.journeyEventCount > 0
 }
 
 func (s *liveBrowserIntelligenceState) markTruncatedLocked(reason string) {
@@ -395,8 +444,13 @@ func (s *liveBrowserIntelligenceState) sourcesCompleteLocked(finalEvaluation boo
 }
 
 func (s *liveBrowserIntelligenceState) evaluateSnapshot(tr *TestRunner, now time.Time, finalEvaluation bool) *ProvisionalBrowserIntelligenceSnapshot {
+	snap, _, _, _, _ := s.evaluateSnapshotWithDomainEvidence(tr, now, finalEvaluation)
+	return snap
+}
+
+func (s *liveBrowserIntelligenceState) evaluateSnapshotWithDomainEvidence(tr *TestRunner, now time.Time, finalEvaluation bool) (snap *ProvisionalBrowserIntelligenceSnapshot, adopted, hasDocEvidence, hasInteractionEvidence, hasJourneyEvidence bool) {
 	if s == nil {
-		return nil
+		return nil, false, false, false, false
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -411,7 +465,12 @@ func (s *liveBrowserIntelligenceState) evaluateSnapshot(tr *TestRunner, now time
 
 	s.mu.Lock()
 	s.dirty = false
-	if s.documentRecords > 0 || s.interactionRecords > 0 || s.journeyEventCount > 0 || s.liveTruncated {
+	adopted = s.adopted
+	hasDocEvidence = s.documentRecords > 0 || s.droppedDocuments > 0
+	hasInteractionEvidence = s.interactionRecords > 0 || s.droppedInteractions > 0
+	hasJourneyEvidence = s.journeyEventCount > 0 || s.droppedJourneyEvents > 0
+	if hasDocEvidence || hasInteractionEvidence || hasJourneyEvidence ||
+		(s.liveTruncated && !s.adopted) {
 		s.firstEvaluated = true
 	}
 	liveTruncated := s.liveTruncated
@@ -430,8 +489,9 @@ func (s *liveBrowserIntelligenceState) evaluateSnapshot(tr *TestRunner, now time
 		Findings:         findings,
 		Interactions:     interactions,
 		Journeys:         journeys,
-	}
+	}, adopted, hasDocEvidence, hasInteractionEvidence, hasJourneyEvidence
 }
+
 
 func (s *liveBrowserIntelligenceState) evaluateFindingsLocked(tr *TestRunner, store storage.AnalysisDefinitionStore, now time.Time, allSourcesObserved bool) *RunBrowserFindingsResponse {
 	resp := &RunBrowserFindingsResponse{
@@ -640,8 +700,11 @@ func (s *liveBrowserIntelligenceState) evaluateJourneysLocked(store storage.Anal
 			acc.add(&event)
 		}
 	}
-	if s.liveTruncated || s.droppedJourneyEvents > 0 {
+	if s.liveTruncated || s.adopted || s.droppedJourneyEvents > 0 {
 		acc.incomplete("live_truncated")
+	}
+	if s.adopted {
+		acc.incomplete("controller_failover")
 	}
 	if s.distributed && !allSourcesCompleted {
 		acc.incomplete("sources_not_collected")
@@ -679,15 +742,35 @@ func (tr *TestRunner) restoreAdoptedProvisionalBrowserIntelligence(test *Managed
 	}
 	restored := cloneProvisionalBrowserIntelligenceSnapshot(cached.ProvisionalBrowserIntelligence)
 	markProvisionalSnapshotTruncated(restored, "controller_failover", time.Time{})
+	var runSnapshot *RunLiveStateSnapshot
 	tr.mu.Lock()
-	defer tr.mu.Unlock()
 	if tr.tests[testID] != test {
+		tr.mu.Unlock()
 		return false
 	}
 	if test.provisionalBrowserIntelligence == nil {
 		test.provisionalBrowserIntelligence = restored
+		if tr.liveState != nil {
+			snapshotAt := time.Now().UTC()
+			if cached.UpdatedAt.After(snapshotAt) {
+				snapshotAt = cached.UpdatedAt.UTC()
+			}
+			s := buildRunLiveStateSnapshotLocked(test, snapshotAt)
+			if s.LiveMetrics == nil && cached.LiveMetrics != nil {
+				s.LiveMetrics = cached.LiveMetrics
+				if s.HistoryPoints == 0 {
+					s.HistoryPoints = cached.HistoryPoints
+				}
+			}
+			runSnapshot = &s
+		}
 	}
-	return test.provisionalBrowserIntelligence != nil
+	ok := test.provisionalBrowserIntelligence != nil
+	tr.mu.Unlock()
+	if runSnapshot != nil {
+		tr.cacheRunSnapshot(*runSnapshot)
+	}
+	return ok
 }
 
 func (tr *TestRunner) startLiveBrowserIntelligence(test *ManagedTest, expectedTargets []string) {
@@ -771,13 +854,14 @@ func (tr *TestRunner) publishLiveBrowserIntelligenceSnapshot(test *ManagedTest, 
 	if tr == nil || test == nil || state == nil {
 		return
 	}
-	snapshot := state.evaluateSnapshot(tr, now, finalEvaluation)
+	snapshot, adopted, hasDocEvidence, hasInteractionEvidence, hasJourneyEvidence := state.evaluateSnapshotWithDomainEvidence(tr, now, finalEvaluation)
 	if snapshot == nil {
 		return
 	}
-	state.mu.Lock()
-	adoptedWithoutPostFailoverEvidence := state.adopted && !state.hasEvidenceLocked()
-	state.mu.Unlock()
+
+	if adopted {
+		markProvisionalSnapshotTruncated(snapshot, "controller_failover", snapshot.UpdatedAt)
+	}
 
 	snapshotAt := time.Now().UTC()
 	if !now.IsZero() && now.UTC().After(snapshotAt) {
@@ -789,10 +873,24 @@ func (tr *TestRunner) publishLiveBrowserIntelligenceSnapshot(test *ManagedTest, 
 		tr.mu.Unlock()
 		return
 	}
-	if adoptedWithoutPostFailoverEvidence && test.provisionalBrowserIntelligence != nil {
-		preserved := cloneProvisionalBrowserIntelligenceSnapshot(test.provisionalBrowserIntelligence)
-		markProvisionalSnapshotTruncated(preserved, "controller_failover", snapshot.UpdatedAt)
-		snapshot = preserved
+	if adopted && test.provisionalBrowserIntelligence != nil {
+		prev := test.provisionalBrowserIntelligence
+		if !hasDocEvidence && prev.Findings != nil {
+			snapshot.Findings = cloneProvisionalFindingsReport(prev.Findings)
+		}
+		if !hasInteractionEvidence && prev.Interactions != nil {
+			snapshot.Interactions = cloneProvisionalInteractionAnalysis(prev.Interactions)
+		}
+		if !hasJourneyEvidence && prev.Journeys != nil {
+			snapshot.Journeys = cloneProvisionalJourneysReport(prev.Journeys)
+		}
+		for _, r := range prev.TruncatedReasons {
+			markProvisionalSnapshotTruncated(snapshot, r, time.Time{})
+		}
+		if prev.UpdatedAt.After(snapshot.UpdatedAt) {
+			snapshot.UpdatedAt = prev.UpdatedAt.UTC()
+		}
+		markProvisionalSnapshotTruncated(snapshot, "controller_failover", snapshot.UpdatedAt)
 	}
 	test.provisionalBrowserIntelligence = snapshot
 	runSnapshot := buildRunLiveStateSnapshotLocked(test, snapshotAt)
@@ -998,16 +1096,17 @@ func (s *Server) provisionalRunBrowserFindings(ctx context.Context, test *Manage
 	if snap == nil || snap.Findings == nil {
 		return nil, false
 	}
-	out := *snap.Findings
-	out.Provisional = true
-	out.LiveTruncated = snap.LiveTruncated
-	if out.Result != nil {
-		resCopy := *out.Result
-		resCopy.Provisional = true
-		resCopy.LiveTruncated = snap.LiveTruncated
-		out.Result = &resCopy
+	out := cloneProvisionalFindingsReport(snap.Findings)
+	if out == nil {
+		return nil, false
 	}
-	return &out, true
+	out.Provisional = true
+	out.LiveTruncated = snap.LiveTruncated || out.LiveTruncated
+	if out.Result != nil {
+		out.Result.Provisional = true
+		out.Result.LiveTruncated = out.LiveTruncated
+	}
+	return out, true
 }
 
 func (s *Server) provisionalRunBrowserInteractions(ctx context.Context, testID string) (*BrowserInteractionAnalysis, bool) {
@@ -1021,10 +1120,13 @@ func (s *Server) provisionalRunBrowserInteractions(ctx context.Context, testID s
 	if snap == nil || snap.Interactions == nil {
 		return nil, false
 	}
-	out := *snap.Interactions
+	out := cloneProvisionalInteractionAnalysis(snap.Interactions)
+	if out == nil {
+		return nil, false
+	}
 	out.Provisional = true
-	out.LiveTruncated = snap.LiveTruncated
-	return &out, true
+	out.LiveTruncated = snap.LiveTruncated || out.LiveTruncated
+	return out, true
 }
 
 func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, requestedID, requestedRevision string) (*JourneyRiskReport, int, error, bool) {
@@ -1048,6 +1150,8 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 			state.mu.Lock()
 			pins = cloneRunPolicyPins(state.policyPins)
 			state.mu.Unlock()
+		} else if test.initialArchiveProvenance != nil {
+			pins = cloneRunPolicyPins(test.initialArchiveProvenance.PolicyPins)
 		}
 		syntheticManifest := &RunArchiveManifest{
 			TestID: test.ID,
@@ -1062,32 +1166,71 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 		}
 		if state != nil {
 			state.mu.Lock()
+			if state.adopted && state.journeyEventCount == 0 && state.droppedJourneyEvents == 0 &&
+				snap != nil && snap.Journeys != nil &&
+				snap.Journeys.Policy.ID == ref.ID && snap.Journeys.Policy.Revision == ref.Revision {
+				state.mu.Unlock()
+				out := cloneProvisionalJourneysReport(snap.Journeys)
+				out.Policy = ref
+				out.Provisional = true
+				out.LiveTruncated = true
+				out.Incomplete = true
+				if !slices.Contains(out.IncompleteReasons, "live_truncated") {
+					out.IncompleteReasons = append(out.IncompleteReasons, "live_truncated")
+				}
+				if !slices.Contains(out.IncompleteReasons, "controller_failover") {
+					out.IncompleteReasons = append(out.IncompleteReasons, "controller_failover")
+				}
+				return out, http.StatusOK, nil, true
+			}
+			adopted := state.adopted
 			_, allCompleted := state.sourcesCompleteLocked(terminal || state.stopped)
 			report := state.evaluateJourneysLocked(store, requestedID, requestedRevision, allCompleted)
 			state.mu.Unlock()
+			if adopted && report != nil {
+				report.LiveTruncated = true
+				report.Incomplete = true
+				if !slices.Contains(report.IncompleteReasons, "live_truncated") {
+					report.IncompleteReasons = append(report.IncompleteReasons, "live_truncated")
+				}
+				if !slices.Contains(report.IncompleteReasons, "controller_failover") {
+					report.IncompleteReasons = append(report.IncompleteReasons, "controller_failover")
+				}
+			}
 			return report, http.StatusOK, nil, true
 		}
 		if snap != nil && snap.Journeys != nil &&
 			snap.Journeys.Policy.ID == ref.ID && snap.Journeys.Policy.Revision == ref.Revision {
-			out := *snap.Journeys
+			out := cloneProvisionalJourneysReport(snap.Journeys)
 			out.Policy = ref
 			out.Provisional = true
-			out.LiveTruncated = snap.LiveTruncated
-			return &out, http.StatusOK, nil, true
+			out.LiveTruncated = snap.LiveTruncated || out.LiveTruncated
+			return out, http.StatusOK, nil, true
 		}
 		return nil, 0, nil, false
 	}
 	if snap != nil && snap.Journeys != nil {
-		out := *snap.Journeys
+		out := cloneProvisionalJourneysReport(snap.Journeys)
 		out.Provisional = true
-		out.LiveTruncated = snap.LiveTruncated
-		return &out, http.StatusOK, nil, true
+		out.LiveTruncated = snap.LiveTruncated || out.LiveTruncated
+		return out, http.StatusOK, nil, true
 	}
 	if state != nil {
 		state.mu.Lock()
+		adopted := state.adopted
 		_, allCompleted := state.sourcesCompleteLocked(terminal || state.stopped)
 		report := state.evaluateJourneysLocked(store, requestedID, requestedRevision, allCompleted)
 		state.mu.Unlock()
+		if adopted && report != nil {
+			report.LiveTruncated = true
+			report.Incomplete = true
+			if !slices.Contains(report.IncompleteReasons, "live_truncated") {
+				report.IncompleteReasons = append(report.IncompleteReasons, "live_truncated")
+			}
+			if !slices.Contains(report.IncompleteReasons, "controller_failover") {
+				report.IncompleteReasons = append(report.IncompleteReasons, "controller_failover")
+			}
+		}
 		return report, http.StatusOK, nil, true
 	}
 	return nil, 0, nil, false

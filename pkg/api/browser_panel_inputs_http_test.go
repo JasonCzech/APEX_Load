@@ -603,8 +603,33 @@ func TestBrowserPanelInputPinsHTTPV2PolicyTombstoneAndSelectionReceipt(t *testin
 		t.Fatalf("stale selection receipt saved %d %s", staleSave.Code, staleSave.Body.String())
 	}
 
-	// Restore matching selection receipt, then tombstone the pinned browser policy.
+	// Restore matching selection receipt, verify tampered BrowserSelection receipt is rejected by rcaBrowserBaselineMatchesPolicyDefinition,
+	// then tombstone the pinned browser policy.
 	saveCompletedRCA(selectionSHA, 2)
+	tamperedPayload := rcaAnalysisPayload{
+		Inputs: rca.InputDigests{
+			Archive:          archiveDigest,
+			BrowserSelection: selectionSHA,
+		},
+		BrowserSelection: &rca.BrowserBaselineSelection{
+			Version:        rca.BrowserSelectionVersion,
+			Status:         "selected",
+			SelectedTestID: "base-1",
+		},
+		Request: rcaAnalysisRequest{BaselineTestID: "base-1"},
+		Assessment: &rca.Assessment{
+			BrowserBaseline: &rca.BrowserBaseline{
+				Policy:       "pol-browser@1",
+				PolicySHA256: browserPolicySHA,
+			},
+		},
+	}
+	if rcaBrowserBaselineMatchesPolicyDefinition(manifest, tamperedPayload, BrowserPolicyRef{ID: "pol-browser", Revision: 1, SHA256: browserPolicySHA}, BrowserPolicyDefinition{
+		Version:  1,
+		Baseline: BrowserPolicyBaseline{Mode: "latest_compatible"},
+	}) {
+		t.Fatal("expected rcaBrowserBaselineMatchesPolicyDefinition to reject tampered BrowserSelection receipt whose digest does not match Inputs.BrowserSelection")
+	}
 	if reopen := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q); reopen.Code != 200 {
 		t.Fatalf("restored selection receipt rejected %d %s", reopen.Code, reopen.Body.String())
 	}

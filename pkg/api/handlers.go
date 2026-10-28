@@ -99,7 +99,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, errRunPolicyStoreUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
+			writeError(w, http.StatusServiceUnavailable, "analysis policy store unavailable")
 			return
 		}
 		if errors.Is(err, errRunPolicyConfiguration) {
@@ -190,7 +190,7 @@ func (s *Server) handlePreflightTest(w http.ResponseWriter, r *http.Request) {
 		// would: a failed policy read is retryable (503) and an unusable
 		// policy is a conflict (409), not a malformed request.
 		if errors.Is(err, errRunPolicyStoreUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
+			writeError(w, http.StatusServiceUnavailable, "analysis policy store unavailable")
 			return
 		}
 		if errors.Is(err, errRunPolicyConfiguration) {

@@ -208,4 +208,20 @@ describe('BrowserInteractionsPanel', () => {
     }
   })
 
+  it('resets stale interaction patterns immediately when testId changes', async () => {
+    const { container, root } = await render(analysis)
+    expect(container.textContent).toContain('Scripted repetition')
+
+    let resolveNext!: (value: unknown) => void
+    mocks.request.mockReturnValueOnce(new Promise(resolve => { resolveNext = resolve }))
+    await act(async () => root.render(<BrowserInteractionsPanel testId="run-2" />))
+    expect(container.textContent).not.toContain('Scripted repetition')
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Loading interaction patterns…')
+
+    resolveNext({ ...analysis, run_id: 'run-2', status: 'not_captured', patterns: [], heatmaps: [] })
+    await act(async () => { await Promise.resolve() })
+    expect(container.textContent).toContain('This run recorded no interaction evidence.')
+    await act(async () => root.unmount())
+  })
+
 })

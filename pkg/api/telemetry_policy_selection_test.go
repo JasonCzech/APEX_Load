@@ -309,8 +309,11 @@ func TestChosenTelemetryAcceptancePolicyStoreOutageIs503(t *testing.T) {
 	}
 	request := receiptRunRequest("Outage run")
 	request.TelemetryAcceptancePolicyID = "any-gate"
-	if recorder := authoringAPIRequest(t, direct, http.MethodPost, "/api/v1/tests", request, ""); recorder.Code != http.StatusServiceUnavailable {
+	if recorder := authoringAPIRequest(t, direct, http.MethodPost, "/api/v1/tests", request, ""); recorder.Code != http.StatusServiceUnavailable || strings.Contains(recorder.Body.String(), "database is locked") {
 		t.Fatalf("POST /api/v1/tests during an outage: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := authoringAPIRequest(t, direct, http.MethodPost, "/api/v1/tests/preflight", LaunchPreflightRequest{CreateTestRequest: request}, ""); recorder.Code != http.StatusServiceUnavailable || strings.Contains(recorder.Body.String(), "database is locked") {
+		t.Fatalf("POST /api/v1/tests/preflight during an outage: %d %s", recorder.Code, recorder.Body.String())
 	}
 	policy := ciRunSourceTestPolicy()
 	policy.AllowTelemetryPolicySelection = true
@@ -331,7 +334,7 @@ func TestChosenTelemetryAcceptancePolicyStoreOutageIs503(t *testing.T) {
 	ciRequest.Header.Set("Idempotency-Key", "octo/apex:performance:9001:1:telemetry-policy-outage")
 	recorder := httptest.NewRecorder()
 	server.handleCreateCIRun(recorder, ciRequest)
-	if recorder.Code != http.StatusServiceUnavailable {
+	if recorder.Code != http.StatusServiceUnavailable || strings.Contains(recorder.Body.String(), "database is locked") {
 		t.Fatalf("POST /api/v1/ci/runs during an outage: %d %s", recorder.Code, recorder.Body.String())
 	}
 }

@@ -76,12 +76,15 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
   const loadedRunIdRef = useRef<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(current => loadedRunIdRef.current === testId ? current : true)
+    if (loadedRunIdRef.current !== testId) {
+      setAnalysis(null)
+      setLoading(true)
+    }
     setError(null)
     browserInteractionsApi.get(testId, controller.signal)
       .then(next => {
         if (!controller.signal.aborted) {
-          loadedRunIdRef.current = next.run_id
+          loadedRunIdRef.current = testId
           setAnalysis(next)
         }
       })
