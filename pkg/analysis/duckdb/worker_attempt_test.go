@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -178,5 +179,56 @@ func TestNativeWorkerModeNeverFallsThroughOnMalformedMarker(t *testing.T) {
 	}
 	if handled, _ := dispatchNativeWorker([]string{"--ordinary-controller-option"}, nil); handled {
 		t.Fatal("ordinary application launch taken")
+	}
+}
+
+func TestWorkerScratchPathCompactForWindowsCreateProcessMaxPath(t *testing.T) {
+	ctx := WithNativeStagingScope(context.Background(), "11111111-2222-3333-4444-555555555555", "66666666-7777-8888-9999-aaaaaaaaaaaa")
+	pipeline := &NativePipeline{ctx: ctx, stagingScope: nativeStagingScopeFrom(ctx)}
+	cacheRoot := t.TempDir()
+	stagingDir, err := pipeline.CreateStagingDirectory(cacheRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b := workerRuntimeTestBootstrap(t)
+	admission := &workerTestAdmission{}
+	attempt, err := newWorkerAttempt(ctx, stagingDir, b, admission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = attempt.release() }()
+
+	rel, err := filepath.Rel(cacheRoot, attempt.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Win32 CreateProcessW enforces MAX_PATH - 2 (258 chars) on lpCurrentDirectory
+	// even when LongPathsEnabled is set. Keeping <jobDir>/<attemptDir> <= 80 chars
+	// leaves >175 chars of headroom for deep runner temp directories + _analysis-cache.
+	if len(rel) > 80 {
+		t.Fatalf("relative worker scratch path %q (%d chars) exceeds compact budget (<= 80 chars)", rel, len(rel))
+	}
+	stagingOwnerRaw, err := os.ReadFile(filepath.Join(stagingDir, workerStagingOwnerMetadataName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stagingOwner workerStagingOwnerMetadata
+	if err := json.Unmarshal(stagingOwnerRaw, &stagingOwner); err != nil {
+		t.Fatal(err)
+	}
+	if stagingOwner.DatasetID != "11111111-2222-3333-4444-555555555555" || stagingOwner.AttemptID != "66666666-7777-8888-9999-aaaaaaaaaaaa" {
+		t.Fatalf("unexpected staging owner metadata: %+v", stagingOwner)
+	}
+	workerOwnerRaw, err := os.ReadFile(filepath.Join(attempt.path, workerOwnerMetadataName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workerOwner workerAttemptOwnerMetadata
+	if err := json.Unmarshal(workerOwnerRaw, &workerOwner); err != nil {
+		t.Fatal(err)
+	}
+	if workerOwner.AttemptID != b.Identity.AttemptID {
+		t.Fatalf("unexpected worker owner metadata: %+v", workerOwner)
 	}
 }

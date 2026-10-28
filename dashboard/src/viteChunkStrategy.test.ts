@@ -122,7 +122,7 @@ describe('chunkNameForModule', () => {
     expect(priorities).toEqual([...priorities].sort((a, b) => b - a))
     const rank = (name: string) => chunkGroupOrder.indexOf(name)
     expect(rank('vendor')).toBe(0)
-    for (const name of ['vendor-virtual', 'vendor-three', 'vendor-recharts', 'vendor-codemirror-core', 'workspace-shared']) {
+    for (const name of ['vendor-virtual', 'vendor-yaml', 'vendor-three', 'vendor-recharts', 'vendor-codemirror-core', 'workspace-shared']) {
       expect(rank('vendor')).toBeLessThan(rank(name))
     }
     for (const name of ['navigation-guard', 'desktop-files', 'script-authoring', 'api-scripts']) {
@@ -173,9 +173,10 @@ describe('chunkNameForModule', () => {
     expect(chunkNameForModule('\u0000virtual:some-plugin-module')).toBeUndefined()
   })
 
-  it('routes Three.js and Recharts to their own vendor chunks', () => {
+  it('routes Three.js, Recharts and YAML to their own vendor chunks', () => {
     expect(chunkNameForModule(modulePath('three/build/three.module.js'))).toBe('vendor-three')
     expect(chunkNameForModule(modulePath('recharts/es6/chart/LineChart.js'))).toBe('vendor-recharts')
+    expect(chunkNameForModule(modulePath('yaml/browser/dist/index.js'))).toBe('vendor-yaml')
   })
 
   it('splits CodeMirror into language, parser and core chunks', () => {

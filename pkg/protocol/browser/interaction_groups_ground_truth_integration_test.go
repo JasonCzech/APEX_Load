@@ -104,7 +104,7 @@ func TestBrowserDocumentActualGroundTruthInteractionGroups(t *testing.T) {
 			}))
 			defer server.Close()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 			defer cancel()
 
 			b := &Browser{}
@@ -162,11 +162,28 @@ func TestBrowserDocumentActualGroundTruthInteractionGroups(t *testing.T) {
 				default:
 					selector = fmt.Sprintf("#grp-input-%d", i)
 				}
-				documentActualExecute(t, b, ctx, &protocol.Action{
+				action := &protocol.Action{
 					Name:     fmt.Sprintf("interact_%d", i),
 					Type:     actionType,
 					Selector: selector,
-				})
+				}
+				// Execute representative button, link, and input interactions via
+				// b.Execute to verify action-level interaction evidence capture, and
+				// dispatch the remaining trusted browser events directly to avoid 46
+				// redundant full-DOM summary walks per cohort under -race.
+				if i <= 2 || i == 41 || i == 50 {
+					documentActualExecute(t, b, ctx, action)
+					continue
+				}
+				var err error
+				if b.touchMode {
+					err = b.dispatchTap(ctx, action, selector)
+				} else {
+					err = b.clickAction(ctx, action, selector)
+				}
+				if err != nil {
+					t.Fatalf("%s: %v", action.Name, err)
+				}
 			}
 
 			for _, frameBtn := range []string{"#iframe-btn-51", "#iframe-btn-52"} {

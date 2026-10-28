@@ -148,7 +148,7 @@ func TestRoadmapIntegratedNonMessagingReleaseScenario(t *testing.T) {
 		// Populate multi-protocol transactions (HTTP, gRPC, WebSocket, Java HTTP) on both baseline and candidate archives.
 		writeMultiProtocolTransactions := func(t *testing.T, rec *storage.RunArchiveRecord, start time.Time, scale int64) {
 			t.Helper()
-			decBytes, prepBytes := int64(64*scale), int64(64*scale)
+			decBytes, prepBytes := 64*scale, 64*scale
 			shallowBytes, graphBytes, serBytes := int64(128), int64(512), int64(256)
 			decMs, encMs, callMs, rttMs, serMs, deserMs := 1.1, 0.9, float64(12*scale), float64(3*scale), 0.4, 0.5
 			statusOK := int32(0)
