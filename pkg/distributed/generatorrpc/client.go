@@ -703,7 +703,13 @@ type GeneratorStats struct {
 	// populated controller-side during multi-generator aggregation; per a single
 	// generator it is left zero (the per-pod value is CPUPercent).
 	CPUProcessPctMax                  float64
+	CPUFreePct                        float64
 	MemoryBytes                       int64
+	MemFreeMB                         float64
+	NetSentKbps                       float64
+	NetRecvKbps                       float64
+	DiskReadKbps                      float64
+	DiskWriteKbps                     float64
 	GoroutineCount                    int32
 	CPUUserPct                        float64
 	CPUSystemPct                      float64
@@ -721,6 +727,7 @@ type GeneratorStats struct {
 	ContainerCPULimitCores            float64
 	ContainerCPUUsagePct              float64
 	ContainerCPUThrottledPeriodsDelta uint64
+	ContainerCPUPeriodsDelta          uint64
 	ContainerCPUThrottledSecondsRate  float64
 	ContainerMemoryWorkingSetMB       float64
 	ContainerMemoryLimitMB            float64
@@ -2589,7 +2596,13 @@ func toProtoStats(stats GeneratorStats) *pb.GeneratorStats {
 		CompletedIterations:               stats.CompletedIterations,
 		ActiveVusers:                      stats.ActiveVUsers,
 		CpuPercent:                        stats.CPUPercent,
+		CpuFreePct:                        stats.CPUFreePct,
 		MemoryBytes:                       stats.MemoryBytes,
+		MemFreeMb:                         stats.MemFreeMB,
+		NetSentKbps:                       stats.NetSentKbps,
+		NetRecvKbps:                       stats.NetRecvKbps,
+		DiskReadKbps:                      stats.DiskReadKbps,
+		DiskWriteKbps:                     stats.DiskWriteKbps,
 		GoroutineCount:                    stats.GoroutineCount,
 		CpuUserPct:                        stats.CPUUserPct,
 		CpuSystemPct:                      stats.CPUSystemPct,
@@ -2607,6 +2620,7 @@ func toProtoStats(stats GeneratorStats) *pb.GeneratorStats {
 		ContainerCpuLimitCores:            stats.ContainerCPULimitCores,
 		ContainerCpuUsagePct:              stats.ContainerCPUUsagePct,
 		ContainerCpuThrottledPeriodsDelta: stats.ContainerCPUThrottledPeriodsDelta,
+		ContainerCpuPeriodsDelta:          stats.ContainerCPUPeriodsDelta,
 		ContainerCpuThrottledSecondsRate:  stats.ContainerCPUThrottledSecondsRate,
 		ContainerMemoryWorkingSetMb:       stats.ContainerMemoryWorkingSetMB,
 		ContainerMemoryLimitMb:            stats.ContainerMemoryLimitMB,
@@ -2635,7 +2649,13 @@ func generatorStatsFromProto(stats *pb.GeneratorStats) GeneratorStats {
 		CompletedIterations:               stats.GetCompletedIterations(),
 		ActiveVUsers:                      stats.GetActiveVusers(),
 		CPUPercent:                        stats.GetCpuPercent(),
+		CPUFreePct:                        stats.GetCpuFreePct(),
 		MemoryBytes:                       stats.GetMemoryBytes(),
+		MemFreeMB:                         stats.GetMemFreeMb(),
+		NetSentKbps:                       stats.GetNetSentKbps(),
+		NetRecvKbps:                       stats.GetNetRecvKbps(),
+		DiskReadKbps:                      stats.GetDiskReadKbps(),
+		DiskWriteKbps:                     stats.GetDiskWriteKbps(),
 		GoroutineCount:                    stats.GetGoroutineCount(),
 		CPUUserPct:                        stats.GetCpuUserPct(),
 		CPUSystemPct:                      stats.GetCpuSystemPct(),
@@ -2653,6 +2673,7 @@ func generatorStatsFromProto(stats *pb.GeneratorStats) GeneratorStats {
 		ContainerCPULimitCores:            stats.GetContainerCpuLimitCores(),
 		ContainerCPUUsagePct:              stats.GetContainerCpuUsagePct(),
 		ContainerCPUThrottledPeriodsDelta: stats.GetContainerCpuThrottledPeriodsDelta(),
+		ContainerCPUPeriodsDelta:          stats.GetContainerCpuPeriodsDelta(),
 		ContainerCPUThrottledSecondsRate:  stats.GetContainerCpuThrottledSecondsRate(),
 		ContainerMemoryWorkingSetMB:       stats.GetContainerMemoryWorkingSetMb(),
 		ContainerMemoryLimitMB:            stats.GetContainerMemoryLimitMb(),

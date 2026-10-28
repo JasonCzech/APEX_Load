@@ -1161,6 +1161,13 @@ message GeneratorStats {
   double disk_io_time_pct = 35;
   double disk_weighted_io_time_pct = 36;
   uint64 disk_in_progress = 37;
+  double cpu_free_pct = 39;
+  double mem_free_mb = 40;
+  double net_sent_kbps = 41;
+  double net_recv_kbps = 42;
+  double disk_read_kbps = 43;
+  double disk_write_kbps = 44;
+  uint64 container_cpu_periods_delta = 45;
 }
 
 message ControlSignal {

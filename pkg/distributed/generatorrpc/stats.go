@@ -15,7 +15,13 @@ func generatorStatsFromResources(resources *engine.SystemResources, activeVUsers
 		return stats
 	}
 	stats.CPUPercent = resources.CPUProcessPct
+	stats.CPUFreePct = resources.CPUFreePct
 	stats.MemoryBytes = int64(resources.MemProcessMb * 1024 * 1024)
+	stats.MemFreeMB = resources.MemFreeMb
+	stats.NetSentKbps = resources.NetSentKbps
+	stats.NetRecvKbps = resources.NetRecvKbps
+	stats.DiskReadKbps = resources.DiskReadKbps
+	stats.DiskWriteKbps = resources.DiskWriteKbps
 	stats.GoroutineCount = firstNonZeroInt32(resources.GoroutineCount, stats.GoroutineCount)
 	stats.CPUUserPct = resources.CPUUserPct
 	stats.CPUSystemPct = resources.CPUSystemPct
@@ -33,6 +39,7 @@ func generatorStatsFromResources(resources *engine.SystemResources, activeVUsers
 	stats.ContainerCPULimitCores = resources.ContainerCPULimitCores
 	stats.ContainerCPUUsagePct = resources.ContainerCPUUsagePct
 	stats.ContainerCPUThrottledPeriodsDelta = resources.ContainerCPUThrottledPeriodsDelta
+	stats.ContainerCPUPeriodsDelta = resources.ContainerCPUPeriodsDelta
 	stats.ContainerCPUThrottledSecondsRate = resources.ContainerCPUThrottledSecondsRate
 	stats.ContainerMemoryWorkingSetMB = resources.ContainerMemoryWorkingSetMB
 	stats.ContainerMemoryLimitMB = resources.ContainerMemoryLimitMB
@@ -56,7 +63,13 @@ func generatorStatsFromResources(resources *engine.SystemResources, activeVUsers
 func resourcesFromGeneratorStats(stats GeneratorStats) *engine.SystemResources {
 	return &engine.SystemResources{
 		CPUProcessPct:                     stats.CPUPercent,
+		CPUFreePct:                        stats.CPUFreePct,
 		MemProcessMb:                      float64(stats.MemoryBytes) / (1024 * 1024),
+		MemFreeMb:                         stats.MemFreeMB,
+		NetSentKbps:                       stats.NetSentKbps,
+		NetRecvKbps:                       stats.NetRecvKbps,
+		DiskReadKbps:                      stats.DiskReadKbps,
+		DiskWriteKbps:                     stats.DiskWriteKbps,
 		GoroutineCount:                    stats.GoroutineCount,
 		CPUUserPct:                        stats.CPUUserPct,
 		CPUSystemPct:                      stats.CPUSystemPct,
@@ -74,6 +87,7 @@ func resourcesFromGeneratorStats(stats GeneratorStats) *engine.SystemResources {
 		ContainerCPULimitCores:            stats.ContainerCPULimitCores,
 		ContainerCPUUsagePct:              stats.ContainerCPUUsagePct,
 		ContainerCPUThrottledPeriodsDelta: stats.ContainerCPUThrottledPeriodsDelta,
+		ContainerCPUPeriodsDelta:          stats.ContainerCPUPeriodsDelta,
 		ContainerCPUThrottledSecondsRate:  stats.ContainerCPUThrottledSecondsRate,
 		ContainerMemoryWorkingSetMB:       stats.ContainerMemoryWorkingSetMB,
 		ContainerMemoryLimitMB:            stats.ContainerMemoryLimitMB,
@@ -107,12 +121,19 @@ func mergeGeneratorStats(left GeneratorStats, right GeneratorStats) GeneratorSta
 	left.ActiveVUsers += right.ActiveVUsers
 	left.CompletedIterations += right.CompletedIterations
 	left.CPUPercent = maxFloat64(left.CPUPercent, right.CPUPercent)
+	left.CPUFreePct = maxFloat64(left.CPUFreePct, right.CPUFreePct)
 	left.MemoryBytes = maxInt64(left.MemoryBytes, right.MemoryBytes)
+	left.MemFreeMB = maxFloat64(left.MemFreeMB, right.MemFreeMB)
+	left.NetSentKbps = maxFloat64(left.NetSentKbps, right.NetSentKbps)
+	left.NetRecvKbps = maxFloat64(left.NetRecvKbps, right.NetRecvKbps)
+	left.DiskReadKbps = maxFloat64(left.DiskReadKbps, right.DiskReadKbps)
+	left.DiskWriteKbps = maxFloat64(left.DiskWriteKbps, right.DiskWriteKbps)
 	left.GoroutineCount = maxInt32(left.GoroutineCount, right.GoroutineCount)
 	left.ThreadCount = maxInt32(left.ThreadCount, right.ThreadCount)
 	left.OpenFDCount = maxInt32(left.OpenFDCount, right.OpenFDCount)
 	left.GCCountDelta = maxUint32(left.GCCountDelta, right.GCCountDelta)
 	left.ContainerCPUThrottledPeriodsDelta = maxUint64(left.ContainerCPUThrottledPeriodsDelta, right.ContainerCPUThrottledPeriodsDelta)
+	left.ContainerCPUPeriodsDelta = maxUint64(left.ContainerCPUPeriodsDelta, right.ContainerCPUPeriodsDelta)
 	left.ContainerMemoryFailCountDelta = maxUint64(left.ContainerMemoryFailCountDelta, right.ContainerMemoryFailCountDelta)
 	left.ContainerOOMKillCountDelta = maxUint64(left.ContainerOOMKillCountDelta, right.ContainerOOMKillCountDelta)
 	left.DiskInProgress = maxUint64(left.DiskInProgress, right.DiskInProgress)
