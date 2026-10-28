@@ -191,6 +191,21 @@ describe('CommandCenterBrowserGroups provisional live intelligence', () => {
         vi.advanceTimersByTime(10000)
       })
       expect(mocks.request.mock.calls.length).toBe(callsAfterFinalize)
+
+      // Switching testId to another run whose fetch is still pending must immediately clear the previous run's live intelligence box.
+      mocks.request.mockImplementation(() => new Promise(() => {}))
+      await act(async () => {
+        root.render(
+          <CommandCenterBrowserGroups
+            testId="run-other"
+            groups={[sampleGroup]}
+            rateWindow="10 s avg"
+            requestsCounted
+            inRunRequestRate
+          />,
+        )
+      })
+      expect(container.querySelector('.command-browser-live-intelligence')).toBeNull()
     } finally {
       vi.useRealTimers()
     }

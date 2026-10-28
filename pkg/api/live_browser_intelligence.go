@@ -897,7 +897,22 @@ func (tr *TestRunner) publishLiveBrowserIntelligenceSnapshot(test *ManagedTest, 
 	testID := test.ID
 	projectID := normalizeProjectID(test.ProjectID)
 	testName := test.Name
+	liveState := tr.liveState
 	tr.mu.Unlock()
+
+	if runSnapshot.LiveMetrics == nil && liveState != nil {
+		if cached, err := liveState.GetRunSnapshot(context.Background(), testID); err == nil && cached != nil && normalizeProjectID(cached.ProjectID) == projectID {
+			if cached.LiveMetrics != nil {
+				runSnapshot.LiveMetrics = cached.LiveMetrics
+				if runSnapshot.HistoryPoints == 0 {
+					runSnapshot.HistoryPoints = cached.HistoryPoints
+				}
+			}
+			if !cached.UpdatedAt.IsZero() && cached.UpdatedAt.After(runSnapshot.UpdatedAt) {
+				runSnapshot.UpdatedAt = cached.UpdatedAt.UTC()
+			}
+		}
+	}
 
 	tr.cacheRunSnapshot(runSnapshot)
 	if tr.hub != nil {

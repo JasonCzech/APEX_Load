@@ -1160,12 +1160,14 @@ func TestLiveBrowserIntelligenceRound3Fixes(t *testing.T) {
 		},
 	}
 
-	// Seed liveState with untruncated pre-failover snapshot.
+	// Seed liveState with untruncated pre-failover snapshot and LiveMetrics.
 	if err := liveStore.SetRunSnapshot(context.Background(), RunLiveStateSnapshot{
 		TestID:                         failoverTestID,
 		ProjectID:                      storage.DefaultProjectID,
 		Status:                         "RUNNING",
 		UpdatedAt:                      startedAt.Add(3 * time.Second),
+		LiveMetrics:                    &LiveMetrics{ActiveVUsers: 4, Requests: 42},
+		HistoryPoints:                  7,
 		ProvisionalBrowserIntelligence: preFailoverSnap,
 	}, time.Minute); err != nil {
 		t.Fatalf("SetRunSnapshot: %v", err)
@@ -1205,6 +1207,9 @@ func TestLiveBrowserIntelligenceRound3Fixes(t *testing.T) {
 	if err != nil || restoredInStore == nil || restoredInStore.ProvisionalBrowserIntelligence == nil {
 		t.Fatalf("expected restored snapshot in liveStore, got %+v (err=%v)", restoredInStore, err)
 	}
+	if restoredInStore.LiveMetrics == nil || restoredInStore.LiveMetrics.Requests != 42 || restoredInStore.HistoryPoints != 7 {
+		t.Fatalf("expected pre-failover LiveMetrics and HistoryPoints to be preserved on adoption, got LiveMetrics=%+v HistoryPoints=%d", restoredInStore.LiveMetrics, restoredInStore.HistoryPoints)
+	}
 	if !restoredInStore.ProvisionalBrowserIntelligence.LiveTruncated ||
 		!slices.Contains(restoredInStore.ProvisionalBrowserIntelligence.TruncatedReasons, "controller_failover") {
 		t.Fatalf("expected LiveTruncated=true and controller_failover in liveStore immediately after adoption, got %+v", restoredInStore.ProvisionalBrowserIntelligence)
@@ -1215,7 +1220,7 @@ func TestLiveBrowserIntelligenceRound3Fixes(t *testing.T) {
 	}
 
 	// 2. High 2A: Record 1 post-failover document while 0 interactions and 0 journey events have arrived.
-	// publishLiveBrowserIntelligenceSnapshot must update Findings while preserving pre-failover Interactions and Journeys!
+	// publishLiveBrowserIntelligenceSnapshot must update Findings while preserving pre-failover Interactions, Journeys, and LiveMetrics!
 	obs := (e1Document{
 		id:        1,
 		metric:    "lcp",
@@ -1229,7 +1234,38 @@ func TestLiveBrowserIntelligenceRound3Fixes(t *testing.T) {
 		SourceGeneration: d2Generation,
 		Observations:     []protocol.BrowserDocumentObservation{obs},
 	})
+	srv.runner.snapshotWriteMu.Lock()
+	delete(srv.runner.snapshotWrites, failoverTestID)
+	srv.runner.snapshotWriteMu.Unlock()
 	srv.runner.publishLiveBrowserIntelligenceSnapshot(adoptedManaged, adoptedManaged.liveBrowserIntelligence, startedAt.Add(6*time.Second), false)
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+		return err == nil && snap != nil && snap.ProvisionalBrowserIntelligence != nil &&
+			snap.ProvisionalBrowserIntelligence.Findings != nil &&
+			snap.ProvisionalBrowserIntelligence.Findings.Result != nil &&
+			snap.ProvisionalBrowserIntelligence.Findings.Result.Score.Coverage.Observed > 0
+	}, "post-failover publishLiveBrowserIntelligenceSnapshot in liveStore")
+	afterDocInStore, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+	if err != nil || afterDocInStore == nil || afterDocInStore.LiveMetrics == nil || afterDocInStore.LiveMetrics.Requests != 42 || afterDocInStore.HistoryPoints != 7 {
+		t.Fatalf("expected pre-failover LiveMetrics and HistoryPoints in liveStore after post-failover browser snapshot publish while adoptedManaged.LiveMetrics == nil, got %+v (err=%v)", afterDocInStore, err)
+	}
+	coalesceAt := time.Now().UTC().Add(10 * time.Second)
+	srv.runner.cacheRunSnapshot(RunLiveStateSnapshot{
+		TestID:                         failoverTestID,
+		ProjectID:                      storage.DefaultProjectID,
+		Status:                         "RUNNING",
+		UpdatedAt:                      coalesceAt,
+		ProvisionalBrowserIntelligence: afterDocInStore.ProvisionalBrowserIntelligence,
+	})
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+		return err == nil && snap != nil && snap.UpdatedAt.Equal(coalesceAt)
+	}, "cacheRunSnapshot with nil LiveMetrics coalesced in liveStore")
+	afterCoalesceInStore, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+	if err != nil || afterCoalesceInStore == nil || afterCoalesceInStore.LiveMetrics == nil || afterCoalesceInStore.LiveMetrics.Requests != 42 || afterCoalesceInStore.HistoryPoints != 7 {
+		t.Fatalf("expected cacheRunSnapshot to preserve pending.latest LiveMetrics and HistoryPoints when snapshot.LiveMetrics == nil, got %+v (err=%v)", afterCoalesceInStore, err)
+	}
 
 	srv.runner.mu.RLock()
 	afterDocSnap := cloneProvisionalBrowserIntelligenceSnapshot(adoptedManaged.provisionalBrowserIntelligence)

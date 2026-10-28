@@ -293,7 +293,7 @@ func rcaBrowserBaselineMatchesPolicyDefinition(manifest *RunArchiveManifest, pay
 	if !rcaBrowserBaselineMatchesPolicy(manifest, payload, ref) {
 		return false
 	}
-	if payload.BrowserSelection != nil && validateRCABrowserSelection(payload) != nil {
+	if validateRCABrowserSelection(payload) != nil {
 		return false
 	}
 	switch policy.Baseline.Mode {

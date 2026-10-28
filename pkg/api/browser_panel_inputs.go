@@ -105,7 +105,7 @@ func (s *Server) verifyAndPopulateBrowserPanelV2(ctx context.Context, projectID 
 					continue
 				}
 				payload := rcaAnalysisPayloadOf(cand)
-				if payload.Assessment == nil || payload.Inputs.Archive != archiveDigest || (payload.BrowserSelection != nil && validateRCABrowserSelection(payload) != nil) {
+				if payload.Assessment == nil || payload.Inputs.Archive != archiveDigest || validateRCABrowserSelection(payload) != nil {
 					continue
 				}
 				policyOK := true
@@ -125,14 +125,7 @@ func (s *Server) verifyAndPopulateBrowserPanelV2(ctx context.Context, projectID 
 							}
 						}
 						if loadedPolicy {
-							if payload.BrowserSelection != nil {
-								policyOK = rcaBrowserBaselineMatchesPolicyDefinition(response.Current.manifest, payload, ref, policy)
-							} else {
-								policyOK = rcaBrowserBaselineMatchesPolicy(response.Current.manifest, payload, ref)
-								if policyOK && policy.Baseline.Mode == "pinned_run" && strings.TrimSpace(payload.Request.BaselineTestID) != "" {
-									policyOK = strings.TrimSpace(payload.Request.BaselineTestID) == strings.TrimSpace(policy.Baseline.RunID)
-								}
-							}
+							policyOK = rcaBrowserBaselineMatchesPolicyDefinition(response.Current.manifest, payload, ref, policy)
 						} else {
 							policyOK = rcaBrowserBaselineMatchesPolicy(response.Current.manifest, payload, ref)
 						}
