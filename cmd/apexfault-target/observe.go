@@ -16,19 +16,23 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"time"
 )
 
 // targetSnapshot is a projection, never a copy of an arbitrary remote response.
 // It deliberately has no controller, VUser or execution-ownership claims.
 type targetSnapshot struct {
-	SchemaVersion    int     `json:"schema_version"`
-	RunID            string  `json:"run_id"`
-	TestID           string  `json:"test_id"`
-	TargetInstanceID string  `json:"target_instance_id"`
-	StartedAt        float64 `json:"started_at_unix"`
-	ObservedAt       float64 `json:"observed_at_unix"`
-	TargetRequests   uint64  `json:"target_requests"`
+	SchemaVersion              int               `json:"schema_version"`
+	RunID                      string            `json:"run_id"`
+	TestID                     string            `json:"test_id"`
+	TargetInstanceID           string            `json:"target_instance_id"`
+	StartedAt                  float64           `json:"started_at_unix"`
+	ObservedAt                 float64           `json:"observed_at_unix"`
+	TargetRequests             uint64            `json:"target_requests"`
+	PerGenerationRequests      map[string]uint64 `json:"per_generation_requests,omitempty"`
+	HighestGeneration          uint64            `json:"highest_generation,omitempty"`
+	DuplicateGenerationOverlap uint64            `json:"duplicate_generation_overlap,omitempty"`
 }
 
 var instancePattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
@@ -85,11 +89,19 @@ func decodeSnapshot(body []byte, runID, testID string, now float64) (targetSnaps
 		return result, invalid
 	}
 	expected := []string{"schema_version", "run_id", "test_id", "target_instance_id", "started_at_unix", "observed_at_unix", "target_requests"}
-	if len(fields) != len(expected) {
-		return result, invalid
+	allowed := map[string]bool{
+		"per_generation_requests":      true,
+		"highest_generation":           true,
+		"duplicate_generation_overlap": true,
 	}
 	for _, key := range expected {
+		allowed[key] = true
 		if _, ok := fields[key]; !ok {
+			return result, invalid
+		}
+	}
+	for key := range fields {
+		if !allowed[key] {
 			return result, invalid
 		}
 	}
@@ -98,7 +110,58 @@ func decodeSnapshot(body []byte, runID, testID string, now float64) (targetSnaps
 		math.IsNaN(result.ObservedAt) || math.IsInf(result.ObservedAt, 0) || result.ObservedAt < now-5 || result.ObservedAt > now {
 		return targetSnapshot{}, invalid
 	}
+	if !validateSnapshotGenerations(fields, result) {
+		return targetSnapshot{}, invalid
+	}
 	return result, nil
+}
+
+func validateSnapshotGenerations(fields map[string]json.RawMessage, result targetSnapshot) bool {
+	rawPerGen, hasPerGen := fields["per_generation_requests"]
+	_, hasHighest := fields["highest_generation"]
+	_, hasOverlap := fields["duplicate_generation_overlap"]
+	if !hasPerGen {
+		return !hasHighest && !hasOverlap && len(result.PerGenerationRequests) == 0 && result.HighestGeneration == 0 && result.DuplicateGenerationOverlap == 0
+	}
+	if len(result.PerGenerationRequests) == 0 || len(result.PerGenerationRequests) > maxGenerationsPerTest {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(rawPerGen))
+	if tok, err := decoder.Token(); err != nil || tok != json.Delim('{') {
+		return false
+	}
+	seen := make(map[string]struct{}, len(result.PerGenerationRequests))
+	var sum, maxGen uint64
+	for decoder.More() {
+		tok, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		key, ok := tok.(string)
+		if !ok {
+			return false
+		}
+		if _, dup := seen[key]; dup {
+			return false
+		}
+		seen[key] = struct{}{}
+		gen, err := strconv.ParseUint(key, 10, 64)
+		if err != nil || gen == 0 || strconv.FormatUint(gen, 10) != key {
+			return false
+		}
+		var count uint64
+		if decoder.Decode(&count) != nil || count == 0 || sum > ^uint64(0)-count {
+			return false
+		}
+		sum += count
+		if gen > maxGen {
+			maxGen = gen
+		}
+	}
+	if tok, err := decoder.Token(); err != nil || tok != json.Delim('}') || len(seen) != len(result.PerGenerationRequests) {
+		return false
+	}
+	return sum <= result.TargetRequests && result.HighestGeneration == maxGen && result.DuplicateGenerationOverlap <= result.TargetRequests
 }
 
 func observeTarget(ctx context.Context, c targetConfig, testID, rawURL, caFile string, timeout time.Duration) (targetSnapshot, error) {

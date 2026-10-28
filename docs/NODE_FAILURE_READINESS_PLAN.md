@@ -28,7 +28,7 @@ recovery and production node-loss readiness remain unfinished.
 | 5 | Generators now support idle, full-budget, non-executing standby claims with separately fenced ownership transfer/activation; controller-only adoption transfers frozen live pod-capacity claims to the new execution generation; generators confirm the exact reservation before an atomic, lease-fenced ledger transfer; preexisting idle standby claims join the same first-epoch batch and transfer without becoming executable participants; the storage transaction rejects an unconfirmed standby omitted by a stale snapshot; completed/retired capacity remains held for ordinary release; evacuation can activate an exact same-run committed standby through an atomic ledger comparison, with bounded RPCs and budget-preserving rollback; adoption-enabled evacuation now persists a fail-closed interruption guard before staging, with exact-guard completion and an explicit interrupted-run reason | Durable, fenced combined-loss recovery remains; reserved spare admission/quota accounting implemented and three consecutive Docker worker-fault trials passed on `9f16bee8`; two deployed normal evacuation trials on `f51780f4` recorded v2 guard then v1 completion, cross-worker replacement traffic and verified archives; a deployed interruption/takeover trial on `1b1ffdc5` failed closed with 90 seconds of flat independent target traffic; the corrected post-commit interruption trial passed 50-VUser successor adoption, independent traffic, capacity transfer, and 9/9 S3 archive verification; opt-in successor rollback (prepared/staged), roll-forward (replacement commit intent) and missing-replacement restart (stateless HTTP) are implemented and locally tested only; deployed qualification of those phases remains open |
 | 6 | [State inventory and fenced storage recovery runbook](NODE_STORAGE_RECOVERY.md) published | Multi-host CSI, permanent worker/zone trials and measured RTO/RPO |
 | 7 | Terminal projections label samples historical; active API/WS observations carry a five-second deadline bounded by the oldest contributor; Command Center and advanced details expire samples locally; observed distributed archive collection failures have durable, incarnation-bound single-run API/WS records and an explicit Results notice; [opt-in confirmed-source TTL retention](ARCHIVE_SOURCE_RETENTION.md) protects publication with a cross-process file fence, and producer retries preserve current durable manifest metadata; partial manifests preserve known collected/missing generator sources and exported report completeness, with an inspectable Results warning; fail-closed evacuation records collection failures and retains sources across in-process terminal-write retries | Atomic terminal availability markers are implemented for lifecycle status writes; durable expected-source intent is implemented; bounded collection retry and cache-only partial-result finalization are implemented; already-uploaded pending archives can recover their catalog after local staging loss; single-run recovery-state API and Results notices are implemented; optional shared staging and private reader-cache deployment support are implemented; aggregate transfer-spool admission with crash-reservation accounting and per-run controller raw-capture limits are implemented; generator and controller namespace backlog admission is implemented; three controller and three generator logical-backlog pressure trials passed on Docker Desktop; same-host PostgreSQL/S3 cross-process shared-staging replay passed three times; deployed multi-node RWX/CSI and physical storage qualification remain |
-| 8 | Go, race, deployment render, and PostgreSQL/S3 regression checks passed | Repeated fault matrix and external production qualification |
+| 8 | Go, race, deployment render, PostgreSQL/S3 regression checks, and the repeatable 3-repetition integrated local fault qualification harness (`TestRECCIntegratedLocalFaultQualification3Rep`: 7 fault scenarios × 3 repetitions = 21 runs reconciled against the authenticated independent fault target with zero duplicate-generation overlap, zero stale adoptions, zero post-terminal active reservations, and zero false-complete archives; [record](qa/reviews/roadmap-rec-c-local-faults-2026-10-28/README.md)) passed | Multi-node cloud cluster soak and live cloud node-drain qualification remain an open external gate |
 
 Validation details: [first-slice evidence](qa/reviews/node-failure-readiness-2026-09-27.md).
 
@@ -635,3 +635,20 @@ acknowledgement. The old-image trial's archive collection exhausted with
 zero of two source receipts, reported explicitly by the recovery API.
 Neither the temporary kind outage nor the classification
 fix qualifies permanent physical node loss.
+
+Repeatable local integrated fault qualification across all seven required
+scenarios (`controller_only_failover`, `standby_worker_loss`,
+`active_controller_and_worker_loss`, `no_spare_capacity`, `network_partition`,
+`second_leader_change_during_recovery`, and
+`local_storage_archive_interruption`) is now enforced by
+`TestRECCIntegratedLocalFaultQualification3Rep` in
+`pkg/api/rec_c_local_fault_qualification_test.go`, executing three fresh
+repetitions per scenario (21 runs total) using real in-process
+`generatorrpc.Service` instances against an authenticated `apexfault-target`
+HTTP server, driving the controller's `reconcilePodCapacity` loop to release
+pod capacity reservations, and reconciling per-generation request counts,
+retained generator/controller archive HTTP transaction records, timing
+breakdowns, and archive outcomes
+([record](qa/reviews/roadmap-rec-c-local-faults-2026-10-28/README.md)). Multi-node
+cloud cluster soak and live cloud node-drain qualification remain an explicit
+external gate.

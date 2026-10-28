@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,15 @@ import (
 )
 
 func validSnapshot(now float64) targetSnapshot {
-	return targetSnapshot{2, testConfig().RunID, faultTestID, strings.Repeat("b", 32), now - 10, now, 42}
+	return targetSnapshot{
+		SchemaVersion:    2,
+		RunID:            testConfig().RunID,
+		TestID:           faultTestID,
+		TargetInstanceID: strings.Repeat("b", 32),
+		StartedAt:        now - 10,
+		ObservedAt:       now,
+		TargetRequests:   42,
+	}
 }
 
 func TestSnapshotURL(t *testing.T) {
@@ -40,8 +49,32 @@ func TestDecodeSnapshot(t *testing.T) {
 	valid := validSnapshot(now)
 	body, _ := json.Marshal(valid)
 	got, err := decodeSnapshot(body, testConfig().RunID, faultTestID, now)
-	if err != nil || got != valid {
+	if err != nil || !reflect.DeepEqual(got, valid) {
 		t.Fatalf("snapshot=%+v err=%v", got, err)
+	}
+	validWithGen := valid
+	validWithGen.PerGenerationRequests = map[string]uint64{"1": 20, "2": 22}
+	validWithGen.HighestGeneration = 2
+	validWithGen.DuplicateGenerationOverlap = 1
+	genBody, _ := json.Marshal(validWithGen)
+	gotGen, err := decodeSnapshot(genBody, testConfig().RunID, faultTestID, now)
+	if err != nil || !reflect.DeepEqual(gotGen, validWithGen) {
+		t.Fatalf("genSnapshot=%+v err=%v", gotGen, err)
+	}
+	for _, badGenJSON := range []string{
+		strings.TrimSuffix(string(body), "}") + `,"highest_generation":2}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{},"highest_generation":0}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{"0":1},"highest_generation":0}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{"01":1},"highest_generation":1}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{"1":0},"highest_generation":1}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{"1":43},"highest_generation":1}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{"1":10},"highest_generation":2}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{"1":10},"highest_generation":1,"duplicate_generation_overlap":43}`,
+		strings.TrimSuffix(string(body), "}") + `,"per_generation_requests":{"1":5,"1":5},"highest_generation":1}`,
+	} {
+		if _, err := decodeSnapshot([]byte(badGenJSON), testConfig().RunID, faultTestID, now); err == nil {
+			t.Fatalf("accepted invalid generation snapshot %s", badGenJSON)
+		}
 	}
 	for _, tc := range []struct {
 		field string

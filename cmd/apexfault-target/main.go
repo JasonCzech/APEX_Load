@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -33,7 +34,10 @@ var runPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 var tokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32,128}$`)
 var testIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,252}$`)
 
-const maxTestCounters = 2000
+const (
+	maxTestCounters       = 2000
+	maxGenerationsPerTest = 64
+)
 
 func readConfig(path string) (targetConfig, error) {
 	var c targetConfig
@@ -65,11 +69,14 @@ func readConfig(path string) (targetConfig, error) {
 }
 
 type target struct {
-	config   targetConfig
-	instance string
-	started  float64
-	mu       sync.Mutex
-	counts   map[string]uint64
+	config           targetConfig
+	instance         string
+	started          float64
+	mu               sync.Mutex
+	counts           map[string]uint64
+	perGeneration    map[string]map[uint64]uint64
+	highestGen       map[string]uint64
+	duplicateOverlap map[string]uint64
 }
 
 func unixNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
@@ -79,7 +86,15 @@ func newTarget(c targetConfig) (*target, error) {
 	if _, err := rand.Read(id[:]); err != nil {
 		return nil, errors.New("cannot generate target instance identity")
 	}
-	return &target{config: c, instance: hex.EncodeToString(id[:]), started: unixNow(), counts: make(map[string]uint64)}, nil
+	return &target{
+		config:           c,
+		instance:         hex.EncodeToString(id[:]),
+		started:          unixNow(),
+		counts:           make(map[string]uint64),
+		perGeneration:    make(map[string]map[uint64]uint64),
+		highestGen:       make(map[string]uint64),
+		duplicateOverlap: make(map[string]uint64),
+	}, nil
 }
 
 func requestedTestID(r *http.Request) (string, bool) {
@@ -88,6 +103,21 @@ func requestedTestID(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return values[0], true
+}
+
+func requestedGeneration(r *http.Request) (uint64, bool, bool) {
+	values := r.Header.Values("X-Apexload-Fault-Generation")
+	if len(values) == 0 {
+		return 0, false, true
+	}
+	if len(values) != 1 {
+		return 0, false, false
+	}
+	gen, err := strconv.ParseUint(values[0], 10, 64)
+	if err != nil || gen == 0 {
+		return 0, false, false
+	}
+	return gen, true, true
 }
 
 func authorized(r *http.Request, token string) bool {
@@ -124,12 +154,42 @@ func (t *target) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid test identity", http.StatusBadRequest)
 			return
 		}
+		gen, hasGen, ok := requestedGeneration(r)
+		if !ok {
+			http.Error(w, "invalid generation identity", http.StatusBadRequest)
+			return
+		}
 		t.mu.Lock()
 		count, exists := t.counts[testID]
 		if (!exists && len(t.counts) >= maxTestCounters) || count == ^uint64(0) {
 			t.mu.Unlock()
 			http.Error(w, "counter unavailable", http.StatusServiceUnavailable)
 			return
+		}
+		if hasGen {
+			genMap := t.perGeneration[testID]
+			if genMap == nil {
+				genMap = make(map[uint64]uint64)
+				t.perGeneration[testID] = genMap
+			}
+			genCount, genExists := genMap[gen]
+			if (!genExists && len(genMap) >= maxGenerationsPerTest) || genCount == ^uint64(0) {
+				t.mu.Unlock()
+				http.Error(w, "counter unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			highest := t.highestGen[testID]
+			if gen < highest && t.duplicateOverlap[testID] == ^uint64(0) {
+				t.mu.Unlock()
+				http.Error(w, "counter unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			genMap[gen] = genCount + 1
+			if gen > highest {
+				t.highestGen[testID] = gen
+			} else if gen < highest {
+				t.duplicateOverlap[testID]++
+			}
 		}
 		t.counts[testID] = count + 1
 		t.mu.Unlock()
@@ -145,15 +205,25 @@ func (t *target) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		t.mu.Lock()
+		var perGen map[string]uint64
+		if genMap := t.perGeneration[testID]; len(genMap) > 0 {
+			perGen = make(map[string]uint64, len(genMap))
+			for g, n := range genMap {
+				perGen[strconv.FormatUint(g, 10)] = n
+			}
+		}
 		snapshot := struct {
-			SchemaVersion    int     `json:"schema_version"`
-			RunID            string  `json:"run_id"`
-			TestID           string  `json:"test_id"`
-			TargetInstanceID string  `json:"target_instance_id"`
-			StartedAt        float64 `json:"started_at_unix"`
-			ObservedAt       float64 `json:"observed_at_unix"`
-			TargetRequests   uint64  `json:"target_requests"`
-		}{2, t.config.RunID, testID, t.instance, t.started, unixNow(), t.counts[testID]}
+			SchemaVersion              int               `json:"schema_version"`
+			RunID                      string            `json:"run_id"`
+			TestID                     string            `json:"test_id"`
+			TargetInstanceID           string            `json:"target_instance_id"`
+			StartedAt                  float64           `json:"started_at_unix"`
+			ObservedAt                 float64           `json:"observed_at_unix"`
+			TargetRequests             uint64            `json:"target_requests"`
+			PerGenerationRequests      map[string]uint64 `json:"per_generation_requests,omitempty"`
+			HighestGeneration          uint64            `json:"highest_generation,omitempty"`
+			DuplicateGenerationOverlap uint64            `json:"duplicate_generation_overlap,omitempty"`
+		}{2, t.config.RunID, testID, t.instance, t.started, unixNow(), t.counts[testID], perGen, t.highestGen[testID], t.duplicateOverlap[testID]}
 		t.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(snapshot)
