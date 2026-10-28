@@ -84,6 +84,9 @@ describe('parseMarkdown', () => {
       { kind: 'hr' },
       { kind: 'blockquote', text: 'Important note continued on next line' },
     ])
+    // A rule needs three markers; two asterisks alone stay text.
+    expect(parseMarkdown('* * *')).toEqual([{ kind: 'hr' }])
+    expect(parseMarkdown('**')).toEqual([{ kind: 'paragraph', text: '**' }])
   })
 
   // The guides wrap bullets across several source lines. Terminating the list at the

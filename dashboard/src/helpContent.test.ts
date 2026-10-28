@@ -1,7 +1,7 @@
 import { settingsDestination, settingsOwner } from './components/settingsNavigation'
 import { isSharedAssetsSection } from './components/sharedAssetsNavigation'
 import { describe, expect, it } from 'vitest'
-import { articleBlocks, articleForSection, helpArticles, helpArticleHash, helpSectionID, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
+import { articleBlocks, articleForSection, helpArticles, helpArticleHash, helpSectionID, isBlockedHelpLink, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
 import { parseMarkdown } from './components/repositoryGuideMarkdown'
 import { apiGuideHashForToggle, apiGuideToggleOptions, helpAreaForPage } from './apiGuideNavigation'
 
@@ -64,8 +64,8 @@ describe('Help catalogue and content contracts', () => {
       const withoutCode = source.replace(/```[\s\S]*?```/g, '')
       for (const match of withoutCode.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
         const href = match[1]
-        expect(href, `${article.path}: ${href}`).not.toMatch(/github\.com|admhelp\.microfocus\.com/i)
-        if (/^(https?:|mailto:|#\/)/.test(href)) continue
+        expect(isBlockedHelpLink(href), `${article.path}: ${href}`).toBe(false)
+        if (/^(https?:|mailto:|#\/)/i.test(href)) continue
         const destination = resolveHelpLink(href, article, source)
         expect(destination, `${article.path}: ${href}`).not.toBe('')
         if (!destination.startsWith('#/docs?')) continue
@@ -78,12 +78,43 @@ describe('Help catalogue and content contracts', () => {
       }
     }
   })
-  it('blocks GitHub repository and LoadRunner documentation URLs while allowing monitoring tool references', () => {
-    expect(resolveHelpLink('https://github.com/JasonCzech/APEX_Load/blob/main/docs/LOADRUNNER_COVERAGE.md', first, '')).toBe('')
-    expect(resolveHelpLink('https://admhelp.microfocus.com/lr/en/latest/help/WebHelp/Content/VuGen/t_HowToCreateJavaScript.htm', first, '')).toBe('')
-    expect(resolveHelpLink('https://docs.dynatrace.com/docs/platform/grail/dynatrace-query-language/commands/smartscape-commands', first, '')).toBe(
+  it('blocks every GitHub host and LoadRunner documentation by hostname while allowing monitoring tool references', () => {
+    for (const href of [
+      'https://github.com/JasonCzech/APEX_Load/blob/main/docs/LOADRUNNER_COVERAGE.md',
+      'https://GitHub.com./owner/repo',
+      'https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect',
+      'https://raw.githubusercontent.com/owner/repo/main/README.md',
+      'https://gist.github.com/owner/abc',
+      'HTTPS://GITHUB.COM/owner/repo',
+      'https://github.com../owner/repo',
+      'https://user@github.com:443/owner/repo',
+      // Same-scheme hrefs without `//` still open github.com in the renderer.
+      'https:github.com/owner/repo',
+      'HTTPS:github.com/owner/repo',
+      'https:/github.com/owner/repo',
+      'https:\\github.com/owner/repo',
+      'https://admhelp.microfocus.com/lr/en/latest/help/WebHelp/Content/VuGen/t_HowToCreateJavaScript.htm',
+      'https://admhelp.opentext.com/lr/en/latest/help/WebHelp/Content/Controller/c_scenario.htm',
+    ]) {
+      expect(isBlockedHelpLink(href), href).toBe(true)
+      expect(resolveHelpLink(href, first, ''), href).toBe('')
+    }
+    // A protocol-relative link is reported as blocked and never becomes a link.
+    expect(isBlockedHelpLink('//github.com/owner/repo')).toBe(true)
+    expect(resolveHelpLink('//github.com/owner/repo', first, '')).toBe('')
+    // Malformed and relative hrefs are not blocked hosts and do not throw.
+    expect(isBlockedHelpLink('https://[bad')).toBe(false)
+    expect(isBlockedHelpLink('PROTOCOL_SUPPORT.md#java-vuser-execution')).toBe(false)
+    for (const href of [
       'https://docs.dynatrace.com/docs/platform/grail/dynatrace-query-language/commands/smartscape-commands',
-    )
+      'https://example.com/search?ref=github.com',
+      'https://notgithub.com/page',
+      'https://learn.microsoft.com/en-us/azure/aks/',
+      'mailto:perf-team@example.com',
+    ]) {
+      expect(isBlockedHelpLink(href), href).toBe(false)
+      expect(resolveHelpLink(href, first, ''), href).toBe(href)
+    }
   })
   it('routes non-admin links to shared sources to user-guide articles and bundles EKS and Java Vuser coverage', async () => {
     const webApi = helpArticles.find(a => a.id === 'web-api-support')!

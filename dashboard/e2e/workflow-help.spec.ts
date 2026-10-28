@@ -634,3 +634,39 @@ test('frozen browser panel Help preserves stale-input and authorization boundari
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('browser-panel-pins-help.png'), animations: 'disabled' })
 })
+
+test('left sidebar index extends towards the visible window bottom or fits its content', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+
+  // 1. Long list (User Guide, 45 articles): extends down to near the edge of the visible window
+  await page.goto('/#/docs?guide=user-guide')
+  const sidebar = page.locator('.help-sidebar')
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar.getByRole('link', { name: 'Concepts & navigation' })).toBeVisible()
+
+  // At scroll 0:
+  await expect.poll(async () => {
+    const box = await sidebar.boundingBox()
+    return box ? box.y + box.height : 0
+  }).toBeGreaterThanOrEqual(760)
+  let box = (await sidebar.boundingBox())!
+  expect(box.y + box.height).toBeLessThanOrEqual(800)
+
+  // When scrolling down:
+  await page.locator('.main-content').evaluate(el => { el.scrollTop = 300 })
+  await expect.poll(async () => {
+    const b = await sidebar.boundingBox()
+    return b ? b.y + b.height : 0
+  }).toBeGreaterThanOrEqual(760)
+  box = (await sidebar.boundingBox())!
+  expect(box.y + box.height).toBeLessThanOrEqual(800)
+
+  // 2. Short list (Getting Started, 2 articles): fits contents without stretching to the bottom
+  await page.goto('/#/docs?guide=getting-started')
+  await expect(sidebar.getByRole('link', { name: 'Your first test' })).toBeVisible()
+  await expect.poll(async () => (await sidebar.boundingBox())?.height).toBeLessThan(350)
+  const boxGS = (await sidebar.boundingBox())!
+  expect(boxGS.y + boxGS.height).toBeLessThan(550)
+
+  await page.screenshot({ path: testInfo.outputPath('help-sidebar-height.png'), animations: 'disabled' })
+})

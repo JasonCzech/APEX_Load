@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { helpArticles, helpArticleHash, loadHelpSource, searchHelp, type HelpArticle } from '../helpContent'
 import { type HelpAreaID } from '../apiGuideNavigation'
 import { useHelpHash } from '../hooks/useHelpHash'
@@ -9,7 +9,67 @@ const UTILITY_ARTICLE_IDS = new Set(['capabilities', 'changes', 'support'])
 
 export default function HelpWorkspace({ area, activeArticle, isAdmin, children }: { area: HelpAreaID; activeArticle: string; isAdmin: boolean; children: ReactNode }) {
   const hash = useHelpHash()
-  const sidebarRef = useSectionListKeys()
+  const sectionListRef = useSectionListKeys()
+  const sidebarRef = useRef<HTMLElement | null>(null)
+  const setSidebarRef = useCallback((element: HTMLElement | null) => {
+    sidebarRef.current = element
+    sectionListRef(element)
+  }, [sectionListRef])
+
+  useEffect(() => {
+    const el = sidebarRef.current
+    if (!el) return
+    const scroller = el.closest<HTMLElement>('.main-content')
+    let rafId: number | null = null
+
+    const updateMaxHeight = () => {
+      if (!el.isConnected) return
+      // Narrow screens collapse the section navigation into a horizontal row.
+      if (window.innerWidth <= 1100) {
+        el.style.removeProperty('--help-sidebar-max-height')
+        return
+      }
+      const rect = el.getBoundingClientRect()
+      // In non-browser / headless test environments without layout:
+      if (rect.width === 0 && rect.height === 0 && rect.top === 0) return
+
+      const scrollerRect = scroller ? scroller.getBoundingClientRect() : null
+      const zoomVal = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dashboard-zoom')) || 1
+      const containerBottom = scrollerRect ? scrollerRect.bottom : window.innerHeight
+      const bottomGap = 28 // aligns with .main-content bottom padding (28px)
+      const availableZoomed = Math.floor((containerBottom - rect.top) / zoomVal - bottomGap)
+      const maxH = Math.max(160, availableZoomed)
+      el.style.setProperty('--help-sidebar-max-height', `${maxH}px`)
+    }
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) return
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null
+        updateMaxHeight()
+      })
+    }
+
+    updateMaxHeight()
+    scroller?.addEventListener('scroll', scheduleUpdate, { passive: true })
+    window.addEventListener('resize', scheduleUpdate, { passive: true })
+
+    let ro: ResizeObserver | undefined
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => scheduleUpdate())
+      if (scroller) ro.observe(scroller)
+      const helpWorkspace = el.closest<HTMLElement>('.help-workspace')
+      if (helpWorkspace) ro.observe(helpWorkspace)
+    }
+
+    return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId)
+      scroller?.removeEventListener('scroll', scheduleUpdate)
+      window.removeEventListener('resize', scheduleUpdate)
+      ro?.disconnect()
+    }
+  }, [area, isAdmin])
+
   // Utility articles live in More help only, so no entry is listed twice.
   const articles = helpArticles.filter(article => article.area === area && (isAdmin || article.area !== 'admin-guide') && !UTILITY_ARTICLE_IDS.has(article.id))
   const groups = Array.from(new Set(articles.map(article => article.group || 'Articles')))
@@ -18,7 +78,7 @@ export default function HelpWorkspace({ area, activeArticle, isAdmin, children }
     <HelpSearch key={hash} isAdmin={isAdmin} />
     <div className="help-columns">
       {/* The same always-visible section list as Settings and Access. */}
-      <aside ref={sidebarRef} className="section-nav help-sidebar">
+      <aside ref={setSidebarRef} className="section-nav help-sidebar">
         <nav aria-label="Help articles">
           {/* Named groups label the list visually; the area heading stays for screen readers. */}
           <h2 className={groups.length > 1 ? 'sr-only' : undefined}>In this area</h2>

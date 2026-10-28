@@ -16,15 +16,23 @@ const ORDERED_MARKER = /^(\s*)(\d+)[.)]\s+(.*)$/
 
 type ListMarker = { indent: number; ordered: boolean; number?: number; text: string }
 
+// Single-asterisk emphasis (*text*), shared by the renderer and plain-text
+// extraction. Neither delimiter may touch a word character, slash, backtick or
+// another asterisk; the text may not start or end with whitespace or a slash,
+// and may not contain an asterisk, backtick or line break. That keeps C
+// comments, path globs such as `*.md` or `*/…/*ERROR*/`, and `foo*bar*` as
+// literal text. Used on its own, group 1 is the emphasized text.
+export const MARKDOWN_ITALIC = /(?<![*\w/`])\*([^*`\s/]|[^*`\s/][^*`\n]*?[^*`\s/])\*(?![*\w/`])/
+
 /** The visible text of inline Markdown: code, bold, italic and link syntax removed. */
 export function markdownPlainText(text: string) {
+  const italic = new RegExp(MARKDOWN_ITALIC.source, 'g')
   return text
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\*\*((?:[^*`]|`[^`]+`)+)\*\*/g, '$1')
+    // Asterisks inside code spans are literal, so only strip emphasis outside them.
     .split(/(`[^`]+`)/)
-    .map((part, index) => index % 2
-      ? part.slice(1, -1)
-      : part.replace(/(?<![*\w/`])\*([^*`\s/]|[^*`\s/][^*`\n]*?[^*`\s/])\*(?![*\w/`])/g, '$1'))
+    .map((part, index) => index % 2 ? part.slice(1, -1) : part.replace(italic, '$1'))
     .join('')
 }
 
@@ -57,8 +65,9 @@ function matchCodeFence(line: string) {
   return line.match(/^```([^`]*)\s*$/)
 }
 
+// Three or more of the same marker (`---`, `* * *`, `___`), optionally spaced.
 function isHorizontalRule(line: string) {
-  return /^\s*(?:-\s*-\s*-[-\s]*|\*\s*\*\s*\**[*\s]*|_\s*_\s*_[_\s]*)$/.test(line)
+  return /^\s*(?:-\s*-\s*-[-\s]*|\*\s*\*\s*\*[*\s]*|_\s*_\s*_[_\s]*)$/.test(line)
 }
 
 function matchBlockquote(line: string) {
