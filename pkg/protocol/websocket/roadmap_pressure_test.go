@@ -289,3 +289,181 @@ func TestWebSocketControlledWriteFailureRetainsSuccessfulReconnectEvidence(t *te
 		t.Fatal("reconnect leaked pending writer")
 	}
 }
+
+func TestWebSocketControlledEndpointLifecycleTimeoutAndClientAnalysis(t *testing.T) {
+	var connections atomic.Int64
+	var pingsReceived atomic.Int64
+	var pongsSent atomic.Int64
+	var textReceived atomic.Int64
+	var normalClosesSent atomic.Int64
+	var abnormalClosesSent atomic.Int64
+
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		conn, err := (&gorilla.Upgrader{}).Upgrade(rw, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		connNum := connections.Add(1)
+		conn.SetPingHandler(func(payload string) error {
+			pingsReceived.Add(1)
+			// Emit 1 unmatched pong followed by 1 matched pong, then 1 text message after a brief delay so ReceiveMs > PingRTTMs.
+			if err := conn.WriteControl(gorilla.PongMessage, []byte("unmatched-server-pong"), time.Now().Add(time.Second)); err != nil {
+				return err
+			}
+			pongsSent.Add(1)
+			if err := conn.WriteControl(gorilla.PongMessage, []byte(payload), time.Now().Add(time.Second)); err != nil {
+				return err
+			}
+			pongsSent.Add(1)
+			time.Sleep(15 * time.Millisecond)
+			return conn.WriteMessage(gorilla.TextMessage, []byte("pong-ack"))
+		})
+		for {
+			kind, body, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if kind != gorilla.TextMessage {
+				continue
+			}
+			textReceived.Add(1)
+			switch string(body) {
+			case "trigger-normal-close":
+				normalClosesSent.Add(1)
+				_ = conn.WriteControl(gorilla.CloseMessage, gorilla.FormatCloseMessage(gorilla.CloseNormalClosure, "normal-bye"), time.Now().Add(time.Second))
+				return
+			case "trigger-abnormal-close":
+				abnormalClosesSent.Add(1)
+				_ = conn.WriteControl(gorilla.CloseMessage, gorilla.FormatCloseMessage(gorilla.CloseInternalServerErr, "abnormal-err"), time.Now().Add(time.Second))
+				return
+			case "trigger-idle-timeout":
+				// Hold connection open without sending any frame so ws_receive times out.
+				time.Sleep(250 * time.Millisecond)
+			default:
+				_ = conn.WriteMessage(gorilla.TextMessage, []byte("conn-"+strings.TrimSpace(string(body))))
+				_ = connNum
+			}
+		}
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	client := &WebSocket{}
+	if err := client.Init(context.Background(), map[string]any{
+		"websocket_reconnect":        true,
+		"websocket_read_timeout_ms":  2000,
+		"websocket_write_timeout_ms": 2000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer client.Teardown(context.Background())
+
+	var summary *protocol.WebSocketSummary
+	record := func(res *protocol.Result) *protocol.WebSocketDiagnostics {
+		t.Helper()
+		if res == nil || res.ServerTelemetry == nil || res.ServerTelemetry.WebSocket == nil || !res.ServerTelemetry.WebSocket.Valid() {
+			t.Fatalf("missing or invalid WebSocket diagnostics: %+v", res)
+		}
+		d := res.ServerTelemetry.WebSocket
+		protocol.MergeWebSocketDiagnostic(&summary, d)
+		return d
+	}
+
+	// 1. Connect + matched vs. unmatched ping/pong RTT vs. receive wait.
+	resConn, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_connect", Target: wsURL})
+	if err != nil || !resConn.Success {
+		t.Fatalf("connect failed: %+v err=%v", resConn, err)
+	}
+	dConn := record(resConn)
+	if dConn.HandshakeMs == nil {
+		t.Fatalf("expected handshake timing: %+v", dConn)
+	}
+
+	resPing, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_ping", Body: []byte("authored-ping-1")})
+	if err != nil || !resPing.Success {
+		t.Fatalf("ping failed: %+v err=%v", resPing, err)
+	}
+	dPing := record(resPing)
+	if len(dPing.PingRTTMs) != 0 {
+		t.Fatalf("ping write should not invent RTT before pong read: %+v", dPing)
+	}
+
+	resRecvPong, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_receive"})
+	if err != nil || !resRecvPong.Success {
+		t.Fatalf("receive after ping failed: %+v err=%v", resRecvPong, err)
+	}
+	dRecvPong := record(resRecvPong)
+	// Server sent 2 pongs (1 unmatched + 1 matched) and 1 text frame; only the 1 matched pong may record RTT.
+	if pingsReceived.Load() != 1 || pongsSent.Load() != 2 || len(dRecvPong.PingRTTMs) != 1 || dRecvPong.ReceiveMs == nil {
+		t.Fatalf("expected 1 matched pong RTT from 2 server pongs: pings=%d pongs=%d diag=%+v", pingsReceived.Load(), pongsSent.Load(), dRecvPong)
+	}
+	if dRecvPong.PingRTTMs[0] >= *dRecvPong.ReceiveMs {
+		t.Fatalf("expected PingRTTMs (%g) < ReceiveMs (%g) after delayed text frame", dRecvPong.PingRTTMs[0], *dRecvPong.ReceiveMs)
+	}
+
+	// 2. Peer normal close (1000) -> DisconnectReason="normal", CloseCode=1000, followed by automatic reconnect on next send.
+	if res, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_send", Body: []byte("trigger-normal-close")}); err != nil || !res.Success {
+		t.Fatalf("send trigger-normal-close: %+v err=%v", res, err)
+	} else {
+		record(res)
+	}
+	resNormClose, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_receive"})
+	if err != nil || resNormClose.Success {
+		t.Fatalf("expected receive on peer normal close to end stream: %+v err=%v", resNormClose, err)
+	}
+	dNorm := record(resNormClose)
+	if dNorm.DisconnectReason != "normal" || dNorm.CloseCode == nil || *dNorm.CloseCode != gorilla.CloseNormalClosure || normalClosesSent.Load() != 1 {
+		t.Fatalf("unexpected peer normal close diagnostics: %+v", dNorm)
+	}
+
+	// Reconnects automatically on next send because close was peer-initiated, not ws_close action.
+	resReconn1, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_send", Body: []byte("trigger-abnormal-close")})
+	if err != nil || !resReconn1.Success {
+		t.Fatalf("reconnect send after normal peer close failed: %+v err=%v", resReconn1, err)
+	}
+	dReconn1 := record(resReconn1)
+	if dReconn1.Reconnects != 1 || dReconn1.ReconnectMs == nil || connections.Load() != 2 {
+		t.Fatalf("expected reconnect to connection #2, got connections=%d diag=%+v", connections.Load(), dReconn1)
+	}
+
+	// 3. Peer abnormal close (1011) -> DisconnectReason="peer_close", CloseCode=1011.
+	resAbnClose, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_receive"})
+	if err != nil || resAbnClose.Success {
+		t.Fatalf("expected receive on peer abnormal close to fail: %+v err=%v", resAbnClose, err)
+	}
+	dAbn := record(resAbnClose)
+	if dAbn.DisconnectReason != "peer_close" || dAbn.CloseCode == nil || *dAbn.CloseCode != gorilla.CloseInternalServerErr || abnormalClosesSent.Load() != 1 {
+		t.Fatalf("unexpected peer abnormal close diagnostics: %+v", dAbn)
+	}
+
+	// 4. Reconnect + idle read timeout (timeout_ms=40) -> DisconnectReason="timeout".
+	resReconn2, err := client.Execute(context.Background(), &protocol.Action{Type: "ws_send", Body: []byte("trigger-idle-timeout")})
+	if err != nil || !resReconn2.Success {
+		t.Fatalf("reconnect send after abnormal close failed: %+v err=%v", resReconn2, err)
+	}
+	dReconn2 := record(resReconn2)
+	if dReconn2.Reconnects != 1 || connections.Load() != 3 {
+		t.Fatalf("expected reconnect to connection #3, got connections=%d diag=%+v", connections.Load(), dReconn2)
+	}
+	resIdle, err := client.Execute(context.Background(), &protocol.Action{
+		Type:   "ws_receive",
+		Params: map[string]any{"timeout_ms": 40},
+	})
+	if err != nil || resIdle.Success {
+		t.Fatalf("expected idle receive timeout failure: %+v err=%v", resIdle, err)
+	}
+	dIdle := record(resIdle)
+	if dIdle.DisconnectReason != "timeout" || dIdle.MessagesReceived != 0 || dIdle.BytesReceived != 0 || dIdle.ReceiveMs == nil || len(dIdle.PingRTTMs) != 0 {
+		t.Fatalf("unexpected idle timeout diagnostics: %+v", dIdle)
+	}
+
+	// Verify merged summary and ClientAnalysis() non-conflation and counters.
+	if summary.NormalCloses != 1 || summary.AbnormalCloses != 1 || summary.Timeouts != 1 || summary.Reconnects != 2 {
+		t.Fatalf("unexpected lifecycle summary counters: %+v", summary)
+	}
+	ca := summary.ClientAnalysis()
+	if ca.PingPongRTT.Count != 1 || ca.ReceiveWait.Count != 4 || ca.ApplicationPendingWrites < 1 || ca.PendingWritesScope != "application_writer_count" || ca.KernelTransportQueueDepth != "unavailable" {
+		t.Fatalf("unexpected WebSocket ClientAnalysis: %+v", ca)
+	}
+}

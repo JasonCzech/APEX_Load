@@ -1,9 +1,12 @@
 package api
 
 import (
-	"github.com/jasonczech/apexload/pkg/protocol"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestBaselineProtocolFindingsRetainQualificationAndIdentity(t *testing.T) {
@@ -180,5 +183,169 @@ func TestBaselineProtocolCanonicalMetricsAndNonConflation(t *testing.T) {
 	gainVerdict := evaluateBaselineRegression(gainSnap)
 	if gainVerdict.Status != "passed" || len(gainVerdict.Evidence) != 1 || gainVerdict.Evidence[0].Status != "passed" {
 		t.Fatalf("expected grpc_client_call_rate increase (50 -> 100 calls/s) to pass, got %+v", gainVerdict)
+	}
+}
+
+func TestNonMessagingProtocolCrossCuttingLegacyMixedPeersRedactionAndBounds(t *testing.T) {
+	// 1. Legacy archive field absence: rows without typed diagnostics remain absent through archive sanitization, reports, and baseline comparison.
+	legacyEvent := TransactionEvent{
+		ActionName: "legacy-call",
+		Population: "action",
+		DurationMs: 12.5,
+		Success:    true,
+	}
+	sanitizeArchivedTransaction(&legacyEvent)
+	if legacyEvent.ServerTelemetry != nil {
+		t.Fatalf("legacy transaction gained fabricated ServerTelemetry: %+v", legacyEvent.ServerTelemetry)
+	}
+	emptyReportLines := strings.Join(protocolReportLines(&RunArchiveReport{
+		ByAction: map[string]RunArchiveActionStats{
+			"legacy-call": {Transactions: 100, AvgResponseMs: 12.5, P95Ms: 20.0},
+		},
+	}), "\n")
+	if !strings.Contains(emptyReportLines, protocolReportNoSamples) {
+		t.Fatalf("expected no-samples report notice for legacy archive, got: %s", emptyReportLines)
+	}
+	win := &BaselineLoadWindow{BaselineComparisonWindow: BaselineComparisonWindow{StartSeconds: 0, EndSeconds: 100}, Load: 10}
+	legacySnap := &BaselineComparisonSnapshot{
+		Current:   BaselineRunIdentity{ID: "cur", Status: "COMPLETE"},
+		Baselines: []BaselineRunIdentity{{ID: "base", Status: "COMPLETE"}},
+		Policy:    defaultBaselineComparisonPolicy(),
+		Request:   BaselineComparisonRequest{RegressionMetrics: []string{"grpc_uncompressed_payload_bytes", "ws_ping_pong_rtt_ms"}},
+		Transactions: []BaselineComparisonRow{{
+			ID:       "legacy-call",
+			Name:     "legacy-call",
+			Protocol: "grpc",
+			Group:    "g",
+			Window:   win,
+			Current:  &BaselineMeasurement{Samples: 100, Successes: 100},
+			Baselines: map[string]BaselineComparisonCell{
+				"base": {Measurement: &BaselineMeasurement{Samples: 100, Successes: 100}, Window: win},
+			},
+		}},
+	}
+	buildBaselineFindings(legacySnap)
+	for _, f := range legacySnap.Findings {
+		if strings.HasPrefix(f.Metric, "gRPC") || strings.HasPrefix(f.Metric, "WebSocket") {
+			t.Fatalf("legacy absence produced protocol finding: %+v", f)
+		}
+	}
+
+	// 2. Mixed generator peers: merging a current peer and a legacy peer marks coverage incomplete and prevents partial-sample throughput promotion.
+	var javaSum *protocol.JavaHTTPSummary
+	protocol.ObserveJavaHTTPAction(&javaSum, javaAPIDiagnostic())
+	mergedAgg := mergeGeneratorMetricAggregates([]generatorrpc.MetricAggregate{
+		{Name: "java-mixed", Count: 1, DependencyType: "java_http", JavaHTTP: javaSum},
+		{Name: "java-mixed", Count: 1, DependencyType: "java_http", JavaHTTP: nil},
+	})
+	if mergedAgg == nil || mergedAgg.JavaHTTP == nil || !mergedAgg.JavaHTTP.Incomplete || mergedAgg.JavaHTTP.Samples != 1 {
+		t.Fatalf("expected mixed generator peer merge to mark JavaHTTP incomplete with 1 sample, got %+v", mergedAgg)
+	}
+
+	// 3. PII / credential redaction across Java HTTP, gRPC, and WebSocket diagnostics, archive events, reports, and baselines.
+	sentinels := []string{
+		"DO_NOT_RETAIN_JAVA_CREDENTIAL_SECRET",
+		"DO_NOT_RETAIN_GRPC_CREDENTIAL_SECRET",
+		"DO_NOT_RETAIN_WS_CREDENTIAL_SECRET",
+	}
+	decBytes, prepBytes := int64(32), int64(32)
+	decMs, encMs, callMs, rttMs := 1.2, 0.8, 15.0, 4.5
+	statusOK := int32(0)
+	redactedEvent := TransactionEvent{
+		ActionName:   "multi-proto",
+		Population:   "action",
+		ErrorMessage: "java_http failed with password=" + sentinels[0],
+		Extractions: map[string]string{
+			"password": sentinels[1],
+		},
+		PropertyDimensions: map[string]string{
+			"api_key": "api_key=" + sentinels[2],
+		},
+		ServerTelemetry: &protocol.ServerTelemetry{
+			JavaHTTP: &protocol.JavaHTTPDiagnostics{
+				Version: 1, Mode: "embedded_opaque_bytes", InputState: "decoded",
+				RequestEncodedBytes: 44, RequestDecodedBytes: &decBytes, PreparedRequestBodyBytes: &prepBytes,
+				AppliedRequestCompression: "none", ResponseState: "complete",
+				ResponseRetainedBytes: &decBytes, ResponseBase64Bytes: &prepBytes,
+				Base64DecodeMs: &decMs, Base64EncodeMs: &encMs, EnclosingMs: 10.0,
+				ObjectFootprint: "unavailable_embedded_opaque_bytes",
+			},
+			GRPC: &protocol.GRPCDiagnostics{
+				Method: "/test.Service/Call?access_token=" + sentinels[1], Mode: "unary", CallMs: callMs,
+				EncodeMs: &encMs, DecodeMs: &decMs, StatusCode: &statusOK,
+				MessagesSent: 1, MessagesReceived: 1, RequestBytes: 32, ResponseBytes: 32,
+			},
+			WebSocket: &protocol.WebSocketDiagnostics{
+				Operation: "ws_receive", MessageType: "text", ReceiveMs: &callMs,
+				PingRTTMs: []float64{rttMs}, MessagesReceived: 1, BytesReceived: 32, PendingWrites: 2,
+			},
+		},
+	}
+	rawBefore, err := json.Marshal(redactedEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sentinels {
+		if !strings.Contains(string(rawBefore), s) {
+			t.Fatalf("pre-sanitization fixture missing sentinel %q", s)
+		}
+	}
+	sanitizeArchivedTransaction(&redactedEvent)
+	encodedEvent, err := json.Marshal(redactedEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sentinels {
+		if strings.Contains(string(encodedEvent), s) {
+			t.Fatalf("archived transaction leaked sentinel %q", s)
+		}
+	}
+
+	// 4. Bounded measurement overhead: merging 2,000 samples keeps O(1) summary JSON bounds across Java HTTP (with footprint), gRPC, and WebSocket.
+	var boundedJava *protocol.JavaHTTPSummary
+	var boundedGRPC *protocol.GRPCSummary
+	var boundedWS *protocol.WebSocketSummary
+	shallowBytes, graphBytes, serBytes := int64(64), int64(256), int64(128)
+	serMs, deserMs := 0.4, 0.5
+	fpDiag := redactedEvent.ServerTelemetry.JavaHTTP.Clone()
+	fpDiag.ContainedObjectFootprint = &protocol.JavaHTTPObjectFootprintEvidence{
+		FixtureKind: "approved_serializable_record",
+		JVMVersion:  "21.0.2",
+		ShallowObject: protocol.JavaHTTPShallowObjectFootprint{
+			Metric: "java_shallow_object_bytes", Method: protocol.JavaHTTPShallowObjectMethodV1,
+			JVMVersion: "21.0.2", Available: true, Bytes: &shallowBytes, Unit: "bytes",
+			RetainedHeapNote: protocol.JavaHTTPObjectFootprintRetainedNote,
+		},
+		ReachableGraph: protocol.JavaHTTPReachableGraphFootprint{
+			Metric: "java_reachable_graph_bytes", Method: protocol.JavaHTTPReachableGraphMethodV1,
+			JVMVersion: "21.0.2", Available: true, Bytes: &graphBytes, Unit: "bytes",
+			UniqueObjects: 5, MaxNodes: 4096, MaxDepth: 32,
+			RetainedHeapNote: protocol.JavaHTTPObjectFootprintRetainedNote,
+		},
+		CodecExecuted: true, SerializedBytes: &serBytes,
+		JavaSerializationMs: &serMs, JavaDeserializationMs: &deserMs,
+	}
+	for i := 0; i < 2000; i++ {
+		protocol.ObserveJavaHTTPAction(&boundedJava, fpDiag)
+		protocol.MergeGRPCDiagnostic(&boundedGRPC, redactedEvent.ServerTelemetry.GRPC)
+		protocol.MergeWebSocketDiagnostic(&boundedWS, redactedEvent.ServerTelemetry.WebSocket)
+	}
+	javaJSON, err := json.Marshal(boundedJava)
+	if err != nil || len(javaJSON) > protocol.MaxJavaHTTPActionsBytes/protocol.MaxJavaHTTPActions {
+		t.Fatalf("JavaHTTPSummary exceeded per-action bound after 2000 samples: len=%d max=%d err=%v", len(javaJSON), protocol.MaxJavaHTTPActionsBytes/protocol.MaxJavaHTTPActions, err)
+	}
+	grpcJSON, err := json.Marshal(boundedGRPC)
+	if err != nil || len(grpcJSON) > 16<<10 {
+		t.Fatalf("GRPCSummary exceeded 16 KiB bound after 2000 samples: len=%d err=%v", len(grpcJSON), err)
+	}
+	wsJSON, err := json.Marshal(boundedWS)
+	if err != nil || len(wsJSON) > 16<<10 {
+		t.Fatalf("WebSocketSummary exceeded 16 KiB bound after 2000 samples: len=%d err=%v", len(wsJSON), err)
+	}
+	// Verify per-action PingRTTMs slice bound (max 32).
+	excessRTT := redactedEvent.ServerTelemetry.WebSocket.Clone()
+	excessRTT.PingRTTMs = make([]float64, 33)
+	if excessRTT.Valid() {
+		t.Fatal("expected WebSocketDiagnostics with >32 PingRTTMs entries to be rejected")
 	}
 }

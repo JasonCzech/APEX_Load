@@ -36,6 +36,8 @@ type groundTruthService struct {
 	mu                    sync.Mutex
 	received, sent, calls int
 	failures              int
+	abortAfterInput       int
+	blockUntilDone        bool
 	wrongPayload          bool
 }
 
@@ -48,12 +50,17 @@ func (s *groundTruthService) receive(payload *interop.Payload) {
 	}
 }
 func (s *groundTruthService) send() { s.mu.Lock(); s.sent++; s.mu.Unlock() }
-func (s *groundTruthService) UnaryCall(_ context.Context, req *interop.SimpleRequest) (*interop.SimpleResponse, error) {
+func (s *groundTruthService) UnaryCall(ctx context.Context, req *interop.SimpleRequest) (*interop.SimpleResponse, error) {
 	s.receive(req.Payload)
 	s.mu.Lock()
 	s.calls++
 	fail := s.calls <= s.failures
+	block := s.blockUntilDone
 	s.mu.Unlock()
+	if block {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
 	if fail {
 		return nil, status.Error(codes.Unavailable, "controlled retry fixture")
 	}
@@ -72,6 +79,7 @@ func (s *groundTruthService) StreamingOutputCall(req *interop.StreamingOutputCal
 }
 func (s *groundTruthService) StreamingInputCall(stream interop.TestService_StreamingInputCallServer) error {
 	var size int32
+	var msgCount int
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -84,6 +92,13 @@ func (s *groundTruthService) StreamingInputCall(stream interop.TestService_Strea
 			return err
 		}
 		s.receive(req.Payload)
+		msgCount++
+		s.mu.Lock()
+		abortAt := s.abortAfterInput
+		s.mu.Unlock()
+		if abortAt > 0 && msgCount >= abortAt {
+			return status.Error(codes.ResourceExhausted, "controlled partial input stream abort")
+		}
 		size += int32(len(req.Payload.GetBody()))
 	}
 }
@@ -268,4 +283,157 @@ func TestGRPCDiagnosticsConcurrentCallsRetainIndependentPopulations(t *testing.T
 	if sent != calls || received != calls || service.received != calls || service.sent != calls || service.wrongPayload {
 		t.Fatal("concurrent endpoint accounting mismatch")
 	}
+}
+
+func TestGRPCControlledEndpointStreamingOverlapPartialSendAndClientAnalysis(t *testing.T) {
+	// 1. Locally capped server stream (max_messages=1 while server sends 2).
+	t.Run("locally_capped_stream", func(t *testing.T) {
+		client, service := groundTruthClient(t, 0, false)
+		res, err := client.Execute(context.Background(), &protocol.Action{
+			Type:   "grpc_server_stream",
+			Target: "grpc.testing.TestService/StreamingOutputCall",
+			Body:   []byte(groundTruthBody),
+			Params: map[string]any{"max_messages": 1},
+		})
+		if err != nil || !res.Success || res.ServerTelemetry == nil || res.ServerTelemetry.GRPC == nil {
+			t.Fatalf("locally capped stream failed: %+v err=%v", res, err)
+		}
+		d := res.ServerTelemetry.GRPC
+		if !d.Valid() || !d.ReceiveLimitReached || d.StatusCode != nil || d.MessagesSent != 1 || d.MessagesReceived != 1 || d.RequestBytes != 8 || d.ResponseBytes != 8 {
+			t.Fatalf("unexpected locally capped stream diagnostics: %+v", d)
+		}
+		service.mu.Lock()
+		gotRecv := service.received
+		service.mu.Unlock()
+		if gotRecv != 1 {
+			t.Fatalf("endpoint received %d requests, want 1", gotRecv)
+		}
+	})
+
+	// 2. Partial sends (server early abort on client stream + malformed later message on bidi stream).
+	t.Run("partial_sends", func(t *testing.T) {
+		client, service := groundTruthClient(t, 0, false)
+		service.mu.Lock()
+		service.abortAfterInput = 1
+		service.mu.Unlock()
+
+		resAbort, err := client.Execute(context.Background(), &protocol.Action{
+			Type:   "grpc_client_stream",
+			Target: "grpc.testing.TestService/StreamingInputCall",
+			Params: map[string]any{"messages": []string{groundTruthBody, groundTruthBody, groundTruthBody}},
+		})
+		if err != nil || resAbort == nil || resAbort.Success || resAbort.ServerTelemetry == nil || resAbort.ServerTelemetry.GRPC == nil {
+			t.Fatalf("expected partial client-stream failure, got %+v err=%v", resAbort, err)
+		}
+		dAbort := resAbort.ServerTelemetry.GRPC
+		if !dAbort.Valid() || dAbort.StatusCode == nil || *dAbort.StatusCode != int32(codes.ResourceExhausted) || dAbort.MessagesReceived != 0 || dAbort.FirstMessageMs != nil || dAbort.MessagesSent < 1 || dAbort.RequestBytes != dAbort.MessagesSent*8 {
+			t.Fatalf("unexpected partial client-stream diagnostics: %+v", dAbort)
+		}
+		service.mu.Lock()
+		if service.received != 1 || service.sent != 0 || service.wrongPayload {
+			t.Fatalf("endpoint partial-send counts mismatch: received=%d sent=%d wrong=%v", service.received, service.sent, service.wrongPayload)
+		}
+		service.abortAfterInput = 0
+		service.received, service.sent = 0, 0
+		service.mu.Unlock()
+
+		resMalformed, err := client.Execute(context.Background(), &protocol.Action{
+			Type:   "grpc_bidi_stream",
+			Target: "grpc.testing.TestService/FullDuplexCall",
+			Params: map[string]any{"messages": []string{groundTruthBody, "{malformed_json"}, "max_messages": 3},
+		})
+		if err != nil || resMalformed == nil || resMalformed.Success || resMalformed.ServerTelemetry == nil || resMalformed.ServerTelemetry.GRPC == nil {
+			t.Fatalf("expected malformed bidi partial send failure, got %+v err=%v", resMalformed, err)
+		}
+		dMal := resMalformed.ServerTelemetry.GRPC
+		if !dMal.Valid() || dMal.MessagesSent != 1 || dMal.RequestBytes != 8 {
+			t.Fatalf("expected exactly 1 sent message (8 bytes) before local JSON error, got %+v", dMal)
+		}
+	})
+
+	// 3. Context cancellation and deadline exceeded against controlled endpoint.
+	t.Run("cancellation_and_deadline_exceeded", func(t *testing.T) {
+		client, service := groundTruthClient(t, 0, false)
+		if _, err := client.resolveMethod(context.Background(), "grpc.testing.TestService/UnaryCall"); err != nil {
+			t.Fatal(err)
+		}
+		service.mu.Lock()
+		service.blockUntilDone = true
+		service.mu.Unlock()
+
+		for _, cancelEarly := range []bool{false, true} {
+			ctx, cancel := context.WithCancel(context.Background())
+			var timer *time.Timer
+			if cancelEarly {
+				timer = time.AfterFunc(30*time.Millisecond, cancel)
+			}
+			res, err := client.Execute(ctx, &protocol.Action{
+				Type:   "grpc_unary",
+				Target: "grpc.testing.TestService/UnaryCall",
+				Body:   []byte(groundTruthBody),
+				Params: map[string]any{"timeout_ms": 120},
+			})
+			if timer != nil {
+				timer.Stop()
+			}
+			cancel()
+			if err != nil || res == nil || res.Success || res.ServerTelemetry == nil || res.ServerTelemetry.GRPC == nil {
+				t.Fatalf("cancelEarly=%v unexpected result: %+v err=%v", cancelEarly, res, err)
+			}
+			wantCode := codes.DeadlineExceeded
+			if cancelEarly {
+				wantCode = codes.Canceled
+			}
+			d := res.ServerTelemetry.GRPC
+			if !d.Valid() || d.StatusCode == nil || *d.StatusCode != int32(wantCode) || d.MessagesSent != 1 || d.RequestBytes != 8 || d.MessagesReceived != 0 || d.ResponseBytes != 0 || d.FirstMessageMs != nil {
+				t.Fatalf("cancelEarly=%v diagnostics=%+v want code=%v", cancelEarly, d, wantCode)
+			}
+		}
+		service.mu.Lock()
+		gotRecv, gotSent := service.received, service.sent
+		service.mu.Unlock()
+		if gotRecv != 2 || gotSent != 0 {
+			t.Fatalf("endpoint received=%d sent=%d, want 2 and 0", gotRecv, gotSent)
+		}
+	})
+
+	// 4. Bidi streaming ClientAnalysis (grpc_uncompressed_payload_bytes, grpc_client_call_rate) and concurrent codec overlap >100%.
+	t.Run("bidi_client_analysis_and_unclamped_codec_overlap", func(t *testing.T) {
+		client, service := groundTruthClient(t, 0, false)
+		res, err := client.Execute(context.Background(), &protocol.Action{
+			Type:   "grpc_bidi_stream",
+			Target: "grpc.testing.TestService/FullDuplexCall",
+			Params: map[string]any{"messages": []string{groundTruthBody, groundTruthBody}, "max_messages": 3},
+		})
+		if err != nil || res == nil || !res.Success {
+			t.Fatalf("bidi execute failed: %+v err=%v", res, err)
+		}
+		assertGroundTruth(t, res, service, 2, 2, 16, 16, codes.OK)
+
+		// Verify concurrent sender/receiver codec timing overlap (>100% of CallMs) is preserved unclamped through GRPCDiagnostics and GRPCSummary.ClientAnalysis().
+		d := res.ServerTelemetry.GRPC.Clone()
+		d.CallMs = max(d.CallMs, 10.0)
+		encOverlap := d.CallMs * 0.70
+		decOverlap := d.CallMs * 0.65
+		d.EncodeMs = &encOverlap
+		d.DecodeMs = &decOverlap
+		if !d.Valid() {
+			t.Fatalf("expected GRPCDiagnostics with overlapping streaming codec work (%.2f + %.2f > %.2f) to be valid", encOverlap, decOverlap, d.CallMs)
+		}
+		var summary *protocol.GRPCSummary
+		protocol.MergeGRPCDiagnostic(&summary, d)
+		ca := summary.ClientAnalysis()
+		if ca.UncompressedRequestBytes == nil || *ca.UncompressedRequestBytes != 16 || ca.UncompressedResponseBytes == nil || *ca.UncompressedResponseBytes != 16 || ca.UncompressedPayloadBytes == nil || *ca.UncompressedPayloadBytes != 32 {
+			t.Fatalf("unexpected grpc_uncompressed_payload_bytes: %+v", ca)
+		}
+		if ca.ClientCallsPerCallSecond == nil || *ca.ClientCallsPerCallSecond <= 0 {
+			t.Fatalf("expected positive grpc_client_call_rate, got %+v", ca.ClientCallsPerCallSecond)
+		}
+		if ca.CodecOverlapRatio == nil || *ca.CodecOverlapRatio <= 1.0 || ca.CodecWorkToCallWallPct == nil || *ca.CodecWorkToCallWallPct <= 100.0 {
+			t.Fatalf("expected unclamped grpc_codec_overlap_ratio > 1.0 (>100%%), got ratio=%v pct=%v", ca.CodecOverlapRatio, ca.CodecWorkToCallWallPct)
+		}
+		if ca.HTTP2TransportPhase != "unavailable" || ca.ServerProcessingPhase != "unavailable" {
+			t.Fatalf("expected unavailable transport/server phases, got %+v", ca)
+		}
+	})
 }
