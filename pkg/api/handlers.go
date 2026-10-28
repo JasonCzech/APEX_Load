@@ -64,6 +64,13 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	}
 	defer receipt.release()
 	receipt.markAttempted()
+	if receipt != nil {
+		if err := storage.CheckAuthoringReceiptFault(storage.AuthoringReceiptFaultPostClaimPreResourceInsert, storage.AuthoringPurposeTestCreate, receipt.resourceID()); err != nil {
+			receipt.outcomeUnknown = true
+			writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "test_create_outcome_unknown", "the run create's outcome is unknown; retry with the same Idempotency-Key, which returns the run if it was created")
+			return
+		}
+	}
 	test, err := s.runner.CreateTest(req)
 	if err != nil && errors.Is(err, errTestIdentityCollision) && receipt.adoptsExisting() {
 		// An earlier attempt with this key created the run, but its response
@@ -109,7 +116,20 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if receipt != nil {
+		if err := storage.CheckAuthoringReceiptFault(storage.AuthoringReceiptFaultPostResourceInsertPreBinding, storage.AuthoringPurposeTestCreate, test.ID); err != nil {
+			receipt.outcomeUnknown = true
+			writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "test_create_outcome_unknown", "the run create's outcome is unknown; retry with the same Idempotency-Key, which returns the run if it was created")
+			return
+		}
+	}
 	receipt.complete("")
+	if receipt != nil {
+		if err := storage.CheckAuthoringReceiptFault(storage.AuthoringReceiptFaultPostCommitDroppedResponse, storage.AuthoringPurposeTestCreate, test.ID); err != nil {
+			writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "test_create_outcome_unknown", "the run create's outcome is unknown; retry with the same Idempotency-Key, which returns the run if it was created")
+			return
+		}
+	}
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
 	markAuthoringReceiptVersion(w, receipt)
 	writeJSON(w, http.StatusCreated, maskManagedTest(test))
@@ -1076,12 +1096,16 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		receipt.markAttempted()
 		if receipt.originalOutcome() {
 			stored, err = s.runner.CreateScriptAuthoringDurableCompletingReceipt(script, receipt.completion())
-			receipt.completedInTransaction = err == nil
+			receipt.completedInTransaction = err == nil || errors.Is(err, storage.ErrAuthoringReceiptFaultPostCommit)
 		} else {
 			stored, err = s.runner.CreateScriptAuthoringDurable(script)
 		}
+		receipt.fail(err)
 	}
 	if err != nil {
+		if errors.Is(err, storage.ErrAuthoringReceiptFaultPostCommit) && receipt != nil {
+			_, _, _ = s.runner.GetScriptDurable(receipt.resourceID())
+		}
 		if writeAuthoringReceiptCreateError(w, err) {
 			return
 		}

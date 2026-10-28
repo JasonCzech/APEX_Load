@@ -3,12 +3,15 @@ package java_http
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
 )
@@ -47,6 +50,7 @@ type JavaHTTP struct {
 	objectSchema         string
 	requestMapping       map[string]string
 	responseMapping      map[string]string
+	footprintReq         *javarunner.FootprintRequest
 }
 
 var (
@@ -104,8 +108,100 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	if len(j.requestMapping) > 0 || j.objectSchema != "" {
 		return fmt.Errorf("java_http request_mapping/object_schema are not applied by embedded byte-preserving java_http; use java_vuser sidecar import or remove these fields")
 	}
+	if fixture, ok := config["java_http_footprint_fixture"].(string); ok && strings.TrimSpace(fixture) != "" {
+		req := javarunner.FootprintRequest{
+			FixtureKind: strings.TrimSpace(fixture),
+		}
+		if javaHome, ok := config["java_http_footprint_java_home"].(string); ok {
+			req.JavaHome = strings.TrimSpace(javaHome)
+		}
+		if v, exists := config["java_http_footprint_array_length"]; exists && v != nil {
+			arrayLen, ok := coerceConfigInt(v)
+			if !ok {
+				return fmt.Errorf("invalid java_http_footprint_array_length: %v", v)
+			}
+			req.ArrayLength = arrayLen
+		}
+		if v, exists := config["java_http_footprint_chain_depth"]; exists && v != nil {
+			chainDepth, ok := coerceConfigInt(v)
+			if !ok {
+				return fmt.Errorf("invalid java_http_footprint_chain_depth: %v", v)
+			}
+			req.ChainDepth = chainDepth
+		}
+		if v, exists := config["java_http_footprint_max_nodes"]; exists && v != nil {
+			maxNodes, ok := coerceConfigInt(v)
+			if !ok {
+				return fmt.Errorf("invalid java_http_footprint_max_nodes: %v", v)
+			}
+			req.MaxNodes = maxNodes
+		}
+		if v, exists := config["java_http_footprint_max_depth"]; exists && v != nil {
+			maxDepth, ok := coerceConfigInt(v)
+			if !ok {
+				return fmt.Errorf("invalid java_http_footprint_max_depth: %v", v)
+			}
+			req.MaxDepth = maxDepth
+		}
+		if runCodec, ok := config["java_http_footprint_run_codec"].(bool); ok {
+			req.RunCodec = runCodec
+		}
+		if disableAgent, ok := config["java_http_footprint_disable_java_agent"].(bool); ok {
+			req.DisableJavaAgent = disableAgent
+		}
+		normalized, err := javarunner.NormalizeFootprintRequest(req)
+		if err != nil {
+			return fmt.Errorf("invalid java_http footprint helper config: %w", err)
+		}
+		j.footprintReq = &normalized
+	}
 	j.http = &httpproto.HTTP{}
 	return j.http.Init(ctx, config)
+}
+
+// MeasureContainedObjectFootprint executes the opt-in contained JVM
+// object-footprint helper and returns protocol-level JavaHTTPObjectFootprintEvidence.
+func MeasureContainedObjectFootprint(ctx context.Context, req javarunner.FootprintRequest) (*protocol.JavaHTTPObjectFootprintEvidence, error) {
+	res, err := javarunner.MeasureApprovedObjectFootprint(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.JavaHTTPObjectFootprintEvidence{
+		FixtureKind: res.FixtureKind,
+		JVMVersion:  res.JVMVersion,
+		ShallowObject: protocol.JavaHTTPShallowObjectFootprint{
+			Metric:                    res.ShallowObject.Metric,
+			Method:                    res.ShallowObject.Method,
+			JVMVersion:                res.ShallowObject.JVMVersion,
+			Available:                 res.ShallowObject.Available,
+			UnavailableReason:         res.ShallowObject.UnavailableReason,
+			Bytes:                     res.ShallowObject.Bytes,
+			Unit:                      res.ShallowObject.Unit,
+			FieldLayoutFallbackBytes:  res.ShallowObject.FieldLayoutFallbackBytes,
+			FieldLayoutFallbackMethod: res.ShallowObject.FieldLayoutFallbackMethod,
+			RetainedHeapNote:          res.ShallowObject.RetainedHeapNote,
+		},
+		ReachableGraph: protocol.JavaHTTPReachableGraphFootprint{
+			Metric:                    res.ReachableGraph.Metric,
+			Method:                    res.ReachableGraph.Method,
+			JVMVersion:                res.ReachableGraph.JVMVersion,
+			Available:                 res.ReachableGraph.Available,
+			UnavailableReason:         res.ReachableGraph.UnavailableReason,
+			Bytes:                     res.ReachableGraph.Bytes,
+			Unit:                      res.ReachableGraph.Unit,
+			UniqueObjects:             res.ReachableGraph.UniqueObjects,
+			MaxNodes:                  res.ReachableGraph.MaxNodes,
+			MaxDepth:                  res.ReachableGraph.MaxDepth,
+			TraversalExhausted:        res.ReachableGraph.TraversalExhausted,
+			FieldLayoutFallbackBytes:  res.ReachableGraph.FieldLayoutFallbackBytes,
+			FieldLayoutFallbackMethod: res.ReachableGraph.FieldLayoutFallbackMethod,
+			RetainedHeapNote:          res.ReachableGraph.RetainedHeapNote,
+		},
+		CodecExecuted:         res.CodecExecuted,
+		SerializedBytes:       res.SerializedBytes,
+		JavaSerializationMs:   res.JavaSerializationMs,
+		JavaDeserializationMs: res.JavaDeserializationMs,
+	}, nil
 }
 
 func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result *protocol.Result, err error) {
@@ -261,6 +357,17 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 				result.Extractions = nil
 				result.ErrorMessage = fmt.Sprintf("java_http response mapping %q rejected: %v", name, storeErr)
 				break
+			}
+		}
+		if j.footprintReq != nil {
+			footprint, fpErr := MeasureContainedObjectFootprint(ctx, *j.footprintReq)
+			if fpErr != nil {
+				result.Success = false
+				if result.ErrorMessage == "" {
+					result.ErrorMessage = "java_http contained object footprint helper failed: " + fpErr.Error()
+				}
+			} else {
+				diagnostic.ContainedObjectFootprint = footprint
 			}
 		}
 	}
@@ -462,4 +569,29 @@ func (j *JavaHTTP) BeginIteration(ctx context.Context) error {
 // observation preserves the timer reading, including a zero-resolution sample.
 func base64OperationMeasurement(elapsed time.Duration) (time.Duration, float64) {
 	return measuredOperationDuration(elapsed), durationToMilliseconds(elapsed)
+}
+
+func coerceConfigInt(raw any) (int, bool) {
+	switch v := raw.(type) {
+	case int:
+		return v, true
+	case int64:
+		if v < math.MinInt || v > math.MaxInt {
+			return 0, false
+		}
+		return int(v), true
+	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.Trunc(v) != v || v < float64(math.MinInt32) || v > float64(math.MaxInt32) {
+			return 0, false
+		}
+		return int(v), true
+	case json.Number:
+		i, err := v.Int64()
+		if err != nil || i < math.MinInt || i > math.MaxInt {
+			return 0, false
+		}
+		return int(i), true
+	default:
+		return 0, false
+	}
 }

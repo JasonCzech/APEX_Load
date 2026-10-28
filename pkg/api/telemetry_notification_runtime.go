@@ -131,10 +131,11 @@ func (s *Server) telemetryNotificationPublication(ctx context.Context, testID st
 	if err != nil {
 		return rejected, nil
 	}
+	scrubber := newTelemetryTextScrubber(manifest)
 	clean := func(value string, limit int) string {
-		value = redactor.ScrubText(scrub.Value(value, scrub.Policy{}))
+		value = redactor.ScrubText(scrub.Value(scrubber.text(value), scrub.Policy{}))
 		value = strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) {
+			if unicode.IsControl(r) || telemetryBidiControl(r) {
 				return ' '
 			}
 			return r
@@ -159,6 +160,7 @@ func (s *Server) telemetryNotificationPublication(ctx context.Context, testID st
 	if err := json.NewEncoder(hash).Encode(assessment); err != nil {
 		return rejected, nil
 	}
+	verdict, manifest = scrubTelemetryVerdict(verdict, scrubber), scrubTelemetryText(manifest, scrubber)
 	conditions := []string{"run:" + testID, "mode:" + verdict.Mode, fmt.Sprintf("policy:%s@%d", verdict.Policy.ID, verdict.Policy.Revision)}
 	for _, criterion := range verdict.Criteria {
 		if criterion.Outcome != TelemetryAcceptancePass && !criterion.Advisory && len(conditions) < maxTelemetryAcceptanceEventConditions {

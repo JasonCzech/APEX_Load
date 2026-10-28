@@ -565,6 +565,9 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{if .Stages}}<table><thead><tr><th>Stage</th><th>Availability</th><th class="num">Samples</th><th class="num">P50 (ms)</th><th class="num">P95 (ms)</th><th class="num">P99 (ms)</th><th class="num">Max (ms)</th><th>Excluded</th></tr></thead><tbody>
 {{range .Stages}}<tr><td>{{.Label}}</td><td>{{.AvailabilityLabel}}</td><td class="num">{{.SamplesLabel}}</td><td class="num">{{.P50}}</td><td class="num">{{.P95}}</td><td class="num">{{.P99}}</td><td class="num">{{.Max}}</td><td>{{.ExcludedLabel}}</td></tr>{{end}}
 </tbody></table>{{end}}
+{{if .ValidityFindings}}<table><thead><tr><th>Validity criterion</th><th>Status</th><th>Summary</th></tr></thead><tbody>
+{{range .ValidityFindings}}<tr><td>{{.Criterion}}</td><td>{{.Status}}</td><td>{{.Summary}}</td></tr>{{end}}
+</tbody></table>{{end}}
 {{if .Exclusions}}<ul>{{range .Exclusions}}<li>Excluded — {{telemetryExclusion .}}</li>{{end}}</ul>{{end}}
 {{end}}
 {{end}}

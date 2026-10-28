@@ -442,8 +442,9 @@ func ValidateDashboardQuery(metric, aggregation string, dimensions []string, fil
 	_, document := BrowserDocumentMetric(metric)
 	definition, _ := LookupMetric(metric)
 	message := slices.Contains(definition.Populations, PopulationMessage)
+	byteMetric := slices.Contains(definition.Populations, PopulationByte)
 	for name := range filters {
-		if !slices.Contains(dashboardDimensions, name) && !(document && slices.Contains(BrowserDocumentFilters(), name)) && !(message && name == "source") {
+		if !slices.Contains(dashboardDimensions, name) && !(document && slices.Contains(BrowserDocumentFilters(), name)) && !(message && name == "source") && !(byteMetric && name == "protocol") {
 			return fmt.Errorf("unsupported filter %q", name)
 		}
 	}

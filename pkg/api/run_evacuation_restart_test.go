@@ -73,15 +73,6 @@ func (s *readyCapacityServer) Heartbeat(stream pb.GeneratorControl_HeartbeatServ
 	return s.Service.Heartbeat(readyCapacityHeartbeat{GeneratorControl_HeartbeatServer: stream, server: s, probe: int(s.probes.Add(1))})
 }
 
-// ReservePodCapacity confirms every claim for the incarnation the heartbeat
-// reported: an in-process generator has no runtime limits to size a ledger by.
-func (s *readyCapacityServer) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityClaim) (*pb.PodCapacityAck, error) {
-	if !s.ready {
-		return s.Service.ReservePodCapacity(ctx, claim)
-	}
-	return &pb.PodCapacityAck{Accepted: true, Snapshot: &pb.PodCapacitySnapshot{Incarnation: claim.GetIncarnation()}}, nil
-}
-
 // restartRecorder records what a restart's new replacement was asked to run.
 type restartRecorder struct {
 	mu          sync.Mutex
@@ -256,7 +247,15 @@ func newRestartGenerator(t *testing.T, id string, maxVUsers int, readyCapacity b
 	t.Helper()
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer()
-	service := generatorrpc.NewService(id, maxVUsers, generatorrpc.WithExecution(), generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")))
+	opts := []generatorrpc.ServiceOption{
+		generatorrpc.WithExecution(),
+		generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")),
+		generatorrpc.WithPodCapacityIncarnation("pod-" + strings.TrimPrefix(id, "gen-")),
+	}
+	if readyCapacity {
+		opts = append(opts, generatorrpc.WithPodResourceLimits(rollbackBudget.CPUCores, int64(rollbackBudget.MemoryMB)*1024*1024))
+	}
+	service := generatorrpc.NewService(id, maxVUsers, opts...)
 	wrapper := &readyCapacityServer{Service: service, ready: readyCapacity}
 	for _, apply := range configure {
 		apply(wrapper)
@@ -1250,11 +1249,26 @@ func (f *evacuationRollbackFixture) stopRestartedOn(t *testing.T, gen *restartGe
 // successor's term, while the predecessor's generation and token are refused
 // by both.
 func TestEvacuationRestartAgainstRealGenerator(t *testing.T) {
-	t.Run("staged replacement is drained", func(t *testing.T) { runRealGeneratorRestart(t, "staged") })
-	t.Run("restarted replacement process lost the run", func(t *testing.T) { runRealGeneratorRestart(t, "process restarted") })
+	for _, noCapacity := range []bool{false, true} {
+		capacityName := "with pod reservations"
+		if noCapacity {
+			capacityName = "without pod reservations"
+		}
+		t.Run(capacityName+"/staged replacement is drained", func(t *testing.T) {
+			runRealGeneratorRestart(t, "staged", noCapacity, false)
+		})
+		t.Run(capacityName+"/restarted replacement process lost the run", func(t *testing.T) {
+			runRealGeneratorRestart(t, "process restarted", noCapacity, false)
+		})
+		if !noCapacity {
+			t.Run(capacityName+"/restarted replacement process with committed reservation", func(t *testing.T) {
+				runRealGeneratorRestart(t, "process restarted", false, true)
+			})
+		}
+	}
 }
 
-func runRealGeneratorRestart(t *testing.T, mode string) {
+func runRealGeneratorRestart(t *testing.T, mode string, noCapacity, committedCapacity bool) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	ctx := context.Background()
@@ -1262,14 +1276,27 @@ func runRealGeneratorRestart(t *testing.T, mode string) {
 	if mode == "process restarted" {
 		phase = runEvacuationPhaseReplacementCommitting
 	}
-	oldClient, oldService := newTestGeneratorRPCClient(t, "gen-b", 10, generatorrpc.WithExecution(), generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")))
+	oldOpts := []generatorrpc.ServiceOption{
+		generatorrpc.WithExecution(),
+		generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")),
+		generatorrpc.WithPodCapacityIncarnation("pod-b"),
+	}
+	if !noCapacity {
+		oldOpts = append(oldOpts, generatorrpc.WithPodResourceLimits(rollbackBudget.CPUCores, int64(rollbackBudget.MemoryMB)*1024*1024))
+	}
+	oldClient, oldService := newTestGeneratorRPCClient(t, "gen-b", 10, oldOpts...)
 	var script []byte
 	var scriptHash string
-	f, spare := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{phase: phase, noCapacity: true}}, func(f *evacuationRollbackFixture) {
+	f, spare := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{phase: phase, noCapacity: noCapacity, committedCapacity: committedCapacity}}, func(f *evacuationRollbackFixture) {
 		// The lost leader staged the replacement, and in replacement_committing
 		// committed it, with a start barrier of 500 ms.
 		if _, err := oldClient.ClaimExecutionEpoch(ctx, f.oldGen, f.oldOwner, time.Minute); err != nil {
 			t.Fatalf("lost leader epoch claim: %v", err)
+		}
+		if !noCapacity {
+			if ack, err := oldClient.ReservePodCapacity(ctx, podClaim(f.claim, false)); err != nil || !ack.GetAccepted() {
+				t.Fatalf("reserve old replacement capacity = (%+v, %v)", ack, err)
+			}
 		}
 		var err error
 		script, scriptHash, _, err = generatorrpc.PrepareDistributedScript(f.test.Groups[0].script)
@@ -1299,12 +1326,19 @@ func runRealGeneratorRestart(t *testing.T, mode string) {
 		}
 		waitForActiveVUsers(t, oldService, 5)
 		// The replacement's process restarted: its VUsers stopped with it, and
-		// the new process knows nothing of the run.
+		// the new process knows nothing of the run and has a fresh incarnation.
 		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		_ = oldService.Shutdown(shutdownCtx)
 		waitForActiveVUsers(t, oldService, 0)
-		fresh, _ := newTestGeneratorRPCClient(t, "gen-b", 10, generatorrpc.WithExecution(), generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")))
+		freshOpts := []generatorrpc.ServiceOption{
+			generatorrpc.WithExecution(),
+			generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")),
+		}
+		if !noCapacity {
+			freshOpts = append(freshOpts, generatorrpc.WithPodResourceLimits(rollbackBudget.CPUCores, int64(rollbackBudget.MemoryMB)*1024*1024))
+		}
+		fresh, _ := newTestGeneratorRPCClient(t, "gen-b", 10, freshOpts...)
 		f.replacement = fresh
 	})
 	owner, generation := f.tr.leadership.executionLeaseTerm()
@@ -1312,6 +1346,11 @@ func runRealGeneratorRestart(t *testing.T, mode string) {
 		t.Fatal(err)
 	}
 	f.assertRestartIntent(t, generation)
+	if !noCapacity {
+		if row := f.ledger(t)["gen-b"]; row.State != "committed" || row.Generation != generation {
+			t.Fatalf("moved share reservation after Phase A = %+v", row)
+		}
+	}
 	if mode == "staged" {
 		// The claim that refused the adoption drained the staged assignment.
 		waitForActiveVUsers(t, oldService, 0)
@@ -1330,6 +1369,15 @@ func runRealGeneratorRestart(t *testing.T, mode string) {
 		maxDuration = rollForwardCommitTarget
 	}
 	f.assertRestarted(t, spare, resume, owner, generation, false, maxDuration)
+	if !noCapacity {
+		ledger := f.ledger(t)
+		if row := ledger["gen-b"]; row.State != "releasing" || row.Generation != generation {
+			t.Fatalf("old replacement reservation after Phase B = %+v", row)
+		}
+		if row := ledger["gen-d"]; row.State != "committed" || row.Generation != generation {
+			t.Fatalf("new replacement reservation after Phase B = %+v", row)
+		}
+	}
 	waitForActiveVUsers(t, spare.service, 5)
 	// The predecessor's generation and token control neither replacement.
 	if result, err := spare.client.AdjustDuration(ctx, generatorrpc.DurationAdjustment{TestID: f.test.ID, ExecutionGeneration: f.oldGen, TargetDuration: time.Hour, RunSupervisionToken: f.token}); err == nil && result.Accepted {
@@ -1681,45 +1729,89 @@ func TestRestartCommittingJournalWithTheSettingOffIsHeld(t *testing.T) {
 // TestEvacuationRestartResumesThroughPhaseB runs the whole successor against
 // real in-process generators for the survivor and the new replacement: Phase A
 // adopts the survivor under the restart intent, and Phase B restarts the share
-// and then streams both generators' metrics.
+// and then streams both generators' metrics. It covers an ordinary run, a
+// loss-tolerant run (per-run execution leases on both survivor and replacement)
+// and a run with a durable live table.
 func TestEvacuationRestartResumesThroughPhaseB(t *testing.T) {
-	ctx := context.Background()
-	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
-	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
-	survivor := newRestartGenerator(t, "gen-c", 10, false)
-	f, spare := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{noCapacity: true}}, func(f *evacuationRollbackFixture) {
-		f.runSurvivorShareOn(t, survivor)
-	})
-	f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED
-	owner, generation := f.tr.leadership.executionLeaseTerm()
-	if err := f.tr.adoptOrphanedRuns(); err != nil {
-		t.Fatal(err)
-	}
-	if resume := f.test.adoptedResume; resume == nil || resume.restart == nil || resume.adopted["gen-c"] == nil || !resume.secured {
-		t.Fatalf("Phase A did not secure the survivor for a restart: %+v", resume)
-	}
-	f.tr.resumeAdoptedRuns()
-	t.Cleanup(func() { f.endResumedRun(t, generation, survivor.client, spare.client) })
-	waitForActiveVUsers(t, spare.service, 5)
-	waitForActiveVUsers(t, survivor.service, 3)
-	f.tr.mu.RLock()
-	streams := len(f.test.remoteMetricsStreamsByTarget)
-	status := f.test.Status
-	f.tr.mu.RUnlock()
-	if streams != 2 || status != "RUNNING" {
-		t.Fatalf("resumed run: %d metrics streams, status %s", streams, status)
-	}
-	record, err := f.store.GetTest(f.test.ID)
-	if err != nil || record.Status != "RUNNING" {
-		t.Fatalf("durable run = %+v, %v", record, err)
-	}
-	checkpoint, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
-	if err != nil || !present || checkpoint.Shards["ga"][0].Target != "gen-d" || checkpoint.Shards["gc"][0].Target != "gen-c" || checkpoint.ExecutionGeneration != generation || checkpoint.ExecutionLeaseOwnerID != owner {
-		t.Fatalf("resumed checkpoint = %+v, %v", checkpoint, err)
-	}
-	// The survivor answers to the successor's term only.
-	if result, err := survivor.client.AdjustDuration(ctx, generatorrpc.DurationAdjustment{TestID: f.test.ID, ExecutionGeneration: f.oldGen, TargetDuration: time.Hour, RunSupervisionToken: f.token}); err == nil && result.Accepted {
-		t.Fatal("the survivor accepted the predecessor's duration change")
+	for _, mode := range []string{"ordinary", "loss tolerant", "live tables"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+			t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+			lossTolerant := mode == "loss tolerant"
+			withLiveTables := mode == "live tables"
+			survivor := newRestartGenerator(t, "gen-c", 10, false)
+			f, spare := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{noCapacity: true}}, func(f *evacuationRollbackFixture) {
+				f.test.Assignment.TolerateGeneratorLoss = lossTolerant
+				if withLiveTables {
+					prepareLostTermLiveTables(t, f, "durable", "discard")
+					for index := range f.test.Groups {
+						base := *f.test.Groups[0].script
+						base.Actions = append([]dsl.Action{
+							{Name: "push", Type: "live_table", Params: map[string]any{"alias": "work", "operation": "push", "values": map[string]any{"value": "ok"}}},
+						}, base.Actions...)
+						f.test.Groups[index].ScriptID, f.test.Groups[index].ScriptName, f.test.Groups[index].script = base.ID, base.Name, &base
+					}
+				}
+				f.runSurvivorShareOn(t, survivor)
+			})
+			if withLiveTables {
+				// Simulate a fresh successor process that must restore durable
+				// live tables from the store during Phase A.
+				f.tr.liveTablesMu.Lock()
+				delete(f.tr.liveTables, f.test.ID)
+				f.tr.liveTablesMu.Unlock()
+			}
+			f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED
+			owner, generation := f.tr.leadership.executionLeaseTerm()
+			if err := f.tr.adoptOrphanedRuns(); err != nil {
+				t.Fatal(err)
+			}
+			if resume := f.test.adoptedResume; resume == nil || resume.restart == nil || resume.adopted["gen-c"] == nil || !resume.secured {
+				t.Fatalf("Phase A did not secure the survivor for a restart: %+v", resume)
+			}
+			f.tr.resumeAdoptedRuns()
+			t.Cleanup(func() { f.endResumedRun(t, generation, survivor.client, spare.client) })
+			waitForActiveVUsers(t, spare.service, 5)
+			waitForActiveVUsers(t, survivor.service, 3)
+			f.tr.mu.RLock()
+			streams := len(f.test.remoteMetricsStreamsByTarget)
+			status := f.test.Status
+			f.tr.mu.RUnlock()
+			if streams != 2 || status != "RUNNING" {
+				t.Fatalf("resumed run: %d metrics streams, status %s", streams, status)
+			}
+			record, err := f.store.GetTest(f.test.ID)
+			if err != nil || record.Status != "RUNNING" {
+				t.Fatalf("durable run = %+v, %v", record, err)
+			}
+			checkpoint, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
+			if err != nil || !present || checkpoint.Shards["ga"][0].Target != "gen-d" || checkpoint.Shards["gc"][0].Target != "gen-c" || checkpoint.ExecutionGeneration != generation || checkpoint.ExecutionLeaseOwnerID != owner {
+				t.Fatalf("resumed checkpoint = %+v, %v", checkpoint, err)
+			}
+			assignments, _ := spare.recorder.snapshot()
+			if len(assignments) != 1 || assignments[0].RequireTestExecutionLease != lossTolerant {
+				t.Fatalf("restart assignments = %+v", assignments)
+			}
+			if withLiveTables {
+				id := liveTableID(f.test.ID, "work")
+				deadline := time.Now().Add(5 * time.Second)
+				for {
+					run := f.tr.liveRun(f.test.ID)
+					if run != nil && run.tables[id] != nil && run.tables[id].table.Stats().Revision > 1 {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("live table received no operations after replacement restart")
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+			// The survivor answers to the successor's term only.
+			if result, err := survivor.client.AdjustDuration(ctx, generatorrpc.DurationAdjustment{TestID: f.test.ID, ExecutionGeneration: f.oldGen, TargetDuration: time.Hour, RunSupervisionToken: f.token}); err == nil && result.Accepted {
+				t.Fatal("the survivor accepted the predecessor's duration change")
+			}
+		})
 	}
 }
 
@@ -2152,6 +2244,15 @@ func (f *evacuationRollbackFixture) runSurvivorShareOn(t *testing.T, survivor *r
 	if _, err := client.ClaimExecutionEpoch(ctx, f.oldGen, f.oldOwner, time.Minute); err != nil {
 		t.Fatalf("lost leader epoch claim: %v", err)
 	}
+	if rows, err := f.store.ListPodCapacityReservations(); err == nil {
+		for _, row := range rows {
+			if row.TestID == f.test.ID && row.Target == "gen-c" {
+				if ack, err := client.ReservePodCapacity(ctx, podClaim(row, false)); err != nil || !ack.GetAccepted() {
+					t.Fatalf("reserve survivor capacity = (%+v, %v)", ack, err)
+				}
+			}
+		}
+	}
 	f.test.Groups[1].ScriptID, f.test.Groups[1].script = f.test.Groups[0].ScriptID, f.test.Groups[0].script
 	content, hash, _, err := generatorrpc.PrepareDistributedScript(f.test.Groups[1].script)
 	if err != nil {
@@ -2160,11 +2261,26 @@ func (f *evacuationRollbackFixture) runSurvivorShareOn(t *testing.T, survivor *r
 	if _, err := client.DistributeScript(ctx, generatorrpc.Script{ID: "restart-script", ExecutionGeneration: f.oldGen, Content: content, ContentHash: hash}); err != nil {
 		t.Fatalf("distribute script: %v", err)
 	}
+	requireLease := assignmentToleratesGeneratorLoss(f.test.Assignment)
+	liveBindings := f.tr.liveBindingJSONForGroup(f.test.ID, "gc")
 	if assign, err := client.AssignWork(ctx, generatorrpc.Assignment{
 		TestID: f.test.ID, GroupName: "gc", ScriptID: "restart-script", ExpectedScriptHash: hash, VUserCount: 3, ExecutionGeneration: f.oldGen,
 		TargetDuration: rollForwardStagedElapsed + rollForwardStagedRemaining, RunSupervisionToken: f.token, AdoptionGrace: 30 * time.Second,
+		RequireTestExecutionLease: requireLease, LiveTableBindingsJSON: liveBindings,
 	}); err != nil || !assign.Accepted {
 		t.Fatalf("assign survivor = (%+v, %v)", assign, err)
+	}
+	if len(liveBindings) > 0 {
+		streamCtx, cancel := context.WithCancel(ctx)
+		t.Cleanup(cancel)
+		if err := client.OpenLiveTables(streamCtx, f.test.ID, "gc", f.oldGen, f.token, f.tr.liveClient(f.test.ID, "gen-c/gc")); err != nil {
+			t.Fatalf("open survivor live tables: %v", err)
+		}
+	}
+	if requireLease {
+		if lease, err := client.ClaimTestExecutionEpoch(ctx, f.test.ID, f.oldGen, f.oldOwner, time.Minute); err != nil || !lease.Accepted {
+			t.Fatalf("survivor test execution lease = (%+v, %v)", lease, err)
+		}
 	}
 	if claim, err := client.ClaimRunSupervision(ctx, generatorrpc.RunSupervisionClaim{TestID: f.test.ID, ExecutionGeneration: f.oldGen, Token: f.token, RequestedTTL: time.Minute, ExecutionLeaseOwnerID: f.oldOwner}); err != nil || !claim.Accepted {
 		t.Fatalf("survivor supervision = (%+v, %v)", claim, err)
@@ -2174,4 +2290,54 @@ func (f *evacuationRollbackFixture) runSurvivorShareOn(t *testing.T, survivor *r
 	}
 	waitForActiveVUsers(t, survivor.service, 3)
 	f.extra["gen-c"] = survivor.dial
+}
+
+// A stop between Phase A and the restart on a run with no survivor replaces
+// the restart intent with this term's checkpoint, completes the run ABORTED
+// and releases its pod capacity reservations.
+func TestStopBetweenPhaseAAndRestartWithoutASurvivor(t *testing.T) {
+	for _, via := range []string{"StopTest before Phase B", "racing stop before Phase B"} {
+		t.Run(via, func(t *testing.T) {
+			f, spare := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{noSurvivor: true}})
+			f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED
+			owner, generation := f.tr.leadership.executionLeaseTerm()
+			if err := f.tr.adoptOrphanedRuns(); err != nil {
+				t.Fatal(err)
+			}
+			if row := f.ledger(t)["gen-b"]; row.State != "committed" || row.Generation != generation {
+				t.Fatalf("moved share reservation after Phase A = %+v", row)
+			}
+			switch via {
+			case "StopTest before Phase B":
+				if err := f.tr.StopTest(f.test.ID); err != nil {
+					t.Fatalf("StopTest: %v", err)
+				}
+				f.tr.resumeAdoptedRuns()
+			case "racing stop before Phase B":
+				f.tr.mu.Lock()
+				f.test.Status = "STOPPING"
+				f.tr.mu.Unlock()
+				if err := f.store.UpdateTestStatus(f.test.ID, "STOPPING", nil, ""); err != nil {
+					t.Fatal(err)
+				}
+				if ok, _ := f.restartPhaseB(t); ok {
+					t.Fatal("the restart claimed a stopping run with no survivor")
+				}
+			}
+			if assignments, _ := spare.recorder.snapshot(); len(assignments) != 0 {
+				t.Fatalf("a stopping run's share was restarted: %+v", assignments)
+			}
+			record, err := f.store.GetTest(f.test.ID)
+			if err != nil || record.Status != "ABORTED" {
+				t.Fatalf("durable run = %+v, %v", record, err)
+			}
+			checkpoint, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
+			if err != nil || !present || checkpoint.ExecutionGeneration != generation || checkpoint.ExecutionLeaseOwnerID != owner {
+				t.Fatalf("plain checkpoint = %+v, present %v, %v", checkpoint, present, err)
+			}
+			if ledger := f.ledger(t); len(ledger) != 0 {
+				t.Fatalf("reservations kept after ABORTED stop = %+v", ledger)
+			}
+		})
+	}
 }

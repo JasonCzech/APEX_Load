@@ -13,7 +13,10 @@ func javaHTTPMetricDefinitions(profiles []NativeQueryProfile) []MetricDefinition
 		{"java_http_response_base64_bytes", "bytes", false}, {"java_http_base64_decode_ms", "ms", false},
 		{"java_http_base64_encode_ms", "ms", false}, {"java_http_enclosing_ms", "ms", false},
 		{"java_http_decoded_per_encoded", "ratio", true}, {"java_http_prepared_per_decoded", "ratio", true},
+		{"serialized_representation_vs_http_body", "ratio", true},
 		{"java_http_base64_per_retained", "ratio", true}, {"java_http_base64_work_share", "ratio", true},
+		{"java_shallow_object_bytes", "bytes", false}, {"java_reachable_graph_bytes", "bytes", false},
+		{"java_serialization_ms", "ms", false}, {"java_deserialization_ms", "ms", false},
 	} {
 		d := MetricDefinition{Name: m.name, Version: "java_http.diagnostics.v1", InputKinds: []string{KindObservation}, Populations: []string{PopulationJavaHTTPAction}, Unit: m.unit, NativeWireUnit: m.unit, Aggregations: []string{"avg", "min", "max", "p50", "p90", "p95", "p99"}, Derivations: []string{}, RequiredEvidence: []string{"java_http_diagnostics.v1", "same_action_population", "complete_selected_observations"}, MissingRule: MissingUnscored, ResetRule: ResetNotApplicable, Baseline: true}
 		if m.pair {

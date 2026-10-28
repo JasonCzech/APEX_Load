@@ -134,6 +134,73 @@ describe('TestExecution advanced details', () => {
     expect(container.querySelectorAll('[aria-label="Run preparation"]')).toHaveLength(1)
   })
 
+  it('renders the structured evacuation quarantine banner when a run is held in stopping quarantine', async () => {
+    configure({
+      ...makeTest('STOPPING'),
+      evacuation_quarantine: {
+        quarantined_owners: ['gen-a:7000', 'gen-b:7000'],
+        retry_count: 5,
+        max_retries: 5,
+        retries_exhausted: true,
+        required_intervention_action: 'POST /api/v1/tests/run-1/interrupted-stop/resolve',
+        original_cause: 'generator evacuation state is uncertain: replacement generation rejected after restart',
+      },
+    })
+    await render()
+    const banner = container.querySelector('[aria-label="Evacuation quarantine status"]')
+    expect(banner).not.toBeNull()
+    expect(banner?.textContent).toContain('Load generator quarantine requires administrator intervention')
+    expect(banner?.textContent).toContain('replacement generation rejected after restart')
+    expect(banner?.textContent).toContain('gen-a:7000, gen-b:7000')
+    expect(banner?.textContent).toContain('Cleanup retries: 5 / 5')
+    expect(banner?.textContent).toContain('POST /api/v1/tests/run-1/interrupted-stop/resolve')
+  })
+
+  it('displays active in-run policy segments, current stage budgets, and interval condition labels in Diagnostics', async () => {
+    const running = makeTest('RUNNING')
+    configure(running)
+    hooks.metrics.mockReturnValue({
+      localMetricsHistory: [],
+      latestMetrics: {
+        timestamp: '2026-01-01T00:01:00Z',
+        active_vusers: 10,
+        tps: 25,
+        avg_response_ms: 42,
+        total_tx: 250,
+        total_errors: 0,
+        error_pct: 0,
+        p50_ms: 35,
+        p90_ms: 60,
+        p95_ms: 80,
+        p99_ms: 120,
+        telemetry: {
+          sample_age_ms: 140,
+          policy_segments: [
+            { sequence: 1, effective_at: '2026-01-01T00:00:00Z', source: 'admission', policy_id: 'system-telemetry-budgets' },
+            { sequence: 2, effective_at: '2026-01-01T00:00:30Z', source: 'run_selection', policy_id: 'tight-budgets' },
+          ],
+          stage_budgets: [
+            { stage: 'sample_age', enabled: true, limit_ms: 2000 },
+            { stage: 'generator_processing', enabled: true, limit_ms: 250 },
+          ],
+          interval_condition_labels: ['degraded_stage_budget', 'clock_unqualified', 'boundary_unscored', 'source_gap', 'overload_shed'],
+        },
+      },
+    })
+    await render()
+    await clickTab('Diagnostics')
+    const segmentCard = container.querySelector('[data-testid="live-telemetry-segment-view"]')
+    expect(segmentCard).not.toBeNull()
+    expect(container.querySelector('[data-testid="live-telemetry-policy-segments"]')?.textContent).toContain('Segment 1 (system-telemetry-budgets) · Segment 2 (tight-budgets)')
+    expect(container.querySelector('[data-testid="live-telemetry-stage-budgets"]')?.textContent).toContain('sample_age: <= 2000 ms · generator_processing: <= 250 ms')
+    const conditionLabels = container.querySelector('[data-testid="live-telemetry-condition-labels"]')
+    expect(conditionLabels?.textContent).toContain('degraded_stage_budget')
+    expect(conditionLabels?.textContent).toContain('clock_unqualified')
+    expect(conditionLabels?.textContent).toContain('boundary_unscored')
+    expect(conditionLabels?.textContent).toContain('source_gap')
+    expect(conditionLabels?.textContent).toContain('overload_shed')
+  })
+
   async function render(props: Partial<Parameters<typeof TestExecution>[0]> = {}) {
     await act(async () => root.render(<TopbarContributionProvider><Topbar /><TestExecution testId="run-1" history={[]} onBack={vi.fn()} onEditScript={vi.fn()} onSelectTest={vi.fn()} onOpenCommandCenter={vi.fn()} {...props} /></TopbarContributionProvider>))
   }

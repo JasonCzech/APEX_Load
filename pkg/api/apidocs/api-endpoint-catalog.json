@@ -324,6 +324,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/analysis/imports/{id}/attest-writer-stopped",
+      "operationId": "handleAnalysisImportAttestWriterStopped",
+      "summary": "Analysis Import Attest Writer Stopped",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/analysis/imports/{id}/commit",
       "operationId": "handleAnalysisCommit",
       "summary": "Analysis Commit",

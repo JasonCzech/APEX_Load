@@ -607,7 +607,11 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	// From the public projection: its source labels are scrubbed (TEL-B).
 	report.HostNetwork = buildRunArchiveHostNetwork(report.Manifest.HostNetwork)
 	// From the masked manifest, whose telemetry text is scrubbed.
-	report.TelemetryPolicySegments = report.Manifest.TelemetryPolicySegments
+	report.TelemetryPolicySegments = cloneTelemetryPolicySegments(report.Manifest.TelemetryPolicySegments)
+	report.TelemetryStageDistributions = cloneTelemetryStageDistributions(report.Manifest.TelemetryStageDistributions)
+	report.TelemetryRenderPopulation = report.Manifest.TelemetryRenderPopulation.clone()
+	report.TelemetryCoverage = cloneTelemetryCoverageRecord(report.Manifest.TelemetryCoverage)
+	report.TelemetryValidityFindings = cloneTelemetryValidityFindings(report.Manifest.TelemetryValidityFindings)
 	report.HTTP3Preflight = cloneHTTP3Preflight(manifest.Provenance.HTTP3Preflight)
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 

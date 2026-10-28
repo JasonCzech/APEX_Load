@@ -85,6 +85,9 @@ func newWorkerAttempt(ctx context.Context, parent string, b workerBootstrap, adm
 	if os.Chmod(path, 0700) != nil {
 		return nil, errWorkerProtocol
 	}
+	if writeWorkerAttemptOwner(path, b.Identity.AttemptID, false, nil) != nil {
+		return nil, errWorkerProtocol
+	}
 	root, err := os.OpenRoot(path)
 	if err != nil {
 		return nil, errWorkerProtocol

@@ -41,6 +41,9 @@ func applyAPIReferenceExamples(route discoveredRoute, contract *inferredRouteCon
 	if route.Method != http.MethodGet || route.Path != "/api/v1/scripts" {
 		return
 	}
+	if contract.Responses == nil {
+		contract.Responses = map[string]oasResponse{}
+	}
 	scriptSchema := openAPISchemaForASTType(ast.NewIdent("StoredScript"), definitions, map[string]bool{}, 0)
 	response := contract.Responses["200"]
 	response.Description = "Scripts visible in the selected scope. count is the total after filtering, before pagination. limit and offset are included when either is supplied or q is nonempty. scripts may be null when the source list is nil."

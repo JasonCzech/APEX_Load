@@ -1053,6 +1053,27 @@ func WithExecution() ServiceOption {
 	}
 }
 
+// WithPodResourceLimits configures the generator's runtime CPU and memory
+// limits for peak pod-capacity reservation enforcement in in-process tests and
+// non-cgroup launches.
+func WithPodResourceLimits(cpuLimitCores float64, memoryLimitBytes int64) ServiceOption {
+	return func(s *Service) {
+		s.podResources.CPULimitCores = cpuLimitCores
+		s.podResources.MemoryLimitBytes = memoryLimitBytes
+	}
+}
+
+// WithPodCapacityIncarnation overrides the generator's pod-capacity incarnation
+// identifier. Tests use it to match a pre-journaled reservation; production
+// generators keep their per-process UUID.
+func WithPodCapacityIncarnation(incarnation string) ServiceOption {
+	return func(s *Service) {
+		if trimmed := strings.TrimSpace(incarnation); trimmed != "" {
+			s.podCapacityIncarnation = trimmed
+		}
+	}
+}
+
 // WithClock replaces the service's time source. Execution-epoch leases are
 // expiry-driven, so tests that exercise a lapsed epoch otherwise have to pick a
 // TTL short enough to elapse during the test and then sleep past it. That makes
@@ -3647,6 +3668,8 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 			AvgTTFBMs:        metrics.AvgTTFBMs,
 			BytesSent:        metrics.BytesSent,
 			BytesReceived:    metrics.BytesRecv,
+			ByteEvidence:     metrics.ByteEvidence,
+			ByteSamples:      metrics.ByteSamples,
 			Exemplars:        append([]engine.TraceExemplar(nil), metrics.Exemplars...),
 		})
 	}
@@ -3920,6 +3943,14 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out := MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
+	var measuredBytesSent, measuredBytesReceived int64
+	hasByteEvidence := false
+	for _, value := range values {
+		if value.Count > 0 && strings.TrimSpace(value.ByteEvidence) != "" {
+			hasByteEvidence = true
+			break
+		}
+	}
 	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
@@ -3943,11 +3974,18 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		weightedTTFBMs += value.AvgTTFBMs * count
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
+		if hasByteEvidence {
+			protocol.MergeIntervalByteEvidence(&out.ByteEvidence, &out.ByteSamples, &measuredBytesSent, &measuredBytesReceived, value.Count, value.ByteEvidence, value.ByteSamples, value.BytesSent, value.BytesReceived)
+		}
 		out.TPS += value.TPS
 		durations.Add(value.Count, value.DurationDigest, value.DurationSketch)
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	if hasByteEvidence && (protocol.IsMeasuredByteEvidence(out.ByteEvidence) || out.ByteEvidence == protocol.ByteEvidenceNone) {
+		out.BytesSent = measuredBytesSent
+		out.BytesReceived = measuredBytesReceived
 	}
 	if javaUncounted {
 		out.JavaHTTP.ForgetPopulation()

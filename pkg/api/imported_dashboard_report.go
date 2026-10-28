@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // attachDashboardPanels enriches a freshly built archive report with the compact
@@ -26,6 +29,7 @@ func (s *Server) attachDashboardPanels(report *RunArchiveReport) {
 		return
 	}
 	projectID := normalizeProjectID(report.Manifest.Provenance.ProjectID)
+	s.attachSavedAnalysisPanels(report, projectID, testID)
 	snapshot, err := s.store.GetGrafanaDashboardSnapshot(testID, projectID)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -40,6 +44,86 @@ func (s *Server) attachDashboardPanels(report *RunArchiveReport) {
 	}
 	report.DashboardPanels = buildRunArchiveDashboardPanels(&resp, snapshot.CapturedAt)
 	attachReportVerdictAndSLA(report)
+}
+
+func (s *Server) attachSavedAnalysisPanels(report *RunArchiveReport, projectID, testID string) {
+	defStore, ok := s.dashboardDefinitions()
+	if !ok {
+		return
+	}
+	defs, err := defStore.ListDashboardDefinitions(projectID, storage.MaxDashboardDefinitionsPerProject, 0)
+	if err != nil || len(defs) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var attached []RunArchiveSavedAnalysisPanel
+	for _, def := range defs {
+		if def == nil {
+			continue
+		}
+		for _, tab := range def.Tabs {
+			for _, panel := range tab.Panels {
+				if panel.Query == nil {
+					continue
+				}
+				q := *panel.Query
+				if q.PanelInputs != nil {
+					matches := q.PanelInputs.Current.RunID == testID ||
+						(q.PanelInputs.Baseline != nil && q.PanelInputs.Baseline.RunID == testID)
+					if !matches {
+						continue
+					}
+					status, reason := s.evaluateSavedPanelStatus(ctx, projectID, q)
+					attached = append(attached, RunArchiveSavedAnalysisPanel{
+						DashboardID:       def.ID,
+						DashboardName:     def.Name,
+						DashboardRevision: def.Revision,
+						TabID:             tab.ID,
+						PanelID:           panel.ID,
+						Title:             panel.Title,
+						Status:            status,
+						Reason:            reason,
+						Query:             q,
+						PanelInputs:       q.PanelInputs,
+					})
+				} else if q.BrowserInputs != nil {
+					matches := q.BrowserInputs.Current.RunID == testID ||
+						(q.BrowserInputs.Baseline != nil && q.BrowserInputs.Baseline.RunID == testID)
+					if !matches {
+						continue
+					}
+					status, reason := s.evaluateSavedPanelSourceRun(ctx, projectID, q.BrowserInputs.Current.RunID, q.BrowserInputs.Current.ManifestSHA256, q.BrowserInputs.Current.PolicyPins)
+					if status == "ready" && q.BrowserInputs.Baseline != nil {
+						status, reason = s.evaluateSavedPanelSourceRun(ctx, projectID, q.BrowserInputs.Baseline.RunID, q.BrowserInputs.Baseline.ManifestSHA256, q.BrowserInputs.Baseline.PolicyPins)
+					}
+					attached = append(attached, RunArchiveSavedAnalysisPanel{
+						DashboardID:       def.ID,
+						DashboardName:     def.Name,
+						DashboardRevision: def.Revision,
+						TabID:             tab.ID,
+						PanelID:           panel.ID,
+						Title:             panel.Title,
+						Status:            status,
+						Reason:            reason,
+						Query:             q,
+						BrowserInputs:     q.BrowserInputs,
+					})
+				}
+			}
+		}
+	}
+	if len(attached) > 0 {
+		report.SavedAnalysisPanels = attached
+	}
+}
+
+func (s *Server) evaluateSavedPanelSourceRun(ctx context.Context, projectID, runID, manifestSHA256 string, policyPins []storage.BrowserPanelPolicyPin) (string, string) {
+	return s.verifySavedPanelSourcePin(ctx, projectID, storage.SavedPanelSourcePin{
+		RunID:          runID,
+		ManifestSHA256: manifestSHA256,
+		PolicyPins:     policyPins,
+	})
 }
 
 // attachDashboardPanelsForProfile attaches the digest only when the named profile

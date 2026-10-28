@@ -178,6 +178,7 @@ func scrubTelemetryText(manifest *RunArchiveManifest, s telemetryTextScrubber) *
 	if record := manifest.TelemetryCoverage; record != nil {
 		copied := *record
 		copied.Algorithm = scrubTelemetryIdentity(record.Algorithm)
+		copied.CoverageRule = scrubTelemetryIdentity(record.CoverageRule)
 		copied.Coverage.ObserverLost = scrubTelemetryIdentity(record.Coverage.ObserverLost)
 		if record.Coverage.Sources != nil {
 			copied.Coverage.Sources = make([]TelemetrySourceCoverage, len(record.Coverage.Sources))
@@ -222,15 +223,27 @@ func scrubTelemetryText(manifest *RunArchiveManifest, s telemetryTextScrubber) *
 		for i := range out.TelemetryStageDistributions {
 			stage := &out.TelemetryStageDistributions[i]
 			stage.Stage, stage.Unit, stage.Availability = scrubTelemetryIdentity(stage.Stage), scrubTelemetryIdentity(stage.Unit), scrubTelemetryIdentity(stage.Availability)
+			stage.DeliverySignal = scrubTelemetryIdentity(stage.DeliverySignal)
 			stage.Reason = s.text(stage.Reason)
 			stage.Excluded = scrubTelemetryCounts(stage.Excluded)
 		}
 	}
 	if population := manifest.TelemetryRenderPopulation.clone(); population != nil {
-		population.Population = scrubTelemetryIdentity(population.Population)
-		population.Epoch, population.ReferenceClient = scrubTelemetryIdentity(population.Epoch), scrubTelemetryIdentity(population.ReferenceClient)
-		population.Unqualified = scrubTelemetryCounts(population.Unqualified)
+		scrubTelemetryRenderPopulation(population)
 		out.TelemetryRenderPopulation = population
+	}
+	out.TelemetryEvidenceFile = scrubTelemetryIdentity(manifest.TelemetryEvidenceFile)
+	findings := manifest.TelemetryValidityFindings
+	if len(findings) == 0 && (manifest.TelemetryCoverage != nil || len(manifest.TelemetryStageDistributions) > 0 || manifest.TelemetryRenderPopulation != nil) {
+		findings = buildTelemetryValidityFindings(manifest)
+	}
+	if findings != nil {
+		out.TelemetryValidityFindings = scrubTelemetryValidityFindings(findings, s)
+	}
+	if manifest.TelemetryAcceptance != nil {
+		out.TelemetryAcceptance = scrubTelemetryVerdict(manifest.TelemetryAcceptance, s)
+	} else if verdict := telemetryAcceptanceForManifest(manifest); verdict != nil {
+		out.TelemetryAcceptance = scrubTelemetryVerdict(verdict, s)
 	}
 	if coverage := manifest.SourceCoverage; coverage != nil {
 		copied := *coverage
@@ -250,6 +263,18 @@ func scrubTelemetryText(manifest *RunArchiveManifest, s telemetryTextScrubber) *
 		}
 	}
 	return &out
+}
+
+func scrubTelemetryRenderPopulation(population *TelemetryRenderPopulation) {
+	if population == nil {
+		return
+	}
+	population.Population = scrubTelemetryIdentity(population.Population)
+	population.Epoch, population.ReferenceClient = scrubTelemetryIdentity(population.Epoch), scrubTelemetryIdentity(population.ReferenceClient)
+	population.Unqualified = scrubTelemetryCounts(population.Unqualified)
+	for i := range population.PriorEpochs {
+		scrubTelemetryRenderPopulation(&population.PriorEpochs[i])
+	}
 }
 
 // scrubTelemetryBudgetPolicy returns a copy of a budget policy with its keys
@@ -436,8 +461,313 @@ func scrubTelemetryVerdict(verdict *TelemetryAcceptanceVerdict, s telemetryTextS
 // verified archive; its telemetry verdict is judged on the recorded evidence
 // and its text scrubbed.
 func newCIValidatedArchiveEvidence(manifest *RunArchiveManifest, finalSummary *IntervalSummaryRecord, validity *ciRunValidity, validityUnavailable bool) *ciValidatedArchiveEvidence {
-	return &ciValidatedArchiveEvidence{Manifest: manifest, FinalSummary: finalSummary, Validity: validity, ValidityUnavailable: validityUnavailable,
-		TelemetryVerdict: scrubTelemetryVerdict(telemetryAcceptanceForManifest(manifest), newTelemetryTextScrubber(manifest))}
+	scrubber := newTelemetryTextScrubber(manifest)
+	verdict := scrubTelemetryVerdict(telemetryAcceptanceForManifest(manifest), scrubber)
+	scrubbedManifest := scrubTelemetryText(manifest, scrubber)
+	var scrubbedValidity *ciRunValidity
+	if validity != nil {
+		copied := *validity
+		if validity.Reasons != nil {
+			copied.Reasons = make([]string, len(validity.Reasons))
+			for i, reason := range validity.Reasons {
+				copied.Reasons[i] = scrubber.text(reason)
+			}
+		}
+		scrubbedValidity = &copied
+	}
+	return &ciValidatedArchiveEvidence{
+		Manifest:            scrubbedManifest,
+		FinalSummary:        finalSummary,
+		Validity:            scrubbedValidity,
+		ValidityUnavailable: validityUnavailable,
+		TelemetryVerdict:    verdict,
+	}
+}
+
+func newManagedTestTelemetryTextScrubber(test *ManagedTest) telemetryTextScrubber {
+	if test == nil {
+		return telemetryTextScrubber{}
+	}
+	manifest := &RunArchiveManifest{
+		Provenance: RunArchiveProvenance{
+			RuntimeSettings: cloneRuntimeSettings(test.RuntimeSettings),
+			Groups:          cloneArchiveTestGroups(test.Groups),
+		},
+	}
+	if test.initialArchiveProvenance != nil {
+		initial := *test.initialArchiveProvenance
+		manifest.InitialProvenance = &initial
+	}
+	return newTelemetryTextScrubber(manifest)
+}
+
+func scrubTelemetryValidityFindings(findings []TelemetryValidityFinding, s telemetryTextScrubber) []TelemetryValidityFinding {
+	if findings == nil {
+		return nil
+	}
+	out := cloneTelemetryValidityFindings(findings)
+	for i := range out {
+		finding := &out[i]
+		finding.Criterion = scrubTelemetryIdentity(finding.Criterion)
+		finding.Status = scrubTelemetryIdentity(finding.Status)
+		finding.Summary = s.text(finding.Summary)
+		for j := range finding.Details {
+			finding.Details[j] = s.text(finding.Details[j])
+		}
+	}
+	return out
+}
+
+func cloneTelemetryPolicySegments(in []TelemetryPolicySegmentReceipt) []TelemetryPolicySegmentReceipt {
+	if in == nil {
+		return nil
+	}
+	out := make([]TelemetryPolicySegmentReceipt, len(in))
+	for i, seg := range in {
+		seg.Policy = cloneTelemetryBudgetPolicy(seg.Policy)
+		out[i] = seg
+	}
+	return out
+}
+
+func cloneTelemetryCoverageRecord(in *TelemetryCoverageRecord) *TelemetryCoverageRecord {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Coverage.Sources != nil {
+		out.Coverage.Sources = append([]TelemetrySourceCoverage(nil), in.Coverage.Sources...)
+	}
+	if in.BreachedKnownFraction != nil {
+		val := *in.BreachedKnownFraction
+		out.BreachedKnownFraction = &val
+	}
+	if in.Segments != nil {
+		out.Segments = append([]TelemetryPolicySegment(nil), in.Segments...)
+	}
+	return &out
+}
+
+func scrubTelemetryPolicySegments(segments []TelemetryPolicySegmentReceipt, s telemetryTextScrubber) []TelemetryPolicySegmentReceipt {
+	if segments == nil {
+		return nil
+	}
+	out := make([]TelemetryPolicySegmentReceipt, len(segments))
+	for i, segment := range segments {
+		segment.Source, segment.PolicyID = scrubTelemetryIdentity(segment.Source), scrubTelemetryIdentity(segment.PolicyID)
+		segment.RequestedBy = s.label(segment.RequestedBy)
+		segment.Policy = scrubTelemetryBudgetPolicy(segment.Policy)
+		out[i] = segment
+	}
+	return out
+}
+
+func scrubTelemetryStageDistributions(stages []TelemetryStageDistribution, s telemetryTextScrubber) []TelemetryStageDistribution {
+	if stages == nil {
+		return nil
+	}
+	out := cloneTelemetryStageDistributions(stages)
+	for i := range out {
+		stage := &out[i]
+		stage.Stage, stage.Unit, stage.Availability = scrubTelemetryIdentity(stage.Stage), scrubTelemetryIdentity(stage.Unit), scrubTelemetryIdentity(stage.Availability)
+		stage.DeliverySignal = scrubTelemetryIdentity(stage.DeliverySignal)
+		stage.Reason = s.text(stage.Reason)
+		stage.Excluded = scrubTelemetryCounts(stage.Excluded)
+	}
+	return out
+}
+
+func scrubTelemetryCoverageValue(in *TelemetryCoverage) *TelemetryCoverage {
+	if in == nil {
+		return nil
+	}
+	copied := *in
+	copied.ObserverLost = scrubTelemetryIdentity(in.ObserverLost)
+	if in.Sources != nil {
+		copied.Sources = make([]TelemetrySourceCoverage, len(in.Sources))
+		for i, source := range in.Sources {
+			source.Source = scrubTelemetryIdentity(source.Source)
+			copied.Sources[i] = source
+		}
+	}
+	return &copied
+}
+
+func scrubLiveTelemetryHealth(in *TelemetryHealth, s telemetryTextScrubber) *TelemetryHealth {
+	out := cloneTelemetryHealth(in)
+	if out == nil {
+		return nil
+	}
+	out.Coverage = scrubTelemetryCoverageValue(out.Coverage)
+	if out.Loss != nil {
+		scrubTelemetryLoss(out.Loss, s)
+	}
+	out.StageDistributions = scrubTelemetryStageDistributions(out.StageDistributions, s)
+	out.Acceptance = scrubTelemetryVerdict(out.Acceptance, s)
+	if out.RenderPopulation != nil {
+		scrubTelemetryRenderPopulation(out.RenderPopulation)
+	}
+	out.PolicySegments = scrubTelemetryPolicySegments(out.PolicySegments, s)
+	for i := range out.StageBudgets {
+		out.StageBudgets[i].Stage = scrubTelemetryIdentity(out.StageBudgets[i].Stage)
+	}
+	for i := range out.IntervalConditionLabels {
+		out.IntervalConditionLabels[i] = scrubTelemetryIdentity(out.IntervalConditionLabels[i])
+	}
+	out.ValidityFindings = scrubTelemetryValidityFindings(out.ValidityFindings, s)
+	return out
+}
+
+func scrubTelemetryRunHealth(in *TelemetryRunHealth, s telemetryTextScrubber) *TelemetryRunHealth {
+	out := cloneTelemetryRunHealth(in)
+	if out == nil {
+		return nil
+	}
+	out.Status = scrubTelemetryIdentity(out.Status)
+	out.Severity = scrubTelemetryIdentity(out.Severity)
+	out.Summary = s.text(out.Summary)
+	out.CurrentSignature = scrubTelemetryIdentity(out.CurrentSignature)
+	for i := range out.Conditions {
+		out.Conditions[i] = s.text(out.Conditions[i])
+	}
+	for i := range out.Unscored {
+		out.Unscored[i] = s.text(out.Unscored[i])
+	}
+	for i := range out.ConditionLabels {
+		out.ConditionLabels[i] = scrubTelemetryIdentity(out.ConditionLabels[i])
+	}
+	for i := range out.StageBudgets {
+		out.StageBudgets[i].Stage = scrubTelemetryIdentity(out.StageBudgets[i].Stage)
+	}
+	return out
+}
+
+func scrubTelemetryDiagnostic(in *TelemetryDiagnostic, fallbackTel *TelemetryHealth, s telemetryTextScrubber) *TelemetryDiagnostic {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Severity = scrubTelemetryIdentity(out.Severity)
+	out.Summary = s.text(out.Summary)
+	if in.Conditions != nil {
+		out.Conditions = make([]string, len(in.Conditions))
+		for i, cond := range in.Conditions {
+			out.Conditions[i] = s.text(cond)
+		}
+	}
+	if in.Unscored != nil {
+		out.Unscored = make([]string, len(in.Unscored))
+		for i, u := range in.Unscored {
+			out.Unscored[i] = s.text(u)
+		}
+	}
+	if in.Samples != nil {
+		out.Samples = make([]DiagnosticSample, len(in.Samples))
+		for i, sample := range in.Samples {
+			sample.Issue = s.text(sample.Issue)
+			sample.Transaction = scrubTelemetryIdentity(sample.Transaction)
+			sample.DependencyType = scrubTelemetryIdentity(sample.DependencyType)
+			sample.DependencyTarget = scrubTelemetryIdentity(sample.DependencyTarget)
+			if sample.CorrelationIDs != nil {
+				sample.CorrelationIDs = make([]string, len(sample.CorrelationIDs))
+				for j, id := range in.Samples[i].CorrelationIDs {
+					sample.CorrelationIDs[j] = scrubTelemetryIdentity(id)
+				}
+			}
+			out.Samples[i] = sample
+		}
+	}
+	if out.Telemetry == nil && fallbackTel != nil {
+		out.Telemetry = cloneTelemetryHealth(fallbackTel)
+	}
+	out.Telemetry = scrubLiveTelemetryHealth(out.Telemetry, s)
+	return &out
+}
+
+func scrubLiveTelemetry(live *LiveMetrics, s telemetryTextScrubber) {
+	if live == nil {
+		return
+	}
+	if live.Telemetry != nil {
+		if len(live.Telemetry.ValidityFindings) == 0 && !live.Telemetry.restoredFromHistory && (live.Telemetry.Coverage != nil || len(live.Telemetry.StageDistributions) > 0 || live.Telemetry.RenderPopulation != nil) {
+			live.Telemetry.ValidityFindings = buildLiveTelemetryValidityFindings(live.Telemetry, live.TelemetryStatus)
+		}
+		live.Telemetry = scrubLiveTelemetryHealth(live.Telemetry, s)
+	}
+	if live.TelemetryStatus != nil {
+		live.TelemetryStatus = scrubTelemetryRunHealth(live.TelemetryStatus, s)
+	}
+	if live.TelemetryPolicy != nil {
+		copied := *live.TelemetryPolicy
+		copied.Availability = scrubTelemetryIdentity(copied.Availability)
+		copied.Policy = scrubTelemetryBudgetPolicy(copied.Policy)
+		live.TelemetryPolicy = &copied
+	}
+}
+
+func scrubTelemetryEvidenceDocument(doc *TelemetryEvidenceDocument, s telemetryTextScrubber) *TelemetryEvidenceDocument {
+	if doc == nil {
+		return nil
+	}
+	out := *doc
+	out.SchemaVersion = scrubTelemetryIdentity(doc.SchemaVersion)
+	out.TestID = scrubTelemetryIdentity(doc.TestID)
+	out.CoverageAlgorithm = scrubTelemetryIdentity(doc.CoverageAlgorithm)
+	out.CoverageRule = scrubTelemetryIdentity(doc.CoverageRule)
+	if doc.Coverage != nil {
+		tmp := &RunArchiveManifest{TelemetryCoverage: doc.Coverage}
+		out.Coverage = scrubTelemetryText(tmp, s).TelemetryCoverage
+	}
+	out.PolicySegments = scrubTelemetryPolicySegments(doc.PolicySegments, s)
+	if doc.SegmentCoverage != nil {
+		out.SegmentCoverage = make([]TelemetryPolicySegment, len(doc.SegmentCoverage))
+		for i, seg := range doc.SegmentCoverage {
+			seg.Unavailable, seg.PolicyHash = scrubTelemetryIdentity(seg.Unavailable), scrubTelemetryIdentity(seg.PolicyHash)
+			out.SegmentCoverage[i] = seg
+		}
+	}
+	if doc.Intervals != nil {
+		out.Intervals = make([]TelemetryEvidenceInterval, len(doc.Intervals))
+		for i, iv := range doc.Intervals {
+			iv.PolicyHash = scrubTelemetryIdentity(iv.PolicyHash)
+			iv.Status = scrubTelemetryIdentity(iv.Status)
+			if iv.ConditionLabels != nil {
+				iv.ConditionLabels = make([]string, len(iv.ConditionLabels))
+				for j, lbl := range doc.Intervals[i].ConditionLabels {
+					iv.ConditionLabels[j] = scrubTelemetryIdentity(lbl)
+				}
+			}
+			if iv.Unscored != nil {
+				iv.Unscored = make([]string, len(iv.Unscored))
+				for j, u := range doc.Intervals[i].Unscored {
+					iv.Unscored[j] = s.text(u)
+				}
+			}
+			out.Intervals[i] = iv
+		}
+	}
+	if doc.ConditionLabelCounts != nil {
+		out.ConditionLabelCounts = make(map[string]int, len(doc.ConditionLabelCounts))
+		for _, k := range slices.Sorted(maps.Keys(doc.ConditionLabelCounts)) {
+			out.ConditionLabelCounts[scrubTelemetryIdentity(k)] += doc.ConditionLabelCounts[k]
+		}
+	}
+	if doc.ResourceSamples != nil {
+		out.ResourceSamples = make([]TelemetryResourceSample, len(doc.ResourceSamples))
+		for i, sample := range doc.ResourceSamples {
+			sample.Component = scrubTelemetryIdentity(sample.Component)
+			sample.Source = scrubTelemetryIdentity(sample.Source)
+			out.ResourceSamples[i] = sample
+		}
+	}
+	if pop := doc.RenderPopulation.clone(); pop != nil {
+		scrubTelemetryRenderPopulation(pop)
+		out.RenderPopulation = pop
+	}
+	out.StageDistributions = scrubTelemetryStageDistributions(doc.StageDistributions, s)
+	out.ValidityFindings = scrubTelemetryValidityFindings(doc.ValidityFindings, s)
+	out.Acceptance = scrubTelemetryVerdict(doc.Acceptance, s)
+	return &out
 }
 
 // scrubBaselineTelemetryComparison scrubs a comparison's run profiles: a

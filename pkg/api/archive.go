@@ -23,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/runcontract"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const archiveSchemaVersion = "apexload.archive.v4"
@@ -172,10 +173,11 @@ type RunArchiveManifest struct {
 	TelemetrySourcesTruncated bool   `json:"telemetry_sources_truncated,omitempty"`
 	// JointIntervalsFile holds the run's joint evidence v4 rows (one per
 	// measured tuple of each retained source publication), also as Parquet.
-	JointIntervalsFile        string `json:"joint_intervals_file,omitempty"`
-	JointIntervalsParquetFile string `json:"joint_intervals_parquet_file,omitempty"`
-	JointIntervalCount        int64  `json:"joint_interval_count,omitempty"`
-	JointIntervalsTruncated   bool   `json:"joint_intervals_truncated,omitempty"`
+	JointIntervalsFile        string                 `json:"joint_intervals_file,omitempty"`
+	JointIntervalsParquetFile string                 `json:"joint_intervals_parquet_file,omitempty"`
+	JointIntervalCount        int64                  `json:"joint_interval_count,omitempty"`
+	JointIntervalsTruncated   bool                   `json:"joint_intervals_truncated,omitempty"`
+	JointTruncatedWindows     []JointTruncatedWindow `json:"truncated_windows,omitempty"`
 	// TelemetryCoverage is the run's wall-time telemetry account: observed
 	// and unknown time per source, and healthy, degraded, breached and
 	// unknown time with explicit denominators.
@@ -194,6 +196,12 @@ type RunArchiveManifest struct {
 	// TelemetryLoss is the run's total of each loss counter at finalize:
 	// exact, an observed lower bound or unavailable, with the reason.
 	TelemetryLoss *TelemetryLossAccounting `json:"telemetry_loss,omitempty"`
+	// TelemetryEvidenceFile holds the versioned telemetry evidence sidecar
+	// (telemetry_evidence.json) with segment coverage, interval condition
+	// labels, bounded resource samples, and validity findings (TEL-B1).
+	TelemetryEvidenceFile     string                      `json:"telemetry_evidence_file,omitempty"`
+	TelemetryValidityFindings []TelemetryValidityFinding  `json:"telemetry_validity_findings,omitempty"`
+	TelemetryAcceptance       *TelemetryAcceptanceVerdict `json:"telemetry_acceptance,omitempty"`
 	// PhaseEventsFile holds generated load-phase transitions and their sink
 	// outcomes (apexload.phase_event.v1), apart from analyst annotations.
 	PhaseEventsFile      string `json:"phase_events_file,omitempty"`
@@ -202,6 +210,21 @@ type RunArchiveManifest struct {
 }
 
 type TransactionSLARuleResult = runcontract.TransactionSLARuleResult
+
+// JointTruncatedWindow records a source observation window or publication
+// sequence span missing from the archived joint interval evidence (for example,
+// held uncommitted batches lost during controller failover, missing sequence
+// gaps, or dropped publications under the in-memory/sidecar budget).
+type JointTruncatedWindow struct {
+	Source              string `json:"source"`
+	ExecutionGeneration uint64 `json:"execution_generation,omitempty"`
+	Epoch               string `json:"epoch,omitempty"`
+	FirstSequence       uint64 `json:"first_sequence,omitempty"`
+	LastSequence        uint64 `json:"last_sequence,omitempty"`
+	StartUnixMs         int64  `json:"start_ms,omitempty"`
+	EndUnixMs           int64  `json:"end_ms,omitempty"`
+	Reason              string `json:"reason,omitempty"`
+}
 
 // TransactionResponseTimeSLAResult is the authoritative compliance result for
 // one named business transaction within one scenario group. Failed protocol
@@ -677,7 +700,8 @@ type RunArchiveReport struct {
 	// captured for this run. Like ReleaseTrend it is nil by default and attached at the
 	// storage-aware handler layer (attachDashboardPanels) from the run's frozen
 	// snapshot, so buildRunArchiveReport stays a pure function of one archive record.
-	DashboardPanels *RunArchiveDashboardPanels `json:"dashboard_panels,omitempty"`
+	DashboardPanels     *RunArchiveDashboardPanels     `json:"dashboard_panels,omitempty"`
+	SavedAnalysisPanels []RunArchiveSavedAnalysisPanel `json:"saved_analysis_panels,omitempty"`
 	// RootCauseView is the generated root cause every report format renders
 	// (v2 where the project presents it, else v1). It is attached at the
 	// handler layer (attachRootCause); a report without it renders the v1
@@ -695,7 +719,11 @@ type RunArchiveReport struct {
 
 	// TelemetryAcceptance is the run's telemetry verdict under its pinned
 	// acceptance policy, apart from the application verdict (C7).
-	TelemetryAcceptance *TelemetryAcceptanceVerdict `json:"telemetry_acceptance,omitempty"`
+	TelemetryAcceptance         *TelemetryAcceptanceVerdict  `json:"telemetry_acceptance,omitempty"`
+	TelemetryStageDistributions []TelemetryStageDistribution `json:"telemetry_stage_distributions,omitempty"`
+	TelemetryRenderPopulation   *TelemetryRenderPopulation   `json:"telemetry_render_population,omitempty"`
+	TelemetryCoverage           *TelemetryCoverageRecord     `json:"telemetry_coverage,omitempty"`
+	TelemetryValidityFindings   []TelemetryValidityFinding   `json:"telemetry_validity_findings,omitempty"`
 	// BrowserIntelligence holds the browser findings, interaction patterns
 	// and journey accounting a report renders (the browser baseline is in
 	// the root-cause section). It is attached only for an export that
@@ -736,6 +764,23 @@ type RunArchiveDashboardPanels struct {
 type RunArchiveDashboard struct {
 	Title  string                     `json:"title"`
 	Panels []RunArchiveDashboardPanel `json:"panels"`
+}
+
+// RunArchiveSavedAnalysisPanel summarizes a project's saved analysis panel
+// pinned to this run, including its frozen v2 pins and live readiness status
+// ("ready", "stale", or "missing_input").
+type RunArchiveSavedAnalysisPanel struct {
+	DashboardID       string                      `json:"dashboard_id"`
+	DashboardName     string                      `json:"dashboard_name"`
+	DashboardRevision int64                       `json:"dashboard_revision"`
+	TabID             string                      `json:"tab_id"`
+	PanelID           string                      `json:"panel_id"`
+	Title             string                      `json:"title"`
+	Status            string                      `json:"status"`
+	Reason            string                      `json:"reason,omitempty"`
+	Query             storage.AnalyticsQuery      `json:"query"`
+	PanelInputs       *storage.SavedPanelInputs   `json:"panel_inputs,omitempty"`
+	BrowserInputs     *storage.BrowserPanelInputs `json:"browser_inputs,omitempty"`
 }
 
 type RunArchiveDashboardPanel struct {

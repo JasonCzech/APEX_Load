@@ -35,7 +35,7 @@ func interruptedEvacuationHasDurableFenceProof(test *ManagedTest) bool {
 }
 
 func targetShardAssignmentChanged(before, next map[string][]GeneratorShardSummary, target string) bool {
-	groups := make(map[string]struct{}, len(before)+len(next))
+	groups := make(map[string]struct{})
 	for group := range before {
 		groups[group] = struct{}{}
 	}
@@ -339,7 +339,8 @@ func (tr *TestRunner) recoverInterruptedRunEvacuation(test *ManagedTest) error {
 		tr.mu.Unlock()
 		return errNotExecutionLeader
 	}
-	status, failureReason := test.Status, withoutEvacuationIntervention(test.Error)
+	test.evacuationQuarantineNextRetryAt = nil
+	status, failureReason := test.Status, evacuationQuarantineOriginalCause(test.Error)
 	tr.mu.Unlock()
 	confirmedReason := interruptedEvacuationFenceProof
 	if failureReason != "" {
@@ -472,8 +473,47 @@ func (tr *TestRunner) resumeInterruptedRunEvacuations() {
 				continue
 			}
 		}
+		retryAttempts := 0
+		var lastFenceErr error
+		tr.mu.Lock()
+		if tr.tests[test.ID] == test && !provenTerminal {
+			nextAt := time.Now().UTC().Add(executionPlanRetryInitialDelay)
+			test.evacuationQuarantineRetries = 0
+			test.evacuationQuarantineNextRetryAt = &nextAt
+		}
+		tr.mu.Unlock()
 		tr.enqueueTerminalRetry("evacuation-guard:"+test.ID, "interrupted evacuation process fences", func() error {
-			return tr.recoverInterruptedRunEvacuation(test)
+			tr.mu.RLock()
+			proven := tr.tests[test.ID] == test && interruptedEvacuationHasDurableFenceProof(test)
+			tr.mu.RUnlock()
+			if proven {
+				return tr.recoverInterruptedRunEvacuation(test)
+			}
+			if retryAttempts >= maxSameLeaderEvacuationCleanupRetries {
+				held, holdErr := tr.holdInterruptedEvacuationForIntervention(test, lastFenceErr)
+				if held || holdErr != nil {
+					return holdErr
+				}
+			}
+			err := tr.recoverInterruptedRunEvacuation(test)
+			if err != nil {
+				retryAttempts++
+				lastFenceErr = err
+				nextAt := time.Now().UTC().Add(evacuationQuarantineRetryDelay(retryAttempts))
+				tr.mu.Lock()
+				if tr.tests[test.ID] == test {
+					test.evacuationQuarantineRetries = retryAttempts
+					test.evacuationQuarantineNextRetryAt = &nextAt
+				}
+				tr.mu.Unlock()
+				return err
+			}
+			tr.mu.Lock()
+			if tr.tests[test.ID] == test {
+				test.evacuationQuarantineNextRetryAt = nil
+			}
+			tr.mu.Unlock()
+			return nil
 		})
 	}
 }

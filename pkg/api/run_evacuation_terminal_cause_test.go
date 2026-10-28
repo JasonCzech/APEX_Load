@@ -1,7 +1,11 @@
 package api
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -10,6 +14,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -162,9 +167,13 @@ func TestEvacuationRecoveryTrustsANaturalCompletion(t *testing.T) {
 			t.Fatalf("completed targets = %v", completed)
 		}
 	})
-	for _, phase := range []string{runEvacuationPhaseReplacementCommitting, runEvacuationPhaseStaged} {
+	for _, phase := range []string{runEvacuationPhaseReplacementCommitting, runEvacuationPhaseStaged, runEvacuationPhasePrepared} {
 		rollForward := phase == runEvacuationPhaseReplacementCommitting
-		name := map[bool]string{true: "roll-forward", false: "rollback"}[rollForward]
+		name := map[string]string{
+			runEvacuationPhaseReplacementCommitting: "roll-forward",
+			runEvacuationPhaseStaged:                "rollback",
+			runEvacuationPhasePrepared:              "rollback prepared",
+		}[phase]
 		t.Run(name+"/survivor", func(t *testing.T) {
 			f := newEvacuationRollForwardFixture(t, rollForwardOptions{phase: phase})
 			completeNaturally(f.survivorGen, f.test.Duration)
@@ -187,35 +196,46 @@ func TestEvacuationRecoveryTrustsANaturalCompletion(t *testing.T) {
 			}
 		})
 	}
-	t.Run("rollback/source", func(t *testing.T) {
-		// The source's duration ran out before its evacuation was fenced: the
-		// rollback returns to the prior topology with the source completed.
-		f := newEvacuationRollForwardFixture(t, rollForwardOptions{phase: runEvacuationPhaseStaged})
-		completeNaturally(f.sourceGen, f.test.Duration)
-		capture := &journalSwapCaptureStore{SQLiteStore: f.store}
-		f.tr.testStore = capture
-		owner, generation := f.tr.leadership.executionLeaseTerm()
-		if err := f.tr.adoptOrphanedRuns(); err != nil {
-			t.Fatal(err)
+	for _, phase := range []string{runEvacuationPhaseStaged, runEvacuationPhasePrepared} {
+		name := "rollback/source"
+		if phase == runEvacuationPhasePrepared {
+			name = "rollback prepared/source"
 		}
-		if swapped := capture.swappedCompletedTargets(t); !slices.Equal(swapped, []string{"gen-a"}) {
-			t.Fatalf("the swapped checkpoint's completed targets = %v, want gen-a", swapped)
-		}
-		resume := f.test.adoptedResume
-		if resume == nil || resume.finishStatus != "" || resume.completed["gen-a"] == nil || resume.adopted["gen-c"] == nil || f.test.remoteClientsByTarget["gen-b"] != nil {
-			t.Fatalf("naturally completed source not rolled back: %+v", resume)
-		}
-		completed := f.durableCompletedTargets(t, owner, generation)
-		if !slices.Contains(completed, "gen-a") || !slices.Equal(f.inMemoryCompletedTargets(t), completed) {
-			t.Fatalf("completed targets = %v", completed)
-		}
-		if claims, capacity := f.spareGen.snapshot(); len(claims) != 1 || len(claims[0]) != 0 || len(capacity) != 1 || !capacity[0].Release {
-			t.Fatalf("staged replacement not fenced and released: claims %+v requests %+v", claims, capacity)
-		}
-		if _, kept := f.ledger(t)["gen-b"]; kept {
-			t.Fatal("the replacement reservation survived the rollback")
-		}
-	})
+		t.Run(name, func(t *testing.T) {
+			// The source's duration ran out before its evacuation was fenced: the
+			// rollback returns to the prior topology with the source completed.
+			f := newEvacuationRollForwardFixture(t, rollForwardOptions{phase: phase})
+			completeNaturally(f.sourceGen, f.test.Duration)
+			capture := &journalSwapCaptureStore{SQLiteStore: f.store}
+			f.tr.testStore = capture
+			owner, generation := f.tr.leadership.executionLeaseTerm()
+			if err := f.tr.adoptOrphanedRuns(); err != nil {
+				t.Fatal(err)
+			}
+			if swapped := capture.swappedCompletedTargets(t); !slices.Equal(swapped, []string{"gen-a"}) {
+				t.Fatalf("the swapped checkpoint's completed targets = %v, want gen-a", swapped)
+			}
+			resume := f.test.adoptedResume
+			if resume == nil || resume.finishStatus != "" || resume.completed["gen-a"] == nil || resume.adopted["gen-c"] == nil || f.test.remoteClientsByTarget["gen-b"] != nil {
+				t.Fatalf("naturally completed source not rolled back: %+v", resume)
+			}
+			completed := f.durableCompletedTargets(t, owner, generation)
+			if !slices.Contains(completed, "gen-a") || !slices.Equal(f.inMemoryCompletedTargets(t), completed) {
+				t.Fatalf("completed targets = %v", completed)
+			}
+			claims, capacity := f.spareGen.snapshot()
+			if phase == runEvacuationPhaseStaged {
+				if len(claims) != 1 || len(claims[0]) != 0 || len(capacity) != 1 || !capacity[0].Release {
+					t.Fatalf("staged replacement not fenced and released: claims %+v requests %+v", claims, capacity)
+				}
+			} else if len(capacity) != 1 || !capacity[0].Release {
+				t.Fatalf("prepared replacement not released: requests %+v", capacity)
+			}
+			if _, kept := f.ledger(t)["gen-b"]; kept {
+				t.Fatal("the replacement reservation survived the rollback")
+			}
+		})
+	}
 }
 
 // inMemoryCompletedTargets reads back the run's in-memory plain checkpoint.
@@ -502,5 +522,87 @@ func TestNaturalSourceAcrossAnotherRollbackLeaderChange(t *testing.T) {
 	}
 	if completed := f.durableCompletedTargets(t, owner, second); !slices.Contains(completed, "gen-a") {
 		t.Fatalf("completed targets = %v, want gen-a", completed)
+	}
+}
+
+// TestEvacuationRecoveryTrustsInProcessNaturalCompletion drives a real
+// in-process generator for a survivor and for a rollback source whose active
+// duration elapses naturally before the successor's epoch claim.
+func TestEvacuationRecoveryTrustsInProcessNaturalCompletion(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(target.Close)
+	script := &dsl.Script{ID: "natural-script", Name: "Natural", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: target.URL}, Actions: []dsl.Action{{Name: "home", Type: "GET", Target: "/"}}}
+	content, hash, _, err := generatorrpc.PrepareDistributedScript(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runNaturalOn := func(t *testing.T, testID, id, group string, vusers int32, gen uint64, owner string, token []byte, logicalDuration time.Duration) *generatorrpc.Client {
+		t.Helper()
+		ctx := context.Background()
+		client, service := newTestGeneratorRPCClient(t, id, 10, generatorrpc.WithExecution(), generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")))
+		if _, err := client.ClaimExecutionEpoch(ctx, gen, owner, time.Minute); err != nil {
+			t.Fatalf("epoch claim on %s: %v", id, err)
+		}
+		if _, err := client.DistributeScript(ctx, generatorrpc.Script{ID: script.ID, ExecutionGeneration: gen, Content: content, ContentHash: hash}); err != nil {
+			t.Fatalf("distribute script on %s: %v", id, err)
+		}
+		activeWindow := 120 * time.Millisecond
+		assign, err := client.AssignWork(ctx, generatorrpc.Assignment{
+			TestID: testID, GroupName: group, ScriptID: script.ID, ExpectedScriptHash: hash,
+			VUserCount: vusers, ExecutionGeneration: gen,
+			DurationOffset: logicalDuration - activeWindow, TargetDuration: activeWindow,
+			RunSupervisionToken: token, AdoptionGrace: 30 * time.Second,
+		})
+		if err != nil || !assign.Accepted {
+			t.Fatalf("assign %s = (%+v, %v)", id, assign, err)
+		}
+		if claim, err := client.ClaimRunSupervision(ctx, generatorrpc.RunSupervisionClaim{TestID: testID, ExecutionGeneration: gen, Token: token, RequestedTTL: time.Minute, ExecutionLeaseOwnerID: owner}); err != nil || !claim.Accepted {
+			t.Fatalf("supervision on %s = (%+v, %v)", id, claim, err)
+		}
+		if commit, err := client.CommitWorkSupervisedAt(ctx, testID, gen, time.Time{}, token); err != nil || !commit.Accepted {
+			t.Fatalf("commit on %s = (%+v, %v)", id, commit, err)
+		}
+		waitForActiveVUsers(t, service, 0)
+		// Allow archive finalization to publish the terminal outcome before
+		// the successor's epoch claim probes the generator.
+		time.Sleep(40 * time.Millisecond)
+		return client
+	}
+	for _, c := range []struct {
+		name        string
+		phase       string
+		participant string
+		group       string
+		vusers      int32
+		running     string
+	}{
+		{name: "roll-forward/survivor", phase: runEvacuationPhaseReplacementCommitting, participant: "gen-c", group: "gc", vusers: 3, running: "gen-b"},
+		{name: "rollback staged/survivor", phase: runEvacuationPhaseStaged, participant: "gen-c", group: "gc", vusers: 3, running: "gen-a"},
+		{name: "rollback prepared/survivor", phase: runEvacuationPhasePrepared, participant: "gen-c", group: "gc", vusers: 3, running: "gen-a"},
+		{name: "rollback staged/source", phase: runEvacuationPhaseStaged, participant: "gen-a", group: "ga", vusers: 5, running: "gen-c"},
+		{name: "rollback prepared/source", phase: runEvacuationPhasePrepared, participant: "gen-a", group: "ga", vusers: 5, running: "gen-c"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+			f := newEvacuationRollForwardFixture(t, rollForwardOptions{phase: c.phase, noCapacity: true}, func(f *evacuationRollbackFixture) {
+				client := runNaturalOn(t, f.test.ID, c.participant, c.group, c.vusers, f.oldGen, f.oldOwner, f.token, f.test.Duration)
+				f.extra = map[string]func() (generatorClient, error){
+					c.participant: func() (generatorClient, error) { return client.Retain() },
+				}
+			})
+			owner, generation := f.tr.leadership.executionLeaseTerm()
+			if err := f.tr.adoptOrphanedRuns(); err != nil {
+				t.Fatal(err)
+			}
+			resume := f.test.adoptedResume
+			if resume == nil || resume.finishStatus != "" || resume.completed[c.participant] == nil || resume.adopted[c.running] == nil {
+				t.Fatalf("in-process natural completion of %s blocked recovery: %+v", c.participant, resume)
+			}
+			if completed := f.durableCompletedTargets(t, owner, generation); !slices.Contains(completed, c.participant) {
+				t.Fatalf("completed targets = %v, want %s", completed, c.participant)
+			}
+		})
 	}
 }

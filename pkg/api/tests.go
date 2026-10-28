@@ -82,6 +82,13 @@ func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit in
 	tr.attachTerminalArchiveCatalog(test)
 	tr.attachRunArchiveFailure(test)
 	tr.attachRunArchiveRecovery(test)
+	scrubber := newManagedTestTelemetryTextScrubber(test)
+	if test.LiveMetrics != nil {
+		scrubLiveTelemetry(test.LiveMetrics, scrubber)
+	}
+	for i := range test.History {
+		scrubLiveTelemetry(test.History[i], scrubber)
+	}
 	return test, true
 }
 
@@ -1002,9 +1009,12 @@ func cloneManagedTestForReadLocked(test *ManagedTest) *ManagedTest {
 	}
 	cloned := cloneManagedTestFieldsLocked(test)
 	if len(test.History) > 0 {
+		scrubber := newManagedTestTelemetryTextScrubber(test)
 		cloned.History = make([]*LiveMetrics, len(test.History))
 		for index, metrics := range test.History {
-			cloned.History[index] = cloneLiveMetrics(metrics)
+			point := cloneLiveMetrics(metrics)
+			scrubLiveTelemetry(point, scrubber)
+			cloned.History[index] = point
 		}
 	}
 	return cloned
@@ -1032,13 +1042,14 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned := *test
 	cloned.FolderID = cloneStringPtr(test.FolderID)
 	cloned.DataPools = cloneScenarioDataPoolBindings(test.DataPools)
-	cloned.Groups = cloneArchiveTestGroups(test.Groups)
+	cloned.Groups = scrubTestGroupAssignments(cloneArchiveTestGroups(test.Groups))
 	cloned.CapacityAdvisory = cloneCapacityAdvisory(test.CapacityAdvisory)
 	cloned.RuntimeSettingsReview = cloneRuntimeSettingsReview(test.RuntimeSettingsReview)
-	cloned.Assignment = cloneGeneratorAssignmentSettings(test.Assignment)
+	cloned.Assignment = scrubGeneratorAssignment(cloneGeneratorAssignmentSettings(test.Assignment))
 	cloned.GoalConfig = cloneGoalConfig(test.GoalConfig)
 	cloned.GoalTargets = cloneGoalTargetStatusMap(test.GoalTargets)
 	cloned.Continuity = runContinuityStatusLocked(test)
+	cloned.EvacuationQuarantine = runEvacuationQuarantineStatusLocked(test)
 	cloned.continuityFailovers = append([]RunFailover(nil), test.continuityFailovers...)
 	cloned.http3Preflight = cloneHTTP3Preflight(test.http3Preflight)
 	cloned.TrafficProfile = cloneTrafficProfile(test.TrafficProfile)
@@ -1049,7 +1060,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.TraceContext = cloneRunTraceContext(test.TraceContext)
 	cloned.JointEvidence = test.JointEvidence.Clone()
 	cloned.AnalysisPolicySelections = cloneRunAnalysisPolicySelections(test.AnalysisPolicySelections)
-	cloned.GeneratorShards = cloneGeneratorShardSummaries(test.GeneratorShards)
+	cloned.GeneratorShards = scrubGeneratorShardTargets(cloneGeneratorShardSummaries(test.GeneratorShards))
 	cloned.ScheduledStartAt = cloneTimePtr(test.ScheduledStartAt)
 	cloned.TimeslotID = cloneStringPtr(test.TimeslotID)
 	cloned.PendingSince = cloneTimePtr(test.PendingSince)
@@ -1059,9 +1070,13 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.telemetryPolicySegments = append([]TelemetryPolicySegmentReceipt(nil), test.telemetryPolicySegments...)
 	cloned.telemetrySegmentPendingAt = cloneTimePtr(test.telemetrySegmentPendingAt)
 	cloned.telemetrySegmentsInvalid = append([]TelemetryPolicySegmentReceipt(nil), test.telemetrySegmentsInvalid...)
+	scrubber := newManagedTestTelemetryTextScrubber(test)
 	cloned.TelemetryPolicySegments = nil
 	if len(test.telemetryPolicySegments) > 0 || len(test.telemetrySegmentsInvalid) > 0 {
-		cloned.TelemetryPolicySegments = telemetryPolicySegmentsListedLocked(test)
+		cloned.TelemetryPolicySegments = scrubTelemetryPolicySegments(telemetryPolicySegmentsListedLocked(test), scrubber)
+	}
+	if len(cloned.TelemetryPolicySegments) == 0 && len(test.TelemetryPolicySegments) > 0 {
+		cloned.TelemetryPolicySegments = scrubTelemetryPolicySegments(test.TelemetryPolicySegments, scrubber)
 	}
 	cloned.StartAuthorization = cloneQueuedStartAuthorization(test.StartAuthorization)
 	cloned.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval)
@@ -1076,7 +1091,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	if cloned.Archive != nil {
 		cloned.ArchiveFailure = nil
 	}
-	cloned.TelemetryHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
+	cloned.TelemetryHealth = scrubTelemetryRunHealth(test.TelemetryHealth, scrubber)
 	if test.initialArchiveProvenance != nil {
 		initial := maskRunArchiveProvenance(*test.initialArchiveProvenance)
 		cloned.initialArchiveProvenance = &initial
@@ -1120,6 +1135,8 @@ func cloneRunLiveMetrics(test *ManagedTest) *LiveMetrics {
 	annotateLiveObservation(metrics, test.Status, time.Now())
 	attachTelemetryStageDistributions(metrics, test)
 	attachTelemetryAcceptance(metrics, test)
+	attachTelemetrySegmentView(metrics, test)
+	scrubLiveTelemetry(metrics, newManagedTestTelemetryTextScrubber(test))
 	return metrics
 }
 

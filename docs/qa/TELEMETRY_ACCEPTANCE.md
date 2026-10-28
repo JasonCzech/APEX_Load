@@ -123,14 +123,18 @@ Each fault in TEL-4's matrix names the tests that accept it. The Go tests run in
 |  | `TestRunReportRouteScrubsGeneratorTargets` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
 |  | `TestRunCalendarTopologyScrubsGeneratorTargets` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
 |  | `TestTelemetryNotificationRuntimeScrubsAndPinsRecipients` (`pkg/api/telemetry_notification_runtime_test.go`) | Go |
+|  | `TestTelemetryTenConsumerParityAndSentinelMatrix` (`pkg/api/telemetry_text_scrub_test.go`) | Go |
 | HA adoption gaps | `TestTelemetryCoverageAfterAdoption` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestTelemetryLiveCoverageAfterAdoptionIsALowerBound` (`pkg/api/telemetry_coverage_test.go`) | Go |
 |  | `TestTelemetryStageRecorderReadoptionSamplesFromTheAdoption` (`pkg/api/telemetry_acceptance_test.go`) | Go |
 |  | `TestStageDistributionsDiscloseALostRecorder` (`pkg/api/telemetry_stages_test.go`) | Go |
+|  | `TestTelemetryCheckpointDurableRenderPopulationFailover` (`pkg/api/telemetry_roadmap_test.go`) | Go |
 | Exports | `TestBaselineComparisonExportsCarryTelemetryCompatibility` (`pkg/api/telemetry_comparison_test.go`) | Go |
 |  | `TestBuildRunArchiveReportIncludesTelemetryHealthEvidence` (`pkg/api/archive_report_test.go`) | Go |
 |  | `TestCITelemetryVerdictComesFromTheArchiveManifest` (`pkg/api/telemetry_acceptance_test.go`) | Go |
 |  | `TestCSVExportAppliesArchiveRedaction` (`pkg/api/jmeter_fidelity_execution_test.go`) | Go |
+|  | `TestTelemetrySourceWindowCoverageV4AndPolicySegments` (`pkg/api/telemetry_roadmap_test.go`) | Go |
+|  | `TestTelemetryEvidenceArchiveSidecarAndLiveSegmentViews` (`pkg/api/telemetry_roadmap_test.go`) | Go |
 |  | runs re-evaluate reproducibly under a common telemetry policy, from the API and the comparison view (`dashboard/e2e/workflow-telemetry-reevaluation.spec.ts`) | End to end, both profiles |
 
 ## Reference workload

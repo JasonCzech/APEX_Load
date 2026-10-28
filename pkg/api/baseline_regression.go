@@ -26,7 +26,7 @@ type BaselineRegressionEvidence struct {
 	Reason     string   `json:"reason,omitempty"`
 }
 
-var baselineRegressionMetrics = []string{"successful_mean", "successful_p95", "successful_p99", "successful_throughput", "error_rate_pct", "consumer_lag_ms", "consumer_offset_lag", "acknowledgement_ms", "grpc_call_p95", "grpc_first_message_p95", "websocket_handshake_p95", "websocket_write_wait_p95", "websocket_ping_rtt_p95", "grpc_encode_p95", "grpc_decode_p95", "grpc_message_throughput", "websocket_message_throughput", "websocket_reconnect_p95", "websocket_send_p95", "websocket_receive_p95", "websocket_text_receive_p95", "websocket_binary_receive_p95"}
+var baselineRegressionMetrics = []string{"successful_mean", "successful_p95", "successful_p99", "successful_throughput", "error_rate_pct", "consumer_lag_ms", "consumer_offset_lag", "acknowledgement_ms", "grpc_call_p95", "grpc_first_message_p95", "websocket_handshake_p95", "websocket_write_wait_p95", "websocket_ping_rtt_p95", "grpc_encode_p95", "grpc_decode_p95", "grpc_message_throughput", "grpc_uncompressed_payload_bytes", "grpc_client_call_rate", "grpc_codec_overlap_ratio", "websocket_message_throughput", "websocket_reconnect_p95", "websocket_send_p95", "websocket_receive_p95", "websocket_text_receive_p95", "websocket_binary_receive_p95", "ws_ping_pong_rtt_ms", "ws_receive_wait_ms", "ws_application_pending_writes"}
 
 func validateBaselineRegressionRequest(r BaselineComparisonRequest) error {
 	for i, list := range [][]string{r.RegressionMetrics, r.RegressionProtocols, r.RegressionGroups, r.RegressionIdentities} {
@@ -72,6 +72,25 @@ func baselineRegressionValue(m *BaselineMeasurement, metric string) (float64, bo
 		if metric == "grpc_message_throughput" {
 			return float64(m.GRPC.MessagesReceived) * m.Throughput / float64(m.Samples), m.GRPC.MessagesReceived >= 0
 		}
+		ca := m.GRPC.ClientAnalysis()
+		if metric == "grpc_uncompressed_payload_bytes" {
+			if ca.UncompressedPayloadBytes == nil {
+				return 0, false
+			}
+			return float64(*ca.UncompressedPayloadBytes) / float64(m.Samples), true
+		}
+		if metric == "grpc_client_call_rate" {
+			if ca.ClientCallsPerCallSecond == nil {
+				return 0, false
+			}
+			return *ca.ClientCallsPerCallSecond, true
+		}
+		if metric == "grpc_codec_overlap_ratio" {
+			if ca.CodecOverlapRatio == nil {
+				return 0, false
+			}
+			return *ca.CodecOverlapRatio, true
+		}
 		d := m.GRPC.Call
 		if metric == "grpc_encode_p95" {
 			d = m.GRPC.Encode
@@ -85,9 +104,12 @@ func baselineRegressionValue(m *BaselineMeasurement, metric string) (float64, bo
 		x, ok := d.Quantile(.95)
 		return x, ok && d.Count == m.Samples
 	}
-	if strings.HasPrefix(metric, "websocket_") && m.WebSocket != nil && m.WebSocket.Samples == m.Samples {
+	if (strings.HasPrefix(metric, "websocket_") || strings.HasPrefix(metric, "ws_")) && m.WebSocket != nil && m.WebSocket.Samples == m.Samples {
 		if metric == "websocket_message_throughput" {
 			return float64(m.WebSocket.MessagesReceived) * m.Throughput / float64(m.Samples), m.WebSocket.MessagesReceived >= 0
+		}
+		if metric == "ws_application_pending_writes" {
+			return float64(m.WebSocket.MaxPendingWrites), m.WebSocket.MaxPendingWrites >= 0
 		}
 		d := m.WebSocket.Handshake
 		if metric == "websocket_reconnect_p95" {
@@ -96,7 +118,7 @@ func baselineRegressionValue(m *BaselineMeasurement, metric string) (float64, bo
 		if metric == "websocket_send_p95" {
 			d = m.WebSocket.Send
 		}
-		if metric == "websocket_receive_p95" {
+		if metric == "websocket_receive_p95" || metric == "ws_receive_wait_ms" {
 			d = m.WebSocket.Receive
 		}
 		if metric == "websocket_text_receive_p95" {
@@ -108,7 +130,7 @@ func baselineRegressionValue(m *BaselineMeasurement, metric string) (float64, bo
 		if metric == "websocket_write_wait_p95" {
 			d = m.WebSocket.WriteWait
 		}
-		if metric == "websocket_ping_rtt_p95" {
+		if metric == "websocket_ping_rtt_p95" || metric == "ws_ping_pong_rtt_ms" {
 			d = m.WebSocket.PingRTT
 		}
 		x, ok := d.Quantile(.95)
@@ -180,8 +202,11 @@ func evaluateBaselineRegression(s *BaselineComparisonSnapshot) *BaselineRegressi
 				if metric == "error_rate_pct" {
 					pct, absolute = 0, s.Policy.ErrorPoints
 				}
-				if metric == "successful_throughput" || strings.HasSuffix(metric, "message_throughput") {
+				if metric == "successful_throughput" || strings.HasSuffix(metric, "message_throughput") || metric == "grpc_client_call_rate" {
 					pct, absolute = s.Policy.ThroughputPct, 0
+				}
+				if metric == "consumer_offset_lag" || metric == "grpc_uncompressed_payload_bytes" || metric == "grpc_codec_overlap_ratio" || metric == "ws_application_pending_writes" {
+					pct, absolute = s.Policy.LatencyPct, 0
 				}
 				if base == 0 && absolute == 0 {
 					e.Reason = "Baseline zero requires an absolute threshold"
@@ -189,11 +214,8 @@ func evaluateBaselineRegression(s *BaselineComparisonSnapshot) *BaselineRegressi
 					v.Evidence = append(v.Evidence, e)
 					continue
 				}
-				if metric == "consumer_offset_lag" {
-					pct, absolute = s.Policy.LatencyPct, 0
-				}
 				delta := a - base
-				if metric == "successful_throughput" || strings.HasSuffix(metric, "message_throughput") {
+				if metric == "successful_throughput" || strings.HasSuffix(metric, "message_throughput") || metric == "grpc_client_call_rate" {
 					delta = -delta
 				}
 				regression := delta > 0 && delta >= absolute && (pct == 0 || base == 0 || 100*delta/math.Abs(base) >= pct)

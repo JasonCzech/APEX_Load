@@ -372,4 +372,66 @@ describe('useClientRenderReporter', () => {
     expect(reportedOutcomes()).toEqual([['visible', 4]])
   })
 
+  it('cycles browser clock calibration probes every 30s without re-sending stale refinements', async () => {
+    let mono = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => mono)
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+
+    // 1. Initial flush at mono=1020 sends client_send_mono_ms and receives clock_calibration echo.
+    request.mockResolvedValueOnce({ accepted: 1, clock_calibration: [1020, 1700000001020, 1700000001021] })
+    await act(async () => { root.render(<Harness testId="run-cal" enabled metrics={named(1, 'run-cal')} />) })
+    mono = 1015
+    await act(async () => { vi.advanceTimersByTime(5) })
+    mono = 1020
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).toHaveBeenCalledTimes(1)
+    const body1 = JSON.parse(request.mock.calls[0][1].body)
+    expect(body1.client_send_mono_ms).toBe(1020)
+    expect(body1.calibration).toBeUndefined()
+
+    // 2. Second flush within 30s sends the refinement once and clears it.
+    request.mockResolvedValueOnce({ accepted: 1 })
+    mono = 5000
+    await act(async () => { root.render(<Harness testId="run-cal" enabled metrics={named(2, 'run-cal')} />) })
+    mono = 5010
+    await act(async () => { vi.advanceTimersByTime(5) })
+    mono = 5020
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).toHaveBeenCalledTimes(2)
+    const body2 = JSON.parse(request.mock.calls[1][1].body)
+    expect(body2.client_send_mono_ms).toBeUndefined()
+    expect(body2.calibration).toEqual({
+      client_send_mono_ms: 1020,
+      client_recv_mono_ms: 1020,
+      controller_recv_unix_ms: 1700000001020,
+      controller_send_unix_ms: 1700000001021,
+    })
+
+    // 3. Third flush within 30s sends neither client_send_mono_ms nor stale calibration.
+    request.mockResolvedValueOnce({ accepted: 1 })
+    mono = 10000
+    await act(async () => { root.render(<Harness testId="run-cal" enabled metrics={named(3, 'run-cal')} />) })
+    mono = 10010
+    await act(async () => { vi.advanceTimersByTime(5) })
+    mono = 10020
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).toHaveBeenCalledTimes(3)
+    const body3 = JSON.parse(request.mock.calls[2][1].body)
+    expect(body3.client_send_mono_ms).toBeUndefined()
+    expect(body3.calibration).toBeUndefined()
+
+    // 4. Fourth flush after >= 30s sends a fresh client_send_mono_ms without stale calibration.
+    request.mockResolvedValueOnce({ accepted: 1, clock_calibration: [32020, 1700000032020, 1700000032021] })
+    mono = 32000
+    await act(async () => { root.render(<Harness testId="run-cal" enabled metrics={named(4, 'run-cal')} />) })
+    mono = 32010
+    await act(async () => { vi.advanceTimersByTime(5) })
+    mono = 32020
+    await act(async () => { vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS) })
+    expect(request).toHaveBeenCalledTimes(4)
+    const body4 = JSON.parse(request.mock.calls[3][1].body)
+    expect(body4.client_send_mono_ms).toBe(32020)
+    expect(body4.calibration).toBeUndefined()
+  })
+
 })

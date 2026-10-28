@@ -311,7 +311,7 @@ export type {
   RuntimeSettingsReview,
   ScenarioRuntimeSettingsDraft,
 } from './types/runtimeSettings'
-export type { LoadModelValidationItem, LoadModelValidationReport, LoadStageDraft } from './types/loadModels'
+export type { LoadModelValidationItem, LoadModelValidationReport, LoadStageDraft, ScenarioValidationContext, ScenarioValidationContextComponent } from './types/loadModels'
 export type {
   AssignmentRecommendation,
   ContinueOnErrorResolution,
@@ -848,6 +848,8 @@ export interface TestSummary {
   goal_targets?: Record<string, GoalTargetStatus>
   /** HA run continuity; absent for fail-policy runs that never failed over. */
   continuity?: RunContinuityStatus
+  /** Structured quarantine diagnostics while a run is held STOPPING awaiting generator stop/fence proof (REC-B1). */
+  evacuation_quarantine?: RunEvacuationQuarantine
   live_metrics?: LiveMetrics
   sparkline?: TestSparklinePoint[]
   telemetry_health?: TelemetryRunHealth
@@ -897,6 +899,17 @@ export interface RunArchiveRecovery {
   verified_sources?: number
   updated_at?: string
   retry_window_ends_at?: string
+}
+
+/** Structured quarantine diagnostics while a distributed run is held STOPPING awaiting generator stop/fence proof (REC-B1). */
+export interface RunEvacuationQuarantine {
+  quarantined_owners?: string[]
+  retry_count: number
+  max_retries: number
+  retries_exhausted?: boolean
+  next_retry_at?: string
+  required_intervention_action?: string
+  original_cause?: string
 }
 
 /** Observed collection failure; this is separate from archive publication retries. */
@@ -2602,7 +2615,31 @@ export interface TelemetryHealth {
   // accounting for its reference dashboard client.
   publication?: TelemetryPublication
   render_population?: TelemetryRenderPopulation
+  policy_segments?: Array<{
+    sequence: number
+    effective_at: string
+    source: string
+    policy_id?: string
+    requested_by?: string
+    policy?: {
+      policy_id?: string
+      revision?: number
+      hash?: string
+      budgets?: Array<{ stage: string; enabled: boolean; limit_ms: number }>
+    }
+  }>
+  stage_budgets?: Array<{ stage: string; enabled: boolean; limit_ms: number }>
+  interval_condition_labels?: TelemetryIntervalConditionLabel[]
 }
+
+export type TelemetryIntervalConditionLabel =
+  | 'healthy'
+  | 'degraded_stage_budget'
+  | 'clock_unqualified'
+  | 'boundary_unscored'
+  | 'source_gap'
+  | 'overload_shed'
+  | string
 
 // A live publication to dashboard viewers (TEL-A): its controller epoch and
 // sequence, whether it carries a collection no earlier one did, and the
@@ -2611,6 +2648,7 @@ export interface TelemetryPublication {
   epoch: string
   sequence: number
   eligible: boolean
+  oldest_observation_start_at?: string
   oldest_collected_at?: string
   newest_collected_at?: string
 }
@@ -2634,6 +2672,7 @@ export interface TelemetryRenderPopulation {
   // When this accounting began: the run's start, or the adoption by this
   // controller.
   sampled_from?: string
+  prior_epochs?: TelemetryRenderPopulation[]
 }
 
 // One telemetry acceptance criterion with the evidence it read (C7).
@@ -2676,7 +2715,7 @@ export interface TelemetryAcceptanceVerdict {
   exclusions?: string[]
 }
 
-export type TelemetryStageName = 'generator_processing' | 'transport' | 'controller_fanout' | 'sample_age' | 'browser_render'
+export type TelemetryStageName = 'generator_processing' | 'transport' | 'controller_fanout' | 'sample_age' | 'browser_render' | 'end_to_end'
 
 // One telemetry stage's sampled distribution so far. Percentiles exist only
 // for a measured stage, and stage percentiles are never added together.
@@ -2685,11 +2724,17 @@ export interface TelemetryStageDistribution {
   unit: string
   availability: 'measured' | 'unavailable' | string
   samples: number
+  eligible_publications?: number
   excluded?: Record<string, number>
   p50_ms?: number
   p95_ms?: number
   p99_ms?: number
   max_ms?: number
+  newest_observation_p50_ms?: number
+  newest_observation_p95_ms?: number
+  newest_observation_p99_ms?: number
+  newest_observation_max_ms?: number
+  delivery_signal?: 'post_commit_paint_opportunity' | 'verified_frame_presentation' | string
   // Advisory stages (browser render) never affect run health.
   advisory?: boolean
   // When this controller began sampling: a controller that adopted the run
@@ -2716,6 +2761,8 @@ export interface TelemetryRunHealth {
   last_transition_at?: string
   /** The telemetry policy segment that classified this interval (TEL-B; 1 is the admission receipt); absent for an interval a change fell inside. */
   policy_segment?: number
+  condition_labels?: TelemetryIntervalConditionLabel[]
+  stage_budgets?: Array<{ stage: string; enabled: boolean; limit_ms: number }>
 }
 
 export interface TelemetryDiagnostic {

@@ -135,9 +135,9 @@ Retired seams are kept retired by `dashboard/src/adapterRetirement.test.ts`. Tha
   - `useScriptsAuthoringState` holds the routing state: the open sub-view and the return target it reopens.
   - An archive import's pending sibling drafts live in the importer (`EnterpriseArchiveImport`), which stays mounted behind the editor.
   - The session decides only whether the editor may leave.
-- **Remaining and completed edges:**
+- **Completed lifecycle edges:**
   - The [scenario prerequisite handoff slice](reviews/roadmap-scenario-prerequisite-2026-10-19/README.md) retains embedded authoring after an archive-source return, a later-edit save or a secret-setup request. The saved script is assigned to the selected group; explicit return still guards remaining drafts. The source review also stays mounted when a saved editor retains later changes.
-  - The [archive approval handoff slice](reviews/roadmap-archive-approval-handoff-2026-10-19/README.md) closes the legacy/plain direct-editor Java queue edge: an accepted receipt marks the lane queued, carries its session identity, and returns an unchanged editor to review. Later edits stay in the editor. Project, folder, options and review-generation fences reject stale callbacks. The review retains source sessions used by pending sibling lanes. Protected imports keep save-before-edit; the separate scenario prerequisite slice above handles its embedding, while the full AUTH-2 property matrix remains open.
+  - The [archive approval handoff slice](reviews/roadmap-archive-approval-handoff-2026-10-19/README.md) closes the legacy/plain direct-editor Java queue edge: an accepted receipt marks the lane queued, carries its session identity, and returns an unchanged editor to review. Later edits stay in the editor. Project, folder, options and review-generation fences reject stale callbacks. The review retains source sessions used by pending sibling lanes. Protected imports keep save-before-edit; the separate scenario prerequisite slice above handles its embedding, and the [AUTH-2 property matrix](LIFECYCLE_PARITY_MATRIX.md#auth-2-properties) has zero open cells.
 
 ## Retained seams
 

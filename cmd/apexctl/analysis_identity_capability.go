@@ -166,7 +166,7 @@ func analysisCLIHistoricalMappingVersion(raw []byte, evidenceProjection bool) (u
 }
 
 func analysisCLIRequestScalars(object map[string]json.RawMessage) error {
-	for _, key := range []string{"project_id", "dataset_id", "run_id", "metric", "source_id", "host", "service", "transaction", "protocol", "group", "from", "to", "aggregation", "mode", "name", "mapping_id"} {
+	for _, key := range []string{"project_id", "dataset_id", "run_id", "metric", "source_id", "host", "service", "transaction", "protocol", "group", "from", "to", "aggregation", "mode", "name", "mapping_id", "alignment", "coverage_policy", "catalog_version", "dataset_artifact_sha256", "archive_manifest_sha256"} {
 		if raw, exists := object[key]; exists {
 			if _, err := analysisCLIText(raw, 256, false); err != nil {
 				return err
@@ -191,8 +191,8 @@ func analysisCLIRequestScalars(object map[string]json.RawMessage) error {
 }
 
 var analysisCLISeriesFields = []string{"project_id", "dataset_id", "metric", "identity_schema_version", "source_id", "host", "service", "dimensions", "from", "to", "bucket_seconds", "aggregation"}
-var analysisCLIComparisonFields = []string{"left", "right", "from", "to", "bucket_seconds", "max_lag_seconds", "mode"}
-var analysisCLISelectionFields = []string{"dataset_id", "run_id", "source_id", "transaction", "host", "service", "dimensions", "protocol", "group", "metric", "aggregation", "dataset_artifact_sha256"}
+var analysisCLIComparisonFields = []string{"left", "right", "from", "to", "bucket_seconds", "max_lag_seconds", "mode", "alignment", "coverage_policy", "catalog_version"}
+var analysisCLISelectionFields = []string{"dataset_id", "run_id", "source_id", "transaction", "host", "service", "dimensions", "protocol", "group", "metric", "aggregation", "dataset_artifact_sha256", "archive_manifest_sha256"}
 
 func analysisCLISelectorsVersion(object map[string]json.RawMessage) (uint32, error) {
 	var required uint32

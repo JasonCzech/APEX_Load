@@ -121,6 +121,7 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		Extractions:      make(map[string]string),
 		DependencyType:   "grpc",
 		DependencyTarget: g.target,
+		ByteEvidence:     protocol.ByteEvidenceNone,
 	}
 	if action == nil {
 		result.Duration = time.Since(result.StartTime)
@@ -157,6 +158,9 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		err = fmt.Errorf("unsupported grpc action type: %s", action.Type)
 	}
 	result.ServerTelemetry = recorder.snapshot()
+	if result.ServerTelemetry != nil && result.ServerTelemetry.GRPC != nil && result.ServerTelemetry.GRPC.Valid() {
+		result.ByteEvidence = protocol.ByteEvidenceGRPCUncompressedPayload
+	}
 	result.Duration = time.Since(result.StartTime)
 	if err != nil {
 		result.Success = false

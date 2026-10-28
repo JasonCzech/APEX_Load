@@ -135,6 +135,12 @@ func workerScratchQuotas(a *workerAttempt) error {
 			}
 			return nil
 		}
+		if isWorkerOwnerMetadataFile(path) {
+			if info.Size() > 4096 {
+				return errWorkerResourceLimit
+			}
+			return nil
+		}
 		kind := "output"
 		for _, h := range a.bootstrap.Handles {
 			if h.Role == "input" && path == h.RelativeName {
@@ -208,6 +214,12 @@ func workerObservePipelineResources(lease *NativeIOLease, parent string, directo
 			}
 			if err != nil || !info.Mode().IsRegular() {
 				return errWorkerResourceLimit
+			}
+			if isWorkerOwnerMetadataFile(path) {
+				if info.Size() > 4096 {
+					return errWorkerResourceLimit
+				}
+				return nil
 			}
 			used, err = workerAdd(used, info.Size())
 			if err != nil {

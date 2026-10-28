@@ -207,7 +207,13 @@ type ciRunResponse struct {
 
 	// TelemetryVerdict is the run's telemetry acceptance verdict, beside the
 	// application outcome; only a fail_ci policy changes Outcome (C7).
-	TelemetryVerdict *ciTelemetryVerdict `json:"telemetry_verdict,omitempty"`
+	TelemetryVerdict            *ciTelemetryVerdict             `json:"telemetry_verdict,omitempty"`
+	TelemetryAcceptance         *TelemetryAcceptanceVerdict     `json:"telemetry_acceptance,omitempty"`
+	TelemetryStageDistributions []TelemetryStageDistribution    `json:"telemetry_stage_distributions,omitempty"`
+	TelemetryRenderPopulation   *TelemetryRenderPopulation      `json:"telemetry_render_population,omitempty"`
+	TelemetryCoverage           *TelemetryCoverageRecord        `json:"telemetry_coverage,omitempty"`
+	TelemetryPolicySegments     []TelemetryPolicySegmentReceipt `json:"telemetry_policy_segments,omitempty"`
+	TelemetryValidityFindings   []TelemetryValidityFinding      `json:"telemetry_validity_findings,omitempty"`
 	// TelemetryAcceptancePolicyID echoes the telemetry acceptance policy the
 	// run chose, so a client can tell a controller that ignored the choice.
 	TelemetryAcceptancePolicyID string `json:"telemetry_acceptance_policy_id,omitempty"`
@@ -2163,6 +2169,15 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 		breached, details := ciLiveSLABreach(test.LiveMetrics.GoalStatus)
 		response.SLABreached = response.SLABreached || breached
 		response.SLADetails = compactNonEmptyStrings(append(response.SLADetails, details...)...)
+		if test.LiveMetrics.Telemetry != nil {
+			scrubber := newManagedTestTelemetryTextScrubber(test)
+			scrubbedTel := scrubLiveTelemetryHealth(test.LiveMetrics.Telemetry, scrubber)
+			response.TelemetryAcceptance = scrubbedTel.Acceptance
+			response.TelemetryStageDistributions = scrubbedTel.StageDistributions
+			response.TelemetryRenderPopulation = scrubbedTel.RenderPopulation
+			response.TelemetryPolicySegments = scrubbedTel.PolicySegments
+			response.TelemetryValidityFindings = scrubbedTel.ValidityFindings
+		}
 	}
 	if test.StartedAt != nil {
 		end := time.Now().UTC()

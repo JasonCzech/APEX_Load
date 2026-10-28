@@ -1,14 +1,20 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -193,12 +199,14 @@ func runAuthoringFidelityLifecycle(t *testing.T, openStore func() storage.Store)
 	guardrailScenario := runAuthoringFidelityGuardrailModeChange(t, server)
 	goalPresenceRuns := runAuthoringFidelityQueuedGoalPresence(t, server)
 	completionClearRuns := runAuthoringFidelityQueuedCompletionAndClears(t, server)
+	importLifecycleState := runAuthoringFidelitySessionImportAndLifecycleEdges(t, server, store)
 
 	shutdownAuthoringFidelityServer(t, server)
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	reopened, reopenedStore := open()
+	assertAuthoringFidelitySessionImportReopen(t, reopened, importLifecycleState)
 	got, found := reopened.runner.GetScenario(scenario.ID)
 	if !found {
 		t.Fatal("scenario lost after close/reopen")
@@ -556,4 +564,473 @@ func runAuthoringFidelityLibrarySnapshot(t *testing.T, server *Server, request C
 		t.Fatal("library recovery overwrote later editor")
 	}
 	return protected
+}
+
+type authoringFidelityImportLifecycleState struct {
+	PrereqScriptID        string
+	PrereqUpdatedAction   string
+	SiblingScriptID       string
+	JavaQueuedSessionID   string
+	JavaSiblingScriptID   string
+	ConflictSiblingID     string
+	PrereqScenarioID      string
+	SingleCommitScriptIDs []string
+}
+
+func TestAuthoringFidelitySessionImportAndLifecycleEdges(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fidelity-session-imports.db")
+	store, err := storage.NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 8})
+	defer shutdownAuthoringFidelityServer(t, server)
+	state := runAuthoringFidelitySessionImportAndLifecycleEdges(t, server, store)
+	assertAuthoringFidelitySessionImportReopen(t, server, state)
+}
+
+func runAuthoringFidelitySessionImportAndLifecycleEdges(t *testing.T, server *Server, store storage.Store) authoringFidelityImportLifecycleState {
+	t.Helper()
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
+		Key:   bytes.Repeat([]byte{0x4b}, 32),
+		KeyID: "fidelity-import-lifecycle-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cipherRecords, ok := store.(storage.ProjectSecretCipherStore); ok && cipherRecords != nil {
+		configuredStore, secretErr := secretstore.NewConfigured(cipherRecords, wrapper)
+		if secretErr != nil {
+			t.Fatal(secretErr)
+		}
+		server.projectSecretStore = configuredStore
+		server.runner.projectSecretStore = configuredStore
+	}
+	if protectedRecords, ok := store.(storage.ProtectedSourceSecretSessionStore); ok && protectedRecords != nil {
+		server.protectedSourceSessions = &secretstore.ProtectedSourceSessionStore{
+			Records: protectedRecords,
+			Wrapper: wrapper,
+		}
+	}
+	settings := server.runner.GetSystemSettings()
+	settings.ScriptImports.AllowSourceSecretMigration = true
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	doJSON := func(method, path string, payload any, headers map[string]string) *httptest.ResponseRecorder {
+		t.Helper()
+		var body []byte
+		if payload != nil {
+			var marshalErr error
+			body, marshalErr = json.Marshal(payload)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+		}
+		req := httptest.NewRequest(method, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		server.mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// 1. Real HTTP requests for session-backed single-script and batch import saves.
+	var singleCommitIDs []string
+	for _, commitRoute := range []struct {
+		name, path, profile string
+	}{
+		{"openapi", "/api/v1/scripts/import/openapi/commit", "openapi"},
+		{"postman", "/api/v1/scripts/import/postman/save", "postman"},
+		{"asyncapi-single", "/api/v1/scripts/import/asyncapi/commit", "asyncapi"},
+	} {
+		script := &dsl.Script{
+			ID:        "fidelity-http-import-" + commitRoute.name,
+			Name:      "Fidelity HTTP Import " + commitRoute.name,
+			Version:   "1.0.0",
+			Protocol:  "http",
+			ProjectID: storage.DefaultProjectID,
+			Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+			Metadata:  &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: commitRoute.profile, Preserved: map[string]any{}}},
+			Actions:   []dsl.Action{{Name: "Fetch " + commitRoute.name, Type: "request", Method: http.MethodGet, Target: "/items"}},
+		}
+		rec := doJSON(http.MethodPost, commitRoute.path, map[string]any{"script": script}, nil)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s commit status=%d body=%s", commitRoute.name, rec.Code, rec.Body.String())
+		}
+		singleCommitIDs = append(singleCommitIDs, script.ID)
+	}
+
+	for _, batchRoute := range []struct {
+		name, path, profile string
+	}{
+		{"generic-har", "/api/v1/scripts/import/commit-batch", "har"},
+		{"asyncapi-batch", "/api/v1/scripts/import/asyncapi/commit-batch", "asyncapi"},
+		{"jmeter-batch", "/api/v1/scripts/import/jmeter/save", "jmeter"},
+	} {
+		draft := &dsl.Script{
+			Name:      "Fidelity Session Batch " + batchRoute.name,
+			Version:   "1.0.0",
+			Protocol:  "http",
+			ProjectID: storage.DefaultProjectID,
+			Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+			Metadata:  &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: batchRoute.profile, Preserved: map[string]any{}}},
+			Actions: []dsl.Action{{
+				Name:   "Get " + batchRoute.name,
+				Type:   "request",
+				Method: http.MethodGet,
+				Target: "/orders",
+				HeaderList: dsl.HeaderList{{
+					Name:  "Authorization",
+					Value: "Bearer fidelity-session-token-" + batchRoute.name,
+				}},
+			}},
+		}
+		preview := server.newScriptImportResponseWithSourceSecrets(
+			httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/"+batchRoute.profile, nil),
+			scriptImportResponseOptions{Script: draft, Scripts: []*dsl.Script{draft}},
+		)
+		masked, ok := preview["scripts"].([]any)
+		if !ok || len(masked) != 1 {
+			t.Fatalf("%s preview scripts=%#v", batchRoute.name, preview["scripts"])
+		}
+		rec := doJSON(http.MethodPost, batchRoute.path, map[string]any{
+			"operation_id":   "fidelity-batch-" + batchRoute.name,
+			"source_profile": batchRoute.profile,
+			"scripts":        masked,
+		}, nil)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s HTTP save status=%d body=%s", batchRoute.name, rec.Code, rec.Body.String())
+		}
+	}
+
+	// 2. Edge (a): saving a scenario prerequisite script from a multi-script import session
+	// retains unsaved sibling drafts and protected source sessions in the session.
+	prereqDraft := &dsl.Script{
+		Name:      "Fidelity Scenario Prereq Script",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: storage.DefaultProjectID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Metadata:  &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: enterpriseArchiveSaveProfile, Preserved: map[string]any{}}},
+		Actions: []dsl.Action{{
+			Name:       "Prereq Login",
+			Type:       "request",
+			Method:     http.MethodGet,
+			Target:     "/login",
+			HeaderList: dsl.HeaderList{{Name: "Authorization", Value: "Bearer fidelity-prereq-canary-901"}},
+		}},
+	}
+	siblingDraft := &dsl.Script{
+		Name:      "Fidelity Unsaved Sibling Script",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: storage.DefaultProjectID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Metadata:  &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: enterpriseArchiveSaveProfile, Preserved: map[string]any{}}},
+		Actions: []dsl.Action{{
+			Name:       "Sibling Checkout",
+			Type:       "request",
+			Method:     http.MethodGet,
+			Target:     "/checkout",
+			HeaderList: dsl.HeaderList{{Name: "X-API-Key", Value: "fidelity-sibling-canary-902"}},
+		}},
+	}
+	multiPreview := server.newScriptImportResponseWithSourceSecrets(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil),
+		scriptImportResponseOptions{
+			Script:  prereqDraft,
+			Scripts: []*dsl.Script{prereqDraft, siblingDraft},
+		},
+	)
+	multiMasked, ok := multiPreview["scripts"].([]any)
+	if !ok || len(multiMasked) != 2 {
+		t.Fatalf("multi-script preview=%#v", multiPreview["scripts"])
+	}
+	sharedSourceSessionID, err := server.registerSourceSecretSession(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil),
+		storage.DefaultProjectID,
+		map[string]string{"sibling_api_key": "fidelity-sibling-canary-902"},
+	)
+	if err != nil || sharedSourceSessionID == "" {
+		t.Fatalf("register shared source secret session: id=%q err=%v", sharedSourceSessionID, err)
+	}
+
+	// Save ONLY the prerequisite script (script 0) first via HTTP POST.
+	prereqSaveRec := doJSON(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/save", map[string]any{
+		"operation_id": "fidelity-prereq-save-only",
+		"scripts":      []any{multiMasked[0]},
+	}, nil)
+	if prereqSaveRec.Code != http.StatusCreated {
+		t.Fatalf("prerequisite script HTTP save status=%d body=%s", prereqSaveRec.Code, prereqSaveRec.Body.String())
+	}
+	var prereqSaveBody struct {
+		Scripts []StoredScript `json:"scripts"`
+	}
+	if err := json.Unmarshal(prereqSaveRec.Body.Bytes(), &prereqSaveBody); err != nil || len(prereqSaveBody.Scripts) != 1 {
+		t.Fatalf("unmarshal prerequisite save response: err=%v body=%s", err, prereqSaveRec.Body.String())
+	}
+	prereqScriptID := prereqSaveBody.Scripts[0].ID
+
+	// Create a scenario referencing the saved prerequisite script via HTTP POST.
+	scenarioCreateRec := doJSON(http.MethodPost, "/api/v1/scenarios", CreateScenarioRequest{
+		Name:         "Fidelity Prerequisite Scenario",
+		Duration:     "30s",
+		ScenarioMode: "vuser_driven",
+		Groups: []CreateGroupEntry{{
+			Name:         "Prereq Group",
+			ScriptID:     prereqScriptID,
+			VUsers:       2,
+			InitStrategy: "at_once",
+		}},
+	}, nil)
+	if scenarioCreateRec.Code != http.StatusCreated {
+		t.Fatalf("prerequisite scenario HTTP create status=%d body=%s", scenarioCreateRec.Code, scenarioCreateRec.Body.String())
+	}
+	var createdPrereqScenario StoredScenario
+	if err := json.Unmarshal(scenarioCreateRec.Body.Bytes(), &createdPrereqScenario); err != nil || createdPrereqScenario.ID == "" {
+		t.Fatalf("unmarshal prerequisite scenario: err=%v body=%s", err, scenarioCreateRec.Body.String())
+	}
+
+	// Verify the unsaved sibling draft (multiMasked[1]) is still retained in the session and can now be saved via HTTP POST.
+	siblingSaveRec := doJSON(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/save", map[string]any{
+		"operation_id": "fidelity-sibling-save-after-prereq",
+		"scripts":      []any{multiMasked[1]},
+	}, nil)
+	if siblingSaveRec.Code != http.StatusCreated {
+		t.Fatalf("unsaved sibling draft lost after prerequisite save: status=%d body=%s", siblingSaveRec.Code, siblingSaveRec.Body.String())
+	}
+	var siblingSaveBody struct {
+		Scripts []StoredScript `json:"scripts"`
+	}
+	if err := json.Unmarshal(siblingSaveRec.Body.Bytes(), &siblingSaveBody); err != nil || len(siblingSaveBody.Scripts) != 1 {
+		t.Fatalf("unmarshal sibling save response: err=%v body=%s", err, siblingSaveRec.Body.String())
+	}
+	siblingScriptID := siblingSaveBody.Scripts[0].ID
+
+	// 3. Edge (b): queueing a Java script for approval returns an explicit queued/pending-approval
+	// state to the import review response while retaining unsaved sibling drafts.
+	javaDraft := javaVMDraft([]string{"-Ddatabase.password=fidelity-java-queue-canary-903"})
+	javaDraft.Name = "Fidelity Java Queue Draft"
+	javaDraft.ProjectID = storage.DefaultProjectID
+	javaDraft.Actions[0].Target = "Actions"
+	ensureScriptImportPreserved(javaDraft, enterpriseArchiveSaveProfile)
+	javaSiblingDraft := &dsl.Script{
+		Name:      "Fidelity Java HTTP Sibling",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: storage.DefaultProjectID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Metadata:  &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: enterpriseArchiveSaveProfile, Preserved: map[string]any{}}},
+		Actions: []dsl.Action{{
+			Name:       "Java Sibling Status",
+			Type:       "request",
+			Method:     http.MethodGet,
+			Target:     "/status",
+			HeaderList: dsl.HeaderList{{Name: "Authorization", Value: "Bearer fidelity-java-sibling-canary-904"}},
+		}},
+	}
+	javaMultiPreview := server.newScriptImportResponseWithSourceSecrets(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil),
+		scriptImportResponseOptions{
+			Script:  javaDraft,
+			Scripts: []*dsl.Script{javaDraft, javaSiblingDraft},
+		},
+	)
+	javaMultiMasked, ok := javaMultiPreview["scripts"].([]any)
+	if !ok || len(javaMultiMasked) != 2 {
+		t.Fatalf("java multi-script preview=%#v", javaMultiPreview["scripts"])
+	}
+	// Attempting direct save of the Java lane refuses with 409 and preserves capabilities.
+	directJavaSave := doJSON(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/save", map[string]any{
+		"operation_id": "fidelity-java-direct-refused",
+		"scripts":      []any{javaMultiMasked[0]},
+	}, nil)
+	if directJavaSave.Code != http.StatusConflict || !strings.Contains(directJavaSave.Body.String(), "Java Vuser") {
+		t.Fatalf("direct Java batch save status=%d body=%s, want 409 Java Vuser approval gate", directJavaSave.Code, directJavaSave.Body.String())
+	}
+	// Queue the Java script for approval via POST /api/v1/scripts/authoring/sessions.
+	queueJavaRec := doJSON(http.MethodPost, "/api/v1/scripts/authoring/sessions", map[string]any{
+		"project_id":      storage.DefaultProjectID,
+		"source":          enterpriseArchiveSaveProfile,
+		"name":            "Fidelity Java Queue Draft",
+		"status":          "editing",
+		"idempotency_key": "fidelity-java-queue-session-1",
+		"draft":           javaMultiMasked[0],
+	}, nil)
+	if queueJavaRec.Code != http.StatusCreated {
+		t.Fatalf("queue Java authoring session status=%d body=%s", queueJavaRec.Code, queueJavaRec.Body.String())
+	}
+	var queuedJavaSession storage.AuthoringSession
+	if err := json.Unmarshal(queueJavaRec.Body.Bytes(), &queuedJavaSession); err != nil {
+		t.Fatal(err)
+	}
+	if queuedJavaSession.ID == "" || queuedJavaSession.Status != "editing" || queuedJavaSession.Draft == nil || queuedJavaSession.Draft.Config.JavaVuser.Enabled {
+		t.Fatalf("queued Java session did not return explicit unapproved queued state: %#v", queuedJavaSession)
+	}
+	// Sibling HTTP draft in the same multi-script session remains intact and saves via HTTP POST.
+	javaSiblingSaveRec := doJSON(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/save", map[string]any{
+		"operation_id": "fidelity-java-sibling-save",
+		"scripts":      []any{javaMultiMasked[1]},
+	}, nil)
+	if javaSiblingSaveRec.Code != http.StatusCreated {
+		t.Fatalf("Java sibling HTTP save status=%d body=%s", javaSiblingSaveRec.Code, javaSiblingSaveRec.Body.String())
+	}
+	var javaSiblingBody struct {
+		Scripts []StoredScript `json:"scripts"`
+	}
+	if err := json.Unmarshal(javaSiblingSaveRec.Body.Bytes(), &javaSiblingBody); err != nil || len(javaSiblingBody.Scripts) != 1 {
+		t.Fatalf("unmarshal Java sibling save: err=%v body=%s", err, javaSiblingSaveRec.Body.String())
+	}
+
+	// 4. Edge (c): recovering from an If-Match conflict during save preserves sibling drafts
+	// and protected source sessions.
+	conflictSiblingDraft := &dsl.Script{
+		Name:      "Fidelity Conflict Retained Sibling",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: storage.DefaultProjectID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Metadata:  &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "har", Preserved: map[string]any{}}},
+		Actions: []dsl.Action{{
+			Name:       "Conflict Sibling Orders",
+			Type:       "request",
+			Method:     http.MethodGet,
+			Target:     "/orders",
+			HeaderList: dsl.HeaderList{{Name: "Authorization", Value: "Bearer fidelity-conflict-canary-905"}},
+		}},
+	}
+	conflictPreview := server.newScriptImportResponseWithSourceSecrets(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil),
+		scriptImportResponseOptions{
+			Script:  conflictSiblingDraft,
+			Scripts: []*dsl.Script{conflictSiblingDraft},
+		},
+	)
+	conflictMasked, ok := conflictPreview["scripts"].([]any)
+	if !ok || len(conflictMasked) != 1 {
+		t.Fatalf("conflict sibling preview=%#v", conflictPreview["scripts"])
+	}
+
+	// Trigger an If-Match (412 Precondition Failed) conflict when updating prereqScriptID via HTTP PUT.
+	getPrereqRec := doJSON(http.MethodGet, "/api/v1/scripts/"+prereqScriptID+"?view=authoring", nil, nil)
+	if getPrereqRec.Code != http.StatusOK {
+		t.Fatalf("GET prereq script status=%d body=%s", getPrereqRec.Code, getPrereqRec.Body.String())
+	}
+	initialETag := strings.TrimSpace(getPrereqRec.Header().Get("ETag"))
+	if initialETag == "" {
+		t.Fatal("GET prereq script omitted ETag header")
+	}
+	var currentPrereq struct {
+		Script *dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(getPrereqRec.Body.Bytes(), &currentPrereq); err != nil || currentPrereq.Script == nil {
+		t.Fatalf("unmarshal GET prereq script: err=%v body=%s", err, getPrereqRec.Body.String())
+	}
+	concurrentPrereqScript := cloneScriptDefinition(currentPrereq.Script)
+	concurrentPrereqScript.Actions[0].Name = "Prereq Login Concurrent Edit"
+	concurrentPutRec := doJSON(
+		http.MethodPut,
+		"/api/v1/scripts/"+prereqScriptID,
+		map[string]any{"script": concurrentPrereqScript},
+		map[string]string{"If-Match": initialETag},
+	)
+	if concurrentPutRec.Code != http.StatusOK {
+		t.Fatalf("concurrent If-Match PUT status=%d body=%s, want 200", concurrentPutRec.Code, concurrentPutRec.Body.String())
+	}
+
+	updatedPrereqScript := cloneScriptDefinition(currentPrereq.Script)
+	updatedPrereqScript.Actions[0].Name = "Prereq Login Reconciled After Conflict"
+	stalePutRec := doJSON(
+		http.MethodPut,
+		"/api/v1/scripts/"+prereqScriptID,
+		map[string]any{"script": updatedPrereqScript},
+		map[string]string{"If-Match": initialETag},
+	)
+	if stalePutRec.Code != http.StatusPreconditionFailed {
+		t.Fatalf("stale If-Match PUT status=%d body=%s, want 412", stalePutRec.Code, stalePutRec.Body.String())
+	}
+
+	// Recover from the If-Match conflict by fetching the latest ETag and retrying PUT.
+	reloadedPrereqRec := doJSON(http.MethodGet, "/api/v1/scripts/"+prereqScriptID+"?view=authoring", nil, nil)
+	if reloadedPrereqRec.Code != http.StatusOK {
+		t.Fatalf("reloaded GET prereq script status=%d body=%s", reloadedPrereqRec.Code, reloadedPrereqRec.Body.String())
+	}
+	latestETag := strings.TrimSpace(reloadedPrereqRec.Header().Get("ETag"))
+	if latestETag == "" || latestETag == initialETag {
+		t.Fatalf("reloaded ETag=%q initialETag=%q, want distinct advanced ETag", latestETag, initialETag)
+	}
+	recoveredPutRec := doJSON(
+		http.MethodPut,
+		"/api/v1/scripts/"+prereqScriptID,
+		map[string]any{"script": updatedPrereqScript},
+		map[string]string{"If-Match": latestETag},
+	)
+	if recoveredPutRec.Code != http.StatusOK {
+		t.Fatalf("recovered If-Match PUT status=%d body=%s, want 200", recoveredPutRec.Code, recoveredPutRec.Body.String())
+	}
+
+	// Verify that both the protected source secret session and the sibling draft capability survived the conflict and recovery.
+	consumedSession, err := server.consumeSourceSecretSession(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil),
+		storage.DefaultProjectID,
+		sharedSourceSessionID,
+	)
+	if err != nil || consumedSession == nil || consumedSession.Values["sibling_api_key"] != "fidelity-sibling-canary-902" {
+		t.Fatalf("protected source secret session lost across If-Match conflict recovery: session=%#v err=%v", consumedSession, err)
+	}
+	conflictSiblingSaveRec := doJSON(http.MethodPost, "/api/v1/scripts/import/commit-batch", map[string]any{
+		"operation_id":   "fidelity-conflict-sibling-save",
+		"source_profile": "har",
+		"scripts":        conflictMasked,
+	}, nil)
+	if conflictSiblingSaveRec.Code != http.StatusCreated {
+		t.Fatalf("sibling draft lost across If-Match conflict recovery: status=%d body=%s", conflictSiblingSaveRec.Code, conflictSiblingSaveRec.Body.String())
+	}
+	var conflictSiblingBody struct {
+		Scripts []StoredScript `json:"scripts"`
+	}
+	if err := json.Unmarshal(conflictSiblingSaveRec.Body.Bytes(), &conflictSiblingBody); err != nil || len(conflictSiblingBody.Scripts) != 1 {
+		t.Fatalf("unmarshal conflict sibling save: err=%v body=%s", err, conflictSiblingSaveRec.Body.String())
+	}
+
+	return authoringFidelityImportLifecycleState{
+		PrereqScriptID:        prereqScriptID,
+		PrereqUpdatedAction:   updatedPrereqScript.Actions[0].Name,
+		SiblingScriptID:       siblingScriptID,
+		JavaQueuedSessionID:   queuedJavaSession.ID,
+		JavaSiblingScriptID:   javaSiblingBody.Scripts[0].ID,
+		ConflictSiblingID:     conflictSiblingBody.Scripts[0].ID,
+		PrereqScenarioID:      createdPrereqScenario.ID,
+		SingleCommitScriptIDs: singleCommitIDs,
+	}
+}
+
+func assertAuthoringFidelitySessionImportReopen(t *testing.T, server *Server, state authoringFidelityImportLifecycleState) {
+	t.Helper()
+	for _, scriptID := range append([]string{
+		state.PrereqScriptID,
+		state.SiblingScriptID,
+		state.JavaSiblingScriptID,
+		state.ConflictSiblingID,
+	}, state.SingleCommitScriptIDs...) {
+		stored, ok := server.runner.GetScript(scriptID)
+		if !ok || stored == nil || stored.Script == nil {
+			t.Fatalf("imported script %q missing after reopen", scriptID)
+		}
+		if scriptID == state.PrereqScriptID && stored.Script.Actions[0].Name != state.PrereqUpdatedAction {
+			t.Fatalf("reconciled prerequisite script action=%q, want %q", stored.Script.Actions[0].Name, state.PrereqUpdatedAction)
+		}
+	}
+	if scenario, ok := server.runner.GetScenario(state.PrereqScenarioID); !ok || scenario == nil || len(scenario.Scripts) != 1 || scenario.Scripts[0].ScriptID != state.PrereqScriptID {
+		t.Fatalf("prerequisite scenario missing or lost script binding after reopen: %#v", scenario)
+	}
+	queued, err := server.loadAuthoringSession(state.JavaQueuedSessionID)
+	if err != nil || queued == nil || queued.Status != "editing" || queued.Draft == nil || queued.Draft.Config.JavaVuser.Enabled {
+		t.Fatalf("queued Java authoring session lost after reopen: session=%#v err=%v", queued, err)
+	}
 }

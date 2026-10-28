@@ -963,3 +963,367 @@ func TestJointEvidenceDistributedStartHoldsTheRun(t *testing.T) {
 		t.Fatal("a started distributed run is not held from its start")
 	}
 }
+
+func TestJointEvidenceFailoverAndRestartSequenceLedgerReconciliation(t *testing.T) {
+	server, store := baselineTestServer(t)
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+
+	makeBatch := func(gen uint64, epoch string, seq uint64, at time.Time, state string, tx ...generatorrpc.MetricAggregate) generatorrpc.MetricsBatch {
+		b := jointBatch(seq, at, tx...)
+		b.ExecutionGeneration = gen
+		b.SourceEpoch = epoch
+		if state != "" {
+			b.LifecycleState = state
+		}
+		return b
+	}
+
+	// 1. Cold HA adoption / controller restart where all committed source windows
+	// (plus benign state-only staging prefixes, pause windows, duplicate terminal
+	// replays, and post-completion batches) are accounted for -> JointIntervalsTruncated == false.
+	t.Run("complete-across-failover-and-restart", func(t *testing.T) {
+		runID := "joint-failover-complete"
+		comparisonArchiveFixture(t, server, store, runID, 100, 100)
+		record := server.runner.archives[runID]
+		admitArchiveForTest(t, record)
+
+		origin := &ManagedTest{
+			ID:                       runID,
+			RefKey:                   "RUN-jf-complete",
+			ProjectID:                storage.DefaultProjectID,
+			Status:                   "RUNNING",
+			CreatedAt:                start,
+			executionGeneration:      1,
+			jointHeldFromStart:       true,
+			initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "inc-1", JointEvidence: jointTestProjection.Clone()},
+		}
+		ledger := telemetrySourceLedgerLocked(origin)
+
+		// Seq 1: state-only STAGED batch (benign ignored).
+		b1 := makeBatch(1, "ep-1", 1, start.Add(1*time.Second), "STAGED")
+		ledger.observe("gen-a", b1, start.Add(1*time.Second))
+
+		// Seq 2 & 3: active batches accepted and persisted to history store before failover.
+		b2 := makeBatch(1, "ep-1", 2, start.Add(2*time.Second), "RUNNING", jointAggregate(jointKey("login", "east", "3g"), 10))
+		b3 := makeBatch(1, "ep-1", 3, start.Add(3*time.Second), "RUNNING", jointAggregate(jointKey("login", "east", "3g"), 15))
+		for _, b := range []generatorrpc.MetricsBatch{b2, b3} {
+			at := time.UnixMilli(b.TimestampUnixMs)
+			ledger.observe("gen-a", b, at)
+			accepted := b
+			countDistributedWindowLocked(origin, "gen-a", b, &accepted)
+			rememberJointPublicationLocked(origin, "gen-a", b)
+			pub := jointPublicationEvidence("gen-a", b, jointTestProjection)
+			takePendingJointPublicationsLocked(origin, pub)
+			ev := &storage.NativeIntervalEvidence{
+				Version:       3,
+				WindowSeconds: 1,
+				Publication:   pub,
+				Dimensions:    pub.Dimensions,
+				Joint:         pub.Joint,
+			}
+			if err := store.SaveHistory(runID, at, &LiveMetrics{Timestamp: at, NativeEvidence: ev}); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// Capture durable checkpoint at generation 1.
+		cp := captureTelemetryCheckpointLocked(origin)
+		rawCP, err := json.Marshal(cp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Cold HA adoption on a successor controller at generation 2 (jointHeldFromStart = false).
+		adopted := &ManagedTest{
+			ID:                       runID,
+			RefKey:                   origin.RefKey,
+			ProjectID:                origin.ProjectID,
+			Status:                   "RUNNING",
+			CreatedAt:                start,
+			executionGeneration:      2,
+			jointHeldFromStart:       false,
+			continuityFailovers:      []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: start.Add(4 * time.Second)}},
+			initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "inc-1", JointEvidence: jointTestProjection.Clone()},
+		}
+		restoredLedger, restoredTotals, err := decodeTelemetryCheckpoint(string(rawCP), cp.Revision, adopted, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		adopted.telemetrySources = restoredLedger
+		adopted.runTotals = restoredTotals
+		restoredLedger.markAdopted()
+
+		// In generation 2, gen-a emits Seq 1 (with SequencePrefixStateOnly) as COMPLETE,
+		// followed by Seq 2 post-completion replay (benign ignored).
+		g2b1 := makeBatch(2, "ep-2", 1, start.Add(5*time.Second), "COMPLETE", jointAggregate(jointKey("login", "east", "3g"), 20))
+		restoredLedger.observe("gen-a", g2b1, start.Add(5*time.Second))
+		rememberJointPublicationLocked(adopted, "gen-a", g2b1)
+
+		g2b2 := makeBatch(2, "ep-2", 2, start.Add(6*time.Second), "RUNNING")
+		restoredLedger.observe("gen-a", g2b2, start.Add(6*time.Second))
+
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+		manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "distributed", Sources: []RunArchiveSource{{Target: "gen-a", Collected: true}}}
+
+		if err := server.runner.persistJointIntervalArchive(context.Background(), adopted, record, manifest); err != nil {
+			t.Fatal(err)
+		}
+		if manifest.JointIntervalsTruncated || len(manifest.JointTruncatedWindows) != 0 || manifest.JointIntervalCount != 3 {
+			t.Fatalf("adopted complete archive: count=%d truncated=%v windows=%+v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated, manifest.JointTruncatedWindows)
+		}
+	})
+
+	// 2. Held uncommitted batch lost during failover + sequence gap + dropped batch ->
+	// JointIntervalsTruncated == true with exact [start_ms, end_ms] and sequence ranges in truncated_windows.
+	t.Run("uncommitted-batch-lost-and-sequence-gap-provenance", func(t *testing.T) {
+		runID := "joint-failover-truncated"
+		comparisonArchiveFixture(t, server, store, runID, 100, 100)
+		record := server.runner.archives[runID]
+		admitArchiveForTest(t, record)
+
+		origin := &ManagedTest{
+			ID:                       runID,
+			RefKey:                   "RUN-jf-trunc",
+			ProjectID:                storage.DefaultProjectID,
+			Status:                   "RUNNING",
+			CreatedAt:                start,
+			executionGeneration:      1,
+			jointHeldFromStart:       true,
+			initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "inc-2", JointEvidence: jointTestProjection.Clone()},
+		}
+		ledger := telemetrySourceLedgerLocked(origin)
+
+		// Seq 1: persisted to store.
+		b1 := makeBatch(1, "ep-1", 1, start.Add(1*time.Second), "RUNNING", jointAggregate(jointKey("login", "east", "3g"), 10))
+		at1 := time.UnixMilli(b1.TimestampUnixMs)
+		ledger.observe("gen-a", b1, at1)
+		rememberJointPublicationLocked(origin, "gen-a", b1)
+		pub1 := jointPublicationEvidence("gen-a", b1, jointTestProjection)
+		takePendingJointPublicationsLocked(origin, pub1)
+		if err := store.SaveHistory(runID, at1, &LiveMetrics{Timestamp: at1, NativeEvidence: &storage.NativeIntervalEvidence{
+			Version: 3, WindowSeconds: 1, Publication: pub1, Dimensions: pub1.Dimensions, Joint: pub1.Joint,
+		}}); err != nil {
+			t.Fatal(err)
+		}
+
+		// Seq 2: lost in transit (gap between Seq 1 and Seq 3).
+		// Seq 3: accepted into pendingJointPublications and checkpointed, but NEVER persisted to SaveHistory before crash!
+		b3 := makeBatch(1, "ep-1", 3, start.Add(3*time.Second), "RUNNING", jointAggregate(jointKey("login", "east", "3g"), 12))
+		at3 := time.UnixMilli(b3.TimestampUnixMs)
+		ledger.observe("gen-a", b3, at3)
+		rememberJointPublicationLocked(origin, "gen-a", b3)
+
+		cp := captureTelemetryCheckpointLocked(origin)
+		rawCP, err := json.Marshal(cp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Successor adopts at generation 2; origin's in-memory pendingJointPublications (Seq 3) was lost with origin!
+		adopted := &ManagedTest{
+			ID:                       runID,
+			RefKey:                   origin.RefKey,
+			ProjectID:                origin.ProjectID,
+			Status:                   "RUNNING",
+			CreatedAt:                start,
+			executionGeneration:      2,
+			jointHeldFromStart:       false,
+			continuityFailovers:      []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: start.Add(4 * time.Second)}},
+			initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "inc-2", JointEvidence: jointTestProjection.Clone()},
+		}
+		restoredLedger, restoredTotals, err := decodeTelemetryCheckpoint(string(rawCP), cp.Revision, adopted, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		adopted.telemetrySources = restoredLedger
+		adopted.runTotals = restoredTotals
+		restoredLedger.markAdopted()
+
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+		manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "distributed", Sources: []RunArchiveSource{{Target: "gen-a", Collected: true}}}
+
+		if err := server.runner.persistJointIntervalArchive(context.Background(), adopted, record, manifest); err != nil {
+			t.Fatal(err)
+		}
+		if !manifest.JointIntervalsTruncated || manifest.JointIntervalCount != 1 {
+			t.Fatalf("expected truncated archive with 1 row, got count=%d truncated=%v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
+		}
+		if len(manifest.JointTruncatedWindows) != 2 {
+			t.Fatalf("expected 2 truncated_windows (uncommitted seq 3 + missing gap seq 2), got %+v", manifest.JointTruncatedWindows)
+		}
+		wantLost := JointTruncatedWindow{
+			Source:              "gen-a",
+			ExecutionGeneration: 1,
+			Epoch:               "ep-1",
+			FirstSequence:       3,
+			LastSequence:        3,
+			StartUnixMs:         start.Add(2 * time.Second).UnixMilli(),
+			EndUnixMs:           start.Add(3 * time.Second).UnixMilli(),
+			Reason:              "uncommitted_batch_lost",
+		}
+		wantGap := JointTruncatedWindow{
+			Source:              "gen-a",
+			ExecutionGeneration: 1,
+			Epoch:               "ep-1",
+			FirstSequence:       2,
+			LastSequence:        2,
+			StartUnixMs:         start.Add(1 * time.Second).UnixMilli(),
+			EndUnixMs:           start.Add(2 * time.Second).UnixMilli(),
+			Reason:              "missing_sequence_range",
+		}
+		if manifest.JointTruncatedWindows[0] != wantLost || manifest.JointTruncatedWindows[1] != wantGap {
+			t.Fatalf("truncated_windows = %+v, want [%+v, %+v]", manifest.JointTruncatedWindows, wantLost, wantGap)
+		}
+	})
+
+	// 3. Non-adopted run (heldFromStart == true, wasAdopted() == false) with a dropped
+	// batch sequence gap (Seq 1 and Seq 3 arrive, Seq 2 is missing) sets
+	// JointIntervalsTruncated == true and populates JointTruncatedWindows with missing_sequence_range.
+	t.Run("non-adopted-run-sequence-gap-marks-truncated", func(t *testing.T) {
+		runID := "joint-non-adopted-gap"
+		comparisonArchiveFixture(t, server, store, runID, 100, 100)
+		record := server.runner.archives[runID]
+		admitArchiveForTest(t, record)
+
+		run := &ManagedTest{
+			ID:                       runID,
+			RefKey:                   "RUN-jf-nonadopted-gap",
+			ProjectID:                storage.DefaultProjectID,
+			Status:                   "RUNNING",
+			CreatedAt:                start,
+			executionGeneration:      1,
+			jointHeldFromStart:       true,
+			initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "inc-3", JointEvidence: jointTestProjection.Clone()},
+		}
+		ledger := telemetrySourceLedgerLocked(run)
+
+		b1 := makeBatch(1, "ep-1", 1, start.Add(1*time.Second), "RUNNING", jointAggregate(jointKey("login", "east", "3g"), 10))
+		b3 := makeBatch(1, "ep-1", 3, start.Add(3*time.Second), "COMPLETE", jointAggregate(jointKey("login", "east", "3g"), 14))
+		for _, b := range []generatorrpc.MetricsBatch{b1, b3} {
+			at := time.UnixMilli(b.TimestampUnixMs)
+			ledger.observe("gen-a", b, at)
+			rememberJointPublicationLocked(run, "gen-a", b)
+			pub := jointPublicationEvidence("gen-a", b, jointTestProjection)
+			takePendingJointPublicationsLocked(run, pub)
+			if err := store.SaveHistory(runID, at, &LiveMetrics{Timestamp: at, NativeEvidence: &storage.NativeIntervalEvidence{
+				Version: 3, WindowSeconds: 1, Publication: pub, Dimensions: pub.Dimensions, Joint: pub.Joint,
+			}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+		manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "distributed", Sources: []RunArchiveSource{{Target: "gen-a", Collected: true}}}
+
+		if err := server.runner.persistJointIntervalArchive(context.Background(), run, record, manifest); err != nil {
+			t.Fatal(err)
+		}
+		if !manifest.JointIntervalsTruncated || manifest.JointIntervalCount != 2 {
+			t.Fatalf("non-adopted gap archive: count=%d truncated=%v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
+		}
+		wantGap := JointTruncatedWindow{
+			Source:              "gen-a",
+			ExecutionGeneration: 1,
+			Epoch:               "ep-1",
+			FirstSequence:       2,
+			LastSequence:        2,
+			StartUnixMs:         start.Add(1 * time.Second).UnixMilli(),
+			EndUnixMs:           start.Add(2 * time.Second).UnixMilli(),
+			Reason:              "missing_sequence_range",
+		}
+		if len(manifest.JointTruncatedWindows) != 1 || manifest.JointTruncatedWindows[0] != wantGap {
+			t.Fatalf("truncated_windows = %+v, want [%+v]", manifest.JointTruncatedWindows, wantGap)
+		}
+	})
+
+	// 4. Generator target with slashes (e.g. Kubernetes dns:/// target) reconciles
+	// cleanly with complete == true and zero false truncated_windows.
+	t.Run("slash-containing-dns-generator-target-reconciles-complete", func(t *testing.T) {
+		runID := "joint-dns-target-complete"
+		dnsTarget := "dns:///generator-headless.default.svc.cluster.local:50051"
+		comparisonArchiveFixture(t, server, store, runID, 100, 100)
+		record := server.runner.archives[runID]
+		admitArchiveForTest(t, record)
+
+		origin := &ManagedTest{
+			ID:                       runID,
+			RefKey:                   "RUN-jf-dns",
+			ProjectID:                storage.DefaultProjectID,
+			Status:                   "RUNNING",
+			CreatedAt:                start,
+			executionGeneration:      1,
+			jointHeldFromStart:       true,
+			initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "inc-4", JointEvidence: jointTestProjection.Clone()},
+		}
+		ledger := telemetrySourceLedgerLocked(origin)
+
+		for seq := uint64(1); seq <= 2; seq++ {
+			at := start.Add(time.Duration(seq) * time.Second)
+			state := "RUNNING"
+			if seq == 2 {
+				state = "COMPLETE"
+			}
+			b := makeBatch(1, "ep-dns/1", seq, at, state, jointAggregate(jointKey("login", "east", "3g"), float64(10*seq)))
+			ledger.observe(dnsTarget, b, at)
+			rememberJointPublicationLocked(origin, dnsTarget, b)
+			pub := jointPublicationEvidence(dnsTarget, b, jointTestProjection)
+			takePendingJointPublicationsLocked(origin, pub)
+			if err := store.SaveHistory(runID, at, &LiveMetrics{Timestamp: at, NativeEvidence: &storage.NativeIntervalEvidence{
+				Version: 3, WindowSeconds: 1, Publication: pub, Dimensions: pub.Dimensions, Joint: pub.Joint,
+			}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		cp := captureTelemetryCheckpointLocked(origin)
+		rawCP, err := json.Marshal(cp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		adopted := &ManagedTest{
+			ID:                       runID,
+			RefKey:                   origin.RefKey,
+			ProjectID:                origin.ProjectID,
+			Status:                   "RUNNING",
+			CreatedAt:                start,
+			executionGeneration:      2,
+			jointHeldFromStart:       false,
+			continuityFailovers:      []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: start.Add(3 * time.Second)}},
+			initialArchiveProvenance: &RunArchiveProvenance{RunIncarnation: "inc-4", JointEvidence: jointTestProjection.Clone()},
+		}
+		restoredLedger, restoredTotals, err := decodeTelemetryCheckpoint(string(rawCP), cp.Revision, adopted, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		adopted.telemetrySources = restoredLedger
+		adopted.runTotals = restoredTotals
+		restoredLedger.markAdopted()
+
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+		manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "distributed", Sources: []RunArchiveSource{{Target: dnsTarget, Collected: true}}}
+
+		if err := server.runner.persistJointIntervalArchive(context.Background(), adopted, record, manifest); err != nil {
+			t.Fatal(err)
+		}
+		if manifest.JointIntervalsTruncated || len(manifest.JointTruncatedWindows) != 0 || manifest.JointIntervalCount != 2 {
+			t.Fatalf("dns target archive: count=%d truncated=%v windows=%+v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated, manifest.JointTruncatedWindows)
+		}
+	})
+}

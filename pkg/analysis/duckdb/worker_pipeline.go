@@ -39,6 +39,7 @@ type NativePipeline struct {
 	writersSealed      bool
 	releaseGate        func()
 	stagingDirs        []string
+	stagingScope       nativeStagingScope
 	monitorDone        chan struct{}
 	monitorLease       *NativeIOLease
 	monitorStopped     bool
@@ -85,7 +86,7 @@ func ReserveNativePipeline(ctx context.Context, parent string, plan PipelinePlan
 		return ctx, nil, errWorkerResourceLimit
 	}
 	childCtx, cancel := context.WithTimeout(ctx, time.Duration(limits.RuntimeMS)*time.Millisecond)
-	p := &NativePipeline{ctx: childCtx, cancel: cancel, limits: limits, stagingBytes: plan.StagingBytes, attempts: map[*workerAttempt]struct{}{}, parentIO: map[*NativeIOLease]struct{}{}, releaseGate: release, wake: make(chan struct{}, 1), stagingClean: true, done: make(chan struct{})}
+	p := &NativePipeline{ctx: childCtx, cancel: cancel, limits: limits, stagingBytes: plan.StagingBytes, stagingScope: nativeStagingScopeFrom(ctx), attempts: map[*workerAttempt]struct{}{}, parentIO: map[*NativeIOLease]struct{}{}, releaseGate: release, wake: make(chan struct{}, 1), stagingClean: true, done: make(chan struct{})}
 	p.releaseGate = sync.OnceFunc(func() { release(); close(p.done) })
 	p.monitorDone = make(chan struct{})
 	p.monitorStop = make(chan struct{})
@@ -466,7 +467,10 @@ func (p *NativePipeline) CreateStagingDirectory(parent string) (string, error) {
 		return "", err
 	}
 	// The admission lease exists before filesystem calls, which never hold mu.
-	dir, err := workerCreateScratchDirectory(parent, "job-", lease)
+	dir, err := workerCreateScratchDirectory(parent, p.stagingScope.prefix(), lease)
+	if err == nil && dir != "" {
+		err = writeWorkerStagingOwner(dir, p.stagingScope)
+	}
 	p.mu.Lock()
 	if dir != "" {
 		p.stagingDirs = append(p.stagingDirs, dir)

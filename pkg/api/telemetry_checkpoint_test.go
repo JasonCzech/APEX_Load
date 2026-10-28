@@ -570,3 +570,88 @@ func TestTelemetryCheckpointAdoptionDoesNotOverwriteNewerEffects(t *testing.T) {
 		t.Fatal("stream installation split the terminal cursor from its newer effects")
 	}
 }
+
+func TestTelemetryCheckpointJointStreamsRoundTripAndBackwardCompatibility(t *testing.T) {
+	test := checkpointTestRun()
+	test.initialArchiveProvenance.JointEvidence = jointTestProjection.Clone()
+	ledger := telemetrySourceLedgerLocked(test)
+
+	// Sequence 1..2: state-only staging prefix on first running batch (sequence 3).
+	batch3 := checkpointBatch(test, 1)
+	batch3.BatchSequence = 3
+	batch3.SequencePrefixStateOnly = true
+	ledger.observe("generator", batch3, time.UnixMilli(batch3.TimestampUnixMs))
+	rememberJointPublicationLocked(test, "generator", batch3)
+
+	// Sequence 4: second accepted running batch.
+	batch4 := checkpointBatch(test, 2)
+	batch4.BatchSequence = 4
+	ledger.observe("generator", batch4, time.UnixMilli(batch4.TimestampUnixMs))
+	rememberJointPublicationLocked(test, "generator", batch4)
+
+	// Sequence 5: terminal batch.
+	batch5 := checkpointBatch(test, 3)
+	batch5.BatchSequence = 5
+	batch5.LifecycleState = "COMPLETE"
+	ledger.observe("generator", batch5, time.UnixMilli(batch5.TimestampUnixMs))
+	rememberJointPublicationLocked(test, "generator", batch5)
+
+	// Sequence 6: duplicate terminal replay / post-completion batch (benign ignored).
+	batch6 := checkpointBatch(test, 3)
+	batch6.BatchSequence = 6
+	batch6.LifecycleState = "RUNNING"
+	ledger.observe("generator", batch6, time.UnixMilli(batch6.TimestampUnixMs))
+
+	cp := captureTelemetryCheckpointLocked(test)
+	if len(cp.JointStreams) != 1 {
+		t.Fatalf("JointStreams len = %d, want 1", len(cp.JointStreams))
+	}
+	js := cp.JointStreams[0]
+	if !reflect.DeepEqual(js.AcceptedRanges, [][2]uint64{{3, 5}}) {
+		t.Fatalf("AcceptedRanges = %v, want [[3 5]]", js.AcceptedRanges)
+	}
+	if !reflect.DeepEqual(js.IgnoredRanges, [][2]uint64{{1, 2}, {6, 6}}) {
+		t.Fatalf("IgnoredRanges = %v, want [[1 2] [6 6]]", js.IgnoredRanges)
+	}
+	if len(js.Windows) != 1 || js.Windows[0].FirstSequence != 3 || js.Windows[0].LastSequence != 5 {
+		t.Fatalf("Windows = %+v, want merged [3..5]", js.Windows)
+	}
+
+	raw, err := json.Marshal(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, _, err := decodeTelemetryCheckpoint(string(raw), cp.Revision, test, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := telemetrySourceKey{source: "generator", generation: test.executionGeneration, epoch: "epoch-1"}
+	gotStream := restored.jointStreams[key]
+	if gotStream == nil || !reflect.DeepEqual(gotStream.AcceptedRanges, js.AcceptedRanges) || !reflect.DeepEqual(gotStream.IgnoredRanges, js.IgnoredRanges) || !reflect.DeepEqual(gotStream.Windows, js.Windows) {
+		t.Fatalf("restored jointStream = %+v, want %+v", gotStream, js)
+	}
+
+	// Backward-compatible with v1 checkpoints that omit JointStreams and JointStreamsTruncated.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	delete(fields, "JointStreams")
+	delete(fields, "JointStreamsTruncated")
+	v1Raw, _ := json.Marshal(fields)
+	v1Restored, _, err := decodeTelemetryCheckpoint(string(v1Raw), cp.Revision, test, 0)
+	if err != nil {
+		t.Fatalf("v1 checkpoint without JointStreams rejected: %v", err)
+	}
+	if len(v1Restored.jointStreams) != 0 {
+		t.Fatalf("expected empty jointStreams on v1 checkpoint, got %d", len(v1Restored.jointStreams))
+	}
+
+	// Reject malformed JointStreams.
+	bad := cp
+	bad.JointStreams = []durableJointStream{{Source: "generator", ExecutionGeneration: test.executionGeneration, Epoch: "epoch-1", AcceptedRanges: [][2]uint64{{5, 3}}}}
+	badRaw, _ := json.Marshal(bad)
+	if _, _, err := decodeTelemetryCheckpoint(string(badRaw), cp.Revision, test, 0); err == nil {
+		t.Fatal("expected inverted JointStreams range to be rejected")
+	}
+}

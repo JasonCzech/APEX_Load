@@ -127,8 +127,17 @@ func TestAnalysisWriterOwnershipNativePipelineRecordsItsIncarnation(t *testing.T
 	if len(attempts) != 1 || attempts[0].Incarnation == nil || *attempts[0].Incarnation != self {
 		t.Fatal("claimed attempt did not record this controller", attempts)
 	}
+	if len(attempts[0].Originals) != 1 || len(current.Originals) != 1 || attempts[0].Originals[0] != current.Originals[0] {
+		t.Fatal("claimed attempt did not plan per-attempt original key", attempts[0].Originals, current.Originals)
+	}
+	if attempts[0].Volume == nil || attempts[0].Volume.Identity == "" {
+		t.Fatal("claimed attempt did not record mint-time volume identity", attempts[0].Volume)
+	}
 	if len(writers) != 1 || writers[0].Incarnation == nil || *writers[0].Incarnation != self {
 		t.Fatal("upload writer did not record this controller", writers)
+	}
+	if writers[0].Volume == nil || writers[0].Volume.Identity == "" {
+		t.Fatal("upload writer did not record mint-time volume identity", writers[0].Volume)
 	}
 	server.reconcileAnalysisWriterIncarnationsOnce(t.Context())
 	everything := storage.AnalysisWriterExitScope{Prover: procidentity.Identity{Machine: "m@h", Boot: "b", Namespace: "n", PID: 1, Start: "1"}, LocalFilesystem: true, Exited: func(procidentity.Identity) bool { return true }}

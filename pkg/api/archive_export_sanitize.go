@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -173,6 +174,50 @@ func prepareSanitizedRunArchivePlanWith(ctx context.Context, record *storage.Run
 			if maskedManifest.Artifacts[index].Name == testManifestName {
 				maskedManifest.Artifacts[index].SizeBytes = int64(len(maskedTestManifest))
 				maskedManifest.Artifacts[index].SHA256 = sha256BytesHex(maskedTestManifest)
+			}
+		}
+	}
+
+	evidenceNames := []string{telemetryEvidenceFileName}
+	if customEvidence := strings.TrimSpace(manifest.TelemetryEvidenceFile); customEvidence != "" && customEvidence != telemetryEvidenceFileName {
+		evidenceNames = append(evidenceNames, customEvidence)
+	}
+	for _, evidenceName := range evidenceNames {
+		if evidenceName == "" {
+			continue
+		}
+		root, err := openArchiveDirectoryNoSymlink(record.ArchivePath)
+		if err != nil {
+			return nil, err
+		}
+		data, _, readErr := readArchiveFileAtRootLimitedContext(ctx, root, evidenceName, maxArchiveManifestDownloadBytes)
+		closeErr := root.Close()
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("read telemetry evidence for safe export: %w", readErr)
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		if readErr == nil {
+			var doc TelemetryEvidenceDocument
+			if err := json.Unmarshal(data, &doc); err != nil {
+				return nil, fmt.Errorf("decode telemetry evidence for safe export: %w", err)
+			}
+			scrubber := newTelemetryTextScrubber(manifest)
+			scrubbedDoc := scrubTelemetryEvidenceDocument(&doc, scrubber)
+			if scrubbedDoc.Acceptance == nil && maskedManifest.TelemetryAcceptance != nil {
+				scrubbedDoc.Acceptance = cloneTelemetryAcceptanceVerdict(maskedManifest.TelemetryAcceptance)
+			}
+			maskedEvidence, err := json.MarshalIndent(scrubbedDoc, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("encode telemetry evidence for safe export: %w", err)
+			}
+			plan.replacements[evidenceName] = maskedEvidence
+			for index := range maskedManifest.Artifacts {
+				if maskedManifest.Artifacts[index].Name == evidenceName {
+					maskedManifest.Artifacts[index].SizeBytes = int64(len(maskedEvidence))
+					maskedManifest.Artifacts[index].SHA256 = sha256BytesHex(maskedEvidence)
+				}
 			}
 		}
 	}
@@ -356,7 +401,8 @@ func sanitizedArchiveDirectorySize(ctx context.Context, root *os.Root, prefix st
 }
 
 func (c *archiveReadCaches) sanitizedRunArchiveArtifact(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, name string) ([]byte, os.FileInfo, bool, error) {
-	if name != runArchiveManifestFileName && name != strings.TrimSpace(manifest.TestManifestFile) {
+	isEvidence := name == telemetryEvidenceFileName || (strings.TrimSpace(manifest.TelemetryEvidenceFile) != "" && name == strings.TrimSpace(manifest.TelemetryEvidenceFile))
+	if name != runArchiveManifestFileName && name != strings.TrimSpace(manifest.TestManifestFile) && !isEvidence {
 		return nil, nil, false, nil
 	}
 	plan, err := c.buildSanitizedRunArchivePlan(ctx, record, manifest)
@@ -365,6 +411,16 @@ func (c *archiveReadCaches) sanitizedRunArchiveArtifact(ctx context.Context, rec
 	}
 	data, ok := plan.replacements[name]
 	if !ok {
+		if isEvidence {
+			file, _, err := openArchiveArtifactForRead(record.ArchivePath, name)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return nil, nil, true, os.ErrNotExist
+				}
+				return nil, nil, true, err
+			}
+			_ = file.Close()
+		}
 		return nil, nil, true, fmt.Errorf("archive artifact %q has no safe representation", name)
 	}
 	file, info, err := openArchiveArtifactForRead(record.ArchivePath, name)

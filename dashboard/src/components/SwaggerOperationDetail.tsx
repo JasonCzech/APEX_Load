@@ -13,7 +13,7 @@ export function CopyableCode({ text, label }: { text: string; label: string }) {
       const copied = await copyTextToClipboard(text)
       setResult({ text, message: copied ? 'Copied to clipboard.' : 'Copy failed. Select and copy the text below.' })
     }}>Copy {label.toLowerCase()}</button></div>
-    <pre tabIndex={0} aria-label={label}><code>{text}</code></pre>
+    <pre tabIndex={0} role="region" aria-label={label}><code>{text}</code></pre>
     <span role="status">{result?.text === text ? result.message : ''}</span>
   </div>
 }

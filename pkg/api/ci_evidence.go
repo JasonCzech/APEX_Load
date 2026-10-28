@@ -199,8 +199,17 @@ func mergeCIRunArchiveEvidence(response *ciRunResponse, evidence *ciValidatedArc
 		response.Validity = &validity
 	}
 	if evidence.TelemetryVerdict != nil {
-		response.TelemetryVerdict = &ciTelemetryVerdict{TelemetryAcceptanceVerdict: *cloneTelemetryAcceptanceVerdict(evidence.TelemetryVerdict)}
+		verdictCopy := cloneTelemetryAcceptanceVerdict(evidence.TelemetryVerdict)
+		response.TelemetryVerdict = &ciTelemetryVerdict{TelemetryAcceptanceVerdict: *verdictCopy}
+		response.TelemetryAcceptance = cloneTelemetryAcceptanceVerdict(verdictCopy)
+	} else if manifest.TelemetryAcceptance != nil {
+		response.TelemetryAcceptance = cloneTelemetryAcceptanceVerdict(manifest.TelemetryAcceptance)
 	}
+	response.TelemetryStageDistributions = cloneTelemetryStageDistributions(manifest.TelemetryStageDistributions)
+	response.TelemetryRenderPopulation = manifest.TelemetryRenderPopulation.clone()
+	response.TelemetryCoverage = cloneTelemetryCoverageRecord(manifest.TelemetryCoverage)
+	response.TelemetryPolicySegments = cloneTelemetryPolicySegments(manifest.TelemetryPolicySegments)
+	response.TelemetryValidityFindings = cloneTelemetryValidityFindings(manifest.TelemetryValidityFindings)
 }
 
 func applyCITerminalEvidence(response *ciRunResponse, evidence *ciValidatedArchiveEvidence, evidenceErr error) {

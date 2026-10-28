@@ -10,6 +10,7 @@ import {
   LoadModelSupportMatrixResponse,
   LoadModelTemplatesResponse,
   LoadModelValidationReport,
+  ScenarioValidationContext,
   LiveErrorEvidence,
   LiveMetrics,
   ResourceSample,
@@ -410,6 +411,17 @@ export function useTestApi() {
 
   const validateScenarioLoadModel = useCallback(
     (data: unknown, options?: ApiCallOptions) => request<LoadModelValidationReport>('/scenarios/validate-load-model', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
+    [],
+  )
+
+  const getScenarioValidationContext = useCallback(
+    async (data: unknown, options?: ApiCallOptions): Promise<ScenarioValidationContext | null> => {
+      const report = await request<LoadModelValidationReport>(
+        '/scenarios/validate-load-model?context_only=true',
+        withCallOptions({ method: 'POST', body: JSON.stringify(data), timeoutMs: 30_000 }, options),
+      )
+      return report?.validation_context ?? null
+    },
     [],
   )
 
@@ -914,6 +926,7 @@ export function useTestApi() {
       getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,
+      getScenarioValidationContext,
       sizeScenarioFromGoal,
       getTrafficProfileSources,
       analyzeTrafficProfile,
@@ -998,6 +1011,7 @@ export function useTestApi() {
       getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,
+      getScenarioValidationContext,
       sizeScenarioFromGoal,
       getTrafficProfileSources,
       analyzeTrafficProfile,

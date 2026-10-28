@@ -889,6 +889,11 @@ message MetricAggregate {
   // predates it leaves it unset, and the controller merges duration_digest.
   DurationSketchSnapshot duration_sketch = 22;
   JavaHTTPSummary java_http = 23;
+  // Measured byte evidence contract (http_body.v1, grpc_uncompressed_payload.v1,
+  // ws_application_payload.v1, none, or unmeasured) and the number of measured
+  // samples contributing to bytes_sent and bytes_received.
+  string byte_evidence = 24;
+  int64 byte_samples = 25;
 }
 
 message TraceExemplar {

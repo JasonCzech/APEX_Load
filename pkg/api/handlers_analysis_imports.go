@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -230,6 +231,10 @@ func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {
 		total += file.Size
 		in.Files = append(in.Files, storage.AnalysisImportFile{ID: uuid.NewString(), RelativePath: p, Size: file.Size})
 	}
+	if _, err := ensureAnalysisVolumeFile(s.store, currentArchiveBackend()); err != nil {
+		writeError(w, 503, "analytical storage volume unavailable")
+		return
+	}
 	saved, err := store.SaveAnalysisImport(in, 0)
 	if err != nil {
 		writeError(w, 400, err.Error())
@@ -428,8 +433,8 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "conflicting upload retry")
 		return
 	}
-	if offset+int64(len(data)) < file.Size && len(data) != analysisUploadChunk {
-		writeError(w, 400, "nonfinal chunks must contain exactly 4 MiB")
+	if len(file.Chunks) >= 16384 {
+		writeError(w, 400, "file exceeds maximum upload chunk count")
 		return
 	}
 	s.writeAnalysisUploadChunk(w, r, writers, *in, *file, offset, data, digest)
@@ -514,7 +519,7 @@ func (s *Server) handleAnalysisPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "import file not found")
 		return
 	}
-	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(r.Context(), selected.Size, 12)
+	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(analytics.WithNativeStagingScope(r.Context(), in.ID, ""), selected.Size, 12)
 	if err != nil {
 		writeError(w, 503, "analysis staging unavailable")
 		return
@@ -651,7 +656,7 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "mapping exceeds the 1024 normalized partition limit")
 		return
 	}
-	if first, second, ok := duplicateAnalysisImportFiles(in.Files); ok && (in.State == "mapped" || in.State == "failed") {
+	if first, second, ok := duplicateAnalysisImportFiles(s.resolveAnalysisCommitFiles(r.Context(), in)); ok && (in.State == "mapped" || in.State == "failed") {
 		// Every file's rows are imported, so the same content twice would be
 		// counted twice; refuse it here rather than fail during publication.
 		// An import's files are fixed when it is created, so the remedy is a
@@ -692,7 +697,7 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parent, stop := s.runner.archiveOperationContext(s.startupContext)
-	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(parent, inputBytes, outputBytes)
+	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(analytics.WithNativeStagingScope(parent, in.ID, ""), inputBytes, outputBytes)
 	if err != nil {
 		stop()
 		writeError(w, 503, "analytical admission unavailable")
@@ -707,6 +712,7 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "analytical claim changed or requires reconciliation")
 		return
 	}
+	_ = analytics.BindStagingAttemptScope(dir, in.ID, claimed.Owner)
 	launched = s.launchBackground(func() {
 		defer func() { <-analysisPipelineJobs }()
 		defer stop()
@@ -721,15 +727,71 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, claimed)
 }
 
+func (s *Server) handleAnalysisImportAttestWriterStopped(w http.ResponseWriter, r *http.Request) {
+	store, in := s.loadAnalysisImportMetadata(w, r)
+	if store == nil {
+		return
+	}
+	backend, err := nativeAnalysisArtifactBackend(r.Context())
+	if err != nil || backend.validate() != nil || ensureAnalysisBackendFor(s.store, backend) != nil {
+		writeError(w, http.StatusServiceUnavailable, "dataset cleanup storage authority unavailable")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if len(reason) < 3 || len(reason) > 1024 {
+		writeError(w, http.StatusBadRequest, "reason is required (3-1024 characters)")
+		return
+	}
+	writers, ok := s.store.(storage.AnalysisWriterOwnershipStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "dataset writer ownership unavailable")
+		return
+	}
+	_, actorSubject, _ := s.resolveAuditActor(r)
+	if strings.TrimSpace(actorSubject) == "" {
+		actorSubject = "admin"
+	}
+	attested, err := writers.AttestAnalysisImportWritersStopped(s.bindAnalysisWriterIncarnation(r.Context()), in.ProjectID, in.ID, actorSubject, reason)
+	if errors.Is(err, storage.ErrAnalysisWriterActive) {
+		writeError(w, http.StatusConflict, "cannot attest writer stopped while a writer on this controller is still active")
+		return
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "analysis import not found")
+		return
+	}
+	if errors.Is(err, storage.ErrAnalysisAuthority) {
+		writeError(w, http.StatusConflict, "import must be cancelled, failed, or deleting before attesting writer stop")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "cannot record writer attestation")
+		return
+	}
+	s.recordAuditEvent(r, "analysis.import.attest-writer-stopped", "success", "analysis_import", in.ID, in.ProjectID, map[string]any{
+		"reason": reason,
+		"actor":  actorSubject,
+	})
+	reportAnalysisArtifactDigest(attested)
+	writeJSON(w, http.StatusOK, attested)
+}
+
 // Resolve the complete exact plan before physical I/O. New upload writers use
 // opaque durable chunk keys; historical chunks retain their validated content
 // key. A malformed/foreign later key cannot cause a partially deleted dataset.
 func analysisDatasetDeletionKeys(in *storage.AnalysisImport) ([]string, error) {
 	const maxKeys = 131072
-	if in == nil || len(in.ID) != 36 || len(in.ProjectID) > 128 || len(in.Files) < 1 || len(in.Files) > 1024 || len(in.Normalized) > 65536 || len(in.RejectionArtifacts) > 65536 || len(in.ObsoleteObjects) > 4096 {
+	if in == nil || len(in.ID) != 36 || len(in.ProjectID) > 128 || len(in.Files) < 1 || len(in.Files) > 1024 || len(in.Originals) > 1024 || len(in.Normalized) > 65536 || len(in.RejectionArtifacts) > 65536 || len(in.ObsoleteObjects) > 4096 {
 		return nil, storage.ErrAnalysisAuthority
 	}
-	total := len(in.Files) + len(in.Normalized) + len(in.RejectionArtifacts) + len(in.ObsoleteObjects)
+	total := len(in.Files) + len(in.Originals) + len(in.Normalized) + len(in.RejectionArtifacts) + len(in.ObsoleteObjects)
 	for _, file := range in.Files {
 		if len(file.ID) != 36 || len(file.Chunks) > 16384 || len(file.Chunks) > maxKeys-total {
 			return nil, storage.ErrAnalysisAuthority
@@ -782,7 +844,7 @@ func analysisDatasetDeletionKeys(in *storage.AnalysisImport) ([]string, error) {
 			return nil, err
 		}
 	}
-	for _, group := range [][]string{in.Normalized, in.ObsoleteObjects, in.RejectionArtifacts} {
+	for _, group := range [][]string{in.Originals, in.Normalized, in.ObsoleteObjects, in.RejectionArtifacts} {
 		for _, key := range group {
 			if err := add(key); err != nil {
 				return nil, err
@@ -948,16 +1010,49 @@ func points0Population(points []analysis.MetricPoint) string {
 	return ""
 }
 
+func analysisWholeFileDigest(file storage.AnalysisImportFile) string {
+	if file.SHA256 != "" {
+		return file.SHA256
+	}
+	if len(file.Chunks) == 1 && file.Chunks[0].Offset == 0 && (file.Size == 0 || file.Chunks[0].Size == file.Size) && file.Chunks[0].SHA256 != "" {
+		return file.Chunks[0].SHA256
+	}
+	return ""
+}
+
+func (s *Server) resolveAnalysisCommitFiles(ctx context.Context, in *storage.AnalysisImport) []storage.AnalysisImportFile {
+	if in == nil || len(in.Files) < 2 {
+		if in == nil {
+			return nil
+		}
+		return in.Files
+	}
+	var bindCtx context.Context
+	if writers, ok := s.store.(storage.AnalysisUploadWriterStore); ok {
+		bindCtx, _, _ = s.bindAnalysisUploadContext(ctx, writers)
+	}
+	files := append([]storage.AnalysisImportFile(nil), in.Files...)
+	for i := range files {
+		if analysisWholeFileDigest(files[i]) != "" || len(files[i].Chunks) < 2 || files[i].Uploaded != files[i].Size || bindCtx == nil {
+			continue
+		}
+		if digest, err := computeAnalysisAssembledFileSHA256(bindCtx, in.ProjectID, in.ID, files[i], files[i].Size, nil); err == nil && digest != "" {
+			files[i].SHA256 = digest
+		}
+	}
+	return files
+}
+
 // duplicateAnalysisImportFiles finds two files of an import with the same
-// content: the same whole-file digest when one was recorded, else the same
-// size and the same ordered chunk digests. Identical content chunked
-// differently is not found here; normalization still fails closed on it.
+// content: the same whole-file digest when one was recorded (including a
+// single-chunk upload covering the whole file or an assembled multi-chunk
+// upload), else the same size and the same ordered chunk digests.
 func duplicateAnalysisImportFiles(files []storage.AnalysisImportFile) (string, string, bool) {
 	seen := make(map[string]string, len(files))
 	for _, file := range files {
 		var key strings.Builder
-		if file.SHA256 != "" {
-			key.WriteString("sha256:" + file.SHA256)
+		if digest := analysisWholeFileDigest(file); digest != "" {
+			key.WriteString("sha256:" + digest)
 		} else {
 			fmt.Fprintf(&key, "size:%d", file.Size)
 			for _, chunk := range file.Chunks {

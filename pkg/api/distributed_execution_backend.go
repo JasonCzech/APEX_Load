@@ -2284,17 +2284,39 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 			clients = map[string]generatorClient{remoteTarget: single}
 		} else {
 			if remoteTarget == "" {
-				return errDistributedGeneratorTargetUnknown
+				finished, err := tr.finishStoppedRunEvacuationRestartWithoutSurvivor(stopBase, b, test)
+				if err != nil {
+					return err
+				}
+				if finished {
+					return nil
+				}
+				tr.mu.RLock()
+				clientsByTarget = cloneClientMap(test.remoteClientsByTarget)
+				single = test.remoteClient
+				remoteTarget = strings.TrimSpace(test.remoteTarget)
+				executionGeneration = test.executionGeneration
+				runSupervisionToken = cloneRunSupervisionToken(test.remoteRunSupervisionToken)
+				tr.mu.RUnlock()
+				if len(clientsByTarget) > 0 {
+					clients = clientsByTarget
+				} else if single != nil {
+					clients = map[string]generatorClient{remoteTarget: single}
+				} else if remoteTarget == "" {
+					return errDistributedGeneratorTargetUnknown
+				}
 			}
-			ctx, cancel := context.WithTimeout(stopBase, b.timeout)
-			client, err := b.dial(ctx, remoteTarget)
-			cancel()
-			if err != nil {
-				return fmt.Errorf("connect generator: %w", err)
+			if len(clients) == 0 {
+				ctx, cancel := context.WithTimeout(stopBase, b.timeout)
+				client, err := b.dial(ctx, remoteTarget)
+				cancel()
+				if err != nil {
+					return fmt.Errorf("connect generator: %w", err)
+				}
+				dialed = client
+				defer dialed.Close()
+				clients = map[string]generatorClient{remoteTarget: client}
 			}
-			dialed = client
-			defer dialed.Close()
-			clients = map[string]generatorClient{remoteTarget: client}
 		}
 	}
 	targets := orderedGeneratorTargets(clients, b.configuredTargets())

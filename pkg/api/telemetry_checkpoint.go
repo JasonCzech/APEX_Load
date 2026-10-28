@@ -5,16 +5,37 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const maxRetainedTelemetryCollections = 1024
 const maxRetainedTelemetryWindowEntries = 4096
+
+const (
+	telemetryCollectionClassificationUnknown                  = "unknown"
+	telemetryCollectionClassificationQualifiedSourceWindows   = "qualified_source_windows"
+	telemetryCollectionClassificationUnscoredBoundarySpanning = "unscored_boundary_spanning"
+	telemetryCollectionClassificationUnqualifiedClock         = "unqualified_clock"
+)
+
+func validTelemetryCollectionClassification(classification string) bool {
+	switch classification {
+	case telemetryCollectionClassificationUnknown,
+		telemetryCollectionClassificationQualifiedSourceWindows,
+		telemetryCollectionClassificationUnscoredBoundarySpanning,
+		telemetryCollectionClassificationUnqualifiedClock:
+		return true
+	default:
+		return false
+	}
+}
 
 // TelemetryCollectionCounter preserves a cumulative source reading and its availability.
 type TelemetryCollectionCounter struct {
@@ -22,21 +43,27 @@ type TelemetryCollectionCounter struct {
 	Unavailable string `json:"unavailable,omitempty"`
 }
 
-// TelemetryCollectionEvidence retains source-clock provenance, not qualified
-// wall coverage. Classification stays unknown until clock/boundary evidence
-// supports assigning the entire collection to a policy segment.
+// TelemetryCollectionEvidence retains source-clock provenance and, when the
+// generator's clock is qualified and the uncertainty-expanded window falls
+// wholly inside one policy segment, its qualified controller-clock segment
+// classification (TEL-A2).
 type TelemetryCollectionEvidence struct {
 	CounterReadings map[string]TelemetryCollectionCounter `json:"counter_readings,omitempty"`
 
-	Source         string                                 `json:"source"`
-	Generation     uint64                                 `json:"execution_generation"`
-	Epoch          string                                 `json:"source_epoch"`
-	Collection     uint64                                 `json:"collection_sequence"`
-	Publication    uint64                                 `json:"publication_sequence"`
-	Windows        []generatorrpc.MetricsCollectionWindow `json:"windows,omitempty"`
-	Complete       bool                                   `json:"windows_complete"`
-	PolicyHash     string                                 `json:"policy_hash,omitempty"`
-	Classification string                                 `json:"classification"`
+	Source          string                                 `json:"source"`
+	Generation      uint64                                 `json:"execution_generation"`
+	Epoch           string                                 `json:"source_epoch"`
+	Collection      uint64                                 `json:"collection_sequence"`
+	Publication     uint64                                 `json:"publication_sequence"`
+	Windows         []generatorrpc.MetricsCollectionWindow `json:"windows,omitempty"`
+	Complete        bool                                   `json:"windows_complete"`
+	PolicySegment   int64                                  `json:"policy_segment,omitempty"`
+	PolicyHash      string                                 `json:"policy_hash,omitempty"`
+	Classification  string                                 `json:"classification"`
+	ClockReason     string                                 `json:"clock_reason,omitempty"`
+	UncertaintyMs   *float64                               `json:"uncertainty_ms,omitempty"`
+	ControllerStart *time.Time                             `json:"controller_start,omitempty"`
+	ControllerEnd   *time.Time                             `json:"controller_end,omitempty"`
 }
 
 type durableWindowMark struct {
@@ -84,22 +111,205 @@ type durableSpans struct {
 	Spans     [][2]int64
 	Truncated bool
 }
+type durableJointStream struct {
+	Source              string
+	ExecutionGeneration uint64
+	Epoch               string
+	AcceptedRanges      [][2]uint64            `json:",omitempty"`
+	IgnoredRanges       [][2]uint64            `json:",omitempty"`
+	DroppedRanges       [][2]uint64            `json:",omitempty"`
+	Windows             []TelemetryJointWindow `json:",omitempty"`
+	DroppedWindows      []TelemetryJointWindow `json:",omitempty"`
+	FirstStartUnixMs    int64                  `json:",omitempty"`
+	LastEndUnixMs       int64                  `json:",omitempty"`
+	Truncated           bool                   `json:",omitempty"`
+}
+
+type durableRenderPopulation struct {
+	ReferenceClientID string                      `json:"reference_client_id,omitempty"`
+	Epoch             string                      `json:"epoch,omitempty"`
+	FirstSequence     uint64                      `json:"first_sequence,omitempty"`
+	LastSequence      uint64                      `json:"last_sequence,omitempty"`
+	PublishedEligible int64                       `json:"published_eligible"`
+	Eligible          int64                       `json:"eligible"`
+	Rendered          int64                       `json:"rendered"`
+	Superseded        int64                       `json:"superseded"`
+	Unqualified       map[string]int64            `json:"unqualified,omitempty"`
+	Unreported        int64                       `json:"unreported"`
+	Ineligible        int64                       `json:"ineligible,omitempty"`
+	Unknown           int64                       `json:"unknown,omitempty"`
+	SampledFrom       *time.Time                  `json:"sampled_from,omitempty"`
+	PriorEpochs       []TelemetryRenderPopulation `json:"prior_epochs,omitempty"`
+	EndToEndDigest    *engine.TDigestSnapshot     `json:"end_to_end_digest,omitempty"`
+	EndToEndMax       float64                     `json:"end_to_end_max,omitempty"`
+	EndToEndExcluded  map[string]int64            `json:"end_to_end_excluded,omitempty"`
+	NewestDigest      *engine.TDigestSnapshot     `json:"newest_digest,omitempty"`
+	NewestMax         float64                     `json:"newest_max,omitempty"`
+	DeliverySignal    string                      `json:"delivery_signal,omitempty"`
+}
+
+func validDurableRenderPopulation(d *durableRenderPopulation) bool {
+	if d == nil {
+		return true
+	}
+	if d.PublishedEligible < 0 || d.Eligible < 0 || d.Rendered < 0 || d.Superseded < 0 || d.Unreported < 0 || d.Ineligible < 0 || d.Unknown < 0 {
+		return false
+	}
+	if d.FirstSequence > 0 && d.LastSequence < d.FirstSequence {
+		return false
+	}
+	for _, v := range d.Unqualified {
+		if v < 0 {
+			return false
+		}
+	}
+	for _, v := range d.EndToEndExcluded {
+		if v < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func captureDurableRenderPopulation(r *telemetryStageRecorder) *durableRenderPopulation {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pop := r.renderPopulationLocked()
+	e2e := r.stages[telemetryStageEndToEnd]
+	if pop == nil && (e2e == nil || (e2e.digest.Count() == 0 && len(e2e.excluded) == 0)) {
+		return nil
+	}
+	out := &durableRenderPopulation{DeliverySignal: r.endToEndSignal}
+	if pop != nil {
+		out.ReferenceClientID = pop.ReferenceClient
+		out.Epoch = pop.Epoch
+		out.FirstSequence = pop.FirstSequence
+		out.LastSequence = pop.LastSequence
+		out.PublishedEligible = pop.PublishedEligible
+		out.Eligible = pop.Eligible
+		out.Rendered = pop.Rendered
+		out.Superseded = pop.Superseded
+		out.Unqualified = pop.Unqualified
+		out.Unreported = pop.Unreported
+		out.Ineligible = pop.Ineligible
+		out.Unknown = pop.Unknown
+		out.SampledFrom = pop.SampledFrom
+		out.PriorEpochs = pop.PriorEpochs
+	}
+	if e2e != nil {
+		if e2e.digest.Count() > 0 {
+			snap := e2e.digest.Snapshot()
+			out.EndToEndDigest = &snap
+			out.EndToEndMax = e2e.max
+		}
+		if len(e2e.excluded) > 0 {
+			out.EndToEndExcluded = make(map[string]int64, len(e2e.excluded))
+			for k, v := range e2e.excluded {
+				out.EndToEndExcluded[k] = v
+			}
+		}
+	}
+	if r.endToEndNewest != nil && r.endToEndNewest.digest.Count() > 0 {
+		snap := r.endToEndNewest.digest.Snapshot()
+		out.NewestDigest = &snap
+		out.NewestMax = r.endToEndNewest.max
+	}
+	return out
+}
+
+func restoreDurableRenderPopulation(r *telemetryStageRecorder, d *durableRenderPopulation) {
+	if r == nil || d == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var priors []TelemetryRenderPopulation
+	for i := range d.PriorEpochs {
+		priors = append(priors, *d.PriorEpochs[i].clone())
+	}
+	if d.Epoch != "" || d.PublishedEligible > 0 || d.Eligible > 0 || d.ReferenceClientID != "" {
+		unq := map[string]int64{}
+		for k, v := range d.Unqualified {
+			unq[k] = v
+		}
+		if len(unq) == 0 {
+			unq = nil
+		}
+		var sampledFrom *time.Time
+		if d.SampledFrom != nil {
+			t := d.SampledFrom.UTC()
+			sampledFrom = &t
+		}
+		unreported := d.Unreported
+		if d.PublishedEligible > d.Eligible {
+			unreported += d.PublishedEligible - d.Eligible
+		}
+		priors = append(priors, TelemetryRenderPopulation{
+			Population:        telemetryRenderPopulationName,
+			Epoch:             d.Epoch,
+			PublishedEligible: d.PublishedEligible,
+			ReferenceClient:   d.ReferenceClientID,
+			FirstSequence:     d.FirstSequence,
+			LastSequence:      d.LastSequence,
+			Eligible:          d.Eligible,
+			Rendered:          d.Rendered,
+			Superseded:        d.Superseded,
+			Unqualified:       unq,
+			Unreported:        unreported,
+			Ineligible:        d.Ineligible,
+			Unknown:           d.Unknown,
+			SampledFrom:       sampledFrom,
+		})
+	}
+	r.render.priorEpochs = priors
+	if d.EndToEndDigest != nil && d.EndToEndDigest.Count > 0 {
+		stage := r.stageLocked(telemetryStageEndToEnd)
+		stage.digest.Merge(engine.NewTDigestFromSnapshot(*d.EndToEndDigest))
+		stage.max = max(stage.max, d.EndToEndMax)
+	}
+	for reason, count := range d.EndToEndExcluded {
+		if count > 0 {
+			stage := r.stageLocked(telemetryStageEndToEnd)
+			if stage.excluded == nil {
+				stage.excluded = map[string]int64{}
+			}
+			stage.excluded[reason] += count
+		}
+	}
+	if d.NewestDigest != nil && d.NewestDigest.Count > 0 {
+		if r.endToEndNewest == nil {
+			r.endToEndNewest = &telemetryStageDigest{digest: engine.NewTDigest(telemetryStageCompression)}
+		}
+		r.endToEndNewest.digest.Merge(engine.NewTDigestFromSnapshot(*d.NewestDigest))
+		r.endToEndNewest.max = max(r.endToEndNewest.max, d.NewestMax)
+	}
+	if d.DeliverySignal != "" {
+		r.endToEndSignal = mergeDeliverySignal(r.endToEndSignal, d.DeliverySignal)
+	}
+}
+
 type telemetryCheckpoint struct {
-	Version              int
-	Incarnation          string
-	Generation           uint64
-	Revision             int64
-	Totals               [4]int64
-	Groups               map[string][4]int64
-	RequestsUnknown      bool
-	Windows              map[string]durableWindowMark
-	Epochs               []durableSourceEpoch
-	Coverage             map[string]durableSpans
-	Requirements         map[string][2]int64
-	Cursors              []durableCoverage
-	Collections          []TelemetryCollectionEvidence
-	CollectionsTruncated bool
-	Truncated, Adopted   bool
+	Version               int
+	Incarnation           string
+	Generation            uint64
+	Revision              int64
+	Totals                [4]int64
+	Groups                map[string][4]int64
+	RequestsUnknown       bool
+	Windows               map[string]durableWindowMark
+	Epochs                []durableSourceEpoch
+	JointStreams          []durableJointStream `json:",omitempty"`
+	JointStreamsTruncated bool                 `json:",omitempty"`
+	Coverage              map[string]durableSpans
+	Requirements          map[string][2]int64
+	Cursors               []durableCoverage
+	Collections           []TelemetryCollectionEvidence
+	CollectionsTruncated  bool
+	Truncated, Adopted    bool
+	RenderPopulation      *durableRenderPopulation `json:"RenderPopulation,omitempty"`
 }
 
 func durableCounts(c runTotalsCounts) [4]int64 {
@@ -159,6 +369,33 @@ func captureTelemetryCheckpointLocked(test *ManagedTest) telemetryCheckpoint {
 		cp.Cursors = append(cp.Cursors, durableCoverage{source, c.key.generation, c.key.epoch, c.epochStartedMs, c.sequence, c.windowSequence, c.endMs, durableMark(c.collection), c.terminal})
 	}
 	sort.Slice(cp.Cursors, func(i, j int) bool { return cp.Cursors[i].Source < cp.Cursors[j].Source })
+	cp.JointStreamsTruncated = l.jointStreamsTruncated
+	for _, s := range l.jointStreams {
+		cp.JointStreams = append(cp.JointStreams, durableJointStream{
+			Source:              s.Source,
+			ExecutionGeneration: s.ExecutionGeneration,
+			Epoch:               s.Epoch,
+			AcceptedRanges:      append([][2]uint64(nil), s.AcceptedRanges...),
+			IgnoredRanges:       append([][2]uint64(nil), s.IgnoredRanges...),
+			DroppedRanges:       append([][2]uint64(nil), s.DroppedRanges...),
+			Windows:             append([]TelemetryJointWindow(nil), s.Windows...),
+			DroppedWindows:      append([]TelemetryJointWindow(nil), s.DroppedWindows...),
+			FirstStartUnixMs:    s.FirstStartUnixMs,
+			LastEndUnixMs:       s.LastEndUnixMs,
+			Truncated:           s.Truncated,
+		})
+	}
+	sort.Slice(cp.JointStreams, func(i, j int) bool {
+		a, b := cp.JointStreams[i], cp.JointStreams[j]
+		if a.Source != b.Source {
+			return a.Source < b.Source
+		}
+		if a.ExecutionGeneration != b.ExecutionGeneration {
+			return a.ExecutionGeneration < b.ExecutionGeneration
+		}
+		return a.Epoch < b.Epoch
+	})
+	cp.RenderPopulation = captureDurableRenderPopulation(test.telemetryStages)
 	return cp
 }
 
@@ -166,10 +403,16 @@ func captureTelemetryCheckpointLocked(test *ManagedTest) telemetryCheckpoint {
 // growing ledger cannot replace the last recoverable snapshot with one the
 // successor would refuse. Never trim a cursor independently from its effects.
 func telemetryCheckpointWithinBounds(cp *telemetryCheckpoint) bool {
-	if len(cp.Epochs) > maxTelemetrySourceEpochs || len(cp.Collections) > maxRetainedTelemetryCollections ||
+	if len(cp.Epochs) > maxTelemetrySourceEpochs || len(cp.JointStreams) > maxTelemetrySourceEpochs || len(cp.Collections) > maxRetainedTelemetryCollections ||
 		len(cp.Windows) > maxTelemetrySourceEpochs || len(cp.Groups) > maxTelemetrySourceEpochs ||
 		len(cp.Coverage) > maxTelemetrySourceEpochs || len(cp.Requirements) > maxTelemetrySourceEpochs || len(cp.Cursors) > maxTelemetrySourceEpochs {
 		return false
+	}
+	for _, js := range cp.JointStreams {
+		if len(js.AcceptedRanges) > maxTelemetrySourceRanges || len(js.IgnoredRanges) > maxTelemetrySourceRanges || len(js.DroppedRanges) > maxTelemetrySourceRanges ||
+			len(js.Windows) > maxTelemetrySourceRanges || len(js.DroppedWindows) > maxTelemetrySourceRanges {
+			return false
+		}
 	}
 	entries := 0
 	for _, c := range cp.Collections {
@@ -213,24 +456,62 @@ func decodeTelemetryCheckpoint(raw string, revision int64, test *ManagedTest, mi
 			return nil, a, fmt.Errorf("invalid checkpoint flag %s", name)
 		}
 	}
+	if rawFlag, ok := fields["JointStreamsTruncated"]; ok && string(rawFlag) != "true" && string(rawFlag) != "false" {
+		return nil, a, fmt.Errorf("invalid checkpoint flag JointStreamsTruncated")
+	}
 	if err := json.Unmarshal([]byte(raw), &cp); err != nil {
 		return nil, a, err
 	}
 	if cp.Version != 1 || cp.Revision != revision || revision <= 0 ||
 		cp.Incarnation == "" || cp.Incarnation != managedTestRunIncarnation(test) || cp.Generation > test.executionGeneration ||
 		cp.Windows == nil || cp.Groups == nil || cp.Coverage == nil || cp.Requirements == nil ||
-		!telemetryCheckpointWithinBounds(&cp) {
+		!telemetryCheckpointWithinBounds(&cp) || !validDurableRenderPopulation(cp.RenderPopulation) {
 		return nil, a, fmt.Errorf("incompatible telemetry checkpoint")
 	}
 	if cp.Generation < minGeneration {
 		return nil, a, errTelemetryCheckpointSuperseded
 	}
 	l := newTelemetrySourceLedger()
+	l.restoredRenderPopulation = cp.RenderPopulation
 	l.truncated, l.adopted = cp.Truncated, cp.Adopted
+	l.jointStreamsTruncated = cp.JointStreamsTruncated
 	l.collections, l.collectionsTruncated = cp.Collections, cp.CollectionsTruncated
 	l.coverage = map[string]*coverageSpans{}
 	l.requirements = map[string]*telemetrySourceRequirement{}
 	l.cursors = map[string]*coverageCursor{}
+	for _, js := range cp.JointStreams {
+		key := telemetrySourceKey{js.Source, js.ExecutionGeneration, js.Epoch}
+		if js.Source == "" || js.ExecutionGeneration > cp.Generation || l.jointStreams[key] != nil || js.FirstStartUnixMs < 0 || js.LastEndUnixMs < 0 || (js.FirstStartUnixMs > 0 && js.LastEndUnixMs < js.FirstStartUnixMs) {
+			return nil, a, fmt.Errorf("invalid joint stream ledger")
+		}
+		for _, ranges := range [][][2]uint64{js.AcceptedRanges, js.IgnoredRanges, js.DroppedRanges} {
+			for i, span := range ranges {
+				if span[0] == 0 || span[1] < span[0] || i > 0 && span[0] <= ranges[i-1][1] {
+					return nil, a, fmt.Errorf("invalid joint stream ranges")
+				}
+			}
+		}
+		for _, windows := range [][]TelemetryJointWindow{js.Windows, js.DroppedWindows} {
+			for i, w := range windows {
+				if w.LastSequence < w.FirstSequence || w.StartUnixMs < 0 || w.EndUnixMs < w.StartUnixMs || i > 0 && w.FirstSequence > 0 && windows[i-1].FirstSequence > 0 && w.FirstSequence <= windows[i-1].LastSequence {
+					return nil, a, fmt.Errorf("invalid joint stream windows")
+				}
+			}
+		}
+		l.jointStreams[key] = &telemetryJointStream{
+			Source:              js.Source,
+			ExecutionGeneration: js.ExecutionGeneration,
+			Epoch:               js.Epoch,
+			AcceptedRanges:      append([][2]uint64(nil), js.AcceptedRanges...),
+			IgnoredRanges:       append([][2]uint64(nil), js.IgnoredRanges...),
+			DroppedRanges:       append([][2]uint64(nil), js.DroppedRanges...),
+			Windows:             append([]TelemetryJointWindow(nil), js.Windows...),
+			DroppedWindows:      append([]TelemetryJointWindow(nil), js.DroppedWindows...),
+			FirstStartUnixMs:    js.FirstStartUnixMs,
+			LastEndUnixMs:       js.LastEndUnixMs,
+			Truncated:           js.Truncated,
+		}
+	}
 	for _, d := range cp.Epochs {
 		r := d.Record
 		key := telemetrySourceKey{r.Source, r.ExecutionGeneration, r.Epoch}
@@ -276,7 +557,7 @@ func decodeTelemetryCheckpoint(raw string, revision int64, test *ManagedTest, mi
 	entries := 0
 	for _, c := range cp.Collections {
 		entries += len(c.Windows)
-		if c.Classification != "unknown" || len(c.CounterReadings) > len(telemetryEpochCounters) || entries > maxRetainedTelemetryWindowEntries || len(c.Windows) > generatorrpc.MaxMetricsCollectionWindows || c.Generation > cp.Generation {
+		if !validTelemetryCollectionClassification(c.Classification) || len(c.CounterReadings) > len(telemetryEpochCounters) || entries > maxRetainedTelemetryWindowEntries || len(c.Windows) > generatorrpc.MaxMetricsCollectionWindows || c.Generation > cp.Generation {
 			return nil, a, fmt.Errorf("invalid source windows")
 		}
 		if c.Complete && len(c.Windows) == 0 {
@@ -406,29 +687,93 @@ func (tr *TestRunner) restoreTelemetryCheckpoint(test *ManagedTest, generation, 
 	test.telemetrySources = ledger
 	test.runTotals = totals
 	test.telemetryCheckpointRestored = true
+	if ledger != nil && ledger.restoredRenderPopulation != nil {
+		restoreDurableRenderPopulation(stageRecorderLocked(test), ledger.restoredRenderPopulation)
+	}
 }
 
 func retainTelemetryCollectionLocked(test *ManagedTest, target string, batch generatorrpc.MetricsBatch) {
 	if batch.Telemetry == nil || batch.Telemetry.CollectionSequence == 0 {
 		return
 	}
-	e := TelemetryCollectionEvidence{Source: target, Generation: batch.ExecutionGeneration, Epoch: batch.SourceEpoch, Collection: batch.Telemetry.CollectionSequence, Publication: batch.BatchSequence, Complete: batch.CollectionWindowsComplete, Classification: "unknown"}
-	// The policy segment in force from the collection to its acceptance;
-	// none when a change falls inside that span, or the collection cannot be
-	// placed on the controller's clock after a change.
-	measured := telemetryMeasurement{collectedAt: time.UnixMilli(batch.Telemetry.CollectedAtUnixMs), offsetMs: batch.Telemetry.CollectedAtOffsetMs, quality: batch.Telemetry.CollectedAtQuality}
-	if batch.Telemetry.CollectedAtUnixMs <= 0 {
-		measured = telemetryMeasurement{}
-	}
+	e := TelemetryCollectionEvidence{Source: target, Generation: batch.ExecutionGeneration, Epoch: batch.SourceEpoch, Collection: batch.Telemetry.CollectionSequence, Publication: batch.BatchSequence, Complete: batch.CollectionWindowsComplete, Classification: telemetryCollectionClassificationUnknown}
 	now := time.Now()
-	from := now
-	if start, known := measured.start(true); !known {
-		from = time.Time{}
-	} else if !start.IsZero() {
-		from = start
+	offsetMs := batch.Telemetry.CollectedAtOffsetMs
+	quality := batch.Telemetry.CollectedAtQuality
+	if quality == nil && test != nil && test.clockCalibrations != nil {
+		evalNow := now
+		if !batch.Telemetry.ReceivedAt.IsZero() {
+			evalNow = batch.Telemetry.ReceivedAt
+		}
+		off, q := test.clockCalibrations.quality(target, evalNow)
+		offsetMs, quality = off, &q
 	}
-	if interval := telemetryIntervalPolicyLocked(test, from, now); interval.ok && !interval.spanning {
-		e.PolicyHash = interval.segment.Policy.Hash
+	windows := batch.CollectionWindows
+	if len(windows) == 0 {
+		bt := *batch.Telemetry
+		if bt.WindowMs == 0 && batch.WindowMs > 0 {
+			bt.WindowMs = batch.WindowMs
+		}
+		if w, ok := generatorrpc.MetricsCollectionWindowFromTelemetry(&bt, batch.TimestampUnixMs); ok {
+			windows = []generatorrpc.MetricsCollectionWindow{w}
+		}
+	}
+	segments := telemetryPolicySegmentsLocked(test)
+	switch {
+	case quality != nil && quality.Qualified && len(windows) > 0:
+		minStart, maxEnd := windows[0].Start, windows[0].End
+		for _, w := range windows[1:] {
+			if w.Start.Before(minStart) {
+				minStart = w.Start
+			}
+			if w.End.After(maxEnd) {
+				maxEnd = w.End
+			}
+		}
+		offsetDur := time.Duration(math.Round(offsetMs * float64(time.Microsecond) * 1000))
+		uncertaintyDur := time.Duration(math.Ceil(quality.UncertaintyMs * float64(time.Microsecond) * 1000))
+		ctrlStart := minStart.Add(-offsetDur - uncertaintyDur).UTC()
+		ctrlEnd := maxEnd.Add(-offsetDur + uncertaintyDur).UTC()
+		uCopy := quality.UncertaintyMs
+		e.ControllerStart = &ctrlStart
+		e.ControllerEnd = &ctrlEnd
+		e.UncertaintyMs = &uCopy
+		interval := telemetryIntervalPolicyLocked(test, ctrlStart, ctrlEnd)
+		if interval.spanning {
+			e.Classification = telemetryCollectionClassificationUnscoredBoundarySpanning
+			e.PolicyHash = ""
+			e.PolicySegment = 0
+		} else {
+			e.Classification = telemetryCollectionClassificationQualifiedSourceWindows
+			if interval.ok && interval.segment.Policy != nil {
+				e.PolicySegment = interval.segment.Sequence
+				e.PolicyHash = interval.segment.Policy.Hash
+			}
+		}
+	case (quality != nil && !quality.Qualified) || (len(segments) > 1 && (quality == nil || !quality.Qualified)):
+		e.Classification = telemetryCollectionClassificationUnqualifiedClock
+		e.PolicyHash = ""
+		e.PolicySegment = 0
+		if quality != nil && quality.Reason != "" {
+			e.ClockReason = quality.Reason
+		} else {
+			e.ClockReason = clockReasonUncalibrated
+		}
+	default:
+		measured := telemetryMeasurement{collectedAt: time.UnixMilli(batch.Telemetry.CollectedAtUnixMs), offsetMs: offsetMs, quality: quality}
+		if batch.Telemetry.CollectedAtUnixMs <= 0 {
+			measured = telemetryMeasurement{}
+		}
+		from := now
+		if start, known := measured.start(true); !known {
+			from = time.Time{}
+		} else if !start.IsZero() {
+			from = start
+		}
+		if interval := telemetryIntervalPolicyLocked(test, from, now); interval.ok && !interval.spanning && interval.segment.Policy != nil {
+			e.PolicySegment = interval.segment.Sequence
+			e.PolicyHash = interval.segment.Policy.Hash
+		}
 	}
 	e.CounterReadings = map[string]TelemetryCollectionCounter{}
 	for name, reading := range telemetryCounterReadings(batch) {
@@ -448,6 +793,9 @@ func retainTelemetryCollectionLocked(test *ManagedTest, target string, batch gen
 		e.CounterReadings[name] = c
 	}
 	e.Windows = append([]generatorrpc.MetricsCollectionWindow(nil), batch.CollectionWindows...)
+	if len(e.Windows) == 0 && len(windows) > 0 && e.Classification != telemetryCollectionClassificationUnknown {
+		e.Windows = append([]generatorrpc.MetricsCollectionWindow(nil), windows...)
+	}
 	if len(e.Windows) > generatorrpc.MaxMetricsCollectionWindows {
 		e.Windows = e.Windows[:generatorrpc.MaxMetricsCollectionWindows]
 		e.Complete = false
@@ -455,6 +803,20 @@ func retainTelemetryCollectionLocked(test *ManagedTest, target string, batch gen
 	l := telemetrySourceLedgerLocked(test)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if e.Classification == telemetryCollectionClassificationQualifiedSourceWindows && len(windows) > 0 && batch.WindowMs <= 0 {
+		offsetDur := time.Duration(math.Round(offsetMs * float64(time.Microsecond) * 1000))
+		if l.coverage == nil {
+			l.coverage = map[string]*coverageSpans{}
+		}
+		spans := l.coverage[target]
+		if spans == nil {
+			spans = &coverageSpans{}
+			l.coverage[target] = spans
+		}
+		for _, w := range windows {
+			spans.add(w.Start.Add(-offsetDur).UnixMilli(), w.End.Add(-offsetDur).UnixMilli())
+		}
+	}
 	entries := len(e.Windows)
 	for _, c := range l.collections {
 		entries += len(c.Windows)
@@ -475,6 +837,18 @@ func cloneTelemetryCollections(in []TelemetryCollectionEvidence) []TelemetryColl
 	out := make([]TelemetryCollectionEvidence, len(in))
 	for i, c := range in {
 		c.Windows = append([]generatorrpc.MetricsCollectionWindow(nil), c.Windows...)
+		if c.UncertaintyMs != nil {
+			u := *c.UncertaintyMs
+			c.UncertaintyMs = &u
+		}
+		if c.ControllerStart != nil {
+			s := *c.ControllerStart
+			c.ControllerStart = &s
+		}
+		if c.ControllerEnd != nil {
+			e := *c.ControllerEnd
+			c.ControllerEnd = &e
+		}
 		if c.CounterReadings != nil {
 			counters := make(map[string]TelemetryCollectionCounter, len(c.CounterReadings))
 			for name, r := range c.CounterReadings {

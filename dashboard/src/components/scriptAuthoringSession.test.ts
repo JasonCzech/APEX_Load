@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { admitValidationResponse, describeValidationContextChanges, draftFingerprint, sameValidationBinding, validationContextChanges, validationContextKey, type ValidationBinding, type ValidationRequest } from './scriptAuthoringSession'
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest'
+import { createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { act } from 'react'
+import { admitValidationResponse, describeValidationContextChanges, draftFingerprint, sameValidationBinding, scenarioValidationContextChanges, validationContextChanges, validationContextKey, type ValidationBinding, type ValidationRequest } from './scriptAuthoringSession'
+import { useTestApi } from '../hooks/api/useTestApi'
 import type { ScriptValidationContext } from '../types/scripts'
+import type { ScenarioValidationContext } from '../types/loadModels'
 
 const binding = (overrides: Partial<ValidationBinding> = {}): ValidationBinding => ({ fingerprint: draftFingerprint('{"name":"a"}'), contentRevision: `scr-v1-${'a'.repeat(64)}`, context: '["p",null,null]', ...overrides })
 const request = (overrides: Partial<ValidationRequest> = {}): ValidationRequest => ({ requestId: 3, sent: binding(), issuedAgainst: binding(), stored: false, ...overrides })
@@ -85,5 +91,53 @@ describe('validation context changes (AUTH-B)', () => {
   it('reports nothing without both contexts', () => {
     expect(validationContextChanges(null, context('s1', 'p1'))).toEqual([])
     expect(validationContextChanges(context('s1', 'p1'), null)).toEqual([])
+  })
+
+  it('compares scenario validation contexts and ignores incomplete objects lacking revision (AUTH-B1)', () => {
+    const scenarioCtx = (scripts: string, revision = `svctx1:${scripts}`): ScenarioValidationContext => ({
+      version: 1,
+      revision,
+      components: { scripts, capabilities: 'c', policy: 'p', approvals: 'a', secret_references: 's' },
+    })
+    expect(scenarioValidationContextChanges(scenarioCtx('scr1'), scenarioCtx('scr1'))).toEqual([])
+    expect(scenarioValidationContextChanges(scenarioCtx('scr1'), scenarioCtx('scr2'))).toEqual(['scripts'])
+    expect(scenarioValidationContextChanges(scenarioCtx('scr1'), null)).toEqual([])
+    expect(scenarioValidationContextChanges(scenarioCtx('scr1'), { version: 1, revision: '', components: { scripts: 'scr2', capabilities: 'c', policy: 'p', approvals: 'a', secret_references: 's' } })).toEqual([])
+  })
+
+  it('unwraps validation_context from LoadModelValidationReport in useTestApi.getScenarioValidationContext (AUTH-B1)', async () => {
+    let api: ReturnType<typeof useTestApi> | null = null
+    function Harness() {
+      api = useTestApi()
+      return null
+    }
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const expectedContext: ScenarioValidationContext = {
+      version: 1,
+      revision: 'svctx1:unwrapped',
+      components: { scripts: 'scr1', capabilities: 'c1', policy: 'p1', approvals: 'a1', secret_references: 's1' },
+    }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    try {
+      await act(async () => { root.render(createElement(Harness)) })
+      fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 'ready',
+        scenario_mode: 'vuser_driven',
+        validation_context: expectedContext,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      const unwrapped = await api!.getScenarioValidationContext({ name: 'Draft' })
+      expect(unwrapped).toEqual(expectedContext)
+
+      fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 'ready',
+        scenario_mode: 'vuser_driven',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      const missing = await api!.getScenarioValidationContext({ name: 'Draft' })
+      expect(missing).toBeNull()
+    } finally {
+      fetchSpy.mockRestore()
+      await act(async () => { root.unmount() })
+    }
   })
 })

@@ -150,3 +150,80 @@ func TestBrowserPanelInputsV2PolicyAndSelectionPins(t *testing.T) {
 		})
 	}
 }
+
+func TestSavedPanelInputsV2GeneralPinsAndFrozenDefaults(t *testing.T) {
+	q := AnalyticsQuery{
+		Population:      "byte",
+		Metric:          "bytes_sent",
+		Aggregation:     "p95",
+		ComparisonRunID: "run-base",
+		Filters:         map[string]string{"protocol": "grpc"},
+	}
+	NormalizeSavedPanelQueryDefaults(&q)
+	if q.QueryVersion != AnalyticsQueryVersion || q.Alignment != "elapsed" || q.CoveragePolicy != "complete_bucket" || q.BucketSeconds != 10 || q.EndSeconds != 60 || q.MaxSeries != 1 {
+		t.Fatalf("unexpected frozen defaults: %+v", q)
+	}
+	q.PanelInputs = &SavedPanelInputs{
+		Version:            2,
+		CatalogVersion:     q.CatalogVersion,
+		Alignment:          q.Alignment,
+		CoveragePolicy:     q.CoveragePolicy,
+		Population:         q.Population,
+		Metric:             q.Metric,
+		Aggregation:        q.Aggregation,
+		QuerySHA256:        SavedPanelQueryDigest(q),
+		ComparisonID:       "cmp-1",
+		ComparisonRevision: 2,
+		ComparisonSHA256:   strings.Repeat("9", 64),
+		Drilldown: SavedPanelDrilldownBounds{
+			StartSeconds:  q.StartSeconds,
+			EndSeconds:    q.EndSeconds,
+			BucketSeconds: q.BucketSeconds,
+			MaxSeries:     q.MaxSeries,
+		},
+		Current: SavedPanelSourcePin{
+			RunID:          "run-cur",
+			ManifestSHA256: strings.Repeat("a", 64),
+			Protocol:       "grpc",
+		},
+		Baseline: &SavedPanelSourcePin{
+			RunID:          "run-base",
+			ManifestSHA256: strings.Repeat("b", 64),
+			Protocol:       "grpc",
+		},
+	}
+	if err := ValidateNativeArchiveQuery(q); err != nil {
+		t.Fatalf("expected valid general SavedPanelInputs v2, got %v", err)
+	}
+
+	// Mutating any frozen parameter or pin without updating PanelInputs is rejected.
+	for _, tc := range []struct {
+		name   string
+		mutate func(*AnalyticsQuery)
+	}{
+		{"alignment mismatch", func(q *AnalyticsQuery) { q.Alignment = "utc" }},
+		{"coverage mismatch", func(q *AnalyticsQuery) { q.CoveragePolicy = "required" }},
+		{"bucket mismatch", func(q *AnalyticsQuery) { q.BucketSeconds = 30 }},
+		{"comparison_run_id mismatch", func(q *AnalyticsQuery) { q.ComparisonRunID = "other" }},
+		{"missing current digest", func(q *AnalyticsQuery) { q.PanelInputs.Current.ManifestSHA256 = "" }},
+		{"both run and dataset on source pin", func(q *AnalyticsQuery) {
+			q.PanelInputs.Current.DatasetID = "ds-1"
+			q.PanelInputs.Current.DatasetArtifactSHA256 = strings.Repeat("d", 64)
+		}},
+		{"invalid comparison pin digest", func(q *AnalyticsQuery) { q.PanelInputs.ComparisonSHA256 = "bad" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := q
+			cpInputs := *q.PanelInputs
+			if q.PanelInputs.Baseline != nil {
+				baseCopy := *q.PanelInputs.Baseline
+				cpInputs.Baseline = &baseCopy
+			}
+			cp.PanelInputs = &cpInputs
+			tc.mutate(&cp)
+			if err := ValidateSavedPanelInputs(cp); err == nil {
+				t.Fatalf("expected error for %s", tc.name)
+			}
+		})
+	}
+}

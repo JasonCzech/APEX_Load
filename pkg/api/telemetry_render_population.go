@@ -47,6 +47,10 @@ type TelemetryPublication struct {
 	// earlier one did not (a lifecycle-only or replayed point): it is not
 	// counted in the render population.
 	Eligible bool `json:"eligible"`
+	// OldestObservationStartAt bounds the earliest MetricsCollectionWindow.Start
+	// included in the publication, projected onto the controller clock via its
+	// generator's qualified clockCalibration (start - offset - uncertainty).
+	OldestObservationStartAt *time.Time `json:"oldest_observation_start_at,omitempty"`
 	// OldestCollectedAt and NewestCollectedAt bound the collection times of
 	// the windows it includes, each on its generator's clock (see
 	// sample_age_quality); a collection covers the window that ends then.
@@ -84,6 +88,20 @@ type TelemetryRenderPopulation struct {
 	// this controller adopted the run (an adoption starts a new epoch, and
 	// the earlier ownership's publications are not counted).
 	SampledFrom *time.Time `json:"sampled_from,omitempty"`
+	// PriorEpochs preserves durable render population provenance recovered
+	// from earlier controller epochs across restart or HA failover without
+	// inferring exactness for unrecorded windows (TEL-A1).
+	PriorEpochs []TelemetryRenderPopulation `json:"prior_epochs,omitempty"`
+}
+
+// telemetryPublicationTiming retains the controller-clock bounds of one
+// published sequence so a later client render report can compute the
+// end-to-end observation-to-render age.
+type telemetryPublicationTiming struct {
+	publishedAt                 time.Time
+	oldestObservationStartAt    time.Time
+	newestCollectedControllerAt time.Time
+	clockQualified              bool
 }
 
 // clientRenderPublication names the publication a client sample is about.
@@ -111,6 +129,7 @@ type telemetryRenderLedger struct {
 	epoch     string
 	sequence  uint64
 	eligible  map[uint64]bool
+	timings   map[uint64]telemetryPublicationTiming
 	published int64
 	// evictedThrough is the newest sequence no longer held.
 	evictedThrough uint64
@@ -124,10 +143,15 @@ type telemetryRenderLedger struct {
 	// last sequence while it was open: unreported once the range passes them.
 	pendingEligible int64
 	unknown         int64
+	priorEpochs     []TelemetryRenderPopulation
 }
 
 // nextPublication assigns the next live publication of the run its identity.
 func (r *telemetryStageRecorder) nextPublication(eligible bool) (string, uint64) {
+	return r.nextPublicationWithTiming(eligible, telemetryPublicationTiming{})
+}
+
+func (r *telemetryStageRecorder) nextPublicationWithTiming(eligible bool, timing telemetryPublicationTiming) (string, uint64) {
 	if r == nil {
 		return "", 0
 	}
@@ -135,10 +159,14 @@ func (r *telemetryStageRecorder) nextPublication(eligible bool) (string, uint64)
 	defer r.mu.Unlock()
 	ledger := &r.render
 	if ledger.epoch == "" {
-		ledger.epoch, ledger.eligible, ledger.outcomes = rand.Text(), map[uint64]bool{}, map[uint64]string{}
+		ledger.epoch, ledger.eligible, ledger.outcomes, ledger.timings = rand.Text(), map[uint64]bool{}, map[uint64]string{}, map[uint64]telemetryPublicationTiming{}
+	}
+	if ledger.timings == nil {
+		ledger.timings = map[uint64]telemetryPublicationTiming{}
 	}
 	ledger.sequence++
 	ledger.eligible[ledger.sequence] = eligible
+	ledger.timings[ledger.sequence] = timing
 	if eligible {
 		ledger.published++
 	}
@@ -149,9 +177,24 @@ func (r *telemetryStageRecorder) nextPublication(eligible bool) (string, uint64)
 		}
 		delete(ledger.eligible, evicted)
 		delete(ledger.outcomes, evicted)
+		delete(ledger.timings, evicted)
+		delete(r.presentationProofs, presentationProofKey(ledger.epoch, evicted))
 		ledger.evictedThrough = evicted
 	}
 	return ledger.epoch, ledger.sequence
+}
+
+func (r *telemetryStageRecorder) publicationTiming(pub clientRenderPublication) (telemetryPublicationTiming, bool) {
+	if r == nil {
+		return telemetryPublicationTiming{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.render.epoch == "" || pub.Epoch != r.render.epoch || !r.render.eligible[pub.Sequence] {
+		return telemetryPublicationTiming{}, false
+	}
+	timing, ok := r.render.timings[pub.Sequence]
+	return timing, ok
 }
 
 func (l *telemetryRenderLedger) held(sequence uint64) bool {
@@ -280,15 +323,35 @@ func (r *telemetryStageRecorder) renderPopulation() *TelemetryRenderPopulation {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.renderPopulationLocked()
+}
+
+func (r *telemetryStageRecorder) renderPopulationLocked() *TelemetryRenderPopulation {
 	ledger := &r.render
 	if ledger.epoch == "" {
-		return nil
+		if len(ledger.priorEpochs) == 0 {
+			return nil
+		}
+		latest := ledger.priorEpochs[len(ledger.priorEpochs)-1].clone()
+		if len(ledger.priorEpochs) > 1 {
+			latest.PriorEpochs = make([]TelemetryRenderPopulation, 0, len(ledger.priorEpochs)-1)
+			for i := range ledger.priorEpochs[:len(ledger.priorEpochs)-1] {
+				latest.PriorEpochs = append(latest.PriorEpochs, *ledger.priorEpochs[i].clone())
+			}
+		}
+		return latest
 	}
 	out := ledger.counts.clone()
 	out.Population, out.Epoch, out.PublishedEligible, out.ReferenceClient, out.Unknown = telemetryRenderPopulationName, ledger.epoch, ledger.published, ledger.referenceID, ledger.unknown
 	out.FirstSequence, out.LastSequence = ledger.first, ledger.last
 	since := r.since
 	out.SampledFrom = &since
+	if len(ledger.priorEpochs) > 0 {
+		out.PriorEpochs = make([]TelemetryRenderPopulation, 0, len(ledger.priorEpochs))
+		for i := range ledger.priorEpochs {
+			out.PriorEpochs = append(out.PriorEpochs, *ledger.priorEpochs[i].clone())
+		}
+	}
 	return out
 }
 
@@ -307,6 +370,12 @@ func (p *TelemetryRenderPopulation) clone() *TelemetryRenderPopulation {
 		since := *p.SampledFrom
 		out.SampledFrom = &since
 	}
+	if len(p.PriorEpochs) > 0 {
+		out.PriorEpochs = make([]TelemetryRenderPopulation, 0, len(p.PriorEpochs))
+		for i := range p.PriorEpochs {
+			out.PriorEpochs = append(out.PriorEpochs, *p.PriorEpochs[i].clone())
+		}
+	}
 	return &out
 }
 
@@ -315,6 +384,10 @@ func (p *TelemetryPublication) clone() *TelemetryPublication {
 		return nil
 	}
 	out := *p
+	if p.OldestObservationStartAt != nil {
+		at := *p.OldestObservationStartAt
+		out.OldestObservationStartAt = &at
+	}
 	if p.OldestCollectedAt != nil {
 		at := *p.OldestCollectedAt
 		out.OldestCollectedAt = &at
@@ -340,8 +413,47 @@ func assignTelemetryPublicationLocked(test *ManagedTest, live *LiveMetrics) {
 	if !distributed && test.LiveMetrics != nil && test.LiveMetrics.Telemetry != nil && !telemetry.CollectedAt.IsZero() && test.LiveMetrics.Telemetry.CollectedAt.Equal(telemetry.CollectedAt) {
 		eligible = false
 	}
-	epoch, sequence := stageRecorderLocked(test).nextPublication(eligible)
-	publication := &TelemetryPublication{Epoch: epoch, Sequence: sequence, Eligible: eligible}
+	var timing telemetryPublicationTiming
+	timing.publishedAt = telemetry.PublishedAt
+	if timing.publishedAt.IsZero() {
+		timing.publishedAt = telemetry.ControllerReceivedAt
+	}
+	if timing.publishedAt.IsZero() && !live.Timestamp.IsZero() {
+		timing.publishedAt = live.Timestamp
+	}
+	if timing.publishedAt.IsZero() {
+		timing.publishedAt = time.Now().UTC()
+	}
+	var obsStartPtr *time.Time
+	if !telemetry.CollectedAt.IsZero() && !telemetry.collectedAtAssumed && !telemetry.SampleAgeUnavailable {
+		qualified := (!distributed && (telemetry.SampleAgeQuality == nil || telemetry.SampleAgeQuality.Qualified)) ||
+			(distributed && telemetry.SampleAgeQuality != nil && telemetry.SampleAgeQuality.Qualified)
+		if qualified {
+			obsStart := telemetry.oldestObservationStartAt
+			if obsStart.IsZero() && !distributed {
+				obsStart = telemetry.CollectedAt
+			}
+			newestCtrl := telemetry.newestCollectedControllerAt
+			if newestCtrl.IsZero() {
+				if !telemetry.newestCollectedAt.IsZero() && !distributed {
+					newestCtrl = telemetry.newestCollectedAt
+				} else if !distributed {
+					newestCtrl = telemetry.CollectedAt
+				} else if !obsStart.IsZero() {
+					newestCtrl = obsStart
+				}
+			}
+			if !obsStart.IsZero() {
+				utcStart := obsStart.UTC()
+				obsStartPtr = &utcStart
+				timing.oldestObservationStartAt = utcStart
+				timing.newestCollectedControllerAt = newestCtrl.UTC()
+				timing.clockQualified = true
+			}
+		}
+	}
+	epoch, sequence := stageRecorderLocked(test).nextPublicationWithTiming(eligible, timing)
+	publication := &TelemetryPublication{Epoch: epoch, Sequence: sequence, Eligible: eligible, OldestObservationStartAt: obsStartPtr}
 	// Without a reported collection time there are no bounds to state.
 	if !telemetry.CollectedAt.IsZero() && !telemetry.collectedAtAssumed && !telemetry.SampleAgeUnavailable {
 		// Each bound is on its own generator's clock: the newest is chosen on

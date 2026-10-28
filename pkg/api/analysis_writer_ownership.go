@@ -8,10 +8,13 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/internal/localfs"
 	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -85,14 +88,35 @@ func (s *Server) analysisWriterRuntime() analysisWriterOwnershipRuntime {
 }
 
 // bindAnalysisWriterIncarnation records this process as the artifact writer
-// of a generation minted under ctx. Without an identity nothing is bound and
-// the generation can be retired only by its own process.
+// of a generation minted under ctx, and materializes/records the filesystem
+// volume identity and locality at mint time. Without an identity nothing is
+// bound and the generation can be retired only by its own process.
 func (s *Server) bindAnalysisWriterIncarnation(ctx context.Context) context.Context {
 	runtime := s.analysisWriterRuntime()
 	if !runtime.known {
 		return ctx
 	}
-	return storage.WithAnalysisWriterIncarnation(ctx, runtime.self)
+	ctx = storage.WithAnalysisWriterIncarnation(ctx, runtime.self)
+	if s != nil && s.nativeReconciliationStore != nil {
+		backend := currentArchiveBackend()
+		if backend.validate() == nil {
+			if backend.Backend == archiveBackendFilesystem {
+				if volID, err := ensureAnalysisVolumeFile(s.nativeReconciliationStore, backend); err == nil && runtime.localFS != nil {
+					if local, probeErr := runtime.localFS(analysisArtifactDirectory(backend)); probeErr == nil {
+						ctx = storage.WithAnalysisWriterVolume(ctx, storage.AnalysisWriterVolume{
+							Identity:        volID,
+							LocalFilesystem: local,
+						})
+					}
+				}
+			} else {
+				ctx = storage.WithAnalysisWriterVolume(ctx, storage.AnalysisWriterVolume{
+					LocalFilesystem: false,
+				})
+			}
+		}
+	}
+	return ctx
 }
 
 var errAnalysisWriterNoIdentity = errors.New("this controller has no process identity to judge from")
@@ -124,6 +148,7 @@ func (s *Server) analysisWriterExitScope() (storage.AnalysisWriterExitScope, err
 	// yet, or an unmounted share) fails the probe, so no writer is judged until
 	// a later sweep finds it.
 	local := false
+	volID := ""
 	if backend.Backend == archiveBackendFilesystem {
 		if runtime.localFS == nil {
 			return storage.AnalysisWriterExitScope{}, errAnalysisWriterNoLocality
@@ -132,9 +157,14 @@ func (s *Server) analysisWriterExitScope() (storage.AnalysisWriterExitScope, err
 		if err != nil {
 			return storage.AnalysisWriterExitScope{}, fmt.Errorf("artifact directory locality is undecided: %w", err)
 		}
+		vID, err := verifyAnalysisVolumeFile(s.nativeReconciliationStore, backend)
+		if err != nil {
+			return storage.AnalysisWriterExitScope{}, err
+		}
 		local = probed
+		volID = vID
 	}
-	return storage.AnalysisWriterExitScope{Prover: runtime.self, Exited: runtime.exited, LocalFilesystem: local}, nil
+	return storage.AnalysisWriterExitScope{Prover: runtime.self, Exited: runtime.exited, LocalFilesystem: local, VolumeIdentity: volID}, nil
 }
 
 // analysisArtifactDirectory is the filesystem directory that
@@ -153,6 +183,29 @@ func (s *Server) analysisWriterHere() func(procidentity.Identity) bool {
 	return func(id procidentity.Identity) bool { return procidentity.Judgeable(runtime.host, id) }
 }
 
+func (s *Server) reclaimExitedAnalysisStagingDirs() {
+	runtime := s.analysisWriterRuntime()
+	if !runtime.known || runtime.exited == nil {
+		return
+	}
+	backend := currentArchiveBackend()
+	if strings.TrimSpace(backend.LocalRoot) == "" {
+		return
+	}
+	cacheRoot := filepath.Join(backend.LocalRoot, "_analysis-cache")
+	if info, err := os.Lstat(cacheRoot); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return
+	}
+	if runtime.localFS != nil {
+		if local, err := runtime.localFS(cacheRoot); err != nil || !local {
+			return
+		}
+	}
+	if reclaimed, err := analytics.ReclaimExitedStagingDirectories(cacheRoot, runtime.exited); err == nil && reclaimed > 0 {
+		slog.Info("analysis staging directories reclaimed after owner exit", "reclaimed", reclaimed)
+	}
+}
+
 // warnAnalysisWriterSweep logs at most every analysisWriterWarnEvery; the
 // caller holds the cursor lock.
 func (s *Server) warnAnalysisWriterSweep(message string, attrs ...any) {
@@ -166,11 +219,14 @@ func (s *Server) warnAnalysisWriterSweep(message string, attrs ...any) {
 }
 
 // reconcileAnalysisWriterIncarnationsOnce retires a bounded page of
-// generations whose controller this host proves exited.
+// generations whose controller this host proves exited, and reclaims any
+// local staging directories whose controller and worker incarnations have
+// both exited.
 func (s *Server) reconcileAnalysisWriterIncarnationsOnce(ctx context.Context) {
 	if s == nil || !analysisQueryContextLive(ctx) {
 		return
 	}
+	s.reclaimExitedAnalysisStagingDirs()
 	writers, ok := s.nativeReconciliationStore.(storage.AnalysisWriterOwnershipStore)
 	if !ok {
 		return

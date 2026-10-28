@@ -273,6 +273,9 @@ func createScenarioWithBindingsTx(tx *storeTx, scenario *Scenario, scripts []Sce
 	if err := replaceScenarioScriptsTx(tx, scenario.ID, scripts); err != nil {
 		return false, err
 	}
+	if err := CheckAuthoringReceiptFault(AuthoringReceiptFaultPostResourceInsertPreBinding, AuthoringPurposeScenarioCreate, scenario.ID); err != nil {
+		return false, fmt.Errorf("%w: %v", ErrAuthoringReceiptFaultBeforeCommit, err)
+	}
 	if err := saveScenarioDataPoolBindingsTx(tx, scenario.ID, bindings); err != nil {
 		return false, err
 	}

@@ -35,6 +35,7 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	out.NetworkProfile = boundedMetricString(input.NetworkProfile, maxMetricLabelBytes)
 	out.DependencyType = boundedMetricString(input.DependencyType, maxMetricLabelBytes)
 	out.DependencyTarget = boundedMetricString(input.DependencyTarget, maxMetricLabelBytes)
+	out.ByteEvidence = boundedMetricString(protocol.ByteEvidence(input), maxMetricLabelBytes)
 	out.ErrorMessage = boundedMetricString(input.ErrorMessage, maxMetricErrorBytes)
 	out.ResponseBody = ""
 	out.PageURL = ""

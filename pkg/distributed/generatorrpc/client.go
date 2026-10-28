@@ -342,6 +342,15 @@ type MetricsTelemetry struct {
 	// NewestCollectedAtUnixMs is a fleet aggregate's newest contributing
 	// collection time (CollectedAtUnixMs is its oldest). Controller-internal.
 	NewestCollectedAtUnixMs int64 `json:"-"`
+	// OldestObservationStartBoundUnixMs, on a single batch or fleet aggregate,
+	// is the earliest controller-clock instant at which any included
+	// MetricsCollectionWindow started (start - offset - uncertainty).
+	// Controller-internal.
+	OldestObservationStartBoundUnixMs float64 `json:"-"`
+	// NewestCollectedAtControllerUnixMs, on a single batch or fleet aggregate,
+	// is the newest contributing collection time mapped to the controller's
+	// clock (collected - offset). Controller-internal.
+	NewestCollectedAtControllerUnixMs float64 `json:"-"`
 	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
 	// It is cumulative for the target stream and remains zero for older
 	// generators that do not publish a sequence.
@@ -392,6 +401,8 @@ type MetricAggregate struct {
 	AvgTTFBMs        float64
 	BytesSent        int64
 	BytesReceived    int64
+	ByteEvidence     string
+	ByteSamples      int64
 	TPS              float64
 	DurationDigest   *engine.TDigestSnapshot
 	DurationSketch   *engine.DurationSketchSnapshot
@@ -2318,6 +2329,8 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		AvgTTFBMs:        value.GetAvgTtfbMs(),
 		BytesSent:        value.GetBytesSent(),
 		BytesReceived:    value.GetBytesReceived(),
+		ByteEvidence:     value.GetByteEvidence(),
+		ByteSamples:      value.GetByteSamples(),
 		TPS:              value.GetTps(),
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
 		DurationSketch:   durationSketchSnapshotFromProto(value.GetDurationSketch()),
@@ -2386,6 +2399,8 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		AvgTtfbMs:            value.AvgTTFBMs,
 		BytesSent:            value.BytesSent,
 		BytesReceived:        value.BytesReceived,
+		ByteEvidence:         value.ByteEvidence,
+		ByteSamples:          value.ByteSamples,
 		Tps:                  value.TPS,
 		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
 		DurationSketch:       durationSketchSnapshotToProto(value.DurationSketch),

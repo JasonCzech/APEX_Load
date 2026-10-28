@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"time"
@@ -261,6 +262,25 @@ func jointPublicationEvidence(source string, batch generatorrpc.MetricsBatch, pr
 		Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: int(batch.ActionMetricsVersion), WindowSeconds: batchWindowSeconds(batch.WindowMs), Dimensions: dimensions, Joint: evidence.Joint}
 }
 
+func jointPublicationWindowBounds(p *storage.NativePublicationEvidence) (int64, int64) {
+	if p == nil || p.Timestamp.IsZero() {
+		return 0, 0
+	}
+	endMs := p.Timestamp.UnixMilli()
+	if endMs < 0 {
+		return 0, 0
+	}
+	windowMs := int64(math.Round(p.WindowSeconds * 1000))
+	if windowMs < 0 {
+		windowMs = 0
+	}
+	startMs := endMs - windowMs
+	if startMs < 0 {
+		startMs = 0
+	}
+	return startMs, endMs
+}
+
 // rememberJointPublicationLocked keeps an accepted batch's joint evidence
 // for the next published point; tr.mu is held.
 func rememberJointPublicationLocked(test *ManagedTest, source string, batch generatorrpc.MetricsBatch) {
@@ -269,22 +289,34 @@ func rememberJointPublicationLocked(test *ManagedTest, source string, batch gene
 		return
 	}
 	p := jointPublicationEvidence(source, batch, projection)
+	startMs, endMs := jointPublicationWindowBounds(p)
 	size := jointPublicationBytes(p)
 	// One publication must fit the same budget as the entire pending queue.
 	// Refuse it before evicting useful earlier windows; the existing dropped
 	// count keeps its absence visible in the joint archive coverage.
 	if size > maxPendingJointBytes {
 		test.jointPublicationsDropped++
+		telemetrySourceLedgerLocked(test).observeJointDropped(source, batch, startMs, endMs)
 		return
 	}
 	for len(test.pendingJointPublications) > 0 && (len(test.pendingJointPublications) >= maxPendingJointPublications || test.pendingJointBytes+size > maxPendingJointBytes) {
-		test.pendingJointBytes -= jointPublicationBytes(test.pendingJointPublications[0])
+		evicted := test.pendingJointPublications[0]
+		test.pendingJointBytes -= jointPublicationBytes(evicted)
 		test.pendingJointPublications[0] = nil
 		test.pendingJointPublications = test.pendingJointPublications[1:]
 		test.jointPublicationsDropped++
+		if evicted != nil {
+			evStart, evEnd := jointPublicationWindowBounds(evicted)
+			telemetrySourceLedgerLocked(test).observeJointDropped(evicted.SourceID, generatorrpc.MetricsBatch{
+				ExecutionGeneration: evicted.ExecutionGeneration,
+				SourceEpoch:         evicted.SourceEpoch,
+				BatchSequence:       evicted.Sequence,
+			}, evStart, evEnd)
+		}
 	}
 	test.pendingJointPublications = append(test.pendingJointPublications, p)
 	test.pendingJointBytes += size
+	telemetrySourceLedgerLocked(test).observeJointAccepted(source, batch, startMs, endMs)
 }
 
 // releaseHeldJointPublicationsLocked drops the batches held for the run's
@@ -293,6 +325,16 @@ func rememberJointPublicationLocked(test *ManagedTest, source string, batch gene
 // them as dropped so a sidecar written without them is marked truncated;
 // tr.mu is held.
 func releaseHeldJointPublicationsLocked(test *ManagedTest) {
+	for _, p := range test.pendingJointPublications {
+		if p != nil {
+			startMs, endMs := jointPublicationWindowBounds(p)
+			telemetrySourceLedgerLocked(test).observeJointDropped(p.SourceID, generatorrpc.MetricsBatch{
+				ExecutionGeneration: p.ExecutionGeneration,
+				SourceEpoch:         p.SourceEpoch,
+				BatchSequence:       p.Sequence,
+			}, startMs, endMs)
+		}
+	}
 	test.jointPublicationsDropped += int64(len(test.pendingJointPublications))
 	test.pendingJointPublications, test.pendingJointBytes = nil, 0
 }

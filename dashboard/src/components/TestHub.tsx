@@ -28,7 +28,8 @@ import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import LoadPlanChart from './LoadPlanChart'
-import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, ScenarioDataPoolBinding, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfileDeriveResponse } from '../types'
+import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, ScenarioDataPoolBinding, ScenarioRuntimeSettingsDraft, ScenarioValidationContext, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfileDeriveResponse } from '../types'
+import { describeValidationContextChanges, scenarioValidationContextChanges, type ValidationStaleCause } from './scriptAuthoringSession'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -790,6 +791,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [loadModelValidation, setLoadModelValidation] = useState<LoadModelValidationReport | null>(null)
   const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
   const [loadModelValidationError, setLoadModelValidationError] = useState('')
+  const [validatedScenarioContext, setValidatedScenarioContext] = useState<ScenarioValidationContext | null>(null)
+  const [observedScenarioContext, setObservedScenarioContext] = useState<ScenarioValidationContext | null>(null)
+  const [constituentScriptsChangedSinceValidation, setConstituentScriptsChangedSinceValidation] = useState(false)
+  const validatedScriptsFingerprintRef = useRef<string | null>(null)
+  const scenarioProbeInFlightRef = useRef(false)
+  const scenarioLastProbeAtRef = useRef(0)
+  const scenarioProbeFailuresRef = useRef(0)
   const [showForm, setShowForm] = useState(initialView === 'builder')
   const [showPlans, setShowPlans] = useState(initialView === 'plans')
   useEffect(() => {
@@ -2787,21 +2795,55 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
 
   // Semantic revisions survive a library refresh but invalidate changed inputs or scripts.
-  const validationFingerprint = JSON.stringify([form, selectedShapeId, scenarioSourceMode,
-    form.groups.map(group => { const script = scripts.find(script => script.id === group.script_id); return script ? [script.id, script.version, script.protocol, script.authoring_health, script.script] : null })])
+  const formValidationFingerprint = JSON.stringify([form, selectedShapeId, scenarioSourceMode])
+  const constituentScriptsFingerprint = JSON.stringify(
+    form.groups.map(group => {
+      const script = scripts.find(script => script.id === group.script_id)
+      return script ? [script.id, script.version, script.protocol, script.authoring_health, script.script] : null
+    }),
+  )
   const validationRevision = useRef(0)
   useEffect(() => {
     validationRevision.current += 1
+    validatedScriptsFingerprintRef.current = null
     setLoadModelValidation(null)
+    setValidatedScenarioContext(null)
+    setObservedScenarioContext(null)
+    setConstituentScriptsChangedSinceValidation(false)
     setLoadModelValidationError('')
     setLoadModelValidationLoading(false)
-  }, [validationFingerprint])
+  }, [formValidationFingerprint])
+
+  useEffect(() => {
+    if (validatedScriptsFingerprintRef.current === null || validatedScriptsFingerprintRef.current === constituentScriptsFingerprint) return
+    validationRevision.current += 1
+    setLoadModelValidation(null)
+    setConstituentScriptsChangedSinceValidation(true)
+    setLoadModelValidationLoading(false)
+  }, [constituentScriptsFingerprint])
+
+  const scenarioValidationContextChanged = useMemo<ValidationStaleCause[]>(() => {
+    const fromContext = scenarioValidationContextChanges(validatedScenarioContext, observedScenarioContext)
+    if (constituentScriptsChangedSinceValidation && !fromContext.includes('scripts')) {
+      return ['scripts', ...fromContext]
+    }
+    return fromContext
+  }, [constituentScriptsChangedSinceValidation, observedScenarioContext, validatedScenarioContext])
+
+  const scenarioValidationStaleMessage = scenarioValidationContextChanged.length > 0
+    ? `Validation results no longer apply: ${describeValidationContextChanges(scenarioValidationContextChanged)} changed since the check. Validate load model again.`
+    : ''
 
   const validateLoadModel = async () => {
     if (bindingErrors.length) { setLoadModelValidationError(bindingErrors.join(' ')); setWizardStep('data'); return }
     if (sourcePending) { setLoadModelValidationError(sourcePendingMessage); setWizardStep('source'); return }
     const revision = ++validationRevision.current
+    validatedScriptsFingerprintRef.current = null
     setLoadModelValidation(null)
+    setValidatedScenarioContext(null)
+    setObservedScenarioContext(null)
+    setConstituentScriptsChangedSinceValidation(false)
+    scenarioProbeFailuresRef.current = 0
     if (form.groups.length === 0 || form.groups.some(group => !group.script_id)) {
       setLoadModelValidationError('Select a script for every group before validating the load model.')
       return
@@ -2850,7 +2892,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     try {
       const report = await api.validateScenarioLoadModel(buildScenarioDraftPayload())
       if (revision !== validationRevision.current) return
+      validatedScriptsFingerprintRef.current = constituentScriptsFingerprint
       setLoadModelValidation(report)
+      setValidatedScenarioContext(report.validation_context ?? null)
+      setObservedScenarioContext(report.validation_context ?? null)
+      setConstituentScriptsChangedSinceValidation(false)
+      scenarioProbeFailuresRef.current = 0
       setWizardStep('review')
     } catch (err: unknown) {
       if (revision !== validationRevision.current) return
@@ -2860,6 +2907,51 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       if (revision === validationRevision.current) setLoadModelValidationLoading(false)
     }
   }
+
+  const probeScenarioValidationContext = useCallback(async () => {
+    if (!validatedScenarioContext || !loadModelValidation) return
+    const probeFn = typeof api.getScenarioValidationContext === 'function' ? api.getScenarioValidationContext : null
+    if (!probeFn) return
+    const spacing = Math.min(5_000 * 2 ** scenarioProbeFailuresRef.current, 60_000)
+    if (scenarioProbeInFlightRef.current || Date.now() - scenarioLastProbeAtRef.current < spacing) return
+    scenarioProbeInFlightRef.current = true
+    scenarioLastProbeAtRef.current = Date.now()
+    const revision = validationRevision.current
+    try {
+      const observed = await probeFn(buildScenarioDraftPayload())
+      if (!observed) {
+        scenarioProbeFailuresRef.current += 1
+        return
+      }
+      scenarioProbeFailuresRef.current = 0
+      if (revision === validationRevision.current) {
+        setObservedScenarioContext(observed)
+        if (scenarioValidationContextChanges(validatedScenarioContext, observed).length > 0) {
+          setLoadModelValidation(null)
+        }
+      }
+    } catch {
+      // Transient read failures on context recheck never mark held validation stale.
+      scenarioProbeFailuresRef.current += 1
+    } finally {
+      scenarioProbeInFlightRef.current = false
+    }
+  }, [api.getScenarioValidationContext, buildScenarioDraftPayload, loadModelValidation, validatedScenarioContext])
+
+  useEffect(() => {
+    if (!loadModelValidation || !validatedScenarioContext) return undefined
+    const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden'
+    const onFocus = () => { if (visible()) void probeScenarioValidationContext() }
+    const onInterval = () => { if (typeof document === 'undefined' || document.hasFocus()) onFocus() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    const timer = window.setInterval(onInterval, 60_000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+      window.clearInterval(timer)
+    }
+  }, [loadModelValidation, probeScenarioValidationContext, validatedScenarioContext])
 
   const persistScenario = async () => {
     if (savingRef.current) return null
@@ -5092,6 +5184,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           </table>
         </div>
         {loadModelValidationError && <div className="settings-error-inline" role="alert"><strong>Validation failed. </strong>{loadModelValidationError}</div>}
+        {!loadModelValidation && scenarioValidationStaleMessage && (
+          <div className="scenario-source-pending scenario-validation-stale-notice" role="status">
+            {scenarioValidationStaleMessage}
+          </div>
+        )}
         {loadModelValidation ? (
           <div className="scenario-load-validation">
             <div className={`scenario-load-validation-summary ${getLoadModelStatusClass(loadModelValidation.status)}`}>

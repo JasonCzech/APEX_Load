@@ -77,6 +77,36 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 		summary.Summary = "No archived report evidence is available for root-cause correlation."
 		return summary
 	}
+	if report.TelemetryAcceptance != nil {
+		summary.Report["telemetry_acceptance"] = cloneTelemetryAcceptanceVerdict(report.TelemetryAcceptance)
+	} else if report.Manifest.TelemetryAcceptance != nil {
+		summary.Report["telemetry_acceptance"] = cloneTelemetryAcceptanceVerdict(report.Manifest.TelemetryAcceptance)
+	}
+	if len(report.TelemetryStageDistributions) > 0 {
+		summary.Report["telemetry_stage_distributions"] = cloneTelemetryStageDistributions(report.TelemetryStageDistributions)
+	} else if len(report.Manifest.TelemetryStageDistributions) > 0 {
+		summary.Report["telemetry_stage_distributions"] = cloneTelemetryStageDistributions(report.Manifest.TelemetryStageDistributions)
+	}
+	if report.TelemetryRenderPopulation != nil {
+		summary.Report["telemetry_render_population"] = report.TelemetryRenderPopulation.clone()
+	} else if report.Manifest.TelemetryRenderPopulation != nil {
+		summary.Report["telemetry_render_population"] = report.Manifest.TelemetryRenderPopulation.clone()
+	}
+	if report.TelemetryCoverage != nil {
+		summary.Report["telemetry_coverage"] = cloneTelemetryCoverageRecord(report.TelemetryCoverage)
+	} else if report.Manifest.TelemetryCoverage != nil {
+		summary.Report["telemetry_coverage"] = cloneTelemetryCoverageRecord(report.Manifest.TelemetryCoverage)
+	}
+	if len(report.TelemetryPolicySegments) > 0 {
+		summary.Report["telemetry_policy_segments"] = cloneTelemetryPolicySegments(report.TelemetryPolicySegments)
+	} else if len(report.Manifest.TelemetryPolicySegments) > 0 {
+		summary.Report["telemetry_policy_segments"] = cloneTelemetryPolicySegments(report.Manifest.TelemetryPolicySegments)
+	}
+	if len(report.TelemetryValidityFindings) > 0 {
+		summary.Report["telemetry_validity_findings"] = cloneTelemetryValidityFindings(report.TelemetryValidityFindings)
+	} else if len(report.Manifest.TelemetryValidityFindings) > 0 {
+		summary.Report["telemetry_validity_findings"] = cloneTelemetryValidityFindings(report.Manifest.TelemetryValidityFindings)
+	}
 	addSignal := func(name string, status string, value string, severity string, score float64) {
 		summary.Signals = append(summary.Signals, RootCauseSignal{Name: name, Status: status, Value: value, Severity: severity, Score: score})
 	}
@@ -369,7 +399,7 @@ func telemetryRootCauseDetail(telemetry *RunArchiveTelemetrySummary) string {
 	if len(telemetry.ConditionCounts) > 0 {
 		keys := make([]string, 0, len(telemetry.ConditionCounts))
 		for key := range telemetry.ConditionCounts {
-			keys = append(keys, key)
+			keys = append(keys, scrubTelemetryIdentity(key))
 		}
 		sort.Strings(keys)
 		parts = append(parts, "conditions: "+strings.Join(keys, ", "))

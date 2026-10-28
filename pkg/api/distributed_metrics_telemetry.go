@@ -1,11 +1,28 @@
 package api
 
 import (
+	"math"
 	"sort"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
+
+func unixMillisFloatToTime(ms float64) time.Time {
+	if ms <= 0 || math.IsNaN(ms) || math.IsInf(ms, 0) {
+		return time.Time{}
+	}
+	wholeMs := math.Floor(ms)
+	fracNs := int64(math.Round((ms - wholeMs) * float64(time.Millisecond)))
+	return time.UnixMilli(int64(wholeMs)).Add(time.Duration(fracNs)).UTC()
+}
+
+func timeToUnixMillisFloat(t time.Time) float64 {
+	if t.IsZero() {
+		return 0
+	}
+	return float64(t.UnixMilli()) + float64(t.Nanosecond()%int(time.Millisecond))/float64(time.Millisecond)
+}
 
 // distributedTelemetryAccumulator merges only timing and receipt/counter facts;
 // it never traverses metric payloads. The same rules serve initial aggregation
@@ -14,8 +31,10 @@ type distributedTelemetryAccumulator struct {
 	telemetry                                               *generatorrpc.MetricsTelemetry
 	publishedAt                                             time.Time
 	hasCollectedAt, hasPublishedAt, hasControllerReceivedAt bool
+	hasObservationStartBound                                bool
 	dropCounterUnavailable                                  bool
 	oldestCollectedMs, newestCollectedMs                    float64
+	oldestObservationStartBoundMs                           float64
 }
 
 func (a *distributedTelemetryAccumulator) add(state string, telemetry *generatorrpc.MetricsTelemetry) {
@@ -70,6 +89,27 @@ func (a *distributedTelemetryAccumulator) add(state string, telemetry *generator
 			if bound := collected + quality.UncertaintyMs; a.telemetry.CollectedAtBoundUnixMs == 0 || bound < a.telemetry.CollectedAtBoundUnixMs {
 				a.telemetry.CollectedAtBoundUnixMs = bound
 			}
+			obsStartBound := telemetry.OldestObservationStartBoundUnixMs
+			if obsStartBound <= 0 {
+				if window, ok := generatorrpc.MetricsCollectionWindowFromTelemetry(telemetry, 0); ok && !window.Start.IsZero() {
+					obsStartBound = timeToUnixMillisFloat(window.Start) - offset - quality.UncertaintyMs
+				}
+			}
+			if obsStartBound > 0 && (!a.hasObservationStartBound || obsStartBound < a.oldestObservationStartBoundMs) {
+				a.oldestObservationStartBoundMs = obsStartBound
+				a.hasObservationStartBound = true
+			}
+		} else if quality == nil {
+			obsStartBound := telemetry.OldestObservationStartBoundUnixMs
+			if obsStartBound <= 0 {
+				if window, ok := generatorrpc.MetricsCollectionWindowFromTelemetry(telemetry, 0); ok && !window.Start.IsZero() {
+					obsStartBound = timeToUnixMillisFloat(window.Start) - offset
+				}
+			}
+			if obsStartBound > 0 && (!a.hasObservationStartBound || obsStartBound < a.oldestObservationStartBoundMs) {
+				a.oldestObservationStartBoundMs = obsStartBound
+				a.hasObservationStartBound = true
+			}
 		}
 		if !a.hasCollectedAt || collected < a.oldestCollectedMs {
 			a.oldestCollectedMs = collected
@@ -79,8 +119,17 @@ func (a *distributedTelemetryAccumulator) add(state string, telemetry *generator
 		if !a.hasCollectedAt || collected > a.newestCollectedMs {
 			a.newestCollectedMs = collected
 			a.telemetry.NewestCollectedAtUnixMs = telemetry.CollectedAtUnixMs
+			a.telemetry.NewestCollectedAtControllerUnixMs = collected
 		}
 		a.telemetry.CollectedAtQuality = combineClockQuality(a.telemetry.CollectedAtQuality, quality, 0)
+		if a.telemetry.CollectedAtQuality == nil || a.telemetry.CollectedAtQuality.Qualified {
+			if a.hasObservationStartBound {
+				a.telemetry.OldestObservationStartBoundUnixMs = a.oldestObservationStartBoundMs
+			}
+		} else {
+			a.telemetry.OldestObservationStartBoundUnixMs = 0
+			a.telemetry.NewestCollectedAtControllerUnixMs = 0
+		}
 		a.hasCollectedAt = true
 	}
 	if telemetry.PublishedAtUnixMs > 0 && (!a.hasPublishedAt || telemetry.PublishedAtUnixMs > a.telemetry.PublishedAtUnixMs) {
@@ -123,6 +172,8 @@ func applyDistributedTelemetryTiming(live *LiveMetrics, batch generatorrpc.Metri
 	t.collectedAtOffsetMs, t.collectedAtBoundUnixMs = 0, 0
 	t.qualifiedAt, t.qualifiedMonotonic = time.Time{}, 0
 	t.newestCollectedAt = time.Time{}
+	t.oldestObservationStartAt = time.Time{}
+	t.newestCollectedControllerAt = time.Time{}
 	t.SampleAgeUnavailable = false
 	if batch.Telemetry != nil {
 		if batch.Telemetry.CollectedAtUnixMs > 0 {
@@ -130,6 +181,32 @@ func applyDistributedTelemetryTiming(live *LiveMetrics, batch generatorrpc.Metri
 		}
 		if batch.Telemetry.NewestCollectedAtUnixMs > 0 {
 			live.Telemetry.newestCollectedAt = time.UnixMilli(batch.Telemetry.NewestCollectedAtUnixMs)
+		}
+		if batch.Telemetry.OldestObservationStartBoundUnixMs > 0 {
+			live.Telemetry.oldestObservationStartAt = unixMillisFloatToTime(batch.Telemetry.OldestObservationStartBoundUnixMs)
+		} else if batch.Telemetry.CollectedAtUnixMs > 0 {
+			bt := *batch.Telemetry
+			if bt.WindowMs == 0 && batch.WindowMs > 0 {
+				bt.WindowMs = batch.WindowMs
+			}
+			if bt.CollectedAtQuality == nil {
+				if window, ok := generatorrpc.MetricsCollectionWindowFromTelemetry(&bt, batch.TimestampUnixMs); ok && !window.Start.IsZero() {
+					live.Telemetry.oldestObservationStartAt = unixMillisFloatToTime(timeToUnixMillisFloat(window.Start) - bt.CollectedAtOffsetMs)
+				}
+			} else if bt.CollectedAtQuality.Qualified {
+				if window, ok := generatorrpc.MetricsCollectionWindowFromTelemetry(&bt, batch.TimestampUnixMs); ok && !window.Start.IsZero() {
+					live.Telemetry.oldestObservationStartAt = unixMillisFloatToTime(timeToUnixMillisFloat(window.Start) - bt.CollectedAtOffsetMs - bt.CollectedAtQuality.UncertaintyMs)
+				}
+			}
+		}
+		if batch.Telemetry.NewestCollectedAtControllerUnixMs > 0 {
+			live.Telemetry.newestCollectedControllerAt = unixMillisFloatToTime(batch.Telemetry.NewestCollectedAtControllerUnixMs)
+		} else if batch.Telemetry.CollectedAtUnixMs > 0 && (batch.Telemetry.CollectedAtQuality == nil || batch.Telemetry.CollectedAtQuality.Qualified) {
+			newestRaw := batch.Telemetry.NewestCollectedAtUnixMs
+			if newestRaw <= 0 {
+				newestRaw = batch.Telemetry.CollectedAtUnixMs
+			}
+			live.Telemetry.newestCollectedControllerAt = unixMillisFloatToTime(float64(newestRaw) - batch.Telemetry.CollectedAtOffsetMs)
 		}
 		if batch.Telemetry.PublishedAtUnixMs > 0 {
 			live.Telemetry.GeneratorPublishedAt = time.UnixMilli(batch.Telemetry.PublishedAtUnixMs)

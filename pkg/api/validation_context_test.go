@@ -472,3 +472,194 @@ func TestValidationContextKeepsAProjectlessDraftsContext(t *testing.T) {
 		t.Fatalf("a draft without a project lost its context: %d", code)
 	}
 }
+
+func validateScenarioWithContext(t *testing.T, server *Server, req CreateScenarioRequest, contextOnly bool) (*LoadModelValidationReport, int) {
+	t.Helper()
+	path := "/api/v1/scenarios/validate-load-model"
+	if contextOnly {
+		path += "?context_only=true"
+	}
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	server.mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		return nil, recorder.Code
+	}
+	var report LoadModelValidationReport
+	if err := json.Unmarshal(recorder.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode scenario validation report: %v", err)
+	}
+	return &report, recorder.Code
+}
+
+func TestScenarioValidationContextTracksConstituentScriptsPoliciesApprovalsAndSecrets(t *testing.T) {
+	server, store, projectSecrets := validationContextFixture(t)
+
+	draftScript := secretReferencingScript()
+	draftScript.ID = "scenario-vctx-script"
+	draftScript.Name = "Constituent Script"
+	storedScript, err := server.runner.CreateScriptAuthoringDurable(draftScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scenarioReq := CreateScenarioRequest{
+		Name:     "Validated Scenario",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "MainGroup",
+			ScriptID: storedScript.ID,
+			VUsers:   2,
+		}},
+	}
+
+	initialReport, code := validateScenarioWithContext(t, server, scenarioReq, false)
+	if code != http.StatusOK || initialReport == nil || initialReport.ValidationContext == nil {
+		t.Fatalf("initial scenario validation status = %d, report = %+v", code, initialReport)
+	}
+	initialCtx := initialReport.ValidationContext
+
+	// 1. Secret provisioning changes secret_references component without changing others;
+	// rotating the secret's value does not change secret_references.
+	projectSecrets.mu.Lock()
+	projectSecrets.values[storage.DefaultProjectID+"/api_token"] = "value-v1"
+	projectSecrets.mu.Unlock()
+	afterSecretSet, code := validateScenarioWithContext(t, server, scenarioReq, true)
+	if code != http.StatusOK || afterSecretSet.ValidationContext == nil {
+		t.Fatalf("after secret set status = %d", code)
+	}
+	if afterSecretSet.ValidationContext.Components.SecretReferences == initialCtx.Components.SecretReferences {
+		t.Fatal("expected secret_references component to change when referenced secret becomes available")
+	}
+	if afterSecretSet.ValidationContext.Components.Scripts != initialCtx.Components.Scripts {
+		t.Fatal("scripts component changed on secret set")
+	}
+	projectSecrets.mu.Lock()
+	projectSecrets.values[storage.DefaultProjectID+"/api_token"] = "value-v2-rotated"
+	projectSecrets.mu.Unlock()
+	afterSecretRotate, code := validateScenarioWithContext(t, server, scenarioReq, true)
+	if code != http.StatusOK || afterSecretRotate.ValidationContext == nil {
+		t.Fatalf("after secret rotate status = %d", code)
+	}
+	if afterSecretRotate.ValidationContext.Revision != afterSecretSet.ValidationContext.Revision {
+		t.Fatal("rotating secret value must not invalidate scenario validation context")
+	}
+
+	// 2. Editing a constituent script changes the scripts component.
+	_, tag := requireAuthoringAPIProjection(t, server, storedScript.ID)
+	updatedScript := *storedScript.Script
+	updatedScript.Name = "Constituent Script Edited"
+	updatedScript.Actions[0].Target = "/orders/v2?token={{secret.api_token}}"
+	if putRec := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scripts/"+storedScript.ID, map[string]any{"script": &updatedScript}, tag); putRec.Code != http.StatusOK {
+		t.Fatalf("update constituent script: %d %s", putRec.Code, putRec.Body.String())
+	}
+	afterScriptEdit, code := validateScenarioWithContext(t, server, scenarioReq, true)
+	if code != http.StatusOK || afterScriptEdit.ValidationContext == nil {
+		t.Fatalf("after script edit status = %d", code)
+	}
+	if afterScriptEdit.ValidationContext.Components.Scripts == afterSecretRotate.ValidationContext.Components.Scripts {
+		t.Fatal("expected scripts component to change after constituent script edit")
+	}
+
+	// 3. Project policy change changes the policy component.
+	project, err := store.GetProject(storage.DefaultProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project.Settings.Authoring = &storage.ProjectAuthoringPolicy{RequireScenarioSaveIfMatch: true}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	afterPolicyChange, code := validateScenarioWithContext(t, server, scenarioReq, true)
+	if code != http.StatusOK || afterPolicyChange.ValidationContext == nil {
+		t.Fatalf("after policy change status = %d", code)
+	}
+	if afterPolicyChange.ValidationContext.Components.Policy == afterScriptEdit.ValidationContext.Components.Policy {
+		t.Fatal("expected policy component to change after project policy update")
+	}
+
+	// 4. Deleting a constituent script marks scripts component changed on context_only probe (200 OK).
+	if delRec := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scripts/"+storedScript.ID, nil, ""); delRec.Code != http.StatusOK {
+		t.Fatalf("delete constituent script: %d %s", delRec.Code, delRec.Body.String())
+	}
+	afterScriptDelete, code := validateScenarioWithContext(t, server, scenarioReq, true)
+	if code != http.StatusOK || afterScriptDelete.ValidationContext == nil {
+		t.Fatalf("after script delete probe status = %d", code)
+	}
+	if afterScriptDelete.ValidationContext.Components.Scripts == afterPolicyChange.ValidationContext.Components.Scripts {
+		t.Fatal("expected scripts component to change when constituent script is deleted")
+	}
+
+	// 5. Project-scoped header resolves the exact same project ID on both full validation
+	// and ?context_only=true (including empty-group drafts via resolveScenarioValidationContextProjectID).
+	opsProject := &storage.Project{
+		ID:        "proj-ops",
+		Name:      "Ops",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Settings: storage.ProjectSettings{
+			Authoring: &storage.ProjectAuthoringPolicy{RequireScenarioSaveIfMatch: false},
+		},
+	}
+	if err := store.SaveProject(opsProject); err != nil {
+		t.Fatal(err)
+	}
+	opsScript := secretReferencingScript()
+	opsScript.ID = "scenario-vctx-ops-script"
+	opsScript.ProjectID = "proj-ops"
+	if _, err := server.runner.CreateScriptAuthoringDurable(opsScript); err != nil {
+		t.Fatal(err)
+	}
+	scopedEmptyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/validate-load-model", nil)
+	scopedEmptyReq = scopedEmptyReq.WithContext(context.WithValue(scopedEmptyReq.Context(), authorizedProjectContextKey{}, "proj-ops"))
+	if got := server.resolveScenarioValidationContextProjectID(scopedEmptyReq, CreateScenarioRequest{Name: "Empty Draft", Duration: "30s"}); got != "proj-ops" {
+		t.Fatalf("resolveScenarioValidationContextProjectID for empty draft = %q, want proj-ops", got)
+	}
+	enableTrustedHeaderAuth(t, server)
+	sendProjectScoped := func(contextOnly bool) *LoadModelValidationReport {
+		t.Helper()
+		path := "/api/v1/scenarios/validate-load-model"
+		if contextOnly {
+			path += "?context_only=true"
+		}
+		raw, err := json.Marshal(CreateScenarioRequest{
+			Name:     "Ops Draft",
+			Duration: "30s",
+			Groups:   []CreateGroupEntry{{Name: "OpsGroup", ScriptID: opsScript.ID, VUsers: 1}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Auth-Request-User", "ops-editor")
+		req.Header.Set("X-APEXLoad-Project-Roles", "proj-ops="+RoleEditor)
+		rec := httptest.NewRecorder()
+		server.mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("project-scoped scenario validation (context_only=%v) = %d: %s", contextOnly, rec.Code, rec.Body.String())
+		}
+		var rep LoadModelValidationReport
+		if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil {
+			t.Fatal(err)
+		}
+		return &rep
+	}
+	fullOpsReport := sendProjectScoped(false)
+	probeOpsReport := sendProjectScoped(true)
+	if fullOpsReport.ValidationContext == nil || probeOpsReport.ValidationContext == nil {
+		t.Fatalf("expected non-nil ValidationContext on both full and context_only reports")
+	}
+	if fullOpsReport.ValidationContext.Revision != probeOpsReport.ValidationContext.Revision {
+		t.Fatalf("full validation context revision (%q) != context_only revision (%q)",
+			fullOpsReport.ValidationContext.Revision, probeOpsReport.ValidationContext.Revision)
+	}
+	if fullOpsReport.ValidationContext.Components.Policy == afterPolicyChange.ValidationContext.Components.Policy {
+		t.Fatal("expected proj-ops policy digest to differ from default project policy digest")
+	}
+}

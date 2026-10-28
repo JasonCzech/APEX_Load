@@ -617,61 +617,64 @@ type ManagedTest struct {
 	GoalTargets           map[string]GoalTargetStatus       `json:"goal_targets,omitempty"`
 	// Continuity is the HA run-continuity state (docs/HA_RUN_CONTINUITY_PLAN.md);
 	// derived on read, never persisted from this field.
-	Continuity     *RunContinuityStatus `json:"continuity,omitempty"`
-	TrafficProfile *TrafficProfile      `json:"traffic_profile,omitempty"`
+	Continuity           *RunContinuityStatus     `json:"continuity,omitempty"`
+	EvacuationQuarantine *RunEvacuationQuarantine `json:"evacuation_quarantine,omitempty"`
+	TrafficProfile       *TrafficProfile          `json:"traffic_profile,omitempty"`
 	// JointEvidence is the run's joint evidence v4 projection (B5), frozen
 	// into provenance at Start.
-	JointEvidence                  *engine.JointProjection  `json:"joint_evidence,omitempty"`
-	RuntimeSettings                *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
-	ELKCapture                     *ELKCaptureConfig        `json:"elk_capture,omitempty"`
-	elkArtifacts                   *runArtifacts
-	DynatraceCapture               *DynatraceCaptureConfig `json:"dynatrace_capture,omitempty"`
-	dynatraceArtifacts             *runArtifacts
-	clockObservations              *clockObservationLog                     // measured source clocks; created on first observation
-	telemetrySources               *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
-	telemetryStages                *telemetryStageRecorder                  // per-stage latency distributions; created on first sample
-	historyTrimmed                 int64                                    // history points dropped by the in-memory bounds
-	clockCalibrations              *clockCalibrations                       // current generator clock offsets; created on first probe
-	browserClockTracker            *browserClockTracker                     // controller-bracketed generator monotonic readings for distributed browser proof
-	liveBrowserIntelligence        *liveBrowserIntelligenceState            // non-verdict live browser intelligence state while active/finalizing
-	provisionalBrowserIntelligence *ProvisionalBrowserIntelligenceSnapshot  // latest provisional browser intelligence snapshot
-	TotalVUsers                    int                                      `json:"total_vusers"`
-	GeneratorShards                []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
-	Duration                       time.Duration                            `json:"duration_ns"`
-	DurationStr                    string                                   `json:"duration"`
-	CreatedAt                      time.Time                                `json:"created_at"`
-	ScheduledStartAt               *time.Time                               `json:"scheduled_start_at,omitempty"`
-	TimeslotID                     *string                                  `json:"timeslot_id,omitempty"`
-	PendingSince                   *time.Time                               `json:"pending_since,omitempty"`
-	PendingReason                  string                                   `json:"pending_reason,omitempty"`
-	QueuePosition                  int                                      `json:"queue_position,omitempty"`
-	BaselinePinned                 bool                                     `json:"baseline_pinned,omitempty"`
-	BaselinePinnedAt               *time.Time                               `json:"baseline_pinned_at,omitempty"`
-	StartedAt                      *time.Time                               `json:"started_at,omitempty"`
-	PausedAt                       *time.Time                               `json:"paused_at,omitempty"`
-	CumulativePause                time.Duration                            `json:"cumulative_pause_ns,omitempty"`
-	CapacityWindowStartAt          *time.Time                               `json:"capacity_window_start_at,omitempty"`
-	CapacityWindowEndAt            *time.Time                               `json:"capacity_window_end_at,omitempty"`
-	EndedAt                        *time.Time                               `json:"ended_at,omitempty"`
-	CreatedBySubject               string                                   `json:"created_by_subject,omitempty"`
-	CreatedByDisplayName           string                                   `json:"created_by_display_name,omitempty"`
-	StartedBySubject               string                                   `json:"started_by_subject,omitempty"`
-	StartedByDisplayName           string                                   `json:"started_by_display_name,omitempty"`
-	StoppedBySubject               string                                   `json:"stopped_by_subject,omitempty"`
-	StoppedByDisplayName           string                                   `json:"stopped_by_display_name,omitempty"`
-	StartAuthorization             *QueuedStartAuthorization                `json:"start_authorization,omitempty"`
-	ExecutionPlanApproval          *RunArchiveExecutionPlanApprovalSnapshot `json:"execution_plan_approval,omitempty"`
-	ExecutionPlan                  *TestExecutionPlanLink                   `json:"execution_plan,omitempty"`
-	VUserRamps                     map[string]VUserRampStatus               `json:"vuser_ramps,omitempty"`
-	LiveMetrics                    *LiveMetrics                             `json:"live_metrics,omitempty"`
-	History                        []*LiveMetrics                           `json:"history,omitempty"`
-	Sparkline                      []TestSparklinePoint                     `json:"sparkline,omitempty"`
-	ComparisonBaseline             *RunComparisonBaseline                   `json:"comparison_baseline,omitempty"`
-	ArchiveFailure                 *storage.RunArchiveFailure               `json:"archive_failure,omitempty"`
-	ArchiveRecovery                *RunArchiveRecovery                      `json:"archive_recovery,omitempty"`
-	Archive                        *storage.RunArchiveRecord                `json:"archive,omitempty"`
-	TelemetryHealth                *TelemetryRunHealth                      `json:"telemetry_health,omitempty"`
-	Error                          string                                   `json:"error,omitempty"`
+	JointEvidence                     *engine.JointProjection  `json:"joint_evidence,omitempty"`
+	RuntimeSettings                   *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	ELKCapture                        *ELKCaptureConfig        `json:"elk_capture,omitempty"`
+	elkArtifacts                      *runArtifacts
+	DynatraceCapture                  *DynatraceCaptureConfig `json:"dynatrace_capture,omitempty"`
+	dynatraceArtifacts                *runArtifacts
+	clockObservations                 *clockObservationLog                     // measured source clocks; created on first observation
+	telemetrySources                  *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
+	telemetryStages                   *telemetryStageRecorder                  // per-stage latency distributions; created on first sample
+	telemetryResourceSamples          []TelemetryResourceSample                // bounded controller/generator resource samples (TEL-B1)
+	telemetryResourceSamplesTruncated bool                                     // true when older telemetry resource samples were evicted
+	historyTrimmed                    int64                                    // history points dropped by the in-memory bounds
+	clockCalibrations                 *clockCalibrations                       // current generator clock offsets; created on first probe
+	browserClockTracker               *browserClockTracker                     // controller-bracketed generator monotonic readings for distributed browser proof
+	liveBrowserIntelligence           *liveBrowserIntelligenceState            // non-verdict live browser intelligence state while active/finalizing
+	provisionalBrowserIntelligence    *ProvisionalBrowserIntelligenceSnapshot  // latest provisional browser intelligence snapshot
+	TotalVUsers                       int                                      `json:"total_vusers"`
+	GeneratorShards                   []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
+	Duration                          time.Duration                            `json:"duration_ns"`
+	DurationStr                       string                                   `json:"duration"`
+	CreatedAt                         time.Time                                `json:"created_at"`
+	ScheduledStartAt                  *time.Time                               `json:"scheduled_start_at,omitempty"`
+	TimeslotID                        *string                                  `json:"timeslot_id,omitempty"`
+	PendingSince                      *time.Time                               `json:"pending_since,omitempty"`
+	PendingReason                     string                                   `json:"pending_reason,omitempty"`
+	QueuePosition                     int                                      `json:"queue_position,omitempty"`
+	BaselinePinned                    bool                                     `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt                  *time.Time                               `json:"baseline_pinned_at,omitempty"`
+	StartedAt                         *time.Time                               `json:"started_at,omitempty"`
+	PausedAt                          *time.Time                               `json:"paused_at,omitempty"`
+	CumulativePause                   time.Duration                            `json:"cumulative_pause_ns,omitempty"`
+	CapacityWindowStartAt             *time.Time                               `json:"capacity_window_start_at,omitempty"`
+	CapacityWindowEndAt               *time.Time                               `json:"capacity_window_end_at,omitempty"`
+	EndedAt                           *time.Time                               `json:"ended_at,omitempty"`
+	CreatedBySubject                  string                                   `json:"created_by_subject,omitempty"`
+	CreatedByDisplayName              string                                   `json:"created_by_display_name,omitempty"`
+	StartedBySubject                  string                                   `json:"started_by_subject,omitempty"`
+	StartedByDisplayName              string                                   `json:"started_by_display_name,omitempty"`
+	StoppedBySubject                  string                                   `json:"stopped_by_subject,omitempty"`
+	StoppedByDisplayName              string                                   `json:"stopped_by_display_name,omitempty"`
+	StartAuthorization                *QueuedStartAuthorization                `json:"start_authorization,omitempty"`
+	ExecutionPlanApproval             *RunArchiveExecutionPlanApprovalSnapshot `json:"execution_plan_approval,omitempty"`
+	ExecutionPlan                     *TestExecutionPlanLink                   `json:"execution_plan,omitempty"`
+	VUserRamps                        map[string]VUserRampStatus               `json:"vuser_ramps,omitempty"`
+	LiveMetrics                       *LiveMetrics                             `json:"live_metrics,omitempty"`
+	History                           []*LiveMetrics                           `json:"history,omitempty"`
+	Sparkline                         []TestSparklinePoint                     `json:"sparkline,omitempty"`
+	ComparisonBaseline                *RunComparisonBaseline                   `json:"comparison_baseline,omitempty"`
+	ArchiveFailure                    *storage.RunArchiveFailure               `json:"archive_failure,omitempty"`
+	ArchiveRecovery                   *RunArchiveRecovery                      `json:"archive_recovery,omitempty"`
+	Archive                           *storage.RunArchiveRecord                `json:"archive,omitempty"`
+	TelemetryHealth                   *TelemetryRunHealth                      `json:"telemetry_health,omitempty"`
+	Error                             string                                   `json:"error,omitempty"`
 	// TelemetryPolicySegments lists the run's telemetry policy segments, the
 	// admission receipt first, once its policy changed while it ran (TEL-B).
 	// It is computed on read from telemetryPolicySegments.
@@ -702,9 +705,11 @@ type ManagedTest struct {
 	// absent). Set both through setContinuityCheckpointLocked. adoptedResume is
 	// set between a successful adoption claim and the runtime rebuild that
 	// follows admission (run_adoption.go).
-	continuityCheckpoint      string
-	continuityArmedGeneration uint64
-	adoptedResume             *adoptedRunResume
+	continuityCheckpoint            string
+	continuityArmedGeneration       uint64
+	evacuationQuarantineRetries     int
+	evacuationQuarantineNextRetryAt *time.Time
+	adoptedResume                   *adoptedRunResume
 	// stageScheduleResume makes stage schedules started after adoption
 	// fast-forward to the run clock instead of replaying from stage 0.
 	stageScheduleResume bool
@@ -1317,16 +1322,22 @@ type TelemetryHealth struct {
 	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
 	// Publication identifies this live publication to dashboard viewers, and
 	// RenderPopulation is the run's render accounting so far (TEL-A).
-	Publication      *TelemetryPublication      `json:"publication,omitempty"`
-	RenderPopulation *TelemetryRenderPopulation `json:"render_population,omitempty"`
+	Publication             *TelemetryPublication           `json:"publication,omitempty"`
+	RenderPopulation        *TelemetryRenderPopulation      `json:"render_population,omitempty"`
+	PolicySegments          []TelemetryPolicySegmentReceipt `json:"policy_segments,omitempty"`
+	StageBudgets            []TelemetryStageBudget          `json:"stage_budgets,omitempty"`
+	IntervalConditionLabels []string                        `json:"interval_condition_labels,omitempty"`
+	ValidityFindings        []TelemetryValidityFinding      `json:"validity_findings,omitempty"`
 	// publicationRepeated is set by a distributed install guard when every
 	// collection the point carries was already published; newestCollectedAt is
 	// a fleet point's newest contributing collection time; collectedAtAssumed
 	// marks a point whose collection time was not reported (the publication
 	// time stands in).
-	publicationRepeated bool
-	newestCollectedAt   time.Time
-	collectedAtAssumed  bool
+	publicationRepeated         bool
+	newestCollectedAt           time.Time
+	oldestObservationStartAt    time.Time
+	newestCollectedControllerAt time.Time
+	collectedAtAssumed          bool
 	// restoredFromHistory marks health rebuilt from a stored interval
 	// summary (a restarted controller, a follower): it carries none of the
 	// loss, coverage or stage evidence a verdict reads, so none is shown.
@@ -1374,7 +1385,9 @@ type TelemetryRunHealth struct {
 	// interval (TEL-B; 1 is the admission receipt). It is absent for an
 	// interval a segment boundary fell inside, which no segment classifies,
 	// and for a run without a receipt.
-	PolicySegment int64 `json:"policy_segment,omitempty"`
+	PolicySegment   int64                  `json:"policy_segment,omitempty"`
+	ConditionLabels []string               `json:"condition_labels,omitempty"`
+	StageBudgets    []TelemetryStageBudget `json:"stage_budgets,omitempty"`
 	// recovered: this healthy status ends a degraded or breached spell that
 	// was announced (an unscored stretch in between does not end it);
 	// announce: this degraded or breached status is not the one announced.
@@ -1545,6 +1558,10 @@ type TxMetrics struct {
 	CorrelationCount   int64                   `json:"correlation_count,omitempty"`
 	Count              int64                   `json:"count"`
 	Errors             int64                   `json:"errors"`
+	BytesSent          int64                   `json:"bytes_sent,omitempty"`
+	BytesReceived      int64                   `json:"bytes_received,omitempty"`
+	ByteEvidence       string                  `json:"byte_evidence,omitempty"`
+	ByteSamples        int64                   `json:"byte_samples,omitempty"`
 	AvgMs              float64                 `json:"avg_ms"`
 	P50Ms              float64                 `json:"p50_ms"`
 	P90Ms              float64                 `json:"p90_ms"`

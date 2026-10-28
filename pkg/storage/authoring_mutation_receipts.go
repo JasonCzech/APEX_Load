@@ -5,11 +5,54 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+type AuthoringReceiptFaultBoundary string
+
+const (
+	AuthoringReceiptFaultPreClaim                     AuthoringReceiptFaultBoundary = "pre_claim"
+	AuthoringReceiptFaultPostClaimPreResourceInsert   AuthoringReceiptFaultBoundary = "post_claim_pre_resource_insert"
+	AuthoringReceiptFaultPostResourceInsertPreBinding AuthoringReceiptFaultBoundary = "post_resource_insert_pre_binding_commit"
+	AuthoringReceiptFaultPostCommitDroppedResponse    AuthoringReceiptFaultBoundary = "post_commit_dropped_response"
+)
+
+type AuthoringReceiptFaultHook func(boundary AuthoringReceiptFaultBoundary, purpose, resourceID string) error
+
+var (
+	authoringReceiptFaultMu   sync.RWMutex
+	authoringReceiptFaultHook AuthoringReceiptFaultHook
+)
+
+// SetAuthoringReceiptFaultHook installs a deterministic crash-boundary fault
+// hook for receipt tests and returns a function that restores the prior hook.
+func SetAuthoringReceiptFaultHook(hook AuthoringReceiptFaultHook) func() {
+	authoringReceiptFaultMu.Lock()
+	prev := authoringReceiptFaultHook
+	authoringReceiptFaultHook = hook
+	authoringReceiptFaultMu.Unlock()
+	return func() {
+		authoringReceiptFaultMu.Lock()
+		authoringReceiptFaultHook = prev
+		authoringReceiptFaultMu.Unlock()
+	}
+}
+
+// CheckAuthoringReceiptFault invokes the active crash-boundary fault hook, if
+// any, for the given boundary, purpose, and resource ID.
+func CheckAuthoringReceiptFault(boundary AuthoringReceiptFaultBoundary, purpose, resourceID string) error {
+	authoringReceiptFaultMu.RLock()
+	hook := authoringReceiptFaultHook
+	authoringReceiptFaultMu.RUnlock()
+	if hook == nil {
+		return nil
+	}
+	return hook(boundary, strings.TrimSpace(purpose), strings.TrimSpace(resourceID))
+}
 
 const (
 	AuthoringReceiptPending  = "pending"
@@ -39,6 +82,12 @@ var (
 	// the pending receipt it claimed (another attempt resumed it, or it was
 	// tombstoned), so the create was rolled back.
 	ErrAuthoringReceiptLost = errors.New("idempotency receipt is no longer held by this request")
+	// ErrAuthoringReceiptFaultBeforeCommit indicates a crash boundary injected
+	// after receipt claim and before transaction commit.
+	ErrAuthoringReceiptFaultBeforeCommit = errors.New("authoring receipt fault injected before commit")
+	// ErrAuthoringReceiptFaultPostCommit indicates a dropped response injected
+	// after the create transaction committed.
+	ErrAuthoringReceiptFaultPostCommit = errors.New("authoring receipt fault injected after commit")
 )
 
 // AuthoringMutationReceipt fences retries of an ordinary authoring create.
@@ -179,6 +228,9 @@ func (s *SQLiteStore) ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptC
 	}
 	if lease <= 0 || in.Retention <= 0 {
 		return nil, errors.New("authoring receipt lease and retention must be positive")
+	}
+	if err := CheckAuthoringReceiptFault(AuthoringReceiptFaultPreClaim, in.Purpose, in.ResourceID); err != nil {
+		return nil, fmt.Errorf("pre-claim authoring receipt: %w", err)
 	}
 	now = now.UTC()
 	leaseExpiresAt := now.Add(lease)

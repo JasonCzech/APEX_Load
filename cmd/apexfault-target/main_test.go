@@ -274,6 +274,82 @@ func TestTargetCountersAreIsolatedByTestID(t *testing.T) {
 	}
 }
 
+func TestTargetGenerationCountersAndDuplicateOverlap(t *testing.T) {
+	c := testConfig()
+	target, err := newTarget(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadGen := func(gen string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/load", nil)
+		req.Header.Set("Authorization", "Bearer "+c.LoadToken)
+		req.Header.Set("X-Apexload-Fault-Run", c.RunID)
+		req.Header.Set("X-Apexload-Fault-Test", faultTestID)
+		if gen != "" {
+			req.Header.Set("X-Apexload-Fault-Generation", gen)
+		}
+		rec := httptest.NewRecorder()
+		target.ServeHTTP(rec, req)
+		return rec
+	}
+	for _, invalid := range []string{"0", "-1", "abc", "18446744073709551616"} {
+		if got := loadGen(invalid).Code; got != http.StatusBadRequest {
+			t.Fatalf("invalid generation %q accepted with status %d", invalid, got)
+		}
+	}
+	dupReq := httptest.NewRequest(http.MethodGet, "/load", nil)
+	dupReq.Header.Set("Authorization", "Bearer "+c.LoadToken)
+	dupReq.Header.Set("X-Apexload-Fault-Run", c.RunID)
+	dupReq.Header.Set("X-Apexload-Fault-Test", faultTestID)
+	dupReq.Header.Add("X-Apexload-Fault-Generation", "1")
+	dupReq.Header.Add("X-Apexload-Fault-Generation", "2")
+	dupRec := httptest.NewRecorder()
+	target.ServeHTTP(dupRec, dupReq)
+	if dupRec.Code != http.StatusBadRequest {
+		t.Fatalf("duplicate generation header accepted: %d", dupRec.Code)
+	}
+
+	// Send 3 requests on generation 1, 2 on generation 2, then 1 late request on generation 1 (overlap).
+	for _, gen := range []string{"1", "1", "1", "2", "2", "1"} {
+		if got := loadGen(gen).Code; got != http.StatusNoContent {
+			t.Fatalf("load gen %s status = %d", gen, got)
+		}
+	}
+
+	snapReq := httptest.NewRequest(http.MethodGet, "/snapshot", nil)
+	snapReq.Header.Set("Authorization", "Bearer "+c.ObserverToken)
+	snapReq.Header.Set("X-Apexload-Fault-Test", faultTestID)
+	snapRec := httptest.NewRecorder()
+	target.ServeHTTP(snapRec, snapReq)
+	if snapRec.Code != http.StatusOK {
+		t.Fatalf("snapshot status = %d", snapRec.Code)
+	}
+	snap, err := decodeSnapshot(snapRec.Body.Bytes(), c.RunID, faultTestID, unixNow())
+	if err != nil {
+		t.Fatalf("decodeSnapshot: %v", err)
+	}
+	if snap.TargetRequests != 6 || snap.HighestGeneration != 2 || snap.DuplicateGenerationOverlap != 1 {
+		t.Fatalf("unexpected snapshot counters: %+v", snap)
+	}
+	if snap.PerGenerationRequests["1"] != 4 || snap.PerGenerationRequests["2"] != 2 || len(snap.PerGenerationRequests) != 2 {
+		t.Fatalf("unexpected per_generation_requests: %+v", snap.PerGenerationRequests)
+	}
+
+	// Verify generation cap per test (maxGenerationsPerTest) returns 503 for new generations.
+	for g := 3; g <= maxGenerationsPerTest; g++ {
+		if got := loadGen(strconv.Itoa(g)).Code; got != http.StatusNoContent {
+			t.Fatalf("generation %d status = %d", g, got)
+		}
+	}
+	if got := loadGen(strconv.Itoa(maxGenerationsPerTest + 1)).Code; got != http.StatusServiceUnavailable {
+		t.Fatalf("generation overflow status = %d, want 503", got)
+	}
+	if got := loadGen("2").Code; got != http.StatusNoContent {
+		t.Fatalf("existing generation at cap status = %d, want 204", got)
+	}
+}
+
 func TestCommandValidation(t *testing.T) {
 	for _, args := range [][]string{{}, {"--tls-cert", "cert"}, {"unexpected"}, {"--unknown"}} {
 		if err := run(context.Background(), args); err == nil {

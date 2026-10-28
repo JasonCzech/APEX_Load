@@ -18,8 +18,9 @@ const (
 	// maxTelemetryCoverageSpans bounds one source's disjoint observed spans.
 	// Past it the shortest span is dropped to admit a longer one, so
 	// coverage is understated (a lower bound), never overstated.
-	maxTelemetryCoverageSpans  = 1024
-	telemetryCoverageAlgorithm = "telemetry_coverage.v3"
+	maxTelemetryCoverageSpans                   = 1024
+	telemetryCoverageAlgorithm                  = "telemetry_coverage.v4"
+	telemetryCoverageRuleQualifiedSourceWindows = "qualified_source_windows"
 )
 
 // coverageSpans is a bounded union of half-open [start, end) intervals in
@@ -208,13 +209,15 @@ const (
 // while the run ran (TEL-B). Its classified time counts the intervals the
 // segment classified; an interval a boundary fell inside is unknown.
 type TelemetryPolicySegment struct {
-	Sequence   int64     `json:"sequence,omitempty"`
-	Start      time.Time `json:"start"`
-	End        time.Time `json:"end"`
-	PolicyHash string    `json:"policy_hash,omitempty"`
-	HealthyMs  int64     `json:"healthy_ms,omitempty"`
-	DegradedMs int64     `json:"degraded_ms,omitempty"`
-	BreachedMs int64     `json:"breached_ms,omitempty"`
+	Sequence             int64     `json:"sequence,omitempty"`
+	Start                time.Time `json:"start"`
+	End                  time.Time `json:"end"`
+	PolicyHash           string    `json:"policy_hash,omitempty"`
+	HealthyMs            int64     `json:"healthy_ms,omitempty"`
+	DegradedMs           int64     `json:"degraded_ms,omitempty"`
+	BreachedMs           int64     `json:"breached_ms,omitempty"`
+	QualifiedCollections int64     `json:"qualified_collections,omitempty"`
+	SourceWindowMs       int64     `json:"source_window_ms,omitempty"`
 	// Unavailable says why a captured policy names no hash.
 	Unavailable string `json:"unavailable,omitempty"`
 	// Legacy marks a run admitted before policies were captured; its
@@ -228,17 +231,21 @@ type TelemetryPolicySegment struct {
 // unknown. BreachedKnownFraction is BreachedMs over ClassifiedMs, absent
 // when nothing was classified.
 type TelemetryCoverageRecord struct {
-	Algorithm             string                   `json:"algorithm"`
-	Coverage              TelemetryCoverage        `json:"coverage"`
-	HealthyMs             int64                    `json:"healthy_ms"`
-	DegradedMs            int64                    `json:"degraded_ms"`
-	BreachedMs            int64                    `json:"breached_ms"`
-	UnknownMs             int64                    `json:"unknown_ms"`
-	ClassifiedMs          int64                    `json:"classified_ms"`
-	BreachedKnownFraction *float64                 `json:"breached_known_fraction,omitempty"`
-	RetainedIntervals     int64                    `json:"retained_intervals"`
-	ClassifiedIntervals   int64                    `json:"classified_intervals"`
-	Segments              []TelemetryPolicySegment `json:"segments"`
+	Algorithm                   string                   `json:"algorithm"`
+	CoverageRule                string                   `json:"coverage_rule,omitempty"`
+	Coverage                    TelemetryCoverage        `json:"coverage"`
+	HealthyMs                   int64                    `json:"healthy_ms"`
+	DegradedMs                  int64                    `json:"degraded_ms"`
+	BreachedMs                  int64                    `json:"breached_ms"`
+	UnknownMs                   int64                    `json:"unknown_ms"`
+	ClassifiedMs                int64                    `json:"classified_ms"`
+	BreachedKnownFraction       *float64                 `json:"breached_known_fraction,omitempty"`
+	RetainedIntervals           int64                    `json:"retained_intervals"`
+	ClassifiedIntervals         int64                    `json:"classified_intervals"`
+	QualifiedCollections        int64                    `json:"qualified_collections,omitempty"`
+	UnscoredBoundaryCollections int64                    `json:"unscored_boundary_collections,omitempty"`
+	UnqualifiedClockCollections int64                    `json:"unqualified_clock_collections,omitempty"`
+	Segments                    []TelemetryPolicySegment `json:"segments"`
 }
 
 // observeCoverage records a fresh collection's receipt-time window. This
@@ -539,7 +546,7 @@ func telemetryRowSpans(rows []IntervalSummaryRecord, windowStart, windowEnd int6
 // (overlaps count once), and only the part every required source observed
 // takes the interval's status.
 func telemetryCoverageRecord(coverage TelemetryCoverage, allObserved *coverageSpans, rows []IntervalSummaryRecord, segments []TelemetryPolicySegment) *TelemetryCoverageRecord {
-	record := &TelemetryCoverageRecord{Algorithm: telemetryCoverageAlgorithm, Coverage: coverage, RetainedIntervals: int64(len(rows)), Segments: segments}
+	record := &TelemetryCoverageRecord{Algorithm: telemetryCoverageAlgorithm, CoverageRule: telemetryCoverageRuleQualifiedSourceWindows, Coverage: coverage, RetainedIntervals: int64(len(rows)), Segments: segments}
 	for _, span := range telemetryRowSpans(rows, coverage.WindowStart.UnixMilli(), coverage.WindowEnd.UnixMilli()) {
 		row := span.row
 		status := ""
@@ -788,16 +795,18 @@ func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *Manage
 	}
 	assigned = appendShardTelemetrySources(assigned, manifest.Provenance.GeneratorShards)
 	var rows []IntervalSummaryRecord
-	err = forEachArchiveRecordContext(ctx, record, func(manifest *RunArchiveManifest) string { return manifest.IntervalSummariesFile }, func(row *coverageIntervalRow) error {
-		summary := IntervalSummaryRecord{Timestamp: row.Timestamp, SampleWindowSeconds: row.SampleWindowSeconds}
-		if row.TelemetryStatus != nil {
-			summary.TelemetryStatus = &TelemetryRunHealth{Status: row.TelemetryStatus.Status, PolicySegment: row.TelemetryStatus.PolicySegment, Unscored: row.TelemetryStatus.Unscored}
+	if record != nil && (record.ManifestPath != "" || manifest.IntervalSummariesFile != "") {
+		err = forEachArchiveRecordContext(ctx, record, func(manifest *RunArchiveManifest) string { return manifest.IntervalSummariesFile }, func(row *coverageIntervalRow) error {
+			summary := IntervalSummaryRecord{Timestamp: row.Timestamp, SampleWindowSeconds: row.SampleWindowSeconds}
+			if row.TelemetryStatus != nil {
+				summary.TelemetryStatus = &TelemetryRunHealth{Status: row.TelemetryStatus.Status, PolicySegment: row.TelemetryStatus.PolicySegment, Unscored: row.TelemetryStatus.Unscored}
+			}
+			rows = append(rows, summary)
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-		rows = append(rows, summary)
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 	manifest.TelemetryCoverage = telemetryRunCoverageRecord(ledger, assigned, from, to, rows, segments)
 	manifest.TelemetryCoverage.Coverage.ObserverLost = telemetryCoverageObserverLost(ledger, assigned, adopted)
@@ -825,5 +834,30 @@ func telemetryRunCoverageRecord(ledger *telemetrySourceLedger, assigned []string
 	observed, requirements, truncated := ledger.coverageSnapshot()
 	coverage, all := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), !distributed, from, to)
 	coverage.Truncated = coverage.Truncated || truncated
-	return telemetryCoverageRecord(coverage, all, rows, segments)
+	record := telemetryCoverageRecord(coverage, all, rows, segments)
+	for _, c := range ledger.collectionsSnapshot() {
+		switch c.Classification {
+		case telemetryCollectionClassificationQualifiedSourceWindows:
+			record.QualifiedCollections++
+			var windowMs int64
+			for _, w := range c.Windows {
+				if d := w.End.Sub(w.Start).Milliseconds(); d > 0 {
+					windowMs += d
+				}
+			}
+			for i := range record.Segments {
+				if (c.PolicySegment > 0 && record.Segments[i].Sequence == c.PolicySegment) ||
+					(c.PolicySegment == 0 && c.PolicyHash != "" && record.Segments[i].PolicyHash == c.PolicyHash) {
+					record.Segments[i].QualifiedCollections++
+					record.Segments[i].SourceWindowMs += windowMs
+					break
+				}
+			}
+		case telemetryCollectionClassificationUnscoredBoundarySpanning:
+			record.UnscoredBoundaryCollections++
+		case telemetryCollectionClassificationUnqualifiedClock:
+			record.UnqualifiedClockCollections++
+		}
+	}
+	return record
 }

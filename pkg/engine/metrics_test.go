@@ -454,6 +454,48 @@ func TestMetricsCollector_ByAction(t *testing.T) {
 	}
 }
 
+func TestRecordActionSampleUnmeasuredThenMeasuredMarksIntervalUnmeasured(t *testing.T) {
+	unmeasured := &protocol.Result{
+		ActionName:    "login",
+		Duration:      10 * time.Millisecond,
+		Success:       true,
+		BytesSent:     100,
+		BytesReceived: 200,
+		ByteEvidence:  "",
+	}
+	measured := &protocol.Result{
+		ActionName:    "login",
+		Duration:      12 * time.Millisecond,
+		Success:       true,
+		BytesSent:     300,
+		BytesReceived: 400,
+		ByteEvidence:  protocol.ByteEvidenceHTTPBody,
+	}
+
+	m1 := &ActionMetrics{MinDuration: time.Hour}
+	mergeActionResult(m1, unmeasured)
+	if m1.ByteEvidence != protocol.ByteEvidenceUnmeasured {
+		t.Fatalf("expected ByteEvidenceUnmeasured after unmeasured sample, got %q", m1.ByteEvidence)
+	}
+	mergeActionResult(m1, measured)
+
+	m2 := &ActionMetrics{MinDuration: time.Hour}
+	mergeActionResult(m2, measured)
+	mergeActionResult(m2, unmeasured)
+
+	for label, m := range map[string]*ActionMetrics{"unmeasured_then_measured": m1, "measured_then_unmeasured": m2} {
+		if m.ByteEvidence != protocol.ByteEvidenceUnmeasured {
+			t.Fatalf("%s: expected ByteEvidenceUnmeasured, got %q", label, m.ByteEvidence)
+		}
+		if m.ByteSamples != 0 {
+			t.Fatalf("%s: expected ByteSamples=0 for unmeasured interval, got %d", label, m.ByteSamples)
+		}
+		if m.BytesSent != 400 || m.BytesRecv != 600 {
+			t.Fatalf("%s: expected BytesSent=400 BytesRecv=600, got sent=%d recv=%d", label, m.BytesSent, m.BytesRecv)
+		}
+	}
+}
+
 func TestMetricsCollector_ByGroup(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.RecordTransaction("checkout", 10*time.Millisecond, true, "buyers")

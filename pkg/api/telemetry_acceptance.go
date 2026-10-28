@@ -137,7 +137,8 @@ type telemetryAcceptanceEvidence struct {
 	stageQuantile telemetryStageQuantile
 	// startedAt is when the run started; stage distributions sampled only
 	// from later are partial.
-	startedAt *time.Time
+	startedAt        *time.Time
+	renderPopulation *TelemetryRenderPopulation
 }
 
 // telemetryStageQuantile returns a stage's kept quantile at q, or false when
@@ -167,14 +168,14 @@ func manifestStageQuantile(manifest *RunArchiveManifest) telemetryStageQuantile 
 }
 
 // telemetryAcceptanceStageMap maps the policy's stage names to the stage
-// distributions the controller samples; end_to_end (capture to a viewer's
-// render) has no distribution yet.
+// distributions the controller samples.
 var telemetryAcceptanceStageMap = map[string]string{
 	"generator":         telemetryStageGeneratorProcessing,
 	"transport":         telemetryStageTransport,
 	"controller_fanout": telemetryStageControllerFanout,
 	"sample_age":        telemetryStageSampleAge,
 	"browser_render":    telemetryStageBrowserRender,
+	"end_to_end":        telemetryStageEndToEnd,
 }
 
 // telemetryAcceptanceExclusions are stated on every verdict.
@@ -207,7 +208,7 @@ func evaluateTelemetryAcceptance(policy TelemetryAcceptancePolicyDefinition, pin
 		verdict.Criteria = append(verdict.Criteria, telemetryBreachCriterion(*policy.MaxBreachedKnownTimeFraction, evidence))
 	}
 	for _, rule := range policy.StageLagPercentiles {
-		verdict.Criteria = append(verdict.Criteria, telemetryStageLagCriterion(rule, evidence.stages, evidence.stageQuantile, evidence.startedAt))
+		verdict.Criteria = append(verdict.Criteria, telemetryStageLagCriterionWithPopulation(rule, evidence.stages, evidence.stageQuantile, evidence.startedAt, evidence.renderPopulation))
 	}
 	verdict.Outcome = TelemetryAcceptancePass
 	for _, criterion := range verdict.Criteria {
@@ -370,6 +371,10 @@ func telemetryBreachCriterion(ceiling float64, evidence telemetryAcceptanceEvide
 }
 
 func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []TelemetryStageDistribution, quantile telemetryStageQuantile, startedAt *time.Time) TelemetryAcceptanceCriterion {
+	return telemetryStageLagCriterionWithPopulation(rule, stages, quantile, startedAt, nil)
+}
+
+func telemetryStageLagCriterionWithPopulation(rule TelemetryLagPercentileRule, stages []TelemetryStageDistribution, quantile telemetryStageQuantile, startedAt *time.Time, renderPopulation *TelemetryRenderPopulation) TelemetryAcceptanceCriterion {
 	criterion := TelemetryAcceptanceCriterion{Criterion: "stage_lag:" + rule.Stage + "/" + rule.Percentile, Comparator: "<=", Threshold: rule.MaxMs, Unit: "ms"}
 	name, measured := telemetryAcceptanceStageMap[rule.Stage]
 	if !measured {
@@ -382,8 +387,9 @@ func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []Teleme
 		}
 	}
 	// Browser render is reported by whichever dashboard tabs were open, so it
-	// can never decide a run.
-	criterion.Advisory = rule.Stage == "browser_render" || stage != nil && stage.Advisory
+	// can never decide a run unless an authenticated presentation harness
+	// proof (verified_frame_presentation) is attached.
+	criterion.Advisory = (rule.Stage == "browser_render" && (stage == nil || stage.Advisory || stage.DeliverySignal != telemetryDeliverySignalVerifiedFramePresentation)) || (stage != nil && stage.Advisory)
 	if stage == nil || stage.Availability != "measured" {
 		reason := fmt.Sprintf("stage %s was not measured", rule.Stage)
 		if stage != nil && stage.Reason != "" {
@@ -425,7 +431,22 @@ func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []Teleme
 		}
 		return inconclusiveCriterion(criterion, partial)
 	}
-	if excluded := telemetryStageExcluded(stage); excluded > 0 {
+	excluded := telemetryStageExcluded(stage)
+	if name == telemetryStageEndToEnd {
+		denom := stage.EligiblePublications
+		if renderPopulation != nil {
+			popDenom := max(renderPopulation.PublishedEligible, renderPopulation.Eligible)
+			for _, prior := range renderPopulation.PriorEpochs {
+				popDenom += max(prior.PublishedEligible, prior.Eligible)
+			}
+			denom = max(denom, popDenom)
+		}
+		if denom > stage.Samples {
+			excluded = max(excluded, denom-stage.Samples)
+			criterion.Denominator = acceptanceFloat(float64(denom))
+		}
+	}
+	if excluded > 0 {
 		return telemetryStageCriterionWithExclusions(criterion, rule, stage, excluded, quantile)
 	}
 	if observed > rule.MaxMs {
@@ -603,12 +624,18 @@ func telemetryAcceptanceForManifest(manifest *RunArchiveManifest) *TelemetryAcce
 	if manifest == nil {
 		return nil
 	}
-	evidence := telemetryAcceptanceEvidence{breach: manifest.TelemetryCoverage, loss: manifest.TelemetryLoss, records: manifest.TransactionCount, stages: manifest.TelemetryStageDistributions, stageQuantile: manifestStageQuantile(manifest), startedAt: manifest.Provenance.StartedAt}
+	if manifest.Provenance.TelemetryAcceptancePolicy == nil && manifest.TelemetryAcceptance != nil {
+		return cloneTelemetryAcceptanceVerdict(manifest.TelemetryAcceptance)
+	}
+	evidence := telemetryAcceptanceEvidence{breach: manifest.TelemetryCoverage, loss: manifest.TelemetryLoss, records: manifest.TransactionCount, stages: manifest.TelemetryStageDistributions, stageQuantile: manifestStageQuantile(manifest), startedAt: manifest.Provenance.StartedAt, renderPopulation: manifest.TelemetryRenderPopulation}
 	if manifest.TelemetryCoverage != nil {
 		coverage := manifest.TelemetryCoverage.Coverage
 		evidence.coverage = &coverage
 	}
-	return telemetryAcceptanceForProvenance(&manifest.Provenance, evidence)
+	if verdict := telemetryAcceptanceForProvenance(&manifest.Provenance, evidence); verdict != nil {
+		return verdict
+	}
+	return cloneTelemetryAcceptanceVerdict(manifest.TelemetryAcceptance)
 }
 
 // attachTelemetryAcceptance adds the run's provisional verdict to a public
@@ -623,7 +650,7 @@ func attachTelemetryAcceptance(metrics *LiveMetrics, test *ManagedTest) {
 		return
 	}
 	telemetry := metrics.Telemetry
-	evidence := telemetryAcceptanceEvidence{provisional: true, coverage: telemetry.Coverage, loss: telemetry.Loss, records: liveRunRecords(metrics), stages: telemetry.StageDistributions, startedAt: test.StartedAt}
+	evidence := telemetryAcceptanceEvidence{provisional: true, coverage: telemetry.Coverage, loss: telemetry.Loss, records: liveRunRecords(metrics), stages: telemetry.StageDistributions, startedAt: test.StartedAt, renderPopulation: telemetry.RenderPopulation}
 	evidence.coveragePending = telemetry.Coverage == nil
 	telemetry.Acceptance = telemetryAcceptanceForProvenance(test.initialArchiveProvenance, evidence)
 }
@@ -812,7 +839,7 @@ func (s *Server) notifyTelemetryAcceptance(testID string, manifest *RunArchiveMa
 	if len(verdict.Reasons) > 0 {
 		summary += ": " + verdict.Reasons[0]
 	}
-	name := scrubTelemetryIdentity(manifest.TestName)
+	name := scrubTelemetryIdentity(scrubber.text(manifest.TestName))
 	if strings.TrimSpace(name) == "" {
 		name = testID
 	}

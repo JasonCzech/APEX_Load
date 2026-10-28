@@ -2128,6 +2128,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2361,6 +2431,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2594,6 +2734,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2827,6 +3037,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3060,6 +3340,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3293,6 +3643,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3528,6 +3948,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3761,6 +4251,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3994,6 +4554,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -4848,6 +5478,35 @@ export interface operations {
                 "sources"?: Array<Record<string, unknown>>;
               }) | null;
               "status"?: string;
+              "telemetry_acceptance"?: ({
+                "criteria"?: Array<{
+                  "advisory"?: boolean;
+                  "bound"?: string;
+                  "comparator"?: string;
+                  "criterion"?: string;
+                  "denominator"?: (number) | null;
+                  "numerator"?: (number) | null;
+                  "observed"?: (number) | null;
+                  "outcome"?: string;
+                  "reason"?: string;
+                  "threshold"?: number;
+                  "unit"?: string;
+                }>;
+                "exclusions"?: Array<string>;
+                "mode"?: string;
+                "outcome"?: string;
+                "policy"?: ({
+                  "applied"?: boolean;
+                  "id"?: string;
+                  "kind"?: string;
+                  "name"?: string;
+                  "revision"?: number;
+                  "sha256"?: string;
+                  "source"?: string;
+                }) | null;
+                "provisional"?: boolean;
+                "reasons"?: Array<string>;
+              }) | null;
               "telemetry_coverage"?: ({
                 "algorithm"?: string;
                 "breached_known_fraction"?: (number) | null;
@@ -4871,8 +5530,10 @@ export interface operations {
                   "window_ms"?: number;
                   "window_start"?: string;
                 };
+                "coverage_rule"?: string;
                 "degraded_ms"?: number;
                 "healthy_ms"?: number;
+                "qualified_collections"?: number;
                 "retained_intervals"?: number;
                 "segments"?: Array<{
                   "breached_ms"?: number;
@@ -4881,12 +5542,17 @@ export interface operations {
                   "healthy_ms"?: number;
                   "legacy"?: boolean;
                   "policy_hash"?: string;
+                  "qualified_collections"?: number;
                   "sequence"?: number;
+                  "source_window_ms"?: number;
                   "start"?: string;
                   "unavailable"?: string;
                 }>;
                 "unknown_ms"?: number;
+                "unqualified_clock_collections"?: number;
+                "unscored_boundary_collections"?: number;
               }) | null;
+              "telemetry_evidence_file"?: string;
               "telemetry_loss"?: ({
                 "dropped_results"?: ({
                   "reason"?: string;
@@ -4952,6 +5618,7 @@ export interface operations {
                 "ineligible"?: number;
                 "last_sequence"?: number;
                 "population"?: string;
+                "prior_epochs"?: Array<Record<string, unknown>>;
                 "published_eligible"?: number;
                 "reference_client"?: string;
                 "rendered"?: number;
@@ -4975,8 +5642,14 @@ export interface operations {
               "telemetry_stage_distributions"?: Array<{
                 "advisory"?: boolean;
                 "availability"?: string;
+                "delivery_signal"?: string;
+                "eligible_publications"?: number;
                 "excluded"?: Record<string, number>;
                 "max_ms"?: (number) | null;
+                "newest_observation_max_ms"?: (number) | null;
+                "newest_observation_p50_ms"?: (number) | null;
+                "newest_observation_p95_ms"?: (number) | null;
+                "newest_observation_p99_ms"?: (number) | null;
                 "p50_ms"?: (number) | null;
                 "p95_ms"?: (number) | null;
                 "p99_ms"?: (number) | null;
@@ -4985,6 +5658,15 @@ export interface operations {
                 "samples"?: number;
                 "stage"?: string;
                 "unit"?: string;
+              }>;
+              "telemetry_validity_findings"?: Array<{
+                "compliant"?: boolean;
+                "criterion"?: string;
+                "details"?: Array<string>;
+                "observed_ms"?: (number) | null;
+                "status"?: string;
+                "summary"?: string;
+                "threshold_ms"?: number;
               }>;
               "termination_reason"?: string;
               "test_id"?: string;
@@ -5015,6 +5697,16 @@ export interface operations {
               }>;
               "transactions_file"?: string;
               "transactions_parquet_file"?: string;
+              "truncated_windows"?: Array<{
+                "end_ms"?: number;
+                "epoch"?: string;
+                "execution_generation"?: number;
+                "first_sequence"?: number;
+                "last_sequence"?: number;
+                "reason"?: string;
+                "source"?: string;
+                "start_ms"?: number;
+              }>;
             }) | null;
             "messaging_progress"?: ({
               "captured_at"?: string;
@@ -5137,6 +5829,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -5741,6 +6503,69 @@ export interface operations {
               "samples"?: number;
               "step"?: string;
             }>;
+            "saved_analysis_panels"?: Array<{
+              "browser_inputs"?: ({
+                "baseline"?: (Record<string, unknown>) | null;
+                "current"?: Record<string, unknown>;
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "query_sha256"?: string;
+                "selection_receipt_sha256"?: string;
+                "version"?: number;
+              }) | null;
+              "dashboard_id"?: string;
+              "dashboard_name"?: string;
+              "dashboard_revision"?: number;
+              "panel_id"?: string;
+              "panel_inputs"?: ({
+                "aggregation"?: string;
+                "alignment"?: string;
+                "baseline"?: (Record<string, unknown>) | null;
+                "catalog_version"?: string;
+                "comparison_id"?: string;
+                "comparison_revision"?: number;
+                "comparison_sha256"?: string;
+                "coverage_policy"?: string;
+                "current"?: Record<string, unknown>;
+                "drilldown"?: Record<string, unknown>;
+                "metric"?: string;
+                "overlay"?: (Record<string, unknown>) | null;
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "population"?: string;
+                "query_sha256"?: string;
+                "version"?: number;
+              }) | null;
+              "query"?: {
+                "aggregation"?: string;
+                "alignment"?: string;
+                "browser_inputs"?: (Record<string, unknown>) | null;
+                "browser_tuple_mode"?: string;
+                "bucket_seconds"?: number;
+                "catalog_version"?: string;
+                "comparison_run_id"?: string;
+                "coverage_policy"?: string;
+                "derivation"?: (Record<string, unknown>) | null;
+                "dimensions"?: Array<string>;
+                "end_seconds"?: number;
+                "evidence_mode"?: string;
+                "filters"?: Record<string, string>;
+                "joint_evidence"?: boolean;
+                "live_bucket_mode"?: string;
+                "max_series"?: number;
+                "metric"?: string;
+                "overlay"?: boolean;
+                "overlay_selection"?: (Record<string, unknown>) | null;
+                "panel_inputs"?: (Record<string, unknown>) | null;
+                "population"?: string;
+                "property_name"?: string;
+                "property_value"?: string;
+                "query_version"?: number;
+                "start_seconds"?: number;
+              };
+              "reason"?: string;
+              "status"?: string;
+              "tab_id"?: string;
+              "title"?: string;
+            }>;
             "schema_version"?: string;
             "sla_rollup"?: ({
               "evaluated"?: number;
@@ -5887,6 +6712,51 @@ export interface operations {
               "provisional"?: boolean;
               "reasons"?: Array<string>;
             }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm"?: string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms"?: number;
+              "classified_intervals"?: number;
+              "classified_ms"?: number;
+              "coverage"?: {
+                "observed_ms"?: number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources"?: Array<{
+                  "observed_ms"?: number;
+                  "required_ms"?: number;
+                  "source"?: string;
+                  "truncated"?: boolean;
+                  "unknown_ms"?: number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms"?: number;
+                "window_end"?: string;
+                "window_ms"?: number;
+                "window_start"?: string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms"?: number;
+              "healthy_ms"?: number;
+              "qualified_collections"?: number;
+              "retained_intervals"?: number;
+              "segments"?: Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end"?: string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start"?: string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms"?: number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
             "telemetry_policy"?: ({
               "availability"?: string;
               "policy"?: ({
@@ -5935,6 +6805,52 @@ export interface operations {
               "requested_by"?: string;
               "sequence"?: number;
               "source"?: string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible"?: number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population"?: string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible"?: number;
+              "reference_client"?: string;
+              "rendered"?: number;
+              "sampled_from"?: (string) | null;
+              "superseded"?: number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported"?: number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability"?: string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples"?: number;
+              "stage"?: string;
+              "unit"?: string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant"?: boolean;
+              "criterion"?: string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status"?: string;
+              "summary"?: string;
+              "threshold_ms"?: number;
             }>;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count"?: number;
@@ -9297,8 +10213,154 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_acceptance_policy_id"?: string;
             "telemetry_budget_policy_id"?: string;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -9844,6 +10906,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -9893,6 +10956,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -10106,6 +11175,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -10155,6 +11225,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -10221,6 +11297,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -10270,6 +11347,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -10312,10 +11395,14 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "alignment"?: string;
           "bucket_seconds"?: number;
+          "catalog_version"?: string;
+          "coverage_policy"?: string;
           "from"?: string;
           "left"?: {
             "aggregation"?: string;
+            "archive_manifest_sha256"?: string;
             "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
@@ -10332,6 +11419,7 @@ export interface operations {
           "mode"?: string;
           "right"?: {
             "aggregation"?: string;
+            "archive_manifest_sha256"?: string;
             "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
@@ -10483,11 +11571,83 @@ export interface operations {
               "unit"?: string;
               "value"?: (number) | null;
             }>;
+            "panel_inputs"?: ({
+              "aggregation": string;
+              "alignment": string;
+              "baseline"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "catalog_version": string;
+              "comparison_id"?: string;
+              "comparison_revision"?: number;
+              "comparison_sha256"?: string;
+              "coverage_policy": string;
+              "current": {
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              };
+              "drilldown": {
+                "bucket_seconds": number;
+                "end_seconds": number;
+                "max_lag_seconds"?: number;
+                "max_series": number;
+                "start_seconds": number;
+              };
+              "metric": string;
+              "overlay"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "revision": number;
+                "sha256": string;
+              }>;
+              "population"?: string;
+              "query_sha256": string;
+              "version": number;
+            }) | null;
             "request": {
+              "alignment"?: string;
               "bucket_seconds": number;
+              "catalog_version"?: string;
+              "coverage_policy"?: string;
               "from": string;
               "left": {
                 "aggregation": string;
+                "archive_manifest_sha256"?: string;
                 "dataset_artifact_sha256"?: string;
                 "dataset_id"?: string;
                 "dimensions"?: Record<string, string>;
@@ -10504,6 +11664,7 @@ export interface operations {
               "mode": string;
               "right": {
                 "aggregation": string;
+                "archive_manifest_sha256"?: string;
                 "dataset_artifact_sha256"?: string;
                 "dataset_id"?: string;
                 "dimensions"?: Record<string, string>;
@@ -10903,10 +12064,14 @@ export interface operations {
         "application/json": {
           "created_at"?: string;
           "definition"?: {
+            "alignment"?: string;
             "bucket_seconds"?: number;
+            "catalog_version"?: string;
+            "coverage_policy"?: string;
             "from"?: string;
             "left"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -10923,6 +12088,7 @@ export interface operations {
             "mode"?: string;
             "right"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -12282,10 +13448,14 @@ export interface operations {
         "application/json": {
           "created_at"?: string;
           "definition"?: {
+            "alignment"?: string;
             "bucket_seconds"?: number;
+            "catalog_version"?: string;
+            "coverage_policy"?: string;
             "from"?: string;
             "left"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -12302,6 +13472,7 @@ export interface operations {
             "mode"?: string;
             "right"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -12615,6 +13786,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -12664,6 +13836,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -12686,6 +13864,65 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisImportAttestWriterStopped": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "reason"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -12771,6 +14008,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -12820,6 +14058,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -12927,6 +14171,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -12976,6 +14221,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -13057,6 +14308,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -13113,6 +14369,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -13277,6 +14538,7 @@ export interface operations {
               "normalized"?: Array<string>;
               "normalized_sha256"?: Record<string, string>;
               "obsolete_objects"?: Array<string>;
+              "originals"?: Array<string>;
               "partition_manifest"?: ({
                 "dataset_id": string;
                 "digest": string;
@@ -13311,6 +14573,12 @@ export interface operations {
               "state": string;
               "updated_at": string;
               "upload_writer_version"?: number;
+              "writer_attestation"?: ({
+                "actor": string;
+                "at": string;
+                "prover"?: Record<string, unknown>;
+                "reason"?: string;
+              }) | null;
             }) | null;
           };
         };
@@ -24152,6 +25420,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -30241,6 +31514,152 @@ export interface operations {
             "presented": boolean;
             "revision"?: number;
             "state": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
           };
         };
       };
@@ -35447,6 +36866,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -35945,6 +37434,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -36366,8 +37925,154 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_acceptance_policy_id"?: string;
             "telemetry_budget_policy_id"?: string;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -40919,6 +42624,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -40949,6 +42658,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -41035,6 +42748,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -41459,6 +43181,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -41682,6 +43474,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -41715,6 +43508,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -41736,6 +43530,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -41744,6 +43543,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -41775,12 +43575,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -41898,6 +43704,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -41936,6 +43746,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -42148,6 +43962,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -42263,6 +44147,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -42297,6 +44185,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -42380,6 +44272,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -42464,6 +44360,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -42497,6 +44394,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -42518,6 +44416,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -42526,6 +44429,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -42557,12 +44461,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -42594,6 +44504,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -42911,12 +44825,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -48904,6 +50824,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -49022,6 +50946,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -49196,6 +51190,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -49314,6 +51312,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -49544,6 +51612,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -50048,6 +52125,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -50086,6 +52167,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -50298,6 +52383,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -50434,6 +52589,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -50468,6 +52627,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -50551,6 +52714,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -50635,6 +52802,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -50668,11 +52836,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -50683,6 +52853,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -50710,6 +52881,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -50718,6 +52894,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -50749,12 +52926,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -50786,6 +52969,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -50910,6 +53097,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -51028,6 +53219,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -51218,6 +53479,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -51336,6 +53601,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -51795,6 +54130,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -51993,6 +54398,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -52111,6 +54520,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -52289,6 +54768,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -52407,6 +54890,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -52634,6 +55187,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -52752,6 +55309,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -52988,6 +55615,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -53021,11 +55649,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -53036,6 +55691,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -53063,11 +55719,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -53084,6 +55751,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -53115,12 +55791,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -53152,6 +55834,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -53270,6 +55956,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -53850,12 +56606,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -57086,6 +59848,24 @@ export interface operations {
               "status": string;
               "status_counts": Record<string, number>;
               "total_vusers": number;
+              "validation_context"?: ({
+                "components": {
+                  "approvals": string;
+                  "capabilities": string;
+                  "policy": string;
+                  "scripts": string;
+                  "secret_references": string;
+                };
+                "contextual_findings"?: Array<{
+                  "cause": string;
+                  "detail": string;
+                  "subject"?: string;
+                }>;
+                "revision": string;
+                "secret_reference_limit": number;
+                "secret_references_truncated"?: boolean;
+                "version": number;
+              }) | null;
             }) | null;
             "preview": Array<{
               "art"?: ({
@@ -58410,6 +61190,24 @@ export interface operations {
               "status": string;
               "status_counts": Record<string, number>;
               "total_vusers": number;
+              "validation_context"?: ({
+                "components": {
+                  "approvals": string;
+                  "capabilities": string;
+                  "policy": string;
+                  "scripts": string;
+                  "secret_references": string;
+                };
+                "contextual_findings"?: Array<{
+                  "cause": string;
+                  "detail": string;
+                  "subject"?: string;
+                }>;
+                "revision": string;
+                "secret_reference_limit": number;
+                "secret_references_truncated"?: boolean;
+                "version": number;
+              }) | null;
             }) | null;
             "preview": Array<{
               "art"?: ({
@@ -65683,6 +68481,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -66181,6 +69049,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -67344,8 +70282,154 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_acceptance_policy_id"?: string;
             "telemetry_budget_policy_id"?: string;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
             "telemetry_verdict"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -69607,6 +72691,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -69645,6 +72733,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -69857,6 +72949,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -69993,6 +73155,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -70027,6 +73193,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -70110,6 +73280,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -70194,6 +73368,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -70227,11 +73402,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -70242,6 +73419,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -70269,6 +73447,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -70277,6 +73460,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -70308,12 +73492,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -70345,6 +73535,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -70465,6 +73659,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -70583,6 +73781,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -70773,6 +74041,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -70891,6 +74163,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -71350,6 +74692,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -71548,6 +74960,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -71666,6 +75082,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -71844,6 +75330,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -71962,6 +75452,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -72189,6 +75749,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72307,6 +75871,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -72543,6 +76177,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -72576,11 +76211,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -72591,6 +76253,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -72618,11 +76281,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -72639,6 +76313,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -72670,12 +76353,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -72707,6 +76396,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72825,6 +76518,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -73838,6 +77601,152 @@ export interface operations {
             "presented": boolean;
             "revision"?: number;
             "state": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
           };
         };
       };
@@ -73880,6 +77789,152 @@ export interface operations {
             "presented": boolean;
             "revision"?: number;
             "state": string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
+            "telemetry_policy_segments"?: Array<{
+              "effective_at": string;
+              "policy": ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "definition_sha256"?: string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "policy_id"?: string;
+              "requested_by"?: string;
+              "sequence": number;
+              "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
+            }>;
           };
         };
       };
@@ -74634,6 +78689,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -74664,6 +78723,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -74750,6 +78813,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -75174,6 +79246,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -75397,6 +79539,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -75430,6 +79573,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -75451,6 +79595,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -75459,6 +79608,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -75490,12 +79640,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -75613,6 +79769,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -75651,6 +79811,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -75863,6 +80027,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -75978,6 +80212,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -76012,6 +80250,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -76095,6 +80337,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -76179,6 +80425,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -76212,6 +80459,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -76233,6 +80481,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -76241,6 +80494,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -76272,12 +80526,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -76309,6 +80569,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -76626,12 +80890,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -79918,6 +84188,35 @@ export interface operations {
               }>;
             }) | null;
             "status"?: string;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "advisory"?: boolean;
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_coverage"?: ({
               "algorithm": string;
               "breached_known_fraction"?: (number) | null;
@@ -79941,8 +84240,10 @@ export interface operations {
                 "window_ms": number;
                 "window_start": string;
               };
+              "coverage_rule"?: string;
               "degraded_ms": number;
               "healthy_ms": number;
+              "qualified_collections"?: number;
               "retained_intervals": number;
               "segments": Array<{
                 "breached_ms"?: number;
@@ -79951,12 +84252,17 @@ export interface operations {
                 "healthy_ms"?: number;
                 "legacy"?: boolean;
                 "policy_hash"?: string;
+                "qualified_collections"?: number;
                 "sequence"?: number;
+                "source_window_ms"?: number;
                 "start": string;
                 "unavailable"?: string;
               }>;
               "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
             }) | null;
+            "telemetry_evidence_file"?: string;
             "telemetry_loss"?: ({
               "dropped_results"?: ({
                 "reason"?: string;
@@ -80022,6 +84328,7 @@ export interface operations {
               "ineligible"?: number;
               "last_sequence"?: number;
               "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
               "published_eligible": number;
               "reference_client"?: string;
               "rendered": number;
@@ -80048,8 +84355,14 @@ export interface operations {
             "telemetry_stage_distributions"?: Array<{
               "advisory"?: boolean;
               "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
               "excluded"?: Record<string, number>;
               "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
               "p50_ms"?: (number) | null;
               "p95_ms"?: (number) | null;
               "p99_ms"?: (number) | null;
@@ -80058,6 +84371,15 @@ export interface operations {
               "samples": number;
               "stage": string;
               "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
             }>;
             "termination_reason"?: string;
             "test_id": string;
@@ -80098,6 +84420,16 @@ export interface operations {
             }>;
             "transactions_file": string;
             "transactions_parquet_file"?: string;
+            "truncated_windows"?: Array<{
+              "end_ms"?: number;
+              "epoch"?: string;
+              "execution_generation"?: number;
+              "first_sequence"?: number;
+              "last_sequence"?: number;
+              "reason"?: string;
+              "source": string;
+              "start_ms"?: number;
+            }>;
           }) | null;
         };
       };
@@ -80367,6 +84699,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -80853,6 +85255,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -81402,6 +85874,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -81643,6 +86185,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -81884,6 +86496,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82125,6 +86807,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82366,6 +87118,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82607,6 +87429,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82850,6 +87742,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -83091,6 +88053,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -83332,6 +88364,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -84799,6 +89901,35 @@ export interface operations {
                 }>;
               }) | null;
               "status"?: string;
+              "telemetry_acceptance"?: ({
+                "criteria": Array<{
+                  "advisory"?: boolean;
+                  "bound"?: string;
+                  "comparator": string;
+                  "criterion": string;
+                  "denominator"?: (number) | null;
+                  "numerator"?: (number) | null;
+                  "observed"?: (number) | null;
+                  "outcome": string;
+                  "reason"?: string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
+                "exclusions"?: Array<string>;
+                "mode": string;
+                "outcome": string;
+                "policy"?: ({
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                }) | null;
+                "provisional"?: boolean;
+                "reasons"?: Array<string>;
+              }) | null;
               "telemetry_coverage"?: ({
                 "algorithm": string;
                 "breached_known_fraction"?: (number) | null;
@@ -84822,8 +89953,10 @@ export interface operations {
                   "window_ms": number;
                   "window_start": string;
                 };
+                "coverage_rule"?: string;
                 "degraded_ms": number;
                 "healthy_ms": number;
+                "qualified_collections"?: number;
                 "retained_intervals": number;
                 "segments": Array<{
                   "breached_ms"?: number;
@@ -84832,12 +89965,17 @@ export interface operations {
                   "healthy_ms"?: number;
                   "legacy"?: boolean;
                   "policy_hash"?: string;
+                  "qualified_collections"?: number;
                   "sequence"?: number;
+                  "source_window_ms"?: number;
                   "start": string;
                   "unavailable"?: string;
                 }>;
                 "unknown_ms": number;
+                "unqualified_clock_collections"?: number;
+                "unscored_boundary_collections"?: number;
               }) | null;
+              "telemetry_evidence_file"?: string;
               "telemetry_loss"?: ({
                 "dropped_results"?: ({
                   "reason"?: string;
@@ -84903,6 +90041,7 @@ export interface operations {
                 "ineligible"?: number;
                 "last_sequence"?: number;
                 "population": string;
+                "prior_epochs"?: Array<Record<string, unknown>>;
                 "published_eligible": number;
                 "reference_client"?: string;
                 "rendered": number;
@@ -84926,8 +90065,14 @@ export interface operations {
               "telemetry_stage_distributions"?: Array<{
                 "advisory"?: boolean;
                 "availability": string;
+                "delivery_signal"?: string;
+                "eligible_publications"?: number;
                 "excluded"?: Record<string, number>;
                 "max_ms"?: (number) | null;
+                "newest_observation_max_ms"?: (number) | null;
+                "newest_observation_p50_ms"?: (number) | null;
+                "newest_observation_p95_ms"?: (number) | null;
+                "newest_observation_p99_ms"?: (number) | null;
                 "p50_ms"?: (number) | null;
                 "p95_ms"?: (number) | null;
                 "p99_ms"?: (number) | null;
@@ -84936,6 +90081,15 @@ export interface operations {
                 "samples": number;
                 "stage": string;
                 "unit": string;
+              }>;
+              "telemetry_validity_findings"?: Array<{
+                "compliant": boolean;
+                "criterion": string;
+                "details"?: Array<string>;
+                "observed_ms"?: (number) | null;
+                "status": string;
+                "summary": string;
+                "threshold_ms"?: number;
               }>;
               "termination_reason"?: string;
               "test_id": string;
@@ -84976,6 +90130,16 @@ export interface operations {
               }>;
               "transactions_file": string;
               "transactions_parquet_file"?: string;
+              "truncated_windows"?: Array<{
+                "end_ms"?: number;
+                "epoch"?: string;
+                "execution_generation"?: number;
+                "first_sequence"?: number;
+                "last_sequence"?: number;
+                "reason"?: string;
+                "source": string;
+                "start_ms"?: number;
+              }>;
             }) | null;
             "messaging_progress"?: ({
               "captured_at": string;
@@ -85131,6 +90295,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -85773,6 +91007,146 @@ export interface operations {
               "samples": number;
               "step": string;
             }>;
+            "saved_analysis_panels"?: Array<{
+              "browser_inputs"?: ({
+                "baseline"?: ({
+                  "manifest_sha256": string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "run_id": string;
+                  "tuple_ids": Array<string>;
+                }) | null;
+                "current": {
+                  "manifest_sha256": string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "run_id": string;
+                  "tuple_ids": Array<string>;
+                };
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "query_sha256": string;
+                "selection_receipt_sha256"?: string;
+                "version": number;
+              }) | null;
+              "dashboard_id": string;
+              "dashboard_name": string;
+              "dashboard_revision": number;
+              "panel_id": string;
+              "panel_inputs"?: ({
+                "aggregation": string;
+                "alignment": string;
+                "baseline"?: ({
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "manifest_sha256"?: string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "protocol"?: string;
+                  "run_id"?: string;
+                  "source_id"?: string;
+                }) | null;
+                "catalog_version": string;
+                "comparison_id"?: string;
+                "comparison_revision"?: number;
+                "comparison_sha256"?: string;
+                "coverage_policy": string;
+                "current": {
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "manifest_sha256"?: string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "protocol"?: string;
+                  "run_id"?: string;
+                  "source_id"?: string;
+                };
+                "drilldown": {
+                  "bucket_seconds": number;
+                  "end_seconds": number;
+                  "max_lag_seconds"?: number;
+                  "max_series": number;
+                  "start_seconds": number;
+                };
+                "metric": string;
+                "overlay"?: ({
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "manifest_sha256"?: string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "protocol"?: string;
+                  "run_id"?: string;
+                  "source_id"?: string;
+                }) | null;
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "population"?: string;
+                "query_sha256": string;
+                "version": number;
+              }) | null;
+              "query": {
+                "aggregation": string;
+                "alignment"?: string;
+                "browser_inputs"?: ({
+                  "baseline"?: (Record<string, unknown>) | null;
+                  "current": Record<string, unknown>;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "query_sha256": string;
+                  "selection_receipt_sha256"?: string;
+                  "version": number;
+                }) | null;
+                "browser_tuple_mode"?: string;
+                "bucket_seconds"?: number;
+                "catalog_version"?: string;
+                "comparison_run_id"?: string;
+                "coverage_policy"?: string;
+                "derivation"?: ({
+                  "minimum_coverage"?: number;
+                  "operation": string;
+                  "window_buckets"?: number;
+                }) | null;
+                "dimensions"?: Array<string>;
+                "end_seconds"?: number;
+                "evidence_mode"?: string;
+                "filters"?: Record<string, string>;
+                "joint_evidence"?: boolean;
+                "live_bucket_mode"?: string;
+                "max_series"?: number;
+                "metric": string;
+                "overlay"?: boolean;
+                "overlay_selection"?: ({
+                  "aggregation": string;
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "dimensions"?: Record<string, string>;
+                  "host"?: string;
+                  "max_lag_seconds"?: number;
+                  "metric": string;
+                  "source_id"?: string;
+                }) | null;
+                "panel_inputs"?: ({
+                  "aggregation": string;
+                  "alignment": string;
+                  "baseline"?: (Record<string, unknown>) | null;
+                  "catalog_version": string;
+                  "comparison_id"?: string;
+                  "comparison_revision"?: number;
+                  "comparison_sha256"?: string;
+                  "coverage_policy": string;
+                  "current": Record<string, unknown>;
+                  "drilldown": Record<string, unknown>;
+                  "metric": string;
+                  "overlay"?: (Record<string, unknown>) | null;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "population"?: string;
+                  "query_sha256": string;
+                  "version": number;
+                }) | null;
+                "population"?: string;
+                "property_name"?: string;
+                "property_value"?: string;
+                "query_version"?: number;
+                "start_seconds"?: number;
+              };
+              "reason"?: string;
+              "status": string;
+              "tab_id": string;
+              "title": string;
+            }>;
             "schema_version": string;
             "sla_rollup"?: ({
               "evaluated": number;
@@ -85919,6 +91293,51 @@ export interface operations {
               "provisional"?: boolean;
               "reasons"?: Array<string>;
             }) | null;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "required_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "coverage_rule"?: string;
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "qualified_collections"?: number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "breached_ms"?: number;
+                "degraded_ms"?: number;
+                "end": string;
+                "healthy_ms"?: number;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "qualified_collections"?: number;
+                "sequence"?: number;
+                "source_window_ms"?: number;
+                "start": string;
+                "unavailable"?: string;
+              }>;
+              "unknown_ms": number;
+              "unqualified_clock_collections"?: number;
+              "unscored_boundary_collections"?: number;
+            }) | null;
             "telemetry_policy"?: ({
               "availability": string;
               "policy"?: ({
@@ -85967,6 +91386,52 @@ export interface operations {
               "requested_by"?: string;
               "sequence": number;
               "source": string;
+            }>;
+            "telemetry_render_population"?: ({
+              "eligible": number;
+              "epoch"?: string;
+              "first_sequence"?: number;
+              "ineligible"?: number;
+              "last_sequence"?: number;
+              "population": string;
+              "prior_epochs"?: Array<Record<string, unknown>>;
+              "published_eligible": number;
+              "reference_client"?: string;
+              "rendered": number;
+              "sampled_from"?: (string) | null;
+              "superseded": number;
+              "unknown"?: number;
+              "unqualified"?: Record<string, number>;
+              "unreported": number;
+            }) | null;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "delivery_signal"?: string;
+              "eligible_publications"?: number;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "newest_observation_max_ms"?: (number) | null;
+              "newest_observation_p50_ms"?: (number) | null;
+              "newest_observation_p95_ms"?: (number) | null;
+              "newest_observation_p99_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
+            "telemetry_validity_findings"?: Array<{
+              "compliant": boolean;
+              "criterion": string;
+              "details"?: Array<string>;
+              "observed_ms"?: (number) | null;
+              "status": string;
+              "summary": string;
+              "threshold_ms"?: number;
             }>;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count": number;
@@ -92202,6 +97667,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -92320,6 +97789,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -92494,6 +98033,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -92612,6 +98155,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -92842,6 +98455,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -93346,6 +98968,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -93384,6 +99010,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -93596,6 +99226,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -93732,6 +99432,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -93766,6 +99470,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -93849,6 +99557,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -93933,6 +99645,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -93966,11 +99679,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -93981,6 +99696,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -94008,6 +99724,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -94016,6 +99737,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -94047,12 +99769,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -94084,6 +99812,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -94208,6 +99940,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -94326,6 +100062,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -94516,6 +100322,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -94634,6 +100444,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -95093,6 +100973,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -95291,6 +101241,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -95409,6 +101363,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -95587,6 +101611,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -95705,6 +101733,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -95932,6 +102030,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -96050,6 +102152,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -96286,6 +102458,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -96319,11 +102492,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -96334,6 +102534,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -96361,11 +102562,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -96382,6 +102594,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -96413,12 +102634,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -96450,6 +102677,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -96568,6 +102799,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -97148,12 +103449,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -104636,6 +110943,7 @@ export interface operations {
                   "elk_capture"?: (Record<string, unknown>) | null;
                   "ended_at"?: (string) | null;
                   "error"?: string;
+                  "evacuation_quarantine"?: (Record<string, unknown>) | null;
                   "execution_plan"?: (Record<string, unknown>) | null;
                   "execution_plan_approval"?: (Record<string, unknown>) | null;
                   "folder_id"?: (string) | null;
@@ -112787,6 +119095,7 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "alignment"?: string;
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
@@ -112822,7 +119131,9 @@ export interface operations {
           }) | null;
           "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
+          "catalog_version"?: string;
           "comparison_run_id"?: string;
+          "coverage_policy"?: string;
           "derivation"?: ({
             "minimum_coverage"?: number;
             "operation"?: string;
@@ -112846,6 +119157,74 @@ export interface operations {
             "max_lag_seconds"?: number;
             "metric"?: string;
             "source_id"?: string;
+          }) | null;
+          "panel_inputs"?: ({
+            "aggregation"?: string;
+            "alignment"?: string;
+            "baseline"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "catalog_version"?: string;
+            "comparison_id"?: string;
+            "comparison_revision"?: number;
+            "comparison_sha256"?: string;
+            "coverage_policy"?: string;
+            "current"?: {
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            };
+            "drilldown"?: {
+              "bucket_seconds"?: number;
+              "end_seconds"?: number;
+              "max_lag_seconds"?: number;
+              "max_series"?: number;
+              "start_seconds"?: number;
+            };
+            "metric"?: string;
+            "overlay"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
+            "population"?: string;
+            "query_sha256"?: string;
+            "version"?: number;
           }) | null;
           "population"?: string;
           "property_name"?: string;
@@ -112956,6 +119335,74 @@ export interface operations {
               "operation": string;
               "window_buckets"?: number;
             }) | null;
+            "panel_inputs"?: ({
+              "aggregation": string;
+              "alignment": string;
+              "baseline"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "catalog_version": string;
+              "comparison_id"?: string;
+              "comparison_revision"?: number;
+              "comparison_sha256"?: string;
+              "coverage_policy": string;
+              "current": {
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              };
+              "drilldown": {
+                "bucket_seconds": number;
+                "end_seconds": number;
+                "max_lag_seconds"?: number;
+                "max_series": number;
+                "start_seconds": number;
+              };
+              "metric": string;
+              "overlay"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "revision": number;
+                "sha256": string;
+              }>;
+              "population"?: string;
+              "query_sha256": string;
+              "version": number;
+            }) | null;
             "removed": Array<string>;
             "warnings": Array<string>;
           };
@@ -113006,6 +119453,7 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "alignment"?: string;
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
@@ -113041,7 +119489,9 @@ export interface operations {
           }) | null;
           "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
+          "catalog_version"?: string;
           "comparison_run_id"?: string;
+          "coverage_policy"?: string;
           "derivation"?: ({
             "minimum_coverage"?: number;
             "operation"?: string;
@@ -113065,6 +119515,74 @@ export interface operations {
             "max_lag_seconds"?: number;
             "metric"?: string;
             "source_id"?: string;
+          }) | null;
+          "panel_inputs"?: ({
+            "aggregation"?: string;
+            "alignment"?: string;
+            "baseline"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "catalog_version"?: string;
+            "comparison_id"?: string;
+            "comparison_revision"?: number;
+            "comparison_sha256"?: string;
+            "coverage_policy"?: string;
+            "current"?: {
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            };
+            "drilldown"?: {
+              "bucket_seconds"?: number;
+              "end_seconds"?: number;
+              "max_lag_seconds"?: number;
+              "max_series"?: number;
+              "start_seconds"?: number;
+            };
+            "metric"?: string;
+            "overlay"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
+            "population"?: string;
+            "query_sha256"?: string;
+            "version"?: number;
           }) | null;
           "population"?: string;
           "property_name"?: string;
@@ -113813,10 +120331,13 @@ export interface operations {
               "kind"?: string;
               "query"?: ({
                 "aggregation"?: string;
+                "alignment"?: string;
                 "browser_inputs"?: (Record<string, unknown>) | null;
                 "browser_tuple_mode"?: string;
                 "bucket_seconds"?: number;
+                "catalog_version"?: string;
                 "comparison_run_id"?: string;
+                "coverage_policy"?: string;
                 "derivation"?: (Record<string, unknown>) | null;
                 "dimensions"?: Array<string>;
                 "end_seconds"?: number;
@@ -113828,6 +120349,7 @@ export interface operations {
                 "metric"?: string;
                 "overlay"?: boolean;
                 "overlay_selection"?: (Record<string, unknown>) | null;
+                "panel_inputs"?: (Record<string, unknown>) | null;
                 "population"?: string;
                 "property_name"?: string;
                 "property_value"?: string;
@@ -116688,6 +123210,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -116806,6 +123332,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -116980,6 +123576,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -117098,6 +123698,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -117328,6 +123998,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -117832,6 +124511,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -117870,6 +124553,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -118082,6 +124769,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -118218,6 +124975,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -118252,6 +125013,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -118335,6 +125100,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -118419,6 +125188,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -118452,11 +125222,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -118467,6 +125239,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -118494,6 +125267,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -118502,6 +125280,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -118533,12 +125312,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -118570,6 +125355,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -118694,6 +125483,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -118812,6 +125605,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -119002,6 +125865,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -119120,6 +125987,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -119579,6 +126516,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -119777,6 +126784,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -119895,6 +126906,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -120073,6 +127154,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -120191,6 +127276,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -120418,6 +127573,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -120536,6 +127695,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -120772,6 +128001,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -120805,11 +128035,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -120820,6 +128077,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -120847,11 +128105,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -120868,6 +128137,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -120899,12 +128177,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -120936,6 +128220,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -121054,6 +128342,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -121634,12 +128992,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -136932,6 +144296,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -136962,6 +144330,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -137048,6 +144420,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -137472,6 +144853,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -137695,6 +145146,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -137728,6 +145180,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -137749,6 +145202,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -137757,6 +145215,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -137788,12 +145247,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -137911,6 +145376,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -137949,6 +145418,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -138161,6 +145634,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -138276,6 +145819,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -138310,6 +145857,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -138393,6 +145944,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -138477,6 +146032,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -138510,6 +146066,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -138531,6 +146088,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -138539,6 +146101,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -138570,12 +146133,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -138607,6 +146176,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -138924,12 +146497,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -139325,6 +146904,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -139355,6 +146938,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -139441,6 +147028,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -139865,6 +147461,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -140088,6 +147754,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -140121,6 +147788,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -140142,6 +147810,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -140150,6 +147823,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -140181,12 +147855,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -140304,6 +147984,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -140342,6 +148026,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -140554,6 +148242,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -140669,6 +148427,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -140703,6 +148465,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -140786,6 +148552,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -140870,6 +148640,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -140903,6 +148674,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -140924,6 +148696,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -140932,6 +148709,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -140963,12 +148741,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -141000,6 +148784,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -141317,12 +149105,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -141718,6 +149512,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -141748,6 +149546,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -141834,6 +149636,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -142258,6 +150069,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -142481,6 +150362,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -142514,6 +150396,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -142535,6 +150418,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -142543,6 +150431,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -142574,12 +150463,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -142697,6 +150592,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -142735,6 +150634,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -142947,6 +150850,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -143062,6 +151035,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -143096,6 +151073,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -143179,6 +151160,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -143263,6 +151248,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -143296,6 +151282,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -143317,6 +151304,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -143325,6 +151317,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -143356,12 +151349,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -143393,6 +151392,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -143710,12 +151713,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -144111,6 +152120,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -144141,6 +152154,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -144227,6 +152244,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -144651,6 +152677,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -144874,6 +152970,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -144907,6 +153004,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -144928,6 +153026,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -144936,6 +153039,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -144967,12 +153071,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -145090,6 +153200,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145128,6 +153242,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145340,6 +153458,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -145455,6 +153643,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145489,6 +153681,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145572,6 +153768,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145656,6 +153856,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -145689,6 +153890,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -145710,6 +153912,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -145718,6 +153925,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -145749,12 +153957,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -145786,6 +154000,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -146103,12 +154321,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -146504,6 +154728,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -146534,6 +154762,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -146620,6 +154852,15 @@ export interface operations {
               }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
+              "evacuation_quarantine"?: ({
+                "max_retries": number;
+                "next_retry_at"?: (string) | null;
+                "original_cause"?: string;
+                "quarantined_owners"?: Array<string>;
+                "required_intervention_action"?: string;
+                "retries_exhausted"?: boolean;
+                "retry_count": number;
+              }) | null;
               "execution_plan"?: ({
                 "entry_count"?: number;
                 "entry_number"?: number;
@@ -147044,6 +155285,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -147267,6 +155578,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -147300,6 +155612,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -147321,6 +155634,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -147329,6 +155647,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -147360,12 +155679,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -147483,6 +155808,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147521,6 +155850,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147733,6 +156066,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -147848,6 +156251,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147882,6 +156289,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147965,6 +156376,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -148049,6 +156464,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "interval_condition_labels"?: Array<string>;
                   "loss"?: ({
                     "dropped_results"?: ({
                       "reason"?: string;
@@ -148082,6 +156498,7 @@ export interface operations {
                     }) | null;
                   }) | null;
                   "missing_metric_windows"?: number;
+                  "policy_segments"?: Array<Record<string, unknown>>;
                   "publication"?: (Record<string, unknown>) | null;
                   "published_at"?: string;
                   "render_population"?: (Record<string, unknown>) | null;
@@ -148103,6 +156520,11 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
@@ -148111,6 +156533,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "validity_findings"?: Array<Record<string, unknown>>;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -148142,12 +156565,18 @@ export interface operations {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "breach_started_at"?: (string) | null;
+                  "condition_labels"?: Array<string>;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
                   "last_observed_at": string;
                   "last_transition_at"?: string;
                   "policy_segment"?: number;
                   "severity": string;
+                  "stage_budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
@@ -148179,6 +156608,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -148496,12 +156929,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -150415,14 +158854,26 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "calibration"?: ({
+            "client_recv_mono_ms"?: (number) | null;
+            "client_send_mono_ms"?: number;
+            "controller_recv_unix_ms"?: (number) | null;
+            "controller_send_unix_ms"?: (number) | null;
+          }) | null;
           "client_id"?: string;
+          "client_recv_mono_ms"?: (number) | null;
+          "client_send_mono_ms"?: (number) | null;
           "samples"?: Array<{
+            "delivery_signal"?: string;
             "observed_at"?: string;
+            "presentation_proof"?: string;
             "publication"?: ({
               "epoch"?: string;
               "sequence"?: number;
             }) | null;
             "receive_to_render_ms"?: number;
+            "received_mono_ms"?: (number) | null;
+            "rendered_mono_ms"?: (number) | null;
             "state"?: string;
           }>;
         };
@@ -150433,6 +158884,7 @@ export interface operations {
         content: {
           "application/json": {
             "accepted": number;
+            "clock_calibration"?: (Array<number>) | null;
             "excluded"?: Record<string, number>;
           };
         };
@@ -150742,6 +159194,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -150860,6 +159316,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -151034,6 +159560,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -151152,6 +159682,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -151382,6 +159982,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -151886,6 +160495,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -151924,6 +160537,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -152136,6 +160753,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -152272,6 +160959,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -152306,6 +160997,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -152389,6 +161084,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -152473,6 +161172,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -152506,11 +161206,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -152521,6 +161223,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -152548,6 +161251,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -152556,6 +161264,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -152587,12 +161296,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -152624,6 +161339,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -152748,6 +161467,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -152866,6 +161589,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -153056,6 +161849,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -153174,6 +161971,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -153633,6 +162500,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -153831,6 +162768,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -153949,6 +162890,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -154127,6 +163138,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -154245,6 +163260,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -154472,6 +163557,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -154590,6 +163679,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -154826,6 +163985,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -154859,11 +164019,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -154874,6 +164061,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -154901,11 +164089,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -154922,6 +164121,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -154953,12 +164161,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -154990,6 +164204,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -155108,6 +164326,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -155688,12 +164976,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -163036,6 +172330,24 @@ export interface operations {
               "status": string;
               "status_counts": Record<string, number>;
               "total_vusers": number;
+              "validation_context"?: ({
+                "components": {
+                  "approvals": string;
+                  "capabilities": string;
+                  "policy": string;
+                  "scripts": string;
+                  "secret_references": string;
+                };
+                "contextual_findings"?: Array<{
+                  "cause": string;
+                  "detail": string;
+                  "subject"?: string;
+                }>;
+                "revision": string;
+                "secret_reference_limit": number;
+                "secret_references_truncated"?: boolean;
+                "version": number;
+              }) | null;
             }) | null;
             "scenario_draft": {
               "assignment"?: ({
@@ -178575,6 +187887,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -178693,6 +188009,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -178867,6 +188253,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -178985,6 +188375,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -179215,6 +188675,15 @@ export interface operations {
             }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
+            "evacuation_quarantine"?: ({
+              "max_retries": number;
+              "next_retry_at"?: (string) | null;
+              "original_cause"?: string;
+              "quarantined_owners"?: Array<string>;
+              "required_intervention_action"?: string;
+              "retries_exhausted"?: boolean;
+              "retry_count": number;
+            }) | null;
             "execution_plan"?: ({
               "entry_count"?: number;
               "entry_number"?: number;
@@ -179719,6 +189188,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -179757,6 +189230,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -179969,6 +189446,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -180105,6 +189652,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -180139,6 +189690,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -180222,6 +189777,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -180306,6 +189865,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -180339,11 +189899,13 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<Record<string, unknown>>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -180354,6 +189916,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -180381,6 +189944,11 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
@@ -180389,6 +189957,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<Record<string, unknown>>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -180420,12 +189989,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -180457,6 +190032,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -180581,6 +190160,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -180699,6 +190282,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -180889,6 +190542,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -181007,6 +190664,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -181466,6 +191193,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -181664,6 +191461,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -181782,6 +191583,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -181960,6 +191831,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -182078,6 +191953,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -182305,6 +192250,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -182423,6 +192372,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -182659,6 +192678,7 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "interval_condition_labels"?: Array<string>;
                 "loss"?: ({
                   "dropped_results"?: ({
                     "reason"?: string;
@@ -182692,11 +192712,38 @@ export interface operations {
                   }) | null;
                 }) | null;
                 "missing_metric_windows"?: number;
+                "policy_segments"?: Array<{
+                  "effective_at": string;
+                  "policy": ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "definition_sha256"?: string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "policy_id"?: string;
+                  "requested_by"?: string;
+                  "sequence": number;
+                  "source": string;
+                }>;
                 "publication"?: ({
                   "eligible": boolean;
                   "epoch": string;
                   "newest_collected_at"?: (string) | null;
                   "oldest_collected_at"?: (string) | null;
+                  "oldest_observation_start_at"?: (string) | null;
                   "sequence": number;
                 }) | null;
                 "published_at"?: string;
@@ -182707,6 +192754,7 @@ export interface operations {
                   "ineligible"?: number;
                   "last_sequence"?: number;
                   "population": string;
+                  "prior_epochs"?: Array<Record<string, unknown>>;
                   "published_eligible": number;
                   "reference_client"?: string;
                   "rendered": number;
@@ -182734,11 +192782,22 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "stage_distributions"?: Array<{
                   "advisory"?: boolean;
                   "availability": string;
+                  "delivery_signal"?: string;
+                  "eligible_publications"?: number;
                   "excluded"?: Record<string, number>;
                   "max_ms"?: (number) | null;
+                  "newest_observation_max_ms"?: (number) | null;
+                  "newest_observation_p50_ms"?: (number) | null;
+                  "newest_observation_p95_ms"?: (number) | null;
+                  "newest_observation_p99_ms"?: (number) | null;
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
@@ -182755,6 +192814,15 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "validity_findings"?: Array<{
+                  "compliant": boolean;
+                  "criterion": string;
+                  "details"?: Array<string>;
+                  "observed_ms"?: (number) | null;
+                  "status": string;
+                  "summary": string;
+                  "threshold_ms"?: number;
+                }>;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -182786,12 +192854,18 @@ export interface operations {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "breach_started_at"?: (string) | null;
+                "condition_labels"?: Array<string>;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
                 "last_observed_at": string;
                 "last_transition_at"?: string;
                 "policy_segment"?: number;
                 "severity": string;
+                "stage_budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
@@ -182823,6 +192897,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -182941,6 +193019,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -183521,12 +193669,18 @@ export interface operations {
               "breach_active"?: boolean;
               "breach_duration_sec"?: number;
               "breach_started_at"?: (string) | null;
+              "condition_labels"?: Array<string>;
               "conditions"?: Array<string>;
               "current_signature"?: string;
               "last_observed_at": string;
               "last_transition_at"?: string;
               "policy_segment"?: number;
               "severity": string;
+              "stage_budgets"?: Array<{
+                "enabled": boolean;
+                "limit_ms": number;
+                "stage": string;
+              }>;
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
@@ -198878,7 +209032,11 @@ export interface operations {
     };
   };
   "handleValidateScenarioLoadModel": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "context_only"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -199801,6 +209959,24 @@ export interface operations {
             "status": string;
             "status_counts": Record<string, number>;
             "total_vusers": number;
+            "validation_context"?: ({
+              "components": {
+                "approvals": string;
+                "capabilities": string;
+                "policy": string;
+                "scripts": string;
+                "secret_references": string;
+              };
+              "contextual_findings"?: Array<{
+                "cause": string;
+                "detail": string;
+                "subject"?: string;
+              }>;
+              "revision": string;
+              "secret_reference_limit": number;
+              "secret_references_truncated"?: boolean;
+              "version": number;
+            }) | null;
           }) | null;
         };
       };
@@ -201836,6 +212012,9 @@ export interface paths {
   "/api/v1/analysis/imports/{id}": {
     "get": operations["handleAnalysisImport_3"];
     "delete": operations["handleAnalysisImport_2"];
+  };
+  "/api/v1/analysis/imports/{id}/attest-writer-stopped": {
+    "post": operations["handleAnalysisImportAttestWriterStopped"];
   };
   "/api/v1/analysis/imports/{id}/commit": {
     "post": operations["handleAnalysisCommit"];

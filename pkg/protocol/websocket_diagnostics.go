@@ -164,3 +164,30 @@ func (s *WebSocketSummary) Clone() *WebSocketSummary {
 	copy := *s
 	return &copy
 }
+
+// WebSocketClientAnalysis exposes canonical client-side WebSocket metrics while
+// keeping matched authored ping/pong RTT distinct from receive blocking wait and
+// application pending writes distinct from kernel transport queue depth.
+type WebSocketClientAnalysis struct {
+	PingPongRTT               DiagnosticDistribution `json:"ws_ping_pong_rtt_ms"`
+	ReceiveWait               DiagnosticDistribution `json:"ws_receive_wait_ms"`
+	ApplicationPendingWrites  int64                  `json:"ws_application_pending_writes"`
+	PendingWritesScope        string                 `json:"pending_writes_scope"`
+	KernelTransportQueueDepth string                 `json:"kernel_transport_queue_depth"`
+	RTTConflationNote         string                 `json:"rtt_conflation_note"`
+}
+
+func (s *WebSocketSummary) ClientAnalysis() WebSocketClientAnalysis {
+	out := WebSocketClientAnalysis{
+		PendingWritesScope:        "application_writer_count",
+		KernelTransportQueueDepth: "unavailable",
+		RTTConflationNote:         "ws_ping_pong_rtt_ms measures matched authored ping/pong frames only and is never conflated with ws_receive_wait_ms",
+	}
+	if s == nil {
+		return out
+	}
+	out.PingPongRTT = s.PingRTT
+	out.ReceiveWait = s.Receive
+	out.ApplicationPendingWrites = s.MaxPendingWrites
+	return out
+}

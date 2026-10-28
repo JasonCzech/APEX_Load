@@ -749,3 +749,237 @@ func TestAnalysisWriterOwnershipDefaultRuntimeIsTheRealProcess(t *testing.T) {
 		t.Fatal("the default probe judged a missing path", local, err)
 	}
 }
+
+func TestAnalysisWriterOwnershipMintTimeVolumeIdentityAndUnmountedShareRefusal(t *testing.T) {
+	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "filesystem")
+	archiveDir := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
+	server, store, in := nativeUploadCursorFixture(t)
+	if err := ensureAnalysisBackend(store); err != nil {
+		t.Fatal(err)
+	}
+	// Controller A mints an upload writer via bindAnalysisWriterIncarnation
+	// before writing any chunk bytes to disk, then crashes.
+	server.analysisWriterOwnership.Store(&analysisWriterOwnershipRuntime{
+		self:    apiWriterA,
+		host:    apiHostA,
+		known:   true,
+		localFS: assumeLocalFilesystem,
+		exited:  func(procidentity.Identity) bool { return false },
+	})
+	data := []byte("PAR1dataPAR1")
+	digest := sha256.Sum256(data)
+	request := storage.AnalysisUploadRequest{
+		ProjectID: in.ProjectID,
+		ImportID:  in.ID,
+		FileID:    in.Files[0].ID,
+		Revision:  in.Revision,
+		Offset:    0,
+		Bytes:     int64(len(data)),
+		SHA256:    hex.EncodeToString(digest[:]),
+	}
+	exited, err := store.BeginAnalysisUploadWriter(server.bindAnalysisWriterIncarnation(t.Context()), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	volID, err := store.GetAnalysisVolumeIdentity()
+	if err != nil || volID == "" {
+		t.Fatal("mint-time volume identity was not bound in store", volID, err)
+	}
+	if exited.Volume == nil || exited.Volume.Identity != volID || !exited.Volume.LocalFilesystem {
+		t.Fatal("writer did not record mint-time volume identity and locality", exited.Volume)
+	}
+	sourceFile := filepath.Join(analysisArtifactDirectory(currentArchiveBackend()), analysisVolumeIdentityFileName)
+	if info, statErr := os.Stat(sourceFile); statErr != nil || !info.Mode().IsRegular() {
+		t.Fatal("_analysis/source.v1 was not materialized at mint time", statErr)
+	}
+	// Controller B starts after A crashed before writing chunk 0: because
+	// source.v1 was materialized at mint time, B immediately resolves A's
+	// offset and completes DELETE without needing another dataset write.
+	actAsWriterB(server, apiWriterA)
+	if !server.resolveExitedAnalysisUploadOffset(t.Context(), request) {
+		t.Fatal("mint-time source.v1 did not allow immediate pre-write crash recovery")
+	}
+	if response := timeslotRequest(t, server, "DELETE", "/api/v1/analysis/imports/"+in.ID, nil); response.Code != 204 {
+		t.Fatalf("DELETE after pre-write crash recovery: %d %s", response.Code, response.Body.String())
+	}
+
+	// Simulate an unmounted share or replaced directory where _analysis exists
+	// as an empty mountpoint without source.v1: exit scope and backend check
+	// must fail closed.
+	if err := os.Remove(sourceFile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.analysisWriterExitScope(); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("unmounted share without source.v1 granted exit scope", err)
+	}
+	if err := ensureAnalysisBackend(store); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("unmounted share without source.v1 passed ensureAnalysisBackend", err)
+	}
+	// Simulate a wrong volume mounted at the same path.
+	if err := os.WriteFile(sourceFile, []byte(uuid.NewString()+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.analysisWriterExitScope(); err == nil {
+		t.Fatal("mismatched volume source.v1 granted exit scope")
+	}
+}
+
+func TestAnalysisWriterOwnershipStagingDirectoryReclaimedAfterControllerAndWorkerExit(t *testing.T) {
+	if _, err := procidentity.CurrentHost(); err != nil {
+		t.Skipf("process identity unavailable: %v", err)
+	}
+	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "filesystem")
+	archiveDir := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
+	server, _, _ := nativeQueryAuthorityFixture(t)
+
+	child := exec.Command(os.Args[0], "-test.run=^TestAnalysisWriterOwnershipHelperProcess$")
+	child.Env = append(os.Environ(), "APEXLOAD_WRITER_OWNERSHIP_HELPER=wait")
+	alive, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer alive.Close()
+	reaped := false
+	t.Cleanup(func() {
+		if !reaped {
+			_ = child.Process.Kill()
+			_ = child.Wait()
+		}
+	})
+	workerID, err := procidentity.Of(child.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cacheRoot, err := nativeAnalysisCacheRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	datasetID := uuid.NewString()
+	attemptID := uuid.NewString()
+	jobDir := filepath.Join(cacheRoot, "job-"+datasetID+"-"+attemptID+"-12345")
+	attemptDir := filepath.Join(jobDir, "native-"+attemptID+"-67890")
+	if err := os.MkdirAll(attemptDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	stagingOwnerJSON, err := json.Marshal(map[string]any{
+		"version":    1,
+		"controller": apiWriterA,
+		"dataset_id": datasetID,
+		"attempt_id": attemptID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobDir, ".staging-owner.json"), stagingOwnerJSON, 0600); err != nil {
+		t.Fatal(err)
+	}
+	workerOwnerJSON, err := json.Marshal(map[string]any{
+		"version":    1,
+		"controller": apiWriterA,
+		"attempt_id": attemptID,
+		"launching":  false,
+		"worker":     workerID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(attemptDir, ".worker-owner.json"), workerOwnerJSON, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Controller A has exited, but its spawned worker child is still alive:
+	// staging directory must NOT be reclaimed yet.
+	server.analysisWriterOwnership.Store(&analysisWriterOwnershipRuntime{
+		self:    apiWriterB,
+		host:    apiHostA,
+		known:   true,
+		localFS: assumeLocalFilesystem,
+		exited: func(id procidentity.Identity) bool {
+			if id == apiWriterA {
+				return true
+			}
+			return procidentity.Exited(id)
+		},
+	})
+	server.reconcileAnalysisWriterIncarnationsOnce(t.Context())
+	if _, err := os.Stat(jobDir); err != nil {
+		t.Fatal("staging directory was reclaimed while worker child was still running", err)
+	}
+
+	// Kill and reap the worker child: next sweep proves both controller and
+	// worker exited and reclaims the staging directory.
+	_ = child.Process.Kill()
+	_ = child.Wait()
+	reaped = true
+	server.reconcileAnalysisWriterIncarnationsOnce(t.Context())
+	if _, err := os.Stat(jobDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("staging directory was not reclaimed after both controller and worker exited", err)
+	}
+}
+
+func TestAnalysisWriterOwnershipAdminInterventionResolvesRemoteAndUnjudgeableWriters(t *testing.T) {
+	for _, backend := range []string{archiveBackendS3, archiveBackendAzureBlob, archiveBackendGCS} {
+		t.Run(backend, func(t *testing.T) {
+			t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+			t.Setenv("APEXLOAD_ARCHIVE_BACKEND", backend)
+			t.Setenv("APEXLOAD_ARCHIVE_BUCKET", "analysis-writer-intervention")
+			t.Setenv("APEXLOAD_ARCHIVE_CONTAINER", "analysis-writer-intervention")
+			server, store, ready := nativeQueryAuthorityFixture(t)
+			actAsWriterB(server)
+
+			deleted, deletedAttempt := claimAsWriter(t, store, ready, apiWriterA)
+			requireDeletionPending(t, timeslotRequest(t, server, "DELETE", "/api/v1/analysis/imports/"+deleted.ID, nil), 0, 0, 0, 1, 0)
+
+			// Controller A exits on a remote object store: status transitions to
+			// remote_commits_unproven=1 and DELETE stays pending.
+			actAsWriterB(server, apiWriterA)
+			server.reconcileAnalysisWriterIncarnationsOnce(t.Context())
+			requireDeletionPending(t, timeslotRequest(t, server, "DELETE", "/api/v1/analysis/imports/"+deleted.ID, nil), 0, 0, 1, 0, 0)
+
+			bucket := memblob.OpenBucket(nil)
+			t.Cleanup(func() { _ = bucket.Close() })
+			pinned := currentArchiveBackend()
+			lateKey := filepath.ToSlash(filepath.Join(pinned.Prefix, "_analysis", deletedAttempt.Normalized[0]))
+			if err := bucket.WriteAll(t.Context(), lateKey, []byte("late remote commit"), nil); err != nil {
+				t.Fatal(err)
+			}
+			// Short reason is rejected with 400.
+			badResp := timeslotRequest(t, server, "POST", "/api/v1/analysis/imports/"+deleted.ID+"/attest-writer-stopped", map[string]any{"reason": "no"})
+			if badResp.Code != 400 {
+				t.Fatalf("expected 400 for short attestation reason, got %d %s", badResp.Code, badResp.Body.String())
+			}
+			// Admin attests that the writer and any in-flight remote commits have stopped.
+			attestResp := timeslotRequest(t, server, "POST", "/api/v1/analysis/imports/"+deleted.ID+"/attest-writer-stopped", map[string]any{
+				"reason": "verified pod terminated and remote object store multipart uploads aborted",
+			})
+			if attestResp.Code != 200 {
+				t.Fatalf("attest-writer-stopped failed: %d %s", attestResp.Code, attestResp.Body.String())
+			}
+			var attested storage.AnalysisImport
+			if err := json.Unmarshal(attestResp.Body.Bytes(), &attested); err != nil || attested.WriterAttestation == nil || attested.WriterAttestation.Reason == "" {
+				t.Fatalf("attested import payload invalid: %+v (%v)", attested, err)
+			}
+			// Now AttemptCleanupPlan is unblocked and removes the late remote object.
+			ops := defaultAnalysisCleanupPhysicalOps
+			ops.openBucket = func(context.Context, archiveBackendRuntime) (analysisCleanupBucket, error) {
+				return analysisNoCloseBucket{bucket}, nil
+			}
+			ctx, _ := cleanupOwnerContext(t, 4, ops)
+			if err := server.retryAnalysisCleanupJob(ctx, store, storage.AnalysisCleanupJob{Kind: "attempt", ProjectID: deleted.ProjectID, ResourceID: deletedAttempt.ID}); err != nil {
+				t.Fatal(err)
+			}
+			if exists, err := bucket.Exists(t.Context(), lateKey); err != nil || exists {
+				t.Fatal("attested remote attempt cleanup did not delete late object", exists, err)
+			}
+		})
+	}
+}

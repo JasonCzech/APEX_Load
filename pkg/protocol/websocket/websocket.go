@@ -110,13 +110,14 @@ func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
 
 func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	if action == nil {
-		return &protocol.Result{StartTime: time.Now(), ErrorMessage: "websocket action is required"}, nil
+		return &protocol.Result{StartTime: time.Now(), ErrorMessage: "websocket action is required", ByteEvidence: protocol.ByteEvidenceNone}, nil
 	}
 	result := &protocol.Result{
 		ActionName:     action.Name,
 		StartTime:      time.Now(),
 		Extractions:    make(map[string]string),
 		DependencyType: "websocket",
+		ByteEvidence:   protocol.ByteEvidenceNone,
 	}
 
 	var err error
@@ -269,10 +270,12 @@ func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *p
 	if len(action.Body) > dsl.MaxWebSocketMessageBytes {
 		return fmt.Errorf("websocket message exceeds %d byte limit", dsl.MaxWebSocketMessageBytes)
 	}
+	result.ByteEvidence = protocol.ByteEvidenceNone
 	conn, err := w.currentOrReconnect(ctx, result)
 	if err != nil {
 		return err
 	}
+	result.ByteEvidence = protocol.ByteEvidenceWebSocketApplicationPayload
 	if err := w.measuredWrite(conn, messageType, action.Body, result); err != nil {
 		if !w.reconnect {
 			return err
@@ -298,15 +301,17 @@ func (w *WebSocket) receive(ctx context.Context, action *protocol.Action, result
 	if callbackMode {
 		return fmt.Errorf("ws_receive cannot compete with a registered callback; use ws_dispatch")
 	}
+	timeout, err := actionTimeout(action, w.readTimeout)
+	if err != nil {
+		return err
+	}
+	result.ByteEvidence = protocol.ByteEvidenceNone
 
 	conn, err := w.currentOrReconnect(ctx, result)
 	if err != nil {
 		return err
 	}
-	timeout, err := actionTimeout(action, w.readTimeout)
-	if err != nil {
-		return err
-	}
+	result.ByteEvidence = protocol.ByteEvidenceWebSocketApplicationPayload
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -430,7 +435,9 @@ func (w *WebSocket) close(action *protocol.Action, result *protocol.Result) erro
 
 	deadline := time.Now().Add(w.writeTimeout)
 	writeErr := conn.WriteControl(gorillawebsocket.CloseMessage, msg, deadline)
-	result.BytesSent = int64(len(msg))
+	if writeErr == nil {
+		result.BytesSent = int64(len(msg))
+	}
 	closeErr := conn.Close()
 	if writeErr != nil {
 		return writeErr

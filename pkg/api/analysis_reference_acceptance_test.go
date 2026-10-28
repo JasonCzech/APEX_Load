@@ -52,6 +52,13 @@ type analyticsReferenceTiming struct {
 	MaxMs   float64 `json:"max_ms"`
 }
 
+type analyticsReferenceFaultTrial struct {
+	Name       string  `json:"name"`
+	Passed     bool    `json:"passed"`
+	DurationMs float64 `json:"duration_ms"`
+	Detail     string  `json:"detail,omitempty"`
+}
+
 type analyticsReferenceResults struct {
 	Schema      string                   `json:"schema"`
 	GeneratedAt time.Time                `json:"generated_at"`
@@ -84,13 +91,14 @@ type analyticsReferenceResults struct {
 	// Peak RSS sampled during the import and the queries: of the controller
 	// process, of its native worker processes, and of the two together at
 	// one instant. Spill is bounded by SpillLimit but not measured.
-	PeakControllerRSSBytes int64    `json:"peak_controller_rss_bytes"`
-	PeakWorkerRSSBytes     int64    `json:"peak_worker_rss_bytes"`
-	PeakCombinedRSSBytes   int64    `json:"peak_combined_rss_bytes"`
-	MemoryLimit            string   `json:"memory_limit"`
-	SpillLimit             string   `json:"spill_limit"`
-	NotMeasured            []string `json:"not_measured"`
-	Failures               []string `json:"failures"`
+	PeakControllerRSSBytes int64                          `json:"peak_controller_rss_bytes"`
+	PeakWorkerRSSBytes     int64                          `json:"peak_worker_rss_bytes"`
+	PeakCombinedRSSBytes   int64                          `json:"peak_combined_rss_bytes"`
+	MemoryLimit            string                         `json:"memory_limit"`
+	SpillLimit             string                         `json:"spill_limit"`
+	FaultTrials            []analyticsReferenceFaultTrial `json:"fault_trials,omitempty"`
+	NotMeasured            []string                       `json:"not_measured"`
+	Failures               []string                       `json:"failures"`
 }
 
 // writeAnalyticsReferenceAcceptance writes the results and, given the

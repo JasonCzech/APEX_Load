@@ -56,7 +56,7 @@ func nativeJavaHTTPValue(d *protocol.JavaHTTPDiagnostics, metric string) (n, den
 		return d.EnclosingMs, 0, true
 	case "java_http_decoded_per_encoded":
 		return pair(d.RequestDecodedBytes, &d.RequestEncodedBytes)
-	case "java_http_prepared_per_decoded":
+	case "java_http_prepared_per_decoded", "serialized_representation_vs_http_body":
 		return pair(d.PreparedRequestBodyBytes, d.RequestDecodedBytes)
 	case "java_http_base64_per_retained":
 		return pair(d.ResponseBase64Bytes, d.ResponseRetainedBytes)
@@ -65,6 +65,26 @@ func nativeJavaHTTPValue(d *protocol.JavaHTTPDiagnostics, metric string) (n, den
 			return
 		}
 		return *d.Base64DecodeMs + *d.Base64EncodeMs, d.EnclosingMs, true
+	case "java_shallow_object_bytes":
+		if d.ContainedObjectFootprint == nil || !d.ContainedObjectFootprint.ShallowObject.Available {
+			return
+		}
+		return scalar(d.ContainedObjectFootprint.ShallowObject.Bytes)
+	case "java_reachable_graph_bytes":
+		if d.ContainedObjectFootprint == nil || !d.ContainedObjectFootprint.ReachableGraph.Available {
+			return
+		}
+		return scalar(d.ContainedObjectFootprint.ReachableGraph.Bytes)
+	case "java_serialization_ms":
+		if d.ContainedObjectFootprint == nil || !d.ContainedObjectFootprint.CodecExecuted {
+			return
+		}
+		return timing(d.ContainedObjectFootprint.JavaSerializationMs)
+	case "java_deserialization_ms":
+		if d.ContainedObjectFootprint == nil || !d.ContainedObjectFootprint.CodecExecuted {
+			return
+		}
+		return timing(d.ContainedObjectFootprint.JavaDeserializationMs)
 	}
 	return
 }
@@ -121,7 +141,7 @@ func buildNativeJavaHTTPSeries(ctx context.Context, record *storage.RunArchiveRe
 			refuse("measurement_unavailable")
 			return nil
 		}
-		if q.Metric == "java_http_prepared_body_bytes" || q.Metric == "java_http_prepared_per_decoded" {
+		if q.Metric == "java_http_prepared_body_bytes" || q.Metric == "java_http_prepared_per_decoded" || q.Metric == "serialized_representation_vs_http_body" {
 			compressionSet[d.AppliedRequestCompression] = true
 		}
 		values[i] = append(values[i], n)

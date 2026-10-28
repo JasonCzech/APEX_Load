@@ -278,7 +278,32 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			}
 			groupMetricsByName[name] = append(groupMetricsByName[name], rawGroups...)
 		}
-		telemetry.add(batch.LifecycleState, batch.Telemetry)
+		batchTelemetry := batch.Telemetry
+		if batchTelemetry != nil {
+			if (batchTelemetry.WindowMs == 0 && batch.WindowMs > 0) || (batchTelemetry.OldestObservationStartBoundUnixMs <= 0 && len(batch.CollectionWindows) > 0) {
+				copied := *batchTelemetry
+				if copied.WindowMs == 0 && batch.WindowMs > 0 {
+					copied.WindowMs = batch.WindowMs
+				}
+				if copied.OldestObservationStartBoundUnixMs <= 0 && len(batch.CollectionWindows) > 0 && (copied.CollectedAtQuality == nil || copied.CollectedAtQuality.Qualified) {
+					var minStart time.Time
+					for _, w := range batch.CollectionWindows {
+						if !w.Start.IsZero() && (minStart.IsZero() || w.Start.Before(minStart)) {
+							minStart = w.Start
+						}
+					}
+					if !minStart.IsZero() {
+						var uncertainty float64
+						if copied.CollectedAtQuality != nil {
+							uncertainty = copied.CollectedAtQuality.UncertaintyMs
+						}
+						copied.OldestObservationStartBoundUnixMs = timeToUnixMillisFloat(minStart) - copied.CollectedAtOffsetMs - uncertainty
+					}
+				}
+				batchTelemetry = &copied
+			}
+		}
+		telemetry.add(batch.LifecycleState, batchTelemetry)
 	}
 	// Joint evidence v4 merges by exact tuple across generators; a generator
 	// without it leaves the fleet window incomplete, never zero.
@@ -1217,6 +1242,10 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		AvgTTFBMs:          aggregate.AvgTTFBMs,
 		Count:              aggregate.Count,
 		Errors:             aggregate.Errors,
+		BytesSent:          aggregate.BytesSent,
+		BytesReceived:      aggregate.BytesReceived,
+		ByteEvidence:       aggregate.ByteEvidence,
+		ByteSamples:        aggregate.ByteSamples,
 		AvgMs:              aggregate.AvgMs,
 		P50Ms:              aggregate.P50Ms,
 		P90Ms:              aggregate.P90Ms,
@@ -1687,6 +1716,14 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out := generatorrpc.MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
+	var measuredBytesSent, measuredBytesReceived int64
+	hasByteEvidence := false
+	for _, value := range values {
+		if value.Count > 0 && strings.TrimSpace(value.ByteEvidence) != "" {
+			hasByteEvidence = true
+			break
+		}
+	}
 	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
@@ -1710,12 +1747,19 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		ttfbSum += value.AvgTTFBMs * count
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
+		if hasByteEvidence {
+			protocol.MergeIntervalByteEvidence(&out.ByteEvidence, &out.ByteSamples, &measuredBytesSent, &measuredBytesReceived, value.Count, value.ByteEvidence, value.ByteSamples, value.BytesSent, value.BytesReceived)
+		}
 		out.TPS += value.TPS
 		out.Exemplars = engine.MergeTraceExemplars(out.Exemplars, value.Exemplars)
 		durations.Add(value.Count, value.DurationDigest, value.DurationSketch)
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	if hasByteEvidence && (protocol.IsMeasuredByteEvidence(out.ByteEvidence) || out.ByteEvidence == protocol.ByteEvidenceNone) {
+		out.BytesSent = measuredBytesSent
+		out.BytesReceived = measuredBytesReceived
 	}
 	if javaUncounted {
 		out.JavaHTTP.ForgetPopulation()

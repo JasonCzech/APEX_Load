@@ -35,7 +35,8 @@ type telemetryAcceptanceReportView struct {
 	// changed while it ran (TEL-B), with each one's classified time.
 	Segments []telemetryAcceptanceReportSegment
 	// SegmentsNote explains the segments (HTML and PDF), set with them.
-	SegmentsNote string
+	SegmentsNote     string
+	ValidityFindings []TelemetryValidityFinding
 }
 
 type telemetryAcceptanceReportSegment struct {
@@ -147,6 +148,7 @@ var telemetryReportLabels = map[string]string{
 	"controller_fanout":                      "Controller fan-out",
 	"sample_age":                             "Sample age",
 	"browser_render":                         "Browser render",
+	"end_to_end":                             "End-to-end observation to render",
 	"clock_unqualified":                      "clock not qualified",
 	"telemetry_gaps":                         "Telemetry gaps",
 	"min_wall_time_coverage":                 "Wall-time coverage (minimum)",
@@ -187,11 +189,19 @@ func (d *runArchiveHTMLReportData) TelemetryAcceptanceView() telemetryAcceptance
 }
 
 func buildTelemetryAcceptanceReportView(manifest *RunArchiveManifest, verdict *TelemetryAcceptanceVerdict) telemetryAcceptanceReportView {
+	if manifest != nil {
+		scrubber := newTelemetryTextScrubber(manifest)
+		manifest = scrubTelemetryText(manifest, scrubber)
+		if verdict != nil {
+			verdict = scrubTelemetryVerdict(verdict, scrubber)
+		}
+	}
 	view := telemetryAcceptanceReportView{Verdict: verdict, Exclusions: append([]string(nil), telemetryAcceptanceExclusions...)}
 	if manifest == nil {
 		view.Summary = "No archive manifest is available."
 		return view
 	}
+	view.ValidityFindings = manifest.TelemetryValidityFindings
 	for _, pin := range manifest.Provenance.PolicyPins {
 		if pin.Kind == storage.AnalysisDefinitionKindTelemetryPolicy || pin.Kind == storage.AnalysisDefinitionKindTelemetryAcceptancePolicy {
 			view.Pins = append(view.Pins, pin)
@@ -313,6 +323,10 @@ func telemetryRenderPopulationReport(p *TelemetryRenderPopulation, startedAt *ti
 		counts = append(counts, [2]string{"unqualified:" + reason, fmt.Sprint(p.Unqualified[reason])})
 	}
 	counts = append(counts, [2]string{"unreported", fmt.Sprint(p.Unreported)}, [2]string{"ineligible", fmt.Sprint(p.Ineligible)}, [2]string{"unknown", fmt.Sprint(p.Unknown)})
+	for idx, prior := range p.PriorEpochs {
+		prefix := fmt.Sprintf("prior_epoch_%d:", idx+1)
+		counts = append(counts, [2]string{prefix + "epoch", prior.Epoch}, [2]string{prefix + "reference_client", prior.ReferenceClient}, [2]string{prefix + "eligible", fmt.Sprint(prior.Eligible)}, [2]string{prefix + "rendered", fmt.Sprint(prior.Rendered)})
+	}
 	return text, counts
 }
 
@@ -441,6 +455,13 @@ func telemetryAcceptanceReportPDF(d *runArchiveHTMLReportData, lines *[]string) 
 		}
 		*lines = append(*lines, line)
 	}
+	for _, finding := range view.ValidityFindings {
+		line := fmt.Sprintf("Validity finding %s (%s, compliant=%t): %s", finding.Criterion, finding.Status, finding.Compliant, finding.Summary)
+		if len(finding.Details) > 0 {
+			line += " [" + strings.Join(finding.Details, "; ") + "]"
+		}
+		*lines = append(*lines, line)
+	}
 	for _, exclusion := range view.Exclusions {
 		*lines = append(*lines, "Excluded: "+telemetryExclusionText(exclusion))
 	}
@@ -489,6 +510,13 @@ func telemetryAcceptanceReportCSV(d *runArchiveHTMLReportData, write reportCSVWr
 		for _, item := range [][2]string{{"availability", stage.Availability}, {"samples", stage.Samples}, {"p50_ms", stage.P50}, {"p95_ms", stage.P95}, {"p99_ms", stage.P99}, {"max_ms", stage.Max}, {"excluded", stage.Excluded}} {
 			rows = append(rows, [4]string{"telemetry_stage", stage.Stage, item[0], item[1]})
 		}
+	}
+	for _, finding := range view.ValidityFindings {
+		rows = append(rows,
+			[4]string{"telemetry_validity_finding", finding.Criterion, "status", finding.Status},
+			[4]string{"telemetry_validity_finding", finding.Criterion, "compliant", fmt.Sprint(finding.Compliant)},
+			[4]string{"telemetry_validity_finding", finding.Criterion, "summary", finding.Summary},
+		)
 	}
 	for index, exclusion := range view.Exclusions {
 		rows = append(rows, [4]string{"telemetry_acceptance_exclusion", fmt.Sprint(index), "exclusion", exclusion})

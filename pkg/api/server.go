@@ -217,6 +217,7 @@ type Server struct {
 	clusterScalers                    clusterScalerResolver
 	clusterSecretWrapper              keywrap.KeyWrapper
 	receiptCredentialKeyMu            sync.Mutex
+	receiptCredentialKeyWrapper       keywrap.KeyWrapper
 	receiptCredentialKey              []byte
 	clusterProbes                     *clusterProbeThrottle
 	fleetProvisioningMu               sync.Mutex

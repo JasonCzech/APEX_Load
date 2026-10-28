@@ -23,6 +23,34 @@ type MetricsCollectionWindow struct {
 	End   time.Time `json:"end"`
 }
 
+// MetricsCollectionWindowFromTelemetry derives a single collection window from
+// a batch's telemetry timestamps and WindowMs when explicit per-group
+// CollectionWindows are absent.
+func MetricsCollectionWindowFromTelemetry(telemetry *MetricsTelemetry, fallbackEndUnixMs ...int64) (MetricsCollectionWindow, bool) {
+	if telemetry == nil || telemetry.WindowMs <= 0 {
+		return MetricsCollectionWindow{}, false
+	}
+	endMs := telemetry.NewestCollectedAtUnixMs
+	if endMs <= 0 {
+		endMs = telemetry.CollectedAtUnixMs
+	}
+	if endMs <= 0 && len(fallbackEndUnixMs) > 0 {
+		endMs = fallbackEndUnixMs[0]
+	}
+	if endMs <= 0 {
+		return MetricsCollectionWindow{}, false
+	}
+	startMs := endMs - telemetry.WindowMs
+	if startMs <= 0 || endMs <= startMs {
+		return MetricsCollectionWindow{}, false
+	}
+	return MetricsCollectionWindow{
+		Group: "default",
+		Start: time.UnixMilli(startMs).UTC(),
+		End:   time.UnixMilli(endMs).UTC(),
+	}, true
+}
+
 func validCollectionWindow(window MetricsCollectionWindow) bool {
 	return strings.TrimSpace(window.Group) != "" && len(window.Group) <= maxGeneratorGroupNameBytes &&
 		!window.Start.IsZero() && window.End.After(window.Start) &&

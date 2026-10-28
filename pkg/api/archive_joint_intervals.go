@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -228,6 +229,15 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 	// (B5).
 	pending := append([]*storage.NativePublicationEvidence(nil), test.pendingJointPublications...)
 	pendingDropped, heldFromStart := test.jointPublicationsDropped, test.jointHeldFromStart
+	ledger := test.telemetrySources
+	failovers := append([]RunFailover(nil), test.continuityFailovers...)
+	var cursorWindows map[string]distributedWindowMark
+	if len(test.runTotals.windows) > 0 {
+		cursorWindows = make(map[string]distributedWindowMark, len(test.runTotals.windows))
+		for k, v := range test.runTotals.windows {
+			cursorWindows[k] = v
+		}
+	}
 	tr.mu.RUnlock()
 	budget, err := newEvidenceSidecarBudget(ctx, record, envArchiveJointIntervalsMaxBytes, 64<<20)
 	if err != nil {
@@ -239,7 +249,7 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 		if err == nil {
 			return
 		}
-		manifest.JointIntervalsFile, manifest.JointIntervalsParquetFile, manifest.JointIntervalCount, manifest.JointIntervalsTruncated = "", "", 0, false
+		manifest.JointIntervalsFile, manifest.JointIntervalsParquetFile, manifest.JointIntervalCount, manifest.JointIntervalsTruncated, manifest.JointTruncatedWindows = "", "", 0, false, nil
 		manifest.Artifacts = slices.DeleteFunc(manifest.Artifacts, func(artifact RunArchiveArtifact) bool {
 			return artifact.Name == jointIntervalsFileName || artifact.Name == jointIntervalsParquetFileName
 		})
@@ -252,12 +262,18 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 	var count int64
 	// A distributed run (the manifest names its generator sources) that this
 	// controller did not hold from its start (adopted after a failover, or
-	// reloaded after a restart): the batches another controller held for its
-	// next point are unknown. The store keeps a bounded number of interval
-	// rows per run, so a run that reached that bound may have lost its oldest.
+	// reloaded after a restart): reconcile against the durable source/joint
+	// sequence ledger to determine whether every committed source window up to
+	// the adopted cursor is present, or which windows were lost.
 	distributed := manifest.SourceCoverage != nil && len(manifest.SourceCoverage.Sources) > 0
-	truncated := reader == nil || pendingDropped > 0 || distributed && !heldFromStart || reader != nil && nativeEvidenceTrimmed(ctx, tr.testStore, test.ID)
+	baseTruncated := reader == nil || pendingDropped > 0 || reader != nil && nativeEvidenceTrimmed(ctx, tr.testStore, test.ID)
+	truncated := baseTruncated || distributed && !heldFromStart || ledger.wasAdopted()
+	installed := map[jointInstalledBatchKey]bool{}
+	installedWindows := map[jointInstalledBatchKey][2]int64{}
 	err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, jointIntervalsFileName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
+		count = 0
+		installed = map[jointInstalledBatchKey]bool{}
+		installedWindows = map[jointInstalledBatchKey][2]int64{}
 		out := &archiveOutputFile{file: file, budget: budget}
 		emit := func(row JointIntervalRecord) error {
 			line, err := json.Marshal(row)
@@ -274,11 +290,29 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 			count++
 			return nil
 		}
+		recordInstalledRow := func(row JointIntervalRecord) {
+			if row.SourceID == "" || row.SourceID == "local" || row.Sequence == 0 {
+				return
+			}
+			id := jointInstalledBatchKey{
+				Source:     row.SourceID,
+				Epoch:      row.SourceEpoch,
+				Generation: row.ExecutionGeneration,
+				Sequence:   row.Sequence,
+			}
+			installed[id] = true
+			endMs := row.Timestamp.UnixMilli()
+			startMs := max(int64(0), endMs-int64(math.Round(row.WindowSeconds*1000)))
+			installedWindows[id] = [2]int64{startMs, endMs}
+		}
 		emitAll := func(rows []JointIntervalRecord) error {
 			for _, row := range rows {
 				if err := emit(row); err != nil {
 					return err
 				}
+			}
+			for _, row := range rows {
+				recordInstalledRow(row)
 			}
 			return nil
 		}
@@ -296,6 +330,7 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 				}
 				rows := jointIntervalEvidenceRows(live.Timestamp, live.NativeEvidence, seen)
 				if len(rows) > 0 && reader != nil {
+					baseTruncated = true
 					truncated = true
 				}
 				if err = emitAll(rows); err != nil {
@@ -310,6 +345,7 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 			err = emitAll(jointPublicationRows(p, seen))
 		}
 		if errors.Is(err, errJointIntervalBudget) {
+			baseTruncated = true
 			truncated = true
 			err = nil
 		}
@@ -317,6 +353,32 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 	}, ctx)
 	if err != nil {
 		return err
+	}
+	var expectedSources []string
+	if manifest.SourceCoverage != nil {
+		for _, s := range manifest.SourceCoverage.Sources {
+			if s.Target != "" {
+				expectedSources = append(expectedSources, s.Target)
+			}
+		}
+	}
+	requireOrigin := (distributed && !heldFromStart) || ledger.wasAdopted()
+	ledgerComplete, truncatedWindows, verified := ledger.reconcileJointEvidence(installed, installedWindows, expectedSources, failovers, cursorWindows, requireOrigin)
+	if verified {
+		if !ledgerComplete || len(truncatedWindows) > 0 {
+			truncated = true
+		} else if requireOrigin {
+			if !baseTruncated && count > 0 {
+				truncated = false
+			} else {
+				truncated = true
+			}
+		}
+		if truncated && len(truncatedWindows) > 0 {
+			manifest.JointTruncatedWindows = truncatedWindows
+		} else {
+			manifest.JointTruncatedWindows = nil
+		}
 	}
 	// The Parquet copy has its own allowance, the JSONL's plus room for its
 	// format overhead: the JSONL may have used all of its own before it was

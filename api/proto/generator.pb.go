@@ -5523,8 +5523,13 @@ type MetricAggregate struct {
 	// predates it leaves it unset, and the controller merges duration_digest.
 	DurationSketch *DurationSketchSnapshot `protobuf:"bytes,22,opt,name=duration_sketch,json=durationSketch,proto3" json:"duration_sketch,omitempty"`
 	JavaHttp       *JavaHTTPSummary        `protobuf:"bytes,23,opt,name=java_http,json=javaHttp,proto3" json:"java_http,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Measured byte evidence contract (http_body.v1, grpc_uncompressed_payload.v1,
+	// ws_application_payload.v1, none, or unmeasured) and the number of measured
+	// samples contributing to bytes_sent and bytes_received.
+	ByteEvidence  string `protobuf:"bytes,24,opt,name=byte_evidence,json=byteEvidence,proto3" json:"byte_evidence,omitempty"`
+	ByteSamples   int64  `protobuf:"varint,25,opt,name=byte_samples,json=byteSamples,proto3" json:"byte_samples,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MetricAggregate) Reset() {
@@ -5716,6 +5721,20 @@ func (x *MetricAggregate) GetJavaHttp() *JavaHTTPSummary {
 		return x.JavaHttp
 	}
 	return nil
+}
+
+func (x *MetricAggregate) GetByteEvidence() string {
+	if x != nil {
+		return x.ByteEvidence
+	}
+	return ""
+}
+
+func (x *MetricAggregate) GetByteSamples() int64 {
+	if x != nil {
+		return x.ByteSamples
+	}
+	return 0
 }
 
 type TraceExemplar struct {
@@ -10191,7 +10210,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
 	"zero_count\x18\a \x01(\x04R\tzeroCount\x12\x1c\n" +
 	"\tcollapsed\x18\b \x01(\bR\tcollapsed\x122\n" +
-	"\x04bins\x18\t \x03(\v2\x1e.apexload.v1.DurationSketchBinR\x04bins\"\xe3\x06\n" +
+	"\x04bins\x18\t \x03(\v2\x1e.apexload.v1.DurationSketchBinR\x04bins\"\xab\a\n" +
 	"\x0fMetricAggregate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12'\n" +
 	"\x0fdependency_type\x18\x02 \x01(\tR\x0edependencyType\x12+\n" +
@@ -10219,7 +10238,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x11messaging_version\x18\x14 \x01(\rR\x10messagingVersion\x128\n" +
 	"\texemplars\x18\x15 \x03(\v2\x1a.apexload.v1.TraceExemplarR\texemplars\x12L\n" +
 	"\x0fduration_sketch\x18\x16 \x01(\v2#.apexload.v1.DurationSketchSnapshotR\x0edurationSketch\x129\n" +
-	"\tjava_http\x18\x17 \x01(\v2\x1c.apexload.v1.JavaHTTPSummaryR\bjavaHttp\"\xe3\x01\n" +
+	"\tjava_http\x18\x17 \x01(\v2\x1c.apexload.v1.JavaHTTPSummaryR\bjavaHttp\x12#\n" +
+	"\rbyte_evidence\x18\x18 \x01(\tR\fbyteEvidence\x12!\n" +
+	"\fbyte_samples\x18\x19 \x01(\x03R\vbyteSamples\"\xe3\x01\n" +
 	"\rTraceExemplar\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x17\n" +
 	"\aspan_id\x18\x02 \x01(\tR\x06spanId\x12\x1f\n" +

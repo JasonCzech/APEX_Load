@@ -98,6 +98,7 @@ type AnalysisDatasetSeriesResponse struct {
 }
 type AnalysisComparisonResponse struct {
 	TimeWindow     *AnalysisTimeWindow         `json:"time_window,omitempty"`
+	PanelInputs    *storage.SavedPanelInputs   `json:"panel_inputs,omitempty"`
 	Left           []analysis.MetricPoint      `json:"left"`
 	Right          []analysis.MetricPoint      `json:"right"`
 	Request        AnalysisComparisonRequest   `json:"request"`

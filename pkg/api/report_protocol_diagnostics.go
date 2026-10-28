@@ -118,6 +118,11 @@ func protocolReportLines(report *RunArchiveReport) []string {
 				identity+" · Client-call protobuf byte rate: "+metric(analysis.SentBytesPerCallSecond, "sent bytes/s")+" / "+metric(analysis.ReceivedBytesPerCallSecond, "received bytes/s"),
 				identity+" · Mean protobuf message payload: "+metric(analysis.MeanSentPayloadBytes, "sent bytes")+" / "+metric(analysis.MeanReceivedPayloadBytes, "received bytes"),
 				identity+" · Codec elapsed work / call wall time: "+metric(analysis.CodecWorkToCallWallPct, "%")+" (codec timings can overlap)",
+				fmt.Sprintf("%s · grpc_uncompressed_payload_bytes: %d sent / %d received bytes; grpc_client_call_rate: %s; grpc_codec_overlap_ratio: %s; HTTP/2 transport phase: %s; server processing phase: %s",
+					identity, g.RequestBytes, g.ResponseBytes,
+					metric(analysis.ClientCallsPerCallSecond, "calls/call-s"),
+					metric(analysis.CodecOverlapRatio, "ratio"),
+					analysis.HTTP2TransportPhase, analysis.ServerProcessingPhase),
 			)
 
 		}
@@ -128,6 +133,9 @@ func protocolReportLines(report *RunArchiveReport) []string {
 			add(name, "WebSocket matched authored ping/pong RTT", w.PingRTT)
 			add(name, "WebSocket text receive wait", w.TextReceive)
 			add(name, "WebSocket binary receive wait", w.BinaryReceive)
+			wsAnalysis := w.ClientAnalysis()
+			lines = append(lines, fmt.Sprintf("%s · ws_application_pending_writes: %d (%s; kernel_transport_queue_depth: %s; %s)",
+				name, wsAnalysis.ApplicationPendingWrites, wsAnalysis.PendingWritesScope, wsAnalysis.KernelTransportQueueDepth, wsAnalysis.RTTConflationNote))
 		}
 		for _, finding := range a.DiagnosticFindings {
 			lines = append(lines, fmt.Sprintf("%s · %s: %s", name, finding.Rule, finding.Message))

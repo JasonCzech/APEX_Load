@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -277,7 +278,9 @@ func (attempt *authoringCreateAttempt) complete(revision string) {
 // fail records the create's error; an unknown commit outcome pins the
 // receipt so a retry adopts whatever committed.
 func (attempt *authoringCreateAttempt) fail(err error) {
-	if attempt != nil && errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) {
+	if attempt != nil && (errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) ||
+		errors.Is(err, storage.ErrAuthoringReceiptFaultBeforeCommit) ||
+		errors.Is(err, storage.ErrAuthoringReceiptFaultPostCommit)) {
 		attempt.outcomeUnknown = true
 	}
 }
@@ -491,6 +494,13 @@ func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, k
 	return identity, nil
 }
 
+func (s *Server) authoringReceiptKeyWrapperLocked() keywrap.KeyWrapper {
+	if s.receiptCredentialKeyWrapper != nil {
+		return s.receiptCredentialKeyWrapper
+	}
+	return s.clusterSecretWrapper
+}
+
 // authoringReceiptCredentialKey returns the key credential values are
 // fingerprinted under. It is generated once per deployment and kept in the
 // settings table only wrapped by the configured key wrapper. Without one it
@@ -501,9 +511,9 @@ func (s *Server) authoringReceiptCredentialKey(ctx context.Context) ([]byte, err
 	s.receiptCredentialKeyMu.Lock()
 	defer s.receiptCredentialKeyMu.Unlock()
 	if len(s.receiptCredentialKey) == authoringReceiptCredentialKeyBytes {
-		return s.receiptCredentialKey, nil
+		return bytes.Clone(s.receiptCredentialKey), nil
 	}
-	wrapper := s.clusterSecretWrapper
+	wrapper := s.authoringReceiptKeyWrapperLocked()
 	if wrapper == nil || s.store == nil {
 		return nil, errAuthoringReceiptCredentialKeyUnavailable
 	}
@@ -551,7 +561,65 @@ func (s *Server) authoringReceiptCredentialKey(ctx context.Context) ([]byte, err
 		return nil, errors.New("authoring receipt credential key is invalid")
 	}
 	s.receiptCredentialKey = key
-	return key, nil
+	return bytes.Clone(key), nil
+}
+
+// RotateAuthoringReceiptCredentialKey re-wraps the stored authoring receipt
+// credential HMAC key under nextWrapper without changing its underlying key
+// material, so all retained credential-bearing receipt fingerprints remain
+// verifiable across master key rotation.
+func (s *Server) RotateAuthoringReceiptCredentialKey(ctx context.Context, nextWrapper keywrap.KeyWrapper) error {
+	if nextWrapper == nil {
+		return errors.New("next key wrapper is required")
+	}
+	if s.store == nil {
+		return errors.New("authoring receipt store is required")
+	}
+	s.receiptCredentialKeyMu.Lock()
+	defer s.receiptCredentialKeyMu.Unlock()
+
+	currentWrapper := s.authoringReceiptKeyWrapperLocked()
+	if currentWrapper == nil {
+		return errAuthoringReceiptCredentialKeyUnavailable
+	}
+	cas, supported := s.store.(settingsCompareAndSwapper)
+	if !supported {
+		return errors.New("authoring receipt credential key cannot be rotated atomically on this store")
+	}
+	aad := []byte(authoringReceiptCredentialKeyAAD)
+	raw, err := s.store.GetSetting(authoringReceiptCredentialKeySetting)
+	if err != nil {
+		return fmt.Errorf("load authoring receipt credential key: %w", err)
+	}
+	if strings.TrimSpace(raw) != "" {
+		var wrapped keywrap.WrappedKey
+		if err := json.Unmarshal([]byte(raw), &wrapped); err != nil {
+			return errors.New("authoring receipt credential key is invalid")
+		}
+		rotated, err := keywrap.RotateWrappedKey(ctx, currentWrapper, nextWrapper, wrapped, aad)
+		if err != nil {
+			return fmt.Errorf("rotate authoring receipt credential key: %w", err)
+		}
+		encoded, err := json.Marshal(rotated)
+		if err != nil {
+			return err
+		}
+		swapped, err := cas.CompareAndSwapSetting(authoringReceiptCredentialKeySetting, raw, string(encoded))
+		if err != nil {
+			return fmt.Errorf("persist rotated authoring receipt credential key: %w", err)
+		}
+		if !swapped {
+			return errors.New("authoring receipt credential key changed concurrently during rotation")
+		}
+	}
+	ring, err := keywrap.NewKeyRingWrapper(nextWrapper, currentWrapper)
+	if err != nil {
+		return err
+	}
+	s.receiptCredentialKeyWrapper = ring
+	clear(s.receiptCredentialKey)
+	s.receiptCredentialKey = nil
+	return nil
 }
 
 // runtimeCredentialReceiptFingerprint is the request identity of a create
@@ -671,6 +739,9 @@ func writeAuthoringReceiptCreateError(w http.ResponseWriter, err error) bool {
 		return true
 	case errors.Is(err, errAuthoringReceiptCreateUnsupported):
 		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_receipt_version_unavailable", "original-outcome receipts are unavailable on this controller; retry with receipt version 1 for a replay of the current resource")
+		return true
+	case errors.Is(err, storage.ErrAuthoringReceiptFaultBeforeCommit), errors.Is(err, storage.ErrAuthoringReceiptFaultPostCommit):
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_outcome_unknown", "the create's outcome is unknown; retry with the same Idempotency-Key")
 		return true
 	}
 	return false

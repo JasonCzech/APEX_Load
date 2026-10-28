@@ -154,7 +154,7 @@ func queueAnalysisImportAttemptsCleanupTx(tx *storeTx, project, id string) error
 		// Legacy uploads have no exact per-write journal or physical seal. Retain
 		// their unknown writer fence; only versioned journalled uploads can prove
 		// quiescence through their own durable physical-close receipts.
-		if state == "normalizing" || legacyUpload {
+		if in.WriterAttestation == nil && (state == "normalizing" || legacyUpload) {
 			tracked, unknown := false, false
 			for _, a := range attempts {
 				if owner != "" && a.ID == owner {
@@ -170,7 +170,7 @@ func queueAnalysisImportAttemptsCleanupTx(tx *storeTx, project, id string) error
 					return ErrAnalysisAuthority
 				}
 				now := time.Now().UTC()
-				sentinel := AnalysisAttempt{ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: in.Revision, CreatedAt: now, AbsoluteExpiry: now, Normalized: append([]string{}, in.Normalized...), Rejections: append([]string{}, in.RejectionArtifacts...), Obsolete: append([]string{}, in.ObsoleteObjects...), LegacyWriterUnknown: true, CleanupQueued: true}
+				sentinel := AnalysisAttempt{ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: in.Revision, CreatedAt: now, AbsoluteExpiry: now, Originals: append([]string{}, in.Originals...), Normalized: append([]string{}, in.Normalized...), Rejections: append([]string{}, in.RejectionArtifacts...), Obsolete: append([]string{}, in.ObsoleteObjects...), LegacyWriterUnknown: true, CleanupQueued: true}
 				if err = analysisAttemptJournalInsert(context.Background(), tx, &sentinel); err != nil {
 					return err
 				}
@@ -306,7 +306,7 @@ func (s *SQLiteStore) AnalysisDatasetCleanupStatus(ctx context.Context, project,
 				status.countUnproven(here, *a.Incarnation)
 			}
 		}
-		for _, key := range append(append(append([]string{}, a.Normalized...), a.Rejections...), a.Obsolete...) {
+		for _, key := range append(append(append(append([]string{}, a.Originals...), a.Normalized...), a.Rejections...), a.Obsolete...) {
 			if !analysisAttemptOwnedOutputKey(project, id, key) {
 				return AnalysisDatasetCleanupStatus{}, ErrAnalysisAuthority
 			}
@@ -319,8 +319,8 @@ func (s *SQLiteStore) AnalysisDatasetCleanupStatus(ctx context.Context, project,
 	if err = rows.Close(); err != nil {
 		return AnalysisDatasetCleanupStatus{}, err
 	}
-	if in != nil {
-		for _, key := range append(append(append([]string{}, in.Normalized...), in.RejectionArtifacts...), in.ObsoleteObjects...) {
+	if in != nil && in.WriterAttestation == nil {
+		for _, key := range append(append(append(append([]string{}, in.Originals...), in.Normalized...), in.RejectionArtifacts...), in.ObsoleteObjects...) {
 			if !known[key] {
 				// An output no journal plans has no recorded writer at all.
 				status.LegacyWriters++

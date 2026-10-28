@@ -516,3 +516,207 @@ func TestAnalysisResultsStreamWithoutAWholeResponseBound(t *testing.T) {
 		t.Fatalf("failure = %v", err)
 	}
 }
+
+func TestAnalysisByteQueryCLIAndStreamingUploadAndExport(t *testing.T) {
+	var lastPath string
+	var lastQuery storage.AnalyticsQuery
+	var uploadedOffsets []string
+	var uploadedBytes bytes.Buffer
+	parquetPayload := bytes.Repeat([]byte("PAR1chunk"), 600) // 5400 bytes -> 3 chunks at 2048 bytes
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/tests/run-1/native-evidence" || r.URL.Path == "/api/v1/tests/run-1/archive/native-series"):
+			_ = json.NewDecoder(r.Body).Decode(&lastQuery)
+			_, _ = w.Write([]byte(`{"metric":"` + lastQuery.Metric + `","ok":true}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/analysis/imports/imp-1":
+			_ = json.NewEncoder(w).Encode(storage.AnalysisImport{
+				ID:        "imp-1",
+				ProjectID: "proj-1",
+				Files: []storage.AnalysisImportFile{{
+					ID:           "f-1",
+					RelativePath: "part.parquet",
+					Size:         int64(len(parquetPayload)),
+				}},
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/analysis/imports/imp-1/files/f-1":
+			uploadedOffsets = append(uploadedOffsets, r.URL.Query().Get("offset"))
+			_, _ = uploadedBytes.ReadFrom(r.Body)
+			_, _ = w.Write([]byte(`{"accepted":true}`))
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer s.Close()
+
+	// Live byte-query for gRPC sum and WebSocket rate.
+	var out bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"byte-query", "--id", "run-1", "--mode", "live", "--metric", "bytes_sent", "--protocol", "grpc", "--api", s.URL}, &out); err != nil {
+		t.Fatalf("live grpc byte-query failed: %v", err)
+	}
+	if lastPath != "/api/v1/tests/run-1/native-evidence" || lastQuery.Population != "byte" || lastQuery.EvidenceMode != "live" || lastQuery.Aggregation != "sum" || lastQuery.Filters["protocol"] != "grpc" {
+		t.Fatalf("unexpected live byte query: path=%s query=%+v", lastPath, lastQuery)
+	}
+
+	// Live byte-query rejects per-request size distributions before any network call.
+	lastPath = ""
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"byte-query", "--id", "run-1", "--mode", "live", "--metric", "bytes_sent", "--aggregation", "p95", "--protocol", "grpc", "--api", s.URL}, &bytes.Buffer{}); err == nil || lastPath != "" {
+		t.Fatalf("expected live p95 byte-query rejection without network, err=%v path=%q", err, lastPath)
+	}
+
+	// Archive byte-query for WebSocket p95 streamed directly to --out file.
+	exportFile := filepath.Join(t.TempDir(), "ws-export.json")
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"byte-query", "--id", "run-1", "--mode", "archive", "--metric", "bytes_received", "--aggregation", "p95", "--protocol", "websocket", "--action", "ws_receive", "--out", exportFile, "--api", s.URL}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("archive websocket byte-query failed: %v", err)
+	}
+	if lastPath != "/api/v1/tests/run-1/archive/native-series" || lastQuery.Aggregation != "p95" || lastQuery.Filters["protocol"] != "websocket" || lastQuery.Filters["action"] != "ws_receive" {
+		t.Fatalf("unexpected archive byte query: path=%s query=%+v", lastPath, lastQuery)
+	}
+	exported, err := os.ReadFile(exportFile)
+	if err != nil || !strings.Contains(string(exported), `"metric":"bytes_received"`) {
+		t.Fatalf("expected streamed export file, err=%v data=%q", err, string(exported))
+	}
+
+	// Chunked Parquet upload streams 2048-byte chunks.
+	parquetPath := filepath.Join(t.TempDir(), "part.parquet")
+	if err := os.WriteFile(parquetPath, parquetPayload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var uploadOut bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"upload", "--id", "imp-1", "--file-id", "f-1", "--file", parquetPath, "--chunk-bytes", "2048", "--api", s.URL}, &uploadOut); err != nil {
+		t.Fatalf("chunked upload failed: %v", err)
+	}
+	if strings.Join(uploadedOffsets, ",") != "0,2048,4096" || !bytes.Equal(uploadedBytes.Bytes(), parquetPayload) {
+		t.Fatalf("unexpected chunked upload offsets=%v bytes match=%v", uploadedOffsets, bytes.Equal(uploadedBytes.Bytes(), parquetPayload))
+	}
+}
+
+func TestAnalysisReplayPanelGeneralV2PinsAndStaleDetection(t *testing.T) {
+	q := storage.AnalyticsQuery{
+		Population:      "byte",
+		Metric:          "bytes_sent",
+		Aggregation:     "p95",
+		ComparisonRunID: "run-base",
+		Filters:         map[string]string{"protocol": "grpc"},
+	}
+	storage.NormalizeSavedPanelQueryDefaults(&q)
+	pin := storage.SavedPanelInputs{
+		Version:        2,
+		CatalogVersion: q.CatalogVersion,
+		Alignment:      q.Alignment,
+		CoveragePolicy: q.CoveragePolicy,
+		Population:     q.Population,
+		Metric:         q.Metric,
+		Aggregation:    q.Aggregation,
+		QuerySHA256:    storage.SavedPanelQueryDigest(q),
+		Drilldown: storage.SavedPanelDrilldownBounds{
+			StartSeconds:  q.StartSeconds,
+			EndSeconds:    q.EndSeconds,
+			BucketSeconds: q.BucketSeconds,
+			MaxSeries:     q.MaxSeries,
+		},
+		Current: storage.SavedPanelSourcePin{
+			RunID:          "run-cur",
+			ManifestSHA256: strings.Repeat("a", 64),
+			Protocol:       "grpc",
+		},
+		Baseline: &storage.SavedPanelSourcePin{
+			RunID:          "run-base",
+			ManifestSHA256: strings.Repeat("b", 64),
+			Protocol:       "grpc",
+		},
+	}
+	q.PanelInputs = &pin
+
+	var mode string // "", "stale", "missing_input"
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/monitoring/dashboard-definitions/d-v2":
+			_ = json.NewEncoder(w).Encode(storage.DashboardDefinition{
+				ID:        "d-v2",
+				ProjectID: "proj-1",
+				Name:      "General Pinned Panel",
+				Revision:  1,
+				Tabs: []storage.DashboardTab{{
+					ID:    "main",
+					Title: "Main",
+					Panels: []storage.DashboardPanel{{
+						ID:    "p-grpc",
+						Title: "gRPC Bytes P95",
+						Kind:  "line",
+						W:     12,
+						H:     8,
+						Query: &q,
+					}},
+				}},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tests/run-cur/archive/native-series":
+			if mode == "missing_input" {
+				http.Error(w, `{"error":"missing_input: completed archive unavailable"}`, http.StatusUnprocessableEntity)
+				return
+			}
+			if mode == "stale" {
+				http.Error(w, `{"error":"stale: saved panel current archive changed since save"}`, http.StatusUnprocessableEntity)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"panel_inputs": pin,
+				"current":      map[string]any{"run_id": "run-cur", "buckets": []any{}},
+			})
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer s.Close()
+
+	var out bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"replay-panel", "--id", "d-v2", "--api", s.URL}, &out); err != nil {
+		t.Fatalf("replay-panel v2 failed: %v", err)
+	}
+	if !strings.Contains(out.String(), `"panel_id":"p-grpc"`) {
+		t.Fatalf("unexpected replay output: %s", out.String())
+	}
+
+	mode = "stale"
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"replay-panel", "--id", "d-v2", "--api", s.URL}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "stale:") {
+		t.Fatalf("expected stale error from replay-panel, got %v", err)
+	}
+
+	mode = "missing_input"
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"replay-panel", "--id", "d-v2", "--api", s.URL}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "missing_input:") {
+		t.Fatalf("expected missing_input error from replay-panel, got %v", err)
+	}
+
+	// Dataset-only comparison panel without comparison_id is rejected rather than synthesizing 1970-01-01 timestamps.
+	dsQ := storage.AnalyticsQuery{
+		Metric:        "cpu_usage",
+		Aggregation:   "avg",
+		EndSeconds:    60,
+		BucketSeconds: 10,
+	}
+	storage.NormalizeSavedPanelQueryDefaults(&dsQ)
+	dsQ.PanelInputs = &storage.SavedPanelInputs{
+		Version:        2,
+		CatalogVersion: dsQ.CatalogVersion,
+		Alignment:      dsQ.Alignment,
+		CoveragePolicy: dsQ.CoveragePolicy,
+		Metric:         dsQ.Metric,
+		Aggregation:    dsQ.Aggregation,
+		QuerySHA256:    storage.SavedPanelQueryDigest(dsQ),
+		Drilldown: storage.SavedPanelDrilldownBounds{
+			StartSeconds:  0,
+			EndSeconds:    60,
+			BucketSeconds: 10,
+			MaxSeries:     20,
+		},
+		Current:  storage.SavedPanelSourcePin{DatasetID: "ds-1", DatasetArtifactSHA256: strings.Repeat("1", 64)},
+		Baseline: &storage.SavedPanelSourcePin{DatasetID: "ds-2", DatasetArtifactSHA256: strings.Repeat("2", 64)},
+	}
+	client := NewApiClient(s.URL)
+	if _, err := client.replayComparisonPanel(context.Background(), "proj-1", "p-ds", dsQ); err == nil || !strings.Contains(err.Error(), "requires comparison_id in panel_inputs to anchor the UTC comparison window") {
+		t.Fatalf("expected comparison_id requirement for dataset-only comparison without run anchor, got %v", err)
+	}
+}

@@ -196,6 +196,10 @@ func (tr *TestRunner) attachStoredTerminalHistory(test *ManagedTest) {
 		identityCurrent := sameStoredTestHistoryIdentity(canonical, test)
 		attached := false
 		if identityCurrent {
+			scrubber := newManagedTestTelemetryTextScrubber(canonical)
+			for i := range merged {
+				scrubLiveTelemetry(merged[i], scrubber)
+			}
 			attached = tr.storedHistoryCache.applyIfCurrent(revision, func() {
 				test.History = merged
 				if len(test.History) > 0 {

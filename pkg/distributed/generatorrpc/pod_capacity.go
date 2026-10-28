@@ -32,6 +32,26 @@ func standbyPodCapacityClaim(claim *pb.PodCapacityClaim) bool {
 	return claim != nil && claim.Dedicated && !claim.Release && len(claim.GroupPeaks) == 0
 }
 
+func (s *Service) canTransferDrainedPodCapacityClaimLocked(testID string, current, claim *pb.PodCapacityClaim) bool {
+	if current == nil || claim == nil || claim.ExecutionGeneration <= current.ExecutionGeneration {
+		return false
+	}
+	if standbyPodCapacityClaim(current) && standbyPodCapacityClaim(claim) {
+		return true
+	}
+	if standbyPodCapacityClaim(current) != standbyPodCapacityClaim(claim) {
+		return false
+	}
+	if _, assigned := s.assignments[testID]; assigned {
+		return false
+	}
+	if len(s.executions[testID]) > 0 || s.lifecycleCoordinator.pendingStages[testID] != nil ||
+		s.lifecycleCoordinator.pendingControls[testID] != nil || s.lifecycleCoordinator.isStoppingLocked(testID) {
+		return false
+	}
+	return true
+}
+
 func (s *Service) idleForStandbyCapacityLocked() bool {
 	if len(s.assignments) != 0 || s.lifecycleCoordinator.stoppingCountLocked() != 0 ||
 		len(s.lifecycleCoordinator.pendingStages) != 0 || len(s.lifecycleCoordinator.pendingControls) != 0 {
@@ -161,14 +181,18 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 		}
 	}
 	if current != nil {
-		// An idle standby has no run supervision token to adopt. A successor
-		// that already claimed the authoritative global epoch may transfer its
-		// unchanged claim. Activation is a separate revision in that new term.
-		if standbyPodCapacityClaim(current) && standbyPodCapacityClaim(claim) && claim.ExecutionGeneration > current.ExecutionGeneration {
+		// An idle standby, or a reservation whose test no longer runs on this
+		// generator, has no run supervision token to adopt. A successor that
+		// already claimed the authoritative global epoch may transfer its
+		// unchanged claim. Activation or release is a separate call in that new term.
+		if s.canTransferDrainedPodCapacityClaimLocked(claim.TestId, current, claim) {
 			transferred := proto.Clone(current).(*pb.PodCapacityClaim)
 			transferred.ExecutionGeneration = claim.ExecutionGeneration
 			if !proto.Equal(transferred, claim) {
-				return reject(fmt.Errorf("standby ownership transfer must preserve the frozen reservation"))
+				if standbyPodCapacityClaim(current) || standbyPodCapacityClaim(claim) {
+					return reject(fmt.Errorf("standby ownership transfer must preserve the frozen reservation"))
+				}
+				return reject(fmt.Errorf("reservation revision or frozen model changed"))
 			}
 			s.podCapacityClaims[claim.TestId] = transferred
 			return &pb.PodCapacityAck{Accepted: true, Snapshot: s.podCapacitySnapshotLocked()}, nil
