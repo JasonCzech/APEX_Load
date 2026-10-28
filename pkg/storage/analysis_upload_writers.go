@@ -32,6 +32,7 @@ type AnalysisUploadWriter struct {
 	ID, ProjectID, ImportID, FileID        string
 	Revision, Offset, Bytes                int64
 	SHA256, ObjectKey, TemporaryKey, State string
+	FileSHA256                             string `json:",omitempty"`
 	CreatedAt                              time.Time
 	PhysicallyClosed                       bool
 	AppliedRevision, Uploaded              int64
@@ -45,7 +46,7 @@ type AnalysisUploadWriter struct {
 type AnalysisUploadRequest struct {
 	ProjectID, ImportID, FileID string
 	Revision, Offset, Bytes     int64
-	SHA256                      string
+	SHA256, FileSHA256          string
 }
 type AnalysisUploadWriterStore interface {
 	BeginAnalysisUploadWriter(context.Context, AnalysisUploadRequest) (*AnalysisUploadWriter, error)
@@ -60,7 +61,7 @@ func analysisUploadObjectKey(w AnalysisUploadWriter) string {
 	return analysisAttemptKey(w.ProjectID, w.ImportID, fmt.Sprintf("chunk-%s-%012d-%s-%s", w.FileID, w.Offset, w.SHA256, w.ID))
 }
 func analysisUploadValidate(w *AnalysisUploadWriter) error {
-	if w == nil || len(w.ProjectID) < 1 || len(w.ProjectID) > 128 || w.Revision < 1 || w.Revision >= 1<<62 || w.Offset < 0 || w.Offset > (20<<30)-w.Bytes || w.Bytes < 1 || w.Bytes > analysisUploadChunkBytes || !analysisUploadDigest.MatchString(w.SHA256) || w.CreatedAt.IsZero() || len(w.Rejection) > 128 {
+	if w == nil || len(w.ProjectID) < 1 || len(w.ProjectID) > 128 || w.Revision < 1 || w.Revision >= 1<<62 || w.Offset < 0 || w.Offset > (20<<30)-w.Bytes || w.Bytes < 1 || w.Bytes > analysisUploadChunkBytes || !analysisUploadDigest.MatchString(w.SHA256) || w.FileSHA256 != "" && (!analysisUploadDigest.MatchString(w.FileSHA256) || w.Offset == 0 && w.FileSHA256 != w.SHA256) || w.CreatedAt.IsZero() || len(w.Rejection) > 128 {
 		return ErrAnalysisAuthority
 	}
 	for _, id := range []string{w.ID, w.ImportID, w.FileID} {
@@ -139,7 +140,7 @@ func analysisUploadWrite(ctx context.Context, tx *storeTx, w *AnalysisUploadWrit
 }
 
 func (s *SQLiteStore) BeginAnalysisUploadWriter(ctx context.Context, req AnalysisUploadRequest) (*AnalysisUploadWriter, error) {
-	if len(req.ProjectID) < 1 || len(req.ProjectID) > 128 || req.Revision < 1 || req.Revision >= 1<<62 || req.Offset < 0 || req.Offset > (20<<30)-req.Bytes || req.Bytes < 1 || req.Bytes > analysisUploadChunkBytes || !analysisUploadDigest.MatchString(req.SHA256) {
+	if len(req.ProjectID) < 1 || len(req.ProjectID) > 128 || req.Revision < 1 || req.Revision >= 1<<62 || req.Offset < 0 || req.Offset > (20<<30)-req.Bytes || req.Bytes < 1 || req.Bytes > analysisUploadChunkBytes || !analysisUploadDigest.MatchString(req.SHA256) || req.FileSHA256 != "" && (!analysisUploadDigest.MatchString(req.FileSHA256) || req.Offset == 0 && req.FileSHA256 != req.SHA256) {
 		return nil, ErrAnalysisAuthority
 	}
 	for _, id := range []string{req.ImportID, req.FileID} {
@@ -174,7 +175,7 @@ func (s *SQLiteStore) BeginAnalysisUploadWriter(ctx context.Context, req Analysi
 			break
 		}
 	}
-	if file == nil || file.Uploaded != req.Offset || req.Bytes > file.Size-req.Offset || req.Bytes != analysisUploadChunkBytes && req.Offset+req.Bytes != file.Size {
+	if file == nil || file.Uploaded != req.Offset || req.Bytes > file.Size-req.Offset || len(file.Chunks) >= analysisUploadMaxWriters || req.FileSHA256 != "" && req.Offset+req.Bytes != file.Size {
 		return nil, ErrAnalysisAuthority
 	}
 	// Project/import locks serialize contenders before any immutable object is
@@ -226,7 +227,7 @@ func (s *SQLiteStore) BeginAnalysisUploadWriter(ctx context.Context, req Analysi
 	if err != nil {
 		return nil, err
 	}
-	w := &AnalysisUploadWriter{ID: uuid.NewString(), ProjectID: req.ProjectID, ImportID: req.ImportID, FileID: req.FileID, Revision: req.Revision, Offset: req.Offset, Bytes: req.Bytes, SHA256: req.SHA256, State: "pending", CreatedAt: now, Incarnation: analysisWriterIncarnationFrom(ctx)}
+	w := &AnalysisUploadWriter{ID: uuid.NewString(), ProjectID: req.ProjectID, ImportID: req.ImportID, FileID: req.FileID, Revision: req.Revision, Offset: req.Offset, Bytes: req.Bytes, SHA256: req.SHA256, FileSHA256: req.FileSHA256, State: "pending", CreatedAt: now, Incarnation: analysisWriterIncarnationFrom(ctx)}
 	w.ObjectKey = analysisUploadObjectKey(*w)
 	w.TemporaryKey = analysisAttemptKey(w.ProjectID, w.ImportID, "upload-"+w.ID+".tmp")
 	if err = analysisUploadWrite(ctx, tx, w, true); err != nil {
@@ -289,6 +290,9 @@ func (s *SQLiteStore) CompleteAnalysisUploadWriter(ctx context.Context, project,
 		file := &in.Files[index]
 		file.Chunks = append(file.Chunks, AnalysisChunk{Offset: w.Offset, Size: w.Bytes, SHA256: w.SHA256, ObjectKey: w.ObjectKey})
 		file.Uploaded += w.Bytes
+		if w.FileSHA256 != "" && file.Uploaded == file.Size {
+			file.SHA256 = w.FileSHA256
+		}
 		in.Revision++
 		in.UpdatedAt, err = preciseDatabaseTimeContext(ctx, tx, tx.dialect)
 		if err != nil {

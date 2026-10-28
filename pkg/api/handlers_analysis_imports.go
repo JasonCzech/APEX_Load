@@ -428,8 +428,8 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "conflicting upload retry")
 		return
 	}
-	if offset+int64(len(data)) < file.Size && len(data) != analysisUploadChunk {
-		writeError(w, 400, "nonfinal chunks must contain exactly 4 MiB")
+	if len(file.Chunks) >= 16384 {
+		writeError(w, 400, "file exceeds maximum upload chunk count")
 		return
 	}
 	s.writeAnalysisUploadChunk(w, r, writers, *in, *file, offset, data, digest)
@@ -651,7 +651,7 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "mapping exceeds the 1024 normalized partition limit")
 		return
 	}
-	if first, second, ok := duplicateAnalysisImportFiles(in.Files); ok && (in.State == "mapped" || in.State == "failed") {
+	if first, second, ok := duplicateAnalysisImportFiles(s.resolveAnalysisCommitFiles(r.Context(), in)); ok && (in.State == "mapped" || in.State == "failed") {
 		// Every file's rows are imported, so the same content twice would be
 		// counted twice; refuse it here rather than fail during publication.
 		// An import's files are fixed when it is created, so the remedy is a
@@ -948,16 +948,49 @@ func points0Population(points []analysis.MetricPoint) string {
 	return ""
 }
 
+func analysisWholeFileDigest(file storage.AnalysisImportFile) string {
+	if file.SHA256 != "" {
+		return file.SHA256
+	}
+	if len(file.Chunks) == 1 && file.Chunks[0].Offset == 0 && (file.Size == 0 || file.Chunks[0].Size == file.Size) && file.Chunks[0].SHA256 != "" {
+		return file.Chunks[0].SHA256
+	}
+	return ""
+}
+
+func (s *Server) resolveAnalysisCommitFiles(ctx context.Context, in *storage.AnalysisImport) []storage.AnalysisImportFile {
+	if in == nil || len(in.Files) < 2 {
+		if in == nil {
+			return nil
+		}
+		return in.Files
+	}
+	var bindCtx context.Context
+	if writers, ok := s.store.(storage.AnalysisUploadWriterStore); ok {
+		bindCtx, _, _ = s.bindAnalysisUploadContext(ctx, writers)
+	}
+	files := append([]storage.AnalysisImportFile(nil), in.Files...)
+	for i := range files {
+		if analysisWholeFileDigest(files[i]) != "" || len(files[i].Chunks) < 2 || files[i].Uploaded != files[i].Size || bindCtx == nil {
+			continue
+		}
+		if digest, err := computeAnalysisAssembledFileSHA256(bindCtx, in.ProjectID, in.ID, files[i], files[i].Size, nil); err == nil && digest != "" {
+			files[i].SHA256 = digest
+		}
+	}
+	return files
+}
+
 // duplicateAnalysisImportFiles finds two files of an import with the same
-// content: the same whole-file digest when one was recorded, else the same
-// size and the same ordered chunk digests. Identical content chunked
-// differently is not found here; normalization still fails closed on it.
+// content: the same whole-file digest when one was recorded (including a
+// single-chunk upload covering the whole file or an assembled multi-chunk
+// upload), else the same size and the same ordered chunk digests.
 func duplicateAnalysisImportFiles(files []storage.AnalysisImportFile) (string, string, bool) {
 	seen := make(map[string]string, len(files))
 	for _, file := range files {
 		var key strings.Builder
-		if file.SHA256 != "" {
-			key.WriteString("sha256:" + file.SHA256)
+		if digest := analysisWholeFileDigest(file); digest != "" {
+			key.WriteString("sha256:" + digest)
 		} else {
 			fmt.Fprintf(&key, "size:%d", file.Size)
 			for _, chunk := range file.Chunks {

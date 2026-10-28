@@ -262,7 +262,7 @@ func rcaEvidenceDigest(manifest *RunArchiveManifest) (string, error) {
 	read.ExemplarsFile, read.ExemplarCount, read.ExemplarsTruncated = "", 0, false
 	read.ClockObservationsFile, read.ClockObservationCount, read.ClockObservationsTruncated = "", 0, false
 	read.TelemetrySourcesFile, read.TelemetrySourceEpochCount, read.TelemetrySourcesTruncated = "", 0, false
-	read.JointIntervalsFile, read.JointIntervalsParquetFile, read.JointIntervalCount, read.JointIntervalsTruncated = "", "", 0, false
+	read.JointIntervalsFile, read.JointIntervalsParquetFile, read.JointIntervalCount, read.JointIntervalsTruncated, read.JointTruncatedWindows = "", "", 0, false, nil
 	read.TelemetryCoverage, read.TelemetryStageDistributions, read.TelemetryStageDigests, read.TelemetryLoss, read.TelemetryRenderPopulation = nil, nil, nil, nil, nil
 	// Written with the coverage, after the main manifest.
 	read.TelemetryPolicySegments = nil

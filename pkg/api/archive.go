@@ -172,10 +172,11 @@ type RunArchiveManifest struct {
 	TelemetrySourcesTruncated bool   `json:"telemetry_sources_truncated,omitempty"`
 	// JointIntervalsFile holds the run's joint evidence v4 rows (one per
 	// measured tuple of each retained source publication), also as Parquet.
-	JointIntervalsFile        string `json:"joint_intervals_file,omitempty"`
-	JointIntervalsParquetFile string `json:"joint_intervals_parquet_file,omitempty"`
-	JointIntervalCount        int64  `json:"joint_interval_count,omitempty"`
-	JointIntervalsTruncated   bool   `json:"joint_intervals_truncated,omitempty"`
+	JointIntervalsFile        string                 `json:"joint_intervals_file,omitempty"`
+	JointIntervalsParquetFile string                 `json:"joint_intervals_parquet_file,omitempty"`
+	JointIntervalCount        int64                  `json:"joint_interval_count,omitempty"`
+	JointIntervalsTruncated   bool                   `json:"joint_intervals_truncated,omitempty"`
+	JointTruncatedWindows     []JointTruncatedWindow `json:"truncated_windows,omitempty"`
 	// TelemetryCoverage is the run's wall-time telemetry account: observed
 	// and unknown time per source, and healthy, degraded, breached and
 	// unknown time with explicit denominators.
@@ -202,6 +203,21 @@ type RunArchiveManifest struct {
 }
 
 type TransactionSLARuleResult = runcontract.TransactionSLARuleResult
+
+// JointTruncatedWindow records a source observation window or publication
+// sequence span missing from the archived joint interval evidence (for example,
+// held uncommitted batches lost during controller failover, missing sequence
+// gaps, or dropped publications under the in-memory/sidecar budget).
+type JointTruncatedWindow struct {
+	Source              string `json:"source"`
+	ExecutionGeneration uint64 `json:"execution_generation,omitempty"`
+	Epoch               string `json:"epoch,omitempty"`
+	FirstSequence       uint64 `json:"first_sequence,omitempty"`
+	LastSequence        uint64 `json:"last_sequence,omitempty"`
+	StartUnixMs         int64  `json:"start_ms,omitempty"`
+	EndUnixMs           int64  `json:"end_ms,omitempty"`
+	Reason              string `json:"reason,omitempty"`
+}
 
 // TransactionResponseTimeSLAResult is the authoritative compliance result for
 // one named business transaction within one scenario group. Failed protocol

@@ -1569,6 +1569,9 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	}
 	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
 		if !remoteMetricsBatchSupersedes(prior, batch) {
+			if batch.BatchSequence > 0 && isTerminalRemoteLifecycle(prior.LifecycleState) {
+				telemetrySourceLedgerLocked(test).observeJointBenign(target, batch)
+			}
 			return false
 		}
 		missing := int64(0)
@@ -1608,6 +1611,8 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	}
 	if !repeatedFinalCollection(batch) {
 		rememberJointPublicationLocked(test, target, batch)
+	} else {
+		telemetrySourceLedgerLocked(test).observeJointBenign(target, batch)
 	}
 	if len(batch.TransactionResponseTimeSLA) > 0 {
 		delete(test.remoteTransactionResponseTimeSLALegacyByTarget, target)

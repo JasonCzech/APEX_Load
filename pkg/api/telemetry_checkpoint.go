@@ -84,22 +84,37 @@ type durableSpans struct {
 	Spans     [][2]int64
 	Truncated bool
 }
+type durableJointStream struct {
+	Source              string
+	ExecutionGeneration uint64
+	Epoch               string
+	AcceptedRanges      [][2]uint64           `json:",omitempty"`
+	IgnoredRanges       [][2]uint64           `json:",omitempty"`
+	DroppedRanges       [][2]uint64           `json:",omitempty"`
+	Windows             []TelemetryJointWindow `json:",omitempty"`
+	DroppedWindows      []TelemetryJointWindow `json:",omitempty"`
+	FirstStartUnixMs    int64                  `json:",omitempty"`
+	LastEndUnixMs       int64                  `json:",omitempty"`
+	Truncated           bool                   `json:",omitempty"`
+}
 type telemetryCheckpoint struct {
-	Version              int
-	Incarnation          string
-	Generation           uint64
-	Revision             int64
-	Totals               [4]int64
-	Groups               map[string][4]int64
-	RequestsUnknown      bool
-	Windows              map[string]durableWindowMark
-	Epochs               []durableSourceEpoch
-	Coverage             map[string]durableSpans
-	Requirements         map[string][2]int64
-	Cursors              []durableCoverage
-	Collections          []TelemetryCollectionEvidence
-	CollectionsTruncated bool
-	Truncated, Adopted   bool
+	Version               int
+	Incarnation           string
+	Generation            uint64
+	Revision              int64
+	Totals                [4]int64
+	Groups                map[string][4]int64
+	RequestsUnknown       bool
+	Windows               map[string]durableWindowMark
+	Epochs                []durableSourceEpoch
+	JointStreams          []durableJointStream `json:",omitempty"`
+	JointStreamsTruncated bool                 `json:",omitempty"`
+	Coverage              map[string]durableSpans
+	Requirements          map[string][2]int64
+	Cursors               []durableCoverage
+	Collections           []TelemetryCollectionEvidence
+	CollectionsTruncated  bool
+	Truncated, Adopted    bool
 }
 
 func durableCounts(c runTotalsCounts) [4]int64 {
@@ -159,6 +174,32 @@ func captureTelemetryCheckpointLocked(test *ManagedTest) telemetryCheckpoint {
 		cp.Cursors = append(cp.Cursors, durableCoverage{source, c.key.generation, c.key.epoch, c.epochStartedMs, c.sequence, c.windowSequence, c.endMs, durableMark(c.collection), c.terminal})
 	}
 	sort.Slice(cp.Cursors, func(i, j int) bool { return cp.Cursors[i].Source < cp.Cursors[j].Source })
+	cp.JointStreamsTruncated = l.jointStreamsTruncated
+	for _, s := range l.jointStreams {
+		cp.JointStreams = append(cp.JointStreams, durableJointStream{
+			Source:              s.Source,
+			ExecutionGeneration: s.ExecutionGeneration,
+			Epoch:               s.Epoch,
+			AcceptedRanges:      append([][2]uint64(nil), s.AcceptedRanges...),
+			IgnoredRanges:       append([][2]uint64(nil), s.IgnoredRanges...),
+			DroppedRanges:       append([][2]uint64(nil), s.DroppedRanges...),
+			Windows:             append([]TelemetryJointWindow(nil), s.Windows...),
+			DroppedWindows:      append([]TelemetryJointWindow(nil), s.DroppedWindows...),
+			FirstStartUnixMs:    s.FirstStartUnixMs,
+			LastEndUnixMs:       s.LastEndUnixMs,
+			Truncated:           s.Truncated,
+		})
+	}
+	sort.Slice(cp.JointStreams, func(i, j int) bool {
+		a, b := cp.JointStreams[i], cp.JointStreams[j]
+		if a.Source != b.Source {
+			return a.Source < b.Source
+		}
+		if a.ExecutionGeneration != b.ExecutionGeneration {
+			return a.ExecutionGeneration < b.ExecutionGeneration
+		}
+		return a.Epoch < b.Epoch
+	})
 	return cp
 }
 
@@ -166,10 +207,16 @@ func captureTelemetryCheckpointLocked(test *ManagedTest) telemetryCheckpoint {
 // growing ledger cannot replace the last recoverable snapshot with one the
 // successor would refuse. Never trim a cursor independently from its effects.
 func telemetryCheckpointWithinBounds(cp *telemetryCheckpoint) bool {
-	if len(cp.Epochs) > maxTelemetrySourceEpochs || len(cp.Collections) > maxRetainedTelemetryCollections ||
+	if len(cp.Epochs) > maxTelemetrySourceEpochs || len(cp.JointStreams) > maxTelemetrySourceEpochs || len(cp.Collections) > maxRetainedTelemetryCollections ||
 		len(cp.Windows) > maxTelemetrySourceEpochs || len(cp.Groups) > maxTelemetrySourceEpochs ||
 		len(cp.Coverage) > maxTelemetrySourceEpochs || len(cp.Requirements) > maxTelemetrySourceEpochs || len(cp.Cursors) > maxTelemetrySourceEpochs {
 		return false
+	}
+	for _, js := range cp.JointStreams {
+		if len(js.AcceptedRanges) > maxTelemetrySourceRanges || len(js.IgnoredRanges) > maxTelemetrySourceRanges || len(js.DroppedRanges) > maxTelemetrySourceRanges ||
+			len(js.Windows) > maxTelemetrySourceRanges || len(js.DroppedWindows) > maxTelemetrySourceRanges {
+			return false
+		}
 	}
 	entries := 0
 	for _, c := range cp.Collections {
@@ -213,6 +260,9 @@ func decodeTelemetryCheckpoint(raw string, revision int64, test *ManagedTest, mi
 			return nil, a, fmt.Errorf("invalid checkpoint flag %s", name)
 		}
 	}
+	if rawFlag, ok := fields["JointStreamsTruncated"]; ok && string(rawFlag) != "true" && string(rawFlag) != "false" {
+		return nil, a, fmt.Errorf("invalid checkpoint flag JointStreamsTruncated")
+	}
 	if err := json.Unmarshal([]byte(raw), &cp); err != nil {
 		return nil, a, err
 	}
@@ -227,10 +277,44 @@ func decodeTelemetryCheckpoint(raw string, revision int64, test *ManagedTest, mi
 	}
 	l := newTelemetrySourceLedger()
 	l.truncated, l.adopted = cp.Truncated, cp.Adopted
+	l.jointStreamsTruncated = cp.JointStreamsTruncated
 	l.collections, l.collectionsTruncated = cp.Collections, cp.CollectionsTruncated
 	l.coverage = map[string]*coverageSpans{}
 	l.requirements = map[string]*telemetrySourceRequirement{}
 	l.cursors = map[string]*coverageCursor{}
+	for _, js := range cp.JointStreams {
+		key := telemetrySourceKey{js.Source, js.ExecutionGeneration, js.Epoch}
+		if js.Source == "" || js.ExecutionGeneration > cp.Generation || l.jointStreams[key] != nil || js.FirstStartUnixMs < 0 || js.LastEndUnixMs < 0 || (js.FirstStartUnixMs > 0 && js.LastEndUnixMs < js.FirstStartUnixMs) {
+			return nil, a, fmt.Errorf("invalid joint stream ledger")
+		}
+		for _, ranges := range [][][2]uint64{js.AcceptedRanges, js.IgnoredRanges, js.DroppedRanges} {
+			for i, span := range ranges {
+				if span[0] == 0 || span[1] < span[0] || i > 0 && span[0] <= ranges[i-1][1] {
+					return nil, a, fmt.Errorf("invalid joint stream ranges")
+				}
+			}
+		}
+		for _, windows := range [][]TelemetryJointWindow{js.Windows, js.DroppedWindows} {
+			for i, w := range windows {
+				if w.LastSequence < w.FirstSequence || w.StartUnixMs < 0 || w.EndUnixMs < w.StartUnixMs || i > 0 && w.FirstSequence > 0 && windows[i-1].FirstSequence > 0 && w.FirstSequence <= windows[i-1].LastSequence {
+					return nil, a, fmt.Errorf("invalid joint stream windows")
+				}
+			}
+		}
+		l.jointStreams[key] = &telemetryJointStream{
+			Source:              js.Source,
+			ExecutionGeneration: js.ExecutionGeneration,
+			Epoch:               js.Epoch,
+			AcceptedRanges:      append([][2]uint64(nil), js.AcceptedRanges...),
+			IgnoredRanges:       append([][2]uint64(nil), js.IgnoredRanges...),
+			DroppedRanges:       append([][2]uint64(nil), js.DroppedRanges...),
+			Windows:             append([]TelemetryJointWindow(nil), js.Windows...),
+			DroppedWindows:      append([]TelemetryJointWindow(nil), js.DroppedWindows...),
+			FirstStartUnixMs:    js.FirstStartUnixMs,
+			LastEndUnixMs:       js.LastEndUnixMs,
+			Truncated:           js.Truncated,
+		}
+	}
 	for _, d := range cp.Epochs {
 		r := d.Record
 		key := telemetrySourceKey{r.Source, r.ExecutionGeneration, r.Epoch}

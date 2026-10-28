@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"sync"
@@ -159,10 +161,18 @@ func (s *Server) runAnalysisUploadChunk(ctx context.Context, writers storage.Ana
 		owner.finish(nil, err)
 		return
 	}
+	fileDigest := ""
+	if offset+int64(len(data)) == file.Size && offset > 0 {
+		fileDigest, err = computeAnalysisAssembledFileSHA256(ctx, in.ProjectID, in.ID, file, offset, data)
+		if err != nil {
+			owner.finish(nil, err)
+			return
+		}
+	}
 	// Begin durably records this process as the writer before any I/O. A writer
 	// of an exited controller that still blocks this offset is retired first
 	// when this host can prove the exit; otherwise the offset stays owned.
-	request := storage.AnalysisUploadRequest{ProjectID: in.ProjectID, ImportID: in.ID, FileID: file.ID, Revision: in.Revision, Offset: offset, Bytes: int64(len(data)), SHA256: digest}
+	request := storage.AnalysisUploadRequest{ProjectID: in.ProjectID, ImportID: in.ID, FileID: file.ID, Revision: in.Revision, Offset: offset, Bytes: int64(len(data)), SHA256: digest, FileSHA256: fileDigest}
 	intent, err := writers.BeginAnalysisUploadWriter(s.bindAnalysisWriterIncarnation(ctx), request)
 	if intent == nil && errors.Is(err, storage.ErrAnalysisUploadInFlight) && s.resolveExitedAnalysisUploadOffset(ctx, request) {
 		intent, err = writers.BeginAnalysisUploadWriter(s.bindAnalysisWriterIncarnation(ctx), request)
@@ -209,8 +219,43 @@ func (s *Server) runAnalysisUploadChunk(ctx context.Context, writers storage.Ana
 	s.retainAnalysisUploadCompletion(owner, scope, accepted)
 }
 
+func computeAnalysisAssembledFileSHA256(ctx context.Context, projectID, importID string, file storage.AnalysisImportFile, tailOffset int64, tail []byte) (string, error) {
+	if tailOffset < 0 || tailOffset+int64(len(tail)) != file.Size {
+		return "", storage.ErrAnalysisAuthority
+	}
+	// Each prior chunk is read sequentially and closed before the next opens,
+	// so detach from the per-writer descriptor cap while keeping context cancellation.
+	readCtx := context.WithValue(ctx, analysisUploadOwnerKey{}, (*analysisUploadPhysicalOwner)(nil))
+	hash := sha256.New()
+	var cursor int64
+	for _, chunk := range file.Chunks {
+		if chunk.Offset != cursor || chunk.Size <= 0 || chunk.Offset+chunk.Size > tailOffset {
+			return "", storage.ErrAnalysisAuthority
+		}
+		key, err := storage.AnalysisUploadChunkObjectKey(projectID, importID, file, chunk)
+		if err != nil {
+			return "", err
+		}
+		chunkDigest, err := analysisObjectRead(readCtx, key, hash, chunk.Size)
+		if err != nil {
+			return "", err
+		}
+		if chunkDigest != chunk.SHA256 {
+			return "", storage.ErrAnalysisAuthority
+		}
+		cursor += chunk.Size
+	}
+	if cursor != tailOffset {
+		return "", storage.ErrAnalysisAuthority
+	}
+	if len(tail) > 0 {
+		_, _ = hash.Write(tail)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
 func analysisSameUploadIntent(a, b *storage.AnalysisUploadWriter) bool {
-	return a != nil && b != nil && a.ID == b.ID && a.ProjectID == b.ProjectID && a.ImportID == b.ImportID && a.FileID == b.FileID && a.Revision == b.Revision && a.Offset == b.Offset && a.Bytes == b.Bytes && a.SHA256 == b.SHA256 && a.ObjectKey == b.ObjectKey && a.TemporaryKey == b.TemporaryKey && a.CreatedAt.Equal(b.CreatedAt)
+	return a != nil && b != nil && a.ID == b.ID && a.ProjectID == b.ProjectID && a.ImportID == b.ImportID && a.FileID == b.FileID && a.Revision == b.Revision && a.Offset == b.Offset && a.Bytes == b.Bytes && a.SHA256 == b.SHA256 && a.FileSHA256 == b.FileSHA256 && a.ObjectKey == b.ObjectKey && a.TemporaryKey == b.TemporaryKey && a.CreatedAt.Equal(b.CreatedAt)
 }
 
 func (s *Server) retainAnalysisUploadCompletion(owner *analysisUploadPhysicalOwner, scope nativeReconciliationScope, accepted bool) {

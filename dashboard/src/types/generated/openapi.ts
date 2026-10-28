@@ -5645,6 +5645,16 @@ export interface operations {
               }>;
               "transactions_file"?: string;
               "transactions_parquet_file"?: string;
+              "truncated_windows"?: Array<{
+                "end_ms"?: number;
+                "epoch"?: string;
+                "execution_generation"?: number;
+                "first_sequence"?: number;
+                "last_sequence"?: number;
+                "reason"?: string;
+                "source"?: string;
+                "start_ms"?: number;
+              }>;
             }) | null;
             "messaging_progress"?: ({
               "captured_at"?: string;
@@ -82645,6 +82655,16 @@ export interface operations {
             }>;
             "transactions_file": string;
             "transactions_parquet_file"?: string;
+            "truncated_windows"?: Array<{
+              "end_ms"?: number;
+              "epoch"?: string;
+              "execution_generation"?: number;
+              "first_sequence"?: number;
+              "last_sequence"?: number;
+              "reason"?: string;
+              "source": string;
+              "start_ms"?: number;
+            }>;
           }) | null;
         };
       };
@@ -88293,6 +88313,16 @@ export interface operations {
               }>;
               "transactions_file": string;
               "transactions_parquet_file"?: string;
+              "truncated_windows"?: Array<{
+                "end_ms"?: number;
+                "epoch"?: string;
+                "execution_generation"?: number;
+                "first_sequence"?: number;
+                "last_sequence"?: number;
+                "reason"?: string;
+                "source": string;
+                "start_ms"?: number;
+              }>;
             }) | null;
             "messaging_progress"?: ({
               "captured_at": string;

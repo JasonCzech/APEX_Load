@@ -15533,6 +15533,32 @@ paths:
                           type: string
                         transactions_parquet_file:
                           type: string
+                        truncated_windows:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              end_ms:
+                                type: integer
+                                format: int64
+                              epoch:
+                                type: string
+                              execution_generation:
+                                type: integer
+                                format: int64
+                              first_sequence:
+                                type: integer
+                                format: int64
+                              last_sequence:
+                                type: integer
+                                format: int64
+                              reason:
+                                type: string
+                              source:
+                                type: string
+                              start_ms:
+                                type: integer
+                                format: int64
                       nullable: true
                     messaging_progress:
                       type: object
@@ -431620,6 +431646,34 @@ paths:
                     type: string
                   transactions_parquet_file:
                     type: string
+                  truncated_windows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        end_ms:
+                          type: integer
+                          format: int64
+                        epoch:
+                          type: string
+                        execution_generation:
+                          type: integer
+                          format: int64
+                        first_sequence:
+                          type: integer
+                          format: int64
+                        last_sequence:
+                          type: integer
+                          format: int64
+                        reason:
+                          type: string
+                        source:
+                          type: string
+                        start_ms:
+                          type: integer
+                          format: int64
+                      required:
+                        - source
                 required:
                   - created_at
                   - interval_summaries_file
@@ -451186,6 +451240,34 @@ paths:
                         type: string
                       transactions_parquet_file:
                         type: string
+                      truncated_windows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            end_ms:
+                              type: integer
+                              format: int64
+                            epoch:
+                              type: string
+                            execution_generation:
+                              type: integer
+                              format: int64
+                            first_sequence:
+                              type: integer
+                              format: int64
+                            last_sequence:
+                              type: integer
+                              format: int64
+                            reason:
+                              type: string
+                            source:
+                              type: string
+                            start_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - source
                     required:
                       - created_at
                       - interval_summaries_file

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -282,11 +283,13 @@ type telemetrySourceKey struct {
 }
 
 type telemetrySourceLedger struct {
-	collections          []TelemetryCollectionEvidence
-	collectionsTruncated bool
-	mu                   sync.Mutex
-	epochs               map[telemetrySourceKey]*TelemetrySourceEpoch
-	truncated            bool
+	collections           []TelemetryCollectionEvidence
+	collectionsTruncated  bool
+	mu                    sync.Mutex
+	epochs                map[telemetrySourceKey]*TelemetrySourceEpoch
+	truncated             bool
+	jointStreams          map[telemetrySourceKey]*telemetryJointStream
+	jointStreamsTruncated bool
 	// coverage is each source's observed wall time, requirements when each
 	// had to be observed and cursors its last sequenced publication (see
 	// telemetry_coverage.go).
@@ -319,7 +322,10 @@ func (l *telemetrySourceLedger) wasAdopted() bool {
 }
 
 func newTelemetrySourceLedger() *telemetrySourceLedger {
-	return &telemetrySourceLedger{epochs: map[telemetrySourceKey]*TelemetrySourceEpoch{}}
+	return &telemetrySourceLedger{
+		epochs:       map[telemetrySourceKey]*TelemetrySourceEpoch{},
+		jointStreams: map[telemetrySourceKey]*telemetryJointStream{},
+	}
 }
 
 // observe records one received publication, including duplicates and
@@ -353,6 +359,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 		l.observeCoverage(source, batch, at)
 		return
 	}
+	priorTerminal := record.TerminalSequence
 	if isTerminalRemoteLifecycle(batch.LifecycleState) && sequence > record.TerminalSequence {
 		record.TerminalSequence = sequence
 	}
@@ -369,6 +376,12 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 		// (staging, activation): nothing before it was lost, so the epoch's
 		// origin is observed.
 		record.addRange(1, sequence-1)
+		l.observeJointBenignRangeLocked(key, 1, sequence-1)
+	}
+	if priorTerminal != 0 && sequence > priorTerminal && !isTerminalRemoteLifecycle(batch.LifecycleState) {
+		l.observeJointBenignRangeLocked(key, sequence, sequence)
+	} else if strings.EqualFold(strings.TrimSpace(batch.LifecycleState), "STAGED") {
+		l.observeJointBenignRangeLocked(key, sequence, sequence)
 	}
 	record.add(sequence)
 	record.observeCounters(batch)
@@ -852,3 +865,554 @@ func localTelemetryLossTotals(droppedResults, shedArrivals int64) *TelemetryLoss
 	addControllerWideTelemetryCounters(totals)
 	return telemetryLossAccounting(totals)
 }
+
+// TelemetryJointWindow records the observation window bounds [StartUnixMs, EndUnixMs]
+// for a contiguous publication sequence span [FirstSequence, LastSequence] of one
+// (source, execution_generation, epoch) stream.
+type TelemetryJointWindow struct {
+	FirstSequence uint64 `json:"first_sequence"`
+	LastSequence  uint64 `json:"last_sequence"`
+	StartUnixMs   int64  `json:"start_ms"`
+	EndUnixMs     int64  `json:"end_ms"`
+}
+
+// telemetryJointStream tracks the joint-evidence publication sequence ranges and
+// observation window bounds for one (source, execution_generation, epoch) stream.
+type telemetryJointStream struct {
+	Source              string
+	ExecutionGeneration uint64
+	Epoch               string
+	AcceptedRanges      [][2]uint64
+	IgnoredRanges       [][2]uint64
+	DroppedRanges       [][2]uint64
+	Windows             []TelemetryJointWindow
+	DroppedWindows      []TelemetryJointWindow
+	FirstStartUnixMs    int64
+	LastEndUnixMs       int64
+	Truncated           bool
+}
+
+func (l *telemetrySourceLedger) jointStreamLocked(key telemetrySourceKey) *telemetryJointStream {
+	if l.jointStreams == nil {
+		l.jointStreams = map[telemetrySourceKey]*telemetryJointStream{}
+	}
+	stream := l.jointStreams[key]
+	if stream != nil {
+		return stream
+	}
+	if len(l.jointStreams) >= maxTelemetrySourceEpochs {
+		l.jointStreamsTruncated = true
+		return nil
+	}
+	stream = &telemetryJointStream{
+		Source:              key.source,
+		ExecutionGeneration: key.generation,
+		Epoch:               key.epoch,
+	}
+	l.jointStreams[key] = stream
+	return stream
+}
+
+func mergeJointSequenceRanges(ranges [][2]uint64, from, to uint64) ([][2]uint64, bool) {
+	if from == 0 || to < from {
+		return ranges, false
+	}
+	ranges = append(ranges, [2]uint64{from, to})
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i][0] < ranges[j][0] })
+	merged := ranges[:1]
+	for _, span := range ranges[1:] {
+		last := &merged[len(merged)-1]
+		if span[0] <= last[1]+1 {
+			last[1] = max(last[1], span[1])
+			continue
+		}
+		merged = append(merged, span)
+	}
+	truncated := false
+	for len(merged) > maxTelemetrySourceRanges {
+		merged[1][0] = merged[0][0]
+		merged = merged[1:]
+		truncated = true
+	}
+	return merged, truncated
+}
+
+func jointRangesCover(ranges [][2]uint64, seq uint64) bool {
+	for _, span := range ranges {
+		if seq >= span[0] && seq <= span[1] {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeJointWindows(windows []TelemetryJointWindow, firstSeq, lastSeq uint64, startMs, endMs int64) ([]TelemetryJointWindow, bool) {
+	if startMs < 0 {
+		startMs = 0
+	}
+	if endMs < startMs {
+		endMs = startMs
+	}
+	w := TelemetryJointWindow{FirstSequence: firstSeq, LastSequence: lastSeq, StartUnixMs: startMs, EndUnixMs: endMs}
+	windows = append(windows, w)
+	if firstSeq > 0 {
+		sort.Slice(windows, func(i, j int) bool {
+			if windows[i].FirstSequence != windows[j].FirstSequence {
+				return windows[i].FirstSequence < windows[j].FirstSequence
+			}
+			return windows[i].StartUnixMs < windows[j].StartUnixMs
+		})
+		merged := windows[:1]
+		for _, next := range windows[1:] {
+			last := &merged[len(merged)-1]
+			if last.FirstSequence > 0 && next.FirstSequence > 0 && next.FirstSequence <= last.LastSequence+1 {
+				last.LastSequence = max(last.LastSequence, next.LastSequence)
+				if next.StartUnixMs > 0 && (last.StartUnixMs == 0 || next.StartUnixMs < last.StartUnixMs) {
+					last.StartUnixMs = next.StartUnixMs
+				}
+				last.EndUnixMs = max(last.EndUnixMs, next.EndUnixMs)
+				continue
+			}
+			merged = append(merged, next)
+		}
+		windows = merged
+	}
+	truncated := false
+	for len(windows) > maxTelemetrySourceRanges {
+		if windows[0].StartUnixMs > 0 && (windows[1].StartUnixMs == 0 || windows[0].StartUnixMs < windows[1].StartUnixMs) {
+			windows[1].StartUnixMs = windows[0].StartUnixMs
+		}
+		if windows[0].FirstSequence > 0 && (windows[1].FirstSequence == 0 || windows[0].FirstSequence < windows[1].FirstSequence) {
+			windows[1].FirstSequence = windows[0].FirstSequence
+		}
+		windows[1].EndUnixMs = max(windows[1].EndUnixMs, windows[0].EndUnixMs)
+		windows[1].LastSequence = max(windows[1].LastSequence, windows[0].LastSequence)
+		windows = windows[1:]
+		truncated = true
+	}
+	return windows, truncated
+}
+
+func (l *telemetrySourceLedger) observeJointBenignRangeLocked(key telemetrySourceKey, from, to uint64) {
+	if l == nil || key.source == "" || from == 0 || to < from {
+		return
+	}
+	stream := l.jointStreamLocked(key)
+	if stream == nil {
+		return
+	}
+	var truncated bool
+	stream.IgnoredRanges, truncated = mergeJointSequenceRanges(stream.IgnoredRanges, from, to)
+	stream.Truncated = stream.Truncated || truncated
+}
+
+func (l *telemetrySourceLedger) observeJointBenign(source string, batch generatorrpc.MetricsBatch) {
+	if l == nil || source == "" || batch.BatchSequence == 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
+	l.observeJointBenignRangeLocked(key, batch.BatchSequence, batch.BatchSequence)
+}
+
+func (l *telemetrySourceLedger) observeJointAccepted(source string, batch generatorrpc.MetricsBatch, startMs, endMs int64) {
+	if l == nil || source == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
+	stream := l.jointStreamLocked(key)
+	if stream == nil {
+		return
+	}
+	if startMs > 0 && (stream.FirstStartUnixMs == 0 || startMs < stream.FirstStartUnixMs) {
+		stream.FirstStartUnixMs = startMs
+	}
+	if endMs > stream.LastEndUnixMs {
+		stream.LastEndUnixMs = endMs
+	}
+	if batch.BatchSequence == 0 {
+		return
+	}
+	var rTrunc, wTrunc bool
+	stream.AcceptedRanges, rTrunc = mergeJointSequenceRanges(stream.AcceptedRanges, batch.BatchSequence, batch.BatchSequence)
+	stream.Windows, wTrunc = mergeJointWindows(stream.Windows, batch.BatchSequence, batch.BatchSequence, startMs, endMs)
+	stream.Truncated = stream.Truncated || rTrunc || wTrunc
+}
+
+func (l *telemetrySourceLedger) observeJointDropped(source string, batch generatorrpc.MetricsBatch, startMs, endMs int64) {
+	if l == nil || source == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
+	stream := l.jointStreamLocked(key)
+	if stream == nil {
+		return
+	}
+	stream.Truncated = true
+	if batch.BatchSequence > 0 {
+		stream.DroppedRanges, _ = mergeJointSequenceRanges(stream.DroppedRanges, batch.BatchSequence, batch.BatchSequence)
+	}
+	stream.DroppedWindows, _ = mergeJointWindows(stream.DroppedWindows, batch.BatchSequence, batch.BatchSequence, startMs, endMs)
+}
+
+func unionUint64Ranges(a, b [][2]uint64) [][2]uint64 {
+	if len(a) == 0 && len(b) == 0 {
+		return nil
+	}
+	combined := make([][2]uint64, 0, len(a)+len(b))
+	for _, span := range a {
+		if span[0] > 0 && span[1] >= span[0] {
+			combined = append(combined, span)
+		}
+	}
+	for _, span := range b {
+		if span[0] > 0 && span[1] >= span[0] {
+			combined = append(combined, span)
+		}
+	}
+	if len(combined) == 0 {
+		return nil
+	}
+	sort.Slice(combined, func(i, j int) bool { return combined[i][0] < combined[j][0] })
+	merged := combined[:1]
+	for _, span := range combined[1:] {
+		last := &merged[len(merged)-1]
+		if span[0] <= last[1]+1 {
+			last[1] = max(last[1], span[1])
+			continue
+		}
+		merged = append(merged, span)
+	}
+	return merged
+}
+
+func subtractUint64Ranges(base, cut [][2]uint64) [][2]uint64 {
+	if len(base) == 0 {
+		return nil
+	}
+	cut = unionUint64Ranges(cut, nil)
+	if len(cut) == 0 {
+		return append([][2]uint64(nil), base...)
+	}
+	var out [][2]uint64
+	for _, span := range unionUint64Ranges(base, nil) {
+		curStart, curEnd := span[0], span[1]
+		consumed := false
+		for _, c := range cut {
+			if c[1] < curStart {
+				continue
+			}
+			if c[0] > curEnd {
+				break
+			}
+			if c[0] > curStart {
+				out = append(out, [2]uint64{curStart, c[0] - 1})
+			}
+			if c[1] >= curEnd {
+				consumed = true
+				break
+			}
+			curStart = c[1] + 1
+		}
+		if !consumed && curStart <= curEnd {
+			out = append(out, [2]uint64{curStart, curEnd})
+		}
+	}
+	return out
+}
+
+type jointInstalledBatchKey struct {
+	Source     string
+	Epoch      string
+	Generation uint64
+	Sequence   uint64
+}
+
+// reconcileJointEvidence compares the source publications present in the joint
+// archive (installed) against the source epoch ledger, the per-stream joint
+// sequence ledger, and the run's failovers/cursors. It reports whether the
+// archived joint evidence is provably complete from the start of the run and
+// returns exact JointTruncatedWindow entries for any missing or dropped spans.
+func (l *telemetrySourceLedger) reconcileJointEvidence(
+	installed map[jointInstalledBatchKey]bool,
+	installedWindows map[jointInstalledBatchKey][2]int64,
+	expectedSources []string,
+	failovers []RunFailover,
+	cursorWindows map[string]distributedWindowMark,
+	requireOrigin bool,
+) (complete bool, truncatedWindows []JointTruncatedWindow, verified bool) {
+	if l == nil {
+		return false, nil, false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.epochs) == 0 && len(l.jointStreams) == 0 && len(failovers) == 0 {
+		return false, nil, false
+	}
+	verified = true
+	observedGen := map[uint64]bool{}
+	keyMap := map[telemetrySourceKey]bool{}
+	for k := range l.epochs {
+		keyMap[k] = true
+		observedGen[k.generation] = true
+	}
+	for k := range l.jointStreams {
+		keyMap[k] = true
+		observedGen[k.generation] = true
+	}
+	for source, mark := range cursorWindows {
+		if source != "" && mark.batchSequence > 0 {
+			k := telemetrySourceKey{source: source, generation: mark.generation, epoch: mark.epoch}
+			keyMap[k] = true
+			observedGen[k.generation] = true
+		}
+	}
+	for _, failover := range failovers {
+		if failover.PriorGeneration == 0 || observedGen[failover.PriorGeneration] {
+			continue
+		}
+		observedGen[failover.PriorGeneration] = true
+		endMs := failover.AdoptedAt.UnixMilli()
+		startMs := endMs
+		if failover.LastObservedAt != nil && !failover.LastObservedAt.IsZero() {
+			startMs = failover.LastObservedAt.UnixMilli()
+		}
+		if startMs < 0 {
+			startMs = 0
+		}
+		if endMs < startMs {
+			endMs = startMs
+		}
+		truncatedWindows = append(truncatedWindows, JointTruncatedWindow{
+			Source:              "*",
+			ExecutionGeneration: failover.PriorGeneration,
+			StartUnixMs:         startMs,
+			EndUnixMs:           endMs,
+			Reason:              "unobserved_generation",
+		})
+	}
+
+	keys := make([]telemetrySourceKey, 0, len(keyMap))
+	seenSources := map[string]bool{}
+	for k := range keyMap {
+		keys = append(keys, k)
+		seenSources[k.source] = true
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].source != keys[j].source {
+			return keys[i].source < keys[j].source
+		}
+		if keys[i].generation != keys[j].generation {
+			return keys[i].generation < keys[j].generation
+		}
+		return keys[i].epoch < keys[j].epoch
+	})
+
+	installedByKey := map[telemetrySourceKey][][2]uint64{}
+	for id := range installed {
+		if id.Source == "" || id.Sequence == 0 {
+			continue
+		}
+		k := telemetrySourceKey{source: id.Source, epoch: id.Epoch, generation: id.Generation}
+		installedByKey[k], _ = mergeJointSequenceRanges(installedByKey[k], id.Sequence, id.Sequence)
+		seenSources[id.Source] = true
+	}
+
+	windowBoundsFor := func(key telemetrySourceKey, fromSeq, toSeq uint64) (int64, int64) {
+		var startMs, endMs int64
+		applyBounds := func(s, e int64) {
+			if s > 0 && (startMs == 0 || s < startMs) {
+				startMs = s
+			}
+			if e > endMs {
+				endMs = e
+			}
+		}
+		if js := l.jointStreams[key]; js != nil {
+			var prevEnd, nextStart int64
+			for _, w := range js.Windows {
+				if w.FirstSequence <= toSeq && w.LastSequence >= fromSeq {
+					applyBounds(w.StartUnixMs, w.EndUnixMs)
+				}
+				if w.LastSequence < fromSeq && w.EndUnixMs > prevEnd {
+					prevEnd = w.EndUnixMs
+				}
+				if w.FirstSequence > toSeq && w.StartUnixMs > 0 && (nextStart == 0 || w.StartUnixMs < nextStart) {
+					nextStart = w.StartUnixMs
+				}
+			}
+			for _, w := range js.DroppedWindows {
+				if w.FirstSequence <= toSeq && w.LastSequence >= fromSeq {
+					applyBounds(w.StartUnixMs, w.EndUnixMs)
+				}
+			}
+			if startMs == 0 && prevEnd > 0 {
+				startMs = prevEnd
+			}
+			if endMs == 0 && nextStart > 0 {
+				endMs = nextStart
+			}
+		}
+		if installedWindows != nil {
+			if fromSeq > 0 {
+				if b, ok := installedWindows[jointInstalledBatchKey{Source: key.source, Epoch: key.epoch, Generation: key.generation, Sequence: fromSeq}]; ok {
+					applyBounds(b[0], b[1])
+				} else if fromSeq > 1 {
+					if prev, ok := installedWindows[jointInstalledBatchKey{Source: key.source, Epoch: key.epoch, Generation: key.generation, Sequence: fromSeq - 1}]; ok && startMs == 0 {
+						startMs = prev[1]
+					}
+				}
+			}
+			if toSeq > 0 {
+				if b, ok := installedWindows[jointInstalledBatchKey{Source: key.source, Epoch: key.epoch, Generation: key.generation, Sequence: toSeq}]; ok {
+					applyBounds(b[0], b[1])
+				} else if next, ok := installedWindows[jointInstalledBatchKey{Source: key.source, Epoch: key.epoch, Generation: key.generation, Sequence: toSeq + 1}]; ok && endMs == 0 {
+					endMs = next[0]
+				}
+			}
+		}
+		for _, c := range l.collections {
+			if c.Source == key.source && c.Generation == key.generation && c.Epoch == key.epoch && c.Publication >= fromSeq && c.Publication <= toSeq {
+				for _, w := range c.Windows {
+					applyBounds(w.Start.UnixMilli(), w.End.UnixMilli())
+				}
+			}
+		}
+		if mark, ok := cursorWindows[key.source]; ok && mark.generation == key.generation && mark.epoch == key.epoch && mark.batchSequence >= fromSeq && mark.batchSequence <= toSeq && mark.batchTimestamp > 0 {
+			if endMs == 0 {
+				endMs = mark.batchTimestamp
+			}
+			if startMs == 0 && mark.batchTimestamp >= 1000 {
+				startMs = mark.batchTimestamp - 1000
+			}
+		}
+		if ep := l.epochs[key]; ep != nil {
+			if startMs == 0 {
+				if fromSeq == 1 && ep.EpochStartedAt != nil && !ep.EpochStartedAt.IsZero() {
+					startMs = ep.EpochStartedAt.UnixMilli()
+				} else if !ep.FirstObservedAt.IsZero() {
+					startMs = ep.FirstObservedAt.UnixMilli()
+				}
+			}
+			if endMs == 0 && !ep.LastObservedAt.IsZero() {
+				endMs = ep.LastObservedAt.UnixMilli()
+			}
+		}
+		if startMs < 0 {
+			startMs = 0
+		}
+		if endMs < startMs {
+			endMs = startMs
+		}
+		return startMs, endMs
+	}
+
+	originComplete := len(keys) > 0 && !l.truncated && !l.jointStreamsTruncated
+	for _, src := range expectedSources {
+		if src != "" && !seenSources[src] {
+			originComplete = false
+		}
+	}
+
+	for _, key := range keys {
+		ep := l.epochs[key]
+		js := l.jointStreams[key]
+		var ignoredRanges, droppedRanges, acceptedRanges [][2]uint64
+		if js != nil {
+			ignoredRanges = js.IgnoredRanges
+			droppedRanges = js.DroppedRanges
+			acceptedRanges = js.AcceptedRanges
+			if js.Truncated || len(js.DroppedRanges) > 0 || len(js.DroppedWindows) > 0 {
+				originComplete = false
+			}
+			for _, dw := range js.DroppedWindows {
+				truncatedWindows = append(truncatedWindows, JointTruncatedWindow{
+					Source:              key.source,
+					ExecutionGeneration: key.generation,
+					Epoch:               key.epoch,
+					FirstSequence:       dw.FirstSequence,
+					LastSequence:        dw.LastSequence,
+					StartUnixMs:         dw.StartUnixMs,
+					EndUnixMs:           dw.EndUnixMs,
+					Reason:              "dropped_publications",
+				})
+			}
+		}
+		var epRanges [][2]uint64
+		maxSeq := uint64(0)
+		if ep != nil {
+			epRanges = ep.ranges
+			maxSeq = ep.LastSequence
+			if ep.RangesTruncated || ep.Unobserved {
+				originComplete = false
+			}
+		}
+		if len(acceptedRanges) > 0 {
+			if last := acceptedRanges[len(acceptedRanges)-1][1]; last > maxSeq {
+				maxSeq = last
+			}
+		}
+		if mark, ok := cursorWindows[key.source]; ok && mark.generation == key.generation && mark.epoch == key.epoch && mark.batchSequence > maxSeq {
+			maxSeq = mark.batchSequence
+			acceptedRanges = unionUint64Ranges(acceptedRanges, [][2]uint64{{mark.batchSequence, mark.batchSequence}})
+		}
+
+		// Sequences received or accepted by the controller that are missing from
+		// the archived joint evidence (and not benign ignored or already counted as dropped).
+		observedUnion := unionUint64Ranges(epRanges, acceptedRanges)
+		covered := unionUint64Ranges(installedByKey[key], unionUint64Ranges(ignoredRanges, droppedRanges))
+		uncommittedLost := subtractUint64Ranges(observedUnion, covered)
+		for _, span := range uncommittedLost {
+			startMs, endMs := windowBoundsFor(key, span[0], span[1])
+			truncatedWindows = append(truncatedWindows, JointTruncatedWindow{
+				Source:              key.source,
+				ExecutionGeneration: key.generation,
+				Epoch:               key.epoch,
+				FirstSequence:       span[0],
+				LastSequence:        span[1],
+				StartUnixMs:         startMs,
+				EndUnixMs:           endMs,
+				Reason:              "uncommitted_batch_lost",
+			})
+		}
+
+		// Sequence gaps between 1..maxSeq that were neither received nor ignored.
+		if maxSeq > 0 {
+			fullSpan := [][2]uint64{{1, maxSeq}}
+			accounted := unionUint64Ranges(observedUnion, unionUint64Ranges(installedByKey[key], unionUint64Ranges(ignoredRanges, droppedRanges)))
+			gaps := subtractUint64Ranges(fullSpan, accounted)
+			for _, gap := range gaps {
+				// If only js exists on a non-adopted run (from unit tests calling
+				// rememberJointPublicationLocked directly on an isolated sequence > 1
+				// without epoch tracking), only treat leading 1..first-1 as a missing
+				// range when ep != nil or requireOrigin is true.
+				if ep == nil && !requireOrigin && len(acceptedRanges) > 0 && gap[1] < acceptedRanges[0][0] {
+					continue
+				}
+				originComplete = false
+				startMs, endMs := windowBoundsFor(key, gap[0], gap[1])
+				truncatedWindows = append(truncatedWindows, JointTruncatedWindow{
+					Source:              key.source,
+					ExecutionGeneration: key.generation,
+					Epoch:               key.epoch,
+					FirstSequence:       gap[0],
+					LastSequence:        gap[1],
+					StartUnixMs:         startMs,
+					EndUnixMs:           endMs,
+					Reason:              "missing_sequence_range",
+				})
+			}
+		} else {
+			originComplete = false
+		}
+	}
+
+	complete = originComplete && len(truncatedWindows) == 0
+	return complete, truncatedWindows, verified
+}
+
