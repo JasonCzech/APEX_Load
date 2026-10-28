@@ -1053,6 +1053,27 @@ func WithExecution() ServiceOption {
 	}
 }
 
+// WithPodResourceLimits configures the generator's runtime CPU and memory
+// limits for peak pod-capacity reservation enforcement in in-process tests and
+// non-cgroup launches.
+func WithPodResourceLimits(cpuLimitCores float64, memoryLimitBytes int64) ServiceOption {
+	return func(s *Service) {
+		s.podResources.CPULimitCores = cpuLimitCores
+		s.podResources.MemoryLimitBytes = memoryLimitBytes
+	}
+}
+
+// WithPodCapacityIncarnation overrides the generator's pod-capacity incarnation
+// identifier. Tests use it to match a pre-journaled reservation; production
+// generators keep their per-process UUID.
+func WithPodCapacityIncarnation(incarnation string) ServiceOption {
+	return func(s *Service) {
+		if trimmed := strings.TrimSpace(incarnation); trimmed != "" {
+			s.podCapacityIncarnation = trimmed
+		}
+	}
+}
+
 // WithClock replaces the service's time source. Execution-epoch leases are
 // expiry-driven, so tests that exercise a lapsed epoch otherwise have to pick a
 // TTL short enough to elapse during the test and then sleep past it. That makes

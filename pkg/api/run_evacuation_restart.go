@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // A missing-replacement restart (REC-A) starts the moved share of an
@@ -385,8 +386,15 @@ func (tr *TestRunner) prepareRunEvacuationRestart(ctx context.Context, candidate
 		return problems
 	}
 	// The moved share's reservation becomes the run's under this term, as a
-	// roll-forward commits its replacement's; the restart then moves it.
-	shareClient := map[string]generatorClient{missing: reachable[missing]}
+	// roll-forward commits its replacement's; the restart then moves it. When
+	// the old replacement's process restarted and answered UNKNOWN_TEST, its
+	// changed incarnation under the accepted epoch claim proves the old
+	// process holds no reservation.
+	missingClient := reachable[missing]
+	if completed[missing] == nil && refused[missing].Outcome == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_UNKNOWN_TEST {
+		missingClient = restartedReplacementCapacityClient{generatorClient: missingClient}
+	}
+	shareClient := map[string]generatorClient{missing: missingClient}
 	if err := tr.commitRunEvacuationRollForwardCapacity(ctx, guard, []string{missing}, shareClient, nil, nil, generation, owner); err != nil {
 		return []string{"moved share capacity: " + err.Error()}
 	}
@@ -394,11 +402,34 @@ func (tr *TestRunner) prepareRunEvacuationRestart(ctx context.Context, candidate
 	for target, client := range capacityClients {
 		clients[target] = client
 	}
-	clients[missing] = reachable[missing]
+	clients[missing] = missingClient
 	if err := tr.adoptPodCapacity(ctx, candidate.test.ID, clients, generation, owner); err != nil {
 		return []string{"capacity ownership transfer: " + err.Error()}
 	}
 	return nil
+}
+
+// restartedReplacementCapacityClient confirms the old incarnation's reservation
+// for a replacement that answered UNKNOWN_TEST when its current generator
+// process reports a newer incarnation under the claimed generation.
+type restartedReplacementCapacityClient struct {
+	generatorClient
+}
+
+func (c restartedReplacementCapacityClient) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityClaim) (*pb.PodCapacityAck, error) {
+	capacity, ok := c.generatorClient.(podCapacityClient)
+	if !ok {
+		return nil, errors.New("generator cannot confirm capacity changes")
+	}
+	ack, err := capacity.ReservePodCapacity(ctx, claim)
+	if err == nil && !ack.GetAccepted() && claim.GetIncarnation() != "" &&
+		ack.GetSnapshot().GetIncarnation() != "" && ack.GetSnapshot().GetIncarnation() != claim.GetIncarnation() {
+		return &pb.PodCapacityAck{
+			Accepted: true,
+			Snapshot: &pb.PodCapacitySnapshot{Incarnation: claim.GetIncarnation()},
+		}, nil
+	}
+	return ack, err
 }
 
 // beginRunEvacuationRestartCheckpoint replaces this term's restart intent with
@@ -522,7 +553,13 @@ func (tr *TestRunner) restartEvacuationReplacement(b *distributedExecutionBacken
 		// A stop requested meanwhile owns the run, and Phase B opens the
 		// streams of every adopted generator for its finalizer. Without one
 		// there is nothing to resume.
-		return len(resume.adopted) > 0
+		if len(resume.adopted) == 0 {
+			if _, err := tr.finishStoppedRunEvacuationRestartWithoutSurvivor(executionCtx, b, test); err != nil {
+				slog.Warn("finish stopped evacuation restart without a survivor", "test_id", test.ID, "error", err)
+			}
+			return false
+		}
+		return true
 	case err == nil && restarted == 1:
 	case journaled:
 		// No replacement committed: the run is held under its journal.
@@ -635,6 +672,119 @@ func (tr *TestRunner) failRunEvacuationRestart(b *distributedExecutionBackend, t
 	tr.mu.Unlock()
 	candidate := &runAdoptionCandidate{test: test, newToken: token}
 	tr.failRunEvacuationRecovery(b, candidate, cloneClientMap(resume.adopted), nil, resume.generation, resume.ownerID, runEvacuationRestartAction, []string{problem})
+}
+
+// finishStoppedRunEvacuationRestartWithoutSurvivor completes a stopping run
+// that Phase A installed for a missing-replacement restart with no surviving
+// generator, before any replacement committed. Phase A already fenced the
+// source and proved the old replacement runs nothing, so replacing the restart
+// intent with this term's checkpoint lets the run complete ABORTED and release
+// its pod capacity reservations. It returns (false, nil) when the run is not
+// in that window (for example, once a replacement has committed).
+func (tr *TestRunner) finishStoppedRunEvacuationRestartWithoutSurvivor(ctx context.Context, b *distributedExecutionBackend, test *ManagedTest) (bool, error) {
+	if tr == nil || b == nil || test == nil {
+		return false, nil
+	}
+	unlockTopology := tr.lockDistributedTopologyControl(test.ID)
+	topologyLocked := true
+	defer func() {
+		if topologyLocked {
+			unlockTopology()
+		}
+	}()
+	generation, owner, _, err := tr.generatorExecutionClaim()
+	if err != nil {
+		return false, err
+	}
+	tr.mu.RLock()
+	current := tr.tests[test.ID] == test && test.Status == "STOPPING" &&
+		!strings.HasPrefix(test.Error, uncertainEvacuationReasonPrefix) &&
+		!strings.HasPrefix(test.Error, "controller failover:") &&
+		test.executionGeneration == generation &&
+		len(test.remoteClientsByTarget) == 0 && test.remoteClient == nil && strings.TrimSpace(test.remoteTarget) == ""
+	finalizing := test.remoteFinalizing
+	raw := test.continuityCheckpoint
+	token := test.remoteRunSupervisionToken
+	failovers := append([]RunFailover(nil), test.continuityFailovers...)
+	completedTargets, archiveTargets := runtimeRetiredTargetsLocked(test)
+	pinnedSecrets := test.pinnedSecrets.snapshot()
+	tr.mu.RUnlock()
+	if !current {
+		return false, nil
+	}
+	if finalizing {
+		return true, nil
+	}
+	mayHaveApplied := func(cause error) error {
+		return &distributedStopFanoutError{
+			attemptedTargets: []string{"evacuation-restart"},
+			failedErrors:     []error{cause},
+			err:              cause,
+		}
+	}
+	var guard runEvacuationCheckpoint
+	switch {
+	case json.Unmarshal([]byte(raw), &guard) == nil &&
+		guard.Version == runEvacuationRestartCheckpointVersion &&
+		guard.Phase == runEvacuationPhaseReplacementRestarting &&
+		guard.TestID == test.ID &&
+		guard.RestartGeneration == generation &&
+		guard.RestartOwnerID == owner &&
+		guard.RestartCheckpoint != nil:
+		sealCtx := ctx
+		if sealCtx == nil || sealCtx.Err() != nil {
+			sealCtx = context.Background()
+		}
+		plain, err := tr.sealRunContinuityCheckpoint(sealCtx, test.ID, generation, owner, token[:], guard.NextShards, failovers, completedTargets, archiveTargets, pinnedSecrets, *guard.RestartCheckpoint)
+		if err != nil {
+			return true, mayHaveApplied(err)
+		}
+		encoded, err := json.Marshal(plain)
+		if err != nil {
+			return true, mayHaveApplied(err)
+		}
+		if err := tr.swapRunContinuityCheckpoint(test, raw, string(encoded), owner); err != nil {
+			return true, mayHaveApplied(err)
+		}
+	default:
+		checkpoint, present, decodeErr := decodeRunContinuityCheckpoint(raw)
+		if decodeErr != nil || !present || checkpoint.ExecutionGeneration != generation || checkpoint.ExecutionLeaseOwnerID != owner || len(checkpoint.Shards) == 0 || len(failovers) == 0 {
+			return false, nil
+		}
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] != test || test.Status != "STOPPING" {
+		tr.mu.Unlock()
+		return false, nil
+	}
+	test.adoptedResume = nil
+	if test.remoteFinalizing {
+		tr.mu.Unlock()
+		return true, nil
+	}
+	test.remoteFinalizing = true
+	finalError := ""
+	if strings.HasPrefix(test.Error, "ci abort reason:") {
+		finalError = test.Error
+	}
+	tr.mu.Unlock()
+	topologyLocked = false
+	unlockTopology()
+	b.completeDistributedTestRun(tr, test, "ABORTED", finalError)
+	if store, ok := tr.testStore.(podCapacityStore); ok {
+		if claims, listErr := store.ListPodCapacityReservations(); listErr == nil {
+			var owned []storage.PodCapacityReservation
+			for _, claim := range claims {
+				if claim.TestID == test.ID {
+					owned = append(owned, claim)
+				}
+			}
+			if len(owned) > 0 {
+				tr.releasePodClaimsWithDial(b, owned)
+			}
+		}
+	}
+	return true, nil
 }
 
 // evacuationRestartRefusal says why a stored run held by a restartable journal

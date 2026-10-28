@@ -2399,6 +2399,12 @@ func (tr *TestRunner) persistAndAttachRunArchiveUnderFence(test *ManagedTest, ar
 const distributedFailureCleanupTimeout = time.Second
 
 func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner, test *ManagedTest, graceful bool) error {
+	tr.mu.RLock()
+	hasRemoteTargets := len(test.remoteClientsByTarget) > 0 || test.remoteClient != nil || strings.TrimSpace(test.remoteTarget) != ""
+	tr.mu.RUnlock()
+	if !hasRemoteTargets {
+		return nil
+	}
 	cleanupTimeout := min(b.timeout, distributedFailureCleanupTimeout)
 	if cleanupTimeout <= 0 {
 		cleanupTimeout = distributedFailureCleanupTimeout
