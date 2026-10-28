@@ -47,8 +47,8 @@ func browserIntelligenceAcceptanceInventory() []browserAcceptanceItem {
 
 func browserIntelligenceAcceptanceEndToEnd() []browserAcceptanceE2E {
 	return []browserAcceptanceE2E{
-		{Behavior: "Configuration: browser policies with revisions (the journey policy editor has component tests only)", Tests: []string{"workflow-browser-intelligence.spec.ts:browser policies save revisions, refuse stale edits and show past revisions"}},
-		{Behavior: "Comparison, finding to resource to HAR entry, and exports", Tests: []string{"workflow-browser-intelligence.spec.ts:the Browser area leads from a finding to its document resources and HAR entry, and exports its sections"}},
+		{Behavior: "Configuration: browser and journey policies with revisions, structural step paths, conflict recovery and deletion", Tests: []string{"workflow-browser-intelligence.spec.ts:browser policies save revisions, refuse stale edits and show past revisions", "workflow-browser-intelligence.spec.ts:journey policies pick structural step paths, save revisions, refuse stale edits and show past revisions"}},
+		{Behavior: "Comparison, finding to resource to HAR entry, saved v2 panels, live provisional intelligence, and exports", Tests: []string{"workflow-browser-intelligence.spec.ts:the Browser area leads from a finding to its document resources and HAR entry, and exports its sections", "workflow-browser-intelligence.spec.ts:real managed Chromium runs drive live provisional intelligence, finalized findings, HAR drill-down, comparison panels, exports and viewer access"}},
 		{Behavior: "Findings on demand; no score without evidence", Tests: []string{"workflow-browser-findings.spec.ts:browser findings are evaluated on demand and never score absent evidence"}},
 		{Behavior: "Journeys under a pinned policy", Tests: []string{"workflow-journeys.spec.ts:a run pinned to a journey policy accounts its journeys from the archive"}},
 	}

@@ -69,8 +69,10 @@ These Playwright tests run in both authentication profiles (default and local-au
 
 | BI-4 behavior | Spec | Test | Profiles |
 | --- | --- | --- | --- |
-| Configuration: browser policies with revisions (the journey policy editor has component tests only) | `dashboard/e2e/workflow-browser-intelligence.spec.ts` | browser policies save revisions, refuse stale edits and show past revisions | both |
-| Comparison, finding to resource to HAR entry, and exports | `dashboard/e2e/workflow-browser-intelligence.spec.ts` | the Browser area leads from a finding to its document resources and HAR entry, and exports its sections | both |
+| Configuration: browser and journey policies with revisions, structural step paths, conflict recovery and deletion | `dashboard/e2e/workflow-browser-intelligence.spec.ts` | browser policies save revisions, refuse stale edits and show past revisions | both |
+|  | `dashboard/e2e/workflow-browser-intelligence.spec.ts` | journey policies pick structural step paths, save revisions, refuse stale edits and show past revisions | both |
+| Comparison, finding to resource to HAR entry, saved v2 panels, live provisional intelligence, and exports | `dashboard/e2e/workflow-browser-intelligence.spec.ts` | the Browser area leads from a finding to its document resources and HAR entry, and exports its sections | both |
+|  | `dashboard/e2e/workflow-browser-intelligence.spec.ts` | real managed Chromium runs drive live provisional intelligence, finalized findings, HAR drill-down, comparison panels, exports and viewer access | both |
 | Findings on demand; no score without evidence | `dashboard/e2e/workflow-browser-findings.spec.ts` | browser findings are evaluated on demand and never score absent evidence | both |
 | Journeys under a pinned policy | `dashboard/e2e/workflow-journeys.spec.ts` | a run pinned to a journey policy accounts its journeys from the archive | both |
 
