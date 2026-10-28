@@ -3,8 +3,12 @@ package engine
 import (
 	"context"
 	"errors"
-	"github.com/jasonczech/apexload/pkg/protocol"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type sourceJournalTestSink struct {
@@ -14,6 +18,7 @@ type sourceJournalTestSink struct {
 func (s sourceJournalTestSink) BrowserDocumentSourceJournal() (*protocol.BrowserSourceJournal, error) {
 	return s.journal, nil
 }
+func (s sourceJournalTestSink) RecordResult(*protocol.Result) error { return nil }
 
 type sourceLeaseTestRuntime struct {
 	lease          *protocol.BrowserSourceLease
@@ -79,5 +84,83 @@ func TestBrowserSourceEngineAdmissionOrdering(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type zeroRampOrderProtocol struct {
+	mu      *sync.Mutex
+	lease   *protocol.BrowserSourceLease
+	journal *protocol.BrowserSourceJournal
+	events  *[]string
+}
+
+func (p *zeroRampOrderProtocol) Name() string        { return "bRoWsEr" }
+func (p *zeroRampOrderProtocol) Description() string { return "test" }
+func (p *zeroRampOrderProtocol) SetBrowserDocumentSourceLease(l *protocol.BrowserSourceLease) {
+	p.lease = l
+}
+func (p *zeroRampOrderProtocol) BrowserDocumentSourceLease() *protocol.BrowserSourceLease {
+	return p.lease
+}
+func (p *zeroRampOrderProtocol) Init(context.Context, map[string]any) error { return nil }
+func (p *zeroRampOrderProtocol) Execute(context.Context, *protocol.Action) (*protocol.Result, error) {
+	p.mu.Lock()
+	*p.events = append(*p.events, "execute")
+	p.mu.Unlock()
+	return &protocol.Result{Success: true, Duration: time.Millisecond}, nil
+}
+func (p *zeroRampOrderProtocol) Teardown(context.Context) error    { return nil }
+func (p *zeroRampOrderProtocol) HealthCheck(context.Context) error { return nil }
+
+func TestBrowserSourceSteadyPhasePrecedesZeroRampVUserExecution(t *testing.T) {
+	var mu sync.Mutex
+	var events []string
+	j, err := protocol.NewBrowserSourceJournal("run", "controller", func(e *protocol.BrowserDocumentReceiptEvidence) error {
+		if e.Source != nil && e.Source.Kind == "steady" {
+			mu.Lock()
+			events = append(events, "steady")
+			mu.Unlock()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	protocol.Register("bRoWsEr", func() protocol.Protocol {
+		return &zeroRampOrderProtocol{mu: &mu, journal: j, events: &events}
+	})
+	yes := true
+	script := &dsl.Script{
+		ID:       "zero-ramp-order",
+		Name:     "zero-ramp-order",
+		Protocol: "bRoWsEr",
+		Actions:  []dsl.Action{{Type: "browser_navigate", Target: "https://example.com"}},
+	}
+	script.Config.Browser.CaptureDocumentMetrics = &yes
+	script.Config.RunLogic.Iterations = 1
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Duration: 200 * time.Millisecond,
+		Groups: []GroupConfig{{
+			Name:                        "browser",
+			Script:                      script,
+			VUsers:                      4,
+			RampUp:                      0,
+			ResultSink:                  sourceJournalTestSink{j},
+			RunID:                       "run",
+			BrowserDocumentProofVersion: 3,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := mge.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(events) == 0 || events[0] != "steady" {
+		t.Fatalf("expected steady phase to be emitted before any VUser execute when RampUp=0, got %v", events)
 	}
 }

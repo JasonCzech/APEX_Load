@@ -17,7 +17,7 @@ import (
 
 const analysisBrowserFindingsUsage = `Usage:
   apexctl analysis browser-findings --run ID [--evaluate [--policy ID --revision N] --project ID [--wait] [--timeout 5m]] [--api URL] [--api-key KEY|--bearer-token TOKEN]
-Prints a run's latest browser findings and qualified score (browser_findings.v1,
+Prints a run's latest browser findings and qualified score (browser_findings.v2,
 browser_score.v1) under its pinned browser_policy. --evaluate queues a
 browser_intelligence evaluation first; --wait polls it and fails unless it is
 ready. An evaluation under a named revision (--policy, --revision) is not the

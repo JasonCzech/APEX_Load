@@ -61,8 +61,14 @@ Each BE-4 behavior names the tests that accept it. **Chromium and WebKit** tests
 |  | `TestSyntheticHARNeverInventsTimingsOrContent` (`pkg/harsynth/writer_test.go`) | Unit (no browser) |
 | Benchmark units and missing samples | `TestBrowserBenchmarkRSSPreservesRawBytesAndMissingness` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
 |  | `TestBrowserBenchmarkV2ArtifactKeepsRawMemoryPopulation` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestParseCDPProcessInfoAndAttributeVUserRendererPIDs` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestParseLinuxSmapsPSSBytes` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestComputeMarginalRSSLinearRegressionAndActionOverhead` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
 |  | `TestBrowserBenchmarkRSSSampleDenominatorIncludesUnavailable` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
 |  | `TestBrowserBenchmarkRSSRuntimeConversionRequiresAvailableFiniteSnapshot` (`pkg/protocol/browser/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestBrowserBenchmarkEvidenceUsesDecimalByteTargets` (`pkg/api/browser_benchmark_units_test.go`) | Unit (no browser) |
+|  | `TestObserverGroupMaxVUsersMatchesCanaryEnvelope` (`pkg/api/goal_controller_test.go`) | Unit (no browser) |
+|  | `TestBrowserCapacityProfileReconcilesDecimalMBTargetToGeneratorMiB` (`pkg/api/capacity_planning_test.go`) | Unit (no browser) |
 | Benchmark (opt-in) | `TestBrowserBenchmark` (`pkg/protocol/browser/browser_benchmark_test.go`) | Chromium and WebKit |
 
 ## End to end
@@ -72,6 +78,8 @@ These Playwright tests run in both authentication profiles (default and local-au
 | BE-4 behavior | Spec | Test | Profiles |
 | --- | --- | --- | --- |
 | Archive resource to HAR and archive ZIP downloads | `dashboard/e2e/workflow-browser-har.spec.ts` | an archived run leads from its retained resources to HAR and archive downloads | both |
+|  | `dashboard/e2e/workflow-browser-har.spec.ts` | UI-driven Chromium managed chain authors, replays, runs and downloads native HARs without stubs | both |
+|  | `dashboard/e2e/workflow-browser-har.spec.ts` | UI-driven WebKit managed chain authors, replays, runs and downloads native HARs without stubs | both |
 | Viewer/editor separation and project denial | `dashboard/e2e/workflow-browser-har.spec.ts` | viewers list HARs but cannot download them, and other projects are denied | local-auth only |
 | Retained missing values | `dashboard/e2e/workflow-retained-resource-inspector.spec.ts` | retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks | both |
 |  | `dashboard/e2e/workflow-retained-resource-inspector.spec.ts` | retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero | both |
@@ -81,10 +89,10 @@ These Playwright tests run in both authentication profiles (default and local-au
 
 `APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^TestBrowserBenchmark$' -v` measures each engine with a desktop and a mobile profile it accepts (Chromium: `desktop_1080p`, `pixel_8`; WebKit, which has no desktop profile: a 1920x1080 viewport, `iphone_15_pro`). Each runs five sessions in each of three modes: plain, document capture, and 200 ms of network latency. It records:
 
-- the host (OS and kernel version, CPU model and count, memory), the Playwright driver version and each browser's version;
+- the host (OS and kernel version, CPU model and count, memory in bytes), the Playwright driver version and each browser's version;
 - cold launch (the engine's browser started from nothing) and session start against the pooled browser a generator keeps running;
-- navigation time, the overhead of document capture, and the throttled navigation's separation from the plain one;
-- largest observed RSS snapshot in bytes (nullable when unavailable), attempted/partial/unavailable snapshot counts, and CPU seconds of the observed test-process descendants including Playwright and browsers;
+- navigation time, the overhead of document capture, action or touch-over-click-baseline overhead (`action_overhead_ms`, `action_overhead_kind`), and the throttled navigation's separation from the plain one;
+- CDP renderer-attributed per-VUser RSS (`per_vuser_rss_bytes`, optional Linux `per_vuser_pss_bytes`) and shared browser/driver overhead (`fixed_overhead_bytes`) for Chromium (`rss_attribution: "cdp_renderer_per_vuser"`), or explicit `"unavailable"` on WebKit, plus largest observed descendant-tree RSS snapshot in bytes (`peak_rss_bytes`, nullable when unavailable), attempted/partial/unavailable snapshot counts, and CPU seconds of the observed test-process descendants including Playwright and browsers;
 - teardown time, and processes left once the browser closes;
 - failures.
 

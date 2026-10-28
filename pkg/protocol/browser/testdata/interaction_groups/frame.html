@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Interaction Groups Child Frame</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <button id="iframe-btn-51" class="ig-target" data-group="51">F51</button>
+  <button id="iframe-btn-52" class="ig-target" data-group="52">F52</button>
+  <script>
+    for (const id of ['iframe-btn-51', 'iframe-btn-52']) {
+      const btn = document.getElementById(id);
+      btn.addEventListener('click', event => {
+        if (window.parent && typeof window.parent.__apexRecordInteraction === 'function') {
+          window.parent.__apexRecordInteraction(id, 'button', 'child_frame', Boolean(event.isTrusted), 0);
+        }
+      });
+    }
+  </script>
+</body>
+</html>

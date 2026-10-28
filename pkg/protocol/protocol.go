@@ -809,31 +809,32 @@ type Result struct {
 	// a row the engine recorded because the iteration ended on its own (the
 	// iteration transaction, or a transaction the VUser left open when it
 	// ended on its own), so the iteration was not cut by a stop.
-	VUserID             int           `json:"vuser_id,omitempty"`
-	Iteration           int64         `json:"iteration,omitempty"`
-	Interrupted         bool          `json:"interrupted,omitempty"`
-	VUserLifetime       uint64        `json:"vuser_lifetime,omitempty"`
-	WallElapsed         time.Duration `json:"wall_elapsed,omitempty"`
-	EndsIteration       bool          `json:"ends_iteration,omitempty"`
-	ActionName          string        // Name of the executed action
-	BusinessTransaction bool          // True when this sample represents a completed business transaction
-	SampleKind          string        // "child" or "aggregate" for StreamingProtocol results
-	ParentActionName    string        // Aggregate action that emitted this child sample
-	Attempt             int           // 1-based execution attempt, including retries
-	Group               string        // Group/transaction name for metrics
-	Region              string        // Generator region that produced this result (per-result override; empty = use writer region)
-	Phase               string        // init, action, or teardown lifecycle phase assigned by the engine
-	Hierarchy           string        // Bounded author/import hierarchy path used for analytics attribution
-	PageName            string        // Stable authored/imported page label used for rollups
-	StartTime           time.Time     // When the action started
-	Duration            time.Duration // Time to execute action
-	WorkerDuration      time.Duration `json:"worker_duration,omitempty"` // Includes compatibility cleanup outside sample timing
-	CorrelationID       string        // Correlation or request id when the protocol exposes one
-	NetworkProfile      string        // Effective network emulation profile used for this result
-	DependencyType      string        // Classified dependency type (http, jms_queue, etc.)
-	DependencyTarget    string        // Classified downstream target (host, queue, topic, etc.)
-	DNSTime             time.Duration // DNS lookup time (if applicable)
-	ConnectTime         time.Duration // Connection establishment time (if applicable)
+	VUserID             int                  `json:"vuser_id,omitempty"`
+	Iteration           int64                `json:"iteration,omitempty"`
+	Interrupted         bool                 `json:"interrupted,omitempty"`
+	VUserLifetime       uint64               `json:"vuser_lifetime,omitempty"`
+	WallElapsed         time.Duration        `json:"wall_elapsed,omitempty"`
+	EndsIteration       bool                 `json:"ends_iteration,omitempty"`
+	AuthoredStep        *BrowserAuthoredStep `json:"authored_step,omitempty"`
+	ActionName          string               // Name of the executed action
+	BusinessTransaction bool                 // True when this sample represents a completed business transaction
+	SampleKind          string               // "child" or "aggregate" for StreamingProtocol results
+	ParentActionName    string               // Aggregate action that emitted this child sample
+	Attempt             int                  // 1-based execution attempt, including retries
+	Group               string               // Group/transaction name for metrics
+	Region              string               // Generator region that produced this result (per-result override; empty = use writer region)
+	Phase               string               // init, action, or teardown lifecycle phase assigned by the engine
+	Hierarchy           string               // Bounded author/import hierarchy path used for analytics attribution
+	PageName            string               // Stable authored/imported page label used for rollups
+	StartTime           time.Time            // When the action started
+	Duration            time.Duration        // Time to execute action
+	WorkerDuration      time.Duration        `json:"worker_duration,omitempty"` // Includes compatibility cleanup outside sample timing
+	CorrelationID       string               // Correlation or request id when the protocol exposes one
+	NetworkProfile      string               // Effective network emulation profile used for this result
+	DependencyType      string               // Classified dependency type (http, jms_queue, etc.)
+	DependencyTarget    string               // Classified downstream target (host, queue, topic, etc.)
+	DNSTime             time.Duration        // DNS lookup time (if applicable)
+	ConnectTime         time.Duration        // Connection establishment time (if applicable)
 	TLSTime             time.Duration
 	TTFB                time.Duration
 	BytesSent           int64

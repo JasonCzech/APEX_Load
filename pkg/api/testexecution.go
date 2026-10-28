@@ -1849,7 +1849,7 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 			persistErr = pinErr
 		} else if pinErr != nil {
 			// A store read failure is retryable, like a failed receipt write.
-			persistErr = errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("resolve run policies: %w", pinErr))
+			persistErr = errors.Join(errStartAdmissionEvidenceStale, errRunPolicyStoreUnavailable, fmt.Errorf("resolve run policies: %w", pinErr))
 		} else {
 			freshAdmission.PolicyPins = pins
 			freshAdmission.TelemetryAcceptancePolicy = acceptance
@@ -6040,6 +6040,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 
 	tr.cacheRunSnapshot(snapshot)
 	tr.broadcastEvent("test_started", eventSnapshot)
+	tr.startLiveBrowserIntelligence(test, nil)
 	tr.startStageSchedules(ctx, test, mge)
 	tr.startTrafficProfileSchedules(ctx, test, mge)
 	tr.scheduleRuntimeGroupDeadlines(eventSnapshot)
@@ -6191,6 +6192,9 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	test.Archive = archiveRecord
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord
+		if strings.TrimSpace(archiveRecord.ManifestSHA256) != "" {
+			releaseLiveBrowserIntelligenceLocked(test)
+		}
 	}
 	terminalSnapshot := buildRunLiveStateSnapshotLocked(test, endTime)
 	eventSnapshot := cloneManagedTestFieldsLocked(test)

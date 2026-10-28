@@ -18,7 +18,7 @@ export default function BrowserTupleArchivePanel({ panel, unit, current, baselin
   return <section className="browser-tuple-archive-panel" aria-label="Separate browser cohort panel">
     <p>{panel.query?.metric} · {panel.query?.aggregation} ({unit}). Each document counts once at its final measurement. Percentiles are bucket estimates. Different measurement tuples remain separate; missing observations are not zero.</p>
     <p>Current run: {current.run_id}{baseline && ` · Baseline run: ${baseline.run_id}`}. {panel.query?.start_seconds || 0}–{panel.query?.end_seconds}s · {panel.query?.bucket_seconds}s buckets.</p>
-    {panel.query?.browser_inputs && <details><summary>Frozen archive inputs</summary><p>Query: {panel.query.browser_inputs.query_sha256}</p><p>Current publication: {panel.query.browser_inputs.current.manifest_sha256}</p>{panel.query.browser_inputs.baseline && <p>Baseline publication: {panel.query.browser_inputs.baseline.manifest_sha256}</p>}<p>These inputs remain fixed when this panel is opened from another run. They do not establish baseline eligibility.</p></details>}
+    {panel.query?.browser_inputs && <details><summary>Frozen archive inputs</summary><p>Query: {panel.query.browser_inputs.query_sha256}</p><p>Current publication: {panel.query.browser_inputs.current.manifest_sha256}</p>{panel.query.browser_inputs.baseline && <p>Baseline publication: {panel.query.browser_inputs.baseline.manifest_sha256}</p>}{panel.query.browser_inputs.selection_receipt_sha256 && <p>Selection receipt: {panel.query.browser_inputs.selection_receipt_sha256}</p>}{!!panel.query.browser_inputs.policy_pins?.length && <p>Policy pins: {panel.query.browser_inputs.policy_pins.map(pin => `${pin.kind} ${pin.id}@${pin.revision} (${pin.sha256})`).join(' · ')}</p>}<p>These inputs remain fixed when this panel is opened from another run. They do not establish baseline eligibility.</p></details>}
     {[...warnings, ...current.warnings, ...(baseline?.warnings ?? [])].map((warning, index) => <p role="status" key={index}>{warning}</p>)}
     {Object.entries(current.excluded ?? {}).map(([reason, count]) => <p key={reason}>Excluded current measurements: {reason.replace(/_/g, ' ')} ({count})</p>)}
     {Object.entries(baseline?.excluded ?? {}).map(([reason, count]) => <p key={reason}>Excluded baseline measurements: {reason.replace(/_/g, ' ')} ({count})</p>)}
@@ -36,7 +36,15 @@ export default function BrowserTupleArchivePanel({ panel, unit, current, baselin
         {baseline && <p>Comparison: {comparison?.status === 'comparable' ? 'Compatible recorded workload/version for this tuple' : `Unavailable (${comparison?.reason?.replace(/_/g, ' ') || 'compatibility not established'})`}. This is a population comparison, not a baseline anomaly verdict.</p>}
         {panel.kind === 'stat' && <p>Latest: {rows[rows.length - 1]?.value ?? 'Missing'} {unit}</p>}
         <ExportableChart definitionId={`${panel.id}-${tuple.id}`} allowSVG={panel.kind === 'line'} title={`${panel.title} · ${tuple.label}`} description="Separate final browser document measurements; no pooled percentiles." rows={rows} columns={[
-          ...(panel.query?.browser_inputs ? [{ key: 'queryPin', label: 'Query SHA-256', value: () => panel.query!.browser_inputs!.query_sha256 }, { key: 'currentPin', label: 'Current archive SHA-256', value: () => panel.query!.browser_inputs!.current.manifest_sha256 }, { key: 'baselinePin', label: 'Baseline archive SHA-256', value: () => panel.query!.browser_inputs!.baseline?.manifest_sha256 ?? '' }] : []),
+          ...(panel.query?.browser_inputs ? [
+            { key: 'queryPin', label: 'Query SHA-256', value: () => panel.query!.browser_inputs!.query_sha256 },
+            { key: 'currentPin', label: 'Current archive SHA-256', value: () => panel.query!.browser_inputs!.current.manifest_sha256 },
+            { key: 'baselinePin', label: 'Baseline archive SHA-256', value: () => panel.query!.browser_inputs!.baseline?.manifest_sha256 ?? '' },
+            ...(panel.query.browser_inputs.version === 2 ? [
+              { key: 'selectionReceiptPin', label: 'Selection receipt SHA-256', value: () => panel.query!.browser_inputs!.selection_receipt_sha256 ?? '' },
+              { key: 'policyPins', label: 'Policy pins', value: () => (panel.query!.browser_inputs!.policy_pins ?? []).map(pin => `${pin.kind}:${pin.id}@${pin.revision}:${pin.sha256}`).join(';') },
+            ] : []),
+          ] : []),
           { key: 'tuple', label: 'Tuple', value: () => tuple.id }, { key: 'cohort', label: 'Cohort', value: () => tuple.cohort_digest },
           { key: 'run', label: 'Current run', value: () => current.run_id }, { key: 'offset', label: 'Elapsed seconds', value: row => row.offset_seconds },
           { key: 'metric', label: 'Metric', value: () => tuple.measurement.metric }, { key: 'algorithm', label: 'Algorithm', value: () => tuple.measurement.algorithm_sha256 },

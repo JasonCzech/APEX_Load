@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../hooks/apiClient'
 import JourneyRiskPanel from './JourneyRiskPanel'
-import { formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText } from './journeyRiskModel'
+import { formatJourneyBoundary, formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText } from './journeyRiskModel'
 
 const mocks = vi.hoisted(() => ({ api: { getTestArchiveJourneys: vi.fn() } }))
 vi.mock('../../hooks/useApi', () => ({ useApi: () => mocks.api }))
@@ -187,5 +187,44 @@ describe('JourneyRiskPanel', () => {
     expect(journeyUnscoredText('accounting_incomplete')).toContain('incomplete')
     expect(journeyUnavailableText('no_iterations')).toContain('ran no VUser iteration')
     expect(journeyIncompleteText(['sources_not_collected', 'novel_reason'])).toBe('The counts are incomplete (generator sources whose archives were not collected; novel reason), so the indexes are withheld.')
+    expect(journeyIncompleteText(['sources_not_completed', 'live_truncated'])).toBe('The counts are incomplete (active VUser iterations have not completed yet; live provisional buffer reached its bound), so the indexes are withheld.')
+    expect(formatJourneyBoundary({ action: 'Submit', step_path: 'actions[2]' })).toBe('action Submit (actions[2])')
+  })
+
+  it('polls provisional live journey accounting without flickering on ReferenceKey and clears on run switch', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveRun2: ((val: typeof report) => void) | undefined
+      mocks.api.getTestArchiveJourneys
+        .mockResolvedValueOnce({ ...report, provisional: true, live_truncated: true })
+        .mockResolvedValueOnce(report)
+        .mockImplementationOnce(() => new Promise(resolve => { resolveRun2 = resolve }))
+      act(() => root.render(<JourneyRiskPanel testId="RUN-REF-1" />))
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('[data-provisional="true"]')).not.toBeNull()
+      expect(container.textContent).toContain('Provisional live journey accounting (non-verdict)')
+      expect(container.textContent).toContain('live_truncated')
+
+      await act(async () => { vi.advanceTimersByTime(3000) })
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('[data-provisional="true"]')).toBeNull()
+      expect(container.textContent).not.toContain('Provisional live journey accounting')
+
+      // Switching testId must immediately clear the previous run's report and show loading state.
+      act(() => root.render(<JourneyRiskPanel testId="RUN-REF-2" />))
+      expect(container.textContent).toContain('Accounting journeys…')
+      expect(container.textContent).not.toContain('Checkout journeys revision 2')
+
+      await act(async () => {
+        resolveRun2?.({ ...report, run_id: 'run-2' })
+        await Promise.resolve()
+      })
+      await act(async () => { await Promise.resolve() })
+      expect(container.textContent).toContain('Checkout journeys revision 2')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

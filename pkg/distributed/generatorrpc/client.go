@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/grpcclient"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -111,6 +112,9 @@ type WorkCommitResult struct {
 	ErrorMessage        string
 	RunSupervisionArmed bool
 	RunSupervisionTTL   time.Duration
+	SentAt              time.Time
+	ReceivedAt          time.Time
+	BrowserBrackets     []ObservedBrowserClockBracket
 }
 
 type RunSupervisionClaim struct {
@@ -234,7 +238,34 @@ type MetricsBatch struct {
 	TransactionResponseTimeSLA []TransactionResponseTimeSLACompliance
 	// HTTPVersionMix is the generator's run-to-date HTTP version mix; nil
 	// from older generators or before any HTTP action.
-	HTTPVersionMix *protocol.HTTPVersionMix
+	HTTPVersionMix              *protocol.HTTPVersionMix
+	LiveBrowserDocumentsJSON    []string
+	LiveBrowserInteractionsJSON []string
+	LiveJourneyEvents           []LiveJourneyEvent
+	LiveBrowserTruncation       *LiveBrowserTruncation
+}
+
+type LiveJourneyEvent struct {
+	Group               string
+	VUserID             int
+	VUserLifetime       uint64
+	Iteration           int64
+	Phase               string
+	ActionName          string
+	TimestampUnixNano   int64
+	DurationMs          float64
+	ElapsedMs           float64
+	BusinessTransaction bool
+	Success             bool
+	Interrupted         bool
+	EndsIteration       bool
+	AuthoredStep        *protocol.BrowserAuthoredStep
+}
+
+type LiveBrowserTruncation struct {
+	DroppedDocuments     int64
+	DroppedInteractions  int64
+	DroppedJourneyEvents int64
 }
 
 type TransactionResponseTimeSLACompliance struct {
@@ -721,12 +752,15 @@ type sharedClientConnection struct {
 	browserNativeHAR           bool
 	browserInteractionV2       bool
 	browserInteractionV3       bool
+	browserInteractionV4       bool
 	browserInteractionObserved time.Time
 	runtimeResources           bool
 	runtimeResourcesObserved   time.Time
 	javaHostCaps               *pb.JavaHostCapabilities
 	javaHostObserved           time.Time
 	javaHostPrepared           bool
+	browserBrackets            map[string][]ObservedBrowserClockBracket
+	browserBracketOrder        []string
 	mu                         sync.Mutex
 	refs                       int
 	closed                     bool
@@ -737,22 +771,29 @@ type HeartbeatStream struct {
 	stream pb.GeneratorControl_HeartbeatClient
 	owner  *Client
 
-	clockMu           sync.Mutex
-	clockSentAt       time.Time
-	clockPingUnixMS   int64
-	clockSampleActive bool
-	lastClock         generatorClockEstimate
-	lastRoundTrip     time.Duration
+	clockMu             sync.Mutex
+	clockSentAt         time.Time
+	clockPingUnixMS     int64
+	clockSampleActive   bool
+	headerObserved      bool
+	lastClock           generatorClockEstimate
+	lastRoundTrip       time.Duration
+	lastSentAt          time.Time
+	lastReceivedAt      time.Time
+	lastBrowserBrackets []ObservedBrowserClockBracket
 }
 
 // ClockSample is one heartbeat's measurement of a generator's clock: the
 // generator's clock minus the controller's, the exchange's round trip, and the
 // uncertainty that bounds the offset error (half the round trip).
 type ClockSample struct {
-	Offset      time.Duration
-	RoundTrip   time.Duration
-	Uncertainty time.Duration
-	ObservedAt  time.Time
+	Offset          time.Duration
+	RoundTrip       time.Duration
+	Uncertainty     time.Duration
+	ObservedAt      time.Time
+	SentAt          time.Time
+	ReceivedAt      time.Time
+	BrowserBrackets []ObservedBrowserClockBracket
 }
 
 // ClockQuality qualifies a duration measured across two hosts' clocks. It is
@@ -1051,11 +1092,18 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 		}
 		request.PrepareOnly = true
 	}
-	if assignment.PreferBrowserOutcomeClocks && request.GetBrowserInteractionEvidenceVersion() == 2 && c.browserOutcomeClocksNegotiated() {
-		request.BrowserInteractionEvidenceVersion = 3
+	if assignment.PreferBrowserOutcomeClocks && request.GetBrowserInteractionEvidenceVersion() == 2 {
+		if c.browserInteractionV4Negotiated() {
+			request.BrowserInteractionEvidenceVersion = 4
+		} else if c.browserOutcomeClocksNegotiated() {
+			request.BrowserInteractionEvidenceVersion = 3
+		}
 	}
-	if request.GetBrowserInteractionEvidenceVersion() > 3 {
+	if request.GetBrowserInteractionEvidenceVersion() > 4 {
 		return AssignmentResult{}, fmt.Errorf("unsupported browser interaction evidence version")
+	}
+	if request.GetBrowserInteractionEvidenceVersion() == 4 && !c.browserInteractionV4Negotiated() {
+		return AssignmentResult{}, fmt.Errorf("browser_interaction_v4_capability_not_negotiated")
 	}
 	if request.GetBrowserInteractionEvidenceVersion() == 3 && !c.browserOutcomeClocksNegotiated() {
 		return AssignmentResult{}, fmt.Errorf("browser_interaction_v3_capability_not_negotiated")
@@ -1154,15 +1202,22 @@ func (c *Client) commitWorkAt(ctx context.Context, testID string, generation uin
 			clockEstimate.uncertainty,
 		)
 	}
-	ack, err := c.rpc.CommitWork(ctx, request)
+	var header metadata.MD
+	sentAt := time.Now()
+	ack, err := c.rpc.CommitWork(ctx, request, grpc.Header(&header))
+	receivedAt := time.Now()
 	if err != nil {
 		return WorkCommitResult{}, err
 	}
+	brackets := c.observeBrowserClockBracketMetadata(header, sentAt, receivedAt)
 	return WorkCommitResult{
 		Accepted:            ack.GetAccepted(),
 		ErrorMessage:        ack.GetErrorMessage(),
 		RunSupervisionArmed: ack.GetRunSupervisionArmed(),
 		RunSupervisionTTL:   time.Duration(ack.GetRunSupervisionTtlMilliseconds()) * time.Millisecond,
+		SentAt:              sentAt,
+		ReceivedAt:          receivedAt,
+		BrowserBrackets:     brackets,
 	}, nil
 }
 
@@ -1445,13 +1500,17 @@ func (c *Client) StopTestAtGeneration(ctx context.Context, testID string, gracef
 }
 
 func (c *Client) StopTestAtGenerationWithToken(ctx context.Context, testID string, graceful bool, generation uint64, token []byte) (StopResult, error) {
+	var header metadata.MD
+	sentAt := time.Now()
 	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{
 		TestId: testID, Graceful: graceful, ExecutionGeneration: generation,
 		RunSupervisionToken: append([]byte(nil), token...),
-	})
+	}, grpc.Header(&header))
+	receivedAt := time.Now()
 	if err != nil {
 		return StopResult{}, err
 	}
+	c.observeBrowserClockBracketMetadata(header, sentAt, receivedAt)
 
 	if ack.GetAcknowledged() {
 		c.sourcePlans.Range(func(key, _ any) bool {
@@ -1469,17 +1528,22 @@ func (c *Client) StopTestAtGenerationWithToken(ctx context.Context, testID strin
 }
 
 func (c *Client) GetArchiveArtifact(ctx context.Context, request ArchiveArtifactRequest) ([]byte, error) {
+	var header metadata.MD
+	sentAt := time.Now()
 	artifact, err := c.rpc.GetArchiveArtifact(
 		ctx,
 		&pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name, SourceIdentity: request.SourceIdentity},
 		grpc.MaxCallRecvMsgSize(grpcMessageSize(archiveArtifactUnaryReceiveMaxSize)),
+		grpc.Header(&header),
 	)
+	receivedAt := time.Now()
 	if err != nil {
 		return nil, err
 	}
 	if request.SourceIdentity != "" && artifact.GetSourceIdentity() != request.SourceIdentity {
 		return nil, fmt.Errorf("generator did not confirm the requested archive source identity")
 	}
+	c.observeBrowserClockBracketMetadata(header, sentAt, receivedAt)
 	return artifact.GetContent(), nil
 }
 
@@ -1493,14 +1557,16 @@ func (c *Client) StreamArchiveArtifact(ctx context.Context, request ArchiveArtif
 	if maxBytes <= 0 {
 		return 0, fmt.Errorf("archive artifact max bytes must be positive")
 	}
+	sentAt := time.Now()
 	stream, err := c.rpc.StreamArchiveArtifact(ctx, &pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name, SourceIdentity: request.SourceIdentity})
 	if err != nil {
 		return 0, err
 	}
 
 	var (
-		written      int64
-		declaredSize int64 = -1
+		written        int64
+		declaredSize   int64 = -1
+		headerObserved bool
 	)
 	for {
 		chunk, recvErr := stream.Recv()
@@ -1515,6 +1581,13 @@ func (c *Client) StreamArchiveArtifact(ctx context.Context, request ArchiveArtif
 		}
 		if chunk.GetName() != request.Name {
 			return written, fmt.Errorf("archive artifact stream name %q does not match %q", chunk.GetName(), request.Name)
+		}
+		if !headerObserved {
+			headerObserved = true
+			receivedAt := time.Now()
+			if md, headerErr := safeStreamHeader(stream); headerErr == nil {
+				c.observeBrowserClockBracketMetadata(md, sentAt, receivedAt)
+			}
 		}
 		if chunk.GetTotalSize() < 0 {
 			return written, fmt.Errorf("archive artifact stream declared a negative size")
@@ -1599,7 +1672,15 @@ func (s *HeartbeatStream) ClockSample() (ClockSample, bool) {
 	if !s.lastClock.known {
 		return ClockSample{}, false
 	}
-	return ClockSample{Offset: s.lastClock.offset, RoundTrip: s.lastRoundTrip, Uncertainty: s.lastClock.uncertainty, ObservedAt: s.lastClock.observedAt}, true
+	return ClockSample{
+		Offset:          s.lastClock.offset,
+		RoundTrip:       s.lastRoundTrip,
+		Uncertainty:     s.lastClock.uncertainty,
+		ObservedAt:      s.lastClock.observedAt,
+		SentAt:          s.lastSentAt,
+		ReceivedAt:      s.lastReceivedAt,
+		BrowserBrackets: append([]ObservedBrowserClockBracket(nil), s.lastBrowserBrackets...),
+	}, true
 }
 
 func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
@@ -1622,8 +1703,16 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	sentAt := s.clockSentAt
 	pingUnixMS := s.clockPingUnixMS
 	sampleActive := s.clockSampleActive
+	headerObserved := s.headerObserved
+	s.headerObserved = true
 	s.clockSampleActive = false
 	s.clockMu.Unlock()
+	var brackets []ObservedBrowserClockBracket
+	if !headerObserved && sampleActive && s.owner != nil {
+		if md, headerErr := safeStreamHeader(s.stream); headerErr == nil {
+			brackets = s.owner.observeBrowserClockBracketMetadata(md, sentAt, receivedAt)
+		}
+	}
 	if sampleActive && s.owner != nil {
 		generatorAt := time.Time{}
 		if pong.GetTimestampUnixNano() > 0 {
@@ -1639,6 +1728,8 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 			if sample, ok := generatorClockSample(sentAt, receivedAt, generatorAt); ok {
 				s.clockMu.Lock()
 				s.lastClock, s.lastRoundTrip = sample, receivedAt.Sub(sentAt)
+				s.lastSentAt, s.lastReceivedAt = sentAt, receivedAt
+				s.lastBrowserBrackets = brackets
 				s.clockMu.Unlock()
 			}
 		}
@@ -1873,45 +1964,105 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 
 	return MetricsBatch{
 		CollectionWindows: windows, CollectionWindowsComplete: windowsComplete,
-		BrowserDocuments:           browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
-		BrowserDocumentsVersion:    batch.GetBrowserDocumentSummaryVersion(),
-		MessagingProgress:          messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
-		MessagingProgressVersion:   batch.GetMessagingProgressVersion(),
-		TestID:                     batch.GetTestId(),
-		ExecutionGeneration:        batch.GetExecutionGeneration(),
-		BatchSequence:              batch.GetBatchSequence(),
-		SourceEpoch:                batch.GetSourceEpoch(),
-		SourceEpochStartedUnixMs:   batch.GetSourceEpochStartedUnixMs(),
-		SequencePrefixStateOnly:    batch.GetSequencePrefixStateOnly(),
-		GeneratorID:                batch.GetGeneratorId(),
-		TimestampUnixMs:            batch.GetTimestampUnixMs(),
-		WindowMs:                   batch.GetWindowMs(),
-		Stats:                      stats,
-		Transactions:               transactions,
-		FleetMetrics:               metricAggregateFromProto(batch.GetFleetMetrics()),
-		TransactionMetrics:         metricAggregatesFromProto(batch.GetTransactionMetrics()),
-		DependencyMetrics:          metricAggregatesFromProto(batch.GetDependencyMetrics()),
-		SOAPMetrics:                metricAggregatesFromProto(batch.GetSoapMetrics()),
-		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
-		ActionMetrics:              metricAggregatesFromProto(batch.GetActionMetrics()),
-		ActionDimensionMetrics:     metricAggregatesFromProto(batch.GetActionDimensionMetrics()),
-		JointMetrics:               jointMetrics,
-		JointInfo:                  jointInfo,
-		ActionPropertyMetrics:      metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
-		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
-		RequestCountsVersion:       batch.GetRequestCountsVersion(),
-		GroupTransactionsVersion:   batch.GetGroupTransactionsVersion(),
-		PropertyMetrics:            metricAggregatesFromProto(batch.GetPropertyMetrics()),
-		RegionMetrics:              metricAggregatesFromProto(batch.GetRegionMetrics()),
-		Browser:                    browserMetricsFromProto(batch.GetBrowserMetrics()),
-		BrowserByDevice:            browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics()),
-		Groups:                     groups,
-		LifecycleState:             batch.GetLifecycleState(),
-		LifecycleError:             batch.GetLifecycleError(),
-		Telemetry:                  telemetry,
-		TransactionResponseTimeSLA: transactionResponseTimeSLAFromProto(batch.GetTransactionResponseTimeSla()),
-		HTTPVersionMix:             httpVersionMixFromProto(batch.GetHttpVersionMix()),
+		BrowserDocuments:            browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
+		BrowserDocumentsVersion:     batch.GetBrowserDocumentSummaryVersion(),
+		MessagingProgress:           messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
+		MessagingProgressVersion:    batch.GetMessagingProgressVersion(),
+		TestID:                      batch.GetTestId(),
+		ExecutionGeneration:         batch.GetExecutionGeneration(),
+		BatchSequence:               batch.GetBatchSequence(),
+		SourceEpoch:                 batch.GetSourceEpoch(),
+		SourceEpochStartedUnixMs:    batch.GetSourceEpochStartedUnixMs(),
+		SequencePrefixStateOnly:     batch.GetSequencePrefixStateOnly(),
+		GeneratorID:                 batch.GetGeneratorId(),
+		TimestampUnixMs:             batch.GetTimestampUnixMs(),
+		WindowMs:                    batch.GetWindowMs(),
+		Stats:                       stats,
+		Transactions:                transactions,
+		FleetMetrics:                metricAggregateFromProto(batch.GetFleetMetrics()),
+		TransactionMetrics:          metricAggregatesFromProto(batch.GetTransactionMetrics()),
+		DependencyMetrics:           metricAggregatesFromProto(batch.GetDependencyMetrics()),
+		SOAPMetrics:                 metricAggregatesFromProto(batch.GetSoapMetrics()),
+		NetworkProfileMetrics:       metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
+		ActionMetrics:               metricAggregatesFromProto(batch.GetActionMetrics()),
+		ActionDimensionMetrics:      metricAggregatesFromProto(batch.GetActionDimensionMetrics()),
+		JointMetrics:                jointMetrics,
+		JointInfo:                   jointInfo,
+		ActionPropertyMetrics:       metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
+		ActionMetricsVersion:        batch.GetActionMetricsVersion(),
+		RequestCountsVersion:        batch.GetRequestCountsVersion(),
+		GroupTransactionsVersion:    batch.GetGroupTransactionsVersion(),
+		PropertyMetrics:             metricAggregatesFromProto(batch.GetPropertyMetrics()),
+		RegionMetrics:               metricAggregatesFromProto(batch.GetRegionMetrics()),
+		Browser:                     browserMetricsFromProto(batch.GetBrowserMetrics()),
+		BrowserByDevice:             browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics()),
+		Groups:                      groups,
+		LifecycleState:              batch.GetLifecycleState(),
+		LifecycleError:              batch.GetLifecycleError(),
+		Telemetry:                   telemetry,
+		TransactionResponseTimeSLA:  transactionResponseTimeSLAFromProto(batch.GetTransactionResponseTimeSla()),
+		HTTPVersionMix:              httpVersionMixFromProto(batch.GetHttpVersionMix()),
+		LiveBrowserDocumentsJSON:    append([]string(nil), batch.GetLiveBrowserDocumentsJson()...),
+		LiveBrowserInteractionsJSON: append([]string(nil), batch.GetLiveBrowserInteractionsJson()...),
+		LiveJourneyEvents:           liveJourneyEventsFromProto(batch.GetLiveJourneyEvents()),
+		LiveBrowserTruncation:       liveBrowserTruncationFromProto(batch.GetLiveBrowserTruncation()),
 	}, nil
+}
+
+func liveJourneyEventsFromProto(rows []*pb.LiveJourneyEvent) []LiveJourneyEvent {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]LiveJourneyEvent, 0, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		var step *protocol.BrowserAuthoredStep
+		if pbStep := row.GetAuthoredStep(); pbStep != nil {
+			candidate := &protocol.BrowserAuthoredStep{
+				Version:               int(pbStep.GetVersion()),
+				ScriptSHA256:          pbStep.GetScriptSha256(),
+				SourceStructureSHA256: pbStep.GetSourceStructureSha256(),
+				StepPath:              pbStep.GetStepPath(),
+				StepID:                pbStep.GetStepId(),
+			}
+			if candidate.Valid() {
+				step = candidate
+			}
+		}
+		out = append(out, LiveJourneyEvent{
+			Group:               row.GetGroup(),
+			VUserID:             int(row.GetVuserId()),
+			VUserLifetime:       row.GetVuserLifetime(),
+			Iteration:           row.GetIteration(),
+			Phase:               row.GetPhase(),
+			ActionName:          row.GetActionName(),
+			TimestampUnixNano:   row.GetTimestampUnixNano(),
+			DurationMs:          row.GetDurationMs(),
+			ElapsedMs:           row.GetElapsedMs(),
+			BusinessTransaction: row.GetBusinessTransaction(),
+			Success:             row.GetSuccess(),
+			Interrupted:         row.GetInterrupted(),
+			EndsIteration:       row.GetEndsIteration(),
+			AuthoredStep:        step,
+		})
+	}
+	return out
+}
+
+func liveBrowserTruncationFromProto(in *pb.LiveBrowserTruncation) *LiveBrowserTruncation {
+	if in == nil {
+		return nil
+	}
+	if in.GetDroppedDocuments() <= 0 && in.GetDroppedInteractions() <= 0 && in.GetDroppedJourneyEvents() <= 0 {
+		return nil
+	}
+	return &LiveBrowserTruncation{
+		DroppedDocuments:     max(in.GetDroppedDocuments(), 0),
+		DroppedInteractions:  max(in.GetDroppedInteractions(), 0),
+		DroppedJourneyEvents: max(in.GetDroppedJourneyEvents(), 0),
+	}
 }
 
 // maxHTTPVersionMixKeys bounds each count map a generator sends; the keys

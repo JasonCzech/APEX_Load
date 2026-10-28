@@ -13,16 +13,19 @@ import (
 
 type frameImpl struct {
 	channelOwner
-	navigationSequence uint64
-	navigationRequest  Request
-	detached           bool
-	page               *pageImpl
-	name               string
-	url                string
-	parentFrame        Frame
-	childFrames        []Frame
-	loadStates         mapset.Set[string]
-	loadStateMu        sync.Mutex // Serializes native state changes with waiter registration.
+	navigationSequence     uint64
+	navigationRequest      Request
+	navigationNewDocument  bool
+	navigationSameDocument bool
+	navigationFailed       bool
+	detached               bool
+	page                   *pageImpl
+	name                   string
+	url                    string
+	parentFrame            Frame
+	childFrames            []Frame
+	loadStates             mapset.Set[string]
+	loadStateMu            sync.Mutex // Serializes native state changes with waiter registration.
 }
 
 func newFrame(parent *channelOwner, objectType string, guid string, initializer map[string]any) *frameImpl {
@@ -303,12 +306,15 @@ func (f *frameImpl) onFrameNavigated(ev map[string]any) {
 	f.Lock()
 	f.navigationSequence++
 	f.navigationRequest = nil
-	if _, failed := ev["error"]; !failed {
-		if document, ok := ev["newDocument"].(map[string]any); ok {
-			if channel, ok := document["request"].(*channel); ok && channel != nil {
-				if request, ok := fromChannel(channel).(*requestImpl); ok {
-					f.navigationRequest = request
-				}
+	_, failed := ev["error"]
+	document, newDoc := ev["newDocument"].(map[string]any)
+	f.navigationFailed = failed
+	f.navigationNewDocument = !failed && newDoc
+	f.navigationSameDocument = !failed && !newDoc
+	if !failed && newDoc {
+		if channel, ok := document["request"].(*channel); ok && channel != nil {
+			if request, ok := fromChannel(channel).(*requestImpl); ok {
+				f.navigationRequest = request
 			}
 		}
 	}

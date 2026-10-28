@@ -332,9 +332,13 @@ type metricsAggregateSet struct {
 	// Requests and RequestErrors are one execution's (one group's) attempted
 	// and failed requests in the window; GroupRequests holds them per group
 	// once the groups' sets are merged.
-	Requests      int64
-	RequestErrors int64
-	GroupRequests map[string]requestCounts
+	Requests                    int64
+	RequestErrors               int64
+	GroupRequests               map[string]requestCounts
+	LiveBrowserDocumentsJSON    []string
+	LiveBrowserInteractionsJSON []string
+	LiveJourneyEvents           []LiveJourneyEvent
+	LiveBrowserTruncation       *LiveBrowserTruncation
 }
 
 // CurrentRequestCountsVersion marks batches whose groups count their
@@ -367,7 +371,13 @@ type transactionWindowAggregate struct {
 	groupTransactionSeries int
 	// requests counts every result that is not a business transaction, as
 	// the archive's request (action) population does.
-	requests requestCounts
+	requests                     requestCounts
+	liveBrowserDocumentsJSON     []string
+	liveBrowserDocumentsBytes    int
+	liveBrowserInteractionsJSON  []string
+	liveBrowserInteractionsBytes int
+	liveJourneyEvents            []LiveJourneyEvent
+	liveTruncation               LiveBrowserTruncation
 }
 
 type metricAccumulator struct {
@@ -551,8 +561,28 @@ func boundRetainedTransactionSamples(values map[string][]TransactionMetric, prio
 	}
 }
 
+const (
+	maxWindowLiveBrowserDocumentRecords    = 256
+	maxWindowLiveBrowserDocumentBytes      = 2 << 20
+	maxWindowLiveBrowserInteractionRecords = 256
+	maxWindowLiveBrowserInteractionBytes   = 2 << 20
+	maxWindowLiveJourneyEvents             = 4096
+)
+
+func (a *transactionWindowAggregate) hasLiveBrowserEvidence() bool {
+	if a == nil {
+		return false
+	}
+	return len(a.liveBrowserDocumentsJSON) > 0 ||
+		len(a.liveBrowserInteractionsJSON) > 0 ||
+		len(a.liveJourneyEvents) > 0 ||
+		a.liveTruncation.DroppedDocuments > 0 ||
+		a.liveTruncation.DroppedInteractions > 0 ||
+		a.liveTruncation.DroppedJourneyEvents > 0
+}
+
 func (a *transactionWindowAggregate) empty() bool {
-	return a == nil || a.requests.requests == 0 && (a.fleet == nil || a.fleet.count == 0)
+	return a == nil || a.requests.requests == 0 && (a.fleet == nil || a.fleet.count == 0) && !a.hasLiveBrowserEvidence()
 }
 
 func (a *transactionWindowAggregate) finalize(windowMs int64) metricsAggregateSet {
@@ -560,15 +590,50 @@ func (a *transactionWindowAggregate) finalize(windowMs int64) metricsAggregateSe
 		return metricsAggregateSet{}
 	}
 	windowSec := windowSecondsFromMs(windowMs)
-	return metricsAggregateSet{
-		Fleet:         a.fleet.finalize(windowSec),
-		Transactions:  finalizeMetricAccumulatorMap(a.transactions, windowSec),
-		Dependencies:  finalizeMetricAccumulatorMap(a.dependencies, windowSec),
-		SOAP:          finalizeMetricAccumulatorMap(a.soap, windowSec),
-		Groups:        finalizeGroupAccumulatorMap(a.groups, a.groupTransactions, windowSec),
-		Requests:      a.requests.requests,
-		RequestErrors: a.requests.errors,
+	var truncation *LiveBrowserTruncation
+	if a.liveTruncation.DroppedDocuments > 0 || a.liveTruncation.DroppedInteractions > 0 || a.liveTruncation.DroppedJourneyEvents > 0 {
+		copyTruncation := a.liveTruncation
+		truncation = &copyTruncation
 	}
+	return metricsAggregateSet{
+		Fleet:                       a.fleet.finalize(windowSec),
+		Transactions:                finalizeMetricAccumulatorMap(a.transactions, windowSec),
+		Dependencies:                finalizeMetricAccumulatorMap(a.dependencies, windowSec),
+		SOAP:                        finalizeMetricAccumulatorMap(a.soap, windowSec),
+		Groups:                      finalizeGroupAccumulatorMap(a.groups, a.groupTransactions, windowSec),
+		Requests:                    a.requests.requests,
+		RequestErrors:               a.requests.errors,
+		LiveBrowserDocumentsJSON:    append([]string(nil), a.liveBrowserDocumentsJSON...),
+		LiveBrowserInteractionsJSON: append([]string(nil), a.liveBrowserInteractionsJSON...),
+		LiveJourneyEvents:           append([]LiveJourneyEvent(nil), a.liveJourneyEvents...),
+		LiveBrowserTruncation:       truncation,
+	}
+}
+
+func (a *transactionWindowAggregate) addLiveJourneyEvent(result *protocol.Result) {
+	if a == nil || result == nil {
+		return
+	}
+	if len(a.liveJourneyEvents) >= maxWindowLiveJourneyEvents {
+		a.liveTruncation.DroppedJourneyEvents++
+		return
+	}
+	a.liveJourneyEvents = append(a.liveJourneyEvents, LiveJourneyEvent{
+		Group:               strings.TrimSpace(result.Group),
+		VUserID:             result.VUserID,
+		VUserLifetime:       result.VUserLifetime,
+		Iteration:           result.Iteration,
+		Phase:               strings.TrimSpace(result.Phase),
+		ActionName:          strings.TrimSpace(result.ActionName),
+		TimestampUnixNano:   result.StartTime.UnixNano(),
+		DurationMs:          float64(result.Duration) / float64(time.Millisecond),
+		ElapsedMs:           float64(result.WallElapsed) / float64(time.Millisecond),
+		BusinessTransaction: result.BusinessTransaction,
+		Success:             result.Success,
+		Interrupted:         result.Interrupted,
+		EndsIteration:       result.EndsIteration,
+		AuthoredStep:        result.AuthoredStep.Clone(),
+	})
 }
 
 func (a *metricAccumulator) add(tx TransactionMetric) {
@@ -676,7 +741,7 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 		return nil
 	}
 	if !result.BusinessTransaction {
-		b.recordRequest(result.Success)
+		b.recordRequest(result)
 		return nil
 	}
 	return b.RecordTransaction(result)
@@ -686,16 +751,20 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 // keeps a request and its failure in the same window; every result already
 // takes the archive recorder's lock (and is encoded under it) on this path,
 // so this brief one adds no new point of serialization.
-func (b *transactionBuffer) recordRequest(success bool) {
+func (b *transactionBuffer) recordRequest(result *protocol.Result) {
+	if result == nil {
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.window == nil {
 		b.window = newTransactionWindowAggregate()
 	}
 	b.window.requests.requests++
-	if !success {
+	if !result.Success {
 		b.window.requests.errors++
 	}
+	b.window.addLiveJourneyEvent(result)
 }
 
 func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
@@ -735,11 +804,60 @@ func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
 		b.window = newTransactionWindowAggregate()
 	}
 	b.window.add(tx)
+	b.window.addLiveJourneyEvent(result)
 	b.transactions = append(b.transactions, tx)
 	if len(b.transactions) > 1024 {
 		copy(b.transactions, b.transactions[len(b.transactions)-1024:])
 		b.transactions = b.transactions[:1024]
 	}
+	return nil
+}
+
+func (b *transactionBuffer) RecordLiveBrowserDocumentEvidence(evidence *protocol.BrowserDocumentEvidence) error {
+	if evidence == nil {
+		return nil
+	}
+	owned := evidence.Clone()
+	var raw []byte
+	var err error
+	if owned != nil {
+		raw, err = json.Marshal(owned)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.window == nil {
+		b.window = newTransactionWindowAggregate()
+	}
+	if owned == nil || err != nil || len(raw) > protocol.MaxBrowserDocumentEvidenceBytes || len(b.window.liveBrowserDocumentsJSON) >= maxWindowLiveBrowserDocumentRecords || b.window.liveBrowserDocumentsBytes+len(raw) > maxWindowLiveBrowserDocumentBytes {
+		b.window.liveTruncation.DroppedDocuments += max(int64(len(evidence.Observations)), 1)
+		return nil
+	}
+	b.window.liveBrowserDocumentsJSON = append(b.window.liveBrowserDocumentsJSON, string(raw))
+	b.window.liveBrowserDocumentsBytes += len(raw)
+	return nil
+}
+
+func (b *transactionBuffer) RecordLiveBrowserInteractionEvidence(evidence *protocol.BrowserInteractionEvidence) error {
+	if evidence == nil {
+		return nil
+	}
+	owned := evidence.Clone()
+	var raw []byte
+	var err error
+	if owned != nil {
+		raw, err = json.Marshal(owned)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.window == nil {
+		b.window = newTransactionWindowAggregate()
+	}
+	if owned == nil || err != nil || len(raw) > protocol.MaxBrowserInteractionEvidenceBytes || len(b.window.liveBrowserInteractionsJSON) >= maxWindowLiveBrowserInteractionRecords || b.window.liveBrowserInteractionsBytes+len(raw) > maxWindowLiveBrowserInteractionBytes {
+		b.window.liveTruncation.DroppedInteractions += max(int64(len(evidence.Interactions)), 1)
+		return nil
+	}
+	b.window.liveBrowserInteractionsJSON = append(b.window.liveBrowserInteractionsJSON, string(raw))
+	b.window.liveBrowserInteractionsBytes += len(raw)
 	return nil
 }
 
@@ -1436,7 +1554,7 @@ func (s *Service) beginHeartbeatStream() (func(), error) {
 	}, nil
 }
 
-func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtifactRequest) (*pb.ArchiveArtifact, error) {
+func (s *Service) GetArchiveArtifact(ctx context.Context, request *pb.ArchiveArtifactRequest) (*pb.ArchiveArtifact, error) {
 	releaseTransfer, err := s.beginArchiveTransfer(true)
 	if err != nil {
 		return nil, err
@@ -1447,6 +1565,7 @@ func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtif
 		return nil, err
 	}
 	defer release()
+	s.sendTestBrowserClockBracketHeader(ctx, request.GetTestId())
 	if artifact.info.Size() > archiveArtifactUnaryMaxSize {
 		return nil, status.Errorf(codes.ResourceExhausted, "archive artifact is %d bytes; use StreamArchiveArtifact", artifact.info.Size())
 	}
@@ -1474,6 +1593,11 @@ func (s *Service) StreamArchiveArtifact(request *pb.ArchiveArtifactRequest, stre
 		return err
 	}
 	defer release()
+	if sample, ok := s.archiveManager.sampleBrowserClockBracket(request.GetTestId()); ok {
+		if encoded, valid := encodeBrowserClockBracketHeader(request.GetTestId(), sample); valid {
+			_ = stream.SendHeader(metadata.Pairs(browserClockBracketMetadataKey, encoded))
+		}
+	}
 	totalSize := artifact.info.Size()
 	if totalSize == 0 {
 		return stream.Send(&pb.ArchiveArtifactChunk{
@@ -1550,6 +1674,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		return err
 	}
 	defer releaseStream()
+	headerSent := false
 	for {
 		_, err := stream.Recv()
 		if err == io.EOF {
@@ -1615,6 +1740,12 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		}
 		s.mu.RUnlock()
 		generatorNow := generatorPublishedClock.at(wallNow)
+		if !headerSent {
+			headerSent = true
+			if md := s.activeTestsBrowserClockBracketMetadata(activeTestIDs); len(md) > 0 {
+				_ = stream.SendHeader(md)
+			}
+		}
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,
 			JavaHost:                       javaHosts,
@@ -2648,6 +2779,60 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		FleetMetrics:                  metricAggregateToProto(aggregates.Fleet),
 		BrowserMetrics:                browserMetricsToProto(aggregates.Browser),
 		BrowserDeviceMetrics:          browserDeviceMetricsToProto(aggregates.BrowserByDevice),
+		LiveBrowserDocumentsJson:      append([]string(nil), aggregates.LiveBrowserDocumentsJSON...),
+		LiveBrowserInteractionsJson:   append([]string(nil), aggregates.LiveBrowserInteractionsJSON...),
+		LiveJourneyEvents:             liveJourneyEventsToProto(aggregates.LiveJourneyEvents),
+		LiveBrowserTruncation:         liveBrowserTruncationToProto(aggregates.LiveBrowserTruncation),
+	}
+}
+
+func liveJourneyEventsToProto(rows []LiveJourneyEvent) []*pb.LiveJourneyEvent {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]*pb.LiveJourneyEvent, 0, len(rows))
+	for _, row := range rows {
+		var pbStep *pb.BrowserAuthoredStep
+		if step := row.AuthoredStep.Clone(); step != nil {
+			pbStep = &pb.BrowserAuthoredStep{
+				Version:               int32(step.Version),
+				ScriptSha256:          step.ScriptSHA256,
+				SourceStructureSha256: step.SourceStructureSHA256,
+				StepPath:              step.StepPath,
+				StepId:                step.StepID,
+			}
+		}
+		out = append(out, &pb.LiveJourneyEvent{
+			Group:               row.Group,
+			VuserId:             int32(row.VUserID),
+			VuserLifetime:       row.VUserLifetime,
+			Iteration:           row.Iteration,
+			Phase:               row.Phase,
+			ActionName:          row.ActionName,
+			TimestampUnixNano:   row.TimestampUnixNano,
+			DurationMs:          row.DurationMs,
+			ElapsedMs:           row.ElapsedMs,
+			BusinessTransaction: row.BusinessTransaction,
+			Success:             row.Success,
+			Interrupted:         row.Interrupted,
+			EndsIteration:       row.EndsIteration,
+			AuthoredStep:        pbStep,
+		})
+	}
+	return out
+}
+
+func liveBrowserTruncationToProto(in *LiveBrowserTruncation) *pb.LiveBrowserTruncation {
+	if in == nil {
+		return nil
+	}
+	if in.DroppedDocuments <= 0 && in.DroppedInteractions <= 0 && in.DroppedJourneyEvents <= 0 {
+		return nil
+	}
+	return &pb.LiveBrowserTruncation{
+		DroppedDocuments:     max(in.DroppedDocuments, 0),
+		DroppedInteractions:  max(in.DroppedInteractions, 0),
+		DroppedJourneyEvents: max(in.DroppedJourneyEvents, 0),
 	}
 }
 
@@ -3055,6 +3240,13 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 	stored := metrics
 	stored.aggregates.BrowserDocuments = metrics.aggregates.BrowserDocuments.Clone()
 	stored.aggregates.MessagingProgress = metrics.aggregates.MessagingProgress.Clone()
+	stored.aggregates.LiveBrowserDocumentsJSON = append([]string(nil), metrics.aggregates.LiveBrowserDocumentsJSON...)
+	stored.aggregates.LiveBrowserInteractionsJSON = append([]string(nil), metrics.aggregates.LiveBrowserInteractionsJSON...)
+	stored.aggregates.LiveJourneyEvents = append([]LiveJourneyEvent(nil), metrics.aggregates.LiveJourneyEvents...)
+	if metrics.aggregates.LiveBrowserTruncation != nil {
+		copyTruncation := *metrics.aggregates.LiveBrowserTruncation
+		stored.aggregates.LiveBrowserTruncation = &copyTruncation
+	}
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
 	stored.transactionResponseTimeSLA = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
 	stored.httpVersions = metrics.httpVersions.Clone()
@@ -3063,7 +3255,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.BrowserDocuments != nil || aggregates.MessagingProgress != nil || aggregates.Fleet != nil || aggregates.Requests > 0 || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.BrowserDocuments != nil || aggregates.MessagingProgress != nil || aggregates.Fleet != nil || aggregates.Requests > 0 || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0 || len(aggregates.LiveBrowserDocumentsJSON) > 0 || len(aggregates.LiveBrowserInteractionsJSON) > 0 || len(aggregates.LiveJourneyEvents) > 0 || aggregates.LiveBrowserTruncation != nil
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -3106,6 +3298,15 @@ func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName strin
 		boundRetainedTransactionSamples(assignment.groupTransactions, groupName)
 	} else {
 		delete(assignment.groupTransactions, groupName)
+	}
+	if len(metrics.aggregates.LiveJourneyEvents) > 0 {
+		events := append([]LiveJourneyEvent(nil), metrics.aggregates.LiveJourneyEvents...)
+		for index := range events {
+			if strings.TrimSpace(events[index].Group) == "" {
+				events[index].Group = groupName
+			}
+		}
+		metrics.aggregates.LiveJourneyEvents = events
 	}
 	if metricsAggregateSetHasEvidence(metrics.aggregates) {
 		assignment.groupAggregates[groupName] = metrics.aggregates
@@ -3358,6 +3559,7 @@ func (s *Service) finalizeArchiveWriter(writer *archiveRecorder, status string, 
 		writer.retireRegisteredHARSources()
 	}
 	if err != nil {
+		s.archiveManager.deleteBrowserJournal(writer.manifest.TestID)
 		discardErr := writer.Discard()
 		removeErr := writer.removeFinalizedRun()
 		if cleanupErr := errors.Join(discardErr, removeErr); cleanupErr != nil {
@@ -3530,7 +3732,15 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	browserDevices := make([]BrowserDeviceMetrics, 0)
 	jointParts := make([][]MetricAggregate, 0, len(values))
 	jointInfos := make([]*JointMetricsInfo, 0, len(values))
-	for groupName, value := range values {
+	groupNames := make([]string, 0, len(values))
+	for groupName := range values {
+		groupNames = append(groupNames, groupName)
+	}
+	sort.Strings(groupNames)
+	var liveDocBytes, liveIntBytes int
+	var truncation LiveBrowserTruncation
+	for _, groupName := range groupNames {
+		value := values[groupName]
 		if value.Requests > 0 {
 			if out.GroupRequests == nil {
 				out.GroupRequests = make(map[string]requestCounts, len(values))
@@ -3541,6 +3751,34 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 			out.GroupRequests[groupName] = counts
 			out.Requests += value.Requests
 			out.RequestErrors += value.RequestErrors
+		}
+		if value.LiveBrowserTruncation != nil {
+			truncation.DroppedDocuments += max(value.LiveBrowserTruncation.DroppedDocuments, 0)
+			truncation.DroppedInteractions += max(value.LiveBrowserTruncation.DroppedInteractions, 0)
+			truncation.DroppedJourneyEvents += max(value.LiveBrowserTruncation.DroppedJourneyEvents, 0)
+		}
+		for _, docJSON := range value.LiveBrowserDocumentsJSON {
+			if len(out.LiveBrowserDocumentsJSON) >= maxWindowLiveBrowserDocumentRecords || liveDocBytes+len(docJSON) > maxWindowLiveBrowserDocumentBytes {
+				truncation.DroppedDocuments++
+				continue
+			}
+			out.LiveBrowserDocumentsJSON = append(out.LiveBrowserDocumentsJSON, docJSON)
+			liveDocBytes += len(docJSON)
+		}
+		for _, intJSON := range value.LiveBrowserInteractionsJSON {
+			if len(out.LiveBrowserInteractionsJSON) >= maxWindowLiveBrowserInteractionRecords || liveIntBytes+len(intJSON) > maxWindowLiveBrowserInteractionBytes {
+				truncation.DroppedInteractions++
+				continue
+			}
+			out.LiveBrowserInteractionsJSON = append(out.LiveBrowserInteractionsJSON, intJSON)
+			liveIntBytes += len(intJSON)
+		}
+		for _, evt := range value.LiveJourneyEvents {
+			if len(out.LiveJourneyEvents) >= maxWindowLiveJourneyEvents {
+				truncation.DroppedJourneyEvents++
+				continue
+			}
+			out.LiveJourneyEvents = append(out.LiveJourneyEvents, evt)
 		}
 		jointParts = append(jointParts, value.Joint)
 		jointInfos = append(jointInfos, value.JointInfo)
@@ -3593,6 +3831,9 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	out.Groups = mergeGroupMetricSeries(groupMetrics)
 	out.Browser = mergeBrowserMetricSeries(browsers)
 	out.BrowserByDevice = mergeBrowserDeviceMetricSeries(browserDevices)
+	if truncation.DroppedDocuments > 0 || truncation.DroppedInteractions > 0 || truncation.DroppedJourneyEvents > 0 {
+		out.LiveBrowserTruncation = &truncation
+	}
 	return out
 }
 
@@ -4063,6 +4304,34 @@ func (s *combinedSink) RecordBrowserInteractionEvidence(evidence *protocol.Brows
 		}
 	}
 	return fmt.Errorf("browser interaction archive sink is unavailable")
+}
+
+func (s *combinedSink) RecordLiveBrowserDocumentEvidence(evidence *protocol.BrowserDocumentEvidence) error {
+	if evidence == nil {
+		return nil
+	}
+	for _, sink := range s.sinks {
+		if target, ok := sink.(engine.LiveBrowserDocumentEvidenceSink); ok {
+			if err := target.RecordLiveBrowserDocumentEvidence(evidence.Clone()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *combinedSink) RecordLiveBrowserInteractionEvidence(evidence *protocol.BrowserInteractionEvidence) error {
+	if evidence == nil {
+		return nil
+	}
+	for _, sink := range s.sinks {
+		if target, ok := sink.(engine.LiveBrowserInteractionEvidenceSink); ok {
+			if err := target.RecordLiveBrowserInteractionEvidence(evidence.Clone()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // browserLoadAverage divides a page-load measure's sum by the document loads

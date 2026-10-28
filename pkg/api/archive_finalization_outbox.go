@@ -597,9 +597,9 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	}
 	archived := *record
 	tr.mu.Lock()
-	defer tr.mu.Unlock()
 	current := tr.tests[testID]
 	if current == nil {
+		tr.mu.Unlock()
 		return
 	}
 	// A shared-store refresh may have loaded a replacement while I/O or the
@@ -608,6 +608,7 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 		!isTerminalTestStatus(current.Status) || current.Status != identity.Status || current.EndedAt == nil ||
 		!archiveRunTimestampMatches(current.CreatedAt, identity.StartTime, tr.testStore) ||
 		!archiveRunTimestampMatches(*current.EndedAt, identity.EndTime, tr.testStore)) {
+		tr.mu.Unlock()
 		return
 	}
 	tr.archives[testID] = &archived
@@ -617,7 +618,12 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	// are released, and counted as dropped so a sidecar written later (its
 	// first write failed, then a refresh) is marked truncated.
 	releaseHeldJointPublicationsLocked(current)
+	releaseLiveBrowserIntelligenceLocked(current)
+	snapshot := buildRunLiveStateSnapshotLocked(current, time.Now().UTC())
 	tr.notifyArchiveAttached(testID)
+	tr.mu.Unlock()
+
+	tr.cacheRunSnapshot(snapshot)
 }
 
 // notifyArchiveAttached runs the archive-attached hook for a run whose

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { METRIC_LABELS } from '../../metricLabels'
 import { ApiError } from '../../hooks/apiClient'
 import { useNavigationGuardRunner, useUnsavedWorkGuard } from '../../hooks/NavigationGuardProvider'
-import { analysisPoliciesApi, type AnalysisPolicyRecord, type EditableAnalysisPolicyKind } from '../../hooks/api/analysisPoliciesApi'
+import { analysisPoliciesApi, type AnalysisJourneyScriptSteps, type AnalysisPolicyRecord, type EditableAnalysisPolicyKind } from '../../hooks/api/analysisPoliciesApi'
 import { formatDateTime } from '../../utils/dateTime'
 import { getErrorMessage } from '../../utils/errorUtils'
 import Notice from '../ux/Notice'
@@ -45,6 +45,7 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
   const [deleteError, setDeleteError] = useState('')
   const [conflict, setConflict] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [scriptSteps, setScriptSteps] = useState<AnalysisJourneyScriptSteps[]>([])
   const [revisionView, setRevisionView] = useState<{ policy: AnalysisPolicyRecord; revision: string; record: AnalysisPolicyRecord | null; error: string } | null>(null)
   // Unsaved edits are guarded: leaving Settings, another project or another
   // policy asks before discarding them.
@@ -61,6 +62,15 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
       .catch(err => { if (!controller.signal.aborted) { setPolicies(null); setLoadError(getErrorMessage(err, 'Unable to load policies')) } })
     return () => controller.abort()
   }, [projectId, kind, reload])
+
+  useEffect(() => {
+    if (!projectId || kind !== 'journey_policy' || typeof analysisPoliciesApi.listJourneySteps !== 'function') return
+    const controller = new AbortController()
+    Promise.resolve(analysisPoliciesApi.listJourneySteps(projectId, controller.signal))
+      .then(list => { if (!controller.signal.aborted && Array.isArray(list)) setScriptSteps(list) })
+      .catch(() => { if (!controller.signal.aborted) setScriptSteps([]) })
+    return () => controller.abort()
+  }, [projectId, kind])
 
   const startNew = () => {
     setSaveError(''); setConflict(false); setRevisionView(null)
@@ -203,7 +213,7 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
       <label className="settings-checkbox"><input type="checkbox" checked={editing.draft.applyByDefault} onChange={event => setEditing({ ...editing, draft: { ...editing.draft, applyByDefault: event.target.checked } } as Editing)} /> Use this policy as the project default</label>
       {editing.kind === 'browser_policy'
         ? <BrowserPolicyFields draft={editing.draft} onChange={draft => setEditing({ ...editing, draft })} />
-        : <JourneyPolicyFields draft={editing.draft} onChange={draft => setEditing({ ...editing, draft })} />}
+        : <JourneyPolicyFields draft={editing.draft} scriptSteps={scriptSteps} onChange={draft => setEditing({ ...editing, draft })} />}
       {conflict && <Notice tone="warning" title="This policy changed since you opened it" action={<button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void reloadCurrent()}>Load the current revision</button>}>
         Someone saved a newer revision. Loading it replaces your edits here; copy anything you want to keep first.
       </Notice>}
@@ -252,8 +262,31 @@ function BrowserPolicyFields({ draft, onChange }: { draft: BrowserPolicyDraft; o
   </>
 }
 
-function JourneyPolicyFields({ draft, onChange }: { draft: JourneyPolicyDraft; onChange: (draft: JourneyPolicyDraft) => void }) {
+function JourneyPolicyFields({ draft, scriptSteps, onChange }: { draft: JourneyPolicyDraft; scriptSteps: AnalysisJourneyScriptSteps[]; onChange: (draft: JourneyPolicyDraft) => void }) {
   const update = (index: number, patch: Partial<JourneyPolicyDraft['journeys'][number]>) => onChange({ ...draft, journeys: draft.journeys.map((journey, current) => current === index ? { ...journey, ...patch } : journey) })
+  const applyPickedStep = (index: number, side: 'start' | 'success', encoded: string) => {
+    if (!encoded) return
+    const [scriptId, stepPath, kind] = encoded.split('\n')
+    const script = scriptSteps.find(entry => entry.script_id === scriptId)
+    const step = script?.steps.find(entry => entry.step_path === stepPath && entry.kind === kind)
+    if (!step) return
+    const current = draft.journeys[index]
+    if (side === 'start') {
+      update(index, {
+        startKind: step.kind,
+        start: step.name,
+        startStepPath: step.step_path,
+        startStructureSha256: current?.startStructureSha256 ? (script?.structure_sha256 || '') : '',
+      })
+    } else {
+      update(index, {
+        successKind: step.kind,
+        success: step.name,
+        successStepPath: step.step_path,
+        successStructureSha256: current?.successStructureSha256 ? (script?.structure_sha256 || '') : '',
+      })
+    }
+  }
   return <>
     <label className="settings-checkbox"><input type="checkbox" checked={draft.stepRiskEnabled} onChange={event => onChange({ ...draft, stepRiskEnabled: event.target.checked })} /> Report the step-risk index</label>
     <table className="tx-table" aria-label="Journeys">
@@ -264,10 +297,24 @@ function JourneyPolicyFields({ draft, onChange }: { draft: JourneyPolicyDraft; o
         <td>
           <select className="settings-input" aria-label={`Journey ${index + 1} start kind`} value={journey.startKind} onChange={event => update(index, { startKind: event.target.value as 'transaction' | 'action' })}><option value="transaction">Transaction</option><option value="action">Action</option></select>
           <input className="settings-input" aria-label={`Journey ${index + 1} start`} value={journey.start} onChange={event => update(index, { start: event.target.value })} />
+          <input className="settings-input" aria-label={`Journey ${index + 1} start step path`} placeholder="Step path (optional, e.g. actions[0])" value={journey.startStepPath || ''} onChange={event => update(index, { startStepPath: event.target.value, startStructureSha256: '' })} />
+          {scriptSteps.length > 0 && <select className="settings-input" aria-label={`Pick journey ${index + 1} start step from script`} value="" onChange={event => applyPickedStep(index, 'start', event.target.value)}>
+            <option value="">Pick step from script…</option>
+            {scriptSteps.map(script => <optgroup key={script.script_id} label={script.script_name || script.script_id}>
+              {script.steps.map(step => <option key={`${script.script_id}:${step.kind}:${step.step_path}`} value={`${script.script_id}\n${step.step_path}\n${step.kind}`}>{step.step_path} — {step.kind}: {step.name}</option>)}
+            </optgroup>)}
+          </select>}
         </td>
         <td>
           <select className="settings-input" aria-label={`Journey ${index + 1} success kind`} value={journey.successKind} onChange={event => update(index, { successKind: event.target.value as 'transaction' | 'action' })}><option value="transaction">Transaction</option><option value="action">Action</option></select>
           <input className="settings-input" aria-label={`Journey ${index + 1} success`} value={journey.success} onChange={event => update(index, { success: event.target.value })} />
+          <input className="settings-input" aria-label={`Journey ${index + 1} success step path`} placeholder="Step path (optional, e.g. actions[0])" value={journey.successStepPath || ''} onChange={event => update(index, { successStepPath: event.target.value, successStructureSha256: '' })} />
+          {scriptSteps.length > 0 && <select className="settings-input" aria-label={`Pick journey ${index + 1} success step from script`} value="" onChange={event => applyPickedStep(index, 'success', event.target.value)}>
+            <option value="">Pick step from script…</option>
+            {scriptSteps.map(script => <optgroup key={script.script_id} label={script.script_name || script.script_id}>
+              {script.steps.map(step => <option key={`${script.script_id}:${step.kind}:${step.step_path}`} value={`${script.script_id}\n${step.step_path}\n${step.kind}`}>{step.step_path} — {step.kind}: {step.name}</option>)}
+            </optgroup>)}
+          </select>}
         </td>
         <td><input className="settings-input" aria-label={`Journey ${index + 1} weight`} inputMode="decimal" value={journey.weight} onChange={event => update(index, { weight: event.target.value })} /></td>
         <td><button type="button" className="btn btn-ghost btn-sm" disabled={draft.journeys.length === 1} onClick={() => onChange({ ...draft, journeys: draft.journeys.filter((_, current) => current !== index) })}>Remove</button></td>

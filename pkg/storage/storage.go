@@ -917,32 +917,33 @@ type LoadStage struct {
 }
 
 type ScenarioSchedule struct {
-	ID                  string                      `json:"id"`
-	ScenarioID          string                      `json:"scenario_id"`
-	ProjectID           string                      `json:"project_id,omitempty"`
-	Revision            int                         `json:"revision,omitempty"`
-	Name                string                      `json:"name"`
-	CronExpr            string                      `json:"cron_expr"`
-	Timezone            string                      `json:"timezone,omitempty"`
-	ReleaseID           string                      `json:"release_id,omitempty"`
-	TimeslotID          string                      `json:"timeslot_id,omitempty"`
-	RunNameTemplate     string                      `json:"run_name_template,omitempty"`
-	Enabled             bool                        `json:"enabled"`
-	ApprovalPolicy      string                      `json:"approval_policy,omitempty"`
-	MissedRunPolicy     string                      `json:"missed_run_policy,omitempty"`
-	ConflictSummary     string                      `json:"conflict_summary,omitempty"`
-	LastOccurrence      *ScenarioScheduleOccurrence `json:"last_occurrence,omitempty"`
-	NextRequiredAction  string                      `json:"next_required_action,omitempty"`
-	PendingApprovalID   string                      `json:"pending_approval_id,omitempty"`
-	OwnerSubject        string                      `json:"owner_subject,omitempty"`
-	OwnerDisplayName    string                      `json:"owner_display_name,omitempty"`
-	Governance          *ScenarioScheduleGovernance `json:"governance,omitempty"`
-	BlackoutWindows     []ScenarioScheduleWindow    `json:"blackout_windows,omitempty"`
-	MaintenanceWindows  []ScenarioScheduleWindow    `json:"maintenance_windows,omitempty"`
-	AvailabilityWindows []ScenarioScheduleWindow    `json:"availability_windows,omitempty"`
-	LastRunTestID       string                      `json:"last_run_test_id,omitempty"`
-	LastRunAt           *time.Time                  `json:"last_run_at,omitempty"`
-	NextRunAt           *time.Time                  `json:"next_run_at,omitempty"`
+	ID                       string                      `json:"id"`
+	ScenarioID               string                      `json:"scenario_id"`
+	ProjectID                string                      `json:"project_id,omitempty"`
+	Revision                 int                         `json:"revision,omitempty"`
+	Name                     string                      `json:"name"`
+	CronExpr                 string                      `json:"cron_expr"`
+	Timezone                 string                      `json:"timezone,omitempty"`
+	ReleaseID                string                      `json:"release_id,omitempty"`
+	TimeslotID               string                      `json:"timeslot_id,omitempty"`
+	RunNameTemplate          string                      `json:"run_name_template,omitempty"`
+	Enabled                  bool                        `json:"enabled"`
+	ApprovalPolicy           string                      `json:"approval_policy,omitempty"`
+	MissedRunPolicy          string                      `json:"missed_run_policy,omitempty"`
+	ConflictSummary          string                      `json:"conflict_summary,omitempty"`
+	LastOccurrence           *ScenarioScheduleOccurrence `json:"last_occurrence,omitempty"`
+	NextRequiredAction       string                      `json:"next_required_action,omitempty"`
+	PendingApprovalID        string                      `json:"pending_approval_id,omitempty"`
+	OwnerSubject             string                      `json:"owner_subject,omitempty"`
+	OwnerDisplayName         string                      `json:"owner_display_name,omitempty"`
+	Governance               *ScenarioScheduleGovernance `json:"governance,omitempty"`
+	BlackoutWindows          []ScenarioScheduleWindow    `json:"blackout_windows,omitempty"`
+	MaintenanceWindows       []ScenarioScheduleWindow    `json:"maintenance_windows,omitempty"`
+	AvailabilityWindows      []ScenarioScheduleWindow    `json:"availability_windows,omitempty"`
+	AnalysisPolicySelections any                         `json:"analysis_policy_selections,omitempty"`
+	LastRunTestID            string                      `json:"last_run_test_id,omitempty"`
+	LastRunAt                *time.Time                  `json:"last_run_at,omitempty"`
+	NextRunAt                *time.Time                  `json:"next_run_at,omitempty"`
 	// DisabledFrom/DisabledUntil define an optional date-range pause: while a
 	// candidate run time falls within [DisabledFrom, DisabledUntil) the schedule
 	// is suppressed without disabling it outright. Either bound may be nil

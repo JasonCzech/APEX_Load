@@ -359,8 +359,9 @@ func sourceMainIterationExit(action dsl.Action) (bool, bool) {
 }
 
 type sourceTransactionRuntimeState struct {
-	name      string
-	startedAt time.Time
+	name         string
+	startedAt    time.Time
+	authoredStep *protocol.BrowserAuthoredStep
 	// iteration is the last iteration it was open in (the one that opened
 	// it, carried forward while it stays open): a transaction left open is
 	// recorded in that iteration even when it is closed after teardown.
@@ -496,9 +497,13 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 		StartTime:    state.startedAt,
 		Success:      false,
 		ErrorMessage: reason,
+		AuthoredStep: state.authoredStep.Clone(),
 	}
 	// The wall-clock span keeps think time inside the transaction in its
 	// interval (journey accounting reads it).
+	prevAuthoredAction := vu.currentAuthoredAction
+	vu.currentAuthoredAction = nil
+	defer func() { vu.currentAuthoredAction = prevAuthoredAction }()
 	return vu.recordTransactionSpan(name, duration, false, source, state.startedAt)
 }
 
@@ -773,6 +778,23 @@ func sourceTransactionFailureResult(name, status string, startedAt time.Time) *p
 	}
 }
 
+func sourceTransactionSourceResult(name, status string, startedAt time.Time, authoredStep *protocol.BrowserAuthoredStep) *protocol.Result {
+	result := sourceTransactionFailureResult(name, status, startedAt)
+	if !authoredStep.Valid() {
+		return result
+	}
+	if result == nil {
+		return &protocol.Result{
+			ActionName:   name,
+			StartTime:    startedAt,
+			Success:      true,
+			AuthoredStep: authoredStep.Clone(),
+		}
+	}
+	result.AuthoredStep = authoredStep.Clone()
+	return result
+}
+
 func (vu *VUser) setSourceTransactionStatus(state *sourceTransactionRuntimeState, status string) {
 	if vu == nil || state == nil {
 		return
@@ -876,11 +898,12 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 			vu.sourceTransactions = make(map[string]*sourceTransactionRuntimeState)
 		}
 		vu.sourceTransactions[key] = &sourceTransactionRuntimeState{
-			name:      name,
-			startedAt: startedAt,
-			status:    sourceTransactionPass,
-			parent:    parentKey,
-			iteration: vu.currentIteration.Load(),
+			name:         name,
+			startedAt:    startedAt,
+			authoredStep: vu.currentBrowserAuthoredStep(),
+			status:       sourceTransactionPass,
+			parent:       parentKey,
+			iteration:    vu.currentIteration.Load(),
 		}
 		vu.startSourceTransactionTraceRoot(ctx, vu.sourceTransactions[key])
 		return nil
@@ -916,7 +939,10 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 		delete(vu.Variables, sourceTransactionStartKey(endName))
 		duration := sourceTransactionDuration(state, time.Now())
 		success := sourceTransactionStatusSuccess(status)
-		vu.recordTransactionSpan(endName, duration, success, sourceTransactionFailureResult(endName, status, state.startedAt), state.startedAt)
+		prevAuthoredAction := vu.currentAuthoredAction
+		vu.currentAuthoredAction = nil
+		defer func() { vu.currentAuthoredAction = prevAuthoredAction }()
+		vu.recordTransactionSpan(endName, duration, success, sourceTransactionSourceResult(endName, status, state.startedAt, state.authoredStep), state.startedAt)
 		vu.Variables[sourceTransactionStatusKey(endName)] = strconv.FormatBool(success)
 		return nil
 	case "lr_set_transaction_status":

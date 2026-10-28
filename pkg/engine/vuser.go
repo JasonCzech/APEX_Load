@@ -29,6 +29,7 @@ type VUser struct {
 	browserAuthoredIndexedSource *dsl.Script
 	browserAuthoredScript        *dsl.Script
 	browserAuthored              *browserAuthoredIndex
+	currentAuthoredAction        *dsl.Action
 
 	LiveTableClient   livetable.Client
 	LiveTableClientID string
@@ -541,6 +542,9 @@ func (lc *lifecycleRun) controlBlockRuns(action *dsl.Action, depth int) bool {
 }
 
 func (lc *lifecycleRun) runParallel(action *dsl.Action, depth int) (actionFlow, bool) {
+	prevAuthoredAction := lc.vu.currentAuthoredAction
+	lc.vu.currentAuthoredAction = action
+	defer func() { lc.vu.currentAuthoredAction = prevAuthoredAction }()
 	lc.vu.markUserWorkStarted()
 	if action.Control == nil || depth >= maxControlDepth {
 		if lc.ignoreErrors {
@@ -558,6 +562,9 @@ func (lc *lifecycleRun) runParallel(action *dsl.Action, depth int) (actionFlow, 
 // reports whether its think time follows.
 func (lc *lifecycleRun) runLeaf(step *dsl.Action) (actionFlow, bool) {
 	vu, logger, phase, ignoreErrors := lc.vu, lc.logger, lc.phase, lc.ignoreErrors
+	prevAuthoredAction := vu.currentAuthoredAction
+	vu.currentAuthoredAction = step
+	defer func() { vu.currentAuthoredAction = prevAuthoredAction }()
 	action := *step
 	// Best-effort teardown must not execute a denied source scope's enclosed
 	// SUT calls without a transaction slot. This check follows control
@@ -813,6 +820,18 @@ func actionThinkTimeInterruptedError(ctx context.Context) error {
 	return fmt.Errorf("action think time was interrupted")
 }
 
+func (vu *VUser) flushBrowserIterationEvidence() {
+	if vu == nil || vu.Proto == nil || vu.ResultSink == nil {
+		return
+	}
+	_, hasArchiveSink := vu.ResultSink.(BrowserInteractionEvidenceSink)
+	_, hasLiveSink := vu.ResultSink.(LiveBrowserInteractionEvidenceSink)
+	if !hasArchiveSink && !hasLiveSink {
+		return
+	}
+	handOffBrowserInteractions(vu.Proto, vu.ResultSink, vu.resultPublicationRedactionConfig())
+}
+
 func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	if vu == nil || vu.Proto == nil || vu.Script == nil {
 		return nil
@@ -823,7 +842,7 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 		return err
 	}
 	vu.Metrics.captureBrowserProvider(vu.Proto, vu.ResultSink, vu.Group, vu.Region, vu.resultPublicationRedactionConfig())
-	handOffBrowserSessionEvidence(vu.Proto, vu.ResultSink, vu.RedactionConfig)
+	handOffBrowserSessionEvidence(vu.Proto, vu.ResultSink, vu.resultPublicationRedactionConfig())
 	vu.bindRuntimeTextRedactor()
 	config := buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver())
 	if vu.browserDocumentProofVersion != 0 {

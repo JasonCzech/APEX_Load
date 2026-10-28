@@ -52,6 +52,7 @@ func TestAssignmentScenarioIDReachesGeneratorRuntime(t *testing.T) {
 	})
 
 	service := newIsolatedService(t, 10, WithExecution())
+	defer shutdownSupervisionTestService(t, service)
 	assignment := toProtoAssignment(Assignment{
 		TestID:     "scenario-run",
 		ScenarioID: "managed-scenario",

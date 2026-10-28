@@ -28,6 +28,106 @@ func (d BrowserClockDomain) Valid() bool {
 	return len(d.RunID) > 0 && len(d.RunID) <= 256 && BrowserEvidenceGeneration(d.Incarnation) && BrowserEvidenceGeneration(d.DomainID)
 }
 
+const (
+	DefaultBrowserClockMaxSkewPPM      int64 = 200
+	MaxBrowserClockMaxSkewPPM          int64 = 1000
+	DefaultBrowserClockMaxBracketRTTNS       = int64(time.Second)
+	DefaultBrowserClockMaxBracketGapNS       = int64(45 * time.Second)
+	MaxBrowserClockMaxBracketGapNS           = int64(60 * time.Second)
+	MaxBrowserClockBracketsPerOwner          = 1024
+)
+
+func NewBrowserClockDomain(runID string) (BrowserClockDomain, error) {
+	incarnation, err := browserProofID()
+	if err != nil {
+		return BrowserClockDomain{}, err
+	}
+	domainID, err := browserProofID()
+	if err != nil {
+		return BrowserClockDomain{}, err
+	}
+	d := BrowserClockDomain{
+		RunID:       runID,
+		Incarnation: incarnation,
+		DomainID:    domainID,
+	}
+	if !d.Valid() {
+		return BrowserClockDomain{}, fmt.Errorf("browser clock domain identity unavailable")
+	}
+	return d, nil
+}
+
+// BrowserClockBracketSample is sampled in a generator's BrowserSourceJournal
+// monotonic clock domain during a controller-initiated RPC exchange.
+type BrowserClockBracketSample struct {
+	Authority BrowserClockDomain `json:"authority"`
+	OwnerID   string             `json:"owner_id"`
+	MonoNS    int64              `json:"mono_ns"`
+}
+
+func (s BrowserClockBracketSample) Valid() bool {
+	return s.Authority.Valid() && len(s.OwnerID) > 0 && len(s.OwnerID) <= 256 && s.MonoNS >= 0
+}
+
+// BrowserClockBracket bounds one generator monotonic reading G_k inside the
+// controller's monotonic interval [ControllerSendNS, ControllerRecvNS].
+type BrowserClockBracket struct {
+	Authority        BrowserClockDomain `json:"authority"`
+	OwnerID          string             `json:"owner_id"`
+	ControllerSendNS int64              `json:"controller_send_ns"`
+	ControllerRecvNS int64              `json:"controller_recv_ns"`
+	OwnerMonoNS      int64              `json:"owner_mono_ns"`
+}
+
+// BrowserDistributedClockEnvelope retains the controller's causal RPC brackets
+// for every expected browser source owner in a distributed run.
+type BrowserDistributedClockEnvelope struct {
+	Version            int                              `json:"version"`
+	Controller         BrowserClockDomain               `json:"controller"`
+	AuthorityStartedAt time.Time                        `json:"authority_started_at"`
+	MaxSkewPPM         int64                            `json:"max_skew_ppm"`
+	MaxBracketRTTNS    int64                            `json:"max_bracket_rtt_ns"`
+	MaxBracketGapNS    int64                            `json:"max_bracket_gap_ns"`
+	Owners             map[string][]BrowserClockBracket `json:"owners"`
+}
+
+func (e *BrowserDistributedClockEnvelope) Clone() *BrowserDistributedClockEnvelope {
+	if e == nil {
+		return nil
+	}
+	out := *e
+	out.AuthorityStartedAt = e.AuthorityStartedAt.UTC()
+	if e.Owners != nil {
+		out.Owners = make(map[string][]BrowserClockBracket, len(e.Owners))
+		for ownerID, brackets := range e.Owners {
+			out.Owners[ownerID] = append([]BrowserClockBracket(nil), brackets...)
+		}
+	}
+	return &out
+}
+
+func browserClockSkewBoundsNS(deltaNS, maxSkewPPM int64) (int64, bool) {
+	if deltaNS < 0 || maxSkewPPM < 0 || maxSkewPPM > MaxBrowserClockMaxSkewPPM {
+		return 0, false
+	}
+	if deltaNS == 0 || maxSkewPPM == 0 {
+		return 0, true
+	}
+	q := deltaNS / 1_000_000
+	rem := deltaNS % 1_000_000
+	if q > (math.MaxInt64-1_000_000)/maxSkewPPM {
+		return 0, false
+	}
+	return q*maxSkewPPM + (rem*maxSkewPPM+999_999)/1_000_000, true
+}
+
+func addInt64Checked(a, b int64) (int64, bool) {
+	if (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {
+		return 0, false
+	}
+	return a + b, true
+}
+
 // BrowserCausalEnvelope brackets an ENTIRE native context lifetime. The
 // authority samples BeforeNS before dispatch/creation, and AfterNS only after
 // terminal acknowledgement. SourceUpperNS comes from the source's monotonic

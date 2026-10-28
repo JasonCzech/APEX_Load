@@ -141,7 +141,7 @@ func PreparePersistentLibraryScriptWithImportTrust(
 		return nil, err
 	}
 	if !trustedImport && prior != nil {
-		if script != nil && script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+		if script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
 			delete(script.Metadata.Import.Preserved, "effective_settings")
 		}
 		if prior.Metadata != nil &&

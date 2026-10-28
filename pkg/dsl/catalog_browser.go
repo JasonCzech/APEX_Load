@@ -146,7 +146,8 @@ func browserActionSpecs() []ActionSpec {
 			Summary:      "Fills an input, optionally issuing per-character keyboard events.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields: locatorFields(FieldSpec{Name: "value", Kind: FieldKindString, Doc: "Text to enter; empty string clears the field and template variables are expanded."},
-				FieldSpec{Name: "params.input_mode", Kind: FieldKindEnum, Enum: []string{"fill", "type"}, SchemaEnum: true, Doc: "fill (default) sets the value; type clears the field and sends per-character keyboard events."},
+				FieldSpec{Name: "params.input_mode", Kind: FieldKindEnum, Enum: []string{"fill", "type"}, SchemaEnum: true, Doc: "fill (default) sets the value; type clears the field (unless params.clear is false) and sends per-character keyboard events."},
+				FieldSpec{Name: "params.clear", Kind: FieldKindBool, Doc: "Clear the field before typing when params.input_mode is type; defaults to true."},
 				FieldSpec{Name: "params.typing_delay_ms", Kind: FieldKindInt, Maximum: 1000, Doc: "Delay between keys in type mode, 0–1000 milliseconds."}),
 			Validate: browserValidator(browserRequireElementLocator, browserFillChecks),
 		},
@@ -363,6 +364,17 @@ func browserActionSpecs() []ActionSpec {
 				fieldSync, fieldCapture,
 			},
 			Validate: browserValidator(nil, nil),
+		},
+		{
+			Type:      "browser_close_window",
+			Protocols: []string{"browser"},
+			Summary:   "Closes a browser window or tab (the current page by default) and switches scope to an open remaining page.",
+			Fields: []FieldSpec{
+				{Name: "target", Kind: FieldKindString, Doc: "Optional window title, URL substring, or zero-based index to close; empty closes the active page."},
+				{Name: "params.index", Kind: FieldKindInt, Doc: "Optional zero-based window/tab index to close."},
+				fieldSync, fieldCapture,
+			},
+			Validate: browserValidator(browserCloseWindowChecks, nil),
 		},
 		{
 			Type:      "browser_handle_dialog",
@@ -847,6 +859,11 @@ func browserFillChecks(label string, action Action) []string {
 	if mode, ok := action.Params["input_mode"]; ok && mode != "fill" && mode != "type" {
 		issues = append(issues, label+": browser_fill input_mode must be fill or type")
 	}
+	if clear, ok := action.Params["clear"]; ok {
+		if _, isBool := clear.(bool); !isBool {
+			issues = append(issues, label+": browser_fill clear must be a boolean")
+		}
+	}
 	if _, set := action.Params["typing_delay_ms"]; set {
 		delay, ok := actionParamIntValue(action.Params, "typing_delay_ms")
 		if !ok || delay < 0 || delay > 1000 {
@@ -854,4 +871,15 @@ func browserFillChecks(label string, action Action) []string {
 		}
 	}
 	return issues
+}
+
+func browserCloseWindowChecks(label string, action Action) []string {
+	for _, key := range []string{"index", "page_index", "window_index"} {
+		if _, exists := action.Params[key]; exists {
+			if index, ok := actionParamIntValue(action.Params, key); !ok || index < 0 {
+				return []string{fmt.Sprintf("%s: browser_close_window %s must be a non-negative integer", label, key)}
+			}
+		}
+	}
+	return nil
 }

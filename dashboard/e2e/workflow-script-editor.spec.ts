@@ -39,6 +39,7 @@ test('operator edits the failed nested browser assertion and reruns without losi
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.locator('.topbar-debug-action-run').click()
+  await expectDebugOutcome(page, 'failed')
   await expect(page.getByRole('button', { name: 'Edit this assertion' })).toBeVisible()
   await expect(page.locator('.script-browser-evidence')).toHaveCount(1)
   await expect(page.getByRole('region', { name: 'Debug detail', exact: true })).toHaveCount(0)

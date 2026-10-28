@@ -61,7 +61,7 @@ func applyTruClientBrowserRuntimeSettings(result *ConvertResult, runtimeFile str
 			mappings[normalizeRuntimeArchivePath(runtimeFile)] = map[string]map[string]RuntimeSettingDisposition{}
 		}
 		mappings[normalizeRuntimeArchivePath(runtimeFile)][section] = rows
-		stepTimeout, objectTimeout := 0, 0
+		stepTimeout, objectTimeout, networkEndThreshold := 0, 0, 0
 		for key, value := range values {
 			row := RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, Note: "Preserved source browser setting; its Go browser equivalence requires source-profile review."}
 			switch strings.ToLower(key) {
@@ -74,6 +74,11 @@ func applyTruClientBrowserRuntimeSettings(result *ConvertResult, runtimeFile str
 				if n, valid := truClientTimeoutMS(value); valid {
 					objectTimeout = n
 					row = RuntimeSettingDisposition{Status: RuntimeSettingDispositionMapped, Fields: []string{"actions[].params.timeout_ms", "actions[].wait_for.timeout_ms"}, Note: "Source seconds converted to selector/object timeout milliseconds; explicit per-step object timeouts override this value."}
+				}
+			case "networkendthreshold":
+				if n, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && n > 0 && n <= dsl.MaxConfiguredProtocolTimeoutMS {
+					networkEndThreshold = n
+					row = RuntimeSettingDisposition{Status: RuntimeSettingDispositionMapped, Fields: []string{"actions[].sync.stable_ms"}, Note: "Source network-quiet threshold milliseconds applied to network_idle step completion policies."}
 				}
 			case "simulatenewuser":
 				if value == "0" || value == "1" {
@@ -105,6 +110,9 @@ func applyTruClientBrowserRuntimeSettings(result *ConvertResult, runtimeFile str
 				if action.Sync != nil && action.Sync.TimeoutMs == 0 {
 					action.Sync.TimeoutMs = stepTimeout
 				}
+			}
+			if networkEndThreshold > 0 && action.Sync != nil && (action.Sync.Type == "network_idle" || action.Sync.Type == "networkidle") && action.Sync.StableMs == 0 {
+				action.Sync.StableMs = networkEndThreshold
 			}
 			timeout := objectTimeout
 			if value, ok := action.Metadata["source_object_timeout_seconds"].(string); ok {
@@ -193,6 +201,13 @@ func appendTruClientSourceMappings(result *ConvertResult, files map[string]strin
 			status = "review_only"
 		}
 		appendSourceReviewMapping(result, SourceReviewMapping{SourceFile: xmlName, StartLine: line, Function: function, TargetPath: ref.Path, TargetName: action.Name, TargetKind: "action", Status: status, Notes: fmt.Sprintf("Source step %s; source attributes and completion rules are retained on the draft action.", id)})
+		if downloadID, _ := action.Metadata["source_download_step_id"].(string); downloadID != "" && downloadID != id {
+			downloadLine := 1
+			if position := strings.Index(xmlText, `stepId="`+downloadID+`"`); position >= 0 {
+				downloadLine += strings.Count(xmlText[:position], "\n")
+			}
+			appendSourceReviewMapping(result, SourceReviewMapping{SourceFile: xmlName, StartLine: downloadLine, Function: "Wait for File Download", TargetPath: ref.Path, TargetName: action.Name, TargetKind: "action", Status: status, Notes: fmt.Sprintf("Source step %s coalesced into pre-armed download action; source attributes and completion rules are retained on the draft action.", downloadID)})
+		}
 		return nil
 	})
 }

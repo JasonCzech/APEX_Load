@@ -97,6 +97,7 @@ type BrowserBaselineParams struct {
 type BrowserBaselinePolicy struct {
 	MetricFloors   map[string]float64 `json:"metric_floors,omitempty"`
 	Ref            string             `json:"ref"`
+	SHA256         string             `json:"sha256,omitempty"`
 	TimingMs       *float64           `json:"timing_ms,omitempty"`
 	TimingRelative *float64           `json:"timing_relative,omitempty"`
 	CLS            *float64           `json:"cls,omitempty"`
@@ -157,10 +158,16 @@ type DocumentCohort struct {
 	// These states are set by the trusted archive adapter after validating
 	// source-bound evidence for the entire retained population. Zero values,
 	// local execution, and absence of reported loss are not positive proof.
-	TimelineQualification       string `json:"timeline_qualification,omitempty"`
-	ClockQualification          string `json:"clock_qualification"`
-	SourceCoverageQualification string `json:"source_coverage_qualification"`
-	Metric                      string `json:"metric"`
+	TimelineQualification       string        `json:"timeline_qualification,omitempty"`
+	ClockQualification          string        `json:"clock_qualification"`
+	ClockUnavailableReason      string        `json:"clock_unavailable_reason,omitempty"`
+	ClockUncertainty            time.Duration `json:"clock_uncertainty,omitempty"`
+	SourceCoverageQualification string        `json:"source_coverage_qualification"`
+	Metric                      string        `json:"metric"`
+	Engine                      string        `json:"engine,omitempty"`
+	DeviceProfile               string        `json:"device_profile,omitempty"`
+	FrameScope                  string        `json:"frame_scope,omitempty"`
+	LifecyclePhase              string        `json:"lifecycle_phase,omitempty"`
 	// Group is the scenario group that measured the document.
 	Group      string            `json:"group,omitempty"`
 	Family     string            `json:"family"`
@@ -182,9 +189,10 @@ type DocumentWindow struct {
 	MonotonicVUsers   int    `json:"monotonic_vusers,omitempty"`
 	MonotonicVerified bool   `json:"monotonic_verified,omitempty"`
 
-	Start   time.Time `json:"start"`
-	End     time.Time `json:"end"`
-	Invalid bool      `json:"invalid,omitempty"`
+	Start         time.Time `json:"start"`
+	End           time.Time `json:"end"`
+	Invalid       bool      `json:"invalid,omitempty"`
+	InvalidReason string    `json:"invalid_reason,omitempty"`
 }
 
 // BrowserBaseline is the detector's output for one assessment.
@@ -195,7 +203,8 @@ type BrowserBaseline struct {
 	// Policy names the run's pinned browser policy (id@revision) when its
 	// floors and baseline mode applied; one that could not be used is named
 	// in a limitation instead.
-	Policy string `json:"policy,omitempty"`
+	Policy       string `json:"policy,omitempty"`
+	PolicySHA256 string `json:"policy_sha256,omitempty"`
 	// Baseline names the workload-qualified baseline run, when there was one.
 	Baseline BaselineRef             `json:"baseline"`
 	Results  []BrowserBaselineResult `json:"results"`
@@ -206,11 +215,16 @@ type BrowserBaseline struct {
 
 // BrowserBaselineResult is one cohort's comparison at one load level.
 type BrowserBaselineResult struct {
-	ID     string `json:"id"`
-	Series string `json:"series"`
-	Metric string `json:"metric"`
-	Unit   string `json:"unit"`
-	Level  string `json:"level"`
+	ID             string `json:"id"`
+	Series         string `json:"series"`
+	Metric         string `json:"metric"`
+	Engine         string `json:"engine,omitempty"`
+	DeviceProfile  string `json:"device_profile,omitempty"`
+	FrameScope     string `json:"frame_scope,omitempty"`
+	LifecyclePhase string `json:"lifecycle_phase,omitempty"`
+	Group          string `json:"group,omitempty"`
+	Unit           string `json:"unit"`
+	Level          string `json:"level"`
 	// LevelStart tells apart two steady levels at one load (a profile that
 	// returns to a load).
 	LevelStart time.Time `json:"level_start"`
@@ -253,14 +267,18 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 		}
 	}
 	if len(documents) == 0 {
+		var policyRef, policySHA256 string
+		if input.BrowserPolicy != nil && input.BrowserPolicy.Unavailable == "" {
+			policyRef, policySHA256 = input.BrowserPolicy.Ref, input.BrowserPolicy.SHA256
+		}
 		// Evidence the run kept but that could not be read, or that the
 		// series budget left out entirely, is not absence.
 		switch {
 		case input.DocumentsUnreadable:
-			return &BrowserBaseline{Version: BrowserBaselineVersion, Status: DetectionUnavailable, Params: params, Results: []BrowserBaselineResult{},
+			return &BrowserBaseline{Version: BrowserBaselineVersion, Status: DetectionUnavailable, Params: params, Policy: policyRef, PolicySHA256: policySHA256, Results: []BrowserBaselineResult{},
 				Limitations: []Limitation{{Code: BrowserBaselineRunEvidenceUnavailable, Detail: "the run's browser document evidence could not be read, so no cohort was compared"}}}
 		case input.DocumentsIncomplete:
-			return &BrowserBaseline{Version: BrowserBaselineVersion, Status: DetectionUnavailable, Params: params, Results: []BrowserBaselineResult{},
+			return &BrowserBaseline{Version: BrowserBaselineVersion, Status: DetectionUnavailable, Params: params, Policy: policyRef, PolicySHA256: policySHA256, Results: []BrowserBaselineResult{},
 				Limitations: []Limitation{{Code: BrowserBaselineRunEvidenceIncomplete, Detail: "none of the run's browser document series was read (the series budget or dropped observations left them out), so no cohort was compared"}}}
 		}
 		return nil
@@ -270,6 +288,7 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 		// The section names the policy only when its floors and mode applied.
 		if policy.Unavailable == "" {
 			out.Policy = policy.Ref
+			out.PolicySHA256 = policy.SHA256
 		}
 		switch {
 		case policy.Unavailable != "":
@@ -318,6 +337,9 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 	}
 	baseline := input.Baseline
 	if baseline == nil || baseline.Qualification == BaselineUnqualified {
+		if baseline != nil {
+			out.Baseline = BaselineRef{TestID: baseline.TestID, Qualification: baseline.Qualification, Reasons: slices.Clone(baseline.QualificationReasons)}
+		}
 		out.Status = DetectionUnavailable
 		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineNoBaselineRun, Detail: "no workload-qualified baseline run was given, so no browser document cohort was compared"})
 		return out
@@ -522,8 +544,12 @@ func browserSourceWindowsWithin(s Series, points []SeriesPoint, level LoadLevel)
 func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples int64, byID map[string]Series, byFamily map[string][]Series, baselineLevels []LoadLevel, ref BaselineRef, baselineIncomplete bool, params BrowserBaselineParams) BrowserBaselineResult {
 	sorted := slices.Clone(current)
 	slices.Sort(sorted)
-	result := BrowserBaselineResult{Series: s.ID, Metric: s.Document.Metric, Unit: s.Unit, Level: level.Label(), LevelStart: level.Start.UTC(), Current: medianSorted(sorted), CurrentBuckets: len(current), CurrentSamples: samples,
-		Baseline: ref, Evidence: []EvidenceRef{s.Evidence}}
+	result := BrowserBaselineResult{
+		Series: s.ID, Metric: s.Document.Metric, Engine: s.Document.Engine, DeviceProfile: s.Document.DeviceProfile,
+		FrameScope: s.Document.FrameScope, LifecyclePhase: s.Document.LifecyclePhase, Group: s.Document.Group,
+		Unit: s.Unit, Level: level.Label(), LevelStart: level.Start.UTC(), Current: medianSorted(sorted), CurrentBuckets: len(current), CurrentSamples: samples,
+		Baseline: ref, Evidence: []EvidenceRef{s.Evidence},
+	}
 	result.ID = stableID("browser_baseline", BrowserBaselineVersion, s.ID, result.Level, level.Start.UTC().Format(time.RFC3339Nano), ref.TestID)
 	if s.Document.Incomplete {
 		result.Caveats = append(result.Caveats, BrowserBaselineSourceLoss)
@@ -546,7 +572,10 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 	}
 	// A series ID is a lookup key, not proof of the measurement contract.
 	// Retained/custom inputs must still describe the same tuple and runtime.
-	if s.Document.Metric != b.Document.Metric || s.Document.Family != b.Document.Family || s.Document.Group != b.Document.Group || s.Unit != b.Unit || !maps.Equal(s.Document.Fields, b.Document.Fields) {
+	if s.Document.Metric != b.Document.Metric || s.Document.Family != b.Document.Family || s.Document.Group != b.Document.Group ||
+		s.Document.Engine != b.Document.Engine || s.Document.DeviceProfile != b.Document.DeviceProfile ||
+		s.Document.FrameScope != b.Document.FrameScope || s.Document.LifecyclePhase != b.Document.LifecyclePhase ||
+		s.Unit != b.Unit || !maps.Equal(s.Document.Fields, b.Document.Fields) {
 		return unscored(BrowserBaselineCohortChanged, "the matching series ID describes a different measurement tuple or runtime cohort")
 	}
 	// v1 gives each interval bucket equal weight. Comparing different bucket

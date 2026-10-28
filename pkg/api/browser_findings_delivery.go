@@ -96,6 +96,11 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 			return
 		}
 	}
+	for _, job := range existing {
+		if job.Actor == browserIntelligenceSystemActor && job.State == storage.EvaluationJobQueued && job.InputFingerprint != inputs.fingerprint {
+			_, _ = store.CancelEvaluationJob(project, job.ID, time.Now())
+		}
+	}
 	if _, _, err := store.CreateEvaluationJob(&storage.EvaluationJob{ID: uuid.NewString(), ProjectID: project, Actor: browserIntelligenceSystemActor, Kind: browserIntelligenceKind,
 		Request: string(request), InputFingerprint: inputs.fingerprint, SubjectID: test.ID}, evaluationJobsActivePerProject); err != nil {
 		slog.Warn("browser findings were not queued", "test_id", testID, "error", err)
@@ -111,12 +116,14 @@ type RunBrowserFindingsResponse struct {
 	// Status is ready (Result is set), pending (an evaluation is queued or
 	// running and none is ready), failed (the newest evaluation failed or
 	// expired and none is ready; Failure says why) or not_evaluated.
-	Status      string                     `json:"status"`
-	JobID       string                     `json:"job_id,omitempty"`
-	CompletedAt *time.Time                 `json:"completed_at,omitempty"`
-	Pending     bool                       `json:"pending,omitempty"`
-	Failure     string                     `json:"failure,omitempty"`
-	Result      *BrowserIntelligenceResult `json:"result,omitempty"`
+	Status        string                     `json:"status"`
+	Provisional   bool                       `json:"provisional,omitempty"`
+	LiveTruncated bool                       `json:"live_truncated,omitempty"`
+	JobID         string                     `json:"job_id,omitempty"`
+	CompletedAt   *time.Time                 `json:"completed_at,omitempty"`
+	Pending       bool                       `json:"pending,omitempty"`
+	Failure       string                     `json:"failure,omitempty"`
+	Result        *BrowserIntelligenceResult `json:"result,omitempty"`
 }
 
 // handleGetRunArchiveBrowserFindings returns the run's latest ready browser
@@ -127,6 +134,12 @@ func (s *Server) handleGetRunArchiveBrowserFindings(w http.ResponseWriter, r *ht
 	if !ok || test == nil {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
+	}
+	if record, hasArchive := s.archiveDomainService().GetRunArchiveContext(r.Context(), test.ID); !hasArchive || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
+		if provisional, ok := s.provisionalRunBrowserFindings(r.Context(), test); ok {
+			writeJSON(w, http.StatusOK, provisional)
+			return
+		}
 	}
 	store, ok := s.store.(storage.EvaluationJobStore)
 	if !ok {

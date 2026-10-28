@@ -9,6 +9,7 @@ const BrowserEvidenceUnavailable = "unavailable"
 const (
 	BrowserClockUnavailable                  = "browser_clock_unavailable"
 	BrowserSourceCoverageUnavailable         = "browser_source_coverage_unavailable"
+	BrowserTimelineUnavailable               = "browser_timeline_unavailable"
 	BrowserBaselineClockUnavailable          = "baseline_browser_clock_unavailable"
 	BrowserBaselineSourceCoverageUnavailable = "baseline_browser_source_coverage_unavailable"
 )
@@ -20,7 +21,11 @@ func browserDocumentQualificationLimitations(document *DocumentCohort, baseline 
 	}
 	var out []Limitation
 	if document == nil || document.ClockQualification != BrowserEvidenceQualified {
-		out = append(out, Limitation{Code: clock, Detail: "the " + side + " lacks verified browser-to-controller clock bounds covering the full document measurement windows; recorded timestamps alone do not qualify load attribution"})
+		detail := "the " + side + " lacks verified browser-to-controller clock bounds covering the full document measurement windows; recorded timestamps alone do not qualify load attribution"
+		if document != nil && document.ClockUnavailableReason != "" {
+			detail += " (" + document.ClockUnavailableReason + ")"
+		}
+		out = append(out, Limitation{Code: clock, Detail: detail})
 	}
 	if document == nil || document.SourceCoverageQualification != BrowserEvidenceQualified {
 		out = append(out, Limitation{Code: coverage, Detail: "the " + side + " lacks verified complete browser source coverage for the document population; successful collection and no reported loss do not prove completeness"})

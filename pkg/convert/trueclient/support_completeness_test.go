@@ -157,7 +157,7 @@ func TestConvertMappableStepsEmitExpectedActions(t *testing.T) {
 		{"Activate Tab", truArg("Tab", "2"), "browser_switch_window"},
 		{"Activate", truArg("Tab", "1"), "browser_switch_window"},
 		{"Add Tab", truArg("Tab", "1"), "browser_switch_window"},
-		{"Close Tab", truArg("Tab", "1"), "browser_switch_window"},
+		{"Close Tab", truArg("Tab", "1"), "browser_close_window"},
 		{"Wait for Property", truArg("Selector", "#a", "Property", "visible"), "browser_wait"},
 	}
 	for _, tc := range cases {

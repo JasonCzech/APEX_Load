@@ -374,6 +374,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/analysis/journey-steps",
+      "operationId": "handleListAnalysisJourneySteps",
+      "summary": "List Analysis Journey Steps",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/analysis/mappings",
       "operationId": "handleAnalysisDefinitions_11",
       "summary": "Analysis Definitions",

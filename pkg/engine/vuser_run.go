@@ -389,7 +389,7 @@ func (run *vuserRun) prepareIteration() (ready, skipped bool) {
 		}
 		_ = run.vu.refreshImportedCredentialRuntimeValues()
 		// A long browser session hands over each iteration's interactions.
-		handOffBrowserInteractions(run.vu.Proto, run.vu.ResultSink, run.vu.RedactionConfig)
+		run.vu.flushBrowserIterationEvidence()
 		// Only a browser observer's lost salesforce_jwt session asks for renewal.
 		renewSession := run.vu.takeBrowserSessionRenewal()
 		if renewSession || run.vu.Script.Protocol == "browser" && run.cfg.Browser.NewUserPerIter != nil && *run.cfg.Browser.NewUserPerIter {
@@ -527,6 +527,7 @@ func (run *vuserRun) completeIteration() bool {
 	run.recordIterationTransaction(run.iterSuccess)
 	run.iterTransactionSource = nil
 	run.releaseReservedActionTransaction()
+	run.vu.flushBrowserIterationEvidence()
 
 	run.iteration++
 	if run.vu.Metrics != nil {
@@ -616,8 +617,13 @@ func (run *vuserRun) recordIterationTransaction(success bool) {
 	if !run.iterationTxMode || run.iterTxRecorded {
 		return
 	}
+	prevAuthoredAction := run.vu.currentAuthoredAction
+	run.vu.currentAuthoredAction = nil
 	run.vu.endingIteration = true
-	defer func() { run.vu.endingIteration = false }()
+	defer func() {
+		run.vu.endingIteration = false
+		run.vu.currentAuthoredAction = prevAuthoredAction
+	}()
 	duration := run.iterTxDuration
 	if duration <= 0 {
 		duration = time.Since(run.iterTxStart) - run.vu.iterationThinkTime
@@ -626,8 +632,10 @@ func (run *vuserRun) recordIterationTransaction(success bool) {
 		}
 	}
 	var source *protocol.Result
-	if !success {
-		source = run.iterTransactionSource
+	if !success && run.iterTransactionSource != nil {
+		copied := *run.iterTransactionSource
+		copied.AuthoredStep = nil
+		source = &copied
 	}
 	run.vu.recordTransactionSpan(run.vu.iterationTransactionName(), duration, success, source, run.iterTxStart)
 	run.iterTxRecorded = true
@@ -740,6 +748,9 @@ func (run *vuserRun) controlBlockRuns(action *dsl.Action, depth int) bool {
 }
 
 func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool) {
+	prevAuthoredAction := run.vu.currentAuthoredAction
+	run.vu.currentAuthoredAction = actionRef
+	defer func() { run.vu.currentAuthoredAction = prevAuthoredAction }()
 	action := *actionRef
 	if strings.EqualFold(strings.TrimSpace(action.Type), "control_parallel") {
 		if action.Control == nil || depth >= maxControlDepth {

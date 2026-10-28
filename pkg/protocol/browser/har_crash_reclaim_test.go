@@ -431,14 +431,40 @@ func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) 
 		t.Fatal(err)
 	}
 	_ = child.Wait()
+	if harLeaseInheritableAcrossExec {
+		if local, localErr := harWorkingDirectoryIsLocal(filepath.Join(dir, runtimeHARWorkingDirectory)); localErr == nil && local {
+			for _, name := range []string{"manifest.json", "writer-entered.json"} {
+				raw, err := os.ReadFile(filepath.Join(generationDir, name))
+				if err != nil {
+					t.Fatalf("read %s: %v", name, err)
+				}
+				var m harOwnershipManifest
+				if err := json.Unmarshal(raw, &m); err != nil || m.Version != harOwnershipManifestVersion {
+					t.Fatalf("%s version = %d (err=%v), want %d (%s)", name, m.Version, err, harOwnershipManifestVersion, raw)
+				}
+			}
+		}
+	}
 	// The orphaned driver notices its closed pipe and exits; until it has,
-	// the generation is not reclaimable. On stdin close the driver closes its
-	// browsers gracefully and only force-exits after 30 seconds
+	// the generation is not reclaimable (neither in this PID namespace nor
+	// from a replacement container in a new PID namespace, because the driver
+	// holds the inherited owner.lock descriptor). On stdin close the driver
+	// closes its browsers gracefully and only force-exits after 30 seconds
 	// (gracefullyProcessExitDoNotHang), which a loaded runner closing WebKit
 	// can reach.
+	origHost := currentHARHost
+	t.Cleanup(func() { currentHARHost = origHost })
 	for deadline := time.Now().Add(45 * time.Second); !harProcessGone(host, driverIdentity, harProcessStart); time.Sleep(50 * time.Millisecond) {
 		if len(PlanRuntimeHARWorkingCleanup(dir, 128)) != 0 {
 			t.Fatal("planned while the native writer lives")
+		}
+		currentHARHost = func() (harHost, error) {
+			return harHost{machine: host.machine, boot: host.boot, namespace: host.namespace + "-replacement"}, nil
+		}
+		replacementPlanned := len(PlanRuntimeHARWorkingCleanup(dir, 128))
+		currentHARHost = origHost
+		if replacementPlanned != 0 {
+			t.Fatal("replacement container planned while the native writer still holds the inherited lease")
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("orphaned driver %d did not exit", driver)
@@ -446,7 +472,13 @@ func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) 
 	}
 	driverExitElapsed := time.Since(killedAt)
 	t.Logf("engine=%s pid=%d driver=%d exited after %s", engine, os.Getpid(), driver, driverExitElapsed.Round(time.Millisecond))
-	plans := PlanRuntimeHARWorkingCleanup(dir, 128)
+	var plans []RuntimeHARWorkingPruneCandidate
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		plans = PlanRuntimeHARWorkingCleanup(dir, 128)
+		if len(plans) > 0 {
+			break
+		}
+	}
 	if len(plans) != 1 || !plans[0].Abandoned {
 		manifest, _ := os.ReadFile(filepath.Join(generationDir, "manifest.json"))
 		entries, _ := os.ReadDir(generationDir)
@@ -606,5 +638,199 @@ func TestParseLinuxProcStatStartTreatsZombieAndDeadStatesAsExited(t *testing.T) 
 		}) {
 			t.Fatalf("malformed stat %q reported harProcessGone = true", string(malformed))
 		}
+	}
+}
+
+func harReplacementContainerCrashChild(t *testing.T, dir string) {
+	o, err := newHARCaptureOwner(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := harTestSleeper(60)
+	if err := o.startProcessWithInheritedLease(func() (int, error) {
+		if err := writer.Start(); err != nil {
+			return 0, err
+		}
+		return writer.Process.Pid, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	harNativeWriterPID = func() int { return writer.Process.Pid }
+	if err := o.beginWriter(); err != nil {
+		_ = writer.Process.Kill()
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(o.path, []byte(ownedHARFixture[:20]), 0o600); err != nil {
+		_ = writer.Process.Kill()
+		t.Fatal(err)
+	}
+	writeReadyToken(dir, fmt.Sprintf("%s %d", o.generation, writer.Process.Pid))
+	time.Sleep(time.Hour) // Wait here for SIGKILL without triggering Go's all-goroutines-asleep detector under PID 1.
+}
+
+// A replacement container in a new PID namespace on the same kernel boot and
+// machine identity reclaims a version-3 generation on a verified local Unix
+// filesystem only after BOTH the killed generator and its inherited-lease
+// writer process have exited, while preserving same-namespace procidentity.Gone
+// checks, non-local (NFS/FUSE) mounts, and foreign machine/boot identities.
+func TestHAROwnershipReplacementContainerReclaimsOnlyAfterInheritedWriterExits(t *testing.T) {
+	if !harLeaseInheritableAcrossExec {
+		t.Skip("inherited flock lease across exec requires Unix")
+	}
+	if dir := os.Getenv("APEX_HAR_REPLACEMENT_CRASH_DIR"); dir != "" {
+		harReplacementContainerCrashChild(t, dir)
+		return
+	}
+	if dir := os.Getenv("APEX_HAR_REPLACEMENT_RECLAIM_DIR"); dir != "" {
+		host, err := currentHARHost()
+		if err != nil {
+			t.Fatal(err)
+		}
+		reclaimed, err := ReclaimRuntimeHARWorking(context.Background(), dir, 128)
+		t.Logf("replacement container host=%+v reclaimed=%d err=%v", host, reclaimed, err)
+		if err != nil || reclaimed != 1 {
+			t.Fatalf("ReclaimRuntimeHARWorking(%q) = (%d, %v), want (1, nil)", dir, reclaimed, err)
+		}
+		return
+	}
+
+	dir := t.TempDir()
+	local, localErr := harWorkingDirectoryIsLocal(dir)
+	if localErr != nil || !local {
+		t.Skipf("tempdir %q is not an allowlisted local filesystem: local=%v err=%v", dir, local, localErr)
+	}
+
+	child := exec.Command(os.Args[0], "-test.run=^TestHAROwnershipReplacementContainerReclaimsOnlyAfterInheritedWriterExits$")
+	child.Env = append(os.Environ(), "APEX_HAR_REPLACEMENT_CRASH_DIR="+dir)
+	logFile, err := os.Create(filepath.Join(t.TempDir(), "child.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logFile.Close()
+	child.Stdout, child.Stderr = logFile, logFile
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var writerProc *os.Process
+	defer func() {
+		_ = child.Process.Kill()
+		_ = child.Wait()
+		if writerProc != nil {
+			_ = writerProc.Kill()
+			_, _ = writerProc.Wait()
+		}
+	}()
+
+	var generation string
+	var writerPID int
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if token, err := os.ReadFile(filepath.Join(dir, "ready")); err == nil {
+			_, _ = fmt.Sscan(string(token), &generation, &writerPID)
+			break
+		}
+	}
+	if !validHARGeneration(generation) || writerPID <= 0 {
+		data, _ := os.ReadFile(logFile.Name())
+		t.Fatalf("replacement crash child did not become ready: gen=%q writer=%d log=%s", generation, writerPID, data)
+	}
+	writerProc, _ = os.FindProcess(writerPID)
+	generationDir := filepath.Join(dir, runtimeHARWorkingDirectory, generation)
+
+	for _, name := range []string{"manifest.json", "writer-entered.json"} {
+		raw, err := os.ReadFile(filepath.Join(generationDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		var m harOwnershipManifest
+		if err := json.Unmarshal(raw, &m); err != nil || m.Version != harOwnershipManifestVersion {
+			t.Fatalf("%s version = %d (err=%v), want %d (%s)", name, m.Version, err, harOwnershipManifestVersion, raw)
+		}
+	}
+
+	host, err := currentHARHost()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writerStart, found, err := harProcessStart(writerPID)
+	if err != nil || !found {
+		t.Fatalf("writer %d start unavailable: found=%v err=%v", writerPID, found, err)
+	}
+	writerIdentity := harProcessIdentity{Role: harProcessWriter, Machine: host.machine, Boot: host.boot, Namespace: host.namespace, PID: writerPID, Start: writerStart}
+
+	// Kill the generator child (SIGKILL). The writer process remains alive and
+	// holds the inherited open file description for owner.lock.
+	if err := child.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = child.Wait()
+
+	origHost := currentHARHost
+	origLocal := harWorkingDirectoryIsLocal
+	t.Cleanup(func() {
+		currentHARHost = origHost
+		harWorkingDirectoryIsLocal = origLocal
+	})
+
+	// Simulate a replacement container in a new PID namespace on the same boot.
+	currentHARHost = func() (harHost, error) {
+		return harHost{machine: host.machine, boot: host.boot, namespace: host.namespace + "-replacement-container"}, nil
+	}
+
+	// 1. While the orphaned writer is still alive, it holds the inherited
+	// owner.lock descriptor, so the replacement container cannot plan or prune it.
+	if plans := PlanRuntimeHARWorkingCleanup(dir, 128); len(plans) != 0 {
+		t.Fatalf("replacement container planned generation while inherited writer %d is still alive: %+v", writerPID, plans)
+	}
+
+	// 2. Even if leaseCoversWriterTree is true, within the SAME PID namespace
+	// procidentity.Gone remains mandatory and refuses a live writer.
+	if harProcessGoneWithLease(host, writerIdentity, harProcessStart, true) {
+		t.Fatal("same-namespace live writer judged gone by leaseCoversWriterTree")
+	}
+
+	// Kill the orphaned writer and wait for the kernel to close its inherited
+	// owner.lock descriptor.
+	if writerProc != nil {
+		_ = writerProc.Kill()
+		_, _ = writerProc.Wait()
+	}
+	for deadline := time.Now().Add(5 * time.Second); !harProcessGone(host, writerIdentity, harProcessStart); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("writer %d did not exit", writerPID)
+		}
+	}
+
+	// 3. On a non-local filesystem (e.g. NFS/FUSE), cross-namespace reclamation
+	// must be refused even after the lease is free.
+	harWorkingDirectoryIsLocal = func(string) (bool, error) { return false, nil }
+	if plans := PlanRuntimeHARWorkingCleanup(dir, 128); len(plans) != 0 {
+		t.Fatalf("replacement container planned generation on non-local filesystem: %+v", plans)
+	}
+	harWorkingDirectoryIsLocal = origLocal
+
+	// 4. On a foreign boot or foreign machine, cross-namespace reclamation must
+	// be refused.
+	currentHARHost = func() (harHost, error) {
+		return harHost{machine: "foreign-machine@other", boot: host.boot, namespace: host.namespace + "-replacement-container"}, nil
+	}
+	if plans := PlanRuntimeHARWorkingCleanup(dir, 128); len(plans) != 0 {
+		t.Fatalf("foreign machine planned generation: %+v", plans)
+	}
+
+	// 5. On the same machine and boot with a verified local filesystem and
+	// free lease, the replacement container in the new PID namespace reclaims
+	// the predecessor container's v3 generation.
+	currentHARHost = func() (harHost, error) {
+		return harHost{machine: host.machine, boot: host.boot, namespace: host.namespace + "-replacement-container"}, nil
+	}
+	plans := PlanRuntimeHARWorkingCleanup(dir, 128)
+	if len(plans) != 1 || !plans[0].Abandoned {
+		t.Fatalf("replacement container planned %+v, want 1 abandoned candidate", plans)
+	}
+	if err := PruneRuntimeHARWorkingCandidate(context.Background(), plans[0]); err != nil {
+		t.Fatalf("replacement container PruneRuntimeHARWorkingCandidate failed: %v", err)
+	}
+	if _, err := os.Stat(generationDir); !os.IsNotExist(err) {
+		t.Fatalf("reclaimed generation directory still exists: %v", err)
 	}
 }

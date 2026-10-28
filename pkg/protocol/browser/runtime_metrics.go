@@ -348,6 +348,9 @@ type processSample struct {
 	PID            int
 	PPID           int
 	RSSKB          float64
+	VmRSSKB        float64
+	PSSKB          float64
+	PSSKnown       bool
 	CPUTimeSeconds float64
 }
 

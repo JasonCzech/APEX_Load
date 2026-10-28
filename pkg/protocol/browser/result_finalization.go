@@ -16,8 +16,16 @@ type capturedBrowserPageState struct {
 }
 
 func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, consoleStart, networkStart int, networkOwner browserNetworkActionOwner, processBefore browserProcessSnapshot, actionDuration time.Duration) {
+	b.finalizeActionResultWithAssertions(ctx, action, result, actionErr, nil, false, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
+}
+
+func (b *Browser) finalizeActionResultWithAssertions(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr, preAssertionErr error, assertionsEvaluated bool, consoleStart, networkStart int, networkOwner browserNetworkActionOwner, processBefore browserProcessSnapshot, actionDuration time.Duration) {
 	defer b.applyEvidenceOutcome(result)
+	priorHTML := result.HTML
 	pageState, captureErr := b.captureActionPageState(ctx, action, actionErr != nil)
+	if pageState.html == "" && priorHTML != "" {
+		pageState.html = priorHTML
+	}
 	networkEntries, acquisitionReason := b.acquireActionNetworkEntries(ctx, networkOwner, networkStart)
 	b.applyCapturedPageStateWithNetwork(result, pageState, consoleStart, networkEntries)
 	if evidence := auraActionsEvidence(networkEntries); evidence != nil {
@@ -42,6 +50,16 @@ func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Act
 	}
 	if captureErr != nil {
 		result.ErrorMessage = captureErr.Error()
+		return
+	}
+	if assertionsEvaluated {
+		if preAssertionErr != nil {
+			result.ErrorMessage = preAssertionErr.Error()
+			result.Snapshot = browserErrorSnapshot(result)
+			return
+		}
+		result.Success = true
+		b.recordSalesforceEPT(result)
 		return
 	}
 	if requiresBrowserAssertionHTML(action.Assertions) && result.HTML == "" {

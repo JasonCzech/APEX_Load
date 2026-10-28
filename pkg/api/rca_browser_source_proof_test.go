@@ -133,7 +133,7 @@ func TestBrowserSourceNativeTwoArchiveQualification(t *testing.T) {
 			t.Fatalf("archive projection: %v %v %v", series, limits, err)
 		}
 		for _, s := range series {
-			if s.Document.ClockQualification != rca.BrowserEvidenceQualified || s.Document.SourceCoverageQualification != rca.BrowserEvidenceQualified || s.Document.TimelineQualification != rca.BrowserEvidenceUnavailable {
+			if s.Document.ClockQualification != rca.BrowserEvidenceQualified || s.Document.SourceCoverageQualification != rca.BrowserEvidenceQualified || s.Document.TimelineQualification != rca.BrowserEvidenceQualified {
 				t.Fatalf("missing bounded qualification: %+v", s.Document)
 			}
 		}
@@ -166,8 +166,8 @@ func TestBrowserSourceNativeTwoArchiveQualification(t *testing.T) {
 	}
 
 	_, detection, limits := rca.Detect(input, rca.DefaultDetectParams, nil)
-	if detection.SeriesEvaluated != 0 || len(limits) == 0 {
-		t.Fatal("bounded load proof enabled timeline scoring", detection, limits)
+	if detection.SeriesEvaluated != len(runs[1]) || detection.SeriesExcluded != 0 {
+		t.Fatal("qualified browser series were not evaluated on timeline", detection, limits)
 	}
 }
 

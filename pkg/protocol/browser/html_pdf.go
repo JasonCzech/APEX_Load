@@ -22,6 +22,8 @@ type HTMLPDFOptions struct {
 // print pagination. JavaScript is disabled and every non-inline request is
 // aborted: the input is rendered, never executed or allowed to reach the network.
 func RenderHTMLToPDF(html string, opts HTMLPDFOptions) ([]byte, error) {
+	activePoolOperations.Add(1)
+	defer activePoolOperations.Add(-1)
 	browser, err := getBrowserInstance("chromium", true)
 	if err != nil {
 		return nil, fmt.Errorf("start chromium: %w", err)

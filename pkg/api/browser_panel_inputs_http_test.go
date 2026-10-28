@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -456,5 +457,225 @@ func TestBrowserPanelSavedInputsRejectForeignPublicationIdentity(t *testing.T) {
 				t.Fatal("foreign publication accepted", w.Code)
 			}
 		})
+	}
+}
+
+func TestBrowserPanelInputPinsHTTPV2PolicyTombstoneAndSelectionReceipt(t *testing.T) {
+	server, project, record, _ := browserPanelHTTPFixture(t)
+	defStore := server.store.(storage.AnalysisDefinitionStore)
+	rcaStore := server.store.(storage.RCAStore)
+
+	browserPolicyRaw := json.RawMessage(`{"version":1,"metrics":[{"metric":"lcp","good":2500,"poor":4000,"weight":1}],"baseline":{"mode":"latest_compatible"}}`)
+	browserPolicySHA := sha256BytesHex(browserPolicyRaw)
+	if _, err := defStore.SaveAnalysisDefinition(storage.AnalysisDefinition{
+		ProjectID:  project,
+		ID:         "pol-browser",
+		Kind:       storage.AnalysisDefinitionKindBrowserPolicy,
+		Name:       "Browser policy",
+		Definition: browserPolicyRaw,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+	journeyPolicyRaw := json.RawMessage(`{"version":1,"journeys":[{"id":"checkout","name":"Checkout","start":{"step_path":"actions[0]"},"complete":[{"step_path":"actions[1]"}]}]}`)
+	journeyPolicySHA := sha256BytesHex(journeyPolicyRaw)
+	if _, err := defStore.SaveAnalysisDefinition(storage.AnalysisDefinition{
+		ProjectID:  project,
+		ID:         "pol-journey",
+		Kind:       storage.AnalysisDefinitionKindJourneyPolicy,
+		Name:       "Journey policy",
+		Definition: journeyPolicyRaw,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Provenance.PolicyPins = []RunPolicyPin{
+		{Kind: storage.AnalysisDefinitionKindJourneyPolicy, ID: "pol-journey", Name: "Journey policy", Revision: 1, SHA256: journeyPolicySHA, Source: "run_selection"},
+		{Kind: storage.AnalysisDefinitionKindBrowserPolicy, ID: "pol-browser", Name: "Browser policy", Revision: 1, SHA256: browserPolicySHA, Source: "run_selection"},
+	}
+	rawManifest, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record.ManifestPath, rawManifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	record.ManifestSHA256 = sha256BytesHex(rawManifest)
+	server.runner.mu.Lock()
+	server.runner.archives[record.TestID] = record
+	server.runner.mu.Unlock()
+	if err := server.store.SaveRunArchive(record); err != nil {
+		t.Fatal(err)
+	}
+
+	archiveDigest, err := rcaEvidenceDigest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionReceipt := &rca.BrowserBaselineSelection{
+		Version: rca.BrowserSelectionVersion,
+		Policy:  "pol-browser@1",
+		Status:  "no_compatible_candidate",
+	}
+	selectionBytes, err := json.Marshal(selectionReceipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionSHA := sha256BytesHex(selectionBytes)
+	saveCompletedRCA := func(sel *rca.BrowserBaselineSelection, selSHA string, attempt int) {
+		t.Helper()
+		rcaInputs := rca.InputDigests{
+			Archive:          archiveDigest,
+			BrowserSelection: selSHA,
+			Engine:           rcaEngineVersion,
+			SignatureSet:     "sig.v1",
+		}
+		payloadBytes, err := json.Marshal(rcaAnalysisPayload{
+			Inputs:           rcaInputs,
+			ArchiveManifest:  record.ManifestSHA256,
+			BrowserSelection: sel,
+			Attempt:          attempt,
+			Assessment: &rca.Assessment{
+				SchemaVersion: rca.AssessmentSchemaVersion,
+				Inputs:        rcaInputs,
+				BrowserBaseline: &rca.BrowserBaseline{
+					Version:      rca.BrowserBaselineVersion,
+					Status:       rca.DetectionComplete,
+					Policy:       "pol-browser@1",
+					PolicySHA256: browserPolicySHA,
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		analysis, _, err := rcaStore.CreateRCAAnalysisWithOrigin(project, record.TestID, rcaInputDigest(rcaInputs, attempt), storage.RCAOriginAutomatic, payloadBytes, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimed, err := rcaStore.ClaimRCAAnalysis("rca-worker", time.Now().UTC(), time.Minute)
+		if err != nil || claimed == nil || claimed.ID != analysis.ID {
+			t.Fatalf("claim RCA analysis = %+v, err=%v", claimed, err)
+		}
+		completedAt := time.Now().UTC()
+		if recorded, err := rcaStore.CompleteRCAAnalysisFenced(claimed.ID, "rca-worker", storage.RCAStateCompleted, payloadBytes, completedAt, "", "", 0); err != nil || !recorded {
+			t.Fatalf("CompleteRCAAnalysisFenced recorded=%v err=%v", recorded, err)
+		}
+	}
+	saveCompletedRCA(selectionReceipt, selectionSHA, 0)
+	// A subsequent manual/ad-hoc RCA analysis without a BrowserSelection receipt
+	// (or a tampered row with BrowserSelection removed while Inputs.BrowserSelection is set)
+	// must not shadow the earlier policy-matched selection receipt for v2 panels.
+	saveCompletedRCA(nil, "", 1)
+	saveCompletedRCA(nil, strings.Repeat("7", 64), 2)
+
+	q := tupleQuery()
+	q.QueryVersion = 5
+	previewResp := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q)
+	if previewResp.Code != 200 {
+		t.Fatalf("v5 preview %d %s", previewResp.Code, previewResp.Body.String())
+	}
+	var preview NativeArchiveResponse
+	if err := json.Unmarshal(previewResp.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.BrowserInputs == nil || preview.BrowserInputs.Version != 2 || preview.BrowserInputs.SelectionReceiptSHA256 != selectionSHA || len(preview.BrowserInputs.PolicyPins) != 2 || preview.BrowserInputs.PolicyPins[0].Kind != storage.AnalysisDefinitionKindBrowserPolicy || preview.BrowserInputs.PolicyPins[1].Kind != storage.AnalysisDefinitionKindJourneyPolicy {
+		t.Fatalf("unexpected v5 browser_inputs: %+v", preview.BrowserInputs)
+	}
+	q.BrowserInputs = preview.BrowserInputs
+	definition := browserPanelDefinitionFixture(project, q)
+	saveResp := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", definition)
+	if saveResp.Code != 201 {
+		t.Fatalf("v5 save %d %s", saveResp.Code, saveResp.Body.String())
+	}
+
+	// Advancing the browser policy to revision 2 keeps historical revision 1 readable.
+	if _, err := defStore.SaveAnalysisDefinition(storage.AnalysisDefinition{
+		ProjectID:  project,
+		ID:         "pol-browser",
+		Kind:       storage.AnalysisDefinitionKindBrowserPolicy,
+		Name:       "Browser policy v2",
+		Definition: browserPolicyRaw,
+	}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if reopen := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q); reopen.Code != 200 {
+		t.Fatalf("v5 reopen after policy update %d %s", reopen.Code, reopen.Body.String())
+	}
+
+	// If a newer completed RCA analysis changes the selection receipt, the saved panel refuses until re-previewed.
+	otherReceipt := &rca.BrowserBaselineSelection{
+		Version: rca.BrowserSelectionVersion,
+		Policy:  "pol-browser@2",
+		Status:  "no_compatible_candidate",
+	}
+	otherReceiptBytes, err := json.Marshal(otherReceipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveCompletedRCA(otherReceipt, sha256BytesHex(otherReceiptBytes), 3)
+	if reopen := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q); reopen.Code != 422 {
+		t.Fatalf("stale selection receipt accepted %d %s", reopen.Code, reopen.Body.String())
+	}
+	if staleSave := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", definition); staleSave.Code != 400 {
+		t.Fatalf("stale selection receipt saved %d %s", staleSave.Code, staleSave.Body.String())
+	}
+
+	// Restore matching selection receipt, verify tampered BrowserSelection receipt is rejected by rcaBrowserBaselineMatchesPolicyDefinition,
+	// then tombstone the pinned browser policy.
+	saveCompletedRCA(selectionReceipt, selectionSHA, 4)
+	tamperedPayload := rcaAnalysisPayload{
+		Inputs: rca.InputDigests{
+			Archive:          archiveDigest,
+			BrowserSelection: selectionSHA,
+		},
+		BrowserSelection: &rca.BrowserBaselineSelection{
+			Version:        rca.BrowserSelectionVersion,
+			Status:         "selected",
+			SelectedTestID: "base-1",
+		},
+		Request: rcaAnalysisRequest{BaselineTestID: "base-1"},
+		Assessment: &rca.Assessment{
+			BrowserBaseline: &rca.BrowserBaseline{
+				Policy:       "pol-browser@1",
+				PolicySHA256: browserPolicySHA,
+			},
+		},
+	}
+	if rcaBrowserBaselineMatchesPolicyDefinition(manifest, tamperedPayload, BrowserPolicyRef{ID: "pol-browser", Revision: 1, SHA256: browserPolicySHA}, BrowserPolicyDefinition{
+		Version:  1,
+		Baseline: BrowserPolicyBaseline{Mode: "latest_compatible"},
+	}) {
+		t.Fatal("expected rcaBrowserBaselineMatchesPolicyDefinition to reject tampered BrowserSelection receipt whose digest does not match Inputs.BrowserSelection")
+	}
+	tamperedRemovedReceipt := tamperedPayload
+	tamperedRemovedReceipt.BrowserSelection = nil
+	if rcaBrowserBaselineMatchesPolicyDefinition(manifest, tamperedRemovedReceipt, BrowserPolicyRef{ID: "pol-browser", Revision: 1, SHA256: browserPolicySHA}, BrowserPolicyDefinition{
+		Version:  1,
+		Baseline: BrowserPolicyBaseline{Mode: "pinned_run", RunID: "base-1"},
+	}) {
+		t.Fatal("expected rcaBrowserBaselineMatchesPolicyDefinition to reject tampered payload with BrowserSelection removed while Inputs.BrowserSelection is set")
+	}
+	if reopen := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q); reopen.Code != 200 {
+		t.Fatalf("restored selection receipt rejected %d %s", reopen.Code, reopen.Body.String())
+	}
+	if _, err := defStore.SaveAnalysisDefinition(storage.AnalysisDefinition{
+		ProjectID:  project,
+		ID:         "pol-browser",
+		Kind:       storage.AnalysisDefinitionKindBrowserPolicy,
+		Name:       "Browser policy v2",
+		Definition: browserPolicyRaw,
+		Deleted:    true,
+	}, 2); err != nil {
+		t.Fatal(err)
+	}
+	if reopen := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q); reopen.Code != 422 || !strings.Contains(reopen.Body.String(), "pinned analysis policy has been deleted") {
+		t.Fatalf("tombstoned policy accepted on reopen %d %s", reopen.Code, reopen.Body.String())
+	}
+	if tombstonedSave := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", definition); tombstonedSave.Code != 400 {
+		t.Fatalf("tombstoned policy accepted on save %d %s", tombstonedSave.Code, tombstonedSave.Body.String())
 	}
 }

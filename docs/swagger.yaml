@@ -5322,6 +5322,9 @@ paths:
                                 type: string
                               request_id:
                                 type: string
+                              route_seq:
+                                type: integer
+                                format: int64
                               source_generation:
                                 type: string
                               state:
@@ -12349,6 +12352,36 @@ paths:
                           type: boolean
                         browser_proof_authority_mode:
                           type: string
+                        browser_proof_clock_envelope:
+                          type: object
+                          properties:
+                            authority_started_at:
+                              type: string
+                              format: date-time
+                            controller:
+                              type: object
+                              additionalProperties: true
+                            max_bracket_gap_ns:
+                              type: integer
+                              format: int64
+                            max_bracket_rtt_ns:
+                              type: integer
+                              format: int64
+                            max_skew_ppm:
+                              type: integer
+                              format: int64
+                            owners:
+                              type: object
+                              additionalProperties:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserClockBracket'
+                                  additionalProperties: true
+                            version:
+                              type: integer
+                              format: int64
+                          nullable: true
                         browser_proof_expected_owners:
                           type: array
                           items:
@@ -15737,6 +15770,37 @@ paths:
                             unscored:
                               type: integer
                               format: int64
+                            version:
+                              type: string
+                          nullable: true
+                        browser_selection:
+                          type: object
+                          properties:
+                            inventory_count:
+                              type: integer
+                              format: int64
+                            policy:
+                              type: string
+                            reasons:
+                              type: array
+                              items:
+                                type: string
+                            receipt_digest:
+                              type: string
+                            rejected:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: rca.BrowserCandidateRejection'
+                                additionalProperties: true
+                            selected_digest:
+                              type: string
+                            selected_test_id:
+                              type: string
+                            status:
+                              type: string
+                            summary:
+                              type: string
                             version:
                               type: string
                           nullable: true
@@ -32422,6 +32486,83 @@ paths:
       tags:
         - Analysis
       x-handler: handleAnalysisPrecisionReview
+  /api/v1/analysis/journey-steps:
+    get:
+      summary: List Analysis Journey Steps
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleListAnalysisJourneySteps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    protocol:
+                      type: string
+                    script_id:
+                      type: string
+                    script_name:
+                      type: string
+                    steps:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          action_type:
+                            type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          step_path:
+                            type: string
+                        required:
+                          - action_type
+                          - kind
+                          - name
+                          - step_path
+                    structure_sha256:
+                      type: string
+                  required:
+                    - protocol
+                    - script_id
+                    - script_name
+                    - steps
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: script_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleListAnalysisJourneySteps
   /api/v1/analysis/mappings:
     get:
       summary: Analysis Definitions
@@ -52136,6 +52277,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 execution:
                   type: object
                   properties:
@@ -52327,6 +52490,34 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                    nullable: true
                   check_url:
                     type: string
                   duration_ms:
@@ -52686,6 +52877,34 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                    nullable: true
                   check_url:
                     type: string
                   duration_ms:
@@ -53016,6 +53235,34 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections:
+                    type: object
+                    properties:
+                      browser:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                      journey:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - id
+                          - revision
+                        nullable: true
+                    nullable: true
                   check_url:
                     type: string
                   duration_ms:
@@ -167959,6 +168206,7 @@ paths:
                         items:
                           type: object
                           properties:
+                            analysis_policy_selections: {}
                             approval_policy:
                               type: string
                             availability_windows:
@@ -171330,6 +171578,7 @@ paths:
                         items:
                           type: object
                           properties:
+                            analysis_policy_selections: {}
                             approval_policy:
                               type: string
                             availability_windows:
@@ -177904,6 +178153,7 @@ paths:
                     items:
                       type: object
                       properties:
+                        analysis_policy_selections: {}
                         approval_policy:
                           type: string
                         availability_windows:
@@ -181154,6 +181404,7 @@ paths:
                     items:
                       type: object
                       properties:
+                        analysis_policy_selections: {}
                         approval_policy:
                           type: string
                         availability_windows:
@@ -185268,6 +185519,7 @@ paths:
                     items:
                       type: object
                       properties:
+                        analysis_policy_selections: {}
                         approval_policy:
                           type: string
                         availability_windows:
@@ -187971,6 +188223,7 @@ paths:
                         items:
                           type: object
                           properties:
+                            analysis_policy_selections: {}
                             approval_policy:
                               type: string
                             availability_windows:
@@ -188650,6 +188903,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 approval_policy:
                   type: string
                 availability_windows:
@@ -188746,6 +189021,7 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections: {}
                   approval_policy:
                     type: string
                   availability_windows:
@@ -189092,6 +189368,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 approval_policy:
                   type: string
                 availability_windows:
@@ -189189,6 +189487,7 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_policy_selections: {}
                   approval_policy:
                     type: string
                   availability_windows:
@@ -189928,6 +190227,28 @@ paths:
             schema:
               type: object
               properties:
+                analysis_policy_selections:
+                  type: object
+                  properties:
+                    browser:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                    journey:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                      nullable: true
+                  nullable: true
                 approval_policy:
                   type: string
                 availability_windows:
@@ -365569,9 +365890,6 @@ paths:
                             rss_per_vuser_target_bytes:
                               type: integer
                               format: int64
-                            rss_per_vuser_target_mb:
-                              type: integer
-                              format: int64
                           required:
                             - action_overhead_target_ms
                             - launch_p50_target_ms
@@ -371096,9 +371414,6 @@ paths:
                             rss_attribution:
                               type: string
                             rss_per_vuser_target_bytes:
-                              type: integer
-                              format: int64
-                            rss_per_vuser_target_mb:
                               type: integer
                               format: int64
                           required:
@@ -412206,7 +412521,11 @@ paths:
                     type: string
                   job_id:
                     type: string
+                  live_truncated:
+                    type: boolean
                   pending:
+                    type: boolean
+                  provisional:
                     type: boolean
                   result:
                     type: object
@@ -412228,7 +412547,55 @@ paths:
                             baseline:
                               type: object
                               properties:
+                                analysis_id:
+                                  type: string
+                                baseline_archive_sha256:
+                                  type: string
+                                baseline_run_id:
+                                  type: string
+                                detail:
+                                  type: string
                                 mode:
+                                  type: string
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      applied:
+                                        type: boolean
+                                      id:
+                                        type: string
+                                      kind:
+                                        type: string
+                                      name:
+                                        type: string
+                                      revision:
+                                        type: integer
+                                        format: int64
+                                      sha256:
+                                        type: string
+                                      source:
+                                        type: string
+                                    required:
+                                      - applied
+                                      - id
+                                      - kind
+                                      - name
+                                      - revision
+                                      - sha256
+                                      - source
+                                reason:
+                                  type: string
+                                rejected_candidates:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: rca.BrowserCandidateRejection'
+                                    additionalProperties: true
+                                selection_receipt_sha256:
+                                  type: string
+                                selection_status:
                                   type: string
                                 status:
                                   type: string
@@ -412359,6 +412726,8 @@ paths:
                             - window
                       input_fingerprint:
                         type: string
+                      live_truncated:
+                        type: boolean
                       notes:
                         type: array
                         items:
@@ -412383,6 +412752,36 @@ paths:
                           - revision
                           - sha256
                           - source
+                      policy_pins:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            applied:
+                              type: boolean
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                            source:
+                              type: string
+                          required:
+                            - applied
+                            - id
+                            - kind
+                            - name
+                            - revision
+                            - sha256
+                            - source
+                      provisional:
+                        type: boolean
                       rule_set:
                         type: string
                       run_id:
@@ -412575,6 +412974,9 @@ paths:
                       mapped:
                         type: integer
                         format: int64
+                      mapped_via_transform:
+                        type: integer
+                        format: int64
                       pattern_eligible:
                         type: integer
                         format: int64
@@ -412583,7 +412985,16 @@ paths:
                         additionalProperties:
                           type: integer
                           format: int64
+                      pattern_retained:
+                        type: integer
+                        format: int64
+                      pattern_truncated:
+                        type: integer
+                        format: int64
                       records:
+                        type: integer
+                        format: int64
+                      streamed_interactions:
                         type: integer
                         format: int64
                     required:
@@ -412592,7 +413003,9 @@ paths:
                       - incomplete
                       - interactions
                       - mapped
+                      - pattern_retained
                       - records
+                      - streamed_interactions
                   heatmaps:
                     type: array
                     items:
@@ -412709,6 +413122,8 @@ paths:
                     type: array
                     items:
                       type: string
+                  live_truncated:
+                    type: boolean
                   notes:
                     type: array
                     items:
@@ -412765,6 +413180,15 @@ paths:
                           type: string
                         layout_revision:
                           type: string
+                        members_truncated:
+                          type: boolean
+                        outcome_index:
+                          type: integer
+                          format: int64
+                        outcome_kind:
+                          type: string
+                        outcome_reason:
+                          type: string
                         provenance:
                           type: string
                         route:
@@ -412781,6 +413205,8 @@ paths:
                         - kind
                         - provenance
                         - start
+                  provisional:
+                    type: boolean
                   run_id:
                     type: string
                   status:
@@ -412817,6 +413243,15 @@ paths:
                   - thresholds
                   - version
                 nullable: true
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -412860,6 +413295,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
           schema:
             type: string
       tags:
@@ -414119,6 +414560,8 @@ paths:
                           nullable: true
                         id:
                           type: string
+                        match_mode:
+                          type: string
                         name:
                           type: string
                         skipped:
@@ -414128,6 +414571,10 @@ paths:
                           type: object
                           properties:
                             action:
+                              type: string
+                            step_path:
+                              type: string
+                            structure_sha256:
                               type: string
                             transaction:
                               type: string
@@ -414141,6 +414588,10 @@ paths:
                           type: object
                           properties:
                             action:
+                              type: string
+                            step_path:
+                              type: string
+                            structure_sha256:
                               type: string
                             transaction:
                               type: string
@@ -414161,6 +414612,8 @@ paths:
                         - steps
                         - success
                         - weight
+                  live_truncated:
+                    type: boolean
                   notes:
                     type: array
                     items:
@@ -414185,6 +414638,8 @@ paths:
                       - revision
                       - sha256
                       - source
+                  provisional:
+                    type: boolean
                   reason:
                     type: string
                   rows_outside_iterations:
@@ -414417,6 +414872,73 @@ paths:
                     type: boolean
                   browser_proof_authority_mode:
                     type: string
+                  browser_proof_clock_envelope:
+                    type: object
+                    properties:
+                      authority_started_at:
+                        type: string
+                        format: date-time
+                      controller:
+                        type: object
+                        properties:
+                          domain_id:
+                            type: string
+                          incarnation:
+                            type: string
+                          run_id:
+                            type: string
+                        required:
+                          - domain_id
+                          - incarnation
+                          - run_id
+                      max_bracket_gap_ns:
+                        type: integer
+                        format: int64
+                      max_bracket_rtt_ns:
+                        type: integer
+                        format: int64
+                      max_skew_ppm:
+                        type: integer
+                        format: int64
+                      owners:
+                        type: object
+                        additionalProperties:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              authority:
+                                type: object
+                                additionalProperties: true
+                              controller_recv_ns:
+                                type: integer
+                                format: int64
+                              controller_send_ns:
+                                type: integer
+                                format: int64
+                              owner_id:
+                                type: string
+                              owner_mono_ns:
+                                type: integer
+                                format: int64
+                            required:
+                              - authority
+                              - controller_recv_ns
+                              - controller_send_ns
+                              - owner_id
+                              - owner_mono_ns
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - authority_started_at
+                      - controller
+                      - max_bracket_gap_ns
+                      - max_bracket_rtt_ns
+                      - max_skew_ppm
+                      - owners
+                      - version
+                    nullable: true
                   browser_proof_expected_owners:
                     type: array
                     items:
@@ -421059,6 +421581,20 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
@@ -421071,13 +421607,43 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
                           type: array
                           items:
                             type: string
+                    policy_pins:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
                     query_sha256:
+                      type: string
+                    selection_receipt_sha256:
                       type: string
                     version:
                       type: integer
@@ -421275,6 +421841,25 @@ paths:
                         properties:
                           manifest_sha256:
                             type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
                           run_id:
                             type: string
                           tuple_ids:
@@ -421291,6 +421876,25 @@ paths:
                         properties:
                           manifest_sha256:
                             type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
                           run_id:
                             type: string
                           tuple_ids:
@@ -421301,7 +421905,28 @@ paths:
                           - manifest_sha256
                           - run_id
                           - tuple_ids
+                      policy_pins:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                          required:
+                            - id
+                            - kind
+                            - revision
+                            - sha256
                       query_sha256:
+                        type: string
+                      selection_receipt_sha256:
                         type: string
                       version:
                         type: integer
@@ -424670,6 +425295,9 @@ paths:
                               type: string
                             request_id:
                               type: string
+                            route_seq:
+                              type: integer
+                              format: int64
                             source_generation:
                               type: string
                             state:
@@ -434007,6 +434635,53 @@ paths:
                         type: boolean
                       browser_proof_authority_mode:
                         type: string
+                      browser_proof_clock_envelope:
+                        type: object
+                        properties:
+                          authority_started_at:
+                            type: string
+                            format: date-time
+                          controller:
+                            type: object
+                            properties:
+                              domain_id:
+                                type: string
+                              incarnation:
+                                type: string
+                              run_id:
+                                type: string
+                            required:
+                              - domain_id
+                              - incarnation
+                              - run_id
+                          max_bracket_gap_ns:
+                            type: integer
+                            format: int64
+                          max_bracket_rtt_ns:
+                            type: integer
+                            format: int64
+                          max_skew_ppm:
+                            type: integer
+                            format: int64
+                          owners:
+                            type: object
+                            additionalProperties:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - authority_started_at
+                          - controller
+                          - max_bracket_gap_ns
+                          - max_bracket_rtt_ns
+                          - max_skew_ppm
+                          - owners
+                          - version
+                        nullable: true
                       browser_proof_expected_owners:
                         type: array
                         items:
@@ -440254,6 +440929,42 @@ paths:
                           - status
                           - summary
                           - unscored
+                          - version
+                        nullable: true
+                      browser_selection:
+                        type: object
+                        properties:
+                          inventory_count:
+                            type: integer
+                            format: int64
+                          policy:
+                            type: string
+                          reasons:
+                            type: array
+                            items:
+                              type: string
+                          receipt_digest:
+                            type: string
+                          rejected:
+                            type: array
+                            items:
+                              type: object
+                              description: 'Go type: rca.BrowserCandidateRejection'
+                              additionalProperties: true
+                          selected_digest:
+                            type: string
+                          selected_test_id:
+                            type: string
+                          status:
+                            type: string
+                          summary:
+                            type: string
+                          version:
+                            type: string
+                        required:
+                          - inventory_count
+                          - status
+                          - summary
                           - version
                         nullable: true
                       completed_at:
@@ -526009,6 +526720,20 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
@@ -526021,13 +526746,43 @@ paths:
                       properties:
                         manifest_sha256:
                           type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
                         run_id:
                           type: string
                         tuple_ids:
                           type: array
                           items:
                             type: string
+                    policy_pins:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
                     query_sha256:
+                      type: string
+                    selection_receipt_sha256:
                       type: string
                     version:
                       type: integer

@@ -67,6 +67,7 @@ type JourneyAccounting struct {
 	Weight    float64         `json:"weight"`
 	Start     JourneyBoundary `json:"start"`
 	Success   JourneyBoundary `json:"success"`
+	MatchMode string          `json:"match_mode,omitempty"`
 	Completed int64           `json:"completed"`
 	Failed    int64           `json:"failed"`
 	Aborted   int64           `json:"aborted"`
@@ -95,6 +96,8 @@ type JourneyPolicyRef struct {
 type JourneyRiskReport struct {
 	SchemaVersion string           `json:"schema_version"`
 	RunID         string           `json:"run_id"`
+	Provisional   bool             `json:"provisional,omitempty"`
+	LiveTruncated bool             `json:"live_truncated,omitempty"`
 	Policy        JourneyPolicyRef `json:"policy"`
 	// Availability is "available", or "unavailable" with Reason (an archive
 	// without VUser iteration identity, for example).
@@ -118,25 +121,53 @@ type JourneyRiskReport struct {
 	Notes                 []string `json:"notes"`
 }
 
-func (b JourneyBoundary) matches(event *TransactionEvent) bool {
-	if b.Transaction != "" {
-		return event.BusinessTransaction && event.ActionName == b.Transaction
+func (b JourneyBoundary) matches(event *TransactionEvent) (bool, string) {
+	if event == nil {
+		return false, ""
 	}
-	return !event.BusinessTransaction && b.Action != "" && event.ActionName == b.Action
+	wantName := b.Action
+	if b.Transaction != "" {
+		if !event.BusinessTransaction {
+			return false, ""
+		}
+		wantName = b.Transaction
+	} else if event.BusinessTransaction || b.Action == "" {
+		return false, ""
+	}
+	if b.StepPath != "" {
+		if event.AuthoredStep != nil {
+			if event.AuthoredStep.StepPath != b.StepPath {
+				return false, ""
+			}
+			if b.StructureSHA256 != "" && event.AuthoredStep.SourceStructureSHA256 != b.StructureSHA256 {
+				return false, ""
+			}
+			return true, "step_path"
+		}
+		if b.StructureSHA256 != "" {
+			return false, ""
+		}
+	}
+	if event.ActionName == wantName {
+		return true, "name"
+	}
+	return false, ""
 }
 
 // journeyEvent is the part of an archived row journey accounting keeps while
 // its iteration is open.
 type journeyEvent struct {
-	ordinal int64
-	begin   int64 // start, Unix ns
-	end     int64 // begin + duration
-	step    bool  // an action sample (not a transaction row)
-	success bool
+	ordinal      int64
+	beginOrdinal int64
+	begin        int64 // start, Unix ns
+	end          int64 // begin + duration
+	step         bool  // an action sample (not a transaction row)
+	success      bool
 	// interrupted: a failure recorded once the VUser was stopping, or one the
 	// generator's own resource limit caused.
 	interrupted bool
 	name        string
+	stepPath    string
 	starts      uint64 // journeys this row is the start boundary of
 	finishes    uint64 // journeys this row is the success boundary of
 }
@@ -152,6 +183,7 @@ const (
 
 type journeyPoint struct {
 	at    int64
+	seq   int64
 	kind  int
 	event *journeyEvent
 }
@@ -184,12 +216,15 @@ type journeyAccumulator struct {
 	vusers  map[journeyVUserKey]*journeyVUserState
 	// started marks, per journey, the groups that ever started it; skipped
 	// counts iterations without a start per group, kept only for those.
-	started  []map[string]bool
-	skipped  []map[string]int64
-	buffered int
-	ordinal  int64
-	report   *JourneyRiskReport
-	identity bool
+	started           []map[string]bool
+	skipped           []map[string]int64
+	matchedByName     []bool
+	matchedByStepPath []bool
+	hasAuthoredSteps  bool
+	buffered          int
+	ordinal           int64
+	report            *JourneyRiskReport
+	identity          bool
 	// lifetimes says any row carries a VUser lifetime; rowsWithoutLifetime
 	// counts the VUsers' action rows that do not (an older generator's).
 	// Lifecycle rows of a group's once-only init/teardown VUser carry none.
@@ -203,9 +238,19 @@ type journeyVUserKey struct {
 }
 
 func newJourneyAccumulator(policy JourneyPolicyDefinition, report *JourneyRiskReport) *journeyAccumulator {
-	acc := &journeyAccumulator{policy: policy, vusers: map[journeyVUserKey]*journeyVUserState{}, report: report}
+	acc := &journeyAccumulator{
+		policy:            policy,
+		vusers:            map[journeyVUserKey]*journeyVUserState{},
+		report:            report,
+		matchedByName:     make([]bool, len(policy.Journeys)),
+		matchedByStepPath: make([]bool, len(policy.Journeys)),
+	}
 	for _, journey := range policy.Journeys {
-		acc.results = append(acc.results, JourneyAccounting{ID: journey.ID, Name: journey.Name, Weight: journey.Weight, Start: journey.Start, Success: journey.Success})
+		matchMode := "name"
+		if journey.Start.StepPath != "" && journey.Success.StepPath != "" {
+			matchMode = "step_path"
+		}
+		acc.results = append(acc.results, JourneyAccounting{ID: journey.ID, Name: journey.Name, Weight: journey.Weight, Start: journey.Start, Success: journey.Success, MatchMode: matchMode})
 		acc.started = append(acc.started, map[string]bool{})
 		acc.skipped = append(acc.skipped, map[string]int64{})
 	}
@@ -260,18 +305,50 @@ func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored b
 	points := make([]journeyPoint, 0, len(state.events)+4)
 	for i := range state.events {
 		event := &state.events[i]
-		points = append(points, journeyPoint{at: event.begin, kind: journeyPointBegin, event: event})
+		event.beginOrdinal = event.ordinal
+		if !event.step {
+			if i > 0 && state.events[i-1].step && state.events[i-1].begin >= event.begin &&
+				((event.stepPath != "" && state.events[i-1].stepPath == event.stepPath) ||
+					(event.stepPath == "" && event.begin == event.end && state.events[i-1].name == event.name)) {
+				event.beginOrdinal = state.events[i-1].ordinal
+			} else {
+				seenPaths := map[string]bool{}
+				seenNames := map[string]bool{}
+				for k := i - 1; k >= 0 && state.events[k].step && state.events[k].begin >= event.begin; k-- {
+					if k < i-1 && state.events[k].begin == event.begin && (state.events[k].starts != 0 || state.events[k].finishes != 0) {
+						break
+					}
+					if state.events[k].stepPath != "" {
+						if seenPaths[state.events[k].stepPath] {
+							break
+						}
+						seenPaths[state.events[k].stepPath] = true
+					} else if state.events[k].begin == event.begin && state.events[k].name != "" {
+						if seenNames[state.events[k].name] {
+							break
+						}
+						seenNames[state.events[k].name] = true
+					}
+					event.beginOrdinal = state.events[k].ordinal
+					if state.events[k].begin == event.begin && (state.events[k].starts != 0 || state.events[k].finishes != 0) {
+						break
+					}
+				}
+			}
+		}
+		points = append(points, journeyPoint{at: event.begin, seq: event.beginOrdinal, kind: journeyPointBegin, event: event})
 		if event.finishes != 0 {
-			points = append(points, journeyPoint{at: event.end, kind: journeyPointFinish, event: event})
+			points = append(points, journeyPoint{at: event.end, seq: event.ordinal, kind: journeyPointFinish, event: event})
 		}
 		if event.interrupted {
 			censored = true
-			points = append(points, journeyPoint{at: event.end, kind: journeyPointInterrupt, event: event})
+			points = append(points, journeyPoint{at: event.end, seq: event.ordinal, kind: journeyPointInterrupt, event: event})
 		}
 	}
 	// At one instant, a row that ended there (finish, then interrupt) comes
-	// before a row that begins there, and a zero-length row's own end follows
-	// its begin.
+	// before a row that begins there, and zero-length rows execute in their
+	// recorded ordinal order so a zero-length loop completes each attempt
+	// before the next attempt opens.
 	tie := func(point journeyPoint) int {
 		switch {
 		case point.kind == journeyPointBegin:
@@ -286,15 +363,25 @@ func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored b
 		if left.at != right.at {
 			return left.at < right.at
 		}
-		if leftTie, rightTie := tie(left), tie(right); leftTie != rightTie {
+		leftTie, rightTie := tie(left), tie(right)
+		if (leftTie == 0) != (rightTie == 0) {
+			return leftTie == 0
+		}
+		if left.seq != right.seq {
+			return left.seq < right.seq
+		}
+		if leftTie != rightTie {
 			return leftTie < rightTie
 		}
 		if left.kind != right.kind {
 			return left.kind < right.kind
 		}
 		if left.event.step != right.event.step {
-			// A transaction opens before the steps that begin with it.
-			return !left.event.step
+			if left.kind == journeyPointBegin {
+				// A transaction opens before the steps that begin with it.
+				return !left.event.step
+			}
+			return left.event.step
 		}
 		return left.event.ordinal < right.event.ordinal
 	})
@@ -428,13 +515,30 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 	if event.EndsIteration && !event.Interrupted {
 		state.ended = true
 	}
+	if event.AuthoredStep != nil {
+		a.hasAuthoredSteps = true
+	}
 	var starts, finishes uint64
 	for j, journey := range a.policy.Journeys {
-		if journey.Start.matches(event) {
+		if ok, mode := journey.Start.matches(event); ok {
 			starts |= uint64(1) << uint(j)
+			switch mode {
+			case "name":
+				a.matchedByName[j] = true
+				a.results[j].MatchMode = "name"
+			case "step_path":
+				a.matchedByStepPath[j] = true
+			}
 		}
-		if journey.Success.matches(event) {
+		if ok, mode := journey.Success.matches(event); ok {
 			finishes |= uint64(1) << uint(j)
+			switch mode {
+			case "name":
+				a.matchedByName[j] = true
+				a.results[j].MatchMode = "name"
+			case "step_path":
+				a.matchedByStepPath[j] = true
+			}
 		}
 	}
 	step := !event.BusinessTransaction
@@ -446,9 +550,13 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 		return
 	}
 	a.buffered++
+	stepPath := ""
+	if event.AuthoredStep != nil {
+		stepPath = event.AuthoredStep.StepPath
+	}
 	// A transaction's interval is its wall-clock span (its duration can
 	// exclude think time inside it).
-	state.events = append(state.events, journeyEvent{ordinal: a.ordinal, begin: begin, end: end, step: step, success: event.Success, interrupted: event.Interrupted && !event.Success, name: event.ActionName, starts: starts, finishes: finishes})
+	state.events = append(state.events, journeyEvent{ordinal: a.ordinal, begin: begin, end: end, step: step, success: event.Success, interrupted: event.Interrupted && !event.Success, name: event.ActionName, stepPath: stepPath, starts: starts, finishes: finishes})
 }
 
 // finish settles the run's end: each VUser lifetime's last iteration is
@@ -479,6 +587,9 @@ func (a *journeyAccumulator) finish() {
 	weightedFailed, weightedEligible, weightedStepFailures, weightedSteps := 0.0, 0.0, 0.0, 0.0
 	for j := range a.results {
 		result := &a.results[j]
+		if a.matchedByName[j] || (!a.matchedByStepPath[j] && !a.hasAuthoredSteps) {
+			result.MatchMode = "name"
+		}
 		for group, count := range a.skipped[j] {
 			if a.started[j][group] {
 				result.Skipped += count
@@ -624,6 +735,19 @@ func resolveJourneyPolicy(store storage.AnalysisDefinitionStore, projectID strin
 //
 // OpenAPI-Responses: 400, 404, 409, 500, 503
 func (s *Server) handleGetRunArchiveJourneys(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if testSummary, ok := s.archiveDomainService().GetTestSummary(id); ok && testSummary != nil {
+		if record, hasArchive := s.archiveDomainService().GetRunArchiveContext(r.Context(), testSummary.ID); !hasArchive || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
+			if report, status, err, handled := s.provisionalRunJourneys(r.Context(), testSummary, r.URL.Query().Get("policy"), r.URL.Query().Get("revision")); handled {
+				if err != nil {
+					writeError(w, status, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, report)
+				return
+			}
+		}
+	}
 	test, record, lease, ok := s.requireRunArchiveTest(w, r)
 	if !ok {
 		return

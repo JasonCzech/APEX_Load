@@ -37,6 +37,7 @@ func (b *Browser) beginRequestEvidence(request playwright.Request, expectedGener
 	join := b.resourceJoinLocked(request, frame)
 	s.issued++
 	s.inFlight++
+	s.lastNetworkActivity = time.Now()
 	if b.harLimitExceeded != nil && s.inFlight > maxRuntimeHARInFlightRequests {
 		// Signal the existing exact-owner close path, never invoke synchronous
 		// Playwright Close from its own callback. Keep counting issued work and
@@ -89,6 +90,7 @@ func (b *Browser) completeRequestEvidence(request playwright.Request, finished b
 	if s.inFlight > 0 {
 		s.inFlight--
 	}
+	s.lastNetworkActivity = time.Now()
 	if identity == nil {
 		return nil, resourceJoin{}
 	}

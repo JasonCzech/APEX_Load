@@ -7,7 +7,7 @@ import { ApiError } from '../../hooks/apiClient'
 import { NavigationGuardRegisterContext, NavigationGuardRunnerContext, type NavigationGuard } from '../../hooks/NavigationGuardProvider'
 import AnalysisPoliciesPanel from './AnalysisPoliciesPanel'
 
-const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), listJourneySteps: vi.fn() }))
 vi.mock('../../hooks/api/analysisPoliciesApi', () => ({ analysisPoliciesApi: api }))
 const confirm = vi.hoisted(() => vi.fn())
 vi.mock('../ux/confirmAction', () => ({ confirmAction: confirm }))
@@ -37,6 +37,7 @@ beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset()
   confirm.mockReset()
   api.list.mockResolvedValue([browserPolicy])
+  api.listJourneySteps.mockResolvedValue([])
 })
 afterEach(async () => { await act(async () => root.unmount()); container.remove() })
 
@@ -128,6 +129,92 @@ describe('AnalysisPoliciesPanel (BI-4)', () => {
     await act(async () => { container.querySelector('form.analysis-policy-editor')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
     await flush()
     expect(api.create).toHaveBeenCalledWith('p1', { kind: 'journey_policy', name: 'Shop', definition: { version: 1, journeys: [{ id: 'journey-1', name: 'Checkout', start: { transaction: 'Cart' }, success: { transaction: 'Confirm' }, weight: 1 }] } })
+  })
+
+  it('picks structural journey step paths from a project script', async () => {
+    api.list.mockResolvedValue([])
+    api.listJourneySteps.mockResolvedValue([{
+      script_id: 'script-1',
+      script_name: 'Checkout Browser',
+      protocol: 'browser',
+      steps: [
+        { step_path: 'actions[0]', kind: 'action', name: 'Submit', action_type: 'browser_click' },
+        { step_path: 'actions[2]', kind: 'action', name: 'Submit', action_type: 'browser_click' },
+      ],
+    }])
+    api.create.mockResolvedValue({})
+    await act(async () => root.render(<AnalysisPoliciesPanel projectId="p1" canEdit />))
+    await flush()
+    await click('Journey policies')
+    await click('New journey policy')
+    await type(container.querySelector<HTMLInputElement>('form.analysis-policy-editor input.settings-input')!, 'Duplicate Step Names')
+    await type(input('Journey 1 name'), 'Submit flow')
+    const startPicker = container.querySelector<HTMLSelectElement>('select[aria-label="Pick journey 1 start step from script"]')!
+    const successPicker = container.querySelector<HTMLSelectElement>('select[aria-label="Pick journey 1 success step from script"]')!
+    await act(async () => {
+      startPicker.value = 'script-1\nactions[0]\naction'
+      startPicker.dispatchEvent(new Event('change', { bubbles: true }))
+      successPicker.value = 'script-1\nactions[2]\naction'
+      successPicker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => { container.querySelector('form.analysis-policy-editor')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    expect(api.create).toHaveBeenCalledWith('p1', {
+      kind: 'journey_policy',
+      name: 'Duplicate Step Names',
+      definition: {
+        version: 1,
+        journeys: [{
+          id: 'journey-1',
+          name: 'Submit flow',
+          start: { action: 'Submit', step_path: 'actions[0]' },
+          success: { action: 'Submit', step_path: 'actions[2]' },
+          weight: 1,
+        }],
+      },
+    })
+
+    // Clearing a step path on a policy that previously carried structure_sha256 clears the digest and saves cleanly.
+    api.list.mockResolvedValue([{
+      id: 'jp-1',
+      project_id: 'p1',
+      kind: 'journey_policy',
+      name: 'Pinned Policy',
+      revision: 2,
+      deleted: false,
+      created_at: '2026-10-09T12:00:00Z',
+      definition: {
+        version: 1,
+        journeys: [{
+          id: 'journey-1',
+          name: 'Submit flow',
+          start: { action: 'Submit', step_path: 'actions[0]', structure_sha256: 'a'.repeat(64) },
+          success: { action: 'Submit', step_path: 'actions[2]', structure_sha256: 'a'.repeat(64) },
+          weight: 1,
+        }],
+      },
+    }])
+    api.update.mockResolvedValue({})
+    await click('Browser policies')
+    await click('Journey policies')
+    await click('Edit')
+    await type(container.querySelector<HTMLInputElement>('input[aria-label="Journey 1 start step path"]')!, '')
+    await act(async () => { container.querySelector('form.analysis-policy-editor')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    expect(api.update).toHaveBeenCalledWith('p1', 'jp-1', 2, {
+      kind: 'journey_policy',
+      name: 'Pinned Policy',
+      definition: {
+        version: 1,
+        journeys: [{
+          id: 'journey-1',
+          name: 'Submit flow',
+          start: { action: 'Submit' },
+          success: { action: 'Submit', step_path: 'actions[2]', structure_sha256: 'a'.repeat(64) },
+          weight: 1,
+        }],
+      },
+    })
   })
 
   it('lets a viewer read past revisions but not edit or delete', async () => {

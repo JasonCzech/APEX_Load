@@ -28,8 +28,8 @@ func TestBrowserTapUsesSyntheticPath(t *testing.T) {
 	if !(&Browser{touchMode: false}).shouldUseSyntheticTap() {
 		t.Fatal("tap should use synthetic touch events when the context has touch disabled")
 	}
-	if !(&Browser{touchMode: true}).shouldUseSyntheticTap() {
-		t.Fatal("tap should use synthetic touch events in touch mode to avoid native tap flake")
+	if (&Browser{touchMode: true}).shouldUseSyntheticTap() {
+		t.Fatal("tap should use native trusted touch events when the context has touch enabled")
 	}
 	operation := syntheticTapOperation()
 	for _, want := range []string{"dispatchTouch('touchstart'", "dispatchTouch('touchend'", "dispatchClick"} {

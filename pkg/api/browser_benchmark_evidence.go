@@ -48,12 +48,11 @@ type BrowserBenchmarkProfile struct {
 
 type BrowserBenchmarkAcceptance struct {
 	MeasurementVersion string `json:"measurement_version"`
-	// The legacy MB target is decimal. Byte values remove ambiguity with old
-	// benchmark outputs which used MiB while labeling them MB.
+	// Authoritative decimal byte budget (250 MB = 250,000,000 bytes).
+	// Legacy ambiguous MB/MiB target fields are omitted in v3.
 	RSSPerVUserTargetBytes   uint64 `json:"rss_per_vuser_target_bytes,omitempty"`
 	LaunchP50TargetMs        int    `json:"launch_p50_target_ms"`
 	ActionOverheadTargetMs   int    `json:"action_overhead_target_ms"`
-	RSSPerVUserTargetMB      int    `json:"rss_per_vuser_target_mb,omitempty"`
 	RSSAttribution           string `json:"rss_attribution"`
 	RequiredRawRunCount      int    `json:"required_raw_run_count"`
 	RequiredBenchmarkCommand string `json:"required_benchmark_command"`
@@ -104,12 +103,11 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#desktop-chromium-1080p",
 			Acceptance: BrowserBenchmarkAcceptance{
-				MeasurementVersion:       "apexload.browser_benchmark.v2",
+				MeasurementVersion:       "apexload.browser_benchmark.v3",
 				LaunchP50TargetMs:        3000,
 				ActionOverheadTargetMs:   10,
-				RSSPerVUserTargetMB:      250,
 				RSSPerVUserTargetBytes:   250_000_000,
-				RSSAttribution:           "shared_playwright_driver_descendants_or_driver",
+				RSSAttribution:           "cdp_renderer_per_vuser",
 				RequiredRawRunCount:      5,
 				RequiredBenchmarkCommand: benchmarkCommand,
 			},
@@ -134,12 +132,11 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#mobile-chromium-pixel-8",
 			Acceptance: BrowserBenchmarkAcceptance{
-				MeasurementVersion:       "apexload.browser_benchmark.v2",
+				MeasurementVersion:       "apexload.browser_benchmark.v3",
 				LaunchP50TargetMs:        3000,
 				ActionOverheadTargetMs:   10,
-				RSSPerVUserTargetMB:      250,
 				RSSPerVUserTargetBytes:   250_000_000,
-				RSSAttribution:           "shared_playwright_driver_descendants_or_driver",
+				RSSAttribution:           "cdp_renderer_per_vuser",
 				RequiredRawRunCount:      5,
 				RequiredBenchmarkCommand: benchmarkCommand,
 			},
@@ -164,10 +161,10 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#mobile-webkit-iphone-15-pro",
 			Acceptance: BrowserBenchmarkAcceptance{
-				MeasurementVersion:       "apexload.browser_benchmark.v2",
+				MeasurementVersion:       "apexload.browser_benchmark.v3",
 				LaunchP50TargetMs:        3000,
 				ActionOverheadTargetMs:   10,
-				RSSAttribution:           "not_qualified_for_webkit; use launch/action latency plus host-level memory telemetry",
+				RSSAttribution:           "unavailable",
 				RequiredRawRunCount:      5,
 				RequiredBenchmarkCommand: benchmarkCommand,
 			},

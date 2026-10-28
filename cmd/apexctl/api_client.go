@@ -32,6 +32,10 @@ type ApiClient struct {
 	// TelemetryBudgetPolicy chooses the telemetry budget policy that sets the
 	// created run's live budgets; the controller must echo it too.
 	TelemetryBudgetPolicy string
+	// BrowserPolicy and JourneyPolicy pin immutable analysis policy revisions
+	// for the created run; the controller must echo them before the run starts.
+	BrowserPolicy *runcontract.AnalysisPolicySelection
+	JourneyPolicy *runcontract.AnalysisPolicySelection
 	// pollWait is a test seam for entering a terminal polling condition without
 	// spending the command-wide timeout budget on preparation requests.
 	pollWait func(context.Context, time.Duration) error
@@ -400,6 +404,12 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 		reqBody.ScenarioMode = "goal_oriented"
 		reqBody.GoalConfig = goalConfig
 	}
+	if c.BrowserPolicy != nil || c.JourneyPolicy != nil {
+		reqBody.AnalysisPolicySelections = &runcontract.AnalysisPolicySelections{
+			Browser: cloneAnalysisPolicySelection(c.BrowserPolicy),
+			Journey: cloneAnalysisPolicySelection(c.JourneyPolicy),
+		}
+	}
 
 	b, _ := json.Marshal(reqBody)
 	resp, err := c.doContext(ctx, http.MethodPost, "/api/v1/tests", bytes.NewReader(b), "application/json")
@@ -413,7 +423,7 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 		// A controller refusing the chosen policy (missing: 400, invalid:
 		// 409) refuses the command's input, as apexctl ci run reports it.
 		// Other refusals keep their usual classification.
-		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusConflict) && ((c.TelemetryPolicy != "" && telemetryPolicyRefusal(string(b))) || (c.TelemetryBudgetPolicy != "" && telemetryBudgetPolicyRefusal(string(b)))) {
+		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusConflict) && ((c.TelemetryPolicy != "" && telemetryPolicyRefusal(string(b))) || (c.TelemetryBudgetPolicy != "" && telemetryBudgetPolicyRefusal(string(b))) || ((c.BrowserPolicy != nil || c.JourneyPolicy != nil) && analysisPolicyRefusal(string(b)))) {
 			return "", cliConfigurationErrorf("bad status: %s, %s", resp.Status, string(b))
 		}
 		return "", fmt.Errorf("bad status: %s, %s", resp.Status, string(b))
@@ -444,6 +454,18 @@ func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vuse
 		} else {
 			unconfirmed = cliConfigurationErrorf("the controller did not confirm --telemetry-budget-policy %q: it reported the run's budget policy as %q", chosen, test.TelemetryBudgetPolicyID)
 		}
+	} else if chosen := c.BrowserPolicy; chosen != nil && !sameAnalysisPolicySelection(chosen, testBrowserPolicySelection(test)) {
+		if got := testBrowserPolicySelection(test); got == nil {
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --browser-policy %q, so the run would be judged by the project's default browser policy; upgrade the controller", formatAnalysisPolicySelection(chosen))
+		} else {
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --browser-policy %q: it reported the run's browser policy as %q", formatAnalysisPolicySelection(chosen), formatAnalysisPolicySelection(got))
+		}
+	} else if chosen := c.JourneyPolicy; chosen != nil && !sameAnalysisPolicySelection(chosen, testJourneyPolicySelection(test)) {
+		if got := testJourneyPolicySelection(test); got == nil {
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --journey-policy %q, so the run would be judged by the project's default journey policy; upgrade the controller", formatAnalysisPolicySelection(chosen))
+		} else {
+			unconfirmed = cliConfigurationErrorf("the controller did not confirm --journey-policy %q: it reported the run's journey policy as %q", formatAnalysisPolicySelection(chosen), formatAnalysisPolicySelection(got))
+		}
 	}
 	if unconfirmed != nil {
 		if deleteErr := c.deleteQueuedTestContext(context.WithoutCancel(ctx), test.ID); deleteErr != nil {
@@ -473,6 +495,25 @@ func telemetryPolicyRefusal(body string) bool {
 func telemetryBudgetPolicyRefusal(body string) bool {
 	body = strings.ToLower(body)
 	return strings.Contains(body, "telemetry budget policy") || strings.Contains(body, "telemetry_budget_policy") || strings.Contains(body, "telemetry_policy policy")
+}
+
+func analysisPolicyRefusal(body string) bool {
+	body = strings.ToLower(body)
+	return strings.Contains(body, "policy selection") || strings.Contains(body, "selected policy revision") || strings.Contains(body, "browser_policy") || strings.Contains(body, "journey_policy") || strings.Contains(body, "analysis_policy_selections")
+}
+
+func testBrowserPolicySelection(test runcontract.TestStatus) *runcontract.AnalysisPolicySelection {
+	if test.AnalysisPolicySelections == nil {
+		return nil
+	}
+	return test.AnalysisPolicySelections.Browser
+}
+
+func testJourneyPolicySelection(test runcontract.TestStatus) *runcontract.AnalysisPolicySelection {
+	if test.AnalysisPolicySelections == nil {
+		return nil
+	}
+	return test.AnalysisPolicySelections.Journey
 }
 
 // deleteQueuedTestContext deletes a run that was created but never started.

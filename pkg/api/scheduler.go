@@ -105,12 +105,13 @@ type CreateScenarioScheduleRequest struct {
 	AvailabilityWindows []storage.ScenarioScheduleWindow `json:"availability_windows,omitempty"`
 	// DisabledFrom/DisabledUntil pause the schedule over an absolute date range
 	// without disabling it; either bound may be nil for an open-ended pause.
-	DisabledFrom     *time.Time `json:"disabled_from,omitempty"`
-	DisabledUntil    *time.Time `json:"disabled_until,omitempty"`
-	ExpectedRevision *int       `json:"expected_revision,omitempty"`
-	OwnerSubject     string     `json:"-"`
-	OwnerDisplayName string     `json:"-"`
-	RBACReviewSource string     `json:"-"`
+	DisabledFrom             *time.Time                   `json:"disabled_from,omitempty"`
+	DisabledUntil            *time.Time                   `json:"disabled_until,omitempty"`
+	AnalysisPolicySelections *RunAnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
+	ExpectedRevision         *int                         `json:"expected_revision,omitempty"`
+	OwnerSubject             string                       `json:"-"`
+	OwnerDisplayName         string                       `json:"-"`
+	RBACReviewSource         string                       `json:"-"`
 }
 
 type ScenarioScheduleHealth struct {
@@ -1803,9 +1804,10 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		runName = fmt.Sprintf("Scheduled Run %s", now.Format(time.RFC3339))
 	}
 	test, err := tr.buildManagedTestForScheduleSweepLockedWithTerm(CreateTestRequest{
-		Name:       runName,
-		ScenarioID: schedule.ScenarioID,
-		ReleaseID:  schedule.ReleaseID,
+		Name:                     runName,
+		ScenarioID:               schedule.ScenarioID,
+		ReleaseID:                schedule.ReleaseID,
+		AnalysisPolicySelections: decodeStoredRunAnalysisPolicySelections(schedule.AnalysisPolicySelections),
 		creationActor: testCreationActor{
 			Type:        "system",
 			Subject:     schedule.OwnerSubject,
@@ -1833,6 +1835,9 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if err != nil {
 		occurrence.Status = "failed"
 		occurrence.ReasonCode = "create_failed"
+		if errors.Is(err, errAnalysisPolicySelectionUnavailable) {
+			occurrence.ReasonCode = "analysis_policy_unavailable"
+		}
 		occurrence.ConflictSummary = err.Error()
 		occurrence.UpdatedAt = now
 		if saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); saveErr != nil {
@@ -1933,6 +1938,9 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		} else {
 			occurrence.Status = "failed"
 			occurrence.ReasonCode = "start_failed"
+			if errors.Is(err, errAnalysisPolicySelectionUnavailable) {
+				occurrence.ReasonCode = "analysis_policy_unavailable"
+			}
 			occurrence.TestID = test.ID
 			occurrence.ConflictSummary = err.Error()
 			occurrence.UpdatedAt = now
@@ -2631,6 +2639,9 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 				} else {
 					existing.Status = "failed"
 					existing.ReasonCode = "start_failed"
+					if errors.Is(err, errAnalysisPolicySelectionUnavailable) {
+						existing.ReasonCode = "analysis_policy_unavailable"
+					}
 					existing.ConflictSummary = err.Error()
 					existing.UpdatedAt = now
 					saveErr := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm)
@@ -3089,6 +3100,7 @@ func cloneScenarioSchedule(schedule *storage.ScenarioSchedule) *storage.Scenario
 		governance.QuotaReview.Findings = append([]string(nil), schedule.Governance.QuotaReview.Findings...)
 		cloned.Governance = &governance
 	}
+	cloned.AnalysisPolicySelections = runAnalysisPolicySelectionsForStorage(decodeStoredRunAnalysisPolicySelections(schedule.AnalysisPolicySelections))
 	cloned.LastOccurrence = cloneScenarioScheduleOccurrence(schedule.LastOccurrence)
 	return &cloned
 }
@@ -3220,8 +3232,55 @@ func (tr *TestRunner) scenarioScheduleIDForTest(testID string) (string, error) {
 	return strings.TrimSpace(occurrence.ScheduleID), nil
 }
 
+func sameRunAnalysisPolicySelections(left, right *RunAnalysisPolicySelections) bool {
+	normalize := func(in *RunAnalysisPolicySelections) *RunAnalysisPolicySelections {
+		if in == nil || (in.Browser == nil && in.Journey == nil) {
+			return nil
+		}
+		return in
+	}
+	l, r := normalize(left), normalize(right)
+	if l == nil || r == nil {
+		return l == r
+	}
+	sameChoice := func(a, b *RunAnalysisPolicySelection) bool {
+		if a == nil || b == nil {
+			return a == b
+		}
+		return a.ID == b.ID && a.Revision == b.Revision
+	}
+	return sameChoice(l.Browser, r.Browser) && sameChoice(l.Journey, r.Journey)
+}
+
+func (tr *TestRunner) validateScenarioSchedulePolicySelections(scenarioID, scheduleID string, requested *RunAnalysisPolicySelections) (*RunAnalysisPolicySelections, error) {
+	tr.mu.RLock()
+	scenario := tr.scenarios[tr.resolveRefKeyLocked(scenarioID)]
+	projectID := ""
+	var existing any
+	if scenario != nil {
+		projectID = scenario.ProjectID
+		if scheduleID != "" {
+			for _, schedule := range scenario.Schedules {
+				if schedule != nil && schedule.ID == scheduleID {
+					existing = schedule.AnalysisPolicySelections
+					break
+				}
+			}
+		}
+	}
+	tr.mu.RUnlock()
+	if scenario == nil {
+		return nil, nil
+	}
+	return tr.resolveScenarioScheduleAnalysisPolicySelections(projectID, existing, requested)
+}
+
 func (tr *TestRunner) CreateScenarioSchedule(scenarioID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, error) {
 	tr.refreshScenariosForHARead(true)
+	policySelections, err := tr.validateScenarioSchedulePolicySelections(scenarioID, "", req.AnalysisPolicySelections)
+	if err != nil {
+		return nil, err
+	}
 	quotaAt := time.Now().UTC()
 	activeSlots, reservationErr := tr.loadBoundTimeslotsActiveAt(quotaAt)
 	projectQuota := tr.loadScenarioProjectQuotaEvidence(scenarioID)
@@ -3229,7 +3288,7 @@ func (tr *TestRunner) CreateScenarioSchedule(scenarioID string, req CreateScenar
 	capacityEvidence := tr.loadScenarioScheduleCapacityEvidence(scenarioID, req.Name, projectQuota)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	return tr.upsertScenarioScheduleLocked(scenarioID, uuid.New().String(), nil, req, quotaAt, activeSlots, reservationErr, projectQuota, releaseEvidence, capacityEvidence)
+	return tr.upsertScenarioScheduleLocked(scenarioID, uuid.New().String(), nil, req, policySelections, quotaAt, activeSlots, reservationErr, projectQuota, releaseEvidence, capacityEvidence)
 }
 
 type scenarioScheduleReleaseEvidence struct {
@@ -3319,6 +3378,7 @@ func (tr *TestRunner) loadScenarioScheduleCapacityEvidence(scenarioID, name stri
 	// a lost choice must not hide its capacity findings. Each run's create
 	// judges the choice.
 	req.skipTelemetryPolicyCheck = true
+	req.skipAnalysisPolicySelectionCheck = true
 	preview, _, revision, err := tr.buildManagedTestFromSnapshot(req, "schedule-conflict-preview", "DRAFT")
 	return scenarioScheduleCapacityEvidence{preview: preview, revision: revision, loaded: true, err: err}
 }
@@ -3352,6 +3412,10 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 	if _, ok := tr.GetScenario(scenarioID); !ok {
 		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
 	}
+	policySelections, err := tr.validateScenarioSchedulePolicySelections(scenarioID, "", req.AnalysisPolicySelections)
+	if err != nil {
+		return nil, err
+	}
 	cronExpr := strings.TrimSpace(req.CronExpr)
 	if err := validateCronExpr(cronExpr); err != nil {
 		return nil, err
@@ -3378,18 +3442,19 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 		return nil, fmt.Errorf("disabled_from must be before disabled_until")
 	}
 	schedule := &storage.ScenarioSchedule{
-		ScenarioID:          scenarioID,
-		Name:                strings.TrimSpace(req.Name),
-		ReleaseID:           req.ReleaseID,
-		CronExpr:            cronExpr,
-		Timezone:            tz,
-		BlackoutWindows:     req.BlackoutWindows,
-		MaintenanceWindows:  req.MaintenanceWindows,
-		AvailabilityWindows: req.AvailabilityWindows,
-		DisabledFrom:        disabledFrom,
-		DisabledUntil:       disabledUntil,
+		ScenarioID:               scenarioID,
+		Name:                     strings.TrimSpace(req.Name),
+		ReleaseID:                req.ReleaseID,
+		CronExpr:                 cronExpr,
+		Timezone:                 tz,
+		BlackoutWindows:          req.BlackoutWindows,
+		MaintenanceWindows:       req.MaintenanceWindows,
+		AvailabilityWindows:      req.AvailabilityWindows,
+		DisabledFrom:             disabledFrom,
+		DisabledUntil:            disabledUntil,
+		AnalysisPolicySelections: runAnalysisPolicySelectionsForStorage(policySelections),
 	}
-	occurrences := make([]time.Time, 0, count)
+	occurrences := []time.Time{}
 	previewFrom := time.Now().UTC()
 	cursor := previewFrom
 	if !executionPlanSchedulePausedIndefinitely(disabledFrom, disabledUntil, cursor) {
@@ -3435,6 +3500,10 @@ func (tr *TestRunner) PreviewScenarioScheduleRuns(scenarioID string, req CreateS
 
 func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, bool, error) {
 	tr.refreshScenariosForHARead(true)
+	policySelections, err := tr.validateScenarioSchedulePolicySelections(scenarioID, scheduleID, req.AnalysisPolicySelections)
+	if err != nil {
+		return nil, false, err
+	}
 	quotaAt := time.Now().UTC()
 	activeSlots, reservationErr := tr.loadBoundTimeslotsActiveAt(quotaAt)
 	projectQuota := tr.loadScenarioProjectQuotaEvidence(scenarioID)
@@ -3448,7 +3517,7 @@ func (tr *TestRunner) UpdateScenarioSchedule(scenarioID string, scheduleID strin
 	}
 	for _, schedule := range scenario.Schedules {
 		if schedule != nil && schedule.ID == scheduleID {
-			updated, err := tr.upsertScenarioScheduleLocked(scenarioID, scheduleID, schedule, req, quotaAt, activeSlots, reservationErr, projectQuota, releaseEvidence, capacityEvidence)
+			updated, err := tr.upsertScenarioScheduleLocked(scenarioID, scheduleID, schedule, req, policySelections, quotaAt, activeSlots, reservationErr, projectQuota, releaseEvidence, capacityEvidence)
 			return updated, true, err
 		}
 	}
@@ -3563,7 +3632,7 @@ func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID strin
 	return true, nil
 }
 
-func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID string, existing *storage.ScenarioSchedule, req CreateScenarioScheduleRequest, quotaAt time.Time, activeSlots []*storage.CapacityReservation, reservationErr error, projectQuota projectQuotaEvidence, releaseEvidence scenarioScheduleReleaseEvidence, capacityEvidence scenarioScheduleCapacityEvidence) (*storage.ScenarioSchedule, error) {
+func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID string, existing *storage.ScenarioSchedule, req CreateScenarioScheduleRequest, validatedSelections *RunAnalysisPolicySelections, quotaAt time.Time, activeSlots []*storage.CapacityReservation, reservationErr error, projectQuota projectQuotaEvidence, releaseEvidence scenarioScheduleReleaseEvidence, capacityEvidence scenarioScheduleCapacityEvidence) (*storage.ScenarioSchedule, error) {
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
 		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
@@ -3577,6 +3646,22 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	}
 	if existing != nil && req.ExpectedRevision != nil && *req.ExpectedRevision != existing.Revision {
 		return nil, fmt.Errorf("%w: expected revision %d, current revision %d", errScheduleConcurrentChange, *req.ExpectedRevision, existing.Revision)
+	}
+	policySelections := cloneRunAnalysisPolicySelections(validatedSelections)
+	if req.AnalysisPolicySelections == nil && existing != nil {
+		if !sameRunAnalysisPolicySelections(decodeStoredRunAnalysisPolicySelections(existing.AnalysisPolicySelections), policySelections) {
+			return nil, fmt.Errorf("scenario schedule policy selections changed while the schedule was evaluated; retry")
+		}
+	} else if req.AnalysisPolicySelections != nil {
+		normalizedSelections, err := normalizeRunAnalysisPolicySelections(req.AnalysisPolicySelections)
+		if err != nil {
+			return nil, err
+		}
+		if normalizedSelections != nil && (normalizedSelections.Browser != nil || normalizedSelections.Journey != nil) {
+			policySelections = normalizedSelections
+		} else {
+			policySelections = nil
+		}
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -3608,21 +3693,22 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		enabled = *req.Enabled
 	}
 	schedule := &storage.ScenarioSchedule{
-		ID:              scheduleID,
-		ScenarioID:      scenarioID,
-		ProjectID:       normalizeProjectID(scenario.ProjectID),
-		Revision:        1,
-		Name:            name,
-		CronExpr:        cronExpr,
-		Timezone:        timezone,
-		ReleaseID:       strings.TrimSpace(req.ReleaseID),
-		TimeslotID:      strings.TrimSpace(req.TimeslotID),
-		RunNameTemplate: strings.TrimSpace(req.RunNameTemplate),
-		Enabled:         enabled,
-		ApprovalPolicy:  normalizeScenarioScheduleApprovalPolicy(req.ApprovalPolicy),
-		MissedRunPolicy: normalizeScenarioScheduleMissedRunPolicy(req.MissedRunPolicy),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                       scheduleID,
+		ScenarioID:               scenarioID,
+		ProjectID:                normalizeProjectID(scenario.ProjectID),
+		Revision:                 1,
+		Name:                     name,
+		CronExpr:                 cronExpr,
+		Timezone:                 timezone,
+		ReleaseID:                strings.TrimSpace(req.ReleaseID),
+		TimeslotID:               strings.TrimSpace(req.TimeslotID),
+		RunNameTemplate:          strings.TrimSpace(req.RunNameTemplate),
+		Enabled:                  enabled,
+		ApprovalPolicy:           normalizeScenarioScheduleApprovalPolicy(req.ApprovalPolicy),
+		MissedRunPolicy:          normalizeScenarioScheduleMissedRunPolicy(req.MissedRunPolicy),
+		AnalysisPolicySelections: runAnalysisPolicySelectionsForStorage(policySelections),
+		CreatedAt:                now,
+		UpdatedAt:                now,
 	}
 	if existing != nil {
 		schedule.Revision = existing.Revision + 1
@@ -4302,10 +4388,11 @@ func (tr *TestRunner) scenarioScheduleConflictSummaryForSweepLocked(schedule *st
 	// A capacity preview: the scenario's telemetry policy is judged by the
 	// occurrence's create, which records a lost choice as a failed occurrence.
 	preview, err := tr.buildManagedTestForScheduleSweepLockedWithTerm(CreateTestRequest{
-		Name:                     schedule.Name,
-		ScenarioID:               scenario.ID,
-		ReleaseID:                schedule.ReleaseID,
-		skipTelemetryPolicyCheck: true,
+		Name:                             schedule.Name,
+		ScenarioID:                       scenario.ID,
+		ReleaseID:                        schedule.ReleaseID,
+		skipTelemetryPolicyCheck:         true,
+		skipAnalysisPolicySelectionCheck: true,
 	}, "schedule-conflict-preview", "DRAFT", leaseTerm)
 	if err != nil {
 		return "", err

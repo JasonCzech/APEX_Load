@@ -17,6 +17,9 @@ func readBrowserSourceProof(ctx context.Context, record *storage.RunArchiveRecor
 		return nil, err
 	}
 	r := protocol.NewBrowserSourceReconciler(m.TestID, m.BrowserProofExpectedOwners)
+	if m.BrowserProofClockEnvelope != nil {
+		r.SetDistributedClockEnvelope(m.BrowserProofClockEnvelope)
+	}
 	err := forEachBrowserReceiptArtifact(ctx, record.ArchivePath, m.BrowserReceiptsFile, m.BrowserReceiptsSHA256, m.BrowserReceiptRecordCount, r.Observe)
 	if err != nil {
 		return nil, err

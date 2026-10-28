@@ -621,6 +621,7 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
 	service := newIsolatedService(t, 50, WithExecution())
+	defer shutdownSupervisionTestService(t, service)
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {
@@ -716,6 +717,7 @@ func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
 	service := newIsolatedService(t, 50, WithExecution())
+	defer shutdownSupervisionTestService(t, service)
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {

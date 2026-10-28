@@ -111,6 +111,10 @@ func TestCDPJoinAssociatesDocumentsCacheAndInitiators(t *testing.T) {
 	childDoc := loadDocument(b, state, "C", "L3", 2, child, page, origin+21)
 	cdpRequest(b, state, "R4", "L3", "C", "GET", "http://b.test/data", origin+30, map[string]any{"type": "script"})
 	b.observeCDPResponse(state, map[string]any{"requestId": "R4", "response": map[string]any{}}, b.evidence.generation)
+	cdpRequest(b, state, "R6", "L1", "F", "GET", "http://a.test/sw.json", origin+35, map[string]any{"type": "script"})
+	b.observeCDPResponse(state, map[string]any{"requestId": "R6", "response": map[string]any{"fromServiceWorker": true, "protocol": "h2"}}, b.evidence.generation)
+	cdpRequest(b, state, "R7", "L1", "F", "GET", "http://a.test/mem.js", origin+38, map[string]any{"type": "parser"})
+	b.observeCDPCacheHit(state, map[string]any{"requestId": "R7"}, b.evidence.generation)
 
 	join := func(frame playwright.Frame, method, url string, ordinal int) resourceJoin {
 		return resourceJoin{page: page, frame: frame, key: resourceKey(method, url), ordinal: ordinal}
@@ -120,12 +124,20 @@ func TestCDPJoinAssociatesDocumentsCacheAndInitiators(t *testing.T) {
 	if css.Version != protocol.BrowserResourceEvidenceVersion {
 		t.Fatalf("an associated record kept version %d", css.Version)
 	}
-	if css.DocumentID != mainDoc || css.DocumentAssociation != "cdp_loader_join" || css.DocumentOffsetMS == nil || math.Abs(*css.DocumentOffsetMS-10.4) > 1e-3 || css.Cache == nil || !*css.Cache || css.InitiatorType != "parser" || css.InitiatorOrigin != "http://a.test" || css.IdentityUnavailableReason != "" {
+	if css.DocumentID != mainDoc || css.DocumentAssociation != "cdp_loader_join" || css.DocumentOffsetMS == nil || math.Abs(*css.DocumentOffsetMS-10.4) > 1e-3 || css.Cache == nil || !*css.Cache || css.ServiceWorker == nil || *css.ServiceWorker || css.Protocol != "" || css.ProtocolUnavailableReason != "cached" || css.InitiatorType != "parser" || css.InitiatorOrigin != "http://a.test" || css.IdentityUnavailableReason != "" {
 		t.Fatalf("stylesheet %+v", css)
 	}
 	data := b.associateResourceEvidence(associationEvidence(t, b, origin+30.2), join(child, "GET", "http://b.test/data", 1), gen)
-	if data.DocumentID != childDoc || data.Cache == nil || *data.Cache || data.InitiatorType != "script" || data.InitiatorOrigin != "" {
+	if data.DocumentID != childDoc || data.Cache == nil || *data.Cache || data.ServiceWorker == nil || *data.ServiceWorker || data.InitiatorType != "script" || data.InitiatorOrigin != "" {
 		t.Fatalf("iframe fetch %+v", data)
+	}
+	swResp := b.associateResourceEvidence(associationEvidence(t, b, origin+35.1), join(main, "GET", "http://a.test/sw.json", 1), gen)
+	if swResp.DocumentID != mainDoc || swResp.ServiceWorker == nil || !*swResp.ServiceWorker || swResp.ServiceWorkerUnavailableReason != "" || swResp.Cache == nil || *swResp.Cache || swResp.Protocol != "" || swResp.ProtocolUnavailableReason != "service_worker" {
+		t.Fatalf("service worker response %+v", swResp)
+	}
+	memHit := b.associateResourceEvidence(associationEvidence(t, b, origin+38.0), join(main, "GET", "http://a.test/mem.js", 1), gen)
+	if memHit.DocumentID != mainDoc || memHit.Cache == nil || !*memHit.Cache || memHit.CacheUnavailableReason != "" || memHit.ServiceWorker == nil || *memHit.ServiceWorker || memHit.Protocol != "" || memHit.ProtocolUnavailableReason != "cached" {
+		t.Fatalf("memory cache hit %+v", memHit)
 	}
 	// The navigation request belongs to the document it loaded.
 	navigation := b.associateResourceEvidence(associationEvidence(t, b, origin+1.3), join(main, "GET", "http://a.test/", 1), gen)
@@ -621,5 +633,49 @@ func TestUnexaminedRequestEvidenceKeepsVersionTwo(t *testing.T) {
 		if v := b.associateResourceEvidence(evidence, join, b.evidence.generation); v.Version != protocol.BrowserEvidenceVersion {
 			t.Fatalf("%s: an unexamined record became version %d", name, v.Version)
 		}
+	}
+}
+
+func TestCachedRedirectHopDoesNotMarkUncachedFinalHopAsCached(t *testing.T) {
+	b, state, page, main, _ := associationBrowser(t)
+	origin := 1_800_000_000_000.0
+	cdpRequest(b, state, "L1", "L1", "F", "GET", "http://a.test/", origin+1, map[string]any{"type": "other"})
+	mainDoc := loadDocument(b, state, "F", "L1", 1, main, page, origin)
+	requestID := "req-cached-redirect"
+	cdpRequest(b, state, requestID, "L1", "F", "GET", "http://a.test/old", origin+10, map[string]any{"type": "script"})
+	b.observeCDPCacheHit(state, map[string]any{"requestId": requestID}, b.evidence.generation)
+	b.observeCDPRequest(state, map[string]any{
+		"requestId": requestID,
+		"loaderId":  "L1",
+		"frameId":   "F",
+		"wallTime":  (origin + 20) / 1000,
+		"request":   map[string]any{"url": "http://a.test/new", "method": "GET"},
+		"redirectResponse": map[string]any{
+			"url":           "http://a.test/old",
+			"status":        float64(301),
+			"protocol":      "h2",
+			"fromDiskCache": false,
+		},
+	}, b.evidence.generation)
+	b.observeCDPResponse(state, map[string]any{
+		"requestId": requestID,
+		"response": map[string]any{
+			"url":               "http://a.test/new",
+			"status":            float64(200),
+			"protocol":          "h2",
+			"fromDiskCache":     false,
+			"fromPrefetchCache": false,
+			"fromServiceWorker": false,
+		},
+	}, b.evidence.generation)
+
+	gen := b.evidence.generation
+	hop1 := b.associateResourceEvidence(associationEvidence(t, b, origin+10), resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/old"), ordinal: 1}, gen)
+	if hop1.DocumentID != mainDoc || hop1.Cache == nil || !*hop1.Cache {
+		t.Fatalf("expected cached redirect hop1 to have Cache=true, got %+v", hop1)
+	}
+	hop2 := b.associateResourceEvidence(associationEvidence(t, b, origin+20), resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/new"), ordinal: 1}, gen)
+	if hop2.DocumentID != mainDoc || hop2.Cache == nil || *hop2.Cache {
+		t.Fatalf("expected uncached final hop2 after cached redirect to have Cache=false, got %+v", hop2)
 	}
 }

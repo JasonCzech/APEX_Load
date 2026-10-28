@@ -1446,6 +1446,16 @@ export function ScriptRuntimeSettingsView({
                 <option value="per_action">Per action</option>
               </select>
             </label>
+            <label><span>HAR capture</span>
+              <select value={script.config.browser?.har_capture || 'off'}
+                onChange={e => updateField('config.browser', { ...script.config.browser, har_capture: e.target.value === 'off' ? undefined : e.target.value })}>
+                <option value="off">Off</option>
+                <option value="always">Always</option>
+                <option value="on_error">On error</option>
+                <option value="on_sla_breach">On SLA breach</option>
+                <option value="manual">Manual</option>
+              </select>
+            </label>
             <label>
               <span>Download Resources</span>
               <select value={script.config.browser?.download_resources || 'recorded'}

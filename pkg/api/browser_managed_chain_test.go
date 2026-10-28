@@ -44,9 +44,11 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	var mu sync.Mutex
 	counts := map[string]int{}
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		counts[r.URL.Path]++
-		mu.Unlock()
+		if r.Method != http.MethodHead {
+			mu.Lock()
+			counts[r.URL.Path]++
+			mu.Unlock()
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		switch r.URL.Path {
 		case "/":
@@ -302,8 +304,9 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	matches := 0
 	if _, err := forEachBrowserInteractionRecord(filepath.Join(archiveRecord.ArchivePath, manifest.BrowserInteractionsFile), func(e *protocol.BrowserInteractionEvidence) error {
 		for _, interaction := range e.Interactions {
-			if interaction.Version != protocol.BrowserInteractionVersion3 || !interaction.Outcome.Clock.Valid() || interaction.Outcome.Clock.ObservedAt.After(interaction.CapturedAt) || interaction.Outcome.Observed != protocol.InteractionOutcomeMet {
-				t.Fatalf("archive lost observed wait clock/result: %+v", interaction.Outcome)
+			primary := interaction.PrimaryOutcome()
+			if interaction.Version != protocol.BrowserInteractionVersion4 || !primary.Clock.Valid() || primary.Clock.ObservedAt.After(interaction.CapturedAt) || primary.Observed != protocol.InteractionOutcomeMet || interaction.AuthoredPageID != pageBinding.PageID {
+				t.Fatalf("archive lost observed wait clock/result: version=%d page=%q outcome=%+v", interaction.Version, interaction.AuthoredPageID, primary)
 			}
 			if !reflect.DeepEqual(interaction.AuthoredStep, replayStep) {
 				t.Fatalf("managed/replay original step mismatch: managed=%+v replay=%+v", interaction.AuthoredStep, replayStep)
@@ -323,7 +326,7 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	if profile != "" {
 		wantEligible = 0
 	}
-	if interactions.Version != browserInteractionAnalysisVersion3 || interactions.Coverage.Interactions != 1 || interactions.Coverage.PatternEligible != wantEligible {
+	if interactions.Version != browserInteractionAnalysisVersion4 || interactions.Coverage.Interactions != 1 || interactions.Coverage.PatternEligible != wantEligible {
 		t.Fatalf("managed native dispatch did not qualify: %+v", interactions)
 	}
 	if profile != "" && interactions.Coverage.PatternExcluded["dispatch_unavailable"] != 1 {

@@ -1884,7 +1884,7 @@ export default function CommandCenterPrototype({
         <CommandCenterLiveTables testId={testId} onOpen={onOpenExecution ? () => onOpenExecution(testId) : undefined} />
       )}
       {liveMode && browserGroups.length > 0 && (
-        <CommandCenterBrowserGroups groups={browserGroups} metrics={displayTest.live_metrics} rateWindow={metricBasis.rateWindow} requestsCounted={metricPopulation === 'requests'} inRunRequestRate={browserPageRequestRate !== undefined} />
+        <CommandCenterBrowserGroups testId={!initialTest || initialTest.id !== testId ? testId : undefined} groups={browserGroups} metrics={displayTest.live_metrics} rateWindow={metricBasis.rateWindow} requestsCounted={metricPopulation === 'requests'} inRunRequestRate={browserPageRequestRate !== undefined} />
       )}
 
       {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} test={displayTest} runStatus={runStatus} history={liveMode ? localMetricsHistory : []} /></section>}

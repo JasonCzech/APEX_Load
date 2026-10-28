@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	playwright "github.com/mxschmitt/playwright-go"
@@ -13,9 +14,10 @@ import (
 )
 
 var (
-	globalPlaywright *playwright.Playwright
-	globalBrowsers   = make(map[string]playwright.Browser)
-	globalMutex      sync.Mutex
+	globalPlaywright     *playwright.Playwright
+	globalBrowsers       = make(map[string]playwright.Browser)
+	globalMutex          sync.Mutex
+	activePoolOperations atomic.Int64
 	// testChromiumLaunchArgs lets integration tests add Chromium flags, such
 	// as trusting a fixture certificate for QUIC. It is part of the pool key
 	// and is never set outside tests. Guarded by globalMutex.
@@ -33,9 +35,35 @@ const (
 func getBrowserInstance(engine string, headless bool, quic ...string) (playwright.Browser, error) {
 	globalMutex.Lock()
 	defer globalMutex.Unlock()
+	return getBrowserInstanceLocked(engine, headless, quic...)
+}
+
+func getBrowserInstanceForContext(engine string, headless bool, quic ...string) (playwright.Browser, func(), error) {
+	globalMutex.Lock()
+	defer globalMutex.Unlock()
+	b, err := getBrowserInstanceLocked(engine, headless, quic...)
+	if err != nil {
+		return nil, nil, err
+	}
+	activePoolOperations.Add(1)
+	return b, func() { activePoolOperations.Add(-1) }, nil
+}
+
+func getBrowserInstanceLocked(engine string, headless bool, quic ...string) (playwright.Browser, error) {
+	if globalPlaywright != nil && pendingHAROwnerNeedsDriverInheritance(globalPlaywright.Pid()) && browserEvidenceBudget.liveCount() <= 1 && !browserEvidenceBudget.hasOpenContext() && activePoolOperations.Load() == 0 {
+		pw := globalPlaywright
+		globalPlaywright = nil
+		closers := make([]func() error, 0, len(globalBrowsers))
+		for key, browser := range globalBrowsers {
+			b := browser
+			closers = append(closers, func() error { return b.Close() })
+			delete(globalBrowsers, key)
+		}
+		_ = pwshutdown.CloseThenStop(runtimeHARCloseWait, pw.Stop, closers...)
+	}
 
 	if globalPlaywright == nil {
-		pw, err := playwright.Run()
+		pw, err := startPlaywrightWithInheritedHARLeases()
 		if err != nil {
 			return nil, fmt.Errorf("failed to start playwright: %w", err)
 		}
@@ -127,6 +155,27 @@ func ShutdownPool(wait time.Duration) bool {
 		return pwshutdown.CloseThenStop(wait, nil, closers...)
 	}
 	return pwshutdown.CloseThenStop(wait, pw.Stop, closers...)
+}
+
+func startPlaywrightWithInheritedHARLeases() (*playwright.Playwright, error) {
+	runtimeHAROwners.Lock()
+	var inherited []*harCaptureOwner
+	for o := range runtimeHAROwners.owners {
+		if o.setLeaseInheritable(true) == nil {
+			inherited = append(inherited, o)
+		}
+	}
+	runtimeHAROwners.Unlock()
+
+	pw, err := playwright.Run()
+
+	for _, o := range inherited {
+		_ = o.setLeaseInheritable(false)
+		if err == nil && pw != nil {
+			o.markLeaseInheritedByWriter(pw.Pid())
+		}
+	}
+	return pw, err
 }
 
 func browserPoolKey(engine string, headless bool, quic string) string {
@@ -221,7 +270,7 @@ func browserExecutableAvailable(engine string) error {
 	defer globalMutex.Unlock()
 
 	if globalPlaywright == nil {
-		pw, err := playwright.Run()
+		pw, err := startPlaywrightWithInheritedHARLeases()
 		if err != nil {
 			return fmt.Errorf("failed to start playwright: %w", err)
 		}

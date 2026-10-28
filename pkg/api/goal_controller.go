@@ -22,7 +22,7 @@ const (
 	// observerMaxVUsers caps an observer group at the diagnostic envelope —
 	// beyond this it is a browser load group and must carry the load role
 	// (and its benchmark-evidence obligations).
-	observerMaxVUsers = 10
+	observerMaxVUsers = 5
 )
 
 func normalizeGroupRole(role string, protocol string, index int) (string, error) {

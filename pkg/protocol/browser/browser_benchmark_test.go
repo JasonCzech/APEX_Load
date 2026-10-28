@@ -46,19 +46,29 @@ type BrowserBenchmarkResult struct {
 	// ColdLaunchMs starts the engine's browser process and a session from
 	// nothing; the other figures are milliseconds, medians over the
 	// iterations, against the pooled browser a generator keeps running.
-	ColdLaunchMs      float64 `json:"cold_launch_ms"`
-	SessionStartMs    float64 `json:"session_start_ms"`
-	ActionMs          float64 `json:"action_ms"`
-	CapturedActionMs  float64 `json:"captured_action_ms"`
-	CaptureOverheadMs float64 `json:"capture_overhead_ms"`
-	ThrottledActionMs float64 `json:"throttled_action_ms"`
+	ColdLaunchMs       float64 `json:"cold_launch_ms"`
+	SessionStartMs     float64 `json:"session_start_ms"`
+	ActionMs           float64 `json:"action_ms"`
+	CapturedActionMs   float64 `json:"captured_action_ms"`
+	CaptureOverheadMs  float64 `json:"capture_overhead_ms"`
+	ActionOverheadMs   float64 `json:"action_overhead_ms"`
+	ActionOverheadKind string  `json:"action_overhead_kind,omitempty"`
+	ThrottledActionMs  float64 `json:"throttled_action_ms"`
 	// ThrottleSeparationMs is the throttled navigation's excess over the
 	// unthrottled one, for the configured latency.
 	ThrottleSeparationMs float64 `json:"throttle_separation_ms"`
 	ThrottleLatencyMs    int     `json:"throttle_latency_ms"`
 	CleanupMs            float64 `json:"cleanup_ms"`
-	// Peak RSS and CPU seconds of the test process's descendants: the
-	// Playwright driver and the browser it launched.
+	// PerVUserRSSBytes attributes type=="renderer" processes for the VUser's
+	// context via CDP SystemInfo.getProcessInfo; FixedOverheadBytes partitions
+	// the shared Playwright driver and Chromium browser/zygote/gpu/utility
+	// processes. WebKit reports RSSAttribution="unavailable" with nil bytes.
+	PerVUserRSSBytes   *uint64 `json:"per_vuser_rss_bytes"`
+	PerVUserPSSBytes   *uint64 `json:"per_vuser_pss_bytes,omitempty"`
+	FixedOverheadBytes *uint64 `json:"fixed_overhead_bytes"`
+	RSSAttribution     string  `json:"rss_attribution"`
+	// PeakRSSBytes and RSSPopulation retain the observed descendant-tree
+	// snapshot for v2 compatibility.
 	PeakRSSBytes          *uint64 `json:"peak_rss_bytes"`
 	RSSPopulation         string  `json:"rss_population"`
 	RSSSamples            int     `json:"rss_samples"`
@@ -81,7 +91,7 @@ func TestBrowserBenchmark(t *testing.T) {
 	iterations := 5
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprint(w, `<!doctype html><title>benchmark</title><h1 id="ready">ready</h1>`)
+		_, _ = fmt.Fprint(w, `<!doctype html><title>benchmark</title><h1 id="ready">ready</h1><button id="target" onclick="document.body.dataset.clicked=(Number(document.body.dataset.clicked||0)+1).toString()">Tap</button>`)
 	}))
 	defer server.Close()
 	const latencyMs = 200
@@ -92,12 +102,27 @@ func TestBrowserBenchmark(t *testing.T) {
 	for _, engine := range []string{"chromium", "webkit"} {
 		t.Run(engine, func(t *testing.T) {
 			for _, target := range benchmarkTargets(engine) {
-				result := BrowserBenchmarkResult{Engine: engine, Profile: target.label, Platform: runtime.GOOS + "-" + runtime.GOARCH, Iterations: iterations, ThrottleLatencyMs: latencyMs, RSSPopulation: "observed_test_process_descendants"}
+				rssAttribution := BrowserRSSAttributionCDPRendererPerVUser
+				rssPopulation := "observed_test_process_descendants"
+				if engine == "webkit" {
+					rssAttribution = BrowserRSSAttributionUnavailable
+					rssPopulation = BrowserRSSAttributionUnavailable
+				}
+				result := BrowserBenchmarkResult{
+					Engine:            engine,
+					Profile:           target.label,
+					Platform:          runtime.GOOS + "-" + runtime.GOARCH,
+					Iterations:        iterations,
+					ThrottleLatencyMs: latencyMs,
+					RSSAttribution:    rssAttribution,
+					RSSPopulation:     rssPopulation,
+				}
 				// Start from a closed browser, so the first session times the
 				// browser's launch.
 				baseline := benchmarkColdPool(t, engine)
 				cpu := benchmarkCPU{start: benchmarkCPUByPID()}
 				var sessionStart, action, captured, throttled, cleanup []float64
+				var clickBaseline, capturedClick, touchAction []float64
 				for i := 0; i < iterations; i++ {
 					for _, mode := range []string{"plain", "captured", "throttled"} {
 						config := map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true}
@@ -107,9 +132,11 @@ func TestBrowserBenchmark(t *testing.T) {
 						switch mode {
 						case "captured":
 							config["browser_capture_document_metrics"] = true
+							config["browser_client_metrics"] = true
 						case "throttled":
 							config["web_network_simulation_latency_ms"] = latencyMs
 						}
+						baselineRenderers := snapshotBaselineRendererPIDs(engine)
 						ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 						b := &Browser{}
 						started := time.Now()
@@ -142,14 +169,52 @@ func TestBrowserBenchmark(t *testing.T) {
 							switch mode {
 							case "plain":
 								action = append(action, benchmarkMs(elapsed))
+								b.mu.Lock()
+								savedTouch := b.touchMode
+								b.touchMode = false
+								b.mu.Unlock()
+								clickStarted := time.Now()
+								clickRes, clickErr := b.Execute(ctx, &protocol.Action{Name: "click baseline", Type: "browser_click", Target: "#target"})
+								clickElapsed := time.Since(clickStarted)
+								b.mu.Lock()
+								b.touchMode = savedTouch
+								b.mu.Unlock()
+								if clickErr == nil && clickRes != nil && clickRes.Success {
+									clickBaseline = append(clickBaseline, benchmarkMs(clickElapsed))
+								} else {
+									t.Logf("%s/%s %s click baseline failed: %v %+v", engine, target.label, mode, clickErr, clickRes)
+									result.Failures++
+								}
+								if target.hasTouch {
+									tapStarted := time.Now()
+									if tapRes, tapErr := b.Execute(ctx, &protocol.Action{Name: "touch action", Type: "browser_tap", Target: "#target"}); tapErr == nil && tapRes != nil && tapRes.Success {
+										touchAction = append(touchAction, benchmarkMs(time.Since(tapStarted)))
+									} else {
+										t.Logf("%s/%s %s touch action failed: %v %+v", engine, target.label, mode, tapErr, tapRes)
+										result.Failures++
+									}
+								}
 							case "captured":
 								captured = append(captured, benchmarkMs(elapsed))
+								if !target.hasTouch {
+									clickStarted := time.Now()
+									if clickRes, clickErr := b.Execute(ctx, &protocol.Action{Name: "captured click", Type: "browser_click", Target: "#target"}); clickErr == nil && clickRes != nil && clickRes.Success {
+										capturedClick = append(capturedClick, benchmarkMs(time.Since(clickStarted)))
+									} else {
+										t.Logf("%s/%s %s captured click failed: %v %+v", engine, target.label, mode, clickErr, clickRes)
+										result.Failures++
+									}
+								}
 							case "throttled":
 								throttled = append(throttled, benchmarkMs(elapsed))
 							}
 						}
-						sample, missing := benchmarkRSSBytes()
-						result.recordRSSSample(sample, missing)
+						if engine == "webkit" {
+							result.recordWebKitUnavailableRSSSample()
+						} else {
+							sample := b.sampleBenchmarkVUserMemory(baselineRenderers, true)
+							result.recordAttributedRSSSample(sample)
+						}
 						cpu.sample()
 						closing := time.Now()
 						if err := b.Teardown(context.Background()); err != nil {
@@ -166,6 +231,7 @@ func TestBrowserBenchmark(t *testing.T) {
 				result.CPUSeconds = cpu.total()
 				result.SessionStartMs, result.ActionMs, result.CapturedActionMs, result.ThrottledActionMs, result.CleanupMs = benchmarkMedian(sessionStart), benchmarkMedian(action), benchmarkMedian(captured), benchmarkMedian(throttled), benchmarkMedian(cleanup)
 				result.CaptureOverheadMs = result.CapturedActionMs - result.ActionMs
+				result.ActionOverheadKind, result.ActionOverheadMs = computeBenchmarkActionOverhead(target.hasTouch, clickBaseline, capturedClick, touchAction)
 				result.ThrottleSeparationMs = result.ThrottledActionMs - result.ActionMs
 				benchmarkClosePooledBrowser(engine)
 				result.LeftoverProcesses = benchmarkLeftover(baseline)
@@ -193,8 +259,9 @@ func TestBrowserBenchmark(t *testing.T) {
 }
 
 type benchmarkTarget struct {
-	label  string
-	config map[string]any
+	label    string
+	hasTouch bool
+	config   map[string]any
 }
 
 // benchmarkTargets gives each engine a desktop and a mobile profile it
@@ -203,13 +270,13 @@ type benchmarkTarget struct {
 func benchmarkTargets(engine string) []benchmarkTarget {
 	if engine == "webkit" {
 		return []benchmarkTarget{
-			{"desktop_1920x1080", map[string]any{"browser_viewport_width": 1920, "browser_viewport_height": 1080}},
-			{"iphone_15_pro", map[string]any{"browser_device_profile": "iphone_15_pro"}},
+			{label: "desktop_1920x1080", hasTouch: false, config: map[string]any{"browser_viewport_width": 1920, "browser_viewport_height": 1080}},
+			{label: "iphone_15_pro", hasTouch: true, config: map[string]any{"browser_device_profile": "iphone_15_pro"}},
 		}
 	}
 	return []benchmarkTarget{
-		{"desktop_1080p", map[string]any{"browser_device_profile": "desktop_1080p"}},
-		{"pixel_8", map[string]any{"browser_device_profile": "pixel_8"}},
+		{label: "desktop_1080p", hasTouch: false, config: map[string]any{"browser_device_profile": "desktop_1080p"}},
+		{label: "pixel_8", hasTouch: true, config: map[string]any{"browser_device_profile": "pixel_8"}},
 	}
 }
 
@@ -351,6 +418,38 @@ func benchmarkRSSFromProcesses(processes []*process.Process, read func(*process.
 	return &total, missing
 }
 
+func computeBenchmarkActionOverhead(hasTouch bool, clickBaseline, capturedClick, touchAction []float64) (string, float64) {
+	if hasTouch {
+		return "touch_over_click_baseline", benchmarkMedian(touchAction) - benchmarkMedian(clickBaseline)
+	}
+	return "click_evidence_capture_overhead", benchmarkMedian(capturedClick) - benchmarkMedian(clickBaseline)
+}
+
+func (b *Browser) sampleBenchmarkVUserMemory(baselineRendererPIDs map[int32]bool, singleContext bool) vuserMemoryAttributionSample {
+	descendants := browserDescendants()
+	descendantPIDs := make([]int32, 0, len(descendants))
+	for _, p := range descendants {
+		descendantPIDs = append(descendantPIDs, p.Pid)
+	}
+	classified, err := b.queryCDPProcessInfo()
+	if err != nil {
+		return vuserMemoryAttributionSample{MissingProcesses: len(descendantPIDs)}
+	}
+	var pssReader func(int32) (uint64, error)
+	if runtime.GOOS == "linux" {
+		pssReader = readLinuxProcessPSSBytes
+	}
+	return computeAttributedVUserMemory(
+		baselineRendererPIDs,
+		classified,
+		descendantPIDs,
+		int32(playwrightDriverPID()),
+		singleContext,
+		readProcessRSSBytesByPID,
+		pssReader,
+	)
+}
+
 // Count every attempted RSS snapshot, including unavailable ones. Partial and
 // unavailable counts cannot be interpreted without this denominator.
 func (result *BrowserBenchmarkResult) recordRSSSample(sample *uint64, missing int) {
@@ -368,7 +467,41 @@ func (result *BrowserBenchmarkResult) recordRSSSample(sample *uint64, missing in
 	}
 }
 
+func (result *BrowserBenchmarkResult) recordWebKitUnavailableRSSSample() {
+	result.RSSAttribution = BrowserRSSAttributionUnavailable
+	result.RSSPopulation = BrowserRSSAttributionUnavailable
+	result.PerVUserRSSBytes = nil
+	result.PerVUserPSSBytes = nil
+	result.FixedOverheadBytes = nil
+	result.PeakRSSBytes = nil
+	result.recordRSSSample(nil, 0)
+}
+
+func (result *BrowserBenchmarkResult) recordAttributedRSSSample(sample vuserMemoryAttributionSample) {
+	result.RSSAttribution = BrowserRSSAttributionCDPRendererPerVUser
+	if sample.PerVUserRSSBytes == nil || sample.FixedOverheadBytes == nil {
+		result.recordRSSSample(nil, sample.MissingProcesses)
+		return
+	}
+	result.recordRSSSample(sample.TotalDescendantRSS, sample.MissingProcesses)
+	if result.PerVUserRSSBytes == nil || *sample.PerVUserRSSBytes > *result.PerVUserRSSBytes {
+		v := *sample.PerVUserRSSBytes
+		result.PerVUserRSSBytes = &v
+	}
+	if sample.PerVUserPSSBytes != nil && (result.PerVUserPSSBytes == nil || *sample.PerVUserPSSBytes > *result.PerVUserPSSBytes) {
+		v := *sample.PerVUserPSSBytes
+		result.PerVUserPSSBytes = &v
+	}
+	if result.FixedOverheadBytes == nil || *sample.FixedOverheadBytes > *result.FixedOverheadBytes {
+		v := *sample.FixedOverheadBytes
+		result.FixedOverheadBytes = &v
+	}
+}
+
 func benchmarkRSSNote(result BrowserBenchmarkResult) string {
+	if result.PerVUserRSSBytes != nil {
+		return fmt.Sprintf("%.0f MiB", float64(*result.PerVUserRSSBytes)/(1<<20))
+	}
 	if result.PeakRSSBytes == nil {
 		return "n/a"
 	}
@@ -422,7 +555,6 @@ func benchmarkHost() map[string]any {
 	}
 	if memory, err := mem.VirtualMemory(); err == nil {
 		info["memory_bytes"] = memory.Total
-		info["memory_mib"] = float64(memory.Total) / (1 << 20)
 	}
 	if driver, err := playwright.NewDriver(); err == nil {
 		info["playwright_driver_version"] = driver.Version
@@ -430,11 +562,32 @@ func benchmarkHost() map[string]any {
 	return info
 }
 
+type browserBenchmarkArtifact struct {
+	Schema      string                   `json:"schema"`
+	GeneratedAt time.Time                `json:"generated_at"`
+	Host        map[string]any           `json:"host"`
+	Results     []BrowserBenchmarkResult `json:"results"`
+}
+
+func parseBrowserBenchmarkArtifact(data []byte) (browserBenchmarkArtifact, error) {
+	var doc browserBenchmarkArtifact
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return browserBenchmarkArtifact{}, err
+	}
+	if doc.Schema != BrowserBenchmarkSchemaV2 && doc.Schema != BrowserBenchmarkSchemaV3 {
+		return browserBenchmarkArtifact{}, fmt.Errorf("unsupported browser benchmark schema %q", doc.Schema)
+	}
+	return doc, nil
+}
+
 // writeBrowserBenchmark writes the results and one F4 feature acceptance
 // request per engine and profile, naming the results' SHA-256.
 func writeBrowserBenchmark(t *testing.T, dir string, results []BrowserBenchmarkResult) {
 	t.Helper()
-	body, err := json.MarshalIndent(map[string]any{"schema": "apexload.browser_benchmark.v2", "generated_at": time.Now().UTC(), "host": benchmarkHost(), "results": results}, "", "  ")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.MarshalIndent(map[string]any{"schema": BrowserBenchmarkSchemaV3, "generated_at": time.Now().UTC(), "host": benchmarkHost(), "results": results}, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1444,8 +1444,10 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
-	if err := tr.validateSelectedRunAnalysisPolicies(projectID, policySelections); err != nil {
-		return nil, err
+	if !req.skipAnalysisPolicySelectionCheck {
+		if err := tr.validateSelectedRunAnalysisPolicies(projectID, policySelections); err != nil {
+			return nil, err
+		}
 	}
 	traceContext, err := normalizeRunTraceContext(req.TraceContext)
 	if err != nil {
@@ -3290,7 +3292,7 @@ func scriptRequestsControlParallel(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
-	stack := make([]dsl.Action, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
+	var stack []dsl.Action
 	stack = append(stack, script.Init...)
 	stack = append(stack, script.Actions...)
 	stack = append(stack, script.Teardown...)

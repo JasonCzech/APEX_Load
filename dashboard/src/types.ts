@@ -1,4 +1,5 @@
 export type { TelemetryBudgetPolicy, TelemetryPolicyEvidence } from './types/telemetryPolicy'
+export type { RunAnalysisPolicySelection, RunAnalysisPolicySelections } from './types/analysisPolicies'
 // Compatibility barrel for dashboard domain contracts. New API/domain code
 // should import from ./types/<domain>; existing consumers can migrate without a
 // flag day while these re-exports preserve their public type names.

@@ -15,30 +15,32 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// Browser intelligence findings and qualified scores (E1). A run's archived
+// Browser intelligence findings and qualified scores (E1/BI-A3). A run's archived
 // final document metrics are judged against a versioned browser_policy as a
-// browser_intelligence evaluation job: findings (browser_findings.v1) and a
+// browser_intelligence evaluation job: findings (browser_findings.v2) and a
 // weighted score (browser_score.v1). Only qualified final observations of a
 // main-frame navigation count; everything else is reported as quality. The
 // job runs automatically when a run that pinned a browser policy finalizes
-// with document evidence, and on demand.
+// with document evidence, when its root-cause analysis completes, and on demand.
 
 const (
-	browserIntelligenceKind           = "browser_intelligence"
-	browserFindingsRuleSet            = "browser_findings.v1"
-	browserScoreVersion               = "browser_score.v1"
-	browserFindingsSchemaVersion      = "apexload.browser_findings.v1"
-	browserIntelligenceDeadline       = 5 * time.Minute
-	maxBrowserFindingEvidence         = 5
-	browserFindingStatistic           = "p75"
-	browserFindingRuleThreshold       = "threshold"
-	browserFindingRuleCollectionLoss  = "collection.incomplete"
-	browserFindingRuleCollectionNone  = "collection.absent"
-	browserFindingCategoryApplication = "application_outcome"
-	browserFindingCategoryCollection  = "collection_health"
+	browserIntelligenceKind               = "browser_intelligence"
+	browserFindingsRuleSet                = "browser_findings.v2"
+	browserScoreVersion                   = "browser_score.v1"
+	browserFindingsSchemaVersion          = "apexload.browser_findings.v2"
+	browserIntelligenceDeadline           = 5 * time.Minute
+	maxBrowserFindingEvidence             = 5
+	browserFindingCandidateRejectionLimit = 16
+	browserFindingStatistic               = "p75"
+	browserFindingRuleThreshold           = "threshold"
+	browserFindingRuleCollectionLoss      = "collection.incomplete"
+	browserFindingRuleCollectionNone      = "collection.absent"
+	browserFindingCategoryApplication     = "application_outcome"
+	browserFindingCategoryCollection      = "collection_health"
 )
 
 func init() {
@@ -111,11 +113,20 @@ type BrowserFindingQuality struct {
 	Incomplete bool `json:"incomplete,omitempty"`
 }
 
-// BrowserFindingBaseline records the baseline criteria; baseline anomalies
-// are a separate rule set (E2), so a threshold finding is never compared.
+// BrowserFindingBaseline records the evaluated baseline verdict and immutable
+// provenance for a finding under browser_findings.v2.
 type BrowserFindingBaseline struct {
-	Mode   string `json:"mode"`
-	Status string `json:"status"`
+	Mode                   string                          `json:"mode"`
+	Status                 string                          `json:"status"`
+	Reason                 string                          `json:"reason,omitempty"`
+	Detail                 string                          `json:"detail,omitempty"`
+	AnalysisID             string                          `json:"analysis_id,omitempty"`
+	BaselineRunID          string                          `json:"baseline_run_id,omitempty"`
+	BaselineArchiveSHA256  string                          `json:"baseline_archive_sha256,omitempty"`
+	SelectionReceiptSHA256 string                          `json:"selection_receipt_sha256,omitempty"`
+	SelectionStatus        string                          `json:"selection_status,omitempty"`
+	RejectedCandidates     []rca.BrowserCandidateRejection `json:"rejected_candidates,omitempty"`
+	PolicyPins             []RunPolicyPin                  `json:"policy_pins,omitempty"`
 }
 
 // BrowserFindingEvidence links a finding to immutable archive evidence.
@@ -203,7 +214,10 @@ type BrowserIntelligenceResult struct {
 	RuleSet          string               `json:"rule_set"`
 	InputFingerprint string               `json:"input_fingerprint"`
 	RunID            string               `json:"run_id"`
+	Provisional      bool                 `json:"provisional,omitempty"`
+	LiveTruncated    bool                 `json:"live_truncated,omitempty"`
 	Policy           BrowserPolicyRef     `json:"policy"`
+	PolicyPins       []RunPolicyPin       `json:"policy_pins,omitempty"`
 	Window           BrowserFindingWindow `json:"window"`
 	Score            BrowserScore         `json:"score"`
 	Findings         []BrowserFinding     `json:"findings"`
@@ -212,18 +226,165 @@ type BrowserIntelligenceResult struct {
 }
 
 type browserIntelligenceInputs struct {
-	request     BrowserIntelligenceRequest
-	projectID   string
-	runID       string
-	record      *storage.RunArchiveRecord
-	policy      BrowserPolicyDefinition
-	ref         BrowserPolicyRef
-	fingerprint string
+	request                BrowserIntelligenceRequest
+	projectID              string
+	runID                  string
+	record                 *storage.RunArchiveRecord
+	policy                 BrowserPolicyDefinition
+	ref                    BrowserPolicyRef
+	policyPins             []RunPolicyPin
+	rcaAnalysisID          string
+	rcaRevision            int64
+	baselineRunID          string
+	baselineArchiveSHA256  string
+	selectionReceiptSHA256 string
+	browserSelection       *rca.BrowserBaselineSelection
+	browserBaseline        *rca.BrowserBaseline
+	baselineQualification  string
+	baselineReasons        []string
+	baselineMismatchReason string
+	provisional            bool
+	liveTruncated          bool
+	fingerprint            string
+	preRCAFingerprint      string
+}
+
+func browserIntelligencePolicyPins(manifest *RunArchiveManifest) []RunPolicyPin {
+	if manifest == nil || len(manifest.Provenance.PolicyPins) == 0 {
+		return nil
+	}
+	var pins []RunPolicyPin
+	for _, pin := range manifest.Provenance.PolicyPins {
+		if pin.Kind == storage.AnalysisDefinitionKindBrowserPolicy || pin.Kind == storage.AnalysisDefinitionKindJourneyPolicy {
+			pins = append(pins, pin)
+		}
+	}
+	sort.Slice(pins, func(i, j int) bool {
+		if pins[i].Kind != pins[j].Kind {
+			return pins[i].Kind < pins[j].Kind
+		}
+		if pins[i].ID != pins[j].ID {
+			return pins[i].ID < pins[j].ID
+		}
+		return pins[i].Revision < pins[j].Revision
+	})
+	return pins
+}
+
+func rcaBrowserBaselineMatchesPolicy(manifest *RunArchiveManifest, payload rcaAnalysisPayload, ref BrowserPolicyRef) bool {
+	if payload.Assessment == nil || ref.SHA256 == "" {
+		return false
+	}
+	if payload.Assessment.BrowserBaseline != nil {
+		return payload.Assessment.BrowserBaseline.PolicySHA256 != "" && payload.Assessment.BrowserBaseline.PolicySHA256 == ref.SHA256
+	}
+	if manifest == nil {
+		return false
+	}
+	for _, pin := range manifest.Provenance.PolicyPins {
+		if pin.Kind == storage.AnalysisDefinitionKindBrowserPolicy {
+			return pin.SHA256 == ref.SHA256
+		}
+	}
+	return false
+}
+
+func rcaBrowserBaselineMatchesPolicyDefinition(manifest *RunArchiveManifest, payload rcaAnalysisPayload, ref BrowserPolicyRef, policy BrowserPolicyDefinition) bool {
+	if !rcaBrowserBaselineMatchesPolicy(manifest, payload, ref) {
+		return false
+	}
+	if validateRCABrowserSelection(payload) != nil {
+		return false
+	}
+	switch policy.Baseline.Mode {
+	case "latest_compatible":
+		if payload.BrowserSelection == nil || strings.TrimSpace(payload.Inputs.BrowserSelection) == "" {
+			return false
+		}
+		return strings.TrimSpace(payload.Request.BaselineTestID) == strings.TrimSpace(payload.BrowserSelection.SelectedTestID)
+	case "pinned_run":
+		if strings.TrimSpace(payload.Request.BaselineTestID) != strings.TrimSpace(policy.Baseline.RunID) {
+			return false
+		}
+		if payload.Assessment != nil && payload.Assessment.BrowserBaseline != nil {
+			for _, lim := range payload.Assessment.BrowserBaseline.Limitations {
+				if lim.Code == rca.BrowserBaselinePolicyPinnedRun {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+type completedRCAAnalysesReader interface {
+	CompletedRCAAnalyses(project, test string) ([]*storage.RCAAnalysis, error)
+}
+
+func rcaCoverageBaselineQualification(coverages []rca.Coverage) (string, []string) {
+	for _, c := range coverages {
+		if c.Evidence != "baseline" {
+			continue
+		}
+		head, tail, hasColon := strings.Cut(c.Detail, ":")
+		status := strings.TrimSpace(head)
+		var reasons []string
+		if hasColon {
+			for _, part := range strings.Split(tail, ",") {
+				if trimmed := strings.TrimSpace(part); trimmed != "" {
+					reasons = append(reasons, trimmed)
+				}
+			}
+		}
+		if status == rca.BaselineUnqualified || status == rca.BaselinePartial || status == rca.BaselineQualified {
+			return status, reasons
+		}
+	}
+	return "", nil
+}
+
+func computeBrowserIntelligenceFingerprint(projectID, runID, manifestSHA256 string, ref BrowserPolicyRef, pins []RunPolicyPin, rcaAnalysisID string, rcaRevision int64, baselineRunID, baselineArchiveSHA256, selectionReceiptSHA256, baselineMismatchReason string) string {
+	value, _ := json.Marshal(struct {
+		RuleSet                string         `json:"rule_set"`
+		Score                  string         `json:"score"`
+		Project                string         `json:"project"`
+		Run                    string         `json:"run"`
+		ManifestSHA256         string         `json:"manifest_sha256"`
+		PolicyID               string         `json:"policy_id"`
+		Revision               int64          `json:"revision"`
+		PolicySHA              string         `json:"policy_sha256"`
+		PolicyPins             []RunPolicyPin `json:"policy_pins,omitempty"`
+		RCAAnalysisID          string         `json:"rca_analysis_id,omitempty"`
+		RCARevision            int64          `json:"rca_revision,omitempty"`
+		BaselineRunID          string         `json:"baseline_run_id,omitempty"`
+		BaselineArchiveSHA256  string         `json:"baseline_archive_sha256,omitempty"`
+		SelectionReceiptSHA256 string         `json:"selection_receipt_sha256,omitempty"`
+		BaselineMismatchReason string         `json:"baseline_mismatch_reason,omitempty"`
+	}{
+		RuleSet:                browserFindingsRuleSet,
+		Score:                  browserScoreVersion,
+		Project:                projectID,
+		Run:                    runID,
+		ManifestSHA256:         strings.ToLower(strings.TrimSpace(manifestSHA256)),
+		PolicyID:               ref.ID,
+		Revision:               ref.Revision,
+		PolicySHA:              ref.SHA256,
+		PolicyPins:             pins,
+		RCAAnalysisID:          rcaAnalysisID,
+		RCARevision:            rcaRevision,
+		BaselineRunID:          baselineRunID,
+		BaselineArchiveSHA256:  baselineArchiveSHA256,
+		SelectionReceiptSHA256: selectionReceiptSHA256,
+		BaselineMismatchReason: baselineMismatchReason,
+	})
+	fingerprint := sha256.Sum256(value)
+	return hex.EncodeToString(fingerprint[:])
 }
 
 // prepareBrowserIntelligence validates a request and resolves its inputs; the
 // fingerprint covers the rule set, the score version, the policy revision's
-// digest and the run's finalized manifest digest.
+// digest, the run's finalized manifest digest, the run's policy pins, and the
+// matched root-cause baseline provenance.
 func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string, raw json.RawMessage) (*browserIntelligenceInputs, error) {
 	var request BrowserIntelligenceRequest
 	if err := decodeAnalysisDefinitionJSON(raw, &request); err != nil {
@@ -259,7 +420,13 @@ func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string
 	if err != nil {
 		return nil, evaluationUnavailable(fmt.Errorf("run %s manifest: %w", runID, err))
 	}
-	inputs := &browserIntelligenceInputs{request: request, projectID: projectID, runID: test.ID, record: record}
+	inputs := &browserIntelligenceInputs{
+		request:    request,
+		projectID:  projectID,
+		runID:      test.ID,
+		record:     record,
+		policyPins: browserIntelligencePolicyPins(manifest),
+	}
 	id, revision, source := "", int64(0), "requested"
 	var pin *RunPolicyPin
 	if request.Policy != nil {
@@ -293,19 +460,90 @@ func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string
 	if err := json.Unmarshal(definition.Definition, &inputs.policy); err != nil {
 		return nil, fmt.Errorf("policy revision is invalid: %w", err)
 	}
+	if inputs.policy.Baseline.Mode == "pinned_run" && strings.TrimSpace(inputs.policy.Baseline.RunID) != "" {
+		if run, lookupErr := s.store.GetTest(strings.TrimSpace(inputs.policy.Baseline.RunID)); lookupErr == nil && run != nil && normalizeProjectID(run.ProjectID) == normalizeProjectID(projectID) {
+			inputs.policy.Baseline.RunID = run.ID
+		}
+	}
 	inputs.ref = BrowserPolicyRef{ID: definition.ID, Name: definition.Name, Revision: definition.Revision, SHA256: sum, Source: source}
-	value, _ := json.Marshal(struct {
-		RuleSet        string `json:"rule_set"`
-		Score          string `json:"score"`
-		Project        string `json:"project"`
-		Run            string `json:"run"`
-		ManifestSHA256 string `json:"manifest_sha256"`
-		PolicyID       string `json:"policy_id"`
-		Revision       int64  `json:"revision"`
-		PolicySHA      string `json:"policy_sha256"`
-	}{browserFindingsRuleSet, browserScoreVersion, projectID, test.ID, strings.ToLower(strings.TrimSpace(record.ManifestSHA256)), inputs.ref.ID, inputs.ref.Revision, sum})
-	fingerprint := sha256.Sum256(value)
-	inputs.fingerprint = hex.EncodeToString(fingerprint[:])
+	preRCAMismatch := ""
+	if inputs.policy.Baseline.Mode != "" && inputs.policy.Baseline.Mode != "none" {
+		preRCAMismatch = "rca_not_completed"
+	}
+	inputs.preRCAFingerprint = computeBrowserIntelligenceFingerprint(projectID, test.ID, record.ManifestSHA256, inputs.ref, inputs.policyPins, "", 0, "", "", "", preRCAMismatch)
+
+	archiveDigest, archiveDigestErr := rcaEvidenceDigest(manifest)
+	if rcaStore, ok := s.store.(storage.RCAStore); ok && archiveDigestErr == nil {
+		var candidates []*storage.RCAAnalysis
+		if reader, ok := rcaStore.(completedRCAAnalysesReader); ok {
+			candidates, _ = reader.CompletedRCAAnalyses(projectID, test.ID)
+		}
+		if len(candidates) == 0 {
+			if latest, rcaErr := rcaStore.LatestCompletedRCAAnalysis(projectID, test.ID); rcaErr == nil && latest != nil {
+				candidates = []*storage.RCAAnalysis{latest}
+			}
+		}
+		if len(candidates) > 0 {
+			var matched *storage.RCAAnalysis
+			var matchedPayload rcaAnalysisPayload
+			mismatchReason := preRCAMismatch
+			for _, cand := range candidates {
+				if cand == nil {
+					continue
+				}
+				payload := rcaAnalysisPayloadOf(cand)
+				switch {
+				case payload.Assessment == nil:
+					if mismatchReason == preRCAMismatch {
+						mismatchReason = preRCAMismatch
+					}
+				case payload.Inputs.Archive != archiveDigest:
+					if mismatchReason == preRCAMismatch {
+						mismatchReason = "rca_archive_mismatch"
+					}
+				case !rcaBrowserBaselineMatchesPolicyDefinition(manifest, payload, inputs.ref, inputs.policy):
+					if mismatchReason == preRCAMismatch {
+						mismatchReason = "rca_policy_mismatch"
+					}
+				default:
+					matched = cand
+					matchedPayload = payload
+				}
+				if matched != nil {
+					break
+				}
+			}
+			if matched != nil {
+				inputs.rcaAnalysisID = matched.ID
+				inputs.rcaRevision = matched.Revision
+				inputs.selectionReceiptSHA256 = matchedPayload.Inputs.BrowserSelection
+				inputs.browserSelection = matchedPayload.BrowserSelection
+				inputs.browserBaseline = matchedPayload.Assessment.BrowserBaseline
+				if matchedPayload.Assessment.BrowserBaseline != nil && matchedPayload.Assessment.BrowserBaseline.Baseline.TestID != "" {
+					inputs.baselineRunID = matchedPayload.Assessment.BrowserBaseline.Baseline.TestID
+					inputs.baselineQualification = matchedPayload.Assessment.BrowserBaseline.Baseline.Qualification
+					inputs.baselineReasons = slices.Clone(matchedPayload.Assessment.BrowserBaseline.Baseline.Reasons)
+				} else if matchedPayload.Request.BaselineTestID != "" {
+					inputs.baselineRunID = matchedPayload.Request.BaselineTestID
+					inputs.baselineQualification, inputs.baselineReasons = rcaCoverageBaselineQualification(matchedPayload.Assessment.Coverage)
+				}
+				if inputs.baselineRunID != "" {
+					inputs.baselineArchiveSHA256 = matchedPayload.Inputs.Baseline
+				}
+			} else {
+				inputs.baselineMismatchReason = mismatchReason
+			}
+		} else {
+			inputs.baselineMismatchReason = preRCAMismatch
+		}
+	} else {
+		inputs.baselineMismatchReason = preRCAMismatch
+	}
+	inputs.fingerprint = computeBrowserIntelligenceFingerprint(
+		projectID, test.ID, record.ManifestSHA256, inputs.ref, inputs.policyPins,
+		inputs.rcaAnalysisID, inputs.rcaRevision, inputs.baselineRunID,
+		inputs.baselineArchiveSHA256, inputs.selectionReceiptSHA256, inputs.baselineMismatchReason,
+	)
 	return inputs, nil
 }
 
@@ -315,7 +553,20 @@ func runBrowserIntelligence(ctx context.Context, s *Server, job *storage.Evaluat
 		return nil, err
 	}
 	if inputs.fingerprint != job.InputFingerprint {
-		return nil, errors.New("the run archive or the policy revision changed after this evaluation was queued; queue a new evaluation")
+		if job.InputFingerprint != "" && job.InputFingerprint == inputs.preRCAFingerprint {
+			inputs.rcaAnalysisID, inputs.rcaRevision = "", 0
+			inputs.baselineRunID, inputs.baselineArchiveSHA256, inputs.selectionReceiptSHA256 = "", "", ""
+			inputs.browserSelection, inputs.browserBaseline = nil, nil
+			inputs.baselineQualification, inputs.baselineReasons = "", nil
+			if inputs.policy.Baseline.Mode != "" && inputs.policy.Baseline.Mode != "none" {
+				inputs.baselineMismatchReason = "rca_not_completed"
+			} else {
+				inputs.baselineMismatchReason = ""
+			}
+			inputs.fingerprint = job.InputFingerprint
+		} else {
+			return nil, errors.New("the run archive or the policy revision changed after this evaluation was queued; queue a new evaluation")
+		}
 	}
 	result, err := evaluateArchiveBrowserFindings(ctx, inputs)
 	if err != nil {
@@ -429,26 +680,35 @@ func browserFindingIdentity(parts ...string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-// evaluateBrowserFindings applies browser_findings.v1 and browser_score.v1.
+// evaluateBrowserFindings applies browser_findings.v2 and browser_score.v1.
 func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFindingWindow, observations []protocol.BrowserDocumentObservation, captured, incomplete bool, dropped int64) *BrowserIntelligenceResult {
 	policy := inputs.policy
-	result := &BrowserIntelligenceResult{SchemaVersion: browserFindingsSchemaVersion, RuleSet: browserFindingsRuleSet, InputFingerprint: inputs.fingerprint, RunID: inputs.runID, Policy: inputs.ref, Window: window,
-		Findings: []BrowserFinding{}, Counts: map[string]int{"active": 0, "suppressed": 0, "unscored": 0},
+	result := &BrowserIntelligenceResult{
+		SchemaVersion:    browserFindingsSchemaVersion,
+		RuleSet:          browserFindingsRuleSet,
+		InputFingerprint: inputs.fingerprint,
+		RunID:            inputs.runID,
+		Policy:           inputs.ref,
+		PolicyPins:       cloneRunPolicyPins(inputs.policyPins),
+		Window:           window,
+		Findings:         []BrowserFinding{},
+		Counts:           map[string]int{"active": 0, "suppressed": 0, "unscored": 0},
 		Notes: []string{
 			"Only qualified final observations of main-frame navigations are judged; child frames and back/forward-cache restores are reported as quality, never scored.",
 			"The observed value is the nearest-rank p75 of the qualified final observations' values.",
-			"Thresholds and weights come from the policy revision named here; findings are not compared with a baseline (baseline anomalies are a separate rule set).",
-		}}
+			"Thresholds and weights come from the policy revision named here; baseline status and provenance come from the run's completed root-cause analysis when its archive and policy digests match.",
+		},
+	}
 	windowKey := window.Start.Format(time.RFC3339Nano) + "/" + window.End.Format(time.RFC3339Nano)
 	add := func(finding BrowserFinding) {
 		cohortKey := ""
 		if finding.Cohort != nil {
 			cohortKey = finding.Cohort.key()
 		}
-		finding.RuleSet, finding.RuleVersion, finding.Window = browserFindingsRuleSet, 1, window
+		finding.RuleSet, finding.RuleVersion, finding.Window = browserFindingsRuleSet, 2, window
 		finding.Key = browserFindingIdentity(inputs.runID, finding.RuleID, finding.Metric, cohortKey, windowKey)
 		finding.ID = browserFindingIdentity(finding.Key, inputs.fingerprint)
-		finding.Baseline = BrowserFindingBaseline{Mode: policy.Baseline.Mode, Status: "not_evaluated"}
+		finding.Baseline = evaluateFindingBaseline(inputs, finding)
 		result.Findings = append(result.Findings, finding)
 		result.Counts[finding.State]++
 	}
@@ -572,6 +832,15 @@ func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFi
 			value := nearestRankP75(evidence.values)
 			severity := browserSeverity(value, good, poor)
 			if severity == "good" {
+				evaluatedBaseline := evaluateFindingBaseline(inputs, finding)
+				if evaluatedBaseline.Status != "regressed" {
+					continue
+				}
+				finding.Observed, finding.Severity, finding.State = &value, "needs_improvement", "active"
+				finding.Evidence.Documents = browserFindingDocuments(inputs.runID, observations, metric.Metric, cohort, 0)
+				finding.Summary = fmt.Sprintf("%s p75 on %s/%s is %s (regressed against baseline %s), from %d qualified final documents.", strings.ToUpper(metric.Metric), cohort.Engine, cohort.DeviceProfile,
+					formatBrowserMetricValue(metric.Metric, value), evaluatedBaseline.BaselineRunID, evidence.quality.EligibleFinal)
+				add(finding)
 				continue
 			}
 			finding.Observed, finding.Severity, finding.State = &value, severity, "active"
@@ -694,4 +963,287 @@ func formatBrowserMetricValue(metric string, value float64) string {
 		return fmt.Sprintf("%.3f", value)
 	}
 	return fmt.Sprintf("%.0f ms", value)
+}
+
+func boundedBrowserCandidateRejections(rejected []rca.BrowserCandidateRejection) []rca.BrowserCandidateRejection {
+	var out []rca.BrowserCandidateRejection
+	for _, r := range rejected {
+		if len(r.Reasons) == 1 && r.Reasons[0] == "self_baseline" {
+			continue
+		}
+		out = append(out, rca.BrowserCandidateRejection{
+			TestID:  r.TestID,
+			Digest:  r.Digest,
+			Reasons: slices.Clone(r.Reasons),
+		})
+		if len(out) >= browserFindingCandidateRejectionLimit {
+			break
+		}
+	}
+	return out
+}
+
+func firstSpecificSelectionReason(reasons []string, fallback string) string {
+	for _, reason := range reasons {
+		trimmed := strings.TrimSpace(reason)
+		if trimmed != "" && trimmed != "current_population_not_comparable" && trimmed != "self_baseline" {
+			return trimmed
+		}
+	}
+	for _, reason := range reasons {
+		if trimmed := strings.TrimSpace(reason); trimmed != "" {
+			return trimmed
+		}
+	}
+	return fallback
+}
+
+func isInsufficientBaselineReason(reason string) bool {
+	switch reason {
+	case rca.BrowserBaselineInsufficient,
+		rca.BrowserBaselineZeroVariance,
+		rca.BrowserBaselineNoBaselineCohort,
+		rca.BrowserBaselineNoSameLoadWindow,
+		rca.BrowserBaselineEvidenceUnavailable,
+		rca.BrowserBaselineRunEvidenceIncomplete,
+		rca.BrowserBaselineRunEvidenceUnavailable,
+		rca.BrowserBaselineLevelsUnavailable,
+		rca.BrowserBaselineNoEffectFloor,
+		rca.BrowserBaselineOutsideSteadyLoad,
+		rca.BrowserBaselineResultsTruncated,
+		"metric_not_observed",
+		"no_qualified_final_observations":
+		return true
+	}
+	return false
+}
+
+func findingBaselineStatusRank(status string) int {
+	switch status {
+	case "regressed":
+		return 0
+	case "unqualified":
+		return 1
+	case "insufficient_evidence":
+		return 2
+	case "within_baseline":
+		return 3
+	case "not_selected":
+		return 4
+	case "not_evaluated":
+		return 5
+	default:
+		return 6
+	}
+}
+
+func baselineResultMatchesFinding(r rca.BrowserBaselineResult, metric string, cohort *BrowserFindingCohort) bool {
+	if cohort == nil || r.Metric != metric {
+		return false
+	}
+	if r.Engine != "" || r.DeviceProfile != "" || r.FrameScope != "" || r.LifecyclePhase != "" {
+		return r.Engine == cohort.Engine &&
+			r.DeviceProfile == cohort.DeviceProfile &&
+			r.FrameScope == cohort.FrameScope &&
+			r.LifecyclePhase == cohort.LifecyclePhase
+	}
+	if len(r.Evidence) == 0 {
+		return false
+	}
+	_, fragment, ok := strings.Cut(r.Evidence[0].Locator, "#")
+	if !ok {
+		return false
+	}
+	parts := strings.Split(fragment, " · ")
+	if len(parts) < 5 {
+		return false
+	}
+	profile := strings.TrimPrefix(parts[2], "profile=")
+	return parts[0] == metric &&
+		parts[1] == cohort.Engine &&
+		profile == cohort.DeviceProfile &&
+		parts[3] == cohort.FrameScope &&
+		parts[4] == cohort.LifecyclePhase
+}
+
+func classifyBrowserBaselineResult(r rca.BrowserBaselineResult) (status, reason, detail string) {
+	switch r.State {
+	case rca.BrowserBaselineAnomaly:
+		if r.Direction != rca.DirectionDecrease {
+			return "regressed", "", fmt.Sprintf("level %s: current %s vs baseline mean %s (z=%.2f)", r.Level, formatBrowserMetricValue(r.Metric, r.Current), formatBrowserMetricValue(r.Metric, r.BaselineMean), r.Z)
+		}
+		return "within_baseline", "", fmt.Sprintf("level %s: current %s vs baseline mean %s (z=%.2f)", r.Level, formatBrowserMetricValue(r.Metric, r.Current), formatBrowserMetricValue(r.Metric, r.BaselineMean), r.Z)
+	case rca.BrowserBaselineWithinRange:
+		return "within_baseline", "", fmt.Sprintf("level %s: current %s within [%s, %s]", r.Level, formatBrowserMetricValue(r.Metric, r.Current), formatBrowserMetricValue(r.Metric, r.ExpectedLow), formatBrowserMetricValue(r.Metric, r.ExpectedHigh))
+	default:
+		if isInsufficientBaselineReason(r.Reason) {
+			return "insufficient_evidence", r.Reason, r.Detail
+		}
+		return "unqualified", firstNonEmpty(r.Reason, "unqualified"), r.Detail
+	}
+}
+
+func evaluateFindingBaseline(inputs *browserIntelligenceInputs, finding BrowserFinding) BrowserFindingBaseline {
+	mode := inputs.policy.Baseline.Mode
+	if mode == "" {
+		mode = "none"
+	}
+	out := BrowserFindingBaseline{
+		Mode:       mode,
+		PolicyPins: cloneRunPolicyPins(inputs.policyPins),
+	}
+	if finding.Category == browserFindingCategoryCollection {
+		out.Status = "not_applicable"
+		return out
+	}
+	if inputs.provisional {
+		out.Status = "not_evaluated_live"
+		out.Reason = "not_evaluated_live"
+		out.BaselineRunID = inputs.baselineRunID
+		out.BaselineArchiveSHA256 = inputs.baselineArchiveSHA256
+		return out
+	}
+	if inputs.rcaAnalysisID != "" {
+		out.AnalysisID = inputs.rcaAnalysisID
+		out.SelectionReceiptSHA256 = inputs.selectionReceiptSHA256
+		out.BaselineRunID = inputs.baselineRunID
+		out.BaselineArchiveSHA256 = inputs.baselineArchiveSHA256
+		if inputs.browserSelection != nil {
+			out.SelectionStatus = inputs.browserSelection.Status
+			out.RejectedCandidates = boundedBrowserCandidateRejections(inputs.browserSelection.Rejected)
+		}
+	}
+	if mode == "none" {
+		out.Status = "not_selected"
+		out.Reason = rca.BrowserBaselinePolicyOff
+		return out
+	}
+	if !finding.Applicable {
+		out.Status = "not_applicable"
+		out.Reason = finding.Reason
+		return out
+	}
+	if inputs.rcaAnalysisID == "" {
+		out.Status = "not_evaluated"
+		out.Reason = firstNonEmpty(inputs.baselineMismatchReason, "rca_not_completed")
+		return out
+	}
+	if inputs.baselineRunID == "" {
+		if inputs.browserSelection != nil {
+			switch inputs.browserSelection.Status {
+			case "current_unqualified":
+				out.Status = "unqualified"
+				out.Reason = firstSpecificSelectionReason(inputs.browserSelection.Reasons, "current_unqualified")
+				if len(inputs.browserSelection.Reasons) > 0 {
+					out.Detail = "current run is not qualified for baseline comparison: " + strings.Join(inputs.browserSelection.Reasons, ", ")
+				}
+				return out
+			case "no_compatible_candidate":
+				out.Status = "not_selected"
+				if len(out.RejectedCandidates) > 0 {
+					first := out.RejectedCandidates[0]
+					out.Reason = firstSpecificSelectionReason(first.Reasons, rca.BrowserBaselineNoBaselineRun)
+					out.Detail = fmt.Sprintf("candidate %s rejected: %s", first.TestID, strings.Join(first.Reasons, ", "))
+				} else {
+					out.Reason = rca.BrowserBaselineNoBaselineRun
+					out.Detail = "no compatible baseline candidate was found in the project"
+				}
+				return out
+			default:
+				if inputs.browserSelection.Status != "" && inputs.browserSelection.Status != "selected" {
+					out.Status = "unqualified"
+					out.Reason = inputs.browserSelection.Status
+					return out
+				}
+			}
+		}
+		out.Status = "not_selected"
+		out.Reason = rca.BrowserBaselineNoBaselineRun
+		return out
+	}
+	if inputs.baselineQualification == rca.BaselineUnqualified || (inputs.browserBaseline != nil && inputs.browserBaseline.Baseline.Qualification == rca.BaselineUnqualified) {
+		reasons := inputs.baselineReasons
+		if len(reasons) == 0 && inputs.browserBaseline != nil {
+			reasons = inputs.browserBaseline.Baseline.Reasons
+		}
+		out.Status = "unqualified"
+		out.Reason = firstSpecificSelectionReason(reasons, rca.BrowserBaselineNoBaselineRun)
+		if len(reasons) > 0 {
+			out.Detail = "baseline run " + inputs.baselineRunID + " is not workload-qualified: " + strings.Join(reasons, ", ")
+		}
+		return out
+	}
+	if inputs.browserBaseline == nil {
+		out.Status = "insufficient_evidence"
+		out.Reason = rca.BrowserBaselineRunEvidenceUnavailable
+		return out
+	}
+	type candidateVerdict struct {
+		status     string
+		reason     string
+		detail     string
+		absZ       float64
+		levelStart time.Time
+		id         string
+	}
+	var verdicts []candidateVerdict
+	for _, r := range inputs.browserBaseline.Results {
+		if !baselineResultMatchesFinding(r, finding.Metric, finding.Cohort) {
+			continue
+		}
+		status, reason, detail := classifyBrowserBaselineResult(r)
+		verdicts = append(verdicts, candidateVerdict{
+			status:     status,
+			reason:     reason,
+			detail:     detail,
+			absZ:       math.Abs(r.Z),
+			levelStart: r.LevelStart,
+			id:         r.ID,
+		})
+	}
+	if len(verdicts) > 0 {
+		sort.SliceStable(verdicts, func(i, j int) bool {
+			a, b := verdicts[i], verdicts[j]
+			if findingBaselineStatusRank(a.status) != findingBaselineStatusRank(b.status) {
+				return findingBaselineStatusRank(a.status) < findingBaselineStatusRank(b.status)
+			}
+			if a.absZ != b.absZ {
+				return a.absZ > b.absZ
+			}
+			if a.reason != b.reason {
+				return a.reason < b.reason
+			}
+			if !a.levelStart.Equal(b.levelStart) {
+				return a.levelStart.Before(b.levelStart)
+			}
+			return a.id < b.id
+		})
+		best := verdicts[0]
+		out.Status, out.Reason, out.Detail = best.status, best.reason, best.detail
+		return out
+	}
+	if finding.State == "unscored" && isInsufficientBaselineReason(finding.Reason) && inputs.browserBaseline.Status != rca.DetectionUnavailable {
+		out.Status = "insufficient_evidence"
+		out.Reason = finding.Reason
+		return out
+	}
+	for _, l := range inputs.browserBaseline.Limitations {
+		switch l.Code {
+		case rca.BrowserBaselinePolicyOff:
+			out.Status, out.Reason, out.Detail = "not_selected", l.Code, l.Detail
+			return out
+		case rca.BrowserBaselineNoBaselineRun:
+			out.Status, out.Reason, out.Detail = "not_selected", l.Code, l.Detail
+			return out
+		case rca.BrowserBaselineLevelsUnavailable, rca.BrowserBaselineRunEvidenceUnavailable, rca.BrowserBaselineRunEvidenceIncomplete, rca.BrowserBaselineEvidenceUnavailable, rca.BrowserBaselineResultsTruncated:
+			out.Status, out.Reason, out.Detail = "insufficient_evidence", l.Code, l.Detail
+			return out
+		default:
+			out.Status, out.Reason, out.Detail = "unqualified", l.Code, l.Detail
+			return out
+		}
+	}
+	out.Status = "insufficient_evidence"
+	out.Reason = firstNonEmpty(finding.Reason, rca.BrowserBaselineOutsideSteadyLoad)
+	return out
 }

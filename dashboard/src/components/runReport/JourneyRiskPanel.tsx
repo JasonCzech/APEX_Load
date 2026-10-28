@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '../../hooks/useApi'
 import { getErrorMessage } from '../../utils/errorUtils'
@@ -55,15 +55,25 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
   const [failure, setFailure] = useState<JourneyLoadFailure | null>(null)
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
+  const loadedRunIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
+    if (loadedRunIdRef.current !== testId) {
+      setReport(null)
+      setLoading(true)
+    }
     setFailure(null)
     getTestArchiveJourneys(testId, selection, { signal: controller.signal })
-      .then(next => { if (!controller.signal.aborted) setReport(next) })
+      .then(next => {
+        if (!controller.signal.aborted) {
+          loadedRunIdRef.current = testId
+          setReport(next)
+        }
+      })
       .catch(err => {
         if (controller.signal.aborted) return
+        loadedRunIdRef.current = null
         setReport(null)
         setFailure(journeyLoadFailure(err, selection))
       })
@@ -71,14 +81,23 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
     return () => controller.abort()
   }, [getTestArchiveJourneys, testId, selection, attempt])
 
+  const isProvisional = Boolean(report?.provisional)
+  useEffect(() => {
+    if (!isProvisional) return
+    const timer = window.setTimeout(() => setAttempt(value => value + 1), 3000)
+    return () => window.clearTimeout(timer)
+  }, [isProvisional, report])
+
   const apply = (event: FormEvent) => {
     event.preventDefault()
     const policy = policyDraft.trim()
     const revision = Number.parseInt(revisionDraft, 10)
+    loadedRunIdRef.current = null
+    setReport(null)
     setSelection(policy ? { policy, revision: Number.isFinite(revision) && revision > 0 ? revision : undefined } : {})
   }
 
-  return <section className="run-report-panel journey-risk" aria-label="Journey risk">
+  return <section className="run-report-panel journey-risk" aria-label="Journey risk" data-provisional={isProvisional ? 'true' : undefined}>
     <h2>Journey risk</h2>
     <form className="run-report-toolbar-actions" onSubmit={apply} aria-label="Journey policy">
       <label>Journey policy <input value={policyDraft} onChange={event => setPolicyDraft(event.target.value)} placeholder="Run's pinned policy" maxLength={128} /></label>
@@ -86,6 +105,7 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
       <button type="submit" className="btn btn-secondary" disabled={loading}>Apply</button>
     </form>
     {loading && <p role="status">Accounting journeys…</p>}
+    {!loading && isProvisional && <p role="note" className="run-report-provisional-notice">Provisional live journey accounting (non-verdict) — updated from active and completed VUser iterations and replaced when the archive is finalized.{report?.live_truncated ? ' Live journey event buffer reached its in-memory bound (live_truncated).' : ''}</p>}
     {!loading && failure?.kind === 'archive_missing' && <p role="note">This run's saved archive is not available yet (it may still be publishing), so its journeys cannot be accounted. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p>}
     {!loading && failure?.kind === 'not_finalized' && <p role="note">Journeys are accounted once the run's archive is finalized. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p>}
     {!loading && failure?.kind === 'policy' && <Notice tone="error" title={failure.message} details={failure.detail} />}
@@ -104,7 +124,7 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
           <th scope="col">Skipped</th><th scope="col">Censored</th><th scope="col">Failure rate</th><th scope="col">Step failures</th>
         </tr></thead>
         <tbody>{report.journeys.map(journey => <tr key={journey.id}>
-          <td><span title={`From ${formatJourneyBoundary(journey.start)} to ${formatJourneyBoundary(journey.success)}`}>{journey.name}</span></td>
+          <td><span title={`From ${formatJourneyBoundary(journey.start)} to ${formatJourneyBoundary(journey.success)}${journey.match_mode ? ` (matched by ${journey.match_mode === 'step_path' ? 'step path' : journey.match_mode})` : ''}`}>{journey.name}</span></td>
           <td>{journey.weight}</td><td>{journey.completed}</td><td>{journey.failed}</td><td>{journey.aborted}</td>
           <td>{journey.skipped}</td><td>{journey.censored}</td><td>{formatJourneyFraction(journey.failure_rate)}</td>
           <td>{journey.step_failures} of {journey.steps}</td>

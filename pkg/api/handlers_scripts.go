@@ -586,7 +586,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if script != nil && script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+		if script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
 			delete(script.Metadata.Import.Preserved, "effective_settings")
 		}
 		if stored.Script != nil && stored.Script.Metadata != nil &&

@@ -124,7 +124,11 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if status, ok := runPolicyErrorStatus(err); ok {
-			writeError(w, status, err.Error())
+			msg := err.Error()
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
+			writeError(w, status, msg)
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -321,14 +325,18 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		status := http.StatusBadRequest
+		msg := err.Error()
 		if errors.Is(err, errScenarioConcurrentChange) {
 			status = http.StatusConflict
 		} else if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
 			status = http.StatusForbidden
 		} else if policyStatus, ok := runPolicyErrorStatus(err); ok {
 			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	if !ok {
@@ -565,10 +573,16 @@ func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Re
 	preview, err := schedules.PreviewScenarioScheduleRuns(r.PathValue("id"), req, count)
 	if err != nil {
 		status := http.StatusBadRequest
-		if err.Error() == "scenario not found: "+r.PathValue("id") {
+		msg := err.Error()
+		if policyStatus, ok := runPolicyErrorStatus(err); ok {
+			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
+		} else if err.Error() == "scenario not found: "+r.PathValue("id") {
 			status = http.StatusNotFound
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, preview)
@@ -588,10 +602,16 @@ func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	schedule, err := schedules.CreateScenarioSchedule(r.PathValue("id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
-		if err.Error() == "scenario not found: "+r.PathValue("id") {
+		msg := err.Error()
+		if policyStatus, ok := runPolicyErrorStatus(err); ok {
+			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
+		} else if err.Error() == "scenario not found: "+r.PathValue("id") {
 			status = http.StatusNotFound
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	projectID := schedules.ScenarioProjectID(r.PathValue("id"))
@@ -632,10 +652,16 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	schedule, ok, err := schedules.UpdateScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
-		if errors.Is(err, errScheduleConcurrentChange) {
+		msg := err.Error()
+		if policyStatus, ok := runPolicyErrorStatus(err); ok {
+			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
+		} else if errors.Is(err, errScheduleConcurrentChange) {
 			status = http.StatusConflict
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	if !ok {
@@ -786,6 +812,9 @@ func scenarioScheduleAuditDetails(schedule *storage.ScenarioSchedule) map[string
 	}
 	if schedule.Governance != nil {
 		details["governance"] = schedule.Governance
+	}
+	if schedule.AnalysisPolicySelections != nil {
+		details["analysis_policy_selections"] = schedule.AnalysisPolicySelections
 	}
 	if len(schedule.BlackoutWindows) > 0 {
 		details["blackout_windows"] = schedule.BlackoutWindows

@@ -31,7 +31,7 @@ A run with browser groups, browser document evidence or a pinned browser policy 
 - **Journey risk.**
 - **The retained resource inspector.**
 
-The live execution page shows the same comparison over the documents published so far. Findings, interaction patterns and journeys read the finalized archive, so they appear only in the run report.
+The live execution page shows the same comparison over the documents published so far, together with **Provisional live browser intelligence** (findings, interaction patterns, and journey risk) evaluated on a 30-second cadence from bounded incremental document, interaction, and journey evidence (`provisional: true`, baseline status `not_evaluated_live`, and `live_truncated: true` if in-memory live caps are exceeded). Provisional live snapshots are persisted through `LiveStateStore` so HA followers serve identical provisional responses while the run is active or finalizing, and are atomically replaced once the finalized archive is attached.
 
 ### Drill-down: finding → document → resources → HAR entry
 
@@ -56,8 +56,8 @@ The live execution page shows the same comparison over the documents published s
 ## Saved panels
 
 Project analytics panels can plot **Archived browser documents**: a document metric (`document_lcp`, `document_fcp`, `document_inp`, `document_cls`) at p50 to p99 over elapsed time.
-- **One tuple per panel:** a panel reads one measurement tuple, named by engine, device profile, group, region, runtime cohort, frame scope and lifecycle. A selection that spans several tuples is refused and names the first difference.
-- **Viewing:** saved panels open in the run's archived panels.
+- **One tuple per panel (or separate cohorts):** a single-tuple panel reads one measurement tuple, named by engine, device profile, group, region, runtime cohort, frame scope and lifecycle; a separate-cohort panel (`browser_tuple_mode: "separate"`) plots up to 20 complete tuples independently.
+- **Frozen archive, policy, and baseline selection pins (`query_version: 5`, `BrowserPanelInputs` `version: 2`):** saving a comparison to a panel from **Baseline comparison → Save to panel** evaluates and pins the current and baseline archive manifest SHA-256 digests, sorted tuple IDs, immutable `browser_policy` and `journey_policy` revision pins (`kind`, `id`, `revision`, `sha256`), and the matched root-cause analysis `selection_receipt_sha256` (`browser_selection` receipt digest). Reopening via `POST /api/v1/tests/{id}/archive/native-series` or `apexctl analysis replay-panel` verifies that pinned policy revisions have not been tombstoned and that the selection receipt and archive digests match, while keeping `query_version: 4` (`version: 1`) saved panels readable.
 
 ## Reports
 
@@ -77,6 +77,8 @@ Each section reads its result when the report is exported. A section whose resul
 | Journey accounting | `analysis journeys --run ID [--policy ID [--revision N]]` | `run_archive_journeys` |
 | One request's HAR entry | `analysis har-entry --run ID --request-id ID` | `run_archive_browser_har_entry` |
 | Policies | `analysis policies list\|get\|save\|delete --project ID …` | `analysis_policy_list`, `_get`, `_create`, `_update`, `_delete` |
+| Replay saved panel | `analysis replay-panel --id ID [--revision N]` | — |
+| Pin policies on run / CI / schedule | `run --api URL [--browser-policy ID@REV] [--journey-policy ID@REV]`, `ci run [--browser-policy ID@REV] [--journey-policy ID@REV]`, `schedule preview\|create\|update --scenario ID [--browser-policy ID@REV\|project_default] [--journey-policy ID@REV\|project_default]` | — |
 
 `apexctl analysis policies save` with `--id` needs the `--revision` the policy was read at, as the editor does.
 
@@ -89,7 +91,7 @@ Automated acceptance suites verify each of these behaviors, including a golden p
 Browser findings judge a run's archived document metrics against a
 versioned `browser_policy`, server side. They produce two things:
 
-- versioned finding records (`browser_findings.v1`);
+- versioned finding records (`browser_findings.v2`);
 - a weighted score (`browser_score.v1`).
 
 Only qualified final observations count. The dashboard's legacy summary
@@ -108,11 +110,20 @@ contains:
 - **Applicability:** optional engine (`chromium`, `webkit`) and device
   profile lists. A cohort outside them is suppressed, never scored.
 - **Effect floors and baseline mode:** these are used by RCA's browser
-  baseline anomalies (`browser_baseline.v1`, a separate rule set). The floors
-  can only raise its minimums. Mode `none` turns the comparison off,
-  `pinned_run` compares only when the analysis's baseline is that run, and
-  `latest_compatible` uses the analysis's baseline run. A threshold finding
-  records the baseline mode with status `not_evaluated`.
+  baseline anomalies (`browser_baseline.v1`) and populated into each finding's
+  `baseline` verdict under `browser_findings.v2`. The floors can only raise its
+  minimums. Mode `none` turns the comparison off (`status: not_selected`,
+  `reason: policy_baseline_off`), `pinned_run` compares only when the
+  analysis's baseline is that run, and `latest_compatible` uses the analysis's
+  selected baseline run. When a completed RCA analysis matches the run's
+  archive digest and the evaluated policy's `PolicySHA256`, each application
+  outcome finding records `regressed`, `within_baseline`,
+  `insufficient_evidence`, `unqualified` (with its reason), or `not_selected`
+  (never healthy when a baseline is missing), with deterministic worst-status
+  precedence across multi-load-level runs and immutable links to the RCA
+  analysis ID, baseline run ID, baseline archive digest, `browser_selection`
+  receipt digest, and pinned browser/journey policies; `collection_health`
+  findings record `not_applicable`.
 
 A policy marked `apply_by_default` is pinned to every run started in the
 project, by revision and digest.
@@ -121,9 +132,11 @@ project, by revision and digest.
 
 Evaluation is a `browser_intelligence` evaluation job.
 
-- **Automatically:** when a run's archive is finalized, if the run pinned a
-  browser policy and requested document evidence. An evaluation of the same
-  inputs (same archive digest and policy revision) is never queued twice.
+- **Automatically:** when a run's archive is finalized (if the run pinned a
+  browser policy and requested document evidence), and again when a completed
+  root-cause analysis commits for that run so findings reflect the evaluated
+  baseline status without double-firing webhook notifications for unchanged
+  active finding keys. An evaluation of the same inputs is never queued twice.
 - **On demand:**
   - `POST /api/v1/analysis/evaluations` with
     `{"kind":"browser_intelligence","request":{"run":"<id>"}}`. Add
@@ -156,7 +169,7 @@ reported in the finding's `quality`, never in its value.
 
 | Rule | Category | Produces |
 | --- | --- | --- |
-| `threshold` | application outcome | `active` with severity `needs_improvement` (p75 above good) or `poor` (above poor); `suppressed` outside applicability; `unscored` when the metric was not observed or has no qualified final observation. Within good, there is no finding. |
+| `threshold` | application outcome | `active` with severity `needs_improvement` (p75 above good, or within good when its evaluated baseline status is `regressed`) or `poor` (above poor); `suppressed` outside applicability; `unscored` when the metric was not observed or has no qualified final observation. Within good and not regressed against the baseline, there is no finding. |
 | `collection.incomplete` | collection health | `active` when the run's document evidence lost observations. |
 | `collection.absent` | collection health | `active` when document evidence was requested and none was retained. |
 
@@ -374,22 +387,30 @@ rows outside iterations (init, teardown, or no identity).
 ## Patterns and heatmaps
 
 `GET /api/v1/tests/{id}/archive/browser-interactions` reads a finalized run's
-interaction evidence (historical-only `browser_interaction_patterns.v2`, or
-`browser_interaction_patterns.v3` when raw v2 is present). Viewer access is
+interaction evidence (historical-only `browser_interaction_patterns.v2`,
+`browser_interaction_patterns.v3` when raw v2/v3 is present, or
+`browser_interaction_patterns.v4` when raw v4 interaction evidence is present;
+append `?format=csv` for a spreadsheet-safe CSV export of coverage, patterns,
+heatmaps, keyboard targets, limitations, and notes). Viewer access is
 enough. The run report shows the result in its [Browser area](#the-browser-area-of-a-run-report), under **Interaction patterns**. A run without interaction evidence answers
 `not_captured`; a run that captured some but kept none in its archive (a
 failed transfer, a refused or torn sidecar) answers `unavailable` with what
-was lost. The response states its thresholds and coverage: interactions,
+was lost. The response states its thresholds and coverage: interactions
+(`interactions` and `streamed_interactions`), pattern-sample retention
+(`pattern_retained` and `pattern_truncated` when the 100,000-row pattern sample
+is exceeded while streaming coverage and heatmaps continue across all records),
 records, dropped (by capture bounds, or lost before the archive) and
 incomplete evidence (the archive's own account, which includes sources that
-never arrived), counts by provenance, gestures mapped,
+never arrived), counts by provenance, gestures mapped (`mapped`, plus
+`mapped_via_transform` when same-origin child-frame gestures are mapped via an
+invertible 2D frame-chain transform in v4),
 and gestures left out by reason. A run without an archive answers `404` (on
 an HA controller, also until the finalized archive is published, so the run
 report offers to check again), an archive not yet finalized `409`, and
 unreadable evidence or an archive that cannot be read `500`. Nothing is
 replayed or injected.
 
-V3 pattern eligibility requires a valid authored step, engine invocation and
+V3 and V4 pattern eligibility requires a valid authored step, engine invocation and
 joined native dispatch timestamp whose source/document/lifecycle tuple is present
 in the verified document archive. A separate 100,000-tuple bound limits this
 join index; excess tuples remain `document_lifecycle_unavailable`, with
@@ -401,15 +422,19 @@ cover the streamed input; the existing 100,000-row retained pattern bound
 still applies. Historical rows remain downloadable and may contribute only
 to separately labelled historical maps in a mixed archive.
 
-V3 groups patterns by source generation, document and lifecycle and sorts by
+V3 and V4 group patterns by source generation, document and lifecycle and sort by
 native dispatch. Repetition requires the same structural step, compatible
 scroll/layout/viewport geometry and the 2-second native-event window;
 duplicate display names cannot merge. Intended retries share the engine's
-logical invocation and consecutive attempt numbers, rather than being
+logical invocation and increasing attempt numbers (even when an intermediate
+attempt was dropped), rather than being
 inferred from proximity. Retry attempts stay out of repetition even when an
 earlier attempt is missing. Pattern windows use the observed dispatch clock,
 so post-action waits do not move them. Pattern and report output retain the
-authored step and script identity. Sync-only outcome limits remain; canceled
+authored step and script identity. In V4, every missed declared page-response
+outcome (`sync`, `dialog`, `download`, `assertion`, or `navigation`) is
+evaluated with its own deadline and emits a distinct `dead_interaction` or
+`unexpected_navigation` pattern ID; canceled
 or otherwise unevaluated waits cannot become dead interactions.
 
 Historical-only v2 analysis keeps the following rules per document, in capture order:
@@ -560,13 +585,13 @@ runtime, policy, load, document, page or measurement cohorts. Authored page
 identity and compatible-baseline selection remain separate requirements.
 
 
-## Choose policy revisions for a run
+## Choose policy revisions for a run or recurring schedule
 
-In New run, expand **Browser and journey policies** to choose an exact browser or journey policy revision. The latest revision is offered initially; an older revision remains selectable by its revision number. Leaving a kind on **Project default at start** preserves default resolution. Policy lists load when the section opens.
+In New run (both **Run setup** and **Schedules**), expand **Browser and journey policies** to choose an exact browser or journey policy revision. The latest revision is offered initially; an older revision remains selectable by its revision number. Leaving a kind on **Project default at start** preserves default resolution. Policy lists load when the section opens.
 
-Run drafts, held runs, delayed starts and revised queued copies retain the selection. In a revised copy, explicitly choosing the project default clears the inherited selection. Switching projects clears the prior project's selection. Recurring schedule authoring continues to use project defaults; this selector does not change a saved scenario or recurring schedule.
+Run drafts, held runs, delayed starts, revised queued copies and recurring scenario schedules (`scenario_schedules.analysis_policy_selections_json`, schema v85) retain the selection. In a revised copy or a saved recurring schedule edit, explicitly choosing the project default (`analysis_policy_selections: {}`) clears the inherited or previously saved selection; omitting `analysis_policy_selections` on a partial schedule update (such as pausing or enabling) preserves the saved selection. Switching projects clears the prior project's selection. Saved schedules display their pinned revision tokens (`browser policy rN`, `journey policy rN`) in the scenario schedule table and project schedule catalog.
 
-Creation checks the selected revision and project. Admission resolves the same immutable revision again and computes its digest on the server. A later edit does not change the chosen revision. A policy deletion visible when admission resolves the selection refuses the start; it cannot silently replace the selection with a default. Already admitted runs retain their historical policy pins and findings. Policy resolution and the admission write use the existing run-identity and execution-ownership fences.
+Creation and schedule preview/save check the selected revision and project. Admission and recurring schedule materialization resolve the same immutable revision again and compute its digest on the server. A later edit does not change the chosen revision. A policy deletion visible when admission or recurring schedule materialization resolves the selection refuses the start (recording `reason_code: "analysis_policy_unavailable"` on the failed schedule occurrence); it cannot silently replace the selection with a default. Already admitted runs retain their historical policy pins and findings. Policy resolution and the admission write use the existing run-identity and execution-ownership fences.
 
 The archive's `provenance.policy_pins` identifies an explicit selection with `source: run_selection`. A default uses `source: project_default`. The selected revision and current tombstone are read in one database snapshot. A concurrent deletion after that read follows the same admission boundary as existing default policies. Historical policy reads remain available after deletion for authorized inspection.
 

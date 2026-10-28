@@ -227,7 +227,7 @@ func (c *docxConverter) collectRuns(n *html.Node, props docxRunProps, preserve b
 			case "code":
 				next.mono = true
 			case "a":
-				if href := attr(ch, "href"); strings.HasPrefix(href, "#") {
+				if href := attr(ch, "href"); strings.HasPrefix(href, "#") && !strings.HasPrefix(href, "#/") {
 					nextLink = docxBookmarkName(strings.TrimPrefix(href, "#"))
 				}
 			}
@@ -300,7 +300,7 @@ func docxRunsXML(runs []docxRun) string {
 			inner = `<w:r>` + docxRunPropsXML(r.props) + `<w:t xml:space="preserve">` + docxXML(r.text) + `</w:t></w:r>`
 		}
 		if r.link != "" && !r.br {
-			inner = `<w:hyperlink w:anchor="` + r.link + `" w:history="1">` + inner + `</w:hyperlink>`
+			inner = `<w:hyperlink w:anchor="` + docxXML(r.link) + `" w:history="1">` + inner + `</w:hyperlink>`
 		}
 		b.WriteString(inner)
 	}
@@ -502,7 +502,7 @@ func (c *docxConverter) block(out *bytes.Buffer, n *html.Node) {
 
 func (c *docxConverter) bookmark(out *bytes.Buffer, id string) {
 	c.bookmarks++
-	fmt.Fprintf(out, `<w:bookmarkStart w:id="%d" w:name="%s"/><w:bookmarkEnd w:id="%d"/>`, c.bookmarks, docxBookmarkName(id), c.bookmarks)
+	fmt.Fprintf(out, `<w:bookmarkStart w:id="%d" w:name="%s"/><w:bookmarkEnd w:id="%d"/>`, c.bookmarks, docxXML(docxBookmarkName(id)), c.bookmarks)
 }
 
 func (c *docxConverter) contents(out *bytes.Buffer, n *html.Node) {

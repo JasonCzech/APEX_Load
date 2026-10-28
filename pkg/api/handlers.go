@@ -99,7 +99,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, errRunPolicyStoreUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
+			writeError(w, http.StatusServiceUnavailable, "analysis policy store unavailable")
 			return
 		}
 		if errors.Is(err, errRunPolicyConfiguration) {
@@ -190,7 +190,7 @@ func (s *Server) handlePreflightTest(w http.ResponseWriter, r *http.Request) {
 		// would: a failed policy read is retryable (503) and an unusable
 		// policy is a conflict (409), not a malformed request.
 		if errors.Is(err, errRunPolicyStoreUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
+			writeError(w, http.StatusServiceUnavailable, "analysis policy store unavailable")
 			return
 		}
 		if errors.Is(err, errRunPolicyConfiguration) {
@@ -444,16 +444,29 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, errStartAdmissionEvidenceStale) || retryableStartSecretRequirement(err) {
 			w.Header().Set("Retry-After", "1")
-			// The client gets the retry guidance. Only a provider failure behind a
-			// secret requirement is hidden from it; log that under the ref. An
+			// The client gets the retry guidance. Underlying provider or storage
+			// failures are hidden from it and logged under the ref; a pure
 			// admission race is a designed retry with nothing more to log.
 			ref := errorReferenceFor(w)
+			clientMessage := err.Error()
 			var requirementErr *startSecretRequirementError
-			if errors.As(err, &requirementErr) && requirementErr.cause != nil {
-				ref = logServerError(w, http.StatusServiceUnavailable, requirementErr.cause, "code", "start_admission_temporarily_unavailable", "test_id", id)
+			if errors.As(err, &requirementErr) {
+				clientMessage = requirementErr.Error()
+				if requirementErr.cause != nil {
+					ref = logServerError(w, http.StatusServiceUnavailable, requirementErr.cause, "code", "start_admission_temporarily_unavailable", "test_id", id)
+				}
+			} else if errors.Is(err, errStartAdmissionEvidenceStale) {
+				if errors.Is(err, errRunPolicyStoreUnavailable) {
+					clientMessage = "analysis policy store unavailable"
+				} else {
+					clientMessage = errStartAdmissionEvidenceStale.Error()
+				}
+				if err != errStartAdmissionEvidenceStale {
+					ref = logServerError(w, http.StatusServiceUnavailable, err, "code", "start_admission_temporarily_unavailable", "test_id", id)
+				}
 			}
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":   err.Error(),
+				"error":   clientMessage,
 				"code":    "start_admission_temporarily_unavailable",
 				"test_id": id,
 				"ref":     ref,

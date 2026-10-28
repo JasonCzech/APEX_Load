@@ -38,3 +38,45 @@ func (c *BrowserOutcomeClock) Clone() *BrowserOutcomeClock {
 	out := *c
 	return &out
 }
+
+func browserOutcomeTime(t time.Time) bool {
+	return !t.IsZero() && t.Location() == time.UTC && t.Year() >= 1970 && t.Year() <= 9999
+}
+
+func (c *BrowserOutcomeClock) Begin(budget time.Duration) {
+	if c == nil {
+		return
+	}
+	started := time.Now().UTC()
+	budgetMS := max(1, int(budget/time.Millisecond))
+	budgetDur := time.Duration(budgetMS) * time.Millisecond
+	*c = BrowserOutcomeClock{
+		Version:    1,
+		StartedAt:  started,
+		DeadlineAt: started.Add(budgetDur),
+		ObservedAt: started,
+		BudgetMS:   budgetMS,
+	}
+}
+
+func (c *BrowserOutcomeClock) Finish() {
+	if c == nil || c.StartedAt.IsZero() {
+		return
+	}
+	observed := time.Now().UTC()
+	if observed.Before(c.StartedAt) {
+		observed = c.StartedAt
+	}
+	c.ObservedAt = observed
+	c.ElapsedMS = c.ObservedAt.Sub(c.StartedAt).Seconds() * 1000
+}
+
+func (c *BrowserOutcomeClock) ClampToDeadline() {
+	if c == nil || c.StartedAt.IsZero() {
+		return
+	}
+	if c.ObservedAt.Before(c.DeadlineAt) {
+		c.ObservedAt = c.DeadlineAt
+		c.ElapsedMS = c.ObservedAt.Sub(c.StartedAt).Seconds() * 1000
+	}
+}

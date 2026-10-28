@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 )
 
@@ -26,12 +27,21 @@ type browserProofOwner struct {
 	authority       BrowserClockDomain
 	sequence, total uint64
 	at              int64
+	firstActivityNS int64
+	hasActivity     bool
 	sealed, failed  bool
 	slots           map[string]map[string]bool
 	seenSlots       map[string]bool
 	contexts        map[string]*BrowserContextProof
 	steady          *BrowserSteadyProof
 	spans           []BrowserSteadyProof
+}
+
+func (o *browserProofOwner) recordActivity(ns int64) {
+	if !o.hasActivity || ns < o.firstActivityNS {
+		o.firstActivityNS = ns
+		o.hasActivity = true
+	}
 }
 
 // BrowserSourceReconciler consumes the retained journal in exact owner order.
@@ -44,6 +54,7 @@ type BrowserSourceReconciler struct {
 	generations       map[string]*browserProofOwner
 	observed          map[string]map[string]BrowserDocumentReceipt
 	observedCount     int
+	clockEnvelope     *BrowserDistributedClockEnvelope
 	checked, complete bool
 	failed            error
 }
@@ -134,6 +145,7 @@ func (r *BrowserSourceReconciler) Observe(e *BrowserDocumentReceiptEvidence) err
 		if owner.seenSlots[event.SlotID] || len(owner.seenSlots) >= MaxBrowserProofRetainedContexts || len(owner.slots) >= MaxBrowserProofActiveSlots {
 			return fail("duplicate or excessive execution slot")
 		}
+		owner.recordActivity(event.AtNS)
 		owner.seenSlots[event.SlotID] = true
 		owner.slots[event.SlotID] = map[string]bool{}
 	case "context_expected":
@@ -143,6 +155,11 @@ func (r *BrowserSourceReconciler) Observe(e *BrowserDocumentReceiptEvidence) err
 		}
 		if e.Lifetime == nil || !e.Lifetime.CreationBracketed || e.Lifetime.Closed || len(e.Receipts) > 0 {
 			return fail("late context expectation")
+		}
+		if event.SourceOriginNS > 0 {
+			owner.recordActivity(min(event.AtNS, event.SourceOriginNS))
+		} else {
+			owner.recordActivity(event.AtNS)
 		}
 		slots[e.SourceGeneration] = false
 		owner.contexts[e.SourceGeneration] = &BrowserContextProof{AuthorityStartedAt: owner.startedAt, Receipts: e, Authority: owner.authority, BeforeNS: event.AtNS, SourceOriginNS: event.SourceOriginNS}
@@ -201,6 +218,7 @@ func (r *BrowserSourceReconciler) Observe(e *BrowserDocumentReceiptEvidence) err
 			owner.steady = nil
 		}
 		if event.Kind == "steady" && event.VUsers > 0 {
+			owner.recordActivity(event.AtNS)
 			owner.steady = &BrowserSteadyProof{BrowserMonotonicSpan: BrowserMonotonicSpan{Authority: owner.authority, StartNS: event.AtNS}, VUsers: event.VUsers}
 		}
 	case "owner_terminal":
@@ -322,4 +340,233 @@ func (r *BrowserSourceReconciler) Map(o BrowserDocumentObservation) (BrowserMono
 	// Reconciliation established EndNS <= AfterNS-origin, so these additions
 	// cannot overflow and every returned bound precedes terminal acknowledgement.
 	return BrowserMonotonicSpan{Authority: p.Authority, StartNS: p.SourceOriginNS + lower, EndNS: p.SourceOriginNS + metric.HostElapsedNS}, spans, nil
+}
+
+func (r *BrowserSourceReconciler) SetDistributedClockEnvelope(env *BrowserDistributedClockEnvelope) {
+	if r == nil {
+		return
+	}
+	r.clockEnvelope = env.Clone()
+}
+
+func (r *BrowserSourceReconciler) distributedClockParams() (maxSkewPPM, maxRTT, maxGap int64, ok bool) {
+	if r == nil || r.clockEnvelope == nil {
+		return 0, 0, 0, false
+	}
+	env := r.clockEnvelope
+	if env.Version != 1 || !env.Controller.Valid() || env.Controller.RunID != r.runID || env.AuthorityStartedAt.IsZero() {
+		return 0, 0, 0, false
+	}
+	maxSkewPPM = env.MaxSkewPPM
+	if maxSkewPPM == 0 {
+		maxSkewPPM = DefaultBrowserClockMaxSkewPPM
+	}
+	if maxSkewPPM < 0 || maxSkewPPM > MaxBrowserClockMaxSkewPPM {
+		return 0, 0, 0, false
+	}
+	maxRTT = env.MaxBracketRTTNS
+	if maxRTT == 0 {
+		maxRTT = DefaultBrowserClockMaxBracketRTTNS
+	}
+	if maxRTT <= 0 || maxRTT > DefaultBrowserClockMaxBracketRTTNS {
+		return 0, 0, 0, false
+	}
+	maxGap = env.MaxBracketGapNS
+	if maxGap == 0 {
+		maxGap = DefaultBrowserClockMaxBracketGapNS
+	}
+	if maxGap <= 0 || maxGap > MaxBrowserClockMaxBracketGapNS {
+		return 0, 0, 0, false
+	}
+	return maxSkewPPM, maxRTT, maxGap, true
+}
+
+func projectDistributedOwnerReading(ownerAuthority BrowserClockDomain, brackets []BrowserClockBracket, maxSkewPPM, g int64) (low, high int64, ok bool) {
+	if len(brackets) == 0 || g < 0 {
+		return 0, 0, false
+	}
+	low = 0
+	high = math.MaxInt64
+	for i := range brackets {
+		b := brackets[i]
+		if b.Authority != ownerAuthority || b.ControllerSendNS < 0 || b.ControllerRecvNS < b.ControllerSendNS || b.OwnerMonoNS < 0 {
+			return 0, 0, false
+		}
+		delta := g - b.OwnerMonoNS
+		absDelta := delta
+		if absDelta < 0 {
+			absDelta = -absDelta
+		}
+		skew, skewOK := browserClockSkewBoundsNS(absDelta, maxSkewPPM)
+		if !skewOK {
+			return 0, 0, false
+		}
+		sendPlusDelta, ok1 := addInt64Checked(b.ControllerSendNS, delta)
+		bLow, ok2 := addInt64Checked(sendPlusDelta, -skew)
+		recvPlusDelta, ok3 := addInt64Checked(b.ControllerRecvNS, delta)
+		bHigh, ok4 := addInt64Checked(recvPlusDelta, skew)
+		if !ok1 || !ok2 || !ok3 || !ok4 {
+			return 0, 0, false
+		}
+		if bLow > low {
+			low = bLow
+		}
+		if bHigh < high {
+			high = bHigh
+		}
+	}
+	if low > high {
+		return low, high, false
+	}
+	return low, high, true
+}
+
+func (r *BrowserSourceReconciler) ValidateDistributedClocks() (bool, string) {
+	if !r.Complete() {
+		return false, "browser_source_closure_incomplete"
+	}
+	if r.clockEnvelope == nil {
+		return false, "browser_clock_envelope_missing"
+	}
+	maxSkewPPM, maxRTT, maxGap, ok := r.distributedClockParams()
+	if !ok {
+		return false, "browser_clock_envelope_invalid"
+	}
+	env := r.clockEnvelope
+	if len(env.Owners) != len(r.owners) {
+		return false, "browser_clock_owner_brackets_missing"
+	}
+	ownerIDs := make([]string, 0, len(r.owners))
+	for id := range r.owners {
+		ownerIDs = append(ownerIDs, id)
+	}
+	slices.Sort(ownerIDs)
+	for _, id := range ownerIDs {
+		owner := r.owners[id]
+		brackets := env.Owners[id]
+		if len(brackets) < 2 || len(brackets) > MaxBrowserClockBracketsPerOwner {
+			return false, "browser_clock_owner_brackets_missing"
+		}
+		for i, b := range brackets {
+			if b.Authority != owner.authority || b.OwnerID != id || b.ControllerSendNS < 0 || b.ControllerRecvNS < b.ControllerSendNS || b.OwnerMonoNS < 0 {
+				return false, "browser_clock_bracket_invalid"
+			}
+			if b.ControllerRecvNS-b.ControllerSendNS > maxRTT {
+				return false, "browser_clock_bracket_rtt_exceeded"
+			}
+			if i > 0 {
+				if b.OwnerMonoNS < brackets[i-1].OwnerMonoNS {
+					return false, "browser_clock_brackets_inconsistent"
+				}
+				if b.OwnerMonoNS-brackets[i-1].OwnerMonoNS > maxGap {
+					return false, "browser_clock_bracket_gap_exceeded"
+				}
+			}
+		}
+		firstActivity := owner.at
+		if owner.hasActivity && owner.firstActivityNS < firstActivity {
+			firstActivity = owner.firstActivityNS
+		}
+		if brackets[0].OwnerMonoNS > firstActivity || brackets[len(brackets)-1].OwnerMonoNS < owner.at {
+			return false, "browser_clock_brackets_unbounded"
+		}
+		for _, b := range brackets {
+			if _, _, ok := projectDistributedOwnerReading(owner.authority, brackets, maxSkewPPM, b.OwnerMonoNS); !ok {
+				return false, "browser_clock_brackets_inconsistent"
+			}
+		}
+	}
+	return true, ""
+}
+
+func (r *BrowserSourceReconciler) distributedSteadySpans(maxSkewPPM int64) ([]BrowserSteadyProof, bool) {
+	env := r.clockEnvelope
+	ownerIDs := make([]string, 0, len(r.owners))
+	for id := range r.owners {
+		ownerIDs = append(ownerIDs, id)
+	}
+	slices.Sort(ownerIDs)
+	var fleetSpans []BrowserSteadyProof
+	for idx, id := range ownerIDs {
+		owner := r.owners[id]
+		brackets := env.Owners[id]
+		var ownerSpans []BrowserSteadyProof
+		for _, span := range owner.spans {
+			_, startHigh, ok1 := projectDistributedOwnerReading(owner.authority, brackets, maxSkewPPM, span.StartNS)
+			endLow, _, ok2 := projectDistributedOwnerReading(owner.authority, brackets, maxSkewPPM, span.EndNS)
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			if endLow > startHigh {
+				ownerSpans = append(ownerSpans, BrowserSteadyProof{
+					BrowserMonotonicSpan: BrowserMonotonicSpan{
+						Authority: env.Controller,
+						StartNS:   startHigh,
+						EndNS:     endLow,
+					},
+					VUsers: span.VUsers,
+				})
+			}
+		}
+		if idx == 0 {
+			fleetSpans = ownerSpans
+			continue
+		}
+		var next []BrowserSteadyProof
+		for _, a := range fleetSpans {
+			for _, b := range ownerSpans {
+				start := max(a.StartNS, b.StartNS)
+				end := min(a.EndNS, b.EndNS)
+				if end > start {
+					next = append(next, BrowserSteadyProof{
+						BrowserMonotonicSpan: BrowserMonotonicSpan{
+							Authority: env.Controller,
+							StartNS:   start,
+							EndNS:     end,
+						},
+						VUsers: a.VUsers + b.VUsers,
+					})
+				}
+			}
+		}
+		fleetSpans = next
+	}
+	return fleetSpans, true
+}
+
+// MapDistributed projects an owner-verified document observation and the
+// multi-generator steady-load spans into the controller's monotonic authority
+// domain using periodic RPC causal brackets and bounded crystal skew.
+func (r *BrowserSourceReconciler) MapDistributed(o BrowserDocumentObservation) (BrowserMonotonicSpan, time.Duration, []BrowserSteadyProof, error) {
+	if ok, reason := r.ValidateDistributedClocks(); !ok {
+		return BrowserMonotonicSpan{}, 0, nil, fmt.Errorf("browser distributed clock mapping unavailable: %s", reason)
+	}
+	localWindow, _, err := r.Map(o)
+	if err != nil {
+		return BrowserMonotonicSpan{}, 0, nil, err
+	}
+	maxSkewPPM, _, _, ok := r.distributedClockParams()
+	if !ok {
+		return BrowserMonotonicSpan{}, 0, nil, errors.New("browser distributed clock parameters invalid")
+	}
+	owner := r.generations[o.SourceGeneration]
+	if owner == nil {
+		return BrowserMonotonicSpan{}, 0, nil, errors.New("browser distributed clock owner missing")
+	}
+	brackets := r.clockEnvelope.Owners[owner.identity]
+	startLow, startHigh, ok1 := projectDistributedOwnerReading(owner.authority, brackets, maxSkewPPM, localWindow.StartNS)
+	endLow, endHigh, ok2 := projectDistributedOwnerReading(owner.authority, brackets, maxSkewPPM, localWindow.EndNS)
+	if !ok1 || !ok2 || endHigh < startLow {
+		return BrowserMonotonicSpan{}, 0, nil, errors.New("browser distributed clock projection failed")
+	}
+	spans, ok := r.distributedSteadySpans(maxSkewPPM)
+	if !ok {
+		return BrowserMonotonicSpan{}, 0, nil, errors.New("browser distributed steady span projection failed")
+	}
+	uncertainty := time.Duration(max(startHigh-startLow, endHigh-endLow))
+	return BrowserMonotonicSpan{
+		Authority: r.clockEnvelope.Controller,
+		StartNS:   startLow,
+		EndNS:     endHigh,
+	}, uncertainty, spans, nil
 }

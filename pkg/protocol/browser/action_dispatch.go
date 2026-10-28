@@ -207,6 +207,8 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 		return b.dispatchSwitchFrame(ctx, action), false
 	case "browser_switch_window":
 		return b.dispatchSwitchWindow(ctx, action), false
+	case "browser_close_window":
+		return b.dispatchCloseWindow(ctx, action), false
 	case "browser_handle_dialog":
 		return b.dispatchHandleDialog(action, result)
 	case "browser_screenshot":
@@ -269,6 +271,7 @@ func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Actio
 	b.registerPage(page, true)
 	b.currentFrameSelector = ""
 	timeout := b.actionTimeout(action)
+	b.recordNavPreSequence(page)
 	response, err := page.Goto(resolvedURL, playwright.PageGotoOptions{
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})

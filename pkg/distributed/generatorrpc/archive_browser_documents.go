@@ -103,3 +103,23 @@ func (w *archiveRecorder) bindBrowserDocumentCapture(requested bool) {
 		w.manifest.BrowserDocumentCaptureRequested = true
 	}
 }
+
+func (w *archiveRecorder) bindBrowserDocumentProofVersion(version int) {
+	if w == nil || version <= 0 {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.closed && version > w.browserDocumentProofVersion {
+		w.browserDocumentProofVersion = version
+	}
+}
+
+func (w *archiveRecorder) browserDocumentProofEnabled() bool {
+	if w == nil {
+		return false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.manifest.BrowserDocumentCaptureRequested && w.browserDocumentProofVersion >= 3
+}

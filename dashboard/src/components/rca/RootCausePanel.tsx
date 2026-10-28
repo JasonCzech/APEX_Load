@@ -387,7 +387,7 @@ export default function RootCausePanel({ testId, model, report, history, history
             </table>
           )}
         </details>
-        <RcaBrowserBaselineSection baseline={assessment.browser_baseline} />
+        <RcaBrowserBaselineSection baseline={assessment.browser_baseline} selection={assessment.browser_selection} receiptDigest={assessment.inputs.browser_selection} />
         <details data-report-focus="rca-coverage">
           <summary>Evidence coverage ({assessment.coverage.filter(c => c.status !== 'complete').length} gaps)</summary>
           <RcaCoverageList coverage={assessment.coverage} monitorEvidenceHref={monitorEvidenceHref} monitorSourcesHref={monitorSourcesHref} />
@@ -406,7 +406,7 @@ export default function RootCausePanel({ testId, model, report, history, history
         {response?.analysis_id && <RcaCritiques testId={testId} analysisId={response.analysis_id} />}
         <details className="rca-provenance">
           <summary>Engine and inputs</summary>
-          <p className="run-report-muted">Engine {assessment.inputs.engine} · evidence revision {assessment.inputs.evidence_revision}{assessment.inputs.baseline ? ' · with baseline' : ''}</p>
+          <p className="run-report-muted">Engine {assessment.inputs.engine} · evidence revision {assessment.inputs.evidence_revision}{assessment.inputs.baseline ? ' · with baseline' : ''}{assessment.inputs.browser_selection ? ` · browser selection receipt …${assessment.inputs.browser_selection.slice(-8)}` : ''}</p>
         </details>
       </>}
     </section>

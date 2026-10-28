@@ -4,13 +4,16 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +33,7 @@ import (
 // probe traffic: it reads what the run recorded.
 
 const (
+	browserInteractionAnalysisVersion4 = "browser_interaction_patterns.v4"
 	browserInteractionAnalysisVersion3 = "browser_interaction_patterns.v3"
 	browserInteractionAnalysisVersion  = "browser_interaction_patterns.v2"
 	// A repeated gesture is at least repeatMinGestures clicks, taps or checks
@@ -41,7 +45,10 @@ const (
 	repeatRadiusPx    = 32.0
 	// heatmapGrid is a map's cells per side.
 	heatmapGrid = 64
-	// Output and memory bounds.
+)
+
+// Output and memory bounds. Variables so unit tests can reach each bound.
+var (
 	maxInteractionPatterns       = 200
 	maxInteractionPatternMembers = 16
 	maxInteractionHeatmaps       = 64
@@ -67,11 +74,13 @@ type BrowserInteractionAnalysis struct {
 	// Status is ready; not_captured when the run recorded no interaction
 	// evidence; or unavailable when it captured some but none reached the
 	// archive (a lost transfer, a refused or torn sidecar).
-	Status     string                       `json:"status"`
-	Thresholds BrowserInteractionThresholds `json:"thresholds"`
-	Coverage   BrowserInteractionCoverage   `json:"coverage"`
-	Patterns   []BrowserInteractionPattern  `json:"patterns"`
-	Heatmaps   []BrowserInteractionHeatmap  `json:"heatmaps"`
+	Status        string                       `json:"status"`
+	Provisional   bool                         `json:"provisional,omitempty"`
+	LiveTruncated bool                         `json:"live_truncated,omitempty"`
+	Thresholds    BrowserInteractionThresholds `json:"thresholds"`
+	Coverage      BrowserInteractionCoverage   `json:"coverage"`
+	Patterns      []BrowserInteractionPattern  `json:"patterns"`
+	Heatmaps      []BrowserInteractionHeatmap  `json:"heatmaps"`
 	// Notes state what the analysis does not claim.
 	Notes       []string `json:"notes"`
 	Limitations []string `json:"limitations,omitempty"`
@@ -87,19 +96,23 @@ type BrowserInteractionThresholds struct {
 
 // BrowserInteractionCoverage counts the evidence and what was left out.
 type BrowserInteractionCoverage struct {
-	Interactions    int64            `json:"interactions"`
-	PatternEligible int64            `json:"pattern_eligible,omitempty"`
-	PatternExcluded map[string]int64 `json:"pattern_excluded,omitempty"`
-	Records         int64            `json:"records"`
+	Interactions         int64            `json:"interactions"`
+	StreamedInteractions int64            `json:"streamed_interactions"`
+	PatternRetained      int64            `json:"pattern_retained"`
+	PatternTruncated     int64            `json:"pattern_truncated,omitempty"`
+	PatternEligible      int64            `json:"pattern_eligible,omitempty"`
+	PatternExcluded      map[string]int64 `json:"pattern_excluded,omitempty"`
+	Records              int64            `json:"records"`
 	// Dropped counts interactions left out by capture bounds, refused by the
 	// archive's budget or a write, or lost with a torn sidecar. A failed
 	// transfer, a refused receipt or an invalid artifact loses an unknown
 	// number: it only sets Incomplete, which says some source's evidence is
 	// missing.
-	Dropped      int64            `json:"dropped"`
-	Incomplete   bool             `json:"incomplete"`
-	ByProvenance map[string]int64 `json:"by_provenance"`
-	Mapped       int64            `json:"mapped"`
+	Dropped            int64            `json:"dropped"`
+	Incomplete         bool             `json:"incomplete"`
+	ByProvenance       map[string]int64 `json:"by_provenance"`
+	Mapped             int64            `json:"mapped"`
+	MappedViaTransform int64            `json:"mapped_via_transform,omitempty"`
 	// Excluded counts interactions no heatmap holds, by reason (the
 	// capture's unavailable reasons, no_points, no_viewport,
 	// outside_viewport, heatmaps_truncated).
@@ -121,10 +134,14 @@ type BrowserInteractionPattern struct {
 	Start          time.Time                     `json:"start"`
 	End            time.Time                     `json:"end"`
 	// Declared and DeadlineMs are a dead interaction's authored outcome.
-	Declared     string   `json:"declared,omitempty"`
-	DeadlineMs   int      `json:"deadline_ms,omitempty"`
-	Detail       string   `json:"detail"`
-	Interactions []string `json:"interactions"`
+	OutcomeKind      string   `json:"outcome_kind,omitempty"`
+	OutcomeIndex     int      `json:"outcome_index,omitempty"`
+	OutcomeReason    string   `json:"outcome_reason,omitempty"`
+	Declared         string   `json:"declared,omitempty"`
+	DeadlineMs       int      `json:"deadline_ms,omitempty"`
+	Detail           string   `json:"detail"`
+	Interactions     []string `json:"interactions"`
+	MembersTruncated bool     `json:"members_truncated,omitempty"`
 }
 
 // BrowserInteractionHeatmap is one compatible layout's map.
@@ -247,6 +264,7 @@ type interactionAnalyzer struct {
 	// unknownCohort counts excluded gestures whose engine/profile cohort is
 	// unknown; unknownReason says why.
 	hasV2              bool
+	hasV4              bool
 	documentJoins      map[string]bool
 	patternPopulations map[string]int64
 	unknownCohort      int64
@@ -263,8 +281,8 @@ func newInteractionAnalyzer(runID string, cohorts map[string]browserGenerationCo
 			"Patterns describe the run's recorded gestures. Scripted or unknown gestures never carry a human-frustration label; a scripted repeat is scripted_repetition.",
 			"A dead interaction needs an authored expected outcome whose deadline was missed; an unchanged page alone is never one.",
 			"Heatmaps show where gestures were dispatched on an abstract grid of the viewport, not production user behavior. Screenshot overlays are not produced.",
-			"Maps separate exact recorded scroll offsets, layouts, viewports, engines and device profiles. Layout, viewport and scroll are read after the gesture and its wait; they do not prove dispatch-time geometry. Child frames without an observed transform and missing or conflicting cohorts are excluded.",
-			"Only clicks, taps and checks repeat. Those without dispatched points (touch gestures are dispatched synthetically) repeat when they share an action name, gesture kind and recorded target; those with points repeat within the radius. The repeat window is measured on capture time, after each gesture's wait. Steps are told apart by action name and gesture kind, so distinct steps that share a name are one step here.",
+			"Maps separate exact recorded scroll offsets, layouts, viewports, engines and device profiles. In historical v1 evidence, layout, viewport and scroll are read after the gesture and its wait; they do not prove dispatch-time geometry. Child frames without an observed transform and missing or conflicting cohorts are excluded.",
+			"In historical v1 evidence, only clicks, taps and checks repeat. Those without dispatched points (touch gestures are dispatched synthetically) repeat when they share an action name, gesture kind and recorded target; those with points repeat within the radius. The repeat window is measured on capture time, after each gesture's wait. Steps are told apart by action name and gesture kind, so distinct steps that share a name are one step here.",
 		},
 	}}
 }
@@ -272,17 +290,25 @@ func newInteractionAnalyzer(runID string, cohorts map[string]browserGenerationCo
 func (a *interactionAnalyzer) add(evidence *protocol.BrowserInteractionEvidence) {
 	a.analysis.Coverage.Records++
 	a.hasV2 = a.hasV2 || protocol.BrowserInteractionHasDispatch(evidence.Version)
+	a.hasV4 = a.hasV4 || evidence.Version >= protocol.BrowserInteractionVersion4
 	a.analysis.Coverage.Dropped += evidence.Dropped
 	a.analysis.Coverage.Incomplete = a.analysis.Coverage.Incomplete || evidence.Incomplete
 	for _, interaction := range evidence.Interactions {
 		a.analysis.Coverage.Interactions++
+		a.analysis.Coverage.StreamedInteractions++
+		a.hasV2 = a.hasV2 || protocol.BrowserInteractionHasDispatch(interaction.Version)
+		a.hasV4 = a.hasV4 || interaction.Version >= protocol.BrowserInteractionVersion4
 		a.patternPopulations[a.patternQualificationReason(interaction)]++
 		a.analysis.Coverage.ByProvenance[interaction.Provenance]++
 		a.mapInteraction(interaction)
 		if len(a.retained) < maxRetainedInteractions {
 			a.retained = append(a.retained, interaction)
-		} else if len(a.analysis.Limitations) == 0 || a.analysis.Limitations[len(a.analysis.Limitations)-1] != "interactions_truncated" {
-			a.analysis.Limitations = append(a.analysis.Limitations, "interactions_truncated")
+			a.analysis.Coverage.PatternRetained = int64(len(a.retained))
+		} else {
+			a.analysis.Coverage.PatternTruncated++
+			if len(a.analysis.Limitations) == 0 || a.analysis.Limitations[len(a.analysis.Limitations)-1] != "interactions_truncated" {
+				a.analysis.Limitations = append(a.analysis.Limitations, "interactions_truncated")
+			}
 		}
 	}
 }
@@ -292,6 +318,16 @@ func (a *interactionAnalyzer) add(evidence *protocol.BrowserInteractionEvidence)
 // table.
 func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	exclude := func(reason string) { a.analysis.Coverage.Excluded[reason]++ }
+	if i.Version >= protocol.BrowserInteractionVersion4 {
+		if i.UnavailableReason != "" {
+			exclude(i.UnavailableReason)
+			return
+		}
+		if i.GeometryProvenance == protocol.InteractionGeometryProvenancePostAction {
+			exclude("post_action_geometry")
+			return
+		}
+	}
 	if protocol.BrowserInteractionHasDispatch(i.Version) && i.Dispatch == nil {
 		exclude("dispatch_unavailable")
 		return
@@ -300,11 +336,15 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 		exclude(i.UnavailableReason)
 		return
 	}
-	// Current evidence has no child-frame-to-main-frame transform. Never
-	// interpret child-frame coordinates as main-frame viewport positions.
+	mappedViaTransform := false
 	if i.FrameScope != "main_frame" {
-		exclude(protocol.InteractionUnavailableChildFrame)
-		return
+		var excludeReason string
+		i, excludeReason = transformChildFrameInteraction(i)
+		if excludeReason != "" {
+			exclude(excludeReason)
+			return
+		}
+		mappedViaTransform = true
 	}
 	if i.LayoutRevision == "" {
 		exclude("layout_unknown")
@@ -389,6 +429,9 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	m.ByKind[i.Kind]++
 	m.Sources[i.Provenance]++
 	a.analysis.Coverage.Mapped++
+	if mappedViaTransform {
+		a.analysis.Coverage.MappedViaTransform++
+	}
 }
 
 // canonicalScroll treats signed zero as the same recorded CSS offset. Other
@@ -426,12 +469,22 @@ func (a *interactionAnalyzer) finish() BrowserInteractionAnalysis {
 		return cmp.Or(cmp.Compare(y.Points+sumCounts(y.Targets), x.Points+sumCounts(x.Targets)), cmp.Compare(x.Key, y.Key))
 	})
 	if a.hasV2 {
-		a.analysis.Version = browserInteractionAnalysisVersion3
-		a.analysis.Notes = []string{
-			"V3 patterns require an engine-authored step, logical invocation and joined native dispatch clock. Legacy or unavailable rows remain retained and are counted as pattern exclusions.",
-			"Native dispatch and historical post-action maps are separate populations. Unmapped child frames, unknown cohorts and unavailable dispatch geometry remain excluded.",
-			"Engine retry attempts share an invocation and never count as repetition. Separate invocations repeat only for the same authored step within the native dispatch window and compatible geometry.",
-			"A missed declared page-response deadline can be a dead interaction; unchanged DOM, cancellation or navigation alone cannot. Scripted gestures never establish human frustration.",
+		if a.hasV4 {
+			a.analysis.Version = browserInteractionAnalysisVersion4
+			a.analysis.Notes = []string{
+				"V4 patterns require an engine-authored step, logical invocation and joined native dispatch clock. Legacy or unavailable rows remain retained and are counted as pattern exclusions.",
+				"Native dispatch and historical post-action maps are separate populations. Same-origin child frames with an invertible 2D transform map into the main-frame viewport; unmapped child frames, cross-origin frames, non-2D transforms, unknown cohorts and unavailable dispatch geometry remain excluded.",
+				"Engine retry attempts share an invocation and never count as repetition. Separate invocations repeat only for the same authored step within the native dispatch window and compatible geometry.",
+				"Every missed declared page-response outcome deadline produces its own dead interaction or unexpected navigation pattern; unchanged DOM, cancellation or navigation alone cannot. Scripted gestures never establish human frustration.",
+			}
+		} else {
+			a.analysis.Version = browserInteractionAnalysisVersion3
+			a.analysis.Notes = []string{
+				"V3 patterns require an engine-authored step, logical invocation and joined native dispatch clock. Legacy or unavailable rows remain retained and are counted as pattern exclusions.",
+				"Native dispatch and historical post-action maps are separate populations. Unmapped child frames, unknown cohorts and unavailable dispatch geometry remain excluded.",
+				"Engine retry attempts share an invocation and never count as repetition. Separate invocations repeat only for the same authored step within the native dispatch window and compatible geometry.",
+				"A missed declared page-response deadline can be a dead interaction; unchanged DOM, cancellation or navigation alone cannot. Scripted gestures never establish human frustration.",
+			}
 		}
 		a.analysis.Coverage.PatternExcluded = map[string]int64{}
 		for reason, count := range a.patternPopulations {
@@ -454,14 +507,32 @@ func (a *interactionAnalyzer) finish() BrowserInteractionAnalysis {
 	if a.unknownCohort > 0 {
 		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("engine_profile_unknown: %d gestures excluded from maps without a consistent engine/profile cohort (%s)", a.unknownCohort, a.unknownReason))
 	}
+	a.analysis.Coverage.StreamedInteractions = a.analysis.Coverage.Interactions
+	a.analysis.Coverage.PatternRetained = int64(len(a.retained))
 	if len(a.analysis.Patterns) > maxInteractionPatterns {
-		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("patterns_truncated: kept %d of %d", maxInteractionPatterns, len(a.analysis.Patterns)))
+		totalPatterns := len(a.analysis.Patterns)
+		slices.SortStableFunc(a.analysis.Patterns, func(x, y BrowserInteractionPattern) int {
+			return cmp.Or(cmp.Compare(patternTruncationPriority(x.Kind), patternTruncationPriority(y.Kind)), x.Start.Compare(y.Start), cmp.Compare(x.ID, y.ID))
+		})
 		a.analysis.Patterns = a.analysis.Patterns[:maxInteractionPatterns]
+		slices.SortStableFunc(a.analysis.Patterns, func(x, y BrowserInteractionPattern) int {
+			return cmp.Or(x.Start.Compare(y.Start), cmp.Compare(x.ID, y.ID))
+		})
+		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("patterns_truncated: kept %d of %d", maxInteractionPatterns, totalPatterns))
 	}
 	if len(a.analysis.Coverage.Excluded) == 0 {
 		a.analysis.Coverage.Excluded = nil
 	}
 	return a.analysis
+}
+
+func patternTruncationPriority(kind string) int {
+	switch kind {
+	case interactionPatternDeadInteraction, interactionPatternUnexpectedNavigation, interactionPatternRetry, interactionPatternRepeatedGesture:
+		return 0
+	default:
+		return 1
+	}
 }
 
 func sumCounts(targets []BrowserInteractionTargetCount) int64 {
@@ -490,7 +561,15 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 	patterns := []BrowserInteractionPattern{}
 	for _, key := range documents {
 		gestures := byDocument[key]
-		slices.SortStableFunc(gestures, func(x, y protocol.BrowserInteraction) int { return interactionClock(x).Compare(interactionClock(y)) })
+		slices.SortStableFunc(gestures, func(x, y protocol.BrowserInteraction) int {
+			if c := interactionClock(x).Compare(interactionClock(y)); c != 0 {
+				return c
+			}
+			if sameInvocation(x, y) {
+				return cmp.Compare(x.Execution.Attempt, y.Execution.Attempt)
+			}
+			return 0
+		})
 		retried := map[string]bool{}
 		// Attempts >1 are intended retries even if the prior attempt was lost.
 		// Their first attempt must also stay out of repetition.
@@ -507,21 +586,59 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 		}
 		retryReported := map[string]bool{}
 		for index, g := range gestures {
-			switch {
-			case g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged:
-				// A gesture that navigated away is never a dead interaction.
-				// Navigating is normal (a recorded step waits for the next
-				// page's element); it is unexpected only when the element the
-				// step waited for never appeared.
-				if inPageOutcome(g.Outcome.Declared) && g.Outcome.Observed == protocol.InteractionOutcomeMissed {
-					patterns = append(patterns, interactionPattern(interactionPatternUnexpectedNavigation, []protocol.BrowserInteraction{g},
-						fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed within %d ms", g.Outcome.Declared, g.Outcome.DeadlineMS)))
+			if g.Version >= protocol.BrowserInteractionVersion4 {
+				navigated := g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged
+				for _, outcome := range g.DeclaredOutcomes() {
+					if outcome.Kind == protocol.InteractionOutcomeKindNavigation &&
+						outcome.Declared != "same_document_route" &&
+						outcome.Declared != "opened_by_action" &&
+						(outcome.Observed == protocol.InteractionOutcomeMet || outcome.Reason == "unexpected_navigation") {
+						navigated = true
+						break
+					}
 				}
-			case g.Outcome.Observed == protocol.InteractionOutcomeMissed && pageResponseOutcome(g.Outcome.Declared):
-				// The authored outcome's deadline passed.
-				patterns = append(patterns, interactionPattern(interactionPatternDeadInteraction, []protocol.BrowserInteraction{g},
-					fmt.Sprintf("the declared %s outcome was not observed within %d ms", g.Outcome.Declared, g.Outcome.DeadlineMS)))
-				patterns[len(patterns)-1].Declared, patterns[len(patterns)-1].DeadlineMs = g.Outcome.Declared, g.Outcome.DeadlineMS
+				for outcomeIndex, outcome := range g.DeclaredOutcomes() {
+					if outcome.Observed != protocol.InteractionOutcomeMissed {
+						continue
+					}
+					switch {
+					case (navigated && (inPageOutcome(outcome.Declared) || outcome.Kind == protocol.InteractionOutcomeKindAssertion)) || (outcome.Kind == protocol.InteractionOutcomeKindNavigation && outcome.Reason == "unexpected_navigation"):
+						detail := fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed", outcome.Declared)
+						if outcome.DeadlineMS > 0 {
+							detail = fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed within %d ms", outcome.Declared, outcome.DeadlineMS)
+						}
+						patterns = append(patterns, interactionOutcomePattern(interactionPatternUnexpectedNavigation, g, outcomeIndex, outcome, detail))
+					case outcomeIsPageResponse(outcome):
+						detail := fmt.Sprintf("the declared %s outcome was not observed", outcome.Declared)
+						if outcome.DeadlineMS > 0 {
+							detail = fmt.Sprintf("the declared %s outcome was not observed within %d ms", outcome.Declared, outcome.DeadlineMS)
+						}
+						patterns = append(patterns, interactionOutcomePattern(interactionPatternDeadInteraction, g, outcomeIndex, outcome, detail))
+					}
+				}
+			} else {
+				primary := g.PrimaryOutcome()
+				switch {
+				case g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged:
+					// A gesture that navigated away is never a dead interaction.
+					// Navigating is normal (a recorded step waits for the next
+					// page's element); it is unexpected only when the element the
+					// step waited for never appeared.
+					if inPageOutcome(primary.Declared) && primary.Observed == protocol.InteractionOutcomeMissed {
+						patterns = append(patterns, interactionPattern(interactionPatternUnexpectedNavigation, []protocol.BrowserInteraction{g},
+							fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed within %d ms", primary.Declared, primary.DeadlineMS)))
+					}
+				default:
+					for _, outcome := range g.DeclaredOutcomes() {
+						if outcome.Observed == protocol.InteractionOutcomeMissed && pageResponseOutcome(outcome.Declared) {
+							// The authored outcome's deadline passed.
+							patterns = append(patterns, interactionPattern(interactionPatternDeadInteraction, []protocol.BrowserInteraction{g},
+								fmt.Sprintf("the declared %s outcome was not observed within %d ms", outcome.Declared, outcome.DeadlineMS)))
+							patterns[len(patterns)-1].Declared, patterns[len(patterns)-1].DeadlineMs = outcome.Declared, outcome.DeadlineMS
+							break
+						}
+					}
+				}
 			}
 			// A failed gesture repeated at once by the same step is a retry
 			// (each engine retry is a new execution with its own action ID,
@@ -530,7 +647,14 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 			if !g.Success && !retryReported[g.InteractionID] && (protocol.BrowserInteractionHasDispatch(g.Version) || !retried[g.InteractionID]) {
 				attempts := []protocol.BrowserInteraction{g}
 				for _, next := range gestures[index+1:] {
-					if !sameInteractionStep(g, next) || (protocol.BrowserInteractionHasDispatch(g.Version) && (!sameInvocation(g, next) || next.Execution.Attempt != attempts[len(attempts)-1].Execution.Attempt+1)) {
+					if protocol.BrowserInteractionHasDispatch(g.Version) {
+						if !sameInvocation(g, next) {
+							continue
+						}
+						if next.Execution.Attempt <= attempts[len(attempts)-1].Execution.Attempt {
+							continue
+						}
+					} else if !sameInteractionStep(g, next) {
 						break
 					}
 					attempts = append(attempts, next)
@@ -572,7 +696,18 @@ func sameInteractionStep(g, next protocol.BrowserInteraction) bool {
 // a pause says nothing about whether the page responded.
 func pageResponseOutcome(declared string) bool {
 	switch declared {
-	case "element_visible", "visible", "load", "domcontentloaded":
+	case "element_visible", "visible", "load", "domcontentloaded", "dialog", "download":
+		return true
+	}
+	return false
+}
+
+func outcomeIsPageResponse(outcome protocol.BrowserInteractionOutcome) bool {
+	if pageResponseOutcome(outcome.Declared) {
+		return true
+	}
+	switch outcome.Kind {
+	case protocol.InteractionOutcomeKindDialog, protocol.InteractionOutcomeKindDownload, protocol.InteractionOutcomeKindAssertion, protocol.InteractionOutcomeKindNavigation:
 		return true
 	}
 	return false
@@ -609,13 +744,20 @@ func repeatGestureKind(kind string) bool {
 func repeatedGestures(gestures []protocol.BrowserInteraction, retried map[string]bool) []BrowserInteractionPattern {
 	var positioned, targeted []protocol.BrowserInteraction
 	for _, g := range gestures {
-		if !repeatGestureKind(g.Kind) || retried[g.InteractionID] {
+		if !repeatGestureKind(g.Kind) || retried[g.InteractionID] || (protocol.BrowserInteractionHasDispatch(g.Version) && g.Dispatch == nil) {
 			continue
+		}
+		if g.FrameScope != "main_frame" {
+			var excludeReason string
+			g, excludeReason = transformChildFrameInteraction(g)
+			if excludeReason != "" {
+				continue
+			}
 		}
 		switch {
 		case len(g.Points) > 0 && g.UnavailableReason == "":
 			positioned = append(positioned, g)
-		case len(g.Points) == 0 && (g.UnavailableReason == "" || g.UnavailableReason == protocol.InteractionUnavailableSyntheticDispatch) && (g.ActionName != "" || g.Target != nil):
+		case len(g.Points) == 0 && (g.UnavailableReason == "" || g.UnavailableReason == protocol.InteractionUnavailableSyntheticDispatch) && (g.ActionName != "" || g.Target != nil || g.AuthoredStep.Valid()):
 			targeted = append(targeted, g)
 		}
 	}
@@ -626,7 +768,71 @@ func repeatedGestures(gestures []protocol.BrowserInteraction, retried map[string
 	return append(patterns, repeatRuns(targeted, sameInteractionTarget, fmt.Sprintf("within %d ms with one action name, gesture kind and target (no dispatched points)", repeatWindow.Milliseconds()))...)
 }
 
+func transformChildFrameInteraction(i protocol.BrowserInteraction) (protocol.BrowserInteraction, string) {
+	if i.Version < protocol.BrowserInteractionVersion4 {
+		return i, protocol.InteractionUnavailableChildFrame
+	}
+	if len(i.FrameChain) == 0 {
+		return i, "unmapped_frame"
+	}
+	if len(i.FrameChain) > protocol.MaxBrowserInteractionFrameDepth {
+		return i, protocol.InteractionUnavailableFrameDepthExceeded
+	}
+	for _, hop := range i.FrameChain {
+		if hop.CrossOrigin {
+			return i, protocol.InteractionUnavailableCrossOriginAncestry
+		}
+		if hop.Non2DTransform || !hop.Invertible2D() {
+			return i, protocol.InteractionUnavailableNonAxisAlignedOr3DTransform
+		}
+	}
+	if protocol.BrowserInteractionPointerKind(i.Kind) && len(i.Points) > 0 {
+		pt := i.Points[0]
+		for _, hop := range i.FrameChain {
+			var ok bool
+			pt, ok = hop.ApplyToPoint(pt)
+			if !ok {
+				return i, protocol.InteractionUnavailableNonAxisAlignedOr3DTransform
+			}
+		}
+		i.Points = append([]protocol.BrowserInteractionPoint(nil), i.Points...)
+		i.Points[0] = pt
+	}
+	return i, ""
+}
+
+func sameInteractionFrameChain(a, b []protocol.BrowserInteractionFrameHop) bool {
+	return slices.EqualFunc(a, b, func(x, y protocol.BrowserInteractionFrameHop) bool {
+		return x.BoundingX == y.BoundingX &&
+			x.BoundingY == y.BoundingY &&
+			x.BoundingWidth == y.BoundingWidth &&
+			x.BoundingHeight == y.BoundingHeight &&
+			x.OffsetWidth == y.OffsetWidth &&
+			x.OffsetHeight == y.OffsetHeight &&
+			x.ClientLeft == y.ClientLeft &&
+			x.ClientTop == y.ClientTop &&
+			x.PaddingLeft == y.PaddingLeft &&
+			x.PaddingTop == y.PaddingTop &&
+			x.ScrollX == y.ScrollX &&
+			x.ScrollY == y.ScrollY &&
+			x.VisualViewportX == y.VisualViewportX &&
+			x.VisualViewportY == y.VisualViewportY &&
+			x.VisualScale == y.VisualScale &&
+			x.TransformOriginX == y.TransformOriginX &&
+			x.TransformOriginY == y.TransformOriginY &&
+			x.CrossOrigin == y.CrossOrigin &&
+			x.Non2DTransform == y.Non2DTransform &&
+			slices.Equal(x.Matrix, y.Matrix)
+	})
+}
+
 func sameInteractionTarget(first, next protocol.BrowserInteraction) bool {
+	if protocol.BrowserInteractionHasDispatch(first.Version) || protocol.BrowserInteractionHasDispatch(next.Version) {
+		if !sameInteractionStep(first, next) || (next.Target == nil) != (first.Target == nil) {
+			return false
+		}
+		return first.Target == nil || next.Target.Role == first.Target.Role && next.Target.LabelSHA256 == first.Target.LabelSHA256
+	}
 	if next.Kind != first.Kind || next.ActionName != first.ActionName || (next.Target == nil) != (first.Target == nil) {
 		return false
 	}
@@ -640,7 +846,7 @@ func repeatRuns(candidates []protocol.BrowserInteraction, match func(first, next
 		end := start + 1
 		for end < len(candidates) {
 			next := candidates[end]
-			if next.Route != first.Route || next.LayoutRevision != first.LayoutRevision || interactionClock(next).Sub(interactionClock(first)) > repeatWindow || (protocol.BrowserInteractionHasDispatch(first.Version) && (!sameInteractionStep(first, next) || first.ScrollX != next.ScrollX || first.ScrollY != next.ScrollY || first.ViewportWidth != next.ViewportWidth || first.ViewportHeight != next.ViewportHeight || first.DeviceScaleFactor != next.DeviceScaleFactor)) || !match(first, next) {
+			if next.Route != first.Route || next.LayoutRevision != first.LayoutRevision || interactionClock(next).Sub(interactionClock(first)) > repeatWindow || (protocol.BrowserInteractionHasDispatch(first.Version) && (!sameInteractionStep(first, next) || first.FrameScope != next.FrameScope || !sameInteractionFrameChain(first.FrameChain, next.FrameChain) || first.ScrollX != next.ScrollX || first.ScrollY != next.ScrollY || first.ViewportWidth != next.ViewportWidth || first.ViewportHeight != next.ViewportHeight || first.DeviceScaleFactor != next.DeviceScaleFactor)) || !match(first, next) {
 				break
 			}
 			end++
@@ -676,7 +882,19 @@ func interactionPattern(kind string, members []protocol.BrowserInteraction, deta
 	}
 	sum := sha256.Sum256([]byte(kind + "\x00" + strings.Join(ids, "\x00")))
 	return BrowserInteractionPattern{ID: hex.EncodeToString(sum[:8]), Kind: kind, Provenance: provenance, Route: first.Route, LayoutRevision: first.LayoutRevision, ActionID: first.ActionID, ActionName: first.ActionName,
-		Count: len(members), AuthoredStep: first.AuthoredStep.Clone(), Start: interactionClock(first), End: interactionClock(last), Detail: detail, Interactions: ids}
+		Count: len(members), AuthoredStep: first.AuthoredStep.Clone(), Start: interactionClock(first), End: interactionClock(last), Detail: detail, Interactions: ids, MembersTruncated: len(members) > maxInteractionPatternMembers}
+}
+
+func interactionOutcomePattern(kind string, g protocol.BrowserInteraction, outcomeIndex int, outcome protocol.BrowserInteractionOutcome, detail string) BrowserInteractionPattern {
+	pattern := interactionPattern(kind, []protocol.BrowserInteraction{g}, detail)
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%s", kind, g.InteractionID, outcome.Kind, outcomeIndex, outcome.Declared)))
+	pattern.ID = hex.EncodeToString(sum[:8])
+	pattern.OutcomeKind = outcome.Kind
+	pattern.OutcomeIndex = outcomeIndex
+	pattern.OutcomeReason = outcome.Reason
+	pattern.Declared = outcome.Declared
+	pattern.DeadlineMs = outcome.DeadlineMS
+	return pattern
 }
 
 // handleGetRunArchiveBrowserInteractions returns a run's interaction
@@ -684,10 +902,30 @@ func interactionPattern(kind string, members []protocol.BrowserInteraction, deta
 func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r *http.Request) {
 	// Materializing an object-backed archive can outlast the write timeout.
 	extendArtifactWriteDeadline(w)
+	format := queryFormat(r)
+	if format != "" && format != "json" && format != "csv" {
+		writeError(w, http.StatusBadRequest, "unsupported format")
+		return
+	}
 	ctx := r.Context()
-	analysis, err := s.runArchiveBrowserInteractions(ctx, r.PathValue("id"))
+	id := r.PathValue("id")
+	analysis, err := s.runArchiveBrowserInteractions(ctx, id)
+	if errors.Is(err, errInteractionArchiveNotFound) || errors.Is(err, errInteractionArchiveNotFinalized) {
+		if provisional, ok := s.provisionalRunBrowserInteractions(ctx, id); ok {
+			analysis = provisional
+			err = nil
+		}
+	}
 	switch {
 	case err == nil:
+		if wantsCSV(r) {
+			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+			w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-browser-interactions-"+sanitizeFilename(id)+".csv\"")
+			if err := writeBrowserInteractionAnalysisCSV(analysis, w); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to write browser interactions csv: "+err.Error())
+			}
+			return
+		}
 		writeJSON(w, http.StatusOK, analysis)
 	case errors.Is(err, errInteractionRunNotFound), errors.Is(err, errInteractionArchiveNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -702,6 +940,143 @@ func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r
 		// answer.
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
+}
+
+func writeBrowserInteractionAnalysisCSV(analysis *BrowserInteractionAnalysis, w io.Writer) error {
+	cw := csv.NewWriter(w)
+	writeRow := func(section, key, field, value string) error {
+		return cw.Write([]string{reportCSVSafeCell(section), reportCSVSafeCell(key), reportCSVSafeCell(field), reportCSVSafeCell(value)})
+	}
+	if err := cw.Write([]string{"section", "key", "field", "value"}); err != nil {
+		return err
+	}
+	cov := analysis.Coverage
+	for _, item := range [][2]string{
+		{"run_id", analysis.RunID},
+		{"version", analysis.Version},
+		{"status", analysis.Status},
+		{"interactions", strconv.FormatInt(cov.Interactions, 10)},
+		{"streamed_interactions", strconv.FormatInt(cov.StreamedInteractions, 10)},
+		{"pattern_retained", strconv.FormatInt(cov.PatternRetained, 10)},
+		{"pattern_truncated", strconv.FormatInt(cov.PatternTruncated, 10)},
+		{"pattern_eligible", strconv.FormatInt(cov.PatternEligible, 10)},
+		{"records", strconv.FormatInt(cov.Records, 10)},
+		{"dropped", strconv.FormatInt(cov.Dropped, 10)},
+		{"incomplete", strconv.FormatBool(cov.Incomplete)},
+		{"mapped", strconv.FormatInt(cov.Mapped, 10)},
+		{"mapped_via_transform", strconv.FormatInt(cov.MappedViaTransform, 10)},
+	} {
+		if err := writeRow("coverage", "", item[0], item[1]); err != nil {
+			return err
+		}
+	}
+	writeMap := func(prefix string, m map[string]int64) error {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		for _, k := range keys {
+			if err := writeRow("coverage", "", prefix+"."+k, strconv.FormatInt(m[k], 10)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := writeMap("by_provenance", cov.ByProvenance); err != nil {
+		return err
+	}
+	if err := writeMap("pattern_excluded", cov.PatternExcluded); err != nil {
+		return err
+	}
+	if err := writeMap("excluded", cov.Excluded); err != nil {
+		return err
+	}
+	for _, p := range analysis.Patterns {
+		stepID, stepPath, scriptSHA := "", "", ""
+		if p.AuthoredStep.Valid() {
+			stepID, stepPath, scriptSHA = p.AuthoredStep.StepID, p.AuthoredStep.StepPath, p.AuthoredStep.ScriptSHA256
+		}
+		for _, item := range [][2]string{
+			{"kind", p.Kind},
+			{"provenance", p.Provenance},
+			{"route", p.Route},
+			{"layout_revision", p.LayoutRevision},
+			{"action_id", p.ActionID},
+			{"action_name", p.ActionName},
+			{"step_id", stepID},
+			{"step_path", stepPath},
+			{"script_sha256", scriptSHA},
+			{"count", strconv.Itoa(p.Count)},
+			{"members_truncated", strconv.FormatBool(p.MembersTruncated)},
+			{"start", p.Start.UTC().Format(time.RFC3339Nano)},
+			{"end", p.End.UTC().Format(time.RFC3339Nano)},
+			{"outcome_kind", p.OutcomeKind},
+			{"outcome_index", strconv.Itoa(p.OutcomeIndex)},
+			{"outcome_reason", p.OutcomeReason},
+			{"declared", p.Declared},
+			{"deadline_ms", strconv.Itoa(p.DeadlineMs)},
+			{"detail", p.Detail},
+			{"interactions", strings.Join(p.Interactions, ";")},
+		} {
+			if err := writeRow("pattern", p.ID, item[0], item[1]); err != nil {
+				return err
+			}
+		}
+	}
+	for _, m := range analysis.Heatmaps {
+		kbd := sumCounts(m.Targets)
+		for _, item := range [][2]string{
+			{"observation", m.Observation},
+			{"route", m.Route},
+			{"layout_revision", m.LayoutRevision},
+			{"viewport_width", strconv.Itoa(m.ViewportWidth)},
+			{"viewport_height", strconv.Itoa(m.ViewportHeight)},
+			{"orientation", m.Orientation},
+			{"engine", m.Engine},
+			{"device_profile", m.DeviceProfile},
+			{"device_scale_factor", fmt.Sprintf("%g", m.DeviceScaleFactor)},
+			{"coordinate_space", m.CoordinateSpace},
+			{"points", strconv.FormatInt(m.Points, 10)},
+			{"keyboard_gestures", strconv.FormatInt(kbd, 10)},
+			{"total_gestures", strconv.FormatInt(m.Points+kbd, 10)},
+			{"occupied_cells", strconv.Itoa(len(m.Cells))},
+			{"targets", formatReportHeatmapTargets(m.Targets)},
+		} {
+			if err := writeRow("heatmap", m.Key, item[0], item[1]); err != nil {
+				return err
+			}
+		}
+		if m.Scroll != nil {
+			for _, item := range [][2]string{
+				{"scroll_min_x", fmt.Sprintf("%g", m.Scroll.MinX)},
+				{"scroll_max_x", fmt.Sprintf("%g", m.Scroll.MaxX)},
+				{"scroll_min_y", fmt.Sprintf("%g", m.Scroll.MinY)},
+				{"scroll_max_y", fmt.Sprintf("%g", m.Scroll.MaxY)},
+			} {
+				if err := writeRow("heatmap", m.Key, item[0], item[1]); err != nil {
+					return err
+				}
+			}
+		}
+		for idx, note := range m.Notes {
+			if err := writeRow("heatmap_note", fmt.Sprintf("%s.%d", m.Key, idx), "note", note); err != nil {
+				return err
+			}
+		}
+	}
+	for idx, lim := range analysis.Limitations {
+		if err := writeRow("limitation", strconv.Itoa(idx), "limitation", lim); err != nil {
+			return err
+		}
+	}
+	for idx, note := range analysis.Notes {
+		if err := writeRow("note", strconv.Itoa(idx), "note", note); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
 }
 
 var (

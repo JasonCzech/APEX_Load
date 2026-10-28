@@ -318,4 +318,34 @@ describe('RootCausePanel', () => {
     expect(links.textContent).toContain('Open the hypothesis span in Elasticsearch')
     expect(links.querySelector('a')!.getAttribute('target')).toBe('_blank')
   })
+
+  it('shows the browser baseline selection receipt and rejected candidates even when no baseline run was selected', async () => {
+    const assessment = rcaTestResponse().assessment!
+    await render(model(rcaTestResponse({
+      assessment: {
+        ...assessment,
+        inputs: { ...assessment.inputs, browser_selection: 'sha256:receipt-9999' },
+        browser_baseline: undefined,
+        browser_selection: {
+          version: 'browser_selection.v1',
+          status: 'not_selected',
+          inventory_count: 2,
+          policy: 'policy-1@3',
+          reasons: ['no_compatible_candidate'],
+          rejected: [
+            { test_id: 'cand-run-1', digest: '0123456789abcdef', reasons: ['policy_revision_mismatch', 'step_topology_mismatch'] },
+            { test_id: 'cand-run-2', reasons: ['clock_unqualified'] },
+          ],
+        },
+      },
+    })))
+    const section = container.querySelector('.rca-browser-baseline')!
+    expect(section).not.toBeNull()
+    const text = section.textContent || ''
+    expect(text).toContain('Browser baseline (selection: not selected)')
+    expect(text).toContain('Selection receipt (browser_selection.v1): Not selected · policy policy-1@3 · 2 candidates inspected · receipt …ipt-9999.')
+    expect(text).toContain('Selection reasons: No compatible candidate.')
+    expect(text).toContain('Rejected cand-run-1: Policy revision mismatch, Step topology mismatch (archive …89abcdef)')
+    expect(text).toContain('Rejected cand-run-2: Clock unqualified')
+  })
 })

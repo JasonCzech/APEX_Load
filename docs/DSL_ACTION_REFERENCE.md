@@ -465,6 +465,17 @@ Requires one of: `target`, `selector`, `object_ref`
 | `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
+### `browser_close_window`
+
+Closes a browser window or tab (the current page by default) and switches scope to an open remaining page.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string |  | Optional window title, URL substring, or zero-based index to close; empty closes the active page. |
+| `params.index` | int |  | Optional zero-based window/tab index to close. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
+
 ### `browser_dblclick`
 
 Double-clicks an element.
@@ -538,7 +549,8 @@ Requires one of: `target`, `selector`, `object_ref`
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string |  | Text to enter; empty string clears the field and template variables are expanded. |
-| `params.input_mode` | enum |  | fill (default) sets the value; type clears the field and sends per-character keyboard events. One of: `fill`, `type`. |
+| `params.input_mode` | enum |  | fill (default) sets the value; type clears the field (unless params.clear is false) and sends per-character keyboard events. One of: `fill`, `type`. |
+| `params.clear` | bool |  | Clear the field before typing when params.input_mode is type; defaults to true. |
 | `params.typing_delay_ms` | int |  | Delay between keys in type mode, 0–1000 milliseconds. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |

@@ -225,6 +225,7 @@ func TestAuthoringCapabilitiesAccessRequirementIncludesServiceAccountScope(t *te
 // accessRequirementGolden is the captured pre-refactor authz fingerprint for
 // each characterization case. See TestAccessRequirementSnapshotStable.
 var accessRequirementGolden = map[string]string{
+	"GET /api/v1/analysis/journey-steps":                                                                                   "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"GET /api/v1/tests/sample-id/telemetry/notifications":                                                                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"GET /api/v1/projects/sample-id/live-tables":                                                                           "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"GET /api/v1/projects/sample-id/live-tables/sample-tableID":                                                            "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",

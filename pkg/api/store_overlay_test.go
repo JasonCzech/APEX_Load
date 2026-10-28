@@ -1211,6 +1211,15 @@ func (o *sqliteStoreOverlay) CompleteRCAAnalysisFenced(a0 string, a1 string, a2 
 	return o.base().CompleteRCAAnalysisFenced(a0, a1, a2, a3, a4, a5, a6, a7)
 }
 
+func (o *sqliteStoreOverlay) CompletedRCAAnalyses(a0 string, a1 string) ([]*storage.RCAAnalysis, error) {
+	if fake, ok := o.fake.(interface {
+		CompletedRCAAnalyses(string, string) ([]*storage.RCAAnalysis, error)
+	}); ok {
+		return fake.CompletedRCAAnalyses(a0, a1)
+	}
+	return o.base().CompletedRCAAnalyses(a0, a1)
+}
+
 func (o *sqliteStoreOverlay) ConfigureRunArchiveCollectionCache(a0 string, a1 string, a2 int64, a3 string, a4 string) (*storage.RunArchiveCollectionIntent, bool, error) {
 	if fake, ok := o.fake.(interface {
 		ConfigureRunArchiveCollectionCache(string, string, int64, string, string) (*storage.RunArchiveCollectionIntent, bool, error)

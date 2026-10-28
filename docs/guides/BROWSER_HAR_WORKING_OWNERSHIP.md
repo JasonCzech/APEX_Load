@@ -184,16 +184,21 @@ and exit proof (`pkg/internal/procidentity`) also retires native analytics
 writers whose controller exited.
 
 Every new browser context sweeps its HAR directory, and a generator sweeps
-the default directory (the system temporary directory) once at start. A
-generator restarted inside the same PID namespace reclaims its killed
-generations. A replacement container has a new PID namespace, so it
-preserves them; they stay until a later boot of the same identified machine
-or manual removal. The shipped images run the generator as PID 1 of its
-container, so every restart is a new PID namespace: there leftovers persist
-in the HAR directory (an `emptyDir` in Kubernetes survives container
-restarts) until the pod is replaced, and once they reach the admission bounds
-below every HAR-enabled browser VUser's initialization fails. Remove them
-when no generator process runs.
+the default directory (the system temporary directory) once at start. Within
+the same PID namespace, `procidentity.Gone` is always mandatory so a live
+orphaned Playwright writer is never reclaimed early. On Unix, when the HAR
+working directory lives on a verified local filesystem (`pkg/internal/localfs`)
+and the Playwright Node driver inherits the open `owner.lock` file description
+across `exec` (`setHARLeaseInheritable`), `manifest.json` and
+`writer-entered.json` are written as version 3: the kernel holds the exclusive
+`flock` lease until both the Go generator and the inherited Node writer tree
+have closed all descriptors and exited, so a replacement container in a new PID
+namespace on the same kernel boot and machine identity reclaims predecessor
+version-3 generations once that lease is free. Version 1/2 manifests,
+non-local mounts (NFS, SMB, EFS, FUSE), foreign machine/boot identities, and
+Windows containers (`LockFileEx` is process-scoped) remain preserved under the
+fail-safe rule until a later boot of the same identified machine or manual
+removal when no generator process runs.
 
 ## Run archive transfer and receipts
 
@@ -408,9 +413,11 @@ administrator) access to the project.
   is refused with 422 and the replay does not start. Without it a replay records only when the script's own
   capture policy does (and serves that HAR as its native one); otherwise it
   serves the synthetic HAR built from its network entries. The Script
-  Editor's debugger runs replays as script debug sessions, which offer no
-  HAR: one the script's own capture policy records is retired when the
-  session ends. Classic replays (`POST /api/v1/scripts/replay` and
+  Editor's debugger runs replays as script debug sessions, which retire any
+  native HAR recorded by the script's own capture policy when the session
+  ends and instead export a synthetic HAR 1.2 of retained session traffic via
+  `GET /api/v1/script-debug/sessions/{session_id}/export` with `?format=har`
+  governed by `runtime_profile.har_options`. Classic replays (`POST /api/v1/scripts/replay` and
   `/api/v1/scripts/{id}/replay`) offer none either and retire such a HAR
   too. When the replay's browser closes, the
   controller copies the published HAR into its own directory (under the
@@ -622,12 +629,13 @@ filesystems and peer processes must honor the existing descriptor-lock
 contract. Only scrubbed, completed HARs leave a generator; raw working files
 never do.
 
-Crash reclamation changed the on-disk generation format one way:
-`writer-entered.json` and version 2 manifests with `processes`. A build from
-before it rejects a HAR directory holding such a generation ("unowned file")
-and cannot clean it, so do not share a HAR directory between older and newer
-builds, and after a rollback remove leftover generations while no generator
-runs.
+Crash reclamation changed the on-disk generation format:
+`writer-entered.json` and version 2/3 manifests with `processes` (version 3
+denotes an inherited local-filesystem Unix lease covering the writer tree). A
+build from before it rejects a HAR directory holding such a generation
+("unowned file") and cannot clean it, so do not share a HAR directory between
+older and newer builds, and after a rollback remove leftover generations while
+no generator runs.
 
 Legacy transaction/resource formats and HAR import behavior are unchanged.
 The deterministic frame-finalizer correction also prevents one stale native

@@ -5,6 +5,15 @@ import { describe, it, expect, vi } from 'vitest'
 import ScriptBrowserEvidence from './ScriptBrowserEvidence'
 import type { BrowserReplayEvent } from '../types/replay'
 
+vi.mock('./BrowserReplayProgress', () => ({
+  default: ({ replaySessionId, onComplete, onDismiss }: { replaySessionId: string; onComplete?: () => void; onDismiss?: () => void }) => (
+    <div data-testid="replay-progress" data-session-id={replaySessionId}>
+      <button type="button" onClick={() => onComplete?.()}>Complete replay</button>
+      <button type="button" onClick={() => onDismiss?.()}>Dismiss replay</button>
+    </div>
+  ),
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const event: BrowserReplayEvent = { phase: 'action', action_index: 0, action_name: 'Check greeting', action_type: 'browser_wait', target: '#result', success: false, duration_ms: 12, started_at: '', completed_at: '', protocol_evidence: { assertion_failure: { expected: 'Welcome', actual: 'Hello' } }, extractions: { greeting: 'Hello' } }
 describe('selected browser evidence', () => {
@@ -45,5 +54,42 @@ describe('selected browser evidence', () => {
   it('explains capture before a run', async () => {
     const host = document.createElement('div'); const root = createRoot(host)
     try { await act(async () => root.render(<ScriptBrowserEvidence running={false} />)); expect(host.textContent).toContain('Debug one iteration') } finally { await act(async () => root.unmount()) }
+  })
+  it('starts a native browser replay session, renders progress, and reports start errors', async () => {
+    const host = document.createElement('div'); document.body.append(host)
+    const root = createRoot(host)
+    const startNative = vi.fn<() => Promise<string | null>>()
+      .mockRejectedValueOnce(new Error('Native HAR unsupported'))
+      .mockResolvedValueOnce('replay-session-1')
+    try {
+      await act(async () => root.render(<ScriptBrowserEvidence running={false} nativeReplayDisabled={true} nativeReplayTitle="Requires editor role" onStartNativeReplay={startNative} />))
+      const disabledBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Run native browser replay')!
+      expect(disabledBtn.disabled).toBe(true)
+      expect(disabledBtn.getAttribute('title')).toBe('Requires editor role')
+
+      await act(async () => root.render(<ScriptBrowserEvidence running={false} onStartNativeReplay={startNative} />))
+      const runBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Run native browser replay')!
+      expect(runBtn.disabled).toBe(false)
+      await act(async () => runBtn.click())
+      expect(startNative).toHaveBeenCalledTimes(1)
+      expect(host.textContent).toContain('Native HAR unsupported')
+      expect(host.querySelector('[data-testid="replay-progress"]')).toBeNull()
+
+      await act(async () => runBtn.click())
+      expect(startNative).toHaveBeenCalledTimes(2)
+      expect(host.textContent).not.toContain('Native HAR unsupported')
+      const progress = host.querySelector('[data-testid="replay-progress"]')
+      expect(progress?.getAttribute('data-session-id')).toBe('replay-session-1')
+      expect(runBtn.disabled).toBe(true)
+
+      await act(async () => (host.querySelector('button:nth-of-type(1)') as HTMLButtonElement | null)?.click())
+      const completeBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Complete replay')!
+      await act(async () => completeBtn.click())
+      expect(runBtn.disabled).toBe(false)
+
+      const dismissBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Dismiss replay')!
+      await act(async () => dismissBtn.click())
+      expect(host.querySelector('[data-testid="replay-progress"]')).toBeNull()
+    } finally { await act(async () => root.unmount()); host.remove() }
   })
 })

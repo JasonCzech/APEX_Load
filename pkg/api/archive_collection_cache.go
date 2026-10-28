@@ -727,7 +727,7 @@ func (c *collectionSourceCache) stageOptional(ctx context.Context, destination *
 			continue
 		}
 		available, availErr := diskspace.AvailablePath(resolveArchiveRoot())
-		if availErr != nil || available < needed+(64<<20) {
+		if availErr != nil || available < cand.bytes+int64(len(trialReceipt))+(64<<20) {
 			continue
 		}
 		src, info, openErr := openArchiveArtifactForRead(filepath.Dir(cand.path), filepath.Base(cand.path))

@@ -249,6 +249,7 @@ const GOAL_TARGET_CONTRACT = {
 const CREATE_SCENARIO_SCHEDULE_CONTRACT = {
   required: ['cron_expr', 'name'],
   known: [
+    'analysis_policy_selections',
     'approval_policy',
     'availability_windows',
     'blackout_windows',
@@ -482,6 +483,7 @@ describe('request bodies the dashboard sends versus the generated handler contra
         approval_policy: 'auto',
         missed_run_policy: 'skip',
         blackout_windows: [{ name: 'freeze', start_time: '00:00', end_time: '06:00' }],
+        analysis_policy_selections: { browser: { id: 'browser-policy-1', revision: 1 } },
         expected_revision: 4,
       })
     })

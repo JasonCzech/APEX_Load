@@ -57,6 +57,7 @@ type browserEvidenceState struct {
 	cohort                                                 *protocol.BrowserRuntimeCohort
 	shapedPages                                            map[playwright.Page]bool
 	issued, inFlight, droppedRequests, droppedObservations int64
+	lastNetworkActivity                                    time.Time
 	incomplete, cancelled                                  bool
 	// Resource association state (resource_association.go).
 	nativeSources             map[*cdpSourceCensus]playwright.Page

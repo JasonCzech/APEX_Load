@@ -17,6 +17,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -330,10 +332,13 @@ var journeyIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 var operationParameterPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
-// JourneyBoundary names an authored transaction or action.
+// JourneyBoundary names an authored transaction or action, optionally bound to
+// its canonical DSL structural step path (and optional source structure digest).
 type JourneyBoundary struct {
-	Transaction string `json:"transaction,omitempty"`
-	Action      string `json:"action,omitempty"`
+	Transaction     string `json:"transaction,omitempty"`
+	Action          string `json:"action,omitempty"`
+	StepPath        string `json:"step_path,omitempty"`
+	StructureSHA256 string `json:"structure_sha256,omitempty"`
 }
 
 func (b JourneyBoundary) validate(field string) error {
@@ -342,6 +347,17 @@ func (b JourneyBoundary) validate(field string) error {
 	}
 	if len(b.Transaction) > 256 || len(b.Action) > 256 {
 		return fmt.Errorf("journey %s name exceeds 256 bytes", field)
+	}
+	if b.StepPath != "" && (!protocol.ValidBrowserAuthoredStepPath(b.StepPath) || !strings.HasPrefix(b.StepPath, "actions[")) {
+		return fmt.Errorf("journey %s step_path must be a canonical iteration actions[...] step path", field)
+	}
+	if b.StructureSHA256 != "" {
+		if b.StepPath == "" {
+			return fmt.Errorf("journey %s structure_sha256 requires step_path", field)
+		}
+		if !protocol.ValidBrowserAuthoredDigest(b.StructureSHA256) {
+			return fmt.Errorf("journey %s structure_sha256 must be a 64-character lowercase hex SHA-256", field)
+		}
 	}
 	return nil
 }
@@ -970,7 +986,7 @@ func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *Ru
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
 		if selections != nil && (selections.Browser != nil || selections.Journey != nil) {
-			return nil, nil, nil, fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration)
+			return nil, nil, nil, wrapAnalysisPolicySelectionError(fmt.Errorf("%w: storage does not support run policy selection", errRunPolicyConfiguration))
 		}
 		if selectedAcceptance != "" {
 			return nil, nil, nil, fmt.Errorf("%w: the run's chosen telemetry acceptance policy cannot be read here", errRunPolicyConfiguration)
@@ -1029,4 +1045,69 @@ func (tr *TestRunner) resolveRunPolicyPinsForRun(projectID string, requested *Ru
 		}
 	}
 	return pins, acceptance, budget, nil
+}
+
+// AnalysisJourneyStepOption is a structural step boundary an editor can bind in
+// a journey_policy.
+type AnalysisJourneyStepOption struct {
+	StepPath   string `json:"step_path"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	ActionType string `json:"action_type"`
+}
+
+// AnalysisJourneyScriptSteps lists the structural journey step boundaries of
+// one project script.
+type AnalysisJourneyScriptSteps struct {
+	ScriptID        string                      `json:"script_id"`
+	ScriptName      string                      `json:"script_name"`
+	Protocol        string                      `json:"protocol"`
+	StructureSHA256 string                      `json:"structure_sha256,omitempty"`
+	Steps           []AnalysisJourneyStepOption `json:"steps"`
+}
+
+func (s *Server) handleListAnalysisJourneySteps(w http.ResponseWriter, r *http.Request) {
+	project := normalizeProjectID(r.URL.Query().Get("project_id"))
+	scriptFilter := strings.TrimSpace(r.URL.Query().Get("script_id"))
+	if s.runner == nil {
+		writeJSON(w, http.StatusOK, []AnalysisJourneyScriptSteps{})
+		return
+	}
+	storedScripts := s.runner.ListScriptsFiltered(project, nil)
+	slices.SortFunc(storedScripts, func(a, b *StoredScript) int {
+		if cmp := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	out := make([]AnalysisJourneyScriptSteps, 0, len(storedScripts))
+	for _, stored := range storedScripts {
+		if stored == nil || stored.Script == nil {
+			continue
+		}
+		if scriptFilter != "" && stored.ID != scriptFilter {
+			continue
+		}
+		structureSHA256, steps := engine.ScriptJourneySteps(stored.Script)
+		if len(steps) == 0 {
+			continue
+		}
+		options := make([]AnalysisJourneyStepOption, len(steps))
+		for i, step := range steps {
+			options[i] = AnalysisJourneyStepOption{
+				StepPath:   step.StepPath,
+				Kind:       step.Kind,
+				Name:       step.Name,
+				ActionType: step.ActionType,
+			}
+		}
+		out = append(out, AnalysisJourneyScriptSteps{
+			ScriptID:        stored.ID,
+			ScriptName:      stored.Name,
+			Protocol:        stored.Protocol,
+			StructureSHA256: structureSHA256,
+			Steps:           options,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }

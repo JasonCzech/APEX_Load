@@ -47,7 +47,7 @@ func openReplayArtifactBackend(ctx context.Context, backend archiveBackendRuntim
 		if strings.TrimSpace(backend.LocalRoot) == "" {
 			return nil, errors.New("replay archive root is required")
 		}
-		absolute, err := filepath.Abs(backend.LocalRoot)
+		absolute, err := resolveArchiveDirectoryRoot(backend.LocalRoot, false)
 		if err != nil {
 			return nil, err
 		}

@@ -28,7 +28,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			SHA          string `json:"sha256"`
 		} `json:"sources"`
 	}
-	if json.Unmarshal(data, &manifest) != nil || manifest.UpstreamModule != "github.com/mxschmitt/playwright-go" || manifest.UpstreamVersion != "v0.6100.0" || manifest.ModuleZipSum != "h1:HYNnbGZsTHz8veJyDGe4fU1iPxfvXqzmwKchzuvGCsY=" || len(manifest.Sources) != 80 || len(manifest.Altered) != 4 || manifest.Altered[0] != "browser_context.go" || manifest.Altered[1] != "frame.go" || manifest.Altered[2] != "request.go" || manifest.Altered[3] != "response.go" {
+	if json.Unmarshal(data, &manifest) != nil || manifest.UpstreamModule != "github.com/mxschmitt/playwright-go" || manifest.UpstreamVersion != "v0.6100.0" || manifest.ModuleZipSum != "h1:HYNnbGZsTHz8veJyDGe4fU1iPxfvXqzmwKchzuvGCsY=" || len(manifest.Sources) != 80 || len(manifest.Altered) != 5 || manifest.Altered[0] != "browser_context.go" || manifest.Altered[1] != "connection.go" || manifest.Altered[2] != "frame.go" || manifest.Altered[3] != "request.go" || manifest.Altered[4] != "response.go" {
 		t.Fatal("pinned SDK provenance/source boundary changed")
 	}
 	renamedREADME := 0
@@ -49,7 +49,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			t.Fatal(err)
 		}
 		sum := sha256.Sum256(bytes)
-		if item.Path != "browser_context.go" && item.Path != "frame.go" && item.Path != "request.go" && item.Path != "response.go" && hex.EncodeToString(sum[:]) != item.SHA {
+		if item.Path != "browser_context.go" && item.Path != "connection.go" && item.Path != "frame.go" && item.Path != "request.go" && item.Path != "response.go" && hex.EncodeToString(sum[:]) != item.SHA {
 			t.Fatalf("undeclared SDK source delta: %s", item.Path)
 		}
 	}

@@ -271,3 +271,72 @@ func TestArchiveReportAttachesV2RootCauseWherePresented(t *testing.T) {
 		t.Fatalf("an analysis of an earlier archive revision: %+v", v)
 	}
 }
+
+func TestRootCauseSectionRendersBrowserSelectionWithoutBaselineInEveryFormat(t *testing.T) {
+	assessment := reportRootCauseTestAssessment()
+	assessment.BrowserBaseline = nil
+	assessment.Inputs.BrowserSelection = "sha256:receipt-9999"
+	assessment.BrowserSelection = &rca.BrowserBaselineSelection{
+		Version:        "browser_selection.v1",
+		Status:         "not_selected",
+		InventoryCount: 2,
+		Policy:         "policy-1@3",
+		Reasons:        []string{"no_compatible_candidate"},
+		Rejected: []rca.BrowserCandidateRejection{
+			{TestID: "cand-run-1", Digest: "sha256:cand-1", Reasons: []string{"policy_revision_mismatch", "step_topology_mismatch"}},
+			{TestID: "cand-run-2", Reasons: []string{"clock_unqualified"}},
+		},
+	}
+	v2 := reportRootCauseFromV2(assessment, nil)
+	if v2.BrowserBaseline != nil || v2.BrowserSelection == nil {
+		t.Fatalf("expected BrowserSelection without BrowserBaseline, got baseline=%+v selection=%+v", v2.BrowserBaseline, v2.BrowserSelection)
+	}
+	report := consistencyMatrixReport()
+	report.RootCauseView = &v2
+	manifest := consistencyMatrixManifest()
+
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "engineer", nil, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := rcaSectionHTML(t, string(html), "rca")
+	for _, want := range []string{
+		"Browser baseline selection (browser_selection.v1, not selected): 2 candidates inspected, policy policy-1@3, receipt sha256:receipt-9999.",
+		"Reasons: no_compatible_candidate",
+		"Rejected cand-run-1 (policy_revision_mismatch, step_topology_mismatch) [sha256:cand-1]",
+		"Rejected cand-run-2 (clock_unqualified)",
+	} {
+		if !strings.Contains(section, want) {
+			t.Fatalf("HTML rca section lacks %q:\n%s", want, section)
+		}
+	}
+
+	profile, _ := lookupRunArchiveReportProfile("engineer")
+	pdf := strings.Join(buildRunArchiveReportPDFLines(report, profile, nil, manifest), "\n")
+	for _, want := range []string{
+		"Browser baseline selection (browser_selection.v1, not selected): 2 candidates inspected, policy policy-1@3, receipt sha256:receipt-9999.",
+		"Reasons: no_compatible_candidate",
+		"Rejected cand-run-1 (policy_revision_mismatch, step_topology_mismatch) [sha256:cand-1]",
+	} {
+		if !strings.Contains(pdf, want) {
+			t.Fatalf("PDF lacks %q:\n%s", want, pdf)
+		}
+	}
+
+	var csvBuf bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfileAndAnnotations(report, &csvBuf, "engineer", nil, manifest); err != nil {
+		t.Fatal(err)
+	}
+	csvBody := csvBuf.String()
+	for _, want := range []string{
+		"rca,browser_selection,status,not_selected",
+		"rca,browser_selection,policy,policy-1@3",
+		"rca,browser_selection,receipt_digest,sha256:receipt-9999",
+		"rca,browser_selection,reasons,no_compatible_candidate",
+		`rca,browser_selection,rejected_candidate,"cand-run-1 (policy_revision_mismatch, step_topology_mismatch) [sha256:cand-1]"`,
+	} {
+		if !strings.Contains(csvBody, want) {
+			t.Fatalf("CSV lacks %q:\n%s", want, csvBody)
+		}
+	}
+}

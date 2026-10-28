@@ -1483,6 +1483,7 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	if !ok || !active || executionCtx == nil {
 		return
 	}
+	tr.restoreAdoptedProvisionalBrowserIntelligence(test)
 	if resume.finishStatus != "" {
 		// Phase A decided the outcome, but only Phase B can establish whether
 		// every old participant has stopped. A missing generator may keep its
@@ -1617,7 +1618,9 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	tr.retainRunRendezvousUntil(lifecycleCtx, test.ID, rendezvousTerm)
 	rendezvousTransferred = true
 	tr.broadcastEvent("test_adopted", eventSnapshot)
-	for _, target := range orderedMetricsTargets(streams, b.configuredTargets()) {
+	metricsTargets := orderedMetricsTargets(streams, b.configuredTargets())
+	tr.startLiveBrowserIntelligence(test, metricsTargets)
+	for _, target := range metricsTargets {
 		go b.consumeMetrics(lifecycleCtx, tr, test, target, streams[target])
 	}
 	if !stopping {

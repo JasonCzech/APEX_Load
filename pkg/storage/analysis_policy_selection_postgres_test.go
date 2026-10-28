@@ -48,4 +48,36 @@ func TestPostgresRunAnalysisPolicySelectionSnapshotAndRestart(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(loaded.AnalysisPolicySelections, chosen) {
 		t.Fatal("peer lost upgraded selection", loaded, err)
 	}
+	now := time.Now().UTC()
+	schedule := &ScenarioSchedule{ID: "selected-schedule", ScenarioID: "monitor-scenario", ProjectID: "monitor-p", Revision: 1, Name: "Nightly", CronExpr: "0 9 * * *", Enabled: true, AnalysisPolicySelections: chosen, CreatedAt: now, UpdatedAt: now}
+	if err := upgraded.SaveScenarioSchedule(schedule); err != nil {
+		t.Fatal(err)
+	}
+	loadedSchedule, err := peer.GetScenarioSchedule("selected-schedule")
+	if err != nil || !reflect.DeepEqual(loadedSchedule.AnalysisPolicySelections, chosen) {
+		t.Fatal(loadedSchedule, err)
+	}
+	if _, err := store.db.Exec(`ALTER TABLE scenario_schedules DROP COLUMN analysis_policy_selections_json`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`DELETE FROM schema_migrations WHERE version>=85`); err != nil {
+		t.Fatal(err)
+	}
+	reupgraded, err := NewPostgresStore(dsn, StoreConnectionOptions{MaxOpenConns: 2}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reupgraded.Close()
+	loadedSchedule, err = reupgraded.GetScenarioSchedule("selected-schedule")
+	if err != nil || loadedSchedule.AnalysisPolicySelections != nil {
+		t.Fatal("legacy schedule upgrade invented selection", loadedSchedule, err)
+	}
+	loadedSchedule.AnalysisPolicySelections = chosen
+	if err := reupgraded.SaveScenarioSchedule(loadedSchedule); err != nil {
+		t.Fatal(err)
+	}
+	loadedSchedule, err = peer.GetScenarioSchedule("selected-schedule")
+	if err != nil || !reflect.DeepEqual(loadedSchedule.AnalysisPolicySelections, chosen) {
+		t.Fatal("peer lost upgraded schedule selection", loadedSchedule, err)
+	}
 }

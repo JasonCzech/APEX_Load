@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,9 +25,10 @@ type archiveManager struct {
 	namespace    *generatorArchiveNamespace
 	namespaceErr error
 
-	writers    map[string]*archiveRecorder
-	creating   map[string]struct{}
-	maxWriters int
+	writers         map[string]*archiveRecorder
+	browserJournals map[string]*protocol.BrowserSourceJournal
+	creating        map[string]struct{}
+	maxWriters      int
 
 	records    map[string]*storage.RunArchiveRecord
 	identities map[string]os.FileInfo
@@ -70,6 +72,7 @@ func newArchiveManager(generatorID string, maxRecords int, ttl time.Duration, ma
 		namespace:         namespace,
 		namespaceErr:      namespaceErr,
 		writers:           make(map[string]*archiveRecorder),
+		browserJournals:   make(map[string]*protocol.BrowserSourceJournal),
 		creating:          make(map[string]struct{}),
 		maxWriters:        maxWriters,
 		records:           make(map[string]*storage.RunArchiveRecord),
@@ -269,6 +272,8 @@ func (manager *archiveManager) completeRemoval(removal generatorArchiveRemoval, 
 				manager.identities[removal.record.TestID] = removal.identity
 			}
 		}
+	} else {
+		delete(manager.browserJournals, removal.record.TestID)
 	}
 	delete(manager.deleting, removal.record.TestID)
 	manager.mu.Unlock()
@@ -436,6 +441,10 @@ func (manager *archiveManager) ensureWriter(testID, testName string) (*archiveRe
 		_ = writer.Discard()
 		return existing, false, nil
 	}
+	writer.onBrowserJournalCreated = func(journal *protocol.BrowserSourceJournal) {
+		manager.registerBrowserJournal(testID, journal)
+	}
+	delete(manager.browserJournals, testID)
 	manager.writers[testID] = writer
 	manager.mu.Unlock()
 	return writer, true, nil
@@ -443,7 +452,48 @@ func (manager *archiveManager) ensureWriter(testID, testName string) (*archiveRe
 
 func (manager *archiveManager) setWriterForTest(testID string, writer *archiveRecorder) {
 	manager.mu.Lock()
+	if writer != nil {
+		writer.onBrowserJournalCreated = func(journal *protocol.BrowserSourceJournal) {
+			manager.registerBrowserJournal(testID, journal)
+		}
+	}
 	manager.writers[testID] = writer
+	manager.mu.Unlock()
+}
+
+func (manager *archiveManager) registerBrowserJournal(testID string, journal *protocol.BrowserSourceJournal) {
+	if manager == nil || testID == "" || journal == nil {
+		return
+	}
+	manager.mu.Lock()
+	if manager.browserJournals == nil {
+		manager.browserJournals = make(map[string]*protocol.BrowserSourceJournal)
+	}
+	manager.browserJournals[testID] = journal
+	manager.mu.Unlock()
+}
+
+func (manager *archiveManager) sampleBrowserClockBracket(testID string) (protocol.BrowserClockBracketSample, bool) {
+	if manager == nil || testID == "" {
+		return protocol.BrowserClockBracketSample{}, false
+	}
+	manager.mu.RLock()
+	journal := manager.browserJournals[testID]
+	manager.mu.RUnlock()
+	if journal == nil {
+		return protocol.BrowserClockBracketSample{}, false
+	}
+	return journal.SampleClockBracket()
+}
+
+func (manager *archiveManager) deleteBrowserJournal(testID string) {
+	if manager == nil || testID == "" {
+		return
+	}
+	manager.mu.Lock()
+	if _, retained := manager.records[testID]; !retained {
+		delete(manager.browserJournals, testID)
+	}
 	manager.mu.Unlock()
 }
 

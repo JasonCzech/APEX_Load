@@ -96,68 +96,69 @@ type archiveMessageDetailCapture struct {
 }
 
 type archiveTransactionEvent struct {
-	WorkerDurationMs      float64                   `json:"worker_duration_ms,omitempty"`
-	CSVExportIDs          []string                  `json:"csv_export_ids"`
-	ExtractionsIncomplete bool                      `json:"extractions_incomplete,omitempty"`
-	Timestamp             time.Time                 `json:"timestamp"`
-	TestID                string                    `json:"test_id"`
-	TestName              string                    `json:"test_name"`
-	Group                 string                    `json:"group,omitempty"`
-	Region                string                    `json:"region,omitempty"`
-	Hierarchy             string                    `json:"hierarchy,omitempty"`
-	PageName              string                    `json:"page_name,omitempty"`
-	Phase                 string                    `json:"phase,omitempty"`
-	HasDetail             bool                      `json:"has_detail"`
-	MessageDetailPriority int                       `json:"message_detail_priority,omitempty"`
-	ActionName            string                    `json:"action_name,omitempty"`
-	VUserID               int                       `json:"vuser_id,omitempty"`
-	Iteration             int64                     `json:"iteration,omitempty"`
-	Interrupted           bool                      `json:"interrupted,omitempty"`
-	VUserLifetime         uint64                    `json:"vuser_lifetime,omitempty"`
-	EndsIteration         bool                      `json:"ends_iteration,omitempty"`
-	ElapsedMs             float64                   `json:"elapsed_ms,omitempty"`
-	Population            string                    `json:"population,omitempty"`
-	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
-	DurationMs            float64                   `json:"duration_ms"`
-	DNSMs                 float64                   `json:"dns_ms,omitempty"`
-	ConnectMs             float64                   `json:"connect_ms,omitempty"`
-	TLSMs                 float64                   `json:"tls_ms,omitempty"`
-	TTFBMs                float64                   `json:"ttfb_ms,omitempty"`
-	BytesSent             int64                     `json:"bytes_sent,omitempty"`
-	BytesReceived         int64                     `json:"bytes_received,omitempty"`
-	ByteEvidence          string                    `json:"byte_evidence,omitempty"` // what the byte counts measure (protocol.ByteEvidence)
-	StatusCode            int                       `json:"status_code,omitempty"`
-	Success               bool                      `json:"success"`
-	ErrorMessage          string                    `json:"error_message,omitempty"`
-	NetworkProfile        string                    `json:"network_profile,omitempty"`
-	PropertyDimensions    map[string]string         `json:"property_dimensions,omitempty"`
-	CorrelationID         string                    `json:"correlation_id,omitempty"`
-	TraceID               string                    `json:"trace_id,omitempty"`
-	SpanID                string                    `json:"span_id,omitempty"`
-	TraceSent             *bool                     `json:"trace_sent,omitempty"`
-	TraceSource           string                    `json:"trace_source,omitempty"`
-	SentTraceID           string                    `json:"sent_trace_id,omitempty"`
-	SentSpanID            string                    `json:"sent_span_id,omitempty"`
-	TraceLinks            []protocol.TraceLink      `json:"trace_links,omitempty"`
-	TraceLinksTruncated   bool                      `json:"trace_links_truncated,omitempty"`
-	DependencyType        string                    `json:"dependency_type,omitempty"`
-	DependencyTarget      string                    `json:"dependency_target,omitempty"`
-	SourceStepID          string                    `json:"source_step_id,omitempty"`
-	SourceStepIndex       int                       `json:"source_step_index,omitempty"`
-	SourceAction          string                    `json:"source_action,omitempty"`
-	SourceActionName      string                    `json:"source_action_name,omitempty"`
-	SourceTransaction     string                    `json:"source_transaction,omitempty"`
-	SourceProfile         string                    `json:"source_profile,omitempty"`
-	PageURL               string                    `json:"page_url,omitempty"`
-	PageTitle             string                    `json:"page_title,omitempty"`
-	ConsoleEntries        []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
-	NetworkEntries        []protocol.NetworkEntry   `json:"network_entries,omitempty"`
-	DOMSummary            *protocol.DOMSummary      `json:"dom_summary,omitempty"`
-	ClientMetrics         *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
-	ServerTelemetry       *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
-	ProtocolEvidence      map[string]any            `json:"protocol_evidence,omitempty"`
-	Extractions           map[string]string         `json:"extractions,omitempty"`
-	Snapshot              *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
+	WorkerDurationMs      float64                       `json:"worker_duration_ms,omitempty"`
+	CSVExportIDs          []string                      `json:"csv_export_ids"`
+	ExtractionsIncomplete bool                          `json:"extractions_incomplete,omitempty"`
+	Timestamp             time.Time                     `json:"timestamp"`
+	TestID                string                        `json:"test_id"`
+	TestName              string                        `json:"test_name"`
+	Group                 string                        `json:"group,omitempty"`
+	Region                string                        `json:"region,omitempty"`
+	Hierarchy             string                        `json:"hierarchy,omitempty"`
+	PageName              string                        `json:"page_name,omitempty"`
+	Phase                 string                        `json:"phase,omitempty"`
+	HasDetail             bool                          `json:"has_detail"`
+	MessageDetailPriority int                           `json:"message_detail_priority,omitempty"`
+	ActionName            string                        `json:"action_name,omitempty"`
+	VUserID               int                           `json:"vuser_id,omitempty"`
+	Iteration             int64                         `json:"iteration,omitempty"`
+	Interrupted           bool                          `json:"interrupted,omitempty"`
+	VUserLifetime         uint64                        `json:"vuser_lifetime,omitempty"`
+	EndsIteration         bool                          `json:"ends_iteration,omitempty"`
+	ElapsedMs             float64                       `json:"elapsed_ms,omitempty"`
+	Population            string                        `json:"population,omitempty"`
+	BusinessTransaction   bool                          `json:"business_transaction,omitempty"`
+	DurationMs            float64                       `json:"duration_ms"`
+	DNSMs                 float64                       `json:"dns_ms,omitempty"`
+	ConnectMs             float64                       `json:"connect_ms,omitempty"`
+	TLSMs                 float64                       `json:"tls_ms,omitempty"`
+	TTFBMs                float64                       `json:"ttfb_ms,omitempty"`
+	BytesSent             int64                         `json:"bytes_sent,omitempty"`
+	BytesReceived         int64                         `json:"bytes_received,omitempty"`
+	ByteEvidence          string                        `json:"byte_evidence,omitempty"` // what the byte counts measure (protocol.ByteEvidence)
+	StatusCode            int                           `json:"status_code,omitempty"`
+	Success               bool                          `json:"success"`
+	ErrorMessage          string                        `json:"error_message,omitempty"`
+	NetworkProfile        string                        `json:"network_profile,omitempty"`
+	PropertyDimensions    map[string]string             `json:"property_dimensions,omitempty"`
+	CorrelationID         string                        `json:"correlation_id,omitempty"`
+	TraceID               string                        `json:"trace_id,omitempty"`
+	SpanID                string                        `json:"span_id,omitempty"`
+	TraceSent             *bool                         `json:"trace_sent,omitempty"`
+	TraceSource           string                        `json:"trace_source,omitempty"`
+	SentTraceID           string                        `json:"sent_trace_id,omitempty"`
+	SentSpanID            string                        `json:"sent_span_id,omitempty"`
+	TraceLinks            []protocol.TraceLink          `json:"trace_links,omitempty"`
+	TraceLinksTruncated   bool                          `json:"trace_links_truncated,omitempty"`
+	DependencyType        string                        `json:"dependency_type,omitempty"`
+	DependencyTarget      string                        `json:"dependency_target,omitempty"`
+	SourceStepID          string                        `json:"source_step_id,omitempty"`
+	SourceStepIndex       int                           `json:"source_step_index,omitempty"`
+	SourceAction          string                        `json:"source_action,omitempty"`
+	SourceActionName      string                        `json:"source_action_name,omitempty"`
+	SourceTransaction     string                        `json:"source_transaction,omitempty"`
+	SourceProfile         string                        `json:"source_profile,omitempty"`
+	AuthoredStep          *protocol.BrowserAuthoredStep `json:"authored_step,omitempty"`
+	PageURL               string                        `json:"page_url,omitempty"`
+	PageTitle             string                        `json:"page_title,omitempty"`
+	ConsoleEntries        []protocol.ConsoleEntry       `json:"console_entries,omitempty"`
+	NetworkEntries        []protocol.NetworkEntry       `json:"network_entries,omitempty"`
+	DOMSummary            *protocol.DOMSummary          `json:"dom_summary,omitempty"`
+	ClientMetrics         *protocol.ClientMetrics       `json:"client_metrics,omitempty"`
+	ServerTelemetry       *protocol.ServerTelemetry     `json:"server_telemetry,omitempty"`
+	ProtocolEvidence      map[string]any                `json:"protocol_evidence,omitempty"`
+	Extractions           map[string]string             `json:"extractions,omitempty"`
+	Snapshot              *protocol.ErrorSnapshot       `json:"snapshot,omitempty"`
 	// HTTP version facts of a native HTTP action; the full receipt stays in
 	// protocol_evidence. HTTPVersion is the negotiated wire version (empty
 	// for a cache hit or a request that got no response).
@@ -410,9 +411,11 @@ type archiveTelemetryHealth struct {
 }
 
 type archiveRecorder struct {
-	browserProofMu      sync.Mutex
-	browserProofJournal *protocol.BrowserSourceJournal
-	browserProofSealed  bool
+	browserProofMu              sync.Mutex
+	browserProofJournal         *protocol.BrowserSourceJournal
+	browserProofSealed          bool
+	browserDocumentProofVersion int
+	onBrowserJournalCreated     func(*protocol.BrowserSourceJournal)
 	// harMu serializes HAR moves with Finalize and Discard; it is taken
 	// before mu.
 	harMu    sync.Mutex
@@ -1148,6 +1151,7 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		SourceActionName:      truncateSnapshotField(result.SourceActionName, 512),
 		SourceTransaction:     truncateSnapshotField(result.SourceTransaction, 512),
 		SourceProfile:         truncateSnapshotField(result.SourceProfile, 512),
+		AuthoredStep:          result.AuthoredStep.Clone(),
 		PageURL:               truncateSnapshotField(result.PageURL, 2048),
 		PageTitle:             truncateSnapshotField(result.PageTitle, 512),
 		ConsoleEntries:        result.ConsoleEntries,

@@ -143,11 +143,25 @@ func (vu *VUser) browserAuthoredIndex() *browserAuthoredIndex {
 	return vu.browserAuthored
 }
 
-func (vu *VUser) resolveBrowserAuthoredAction(action dsl.Action, source *dsl.Action) *protocol.Action {
-	var identity *protocol.BrowserAuthoredStep
-	if index := vu.browserAuthoredIndex(); index != nil {
-		identity = index.byAction[source].Clone()
+func (vu *VUser) browserAuthoredStepForAction(source *dsl.Action) *protocol.BrowserAuthoredStep {
+	if vu == nil || source == nil {
+		return nil
 	}
+	if index := vu.browserAuthoredIndex(); index != nil {
+		return index.byAction[source].Clone()
+	}
+	return nil
+}
+
+func (vu *VUser) currentBrowserAuthoredStep() *protocol.BrowserAuthoredStep {
+	if vu == nil {
+		return nil
+	}
+	return vu.browserAuthoredStepForAction(vu.currentAuthoredAction)
+}
+
+func (vu *VUser) resolveBrowserAuthoredAction(action dsl.Action, source *dsl.Action) *protocol.Action {
+	identity := vu.browserAuthoredStepForAction(source)
 	resolved := vu.resolveAction(action)
 	resolved.BrowserAuthoredStep = identity
 	return resolved
@@ -199,4 +213,101 @@ func (vu *VUser) browserReplayAuthoredStep(unit replayUnit) *protocol.BrowserAut
 		return nil
 	}
 	return index.byAction[source].Clone()
+}
+
+// ScriptJourneyStep describes a structural DSL step that can act as a journey
+// start or success boundary during iteration execution.
+type ScriptJourneyStep struct {
+	StepPath   string `json:"step_path"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	ActionType string `json:"action_type"`
+}
+
+// ScriptJourneySteps walks script's iteration actions and returns its optional
+// browser structure digest alongside the structural step boundaries editors
+// can bind in a journey_policy.
+func ScriptJourneySteps(script *dsl.Script) (string, []ScriptJourneyStep) {
+	if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
+		return "", nil
+	}
+	structureSHA256 := browserAuthoredStructureDigest(script)
+	actionTxMode := normalizeAutoTransactionMode(script.Config.RunLogic.AutoTransactions) == "per_action"
+	var steps []ScriptJourneyStep
+	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if !strings.HasPrefix(ref.Path, "actions[") || ref.Action == nil {
+			return nil
+		}
+		canonical := dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(ref.Action.Type)))
+		switch canonical {
+		case "control_if", "control_loop", "control_switch", "control_parallel", "control_break", "control_continue":
+			return nil
+		case "source_transaction":
+			switch normalizeSourceTransactionFunction(*ref.Action) {
+			case "lr_start_transaction", "lr_start_sub_transaction":
+				if name, _, ok := sourceTransactionStartArguments(*ref.Action); ok {
+					steps = append(steps, ScriptJourneyStep{
+						StepPath:   ref.Path,
+						Kind:       "transaction",
+						Name:       name,
+						ActionType: canonical,
+					})
+				}
+			case "lr_set_transaction":
+				if name, _, _, ok := sourceSetTransactionArguments(*ref.Action); ok {
+					steps = append(steps, ScriptJourneyStep{
+						StepPath:   ref.Path,
+						Kind:       "transaction",
+						Name:       name,
+						ActionType: canonical,
+					})
+				}
+			}
+			return nil
+		case "http_sequence":
+			if name := strings.TrimSpace(ref.Action.Name); name != "" {
+				steps = append(steps, ScriptJourneyStep{
+					StepPath:   ref.Path,
+					Kind:       "transaction",
+					Name:       name,
+					ActionType: canonical,
+				})
+			}
+			return nil
+		case "transaction":
+			if name := strings.TrimSpace(ref.Action.Name); name != "" {
+				steps = append(steps, ScriptJourneyStep{
+					StepPath:   ref.Path,
+					Kind:       "transaction",
+					Name:       name,
+					ActionType: canonical,
+				})
+			}
+			return nil
+		default:
+			name := strings.TrimSpace(ref.Action.Name)
+			if name == "" {
+				name = strings.TrimSpace(ref.Action.Type)
+			}
+			if name == "" {
+				return nil
+			}
+			steps = append(steps, ScriptJourneyStep{
+				StepPath:   ref.Path,
+				Kind:       "action",
+				Name:       name,
+				ActionType: canonical,
+			})
+			if actionTxMode {
+				steps = append(steps, ScriptJourneyStep{
+					StepPath:   ref.Path,
+					Kind:       "transaction",
+					Name:       name,
+					ActionType: canonical,
+				})
+			}
+			return nil
+		}
+	})
+	return structureSHA256, steps
 }

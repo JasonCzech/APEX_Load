@@ -119,15 +119,65 @@ func BenchmarkBrowserTouchOrClickActionLatency(b *testing.B) {
 				b.Fatalf("navigate(%s): %v", target.name, err)
 			}
 
+			var overheadTotalMs float64
+			var capturedBr *Browser
+			if target.actionType == "browser_click" {
+				capturedCfg := benchmarkBrowserConfig(target.name, true)
+				capturedCfg["browser_capture_document_metrics"] = true
+				capturedBr = &Browser{}
+				if err := capturedBr.Init(ctx, capturedCfg); err != nil {
+					b.Fatalf("Init captured(%s): %v", target.name, err)
+				}
+				defer func() {
+					if err := capturedBr.Teardown(context.Background()); err != nil {
+						b.Fatalf("Teardown captured(%s): %v", target.name, err)
+					}
+				}()
+				if _, err := capturedBr.Execute(ctx, &protocol.Action{Name: "open fixture", Type: "browser_navigate", Target: server.URL}); err != nil {
+					b.Fatalf("navigate captured(%s): %v", target.name, err)
+				}
+			}
+
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
+				primaryStart := time.Now()
 				result, err := br.Execute(ctx, &protocol.Action{Name: "activate target", Type: target.actionType, Target: "#target"})
+				primaryMs := benchmarkMs(time.Since(primaryStart))
 				if err != nil {
 					b.Fatalf("%s(%s): %v", target.actionType, target.name, err)
 				}
 				if result.ErrorMessage != "" {
 					b.Fatalf("%s(%s): %s", target.actionType, target.name, result.ErrorMessage)
 				}
+				b.StopTimer()
+				if target.actionType == "browser_tap" {
+					br.mu.Lock()
+					savedTouch := br.touchMode
+					br.touchMode = false
+					br.mu.Unlock()
+					baselineStart := time.Now()
+					baseRes, baseErr := br.Execute(ctx, &protocol.Action{Name: "click baseline", Type: "browser_click", Target: "#target"})
+					baselineMs := benchmarkMs(time.Since(baselineStart))
+					br.mu.Lock()
+					br.touchMode = savedTouch
+					br.mu.Unlock()
+					if baseErr != nil || baseRes == nil || baseRes.ErrorMessage != "" {
+						b.Fatalf("click baseline(%s): %v %+v", target.name, baseErr, baseRes)
+					}
+					overheadTotalMs += primaryMs - baselineMs
+				} else if capturedBr != nil {
+					capStart := time.Now()
+					capRes, capErr := capturedBr.Execute(ctx, &protocol.Action{Name: "captured click", Type: "browser_click", Target: "#target"})
+					capMs := benchmarkMs(time.Since(capStart))
+					if capErr != nil || capRes == nil || capRes.ErrorMessage != "" {
+						b.Fatalf("captured click(%s): %v %+v", target.name, capErr, capRes)
+					}
+					overheadTotalMs += capMs - primaryMs
+				}
+				b.StartTimer()
+			}
+			if b.N > 0 {
+				b.ReportMetric(overheadTotalMs/float64(b.N), "action_overhead_ms/op")
 			}
 		})
 	}
@@ -135,33 +185,41 @@ func BenchmarkBrowserTouchOrClickActionLatency(b *testing.B) {
 
 func BenchmarkBrowserRSSPerChromiumDeviceProfile(b *testing.B) {
 	requireMobileBrowserBenchmarks(b)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprint(w, `<!doctype html><html><body><h1 id="ready">ready</h1></body></html>`)
+	}))
+	defer server.Close()
+
 	for _, target := range mobileBrowserBenchmarkProfiles() {
 		if !target.memoryProbe {
 			continue
 		}
 		target := target
 		b.Run(target.name, func(b *testing.B) {
-			var totalRSSBytes float64
+			var totalPerVUserRSSBytes float64
+			var totalFixedOverheadBytes float64
 			for i := 0; i < b.N; i++ {
+				baselineRenderers := snapshotBaselineRendererPIDs("chromium")
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				br := &Browser{}
 				if err := br.Init(ctx, benchmarkBrowserConfig(target.name, true)); err != nil {
 					cancel()
 					b.Fatalf("Init(%s): %v", target.name, err)
 				}
-				snapshot, err := br.captureBrowserProcessSnapshot(ctx)
-				if err != nil {
+				if _, err := br.Execute(ctx, &protocol.Action{Name: "open fixture", Type: "browser_navigate", Target: server.URL}); err != nil {
 					_ = br.Teardown(ctx)
 					cancel()
-					b.Fatalf("captureBrowserProcessSnapshot(%s): %v", target.name, err)
+					b.Fatalf("navigate(%s): %v", target.name, err)
 				}
-				rssBytes, available := benchmarkRuntimeRSSBytes(snapshot)
-				if !available {
+				sample := br.sampleBenchmarkVUserMemory(baselineRenderers, true)
+				if sample.PerVUserRSSBytes == nil || sample.FixedOverheadBytes == nil {
 					_ = br.Teardown(ctx)
 					cancel()
-					b.Fatalf("RSS attribution unavailable for %s", target.name)
+					b.Fatalf("CDP renderer RSS attribution unavailable for %s", target.name)
 				}
-				totalRSSBytes += rssBytes
+				totalPerVUserRSSBytes += float64(*sample.PerVUserRSSBytes)
+				totalFixedOverheadBytes += float64(*sample.FixedOverheadBytes)
 				if err := br.Teardown(ctx); err != nil {
 					cancel()
 					b.Fatalf("Teardown(%s): %v", target.name, err)
@@ -169,10 +227,9 @@ func BenchmarkBrowserRSSPerChromiumDeviceProfile(b *testing.B) {
 				cancel()
 			}
 			if b.N > 0 {
-				// MemoryMB is the existing runtime snapshot's binary-unit field.
-				// Preserve its semantics and label new benchmark output explicitly.
-				b.ReportMetric(totalRSSBytes/float64(1<<20)/float64(b.N), "rss_mib/op")
-				b.ReportMetric(totalRSSBytes/float64(b.N), "rss_bytes/op")
+				b.ReportMetric(totalPerVUserRSSBytes/float64(b.N), "rss_bytes/op")
+				b.ReportMetric(totalPerVUserRSSBytes/float64(b.N), "per_vuser_rss_bytes/op")
+				b.ReportMetric(totalFixedOverheadBytes/float64(b.N), "fixed_overhead_bytes/op")
 			}
 		})
 	}

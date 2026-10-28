@@ -31,6 +31,12 @@ func switchWindowForAction(action *dsl.Action, state *truConvertState) (dsl.Acti
 	if action == nil || state == nil || action.Metadata == nil {
 		return dsl.Action{}, false
 	}
+	if action.Type == "browser_switch_window" || action.Type == "browser_close_window" {
+		if action.Type == "browser_close_window" {
+			state.currentWindowContext = ""
+		}
+		return dsl.Action{}, false
+	}
 	context := firstNonEmptyString(stringFromAny(action.Metadata["source_window_context"]), stringFromAny(action.Metadata["window_context"]))
 	if context == state.currentWindowContext {
 		return dsl.Action{}, false
@@ -59,6 +65,29 @@ func switchWindowAction(context string, name string) dsl.Action {
 	action.Target = context
 	action.Params = map[string]any{"target": context}
 	return action
+}
+
+func closeWindowAction(context string, name string) (dsl.Action, bool) {
+	action := dsl.Action{
+		Name: name,
+		Type: "browser_close_window",
+		Metadata: map[string]any{
+			"source": "truclient_close_tab",
+		},
+	}
+	context = strings.TrimSpace(context)
+	if context == "" {
+		return action, true
+	}
+	if index, err := strconv.Atoi(context); err == nil {
+		if index < 0 {
+			return action, false
+		}
+		action.Params = map[string]any{"index": index}
+		return action, true
+	}
+	action.Target = context
+	return action, true
 }
 
 func normalizeTruClientFrameSelector(value string) string {
@@ -148,8 +177,10 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		}
 		if strings.EqualFold(strings.TrimSpace(step.Action), "Type") {
 			action.Params = map[string]any{"input_mode": "type"}
-			if clear, _ := parseFirstArgumentValue(step.Arguments, "Clear"); strings.EqualFold(trimQuotedValue(clear), "false") || trimQuotedValue(clear) == "0" {
-				applyTruClientSemanticGate(&action, "truclient_append_typing_requires_review", "The source requests typing without clearing; the native typing draft clears the field and requires an explicit append replacement.")
+			if clear, err := parseFirstArgumentValue(step.Arguments, "Clear", "clear"); err != nil {
+				return nil, nil, false, err
+			} else if trimmed := trimQuotedValue(clear); strings.EqualFold(trimmed, "false") || trimmed == "0" {
+				action.Params["clear"] = false
 			}
 			if interval, err := parseFirstArgumentValue(step.Arguments, "Typing Interval"); err != nil {
 				return nil, nil, false, err
@@ -255,7 +286,17 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 			action.Metadata["source_rendezvous_name"] = name
 		}
 		return []dsl.Action{action}, nil, false, nil
-	case "Activate", "Activate Tab", "Add Tab", "Close Tab":
+	case "Close Tab":
+		context, err := parseFirstArgumentValue(step.Arguments, "Tab", "Tab ID", "Window", "Index", "Target", "Name")
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("parse TruClient Close Tab step arguments: %w", err)
+		}
+		action, valid := closeWindowAction(trimQuotedValue(context), stepDisplayName(step, step.Action))
+		if !valid {
+			applyTruClientSemanticGate(&action, "truclient_window_identity_requires_review", "The source tab/window index is negative and requires explicit native browser context.")
+		}
+		return []dsl.Action{action}, nil, false, nil
+	case "Activate", "Activate Tab", "Add Tab":
 		context, err := parseFirstArgumentValue(step.Arguments, "Tab", "Tab ID", "Window", "Index", "Target", "Name")
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("parse TruClient %s step arguments: %w", strings.TrimSpace(step.Action), err)
@@ -265,12 +306,21 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		if strings.TrimSpace(context) == "" {
 			applyTruClientSemanticGate(&action, "truclient_window_identity_requires_review", "The source tab/window identity requires explicit native browser context.")
 		}
-		if name := strings.TrimSpace(step.Action); strings.EqualFold(name, "Add Tab") || strings.EqualFold(name, "Close Tab") {
+		if name := strings.TrimSpace(step.Action); strings.EqualFold(name, "Add Tab") {
 			applyTruClientSemanticGate(&action, "truclient_tab_lifecycle_requires_review", "The source tab open/close lifecycle requires an explicit native replacement.")
 			action.Metadata["review_reason"] = "tab_lifecycle_not_replayed"
 			warnings = append(warnings, fmt.Sprintf("TruClient %q switches browser focus, but tab open/close lifecycle is not replayed", name))
 		}
 		return []dsl.Action{action}, warnings, false, nil
+	case "Wait for File Download":
+		if action, ok, err := convertWaitForDownloadStep(step, descriptors); err != nil {
+			return nil, nil, false, err
+		} else if ok {
+			return []dsl.Action{action}, nil, false, nil
+		}
+		scope, _ := LookupStepScope("Wait for File Download")
+		action := reviewOnlyStepAction(step, scope)
+		return []dsl.Action{action}, []string{reviewOnlyStepWarning(step, scope)}, false, nil
 	case "Wait for Property":
 		return convertWaitForPropertyStep(step, descriptors)
 	case "Evaluate JavaScript":
@@ -363,6 +413,72 @@ func convertSetFilesStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.A
 			"source_file_path": path,
 		},
 	}, true, nil
+}
+
+func convertWaitForDownloadStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, bool, error) {
+	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+	if err != nil {
+		return dsl.Action{}, false, fmt.Errorf("parse TruClient Wait for File Download selector arguments: %w", err)
+	}
+	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
+	if selector == "" {
+		return dsl.Action{}, false, nil
+	}
+	action := dsl.Action{
+		Name:     stepDisplayName(step, "Wait for File Download"),
+		Type:     "browser_download",
+		Target:   selector,
+		Selector: selector,
+		Metadata: map[string]any{
+			"source": "truclient_wait_for_download",
+		},
+	}
+	if err := applyTruClientDownloadArguments(&action, step); err != nil {
+		return dsl.Action{}, false, err
+	}
+	return action, true, nil
+}
+
+func applyTruClientDownloadArguments(action *dsl.Action, step truXMLStep) error {
+	if action == nil {
+		return nil
+	}
+	urlContains, err := parseFirstArgumentValue(step.Arguments, "URL", "url", "URL Contains", "url_contains", "Location", "location")
+	if err != nil {
+		return fmt.Errorf("parse TruClient Wait for File Download URL arguments: %w", err)
+	}
+	filenameContains, err := parseFirstArgumentValue(step.Arguments, "File Name", "Filename", "file_name", "filename", "Suggested Filename", "filename_contains")
+	if err != nil {
+		return fmt.Errorf("parse TruClient Wait for File Download filename arguments: %w", err)
+	}
+	filenameRegex, err := parseFirstArgumentValue(step.Arguments, "Filename Regex", "filename_regex", "File Name Regex", "file_name_regex")
+	if err != nil {
+		return fmt.Errorf("parse TruClient Wait for File Download filename regex arguments: %w", err)
+	}
+	saveAs, err := parseFirstArgumentValue(step.Arguments, "Save As", "save_as", "Path", "path", "File Path", "file_path")
+	if err != nil {
+		return fmt.Errorf("parse TruClient Wait for File Download save path arguments: %w", err)
+	}
+	saveDir, err := parseFirstArgumentValue(step.Arguments, "Save Dir", "save_dir", "Directory", "directory", "Folder", "folder")
+	if err != nil {
+		return fmt.Errorf("parse TruClient Wait for File Download save directory arguments: %w", err)
+	}
+	setParam := func(key, raw string) {
+		val := trimQuotedValue(raw)
+		if val == "" {
+			return
+		}
+		if action.Params == nil {
+			action.Params = map[string]any{}
+		}
+		action.Params[key] = val
+	}
+	setParam("url_contains", urlContains)
+	setParam("filename_contains", filenameContains)
+	setParam("filename_regex", filenameRegex)
+	setParam("save_as", saveAs)
+	setParam("save_dir", saveDir)
+	return nil
 }
 
 func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, error) {

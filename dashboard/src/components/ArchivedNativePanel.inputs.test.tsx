@@ -25,6 +25,29 @@ it('reopens the exact retained run from a different page and exports its pins', 
  expect(columns.find(item => item.key === 'queryPin')?.value({})).toBe(pin.query_sha256)
  expect(columns.find(item => item.key === 'currentPin')?.value({})).toBe(pin.current.manifest_sha256)
 })
+it('renders and exports v2 policy pins and selection receipt SHA-256 on query_version 5 panels', async () => {
+ const v2Pin = {
+  version: 2 as const,
+  query_sha256: 'a'.repeat(64),
+  selection_receipt_sha256: 'f'.repeat(64),
+  policy_pins: [{ kind: 'browser_policy' as const, id: 'pol-browser', revision: 2, sha256: '1'.repeat(64) }],
+  current: {
+   run_id: 'retained',
+   manifest_sha256: 'b'.repeat(64),
+   tuple_ids: ['c'.repeat(64)],
+   policy_pins: [{ kind: 'browser_policy' as const, id: 'pol-browser', revision: 2, sha256: '1'.repeat(64) }],
+  },
+ }
+ const v2Panel: DashboardDefinitionPanel = { ...panel, query: { ...panel.query!, query_version: 5, browser_inputs: v2Pin } }
+ request.mockResolvedValue({ ...result, browser_inputs: v2Pin })
+ await act(async () => root.render(<ArchivedNativePanel panel={v2Panel} testId="different-page-run" />))
+ expect(container.textContent).toContain('Selection receipt:')
+ expect(container.textContent).toContain('f'.repeat(64))
+ expect(container.textContent).toContain('Policy pins: browser_policy pol-browser@2')
+ const columns = exports.mock.calls[exports.mock.calls.length - 1][0].columns as { key: string; value: (row: unknown) => unknown }[]
+ expect(columns.find(item => item.key === 'selectionReceiptPin')?.value({})).toBe('f'.repeat(64))
+ expect(String(columns.find(item => item.key === 'policyPins')?.value({}))).toContain('browser_policy:pol-browser@2:')
+})
 it('keeps a stale publication unavailable rather than re-querying the page run', async () => {
  request.mockRejectedValue(new Error('saved browser inputs changed or are unavailable'))
  await act(async () => root.render(<ArchivedNativePanel panel={panel} testId="different-page-run" />))

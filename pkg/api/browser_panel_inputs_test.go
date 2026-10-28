@@ -51,6 +51,51 @@ func TestBrowserPanelInputPinsUseEvaluatedPublications(t *testing.T) {
 	}
 }
 
+func TestBrowserPanelInputPinsV2PolicyAndSelectionPins(t *testing.T) {
+	v2Fixture := func() (storage.AnalyticsQuery, NativeArchiveResponse) {
+		q, response := browserPanelInputFixture()
+		q.QueryVersion = 5
+		response.Current.policyPins = []storage.BrowserPanelPolicyPin{
+			{Kind: storage.AnalysisDefinitionKindBrowserPolicy, ID: "pol-browser", Revision: 2, SHA256: strings.Repeat("1", 64)},
+			{Kind: storage.AnalysisDefinitionKindJourneyPolicy, ID: "pol-journey", Revision: 1, SHA256: strings.Repeat("2", 64)},
+		}
+		response.Current.selectionReceiptSHA256 = strings.Repeat("3", 64)
+		response.Baseline.policyPins = []storage.BrowserPanelPolicyPin{
+			{Kind: storage.AnalysisDefinitionKindBrowserPolicy, ID: "pol-browser", Revision: 2, SHA256: strings.Repeat("1", 64)},
+		}
+		return q, response
+	}
+	q, response := v2Fixture()
+	if err := bindBrowserPanelInputs(q, &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.BrowserInputs == nil || response.BrowserInputs.Version != 2 || len(response.BrowserInputs.PolicyPins) != 2 || response.BrowserInputs.SelectionReceiptSHA256 != strings.Repeat("3", 64) || len(response.BrowserInputs.Baseline.PolicyPins) != 1 {
+		t.Fatalf("unexpected v2 pins: %+v", response.BrowserInputs)
+	}
+	q.BrowserInputs = response.BrowserInputs
+	if err := bindBrowserPanelInputs(q, &response); err != nil {
+		t.Fatalf("unchanged v2 pins refused: %v", err)
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*NativeArchiveResponse)
+	}{
+		{"changed current policy revision", func(r *NativeArchiveResponse) { r.Current.policyPins[0].Revision = 3 }},
+		{"changed current policy digest", func(r *NativeArchiveResponse) { r.Current.policyPins[0].SHA256 = strings.Repeat("9", 64) }},
+		{"changed baseline policy digest", func(r *NativeArchiveResponse) { r.Baseline.policyPins[0].SHA256 = strings.Repeat("9", 64) }},
+		{"changed selection receipt", func(r *NativeArchiveResponse) { r.Current.selectionReceiptSHA256 = strings.Repeat("8", 64) }},
+		{"missing selection receipt", func(r *NativeArchiveResponse) { r.Current.selectionReceiptSHA256 = "" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, fresh := v2Fixture()
+			tc.change(&fresh)
+			if bindBrowserPanelInputs(q, &fresh) == nil {
+				t.Fatal("changed v2 input accepted")
+			}
+		})
+	}
+}
+
 func TestBrowserPanelInputPinsDoNotAlterOldResponses(t *testing.T) {
 	for _, v := range []int{0, 1, 2, 3} {
 		q := storage.AnalyticsQuery{QueryVersion: v}
@@ -62,7 +107,7 @@ func TestBrowserPanelInputPinsDoNotAlterOldResponses(t *testing.T) {
 }
 
 func TestBrowserPanelInputCombinedBounds(t *testing.T) {
-	for _, version := range []int{3, 4} {
+	for _, version := range []int{3, 4, 5} {
 		for _, tc := range []struct {
 			name                                     string
 			current, baseline, shift, buckets, limit int

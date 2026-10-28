@@ -138,15 +138,15 @@ run_telemetry_reference() {
 }
 
 # run_browser_intelligence_acceptance runs the BI-4 golden in Chromium and
-# WebKit, keeping its results and F4 acceptance requests at a fresh private
-# path.
+# WebKit and the seeded-regression production exit in Chromium, keeping its
+# results and F4 acceptance requests at a fresh private path.
 run_browser_intelligence_acceptance() {
   local out_dir commit
   out_dir="$(mktemp -d "${TMPDIR:-/tmp}/apexload-browser-intelligence-acceptance.XXXXXX")" || return 1
   printf 'Browser intelligence golden results: %s\n' "${out_dir}"
   commit="$(acceptance_commit)"
   APEXLOAD_BROWSER_TESTS=require APEXLOAD_BI_ACCEPTANCE_OUT="${out_dir}" APEXLOAD_COMMIT_SHA="${commit}" \
-    go test -count=1 -timeout 15m -v -run '^TestBrowserIntelligenceGoldenAcceptance$' ./pkg/api
+    go test -count=1 -timeout=25m -v -run '^(TestBrowserIntelligenceGoldenAcceptance|TestBrowserSeededRegressionProductionPath)$' ./pkg/api
 }
 
 run_suite "analytics_duckdb (embedded native analytics)" \

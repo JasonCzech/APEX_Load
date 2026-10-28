@@ -54,6 +54,67 @@ type ReportRootCause struct {
 	// cohorts with the baseline run's (browser_baseline.v1), when the run
 	// had document series.
 	BrowserBaseline *ReportBrowserBaseline `json:"browser_baseline,omitempty"`
+	// BrowserSelection is v2's browser baseline admission receipt
+	// (browser_selection.v1), present even when no baseline comparison ran.
+	BrowserSelection *ReportBrowserSelection `json:"browser_selection,omitempty"`
+}
+
+// ReportBrowserSelection presents the assessment's browser baseline admission
+// receipt (browser_selection.v1) and candidate rejections.
+type ReportBrowserSelection struct {
+	Version        string                          `json:"version"`
+	Policy         string                          `json:"policy,omitempty"`
+	Status         string                          `json:"status"`
+	InventoryCount int                             `json:"inventory_count"`
+	SelectedTestID string                          `json:"selected_test_id,omitempty"`
+	SelectedDigest string                          `json:"selected_digest,omitempty"`
+	ReceiptDigest  string                          `json:"receipt_digest,omitempty"`
+	Reasons        []string                        `json:"reasons,omitempty"`
+	Rejected       []rca.BrowserCandidateRejection `json:"rejected,omitempty"`
+	Summary        string                          `json:"summary"`
+}
+
+func reportBrowserSelectionFromV2(sel *rca.BrowserBaselineSelection, receiptDigest string) *ReportBrowserSelection {
+	if sel == nil {
+		return nil
+	}
+	out := &ReportBrowserSelection{
+		Version:        sel.Version,
+		Policy:         sel.Policy,
+		Status:         sel.Status,
+		InventoryCount: sel.InventoryCount,
+		SelectedTestID: sel.SelectedTestID,
+		SelectedDigest: sel.SelectedDigest,
+		ReceiptDigest:  receiptDigest,
+		Reasons:        append([]string(nil), sel.Reasons...),
+	}
+	for _, rej := range sel.Rejected {
+		out.Rejected = append(out.Rejected, rca.BrowserCandidateRejection{
+			TestID:  rej.TestID,
+			Digest:  rej.Digest,
+			Reasons: append([]string(nil), rej.Reasons...),
+		})
+	}
+	out.Summary = reportBrowserSelectionSummary(out)
+	return out
+}
+
+func reportBrowserSelectionSummary(s *ReportBrowserSelection) string {
+	parts := []string{fmt.Sprintf("Browser baseline selection (%s, %s): %d candidate%s inspected", s.Version, strings.ToLower(rcaHumanize(s.Status)), s.InventoryCount, pluralSuffix(s.InventoryCount))}
+	if s.Policy != "" {
+		parts = append(parts, "policy "+s.Policy)
+	}
+	if s.SelectedTestID != "" {
+		sel := "selected " + s.SelectedTestID
+		if s.SelectedDigest != "" {
+			sel += " (" + s.SelectedDigest + ")"
+		}
+		parts = append(parts, sel)
+	}
+	if s.ReceiptDigest != "" {
+		parts = append(parts, "receipt "+s.ReceiptDigest)
+	}
+	return strings.Join(parts, ", ") + "."
 }
 
 // ReportBrowserBaseline presents the assessment's browser baseline: how many
@@ -305,6 +366,7 @@ func reportRootCauseFromV2(a *rca.Assessment, completedAt *time.Time) ReportRoot
 		view.Hypotheses = append(view.Hypotheses, out)
 	}
 	view.BrowserBaseline = reportBrowserBaselineFromV2(a.BrowserBaseline)
+	view.BrowserSelection = reportBrowserSelectionFromV2(a.BrowserSelection, a.Inputs.BrowserSelection)
 	for _, l := range a.Limitations {
 		view.Limitations = append(view.Limitations, rcaLimitationText(l))
 	}

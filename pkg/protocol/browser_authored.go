@@ -29,14 +29,23 @@ const maxBrowserAuthoredPathBytes = 4096
 
 var browserAuthoredPath = regexp.MustCompile(`^(init|actions|teardown)\[(0|[1-9][0-9]{0,5})\](\.control\.((steps|else|default)\[(0|[1-9][0-9]{0,5})\]|(cases|branches)\[(0|[1-9][0-9]{0,5})\]\.steps\[(0|[1-9][0-9]{0,5})\])){0,64}$`)
 
+// ValidBrowserAuthoredStepPath reports whether path is a canonical structural
+// DSL step path (init/actions/teardown with bounded control-flow indices).
+func ValidBrowserAuthoredStepPath(path string) bool {
+	return len(path) > 0 && len(path) <= maxBrowserAuthoredPathBytes && browserAuthoredPath.MatchString(path)
+}
+
+// ValidBrowserAuthoredDigest reports whether value is a 64-character lowercase
+// hex SHA-256 digest.
+func ValidBrowserAuthoredDigest(value string) bool {
+	return browserAuthoredDigestValid(value)
+}
+
 // NewBrowserAuthoredStep returns no identity for unbound or noncanonical input.
 // Only structural tokens are accepted: names, selectors, URLs and source labels
 // never enter StepPath. No key is manufactured for historical evidence.
 func NewBrowserAuthoredStep(scriptSHA256, path string) *BrowserAuthoredStep {
-	if len(scriptSHA256) != 64 || strings.ToLower(scriptSHA256) != scriptSHA256 || len(path) > maxBrowserAuthoredPathBytes || !browserAuthoredPath.MatchString(path) {
-		return nil
-	}
-	if _, err := hex.DecodeString(scriptSHA256); err != nil {
+	if !browserAuthoredDigestValid(scriptSHA256) || !ValidBrowserAuthoredStepPath(path) {
 		return nil
 	}
 	sum := sha256.Sum256([]byte("browser_authored_step.v1\x00" + scriptSHA256 + "\x00" + path))

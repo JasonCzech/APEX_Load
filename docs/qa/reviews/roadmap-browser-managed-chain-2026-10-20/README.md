@@ -8,7 +8,7 @@ Persisted editor/viewer identities exercise current authorization: viewers can i
 
 The fixture waits for the controlled fetch response body before its visible completion signal, so resource retention is compared against completed traffic. Its HAR directory is private and explicitly configured. The exploratory shared-temp run exposed a capture-failure omission gap; fixing that product gap is a separate follow-up, not evidence that this successful path covers failures.
 
-This closes the local authenticated author/replay/run/archive/download path only. Real TruClient export fidelity, browser-driven dashboard navigation through a real managed run, live/policy/baseline/panel workflows, durable replay HAR recovery, reference-host performance, Linux/Windows and actual-device qualification remain pending.
+This closes the local authenticated author/replay/run/archive/download path; browser-driven dashboard traversal across Chromium and WebKit in both auth profiles is covered by the [UI-driven managed browser workflow slice](../roadmap-browser-ui-managed-chain-2026-10-27/README.md). Real TruClient export fidelity, live/policy/baseline/panel workflows, durable replay HAR recovery, reference-host performance, Linux/Windows and actual-device qualification remain pending.
 
 ## Validation and review
 

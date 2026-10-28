@@ -59,15 +59,16 @@ func cacheBackendIsRemote(backend string) bool {
 }
 
 type RunLiveStateSnapshot struct {
-	TestID        string       `json:"test_id"`
-	TestName      string       `json:"test_name"`
-	ProjectID     string       `json:"project_id,omitempty"`
-	Status        string       `json:"status"`
-	UpdatedAt     time.Time    `json:"updated_at"`
-	StartedAt     *time.Time   `json:"started_at,omitempty"`
-	EndedAt       *time.Time   `json:"ended_at,omitempty"`
-	LiveMetrics   *LiveMetrics `json:"live_metrics,omitempty"`
-	HistoryPoints int          `json:"history_points"`
+	TestID                         string                                  `json:"test_id"`
+	TestName                       string                                  `json:"test_name"`
+	ProjectID                      string                                  `json:"project_id,omitempty"`
+	Status                         string                                  `json:"status"`
+	UpdatedAt                      time.Time                               `json:"updated_at"`
+	StartedAt                      *time.Time                              `json:"started_at,omitempty"`
+	EndedAt                        *time.Time                              `json:"ended_at,omitempty"`
+	LiveMetrics                    *LiveMetrics                            `json:"live_metrics,omitempty"`
+	ProvisionalBrowserIntelligence *ProvisionalBrowserIntelligenceSnapshot `json:"provisional_browser_intelligence,omitempty"`
+	HistoryPoints                  int                                     `json:"history_points"`
 }
 
 type LiveStateStore interface {

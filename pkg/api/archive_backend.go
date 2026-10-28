@@ -15,15 +15,18 @@ import (
 	"strings"
 	"time"
 
+	cloudstorage "cloud.google.com/go/storage"
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/internal/archivequota"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"gocloud.dev/blob"
-	_ "gocloud.dev/blob/azureblob"
+	"gocloud.dev/blob/azureblob"
 	_ "gocloud.dev/blob/fileblob"
-	_ "gocloud.dev/blob/gcsblob"
+	"gocloud.dev/blob/gcsblob"
 	_ "gocloud.dev/blob/s3blob"
+	"gocloud.dev/gcp"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -86,6 +89,7 @@ func currentArchiveBackend() archiveBackendRuntime {
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
 	case archiveBackendGCS:
 		runtime.Bucket = strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BUCKET"))
+		runtime.Endpoint = normalizeGCSEmulatorEndpoint(firstNonEmpty(runtime.Endpoint, strings.TrimSpace(os.Getenv("STORAGE_EMULATOR_HOST"))))
 		runtime.LocalRoot = objectArchiveStagingRoot(filesystemRoot, backend)
 	default:
 		runtime.Backend = archiveBackendFilesystem
@@ -158,6 +162,19 @@ func cleanArchivePrefix(prefix string) string {
 		return "apexload/archives"
 	}
 	return prefix
+}
+
+func normalizeGCSEmulatorEndpoint(raw string) string {
+	endpoint := strings.TrimSpace(raw)
+	if endpoint == "" {
+		return ""
+	}
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "http://" + endpoint
+	}
+	endpoint = strings.TrimRight(endpoint, "/")
+	endpoint = strings.TrimSuffix(endpoint, "/storage/v1")
+	return strings.TrimRight(endpoint, "/")
 }
 
 func joinArchiveURI(base string, parts ...string) string {
@@ -336,20 +353,55 @@ func (b archiveBackendRuntime) bucketURL() string {
 	case archiveBackendS3:
 		bucketURL := "s3://" + b.Bucket
 		params := []string{}
-		if b.Region != "" {
-			params = append(params, "region="+url.QueryEscape(b.Region))
+		region := strings.TrimSpace(b.Region)
+		if region == "" && strings.TrimSpace(b.Endpoint) != "" && strings.TrimSpace(os.Getenv("AWS_REGION")) == "" && strings.TrimSpace(os.Getenv("AWS_DEFAULT_REGION")) == "" {
+			region = "us-east-1"
 		}
-		if b.Endpoint != "" {
-			params = append(params, "endpoint="+url.QueryEscape(b.Endpoint))
+		if region != "" {
+			params = append(params, "region="+url.QueryEscape(region))
+		}
+		if endpoint := strings.TrimSpace(b.Endpoint); endpoint != "" {
+			params = append(params, "endpoint="+url.QueryEscape(endpoint))
+			if !strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_S3_FORCE_PATH_STYLE")), "false") {
+				params = append(params, "s3ForcePathStyle=true")
+			}
+			if strings.HasPrefix(strings.ToLower(endpoint), "http://") {
+				params = append(params, "disable_https=true")
+			}
 		}
 		if len(params) > 0 {
 			bucketURL += "?" + strings.Join(params, "&")
 		}
 		return bucketURL
 	case archiveBackendAzureBlob:
-		return "azblob://" + b.Container
+		bucketURL := "azblob://" + b.Container
+		params := []string{}
+		if account := strings.TrimSpace(b.Account); account != "" {
+			params = append(params, "storage_account="+url.QueryEscape(account))
+		}
+		if endpoint := strings.TrimSpace(b.Endpoint); endpoint != "" {
+			if parsed, err := url.Parse(endpoint); err == nil && parsed.Host != "" {
+				params = append(params, "domain="+url.QueryEscape(parsed.Host))
+				if scheme := strings.ToLower(parsed.Scheme); scheme == "http" || scheme == "https" {
+					params = append(params, "protocol="+url.QueryEscape(scheme))
+				}
+				if strings.HasPrefix(parsed.Host, "127.0.0.1") || strings.HasPrefix(parsed.Host, "localhost") || strings.HasPrefix(parsed.Host, "[::1]") || strings.EqualFold(parsed.Scheme, "http") || parsed.Port() != "" || strings.Trim(parsed.Path, "/") != "" {
+					params = append(params, "localemu=true")
+				}
+			} else {
+				params = append(params, "domain="+url.QueryEscape(endpoint))
+			}
+		}
+		if len(params) > 0 {
+			bucketURL += "?" + strings.Join(params, "&")
+		}
+		return bucketURL
 	case archiveBackendGCS:
-		return "gs://" + b.Bucket
+		bucketURL := "gs://" + b.Bucket
+		if strings.TrimSpace(b.Endpoint) != "" || strings.TrimSpace(os.Getenv("STORAGE_EMULATOR_HOST")) != "" {
+			bucketURL += "?anonymous=true"
+		}
+		return bucketURL
 	default:
 		return ""
 	}
@@ -361,6 +413,47 @@ func (b archiveBackendRuntime) openBucket(ctx context.Context) (*blob.Bucket, er
 	}
 	if b.Backend == archiveBackendFilesystem {
 		return nil, nil
+	}
+	switch b.Backend {
+	case archiveBackendAzureBlob:
+		parsed, err := url.Parse(b.bucketURL())
+		if err != nil {
+			return nil, fmt.Errorf("parse archive object bucket URL: %w", err)
+		}
+		opener := &azureblob.URLOpener{
+			MakeClient:        azureblob.NewDefaultClient,
+			ServiceURLOptions: *azureblob.NewDefaultServiceURLOptions(),
+		}
+		bucket, err := opener.OpenBucketURL(ctx, parsed)
+		if err != nil {
+			return nil, fmt.Errorf("open archive object bucket: %w", err)
+		}
+		return bucket, nil
+	case archiveBackendGCS:
+		if endpoint := firstNonEmpty(strings.TrimSpace(b.Endpoint), strings.TrimSpace(os.Getenv("STORAGE_EMULATOR_HOST"))); endpoint != "" {
+			if !strings.Contains(endpoint, "://") {
+				endpoint = "http://" + endpoint
+			}
+			trimmed := strings.TrimRight(endpoint, "/")
+			if !strings.HasSuffix(trimmed, "/storage/v1") {
+				endpoint = trimmed + "/storage/v1/"
+			} else {
+				endpoint = trimmed + "/"
+			}
+			anonClient := gcp.NewAnonymousHTTPClient(gcp.DefaultTransport())
+			bucket, err := gcsblob.OpenBucket(ctx, anonClient, b.Bucket, &gcsblob.Options{
+				ClientOptions: []option.ClientOption{
+					option.WithoutAuthentication(),
+					option.WithEndpoint(endpoint),
+					option.WithHTTPClient(&anonClient.Client),
+					cloudstorage.WithJSONReads(),
+				},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("open archive object bucket: %w", err)
+			}
+			return bucket, nil
+		}
 	}
 	bucket, err := blob.OpenBucket(ctx, b.bucketURL())
 	if err != nil {

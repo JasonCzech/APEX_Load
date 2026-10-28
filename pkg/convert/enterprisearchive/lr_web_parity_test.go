@@ -499,7 +499,7 @@ function Poll_0_ResponseCB(aResponseHeadersStr, aResponseHeadersLen, aResponseBo
 			extraFiles: map[string]string{
 				"WebSocketCallbacks.js": `function OnOpenCB0(connectionID, responseHeader, length)
 {
-	lr.outputMessage('WebSocket ID = %s connected sucessfully, first buffer length = %d', connectionID, length);
+	lr.outputMessage('WebSocket ID = %s connected successfully, first buffer length = %d', connectionID, length);
 }
 
 function OnMessageCB0(connectionID, isbinary, data, length)
@@ -510,7 +510,7 @@ function OnMessageCB0(connectionID, isbinary, data, length)
 
 function OnErrorCB0(connectionID, message, length)
 {
-	lr.outputMessage('WebSocket ID = %s error occured. Error message = %s', connectionID, message);
+	lr.outputMessage('WebSocket ID = %s error occurred. Error message = %s', connectionID, message);
 }
 
 function OnCloseCB0(connectionID, isClosedByClient, code, reason, length)

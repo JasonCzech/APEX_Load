@@ -810,6 +810,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if prepared != nil && prepared.writer != nil {
 		prepared.writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName(), ArchiveSourceIdentity(request.GetTestId(), request.GetRunSupervisionToken(), request.GetArchiveSourceTarget()))
 		prepared.writer.bindBrowserDocumentCapture(prepared.browserDocumentCaptureRequested)
+		prepared.writer.bindBrowserDocumentProofVersion(assignedBrowserDocumentProofVersion(request))
 	}
 	coordinator.scheduleStageExpiryLocked(service, request.GetTestId())
 	return service.metricsBatchLocked(request.GetTestId()), service.availableCapacityLocked(), nil
@@ -1174,6 +1175,11 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser interaction evidence v3")
 		}
 	}
+	if request.GetBrowserInteractionEvidenceVersion() == 4 {
+		if _, ok := instance.(protocol.BrowserInteractionEvidenceV4Provider); !ok {
+			return nil, status.Error(codes.FailedPrecondition, "runtime does not support browser interaction evidence v4")
+		}
+	}
 	if source := request.GetBrowserAuthoredDefinition(); source != nil {
 		runtimeSource := engine.BrowserOriginalAuthoredDefinition(&script)
 		if !runtimeSource.Valid() || runtimeSource.StructureSHA256 != source.StructureSha256 {
@@ -1294,6 +1300,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if archiveErr != nil {
 		return nil, status.Errorf(codes.Internal, "initialize archive recorder: %v", archiveErr)
 	}
+	writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName(), ArchiveSourceIdentity(request.GetTestId(), request.GetRunSupervisionToken(), request.GetArchiveSourceTarget()))
+	writer.bindBrowserDocumentCapture(prepared.browserDocumentCaptureRequested)
+	writer.bindBrowserDocumentProofVersion(assignedBrowserDocumentProofVersion(request))
 	prepared.writer = writer
 	prepared.createdWriter = created
 	if engine.HasAllocatedParameters(&script) && (request.GetParameterPopulation() == 0 || uint64(request.GetParameterOffset())+uint64(request.GetVuserCount()) > uint64(request.GetParameterPopulation())) {
@@ -1603,6 +1612,7 @@ func (service *Service) cleanupPreparedAssignmentStage(plan *assignmentStagePlan
 	}
 	testID := plan.validated.request.GetTestId()
 	if writer := service.archiveManager.takeWriterIf(testID, prepared.writer); writer != nil {
+		service.archiveManager.deleteBrowserJournal(testID)
 		if err := writer.Discard(); err != nil {
 			slog.Warn("discard failed execution archive", "test_id", testID, "error", err)
 		}

@@ -205,14 +205,14 @@ Every published step resolves to one of the dispositions above — none is silen
 
 | Step | Family | Status | Target | Notes |
 |---|---|---|---|---|
-| `Activate` | switch_tab | `supported` | browser_switch_window | Activate / Activate Tab change focus via browser_switch_window. Add Tab / Close Tab also switch focus but warn that tab open/close lifecycle is not replayed (no close-window action). |
-| `Activate Tab` | switch_tab | `supported` | browser_switch_window | Activate / Activate Tab change focus via browser_switch_window. Add Tab / Close Tab also switch focus but warn that tab open/close lifecycle is not replayed (no close-window action). |
-| `Add Tab` | switch_tab | `supported` | browser_switch_window | Activate / Activate Tab change focus via browser_switch_window. Add Tab / Close Tab also switch focus but warn that tab open/close lifecycle is not replayed (no close-window action). |
+| `Activate` | switch_tab | `supported` | browser_switch_window / browser_close_window | Activate / Activate Tab change focus via browser_switch_window, and Close Tab closes the target or active tab via browser_close_window. Add Tab switches focus and warns that blank tab creation requires a navigation or popup trigger. |
+| `Activate Tab` | switch_tab | `supported` | browser_switch_window / browser_close_window | Activate / Activate Tab change focus via browser_switch_window, and Close Tab closes the target or active tab via browser_close_window. Add Tab switches focus and warns that blank tab creation requires a navigation or popup trigger. |
+| `Add Tab` | switch_tab | `supported` | browser_switch_window / browser_close_window | Activate / Activate Tab change focus via browser_switch_window, and Close Tab closes the target or active tab via browser_close_window. Add Tab switches focus and warns that blank tab creation requires a navigation or popup trigger. |
 | `Break` | control_transfer | `supported` | control_break / control_continue | Break and continue convert to native control_break / control_continue engine actions; the nearest enclosing control_loop consumes them (break stops the loop, continue skips to the next pass). |
 | `Call Function` | call_function | `review_only` | source_review | Custom TruClient JavaScript function calls are preserved for review (action-block Call Action is inlined separately during execution flattening). |
 | `Catch Error` | catch_error | `review_only` | source_review (protected body preserved) | There is no control_try in the DSL; a review marker is emitted and the protected child steps are still converted in source order so they are not lost. |
 | `Click` | click | `supported` | browser_click | Direct object clicks, submit actions, and checkbox/radio selection actions map to browser click actions with the captured selector. |
-| `Close Tab` | switch_tab | `supported` | browser_switch_window | Activate / Activate Tab change focus via browser_switch_window. Add Tab / Close Tab also switch focus but warn that tab open/close lifecycle is not replayed (no close-window action). |
+| `Close Tab` | switch_tab | `supported` | browser_switch_window / browser_close_window | Activate / Activate Tab change focus via browser_switch_window, and Close Tab closes the target or active tab via browser_close_window. Add Tab switches focus and warns that blank tab creation requires a navigation or popup trigger. |
 | `Continue` | control_transfer | `supported` | control_break / control_continue | Break and continue convert to native control_break / control_continue engine actions; the nearest enclosing control_loop consumes them (break stops the loop, continue skips to the next pass). |
 | `Dialog - Authenticate` | dialog_secure | `review_only` | source_review | Authentication and password dialogs carry credentials; they are preserved for review with parameter references intact rather than baking secrets into a replayed dialog. |
 | `Dialog - Confirm` | handle_dialog | `supported` | browser_handle_dialog | Dialog - Confirm and Dialog - Prompt map to browser_handle_dialog (accept/dismiss + prompt text). Dialog - Authenticate and Dialog - Prompt Password carry credentials and remain review_only with preserved parameter references. |
@@ -250,7 +250,7 @@ Every published step resolves to one of the dispositions above — none is silen
 | `Verify` | verify | `supported` | action assertions | Verification steps map into browser action assertions instead of a separate browser action type. |
 | `Verify PDF Content` | verify_pdf | `review_only` | source_review | PDF content verification has no browser-runtime equivalent; preserved for review. |
 | `Wait` | wait | `supported` | browser_wait | Wait conditions remain in scope when they can be normalized to existing browser wait semantics. |
-| `Wait for File Download` | wait_for_download | `review_only` | source_review | File-download waits have no browser-runtime equivalent; preserved for review. |
+| `Wait for File Download` | wait_for_download | `review_only` | browser_download (when paired with Click or selector) / source_review | Coalesces with an immediately preceding Click step (or uses its own selector) into a pre-armed browser_download action; standalone waits without a trigger selector remain preserved as source_review. |
 | `Wait for Property` | wait_for_property | `supported` | browser_wait | Wait for Property maps to browser_wait for visibility/text properties; arbitrary DOM-property waits the runtime cannot poll remain review_only. |
 
 ## Java Vuser import coverage

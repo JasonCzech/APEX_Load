@@ -805,21 +805,37 @@ func browserDeviceProfileForCapacity(group TestGroup, runtimeSettings *RuntimeSe
 	return strings.TrimSpace(group.script.Config.Browser.DeviceProfile)
 }
 
+const (
+	// browserTargetRSSBytes is the published 250 MB (decimal) per-VUser browser
+	// memory acceptance target in BrowserBenchmarkAcceptance.
+	browserTargetRSSBytes = 250_000_000
+	bytesPerBinaryMiB     = 1 << 20
+)
+
+// browserDecimalMBToMiB converts a decimal MB budget (N * 1,000,000 bytes) into
+// the binary MiB units used by Generator.MemoryMB (8192 MiB = 8 GiB), removing
+// any 1000^2 vs 1024^2 mixing when sizing browser VUsers against generator RAM.
+func browserDecimalMBToMiB(decimalMB float64) float64 {
+	return (decimalMB * 1_000_000) / float64(bytesPerBinaryMiB)
+}
+
 // browserCapacityProfileForTier returns the per-device-tier resource footprint
 // of a real browser VUser. BrowserDeviceTierCeiling is an internal engineering
 // ceiling only: the published density envelope comes from
 // publishedBrowserDensityPerGenerator, which is anchored on the diagnostic
-// canary acceptance contract.
+// canary acceptance contract. Tier memory values are defined in decimal MB
+// around browserTargetRSSBytes (250,000,000 bytes) and converted to binary MiB
+// to match Generator.MemoryMB.
 func browserCapacityProfileForTier(tier string) capacityWorkloadProfile {
 	switch strings.ToLower(strings.TrimSpace(tier)) {
 	case "low":
-		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 40, BrowserMemoryMBPerVUser: 180, BrowserCPUCoresPerVUser: 0.055, BrowserNetworkMbpsPerVUser: 0.25}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 40, BrowserMemoryMBPerVUser: browserDecimalMBToMiB(180), BrowserCPUCoresPerVUser: 0.055, BrowserNetworkMbpsPerVUser: 0.25}
 	case "mid":
-		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 32, BrowserMemoryMBPerVUser: 220, BrowserCPUCoresPerVUser: 0.07, BrowserNetworkMbpsPerVUser: 0.35}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 32, BrowserMemoryMBPerVUser: browserDecimalMBToMiB(220), BrowserCPUCoresPerVUser: 0.07, BrowserNetworkMbpsPerVUser: 0.35}
 	case "high":
-		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 25, BrowserMemoryMBPerVUser: 260, BrowserCPUCoresPerVUser: 0.085, BrowserNetworkMbpsPerVUser: 0.45}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 25, BrowserMemoryMBPerVUser: browserDecimalMBToMiB(260), BrowserCPUCoresPerVUser: 0.085, BrowserNetworkMbpsPerVUser: 0.45}
 	default:
-		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 20, BrowserMemoryMBPerVUser: 280, BrowserCPUCoresPerVUser: 0.09, BrowserNetworkMbpsPerVUser: 0.5}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 20, BrowserMemoryMBPerVUser: browserDecimalMBToMiB(280), BrowserCPUCoresPerVUser: 0.09, BrowserNetworkMbpsPerVUser: 0.5}
 	}
 }
 
@@ -905,7 +921,7 @@ func estimatePerVUserFootprint(complexityScore float64, workloadProfile capacity
 	if workloadProfile.BrowserVUsers > 0 {
 		return CapacityResourceEstimate{
 			CPUCores:    math.Max(0.055, workloadProfile.BrowserCPUCoresPerVUser*complexityScore),
-			MemoryMB:    math.Max(180, workloadProfile.BrowserMemoryMBPerVUser),
+			MemoryMB:    math.Max(browserDecimalMBToMiB(180), workloadProfile.BrowserMemoryMBPerVUser),
 			NetworkMbps: math.Max(0.25, workloadProfile.BrowserNetworkMbpsPerVUser),
 		}
 	}

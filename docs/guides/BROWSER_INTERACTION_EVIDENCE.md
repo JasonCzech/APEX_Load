@@ -19,7 +19,9 @@ joined document/lifecycle and engine/profile evidence for qualified analysis.
 
 ## Versioned identity and native dispatch
 
-New engine-managed capture uses raw interaction version 2. It retains the
+New engine-managed capture uses raw interaction version 4 (negotiating
+`browser_interaction_evidence_v4`, with backward compatibility for
+`browser_interaction_evidence_v2` / raw v2–v3 and legacy raw v1). It retains the
 exact pre-interpolation script SHA-256, canonical structural step path and
 domain-separated step ID. Duplicate action names remain distinct; load and
 replay share this identity. An engine-owned logical invocation and attempt
@@ -30,10 +32,21 @@ engine binding keep authored identity unavailable.
 When observed, `dispatch` records the first relevant trusted native input
 event's `timeStamp`, the document's `performance.timeOrigin`, their UTC
 projection, and joined document/lifecycle IDs. Viewport, scroll, route,
-layout and the first map point describe that event, before target handlers.
-`captured_at` remains the later post-action capture time. Keyboard/form
-targets use the observed event target; input values are never retained. V2
-reads at most 128 UTF-16 code units before label normalization, and visits at
+layout and the first map point describe that event, before target handlers, with
+`geometry_provenance: dispatch`. `captured_at` remains the later post-action
+capture time. Same-origin child frames record `frame_chain` (up to 8 hops of
+bounding box, border/padding, and 2D CSS matrix); when every hop is same-origin
+and has an invertible 2D transform, the analysis maps the child-frame point
+into the main-frame viewport (`mapped_via_transform`). Cross-origin frames,
+non-2D transforms, or deeper chains record their explicit exclusion reason
+(`cross_origin_ancestry`, `non_axis_aligned_or_3d_transform`,
+`frame_depth_exceeded`). On Chromium mobile profiles (`HasTouch`), taps, long
+presses, and swipes are dispatched via CDP `Input.dispatchTouchEvent` so the
+renderer receives trusted touch events (`pointer_type: touch`) with observed
+coordinates and `dispatch` timing; WebKit touch sessions fall back to synthetic
+dispatch (`synthetic_dispatch`). Keyboard/form
+targets use the observed event target; input values are never retained. V2–V4
+read at most 128 UTF-16 code units before label normalization, and visit at
 most 64 nodes of an associated label before taking the final 64-character
 normalized prefix. Role/type/tag tokens are bounded before processing.
 
@@ -41,14 +54,15 @@ Missing native events, synthetic touch, untransformed child frames, lost
 pages or unavailable document joins carry an explicit
 `dispatch_unavailable_reason`; capture time never substitutes for dispatch.
 A navigation can lose its event before the drain and remains unavailable.
-The declared outcome still covers the authored `sync` only: cancellation,
+In raw v4, `outcomes` binds every declared `sync`, `dialog`, `download`,
+inline `assertion`, and `navigation` outcome on the gesture to its own
+observation clock or timestamp: cancellation,
 page closure, invalid selectors and unsupported wait types remain
-`not_reached`; only a supported evaluated wait can report `met` or an
-observed timeout `missed`. Assertions, dialogs and download outcome binding
-remain separate work.
+`not_reached` or `unsupported`; only a supported evaluated outcome can report
+`met` or `missed`.
 
-Raw v1 remains readable and keeps its original post-action geometry and
-capture clock. It receives no invented step, invocation or dispatch data.
+Raw v1–v3 remain readable and keep their original wire contract. Raw v1 receives
+no invented step, invocation or dispatch data.
 The shared sidecar/inventory wrapper remains `browser_interactions_v1`;
 each validated record declares its own raw version. Mixed records are
 preserved through the same digest/receipt path. Pattern analysis versions
@@ -57,8 +71,9 @@ are separate from these raw versions; see the
 
 ## What one interaction records
 
-The common fields and historical v1 behavior follow; v2 overrides observation
-time, geometry, target and outcome qualification as described above.
+The common fields and historical v1 behavior follow; v2–v4 override observation
+time, geometry, child-frame transform chains, trusted Chromium mobile touch,
+target, and multi-outcome qualification as described above.
 
 Each gesture action (`browser_click`, `browser_dblclick`, `browser_tap`,
 `browser_long_press`, `browser_swipe`, `browser_hover`,

@@ -238,7 +238,9 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 			tr.mu.Unlock()
 			tr.cacheRunSnapshot(snapshot)
 			tr.broadcastEvent("test_started", eventSnapshot)
-			for _, target := range orderedMetricsTargets(streamsByTarget, b.configuredTargets()) {
+			orderedTargets := orderedMetricsTargets(streamsByTarget, b.configuredTargets())
+			tr.startLiveBrowserIntelligence(test, orderedTargets)
+			for _, target := range orderedTargets {
 				go b.consumeMetrics(lifecycleCtx, tr, test, target, streamsByTarget[target])
 			}
 			preBaseline, _ := testexec.ResourceBaselineWindows(test.ResourceBaseline)
@@ -1599,6 +1601,11 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	// accepted: publications are throttled fleet-wide, so most batches are
 	// only stored.
 	stageRecorderLocked(test).observeGeneratorBatch(target, batch)
+	if test.liveBrowserIntelligence != nil {
+		ownForLive := own
+		ownForLive.Telemetry = batch.Telemetry
+		test.liveBrowserIntelligence.observeGeneratorBatch(target, ownForLive, terminal)
+	}
 	if !repeatedFinalCollection(batch) {
 		rememberJointPublicationLocked(test, target, batch)
 	}
@@ -2021,6 +2028,11 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 				test.remoteMetricsAcceptedRevision++
 				revision = test.remoteMetricsAcceptedRevision
 				stageRecorderLocked(test).observeGeneratorBatch(target, batch)
+				if test.liveBrowserIntelligence != nil {
+					ownForLive := own
+					ownForLive.Telemetry = batch.Telemetry
+					test.liveBrowserIntelligence.observeGeneratorBatch(target, ownForLive, isTerminalRemoteLifecycle(batch.LifecycleState))
+				}
 			} else {
 				batch = prior
 			}
@@ -2032,6 +2044,11 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			test.remoteMetricsAcceptedRevision++
 			revision = test.remoteMetricsAcceptedRevision
 			stageRecorderLocked(test).observeGeneratorBatch(target, batch)
+			if test.liveBrowserIntelligence != nil {
+				ownForLive := own
+				ownForLive.Telemetry = batch.Telemetry
+				test.liveBrowserIntelligence.observeGeneratorBatch(target, ownForLive, isTerminalRemoteLifecycle(batch.LifecycleState))
+			}
 			stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 		}
 	}
@@ -2207,6 +2224,7 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 	tr.mu.RUnlock()
 	elk.stopMonitoring()
 	dynatrace.stopMonitoring()
+	tr.stopAndJoinLiveBrowserIntelligence(test, completedAt)
 	if finalStatus == "FAILED" || finalStatus == "ABORTED" {
 		// Failure/abort cleanup and archive transfer are best effort and may be
 		// slow when a target is unreachable. Publish the already-derived terminal

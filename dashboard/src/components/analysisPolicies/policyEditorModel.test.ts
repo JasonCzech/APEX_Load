@@ -63,11 +63,12 @@ describe('browser policy editor model (BI-4)', () => {
 })
 
 describe('journey policy editor model (BI-4)', () => {
-  it('round-trips transaction and action boundaries', () => {
+  it('round-trips transaction and action boundaries including structural step paths', () => {
+    const digest = 'a'.repeat(64)
     const stored = {
       version: 1,
       journeys: [
-        { id: 'checkout', name: 'Checkout', start: { transaction: 'Cart' }, success: { action: 'Confirm order' }, weight: 3 },
+        { id: 'checkout', name: 'Checkout', start: { transaction: 'Cart', step_path: 'actions[0]', structure_sha256: digest }, success: { action: 'Confirm order', step_path: 'actions[2]' }, weight: 3 },
         { id: 'search', name: 'Search', start: { action: 'Open search' }, success: { transaction: 'Results' }, weight: 1 },
       ],
       step_risk_enabled: true,
@@ -75,12 +76,15 @@ describe('journey policy editor model (BI-4)', () => {
     expect(journeyDefinitionFromDraft(journeyDraftFromDefinition('Shop', stored))).toEqual({ definition: stored })
   })
 
-  it('refuses duplicate or malformed journey IDs and missing boundaries', () => {
+  it('refuses duplicate or malformed journey IDs, invalid step paths, and missing boundaries', () => {
     const base = { ...defaultJourneyPolicyDraft(), name: 'Shop' }
     const journey = { ...base.journeys[0], name: 'Checkout', start: 'Cart', success: 'Confirm', weight: '1' }
     expect(journeyDefinitionFromDraft({ ...base, journeys: [journey, journey] }).problem).toContain('unique lowercase slug')
     expect(journeyDefinitionFromDraft({ ...base, journeys: [{ ...journey, id: 'Check Out' }] }).problem).toContain('unique lowercase slug')
     expect(journeyDefinitionFromDraft({ ...base, journeys: [{ ...journey, success: '' }] }).problem).toContain('start and a success boundary')
+    expect(journeyDefinitionFromDraft({ ...base, journeys: [{ ...journey, startStepPath: 'bad-path' }] }).problem).toContain('canonical DSL step path')
+    expect(journeyDefinitionFromDraft({ ...base, journeys: [{ ...journey, startStepPath: 'init[0]' }] }).problem).toContain('canonical DSL step path')
+    expect(journeyDefinitionFromDraft({ ...base, journeys: [{ ...journey, startStructureSha256: 'a'.repeat(64) }] }).problem).toContain('needs a step path')
     expect(journeyDefinitionFromDraft({ ...base, journeys: [] }).problem).toBe('Define at least one journey.')
   })
 })

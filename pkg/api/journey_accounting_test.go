@@ -19,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -767,5 +770,263 @@ func TestJourneyAccountingCensorsBoundariesFailedAfterAnInterruption(t *testing.
 	checkout := journeyByID(t, accountJourneyRows(policy, l.rows), "checkout")
 	if checkout.Failed != 0 || checkout.Censored != 1 || checkout.Completed != 1 {
 		t.Fatalf("checkout %+v", checkout)
+	}
+}
+
+func TestJourneyAccountingStepPathSeparatesDuplicateNamesAndSurvivesNonStructuralEdits(t *testing.T) {
+	scriptV1 := &dsl.Script{
+		ID:       "browser-dup",
+		Name:     "Duplicate Names",
+		Protocol: "browser",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test", Pacing: dsl.PacingConfig{Type: "none"}},
+		Actions: []dsl.Action{
+			{Name: "Submit", Type: "browser_click", Selector: "#step-1"},
+			{Name: "Review", Type: "browser_wait_for_selector", Selector: "#review"},
+			{Name: "Submit", Type: "browser_click", Selector: "#step-2"},
+		},
+	}
+	defV1 := engine.BrowserOriginalAuthoredDefinition(scriptV1)
+	if !defV1.Valid() {
+		t.Fatal("expected valid browser authored definition")
+	}
+
+	// Non-structural edit: change selector, think time, and even display name
+	// while keeping the exact (path, action.Type) structure.
+	scriptV2 := &dsl.Script{
+		ID:       "browser-dup",
+		Name:     "Duplicate Names v2",
+		Protocol: "browser",
+		Config:   dsl.ScriptConfig{BaseURL: "https://staging.example.test", Pacing: dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 250}},
+		Actions: []dsl.Action{
+			{Name: "Submit Cart", Type: "browser_click", Selector: "#new-step-1", ThinkTimeAfter: true},
+			{Name: "Review", Type: "browser_wait_for_selector", Selector: "#new-review"},
+			{Name: "Submit Order", Type: "browser_click", Selector: "#new-step-2", ThinkTimeAfter: true},
+		},
+	}
+	defV2 := engine.BrowserOriginalAuthoredDefinition(scriptV2)
+	if defV2.StructureSHA256 != defV1.StructureSHA256 {
+		t.Fatalf("non-structural edit changed StructureSHA256: %q != %q", defV2.StructureSHA256, defV1.StructureSHA256)
+	}
+
+	step0V1 := protocol.NewBrowserOriginalAuthoredStep(defV1, "actions[0]")
+	step1V1 := protocol.NewBrowserOriginalAuthoredStep(defV1, "actions[1]")
+	step2V1 := protocol.NewBrowserOriginalAuthoredStep(defV1, "actions[2]")
+	step0V2 := protocol.NewBrowserOriginalAuthoredStep(defV2, "actions[0]")
+	step2V2 := protocol.NewBrowserOriginalAuthoredStep(defV2, "actions[2]")
+
+	policy := JourneyPolicyDefinition{
+		Version: analysisPolicyVersion,
+		Journeys: []JourneyDefinition{
+			{
+				ID:      "submit-flow",
+				Name:    "Submit Flow",
+				Start:   JourneyBoundary{Action: "Submit", StepPath: "actions[0]", StructureSHA256: defV1.StructureSHA256},
+				Success: JourneyBoundary{Action: "Submit", StepPath: "actions[2]", StructureSHA256: defV1.StructureSHA256},
+				Weight:  1,
+			},
+		},
+	}
+	start := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	rows := []TransactionEvent{
+		// Iteration 1 (scriptV1): both steps are named "Submit", but actions[0]
+		// only opens the attempt and actions[2] completes it.
+		{Timestamp: start, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "Submit", AuthoredStep: step0V1, Success: true, DurationMs: 10},
+		{Timestamp: start.Add(20 * time.Millisecond), Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "Review", AuthoredStep: step1V1, Success: true, DurationMs: 10},
+		{Timestamp: start.Add(40 * time.Millisecond), Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "Submit", AuthoredStep: step2V1, Success: true, DurationMs: 10, EndsIteration: true},
+		// Iteration 2 (scriptV1): starts at actions[0] and ends iteration without
+		// reaching actions[2] -> settled intra-iteration as Aborted (never bleeds into Iteration 3).
+		{Timestamp: start.Add(100 * time.Millisecond), Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 2, ActionName: "Submit", AuthoredStep: step0V1, Success: true, DurationMs: 10, EndsIteration: true},
+		// Iteration 3 (scriptV2 after non-structural edit): still matches by StepPath + StructureSHA256!
+		{Timestamp: start.Add(200 * time.Millisecond), Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 3, ActionName: "Submit Cart", AuthoredStep: step0V2, Success: true, DurationMs: 10},
+		{Timestamp: start.Add(220 * time.Millisecond), Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 3, ActionName: "Submit Order", AuthoredStep: step2V2, Success: true, DurationMs: 10, EndsIteration: true},
+	}
+	report := accountJourneyRows(policy, rows)
+	flow := journeyByID(t, report, "submit-flow")
+	if flow.MatchMode != "step_path" || flow.Completed != 2 || flow.Aborted != 1 || flow.Failed != 0 || flow.Steps != 6 {
+		t.Fatalf("unexpected step_path accounting: %+v", flow)
+	}
+
+	// Structural edit (inserted action changing StructureSHA256) is refused when StructureSHA256 is pinned.
+	scriptV3 := &dsl.Script{
+		ID:       "browser-dup",
+		Name:     "Duplicate Names v3",
+		Protocol: "browser",
+		Actions:  append([]dsl.Action{{Name: "Extra", Type: "browser_navigate", Target: "/"}}, scriptV1.Actions...),
+	}
+	defV3 := engine.BrowserOriginalAuthoredDefinition(scriptV3)
+	mismatchRows := []TransactionEvent{
+		{Timestamp: start, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "Submit", AuthoredStep: protocol.NewBrowserOriginalAuthoredStep(defV3, "actions[0]"), Success: true, DurationMs: 10},
+		{Timestamp: start.Add(20 * time.Millisecond), Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "Submit", AuthoredStep: protocol.NewBrowserOriginalAuthoredStep(defV3, "actions[2]"), Success: true, DurationMs: 10, EndsIteration: true},
+	}
+	mismatchFlow := journeyByID(t, accountJourneyRows(policy, mismatchRows), "submit-flow")
+	if mismatchFlow.Eligible != 0 || mismatchFlow.Completed != 0 {
+		t.Fatalf("expected structural mismatch to refuse matching when StructureSHA256 is pinned, got %+v", mismatchFlow)
+	}
+
+	// Legacy archive rows without AuthoredStep fall back to Name when StructureSHA256 is not pinned, labelled match_mode: "name".
+	unpinnedPolicy := JourneyPolicyDefinition{
+		Version: analysisPolicyVersion,
+		Journeys: []JourneyDefinition{
+			{
+				ID:      "legacy-fallback",
+				Name:    "Legacy Fallback",
+				Start:   JourneyBoundary{Action: "Open", StepPath: "actions[0]"},
+				Success: JourneyBoundary{Action: "Done", StepPath: "actions[1]"},
+				Weight:  1,
+			},
+		},
+	}
+	legacyRows := []TransactionEvent{
+		{Timestamp: start, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "Open", Success: true, DurationMs: 10},
+		{Timestamp: start.Add(10 * time.Millisecond), Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "Done", Success: true, DurationMs: 10, EndsIteration: true},
+	}
+	legacyFlow := journeyByID(t, accountJourneyRows(unpinnedPolicy, legacyRows), "legacy-fallback")
+	if legacyFlow.MatchMode != "name" || legacyFlow.Completed != 1 {
+		t.Fatalf("expected legacy fallback to report match_mode=name and Completed=1, got %+v", legacyFlow)
+	}
+}
+
+func TestJourneyAccountingZeroDurationLoopTieBreaking(t *testing.T) {
+	policy := JourneyPolicyDefinition{
+		Version: analysisPolicyVersion,
+		Journeys: []JourneyDefinition{
+			{
+				ID:      "loop-actions",
+				Name:    "Loop Actions",
+				Start:   JourneyBoundary{Action: "open", StepPath: "actions[0].control.steps[0]"},
+				Success: JourneyBoundary{Action: "confirm", StepPath: "actions[0].control.steps[1]"},
+				Weight:  1,
+			},
+			{
+				ID:      "loop-tx",
+				Name:    "Loop Transactions",
+				Start:   JourneyBoundary{Transaction: "OpenTx", StepPath: "actions[0].control.steps[0]"},
+				Success: JourneyBoundary{Transaction: "ConfirmTx", StepPath: "actions[0].control.steps[1]"},
+				Weight:  1,
+			},
+		},
+	}
+	digest := strings.Repeat("b", 64)
+	stepOpen := protocol.NewBrowserAuthoredStep(digest, "actions[0].control.steps[0]")
+	stepConfirm := protocol.NewBrowserAuthoredStep(digest, "actions[0].control.steps[1]")
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+
+	// Two loop passes in the same VUser iteration at the exact same nanosecond
+	// with DurationMs == 0 and ElapsedMs == 0.
+	rows := []TransactionEvent{
+		// Pass 1:
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "open", AuthoredStep: stepOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "OpenTx", BusinessTransaction: true, AuthoredStep: stepOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "confirm", AuthoredStep: stepConfirm, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "ConfirmTx", BusinessTransaction: true, AuthoredStep: stepConfirm, Success: true},
+		// Pass 2 (same nanosecond):
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "open", AuthoredStep: stepOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "OpenTx", BusinessTransaction: true, AuthoredStep: stepOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "confirm", AuthoredStep: stepConfirm, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "ConfirmTx", BusinessTransaction: true, AuthoredStep: stepConfirm, Success: true, EndsIteration: true},
+	}
+	report := accountJourneyRows(policy, rows)
+	loopActions := journeyByID(t, report, "loop-actions")
+	if loopActions.Completed != 2 || loopActions.Aborted != 0 || loopActions.Steps != 4 {
+		t.Fatalf("loop-actions zero-duration tie-breaking failed: %+v", loopActions)
+	}
+	loopTx := journeyByID(t, report, "loop-tx")
+	if loopTx.Completed != 2 || loopTx.Aborted != 0 || loopTx.Steps != 4 {
+		t.Fatalf("loop-tx zero-duration tie-breaking failed: %+v", loopTx)
+	}
+
+	// Mixed boundary kind (transaction start + action success without auto-tx on confirm)
+	// and a zero-duration pre-transaction step at the same nanosecond.
+	mixedPolicy := JourneyPolicyDefinition{
+		Version: analysisPolicyVersion,
+		Journeys: []JourneyDefinition{
+			{
+				ID:      "mixed-loop",
+				Name:    "Mixed Loop",
+				Start:   JourneyBoundary{Transaction: "OpenTx", StepPath: "actions[1].control.steps[0]"},
+				Success: JourneyBoundary{Action: "confirm", StepPath: "actions[1].control.steps[1]"},
+				Weight:  1,
+			},
+		},
+	}
+	stepPre := protocol.NewBrowserAuthoredStep(digest, "actions[0]")
+	stepLoopOpen := protocol.NewBrowserAuthoredStep(digest, "actions[1].control.steps[0]")
+	stepLoopConfirm := protocol.NewBrowserAuthoredStep(digest, "actions[1].control.steps[1]")
+	mixedRows := []TransactionEvent{
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "pre_step", AuthoredStep: stepPre, Success: false},
+		// Pass 1:
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "open", AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "OpenTx", BusinessTransaction: true, AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "confirm", AuthoredStep: stepLoopConfirm, Success: true},
+		// Pass 2:
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "open", AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "OpenTx", BusinessTransaction: true, AuthoredStep: stepLoopOpen, Success: true},
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "confirm", AuthoredStep: stepLoopConfirm, Success: true, EndsIteration: true},
+	}
+	mixedReport := accountJourneyRows(mixedPolicy, mixedRows)
+	mixed := journeyByID(t, mixedReport, "mixed-loop")
+	if mixed.Completed != 2 || mixed.Aborted != 0 || mixed.Failed != 0 || mixed.Steps != 4 || mixed.StepFailures != 0 {
+		t.Fatalf("mixed-loop zero-duration tie-breaking failed: %+v", mixed)
+	}
+
+	// Legacy archive with zero AuthoredStep rows and zero boundary matches must downgrade MatchMode to "name".
+	legacyUnmatched := accountJourneyRows(mixedPolicy, []TransactionEvent{
+		{Timestamp: at, Group: "web", VUserID: 1, VUserLifetime: 1, Iteration: 1, ActionName: "unrelated", Success: true, EndsIteration: true},
+	})
+	if got := journeyByID(t, legacyUnmatched, "mixed-loop"); got.MatchMode != "name" {
+		t.Fatalf("expected legacy archive without AuthoredStep to report match_mode=name, got %+v", got)
+	}
+}
+
+func TestListAnalysisJourneyStepsAndBoundaryValidation(t *testing.T) {
+	server, _ := baselineTestServer(t)
+	script := &dsl.Script{
+		ID:       "shop-browser",
+		Name:     "Shop Browser",
+		Protocol: "browser",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test", Pacing: dsl.PacingConfig{Type: "none"}},
+		Actions: []dsl.Action{
+			dsl.TransactionMarker("Browse", true),
+			{Name: "Submit", Type: "browser_click", Selector: "#cart"},
+			dsl.TransactionMarker("Browse", false),
+			{Name: "Submit", Type: "browser_click", Selector: "#pay"},
+		},
+	}
+	storedScript, err := server.runner.StoreScriptDurable(script)
+	if err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	server.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/analysis/journey-steps?project_id="+storage.DefaultProjectID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/analysis/journey-steps = %d: %s", rec.Code, rec.Body.String())
+	}
+	var catalogs []AnalysisJourneyScriptSteps
+	if err := json.Unmarshal(rec.Body.Bytes(), &catalogs); err != nil {
+		t.Fatalf("decode journey steps: %v", err)
+	}
+	if len(catalogs) != 1 || catalogs[0].ScriptID != storedScript.ID || catalogs[0].StructureSHA256 == "" || len(catalogs[0].Steps) != 3 {
+		t.Fatalf("unexpected journey step catalog: %+v", catalogs)
+	}
+	if catalogs[0].Steps[0].StepPath != "actions[0]" || catalogs[0].Steps[0].Kind != "transaction" || catalogs[0].Steps[0].Name != "Browse" ||
+		catalogs[0].Steps[1].StepPath != "actions[1]" || catalogs[0].Steps[1].Kind != "action" || catalogs[0].Steps[1].Name != "Submit" ||
+		catalogs[0].Steps[2].StepPath != "actions[3]" || catalogs[0].Steps[2].Kind != "action" || catalogs[0].Steps[2].Name != "Submit" {
+		t.Fatalf("unexpected catalog steps: %+v", catalogs[0].Steps)
+	}
+
+	if err := (JourneyBoundary{Action: "Submit", StepPath: "../bad"}).validate("start"); err == nil {
+		t.Fatal("expected invalid step_path to fail validation")
+	}
+	if err := (JourneyBoundary{Action: "Submit", StepPath: "init[0]"}).validate("start"); err == nil {
+		t.Fatal("expected non-iteration init[0] step_path to fail validation")
+	}
+	if err := (JourneyBoundary{Action: "Submit", StructureSHA256: catalogs[0].StructureSHA256}).validate("start"); err == nil {
+		t.Fatal("expected structure_sha256 without step_path to fail validation")
+	}
+	if err := (JourneyBoundary{Action: "Submit", StepPath: "actions[1]", StructureSHA256: "not-hex"}).validate("start"); err == nil {
+		t.Fatal("expected invalid structure_sha256 to fail validation")
+	}
+	if err := (JourneyBoundary{Action: "Submit", StepPath: "actions[1]", StructureSHA256: catalogs[0].StructureSHA256}).validate("start"); err != nil {
+		t.Fatalf("expected valid structural boundary to pass validation, got %v", err)
 	}
 }

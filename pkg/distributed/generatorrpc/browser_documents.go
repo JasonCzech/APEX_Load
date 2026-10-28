@@ -14,6 +14,7 @@ const FeatureBrowserDocumentEvidenceV2 = "browser_document_evidence_v2"
 const FeatureBrowserInteractionEvidenceV1 = "browser_interaction_evidence_v1"
 const FeatureBrowserInteractionEvidenceV2 = dsl.FeatureBrowserInteractionEvidenceV2
 const FeatureBrowserInteractionEvidenceV3 = "browser_interaction_evidence_v3"
+const FeatureBrowserInteractionEvidenceV4 = "browser_interaction_evidence_v4"
 const FeatureBrowserNativeHARV1 = dsl.FeatureBrowserNativeHARV1
 
 // browserInstanceFeatures resolves a browser runtime instance's advertised
@@ -54,6 +55,9 @@ func browserRuntimeFeatures(instance protocol.Protocol) []string {
 	}
 	if _, ok := instance.(protocol.BrowserInteractionEvidenceV3Provider); ok {
 		features = append(features, FeatureBrowserInteractionEvidenceV3)
+	}
+	if _, ok := instance.(protocol.BrowserInteractionEvidenceV4Provider); ok {
+		features = append(features, FeatureBrowserInteractionEvidenceV4)
 	}
 	return features
 }

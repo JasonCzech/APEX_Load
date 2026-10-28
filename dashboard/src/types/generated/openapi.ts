@@ -1804,6 +1804,7 @@ export interface operations {
                 "page_id"?: string;
                 "reason"?: string;
                 "request_id"?: string;
+                "route_seq"?: number;
                 "source_generation"?: string;
                 "state"?: string;
                 "version"?: number;
@@ -4417,6 +4418,15 @@ export interface operations {
               "browser_interactions_file"?: string;
               "browser_interactions_incomplete"?: boolean;
               "browser_proof_authority_mode"?: string;
+              "browser_proof_clock_envelope"?: ({
+                "authority_started_at"?: string;
+                "controller"?: Record<string, unknown>;
+                "max_bracket_gap_ns"?: number;
+                "max_bracket_rtt_ns"?: number;
+                "max_skew_ppm"?: number;
+                "owners"?: Record<string, Array<Record<string, unknown>>>;
+                "version"?: number;
+              }) | null;
               "browser_proof_expected_owners"?: Array<string>;
               "browser_receipt_incomplete"?: boolean;
               "browser_receipt_record_count"?: number;
@@ -5679,6 +5689,18 @@ export interface operations {
                 "status"?: string;
                 "summary"?: string;
                 "unscored"?: number;
+                "version"?: string;
+              }) | null;
+              "browser_selection"?: ({
+                "inventory_count"?: number;
+                "policy"?: string;
+                "reasons"?: Array<string>;
+                "receipt_digest"?: string;
+                "rejected"?: Array<Record<string, unknown>>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status"?: string;
+                "summary"?: string;
                 "version"?: string;
               }) | null;
               "completed_at"?: (string) | null;
@@ -9211,6 +9233,16 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+            }) | null;
             "check_url"?: string;
             "duration_ms": number;
             "error"?: string;
@@ -20486,6 +20518,7 @@ export interface operations {
               }) | null;
               "scenario_mode"?: string;
               "schedules"?: Array<({
+                "analysis_policy_selections"?: unknown;
                 "approval_policy"?: string;
                 "availability_windows"?: Array<Record<string, unknown>>;
                 "blackout_windows"?: Array<Record<string, unknown>>;
@@ -24899,6 +24932,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -26048,6 +26082,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -36171,6 +36206,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "execution"?: {
             "base_url"?: string;
             "duration"?: string;
@@ -36257,6 +36302,16 @@ export interface operations {
       "202": {
         content: {
           "application/json": {
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+            }) | null;
             "check_url"?: string;
             "duration_ms": number;
             "error"?: string;
@@ -44973,6 +45028,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -45531,6 +45587,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "approval_policy"?: string;
           "availability_windows"?: Array<{
             "days_of_week"?: Array<number>;
@@ -45571,6 +45637,7 @@ export interface operations {
       "201": {
         content: {
           "application/json": ({
+            "analysis_policy_selections"?: unknown;
             "approval_policy"?: string;
             "availability_windows"?: Array<{
               "days_of_week"?: Array<number>;
@@ -66436,7 +66503,6 @@ export interface operations {
                 "required_raw_run_count": number;
                 "rss_attribution": string;
                 "rss_per_vuser_target_bytes"?: number;
-                "rss_per_vuser_target_mb"?: number;
               };
               "artifact_path": string;
               "benchmark_commands": Array<string>;
@@ -67214,6 +67280,16 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis_policy_selections"?: ({
+              "browser"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+              "journey"?: ({
+                "id": string;
+                "revision": number;
+              }) | null;
+            }) | null;
             "check_url"?: string;
             "duration_ms": number;
             "error"?: string;
@@ -73081,7 +73157,6 @@ export interface operations {
                 "required_raw_run_count": number;
                 "rss_attribution": string;
                 "rss_per_vuser_target_bytes"?: number;
-                "rss_per_vuser_target_mb"?: number;
               };
               "artifact_path": string;
               "benchmark_commands": Array<string>;
@@ -77007,14 +77082,33 @@ export interface operations {
             "completed_at"?: (string) | null;
             "failure"?: string;
             "job_id"?: string;
+            "live_truncated"?: boolean;
             "pending"?: boolean;
+            "provisional"?: boolean;
             "result"?: ({
               "counts": Record<string, number>;
               "findings": Array<{
                 "algorithm"?: string;
                 "applicable": boolean;
                 "baseline": {
+                  "analysis_id"?: string;
+                  "baseline_archive_sha256"?: string;
+                  "baseline_run_id"?: string;
+                  "detail"?: string;
                   "mode": string;
+                  "policy_pins"?: Array<{
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }>;
+                  "reason"?: string;
+                  "rejected_candidates"?: Array<Record<string, unknown>>;
+                  "selection_receipt_sha256"?: string;
+                  "selection_status"?: string;
                   "status": string;
                 };
                 "category": string;
@@ -77057,6 +77151,7 @@ export interface operations {
                 };
               }>;
               "input_fingerprint": string;
+              "live_truncated"?: boolean;
               "notes": Array<string>;
               "policy": {
                 "id": string;
@@ -77065,6 +77160,16 @@ export interface operations {
                 "sha256": string;
                 "source": string;
               };
+              "policy_pins"?: Array<{
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }>;
+              "provisional"?: boolean;
               "rule_set": string;
               "run_id": string;
               "schema_version": string;
@@ -77196,6 +77301,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "format"?: string;
+      };
     };
     requestBody?: never;
     responses: {
@@ -77209,9 +77317,13 @@ export interface operations {
               "incomplete": boolean;
               "interactions": number;
               "mapped": number;
+              "mapped_via_transform"?: number;
               "pattern_eligible"?: number;
               "pattern_excluded"?: Record<string, number>;
+              "pattern_retained": number;
+              "pattern_truncated"?: number;
               "records": number;
+              "streamed_interactions": number;
             };
             "heatmaps": Array<{
               "by_kind": Record<string, number>;
@@ -77245,6 +77357,7 @@ export interface operations {
               "viewport_width": number;
             }>;
             "limitations"?: Array<string>;
+            "live_truncated"?: boolean;
             "notes": Array<string>;
             "patterns": Array<{
               "action_id"?: string;
@@ -77265,10 +77378,15 @@ export interface operations {
               "interactions": Array<string>;
               "kind": string;
               "layout_revision"?: string;
+              "members_truncated"?: boolean;
+              "outcome_index"?: number;
+              "outcome_kind"?: string;
+              "outcome_reason"?: string;
               "provenance": string;
               "route"?: string;
               "start": string;
             }>;
+            "provisional"?: boolean;
             "run_id": string;
             "status": string;
             "thresholds": {
@@ -77279,6 +77397,12 @@ export interface operations {
             };
             "version": string;
           }) | null;
+          "text/csv": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -77644,20 +77768,26 @@ export interface operations {
               "failed": number;
               "failure_rate"?: (number) | null;
               "id": string;
+              "match_mode"?: string;
               "name": string;
               "skipped": number;
               "start": {
                 "action"?: string;
+                "step_path"?: string;
+                "structure_sha256"?: string;
                 "transaction"?: string;
               };
               "step_failures": number;
               "steps": number;
               "success": {
                 "action"?: string;
+                "step_path"?: string;
+                "structure_sha256"?: string;
                 "transaction"?: string;
               };
               "weight": number;
             }>;
+            "live_truncated"?: boolean;
             "notes": Array<string>;
             "policy": {
               "id": string;
@@ -77666,6 +77796,7 @@ export interface operations {
               "sha256": string;
               "source": string;
             };
+            "provisional"?: boolean;
             "reason"?: string;
             "rows_outside_iterations": number;
             "run_id": string;
@@ -77773,6 +77904,25 @@ export interface operations {
             "browser_interactions_file"?: string;
             "browser_interactions_incomplete"?: boolean;
             "browser_proof_authority_mode"?: string;
+            "browser_proof_clock_envelope"?: ({
+              "authority_started_at": string;
+              "controller": {
+                "domain_id": string;
+                "incarnation": string;
+                "run_id": string;
+              };
+              "max_bracket_gap_ns": number;
+              "max_bracket_rtt_ns": number;
+              "max_skew_ppm": number;
+              "owners": Record<string, Array<{
+                "authority": Record<string, unknown>;
+                "controller_recv_ns": number;
+                "controller_send_ns": number;
+                "owner_id": string;
+                "owner_mono_ns": number;
+              }>>;
+              "version": number;
+            }) | null;
             "browser_proof_expected_owners"?: Array<string>;
             "browser_receipt_incomplete"?: boolean;
             "browser_receipt_record_count"?: number;
@@ -80920,6 +81070,7 @@ export interface operations {
                 "page_id"?: string;
                 "reason"?: string;
                 "request_id"?: string;
+                "route_seq"?: number;
                 "source_generation"?: string;
                 "state": string;
                 "version": number;
@@ -83613,6 +83764,19 @@ export interface operations {
               "browser_interactions_file"?: string;
               "browser_interactions_incomplete"?: boolean;
               "browser_proof_authority_mode"?: string;
+              "browser_proof_clock_envelope"?: ({
+                "authority_started_at": string;
+                "controller": {
+                  "domain_id": string;
+                  "incarnation": string;
+                  "run_id": string;
+                };
+                "max_bracket_gap_ns": number;
+                "max_bracket_rtt_ns": number;
+                "max_skew_ppm": number;
+                "owners": Record<string, Array<Record<string, unknown>>>;
+                "version": number;
+              }) | null;
               "browser_proof_expected_owners"?: Array<string>;
               "browser_receipt_incomplete"?: boolean;
               "browser_receipt_record_count"?: number;
@@ -85559,6 +85723,18 @@ export interface operations {
                 "unscored": number;
                 "version": string;
               }) | null;
+              "browser_selection"?: ({
+                "inventory_count": number;
+                "policy"?: string;
+                "reasons"?: Array<string>;
+                "receipt_digest"?: string;
+                "rejected"?: Array<Record<string, unknown>>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status": string;
+                "summary": string;
+                "version": string;
+              }) | null;
               "completed_at"?: (string) | null;
               "confidence"?: string;
               "coverage"?: Array<Record<string, unknown>>;
@@ -86936,6 +87112,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -105386,6 +105563,46 @@ export interface operations {
       };
     };
   };
+  "handleListAnalysisJourneySteps": {
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+        "script_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "protocol": string;
+            "script_id": string;
+            "script_name": string;
+            "steps": Array<{
+              "action_type": string;
+              "kind": string;
+              "name": string;
+              "step_path": string;
+            }>;
+            "structure_sha256"?: string;
+          }>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleListAnalysisPolicies": {
     parameters: {
       "query": {
@@ -111534,15 +111751,34 @@ export interface operations {
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             }) | null;
             "current"?: {
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             };
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
             "query_sha256"?: string;
+            "selection_receipt_sha256"?: string;
             "version"?: number;
           }) | null;
           "browser_tuple_mode"?: string;
@@ -111614,15 +111850,34 @@ export interface operations {
             "browser_inputs"?: ({
               "baseline"?: ({
                 "manifest_sha256": string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
                 "run_id": string;
                 "tuple_ids": Array<string>;
               }) | null;
               "current": {
                 "manifest_sha256": string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
                 "run_id": string;
                 "tuple_ids": Array<string>;
               };
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "revision": number;
+                "sha256": string;
+              }>;
               "query_sha256": string;
+              "selection_receipt_sha256"?: string;
               "version": number;
             }) | null;
             "browser_tuple_comparisons"?: Array<{
@@ -111715,15 +111970,34 @@ export interface operations {
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             }) | null;
             "current"?: {
               "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
               "run_id"?: string;
               "tuple_ids"?: Array<string>;
             };
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
             "query_sha256"?: string;
+            "selection_receipt_sha256"?: string;
             "version"?: number;
           }) | null;
           "browser_tuple_mode"?: string;
@@ -161114,6 +161388,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "approval_policy"?: string;
           "availability_windows"?: Array<{
             "days_of_week"?: Array<number>;
@@ -188715,6 +188999,7 @@ export interface operations {
             }) | null;
             "scenario_mode"?: string;
             "schedules"?: Array<({
+              "analysis_policy_selections"?: unknown;
               "approval_policy"?: string;
               "availability_windows"?: Array<{
                 "days_of_week"?: Array<number>;
@@ -189405,6 +189690,16 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "analysis_policy_selections"?: ({
+            "browser"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+            "journey"?: ({
+              "id"?: string;
+              "revision"?: number;
+            }) | null;
+          }) | null;
           "approval_policy"?: string;
           "availability_windows"?: Array<{
             "days_of_week"?: Array<number>;
@@ -189445,6 +189740,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": ({
+            "analysis_policy_selections"?: unknown;
             "approval_policy"?: string;
             "availability_windows"?: Array<{
               "days_of_week"?: Array<number>;
@@ -200516,6 +200812,9 @@ export interface paths {
   };
   "/api/v1/analysis/imports/{id}/precision-review": {
     "post": operations["handleAnalysisPrecisionReview"];
+  };
+  "/api/v1/analysis/journey-steps": {
+    "get": operations["handleListAnalysisJourneySteps"];
   };
   "/api/v1/analysis/mappings": {
     "get": operations["handleAnalysisDefinitions_11"];

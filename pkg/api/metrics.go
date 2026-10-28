@@ -819,15 +819,16 @@ func buildRunLiveStateSnapshotLocked(test *ManagedTest, updatedAt time.Time) Run
 		return RunLiveStateSnapshot{UpdatedAt: updatedAt}
 	}
 	return RunLiveStateSnapshot{
-		TestID:        test.ID,
-		TestName:      test.Name,
-		ProjectID:     normalizeProjectID(test.ProjectID),
-		Status:        test.Status,
-		UpdatedAt:     updatedAt.UTC(),
-		StartedAt:     cloneTimePtr(test.StartedAt),
-		EndedAt:       cloneTimePtr(test.EndedAt),
-		LiveMetrics:   cloneRunLiveMetrics(test),
-		HistoryPoints: len(test.History),
+		TestID:                         test.ID,
+		TestName:                       test.Name,
+		ProjectID:                      normalizeProjectID(test.ProjectID),
+		Status:                         test.Status,
+		UpdatedAt:                      updatedAt.UTC(),
+		StartedAt:                      cloneTimePtr(test.StartedAt),
+		EndedAt:                        cloneTimePtr(test.EndedAt),
+		LiveMetrics:                    cloneRunLiveMetrics(test),
+		ProvisionalBrowserIntelligence: cloneProvisionalBrowserIntelligenceSnapshot(test.provisionalBrowserIntelligence),
+		HistoryPoints:                  len(test.History),
 	}
 }
 
@@ -886,7 +887,18 @@ func (tr *TestRunner) cacheRunSnapshot(snapshot RunLiveStateSnapshot) {
 		tr.snapshotWrites = make(map[string]*runSnapshotWriteState)
 	}
 	if pending := tr.snapshotWrites[testID]; pending != nil {
+		if snapshot.Status == pending.latest.Status && snapshot.UpdatedAt.Before(pending.latest.UpdatedAt) &&
+			(snapshot.ProvisionalBrowserIntelligence != nil ||
+				(isTerminalTestStatus(snapshot.Status) && pending.latest.ProvisionalBrowserIntelligence != nil && snapshot.ProvisionalBrowserIntelligence == nil)) {
+			snapshot.UpdatedAt = pending.latest.UpdatedAt
+		}
 		if pending.latest.UpdatedAt.IsZero() || snapshot.Status != pending.latest.Status || !snapshot.UpdatedAt.Before(pending.latest.UpdatedAt) {
+			if snapshot.LiveMetrics == nil && pending.latest.LiveMetrics != nil {
+				snapshot.LiveMetrics = pending.latest.LiveMetrics
+				if snapshot.HistoryPoints == 0 {
+					snapshot.HistoryPoints = pending.latest.HistoryPoints
+				}
+			}
 			pending.latest = snapshot
 			pending.dirty = true
 		}

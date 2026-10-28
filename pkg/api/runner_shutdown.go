@@ -122,6 +122,7 @@ type leadershipLossRuntime struct {
 	singleClient         generatorClient
 	streamsByTarget      map[string]*generatorrpc.MetricsStream
 	singleStream         *generatorrpc.MetricsStream
+	liveBrowser          *liveBrowserIntelligenceState
 }
 
 // teardownActiveTestsAfterLeadershipLoss is deliberately separate from the
@@ -152,6 +153,9 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		// committed by this controller once it has lost leadership, whether
 		// the run is still active or awaits its archive's publication retry.
 		releaseHeldJointPublicationsLocked(test)
+		if test.liveBrowserIntelligence == nil {
+			test.provisionalBrowserIntelligence = nil
+		}
 		activeStatus := false
 		switch test.Status {
 		case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
@@ -159,7 +163,7 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		}
 		if !activeStatus && test.cancel == nil && test.multiEngine == nil && test.remoteClient == nil &&
 			len(test.remoteClientsByTarget) == 0 && len(test.remoteArchiveClientsByTarget) == 0 && len(test.remoteSecretSnapshots) == 0 &&
-			test.remoteRunSupervisionCancel == nil {
+			test.remoteRunSupervisionCancel == nil && test.liveBrowserIntelligence == nil {
 			continue
 		}
 		runtime := leadershipLossRuntime{
@@ -174,7 +178,9 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 			singleClient:         test.remoteClient,
 			streamsByTarget:      test.remoteMetricsStreamsByTarget,
 			singleStream:         test.remoteMetricsStream,
+			liveBrowser:          test.liveBrowserIntelligence,
 		}
+		releaseLiveBrowserIntelligenceLocked(test)
 		if test.multiEngine != nil {
 			engine := test.multiEngine
 			runtime.stopLocal = engine.Stop
@@ -225,6 +231,9 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 	}
 	var errs []error
 	for _, runtime := range runtimes {
+		if runtime.liveBrowser != nil {
+			runtime.liveBrowser.stopAndJoin()
+		}
 		if err := stopAndWaitRunSupervisionKeeper(ctx, runtime.runSupervisionKeeper); err != nil {
 			errs = append(errs, fmt.Errorf("join stale run-supervision keeper for %s: %w", runtime.testID, err))
 		}

@@ -252,10 +252,13 @@ func (b *Browser) runPostActionSyncWithClock(ctx context.Context, action *protoc
 	}
 	switch syncType {
 	case "network_idle", "networkidle":
-		return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		if err := b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 			State:   playwright.LoadStateNetworkidle,
 			Timeout: playwright.Float(b.timeoutMS(waitCtx, b.waitTimeout(sync.TimeoutMs))),
-		})
+		}); err != nil {
+			return err
+		}
+		return b.waitForNetworkQuiet(waitCtx, time.Duration(sync.StableMs)*time.Millisecond)
 	case "load":
 		return b.currentPage().WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 			State:   playwright.LoadStateLoad,
@@ -343,6 +346,33 @@ func (b *Browser) waitForDOMStable(ctx context.Context, stableWindow time.Durati
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (b *Browser) waitForNetworkQuiet(ctx context.Context, quietWindow time.Duration) error {
+	started := time.Now()
+	if quietWindow <= 0 {
+		quietWindow = 50 * time.Millisecond
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		b.mu.Lock()
+		inFlight := b.evidence.inFlight
+		lastActivity := b.evidence.lastNetworkActivity
+		b.mu.Unlock()
+		quietSince := started
+		if lastActivity.After(quietSince) {
+			quietSince = lastActivity
+		}
+		if inFlight == 0 && time.Since(quietSince) >= quietWindow {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for network quiet (%s): %w", quietWindow, ctx.Err())
 		case <-ticker.C:
 		}
 	}

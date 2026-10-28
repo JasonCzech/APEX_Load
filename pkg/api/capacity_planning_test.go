@@ -137,8 +137,8 @@ func TestEstimateCapacityAdvisoryUsesBrowserVUserDensity(t *testing.T) {
 	if !advisory.RequiresOverride || advisory.Bottleneck != "memory" {
 		t.Fatalf("requires override = %v bottleneck = %q, want browser memory footprint shortfall with one available generator", advisory.RequiresOverride, advisory.Bottleneck)
 	}
-	if advisory.EstimatedPerVUser.MemoryMB < 250 {
-		t.Fatalf("browser per-vuser memory = %v, want mobile browser scale estimate", advisory.EstimatedPerVUser.MemoryMB)
+	if advisory.EstimatedPerVUser.MemoryMB < roundCapacityValue(browserDecimalMBToMiB(250)) {
+		t.Fatalf("browser per-vuser memory = %v, want mobile browser scale estimate above the 250 MB decimal target (%v MiB)", advisory.EstimatedPerVUser.MemoryMB, roundCapacityValue(browserDecimalMBToMiB(250)))
 	}
 	if !containsSubstring(advisory.Warnings, "Browser VUsers launch real browser runtimes") {
 		t.Fatalf("warnings = %#v, want browser runtime guidance", advisory.Warnings)
@@ -202,6 +202,22 @@ func TestEstimateCapacityAdvisoryPublishesClaimableBrowserDensity(t *testing.T) 
 	highTier := browserAdvisory("iphone_15_pro", 8)
 	if highTier.EstimatedPerVUser.MemoryMB <= lowTier.EstimatedPerVUser.MemoryMB {
 		t.Fatalf("per-vuser memory low tier = %v high tier = %v, want device-tier footprint to remain in the CPU/memory math", lowTier.EstimatedPerVUser.MemoryMB, highTier.EstimatedPerVUser.MemoryMB)
+	}
+}
+
+func TestBrowserCapacityProfileReconcilesDecimalMBTargetToGeneratorMiB(t *testing.T) {
+	targetMiB := float64(browserTargetRSSBytes) / float64(1<<20)
+	if got := browserDecimalMBToMiB(250); got != targetMiB {
+		t.Fatalf("browserDecimalMBToMiB(250) = %v, want %v", got, targetMiB)
+	}
+	low := browserCapacityProfileForTier("low")
+	mid := browserCapacityProfileForTier("mid")
+	high := browserCapacityProfileForTier("high")
+	if !(low.BrowserMemoryMBPerVUser < mid.BrowserMemoryMBPerVUser && mid.BrowserMemoryMBPerVUser < targetMiB && targetMiB < high.BrowserMemoryMBPerVUser) {
+		t.Fatalf("expected low (%v) < mid (%v) < 250 MB target (%v MiB) < high (%v)", low.BrowserMemoryMBPerVUser, mid.BrowserMemoryMBPerVUser, targetMiB, high.BrowserMemoryMBPerVUser)
+	}
+	if high.BrowserMemoryMBPerVUser >= 260 {
+		t.Fatalf("expected high-tier 260 decimal MB converted to binary MiB (< 260), got %v", high.BrowserMemoryMBPerVUser)
 	}
 }
 

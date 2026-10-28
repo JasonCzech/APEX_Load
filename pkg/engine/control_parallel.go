@@ -61,13 +61,14 @@ func (vu *VUser) executeParallelBlock(ctx context.Context, action dsl.Action, ph
 	defer endTransactionRoot()
 	success := vu.runParallelBranches(ctx, action.Control, phase)
 	result := &protocol.Result{
-		ActionName: action.Name,
-		Group:      vu.Group,
-		Region:     vu.Region,
-		Phase:      phase,
-		StartTime:  started,
-		Duration:   time.Since(started),
-		Success:    success,
+		ActionName:   action.Name,
+		Group:        vu.Group,
+		Region:       vu.Region,
+		Phase:        phase,
+		StartTime:    started,
+		Duration:     time.Since(started),
+		Success:      success,
+		AuthoredStep: vu.currentBrowserAuthoredStep(),
 	}
 	if action.Attribution != nil {
 		result.Hierarchy = strings.TrimSpace(vu.interpolate(action.Attribution.HierarchyPath))

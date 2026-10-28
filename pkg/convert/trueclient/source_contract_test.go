@@ -203,3 +203,147 @@ func TestTruClientXMLTransactionAnchorsPreserveOrderingAndGateAmbiguity(t *testi
 		}
 	}
 }
+
+func TestTruClientReplayPrimitivesAppendTypingCloseTabDownloadAndNetworkIdle(t *testing.T) {
+	// 1. Type with Clear=false / Clear=0 maps to params.clear=false without a review gate.
+	for _, clearArg := range []string{"false", "0"} {
+		actions, warnings, unsupported, err := convertStep(truXMLStep{
+			Action:    "Type",
+			Arguments: `{"Selector":{"value":"#search"},"Value":{"value":"-suffix"},"Clear":{"value":"` + clearArg + `"}}`,
+		}, nil)
+		if err != nil || unsupported || len(warnings) != 0 || len(actions) != 1 {
+			t.Fatalf("clear=%q actions=%+v warnings=%v unsupported=%v err=%v", clearArg, actions, warnings, unsupported, err)
+		}
+		if actions[0].Type != "browser_fill" || actions[0].Params["input_mode"] != "type" || actions[0].Params["clear"] != false || reviewRequired(actions[0].Metadata) {
+			t.Fatalf("clear=%q unexpected action=%+v", clearArg, actions[0])
+		}
+	}
+
+	// 2. Close Tab maps to browser_close_window without a tab lifecycle review gate.
+	for _, tc := range []struct {
+		name      string
+		args      string
+		wantIndex any
+		wantTgt   string
+		wantGate  bool
+	}{
+		{name: "active tab", args: `{}`, wantIndex: nil, wantTgt: "", wantGate: false},
+		{name: "by index", args: `{"Tab":{"value":"1"}}`, wantIndex: 1, wantTgt: "", wantGate: false},
+		{name: "by url/title", args: `{"Tab":{"value":"popup"}}`, wantIndex: nil, wantTgt: "popup", wantGate: false},
+		{name: "negative index gated", args: `{"Tab":{"value":"-1"}}`, wantIndex: nil, wantTgt: "", wantGate: true},
+	} {
+		t.Run("close_tab_"+tc.name, func(t *testing.T) {
+			actions, warnings, unsupported, err := convertStep(truXMLStep{Action: "Close Tab", Arguments: tc.args}, nil)
+			if err != nil || unsupported || len(warnings) != 0 || len(actions) != 1 {
+				t.Fatalf("actions=%+v warnings=%v unsupported=%v err=%v", actions, warnings, unsupported, err)
+			}
+			got := actions[0]
+			if got.Type != "browser_close_window" || got.Target != tc.wantTgt || reviewRequired(got.Metadata) != tc.wantGate {
+				t.Fatalf("got=%+v want target=%q gate=%v", got, tc.wantTgt, tc.wantGate)
+			}
+			if tc.wantIndex != nil && got.Params["index"] != tc.wantIndex {
+				t.Fatalf("got index=%v want=%v", got.Params["index"], tc.wantIndex)
+			}
+			if _, hasParamTarget := got.Params["target"]; hasParamTarget {
+				t.Fatalf("unexpected undeclared params.target on browser_close_window: %+v", got.Params)
+			}
+		})
+	}
+
+	// 3. Click + Wait for File Download coalesces into pre-armed browser_download,
+	// preserving XML-anchored transactions and EndEvent="Step network completed".
+	doc := `<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step action="Navigate" stepId="nav" endEvent="Step network completed" arguments='{"Location":{"value":"\"https://example.invalid/reports\""}}' />
+    <step action="Click" stepId="click-dl" arguments='{"Selector":{"value":"\"#download-csv\""}}' />
+    <step action="Wait for File Download" stepId="wait-dl" endEvent="Step network completed" arguments='{"File Name":{"value":"\"report.csv\""},"URL":{"value":"\"/exports/report.csv\""},"Save Dir":{"value":"\"/tmp/downloads\""}}' />
+  </step>
+  <transactions>
+    <transaction name="ExportReport">
+      <vertex type="start" progressType="Step started" step="click-dl" />
+      <vertex type="end" progressType="After step ended" step="wait-dl" />
+    </transaction>
+  </transactions>
+</truScript>`
+	result, err := ConvertArchive(map[string]string{"default.xml": doc}, ConvertOptions{
+		ScriptName:           "CoalescedDownload",
+		PreserveTransactions: true,
+	})
+	if err != nil {
+		t.Fatalf("ConvertArchive: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues: %v", issues)
+	}
+	if result.Stats.ReviewOnlySteps != 0 || len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unexpected review/unsupported stats: %+v", result.Stats)
+	}
+	// Expected sequence: navigate, lr_start_transaction, browser_download, lr_end_transaction
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("actions=%+v, want 4 actions", result.Script.Actions)
+	}
+	nav := result.Script.Actions[0]
+	if nav.Type != "browser_navigate" || nav.Sync == nil || nav.Sync.Type != "network_idle" || reviewRequired(nav.Metadata) {
+		t.Fatalf("navigate=%+v", nav)
+	}
+	dl := result.Script.Actions[2]
+	if dl.Type != "browser_download" || dl.Selector != "#download-csv" || reviewRequired(dl.Metadata) {
+		t.Fatalf("download=%+v", dl)
+	}
+	if dl.Params["filename_contains"] != "report.csv" || dl.Params["url_contains"] != "/exports/report.csv" || dl.Params["save_dir"] != "/tmp/downloads" {
+		t.Fatalf("download params=%+v", dl.Params)
+	}
+	if dl.Sync == nil || dl.Sync.Type != "network_idle" || dl.Metadata["source_download_step_id"] != "wait-dl" {
+		t.Fatalf("download sync/metadata=%+v / %+v", dl.Sync, dl.Metadata)
+	}
+
+	// 4. Wait for File Download with its own Selector or conflicting EndEvent must not coalesce.
+	nonCoalescedDoc := `<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step action="Click" stepId="click-1" arguments='{"Selector":{"value":"\"#first\""}}' />
+    <step action="Wait for File Download" stepId="wait-1" arguments='{"Selector":{"value":"\"#own-selector\""},"File Name":{"value":"\"report.csv\""}}' />
+    <step action="Click" stepId="click-2" endEvent="DOM content loaded" arguments='{"Selector":{"value":"\"#second\""}}' />
+    <step action="Wait for File Download" stepId="wait-2" endEvent="Step network completed" arguments='{"File Name":{"value":"\"report2.csv\""}}' />
+  </step>
+</truScript>`
+	nonCoalescedResult, err := ConvertArchive(map[string]string{"default.xml": nonCoalescedDoc}, ConvertOptions{
+		ScriptName:               "NonCoalescedDownload",
+		PreserveUnsupportedSteps: true,
+	})
+	if err != nil {
+		t.Fatalf("ConvertArchive non-coalesced: %v", err)
+	}
+	if len(nonCoalescedResult.Script.Actions) != 4 {
+		t.Fatalf("non-coalesced actions=%+v, want 4 separate actions", nonCoalescedResult.Script.Actions)
+	}
+
+	// 5. Split transaction anchor ending on the coalesced Click step (excluding Wait for File Download) must be gated.
+	splitAnchorDoc := `<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step action="Click" stepId="click-dl" objectTimeout="7" arguments='{"Selector":{"value":"\"#download-csv\""}}' />
+    <step action="Wait for File Download" stepId="wait-dl" objectTimeout="25" arguments='{"File Name":{"value":"\"report.csv\""}}' />
+  </step>
+  <transactions>
+    <transaction name="SplitExport">
+      <vertex type="start" progressType="Step started" step="click-dl" />
+      <vertex type="end" progressType="After step ended" step="click-dl" />
+    </transaction>
+  </transactions>
+</truScript>`
+	splitResult, err := ConvertArchive(map[string]string{"default.xml": splitAnchorDoc}, ConvertOptions{
+		ScriptName:               "SplitCoalescedAnchor",
+		PreserveTransactions:     true,
+		PreserveUnsupportedSteps: true,
+	})
+	if err != nil {
+		t.Fatalf("ConvertArchive split anchor: %v", err)
+	}
+	if splitResult.Stats.ReviewOnlySteps != 1 {
+		t.Fatalf("expected split transaction anchor to produce 1 review gate, got stats=%+v actions=%+v", splitResult.Stats, splitResult.Script.Actions)
+	}
+	if len(splitResult.Script.Actions) != 2 ||
+		splitResult.Script.Actions[1].Metadata["source_object_timeout_seconds"] != "7" ||
+		splitResult.Script.Actions[1].Metadata["source_download_object_timeout_seconds"] != "25" {
+		t.Fatalf("expected click and download object timeouts to stay distinct: %+v", splitResult.Script.Actions)
+	}
+}

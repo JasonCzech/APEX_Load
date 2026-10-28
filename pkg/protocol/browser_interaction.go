@@ -37,7 +37,16 @@ const (
 	// InteractionOutcomeNotReached: the gesture failed before its declared
 	// outcome was waited for, or v2 could not evaluate it (cancellation, page
 	// loss, invalid selector or unsupported wait).
-	InteractionOutcomeNotReached = "not_reached"
+	InteractionOutcomeNotReached  = "not_reached"
+	InteractionOutcomeUnsupported = "unsupported"
+
+	InteractionOutcomeKindSync       = "sync"
+	InteractionOutcomeKindDialog     = "dialog"
+	InteractionOutcomeKindAssertion  = "assertion"
+	InteractionOutcomeKindDownload   = "download"
+	InteractionOutcomeKindNavigation = "navigation"
+
+	MaxBrowserInteractionOutcomes = 16
 )
 
 // Reasons an interaction's points or target were not observed.
@@ -58,18 +67,27 @@ const (
 	// InteractionUnavailableTarget: the element a keyboard gesture acted on
 	// could not be resolved after it.
 	InteractionUnavailableTarget = "target_unresolved"
+	// InteractionUnavailableCrossOriginAncestry: a child frame's ancestor chain
+	// crosses a cross-origin or opaque-sandboxed boundary.
+	InteractionUnavailableCrossOriginAncestry = "cross_origin_ancestry"
+	// InteractionUnavailableNonAxisAlignedOr3DTransform: a child frame's
+	// ancestor chain uses a 3D, perspective, or non-invertible transform.
+	InteractionUnavailableNonAxisAlignedOr3DTransform = "non_axis_aligned_or_3d_transform"
+	// InteractionUnavailableFrameDepthExceeded: a child frame's nesting depth
+	// exceeds MaxBrowserInteractionFrameDepth.
+	InteractionUnavailableFrameDepthExceeded = "frame_depth_exceeded"
 )
 
 var browserInteractionKinds = map[string]bool{
 	"click": true, "dblclick": true, "tap": true, "long_press": true, "swipe": true, "hover": true, "drag": true, "scroll": true,
-	"check": true, "key": true, "fill": true, "select": true, "set_files": true,
+	"check": true, "key": true, "fill": true, "select": true, "set_files": true, "download": true,
 }
 
 // BrowserInteractionPointerKinds dispatch pointer input; the others are
 // keyboard or form input recorded by target, without coordinates.
 func BrowserInteractionPointerKind(kind string) bool {
 	switch kind {
-	case "click", "dblclick", "tap", "long_press", "swipe", "hover", "drag", "check":
+	case "click", "dblclick", "tap", "long_press", "swipe", "hover", "drag", "check", "download":
 		return true
 	}
 	return false
@@ -87,44 +105,72 @@ type BrowserInteractionTarget struct {
 	LabelSHA256 string `json:"label_sha256,omitempty"`
 }
 
-// BrowserInteractionOutcome is the gesture's declared outcome (the action's
-// wait condition) with its deadline, and what was observed.
+// BrowserInteractionOutcome is a gesture's declared outcome (wait condition,
+// dialog guard, inline assertion, download, or navigation commit) and what was
+// observed.
 type BrowserInteractionOutcome struct {
-	Clock      *BrowserOutcomeClock `json:"clock,omitempty"`
-	Declared   string               `json:"declared"`
-	DeadlineMS int                  `json:"deadline_ms,omitempty"`
-	Observed   string               `json:"observed"`
+	Kind               string               `json:"kind,omitempty"`
+	Clock              *BrowserOutcomeClock `json:"clock,omitempty"`
+	ObservedAt         *time.Time           `json:"observed_at,omitempty"`
+	Declared           string               `json:"declared,omitempty"`
+	DeadlineMS         int                  `json:"deadline_ms,omitempty"`
+	Observed           string               `json:"observed"`
+	Reason             string               `json:"reason,omitempty"`
+	NavigationSequence uint64               `json:"navigation_sequence,omitempty"`
+	AuthoredPageID     string               `json:"authored_page_id,omitempty"`
+	RouteSeq           uint64               `json:"route_seq,omitempty"`
 }
 
 type BrowserInteraction struct {
-	Execution                 *BrowserActionExecution     `json:"execution,omitempty"`
-	AuthoredStep              *BrowserAuthoredStep        `json:"authored_step,omitempty"`
-	Dispatch                  *BrowserInteractionDispatch `json:"dispatch,omitempty"`
-	DispatchUnavailableReason string                      `json:"dispatch_unavailable_reason,omitempty"`
+	Execution                 *BrowserActionExecution      `json:"execution,omitempty"`
+	AuthoredStep              *BrowserAuthoredStep         `json:"authored_step,omitempty"`
+	Dispatch                  *BrowserInteractionDispatch  `json:"dispatch,omitempty"`
+	DispatchUnavailableReason string                       `json:"dispatch_unavailable_reason,omitempty"`
+	GeometryProvenance        string                       `json:"geometry_provenance,omitempty"`
+	AuthoredPageID            string                       `json:"authored_page_id,omitempty"`
+	RouteSeq                  uint64                       `json:"route_seq,omitempty"`
+	FrameChain                []BrowserInteractionFrameHop `json:"frame_chain,omitempty"`
 
-	Version           int                       `json:"version"`
-	SourceGeneration  string                    `json:"source_generation"`
-	InteractionID     string                    `json:"interaction_id"`
-	ActionID          string                    `json:"action_id"`
-	ActionName        string                    `json:"action_name,omitempty"`
-	DocumentID        string                    `json:"document_id,omitempty"`
-	FrameScope        string                    `json:"frame_scope"`
-	Kind              string                    `json:"kind"`
-	PointerType       string                    `json:"pointer_type,omitempty"`
-	Points            []BrowserInteractionPoint `json:"points,omitempty"`
-	Target            *BrowserInteractionTarget `json:"target,omitempty"`
-	ViewportWidth     int                       `json:"viewport_width,omitempty"`
-	ViewportHeight    int                       `json:"viewport_height,omitempty"`
-	ScrollX           float64                   `json:"scroll_x"`
-	ScrollY           float64                   `json:"scroll_y"`
-	DeviceScaleFactor float64                   `json:"device_scale_factor,omitempty"`
-	LayoutRevision    string                    `json:"layout_revision,omitempty"`
-	Route             string                    `json:"route,omitempty"`
-	Outcome           BrowserInteractionOutcome `json:"outcome"`
-	Provenance        string                    `json:"provenance"`
-	Success           bool                      `json:"success"`
-	CapturedAt        time.Time                 `json:"captured_at"`
-	UnavailableReason string                    `json:"unavailable_reason,omitempty"`
+	Version           int                         `json:"version"`
+	SourceGeneration  string                      `json:"source_generation"`
+	InteractionID     string                      `json:"interaction_id"`
+	ActionID          string                      `json:"action_id"`
+	ActionName        string                      `json:"action_name,omitempty"`
+	DocumentID        string                      `json:"document_id,omitempty"`
+	FrameScope        string                      `json:"frame_scope"`
+	Kind              string                      `json:"kind"`
+	PointerType       string                      `json:"pointer_type,omitempty"`
+	Points            []BrowserInteractionPoint   `json:"points,omitempty"`
+	Target            *BrowserInteractionTarget   `json:"target,omitempty"`
+	ViewportWidth     int                         `json:"viewport_width,omitempty"`
+	ViewportHeight    int                         `json:"viewport_height,omitempty"`
+	ScrollX           float64                     `json:"scroll_x"`
+	ScrollY           float64                     `json:"scroll_y"`
+	DeviceScaleFactor float64                     `json:"device_scale_factor,omitempty"`
+	LayoutRevision    string                      `json:"layout_revision,omitempty"`
+	Route             string                      `json:"route,omitempty"`
+	Outcome           BrowserInteractionOutcome   `json:"outcome,omitzero"`
+	Outcomes          []BrowserInteractionOutcome `json:"outcomes,omitempty"`
+	Provenance        string                      `json:"provenance"`
+	Success           bool                        `json:"success"`
+	CapturedAt        time.Time                   `json:"captured_at"`
+	UnavailableReason string                      `json:"unavailable_reason,omitempty"`
+}
+
+// PrimaryOutcome returns the single v1-v3 outcome or the first v4 outcome.
+func (i BrowserInteraction) PrimaryOutcome() BrowserInteractionOutcome {
+	if i.Version >= BrowserInteractionVersion4 && len(i.Outcomes) > 0 {
+		return i.Outcomes[0]
+	}
+	return i.Outcome
+}
+
+// DeclaredOutcomes returns the interaction's outcomes across all wire versions.
+func (i BrowserInteraction) DeclaredOutcomes() []BrowserInteractionOutcome {
+	if i.Version >= BrowserInteractionVersion4 {
+		return i.Outcomes
+	}
+	return []BrowserInteractionOutcome{i.Outcome}
 }
 
 // BrowserInteractionEvidence is a bounded batch of one source generation's
@@ -143,12 +189,7 @@ func browserInteractionFinite(v, limit float64) bool {
 
 // Valid checks one interaction record.
 func (i BrowserInteraction) Valid() bool {
-	if i.Version == BrowserInteractionVersion3 && (i.Outcome.Observed == InteractionOutcomeMet || i.Outcome.Observed == InteractionOutcomeMissed) {
-		if !i.Outcome.Clock.Valid() || i.Outcome.Observed == InteractionOutcomeMet && i.Outcome.Clock.ObservedAt.After(i.Outcome.Clock.DeadlineAt) || i.Outcome.Observed == InteractionOutcomeMissed && i.Outcome.Clock.ObservedAt.Before(i.Outcome.Clock.DeadlineAt) {
-			return false
-		}
-	}
-	if i.Outcome.Clock != nil && (i.Version != BrowserInteractionVersion3 || !i.Outcome.Clock.Valid() || i.Outcome.Clock.BudgetMS != i.Outcome.DeadlineMS || i.Outcome.Declared == "" || i.Outcome.Clock.ObservedAt.After(i.CapturedAt)) {
+	if !browserInteractionOutcomesValid(i) {
 		return false
 	}
 	if !browserInteractionV2FieldsValid(i) || !BrowserEvidenceGeneration(i.SourceGeneration) || !browserEvidenceID(i.InteractionID, i.SourceGeneration, false) || !browserEvidenceID(i.ActionID, i.SourceGeneration, true) || !browserEvidenceID(i.DocumentID, i.SourceGeneration, true) || !browserEvidenceText(i.ActionName, 256) || !browserInteractionKinds[i.Kind] {
@@ -159,18 +200,6 @@ func (i BrowserInteraction) Valid() bool {
 	}
 	switch i.Provenance {
 	case InteractionProvenanceScripted, InteractionProvenanceRecorded, InteractionProvenanceUnknown:
-	default:
-		return false
-	}
-	switch i.Outcome.Observed {
-	case InteractionOutcomeNotDeclared:
-		if i.Outcome.Declared != "" || i.Outcome.DeadlineMS != 0 {
-			return false
-		}
-	case InteractionOutcomeMet, InteractionOutcomeMissed, InteractionOutcomeNotReached:
-		if !browserEvidenceText(i.Outcome.Declared, 64) || i.Outcome.Declared == "" || i.Outcome.DeadlineMS < 0 || i.Outcome.DeadlineMS > 86400000 {
-			return false
-		}
 	default:
 		return false
 	}
@@ -206,11 +235,118 @@ func (i BrowserInteraction) Valid() bool {
 	return !i.CapturedAt.IsZero() && i.CapturedAt.Location() == time.UTC && browserInteractionReason(i.UnavailableReason)
 }
 
+func browserInteractionOutcomesValid(i BrowserInteraction) bool {
+	if i.Version == BrowserInteractionVersion4 {
+		if i.Outcome != (BrowserInteractionOutcome{}) || len(i.Outcomes) == 0 || len(i.Outcomes) > MaxBrowserInteractionOutcomes {
+			return false
+		}
+		for _, o := range i.Outcomes {
+			if !o.validV4(i.CapturedAt, len(i.Outcomes)) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(i.Outcomes) != 0 || i.Outcome.Kind != "" || i.Outcome.Reason != "" || i.Outcome.ObservedAt != nil || i.Outcome.NavigationSequence != 0 || i.Outcome.AuthoredPageID != "" || i.Outcome.RouteSeq != 0 {
+		return false
+	}
+	if i.Version == BrowserInteractionVersion3 && (i.Outcome.Observed == InteractionOutcomeMet || i.Outcome.Observed == InteractionOutcomeMissed) {
+		if !i.Outcome.Clock.Valid() || i.Outcome.Observed == InteractionOutcomeMet && i.Outcome.Clock.ObservedAt.After(i.Outcome.Clock.DeadlineAt) || i.Outcome.Observed == InteractionOutcomeMissed && i.Outcome.Clock.ObservedAt.Before(i.Outcome.Clock.DeadlineAt) {
+			return false
+		}
+	}
+	if i.Outcome.Clock != nil && (i.Version != BrowserInteractionVersion3 || !i.Outcome.Clock.Valid() || i.Outcome.Clock.BudgetMS != i.Outcome.DeadlineMS || i.Outcome.Declared == "" || i.Outcome.Clock.ObservedAt.After(i.CapturedAt)) {
+		return false
+	}
+	switch i.Outcome.Observed {
+	case InteractionOutcomeNotDeclared:
+		return i.Outcome.Declared == "" && i.Outcome.DeadlineMS == 0
+	case InteractionOutcomeMet, InteractionOutcomeMissed, InteractionOutcomeNotReached:
+		return browserEvidenceText(i.Outcome.Declared, 64) && i.Outcome.Declared != "" && i.Outcome.DeadlineMS >= 0 && i.Outcome.DeadlineMS <= 86400000
+	default:
+		return false
+	}
+}
+
+func (o BrowserInteractionOutcome) validV4(capturedAt time.Time, totalOutcomes int) bool {
+	if !browserEvidenceText(o.Reason, 64) {
+		return false
+	}
+	if o.Observed == InteractionOutcomeNotDeclared {
+		return totalOutcomes == 1 && o.Kind == InteractionOutcomeKindSync && o.Declared == "" && o.DeadlineMS == 0 && o.Reason == "" && o.ObservedAt == nil && o.NavigationSequence == 0 && o.AuthoredPageID == "" && o.RouteSeq == 0 && o.Clock == nil
+	}
+	switch o.Observed {
+	case InteractionOutcomeMet, InteractionOutcomeMissed, InteractionOutcomeNotReached, InteractionOutcomeUnsupported:
+	default:
+		return false
+	}
+	if o.Declared == "" || !browserEvidenceText(o.Declared, 64) {
+		return false
+	}
+	switch o.Kind {
+	case InteractionOutcomeKindSync, InteractionOutcomeKindDialog, InteractionOutcomeKindDownload:
+		if o.DeadlineMS <= 0 || o.DeadlineMS > 86400000 || o.ObservedAt != nil || o.NavigationSequence != 0 || o.AuthoredPageID != "" || o.RouteSeq != 0 {
+			return false
+		}
+		if o.Observed == InteractionOutcomeMet || o.Observed == InteractionOutcomeMissed {
+			if !o.Clock.Valid() || o.Clock.BudgetMS != o.DeadlineMS || o.Clock.ObservedAt.After(capturedAt) {
+				return false
+			}
+			if o.Observed == InteractionOutcomeMet && o.Clock.ObservedAt.After(o.Clock.DeadlineAt) {
+				return false
+			}
+			if o.Observed == InteractionOutcomeMissed && (o.Reason == "" || o.Reason == "deadline_missed") && o.Clock.ObservedAt.Before(o.Clock.DeadlineAt) {
+				return false
+			}
+			return true
+		}
+		return o.Clock == nil
+	case InteractionOutcomeKindAssertion:
+		if o.DeadlineMS != 0 || o.Clock != nil || o.NavigationSequence != 0 || o.AuthoredPageID != "" || o.RouteSeq != 0 {
+			return false
+		}
+		if o.Observed == InteractionOutcomeMet || o.Observed == InteractionOutcomeMissed {
+			if o.ObservedAt == nil || !browserOutcomeTime(*o.ObservedAt) || o.ObservedAt.After(capturedAt) {
+				return false
+			}
+			return o.Observed == InteractionOutcomeMet || o.Reason != ""
+		}
+		return o.ObservedAt == nil && o.Reason != ""
+	case InteractionOutcomeKindNavigation:
+		if o.DeadlineMS != 0 || o.Clock != nil || o.NavigationSequence > 9007199254740991 || o.RouteSeq > 9007199254740991 {
+			return false
+		}
+		if o.AuthoredPageID != "" && (len(o.AuthoredPageID) != 64 || !browserInteractionToken(o.AuthoredPageID)) {
+			return false
+		}
+		if o.AuthoredPageID == "" && o.RouteSeq != 0 {
+			return false
+		}
+		if o.Observed == InteractionOutcomeMet {
+			return o.ObservedAt != nil && browserOutcomeTime(*o.ObservedAt) && !o.ObservedAt.After(capturedAt) && o.NavigationSequence > 0
+		}
+		return o.Reason != ""
+	default:
+		return false
+	}
+}
+
+func (o BrowserInteractionOutcome) Clone() BrowserInteractionOutcome {
+	out := o
+	out.Clock = o.Clock.Clone()
+	if o.ObservedAt != nil {
+		at := *o.ObservedAt
+		out.ObservedAt = &at
+	}
+	return out
+}
+
 // browserInteractionReason admits an interaction's unavailable reason: the
 // shared evidence reasons and the interaction ones.
 func browserInteractionReason(v string) bool {
 	switch v {
-	case InteractionUnavailablePageState, InteractionUnavailableChildFrame, InteractionUnavailableSyntheticDispatch, InteractionUnavailableDocumentChanged, InteractionUnavailableTarget:
+	case InteractionUnavailablePageState, InteractionUnavailableChildFrame, InteractionUnavailableSyntheticDispatch, InteractionUnavailableDocumentChanged, InteractionUnavailableTarget,
+		InteractionUnavailableCrossOriginAncestry, InteractionUnavailableNonAxisAlignedOr3DTransform, InteractionUnavailableFrameDepthExceeded:
 		return true
 	}
 	return browserEvidenceReason(v)
@@ -255,7 +391,21 @@ func (e *BrowserInteractionEvidence) Clone() *BrowserInteractionEvidence {
 			target := *i.Target
 			i.Target = &target
 		}
-		i.Outcome.Clock = i.Outcome.Clock.Clone()
+		i.Outcome = i.Outcome.Clone()
+		if len(i.Outcomes) > 0 {
+			outcomes := make([]BrowserInteractionOutcome, len(i.Outcomes))
+			for idx, o := range i.Outcomes {
+				outcomes[idx] = o.Clone()
+			}
+			i.Outcomes = outcomes
+		}
+		if len(i.FrameChain) > 0 {
+			chain := make([]BrowserInteractionFrameHop, len(i.FrameChain))
+			for idx, hop := range i.FrameChain {
+				chain[idx] = hop.Clone()
+			}
+			i.FrameChain = chain
+		}
 		i.Execution = i.Execution.Clone()
 		i.AuthoredStep = i.AuthoredStep.Clone()
 		if i.Dispatch != nil {

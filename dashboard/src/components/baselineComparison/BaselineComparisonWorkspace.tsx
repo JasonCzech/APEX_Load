@@ -6,6 +6,9 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import type { TestSummary } from '../../types'
 import { formatDateTime } from '../../utils/dateTime'
 import { downloadBlob } from '../../utils/fileUtils'
+import { request } from '../../hooks/apiClient'
+import type { DashboardDefinition } from '../../hooks/api/useDashboardDefinitionsApi'
+import { freezeBrowserPanelDefinition } from '../browserPanelInputs'
 import { comparisonColors, comparisonMagnitude, comparisonApi, comparisonVerdictLabel, type SavedComparisonSummary, comparisonRequestSignature, defaultPolicy, difference, measurementValue, metricOptions, metricUnit, number, resourceProviderLabel, verdictBlockers, withUnit, type ComparisonPolicy, type ComparisonRequest, type ComparisonRow, type ComparisonSnapshot, type MeasurementWindow, type Metric, type ResourceMapping, type RunIdentity } from './model'
 import { ComparisonDetail } from './ComparisonDetail'
 import type { ReportLens } from '../../appRouting'
@@ -57,6 +60,8 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
   const [groupRun, setGroupRun] = useState('')
   const [groupFrom, setGroupFrom] = useState('')
   const [groupTo, setGroupTo] = useState('')
+  const [panelTitle, setPanelTitle] = useState(`${test.name || test.id} browser comparison`)
+  const [savedPanel, setSavedPanel] = useState<DashboardDefinition | null>(null)
   const defaultSelected = useRef(Boolean(initialBaseline || comparisonId))
   const evaluation = useRef<AbortController | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -156,6 +161,70 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
     catch (e) { setError(errorText(e)) }
     finally { setBusy(false) }
   }
+  async function saveToPanel() {
+    if (!snapshot || !shownBaselines.length) return
+    const baselineRunId = effectiveMobile || shownBaselines[0].id
+    const title = panelTitle.trim() || `${test.name || test.id} browser comparison`
+    const runWindow = snapshot.request.windows?.[test.id]
+    const rawStartSec = Math.floor(Number(runWindow?.start_seconds) || 0)
+    const startSec = Math.max(0, Math.min(86399, rawStartSec))
+    const rawEndSec = Math.floor(Number(runWindow?.end_seconds) || 0)
+    const endSec = rawEndSec > startSec ? Math.min(86400, rawEndSec) : Math.min(86400, startSec + 60)
+    const bucketSec = Math.max(10, Math.min(3600, Math.ceil((endSec - startSec) / 1000)))
+    const firstDoc = snapshot.browser_documents?.find(doc => doc.baseline_id === baselineRunId) ?? snapshot.browser_documents?.[0]
+    const panelMetric = firstDoc?.metric && ['fcp', 'lcp', 'cls', 'inp'].includes(firstDoc.metric) ? `document_${firstDoc.metric}` : 'document_lcp'
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const draft: Pick<DashboardDefinition, 'name' | 'tabs'> = {
+        name: title,
+        tabs: [{
+          id: 'main',
+          title: 'Main',
+          panels: [{
+            id: 'browser-comparison',
+            title,
+            kind: 'line',
+            x: 0,
+            y: 0,
+            w: 24,
+            h: 8,
+            query: {
+              query_version: 5,
+              browser_tuple_mode: 'separate',
+              population: 'browser_document',
+              metric: panelMetric,
+              aggregation: 'p75',
+              comparison_run_id: baselineRunId,
+              start_seconds: startSec,
+              end_seconds: endSec,
+              bucket_seconds: bucketSec,
+              max_series: 20,
+              filters: {
+                frame_scope: firstDoc?.frame_scope || 'main_frame',
+                lifecycle_phase: firstDoc?.lifecycle_phase || 'navigation',
+              },
+            },
+          }],
+        }],
+      }
+      const frozen = await freezeBrowserPanelDefinition(test.id, draft)
+      const created = await request<DashboardDefinition>('/monitoring/dashboard-definitions', {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: snapshot.project_id || test.project_id || 'default',
+          name: frozen.name,
+          visibility: 'project',
+          tabs: frozen.tabs,
+        }),
+      })
+      setSavedPanel(created)
+      setNotice(`Saved panel "${created.name}" (${created.id}, revision ${created.revision}).`)
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
   function toggle(id: string) { defaultSelected.current = true; setSelected(old => old.includes(id) ? old.filter(value => value !== id) : old.length < 5 ? [...old, id] : old) }
   const findings = allFindings ? snapshot?.findings || [] : (snapshot?.findings || []).slice(0, 8)
   return <div ref={workspaceRef} className="bc-workspace">
@@ -221,7 +290,10 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
           </tbody></table>{!rows.length && <p>No matching evidence. Review the measurement windows and capture notes.</p>}</div>
         </>}
       </section>
-      <section className="run-report-panel bc-controls" aria-label="Share comparison"><div><h3>Share this assessment</h3><a href={`#/report/${encodeURIComponent(test.id)}?section=comparison&comparison_id=${encodeURIComponent(snapshot.id)}`}>Permanent comparison link</a></div><p className="run-report-muted">Reports use the {REPORT_LENS_LABELS[lens]} audience chosen at the top of the page.</p>{/* The report's own export names; the evidence and JSON files are the comparison's. */}{[['html', 'Navigable HTML'], ['pdf', 'Print-ready PDF'], ['docx', 'Editable Word'], ['evidence_csv', 'Evidence CSV'], ['json', 'Comparison JSON']].map(([format, label]) => <button key={format} type="button" className="btn btn-secondary" disabled={busy} onClick={() => void download(format)}>{label}</button>)}</section>
+      <section className="run-report-panel bc-controls" aria-label="Share comparison"><div><h3>Share this assessment</h3><a href={`#/report/${encodeURIComponent(test.id)}?section=comparison&comparison_id=${encodeURIComponent(snapshot.id)}`}>Permanent comparison link</a></div><p className="run-report-muted">Reports use the {REPORT_LENS_LABELS[lens]} audience chosen at the top of the page.</p>{/* The report's own export names; the evidence and JSON files are the comparison's. */}{[['html', 'Navigable HTML'], ['pdf', 'Print-ready PDF'], ['docx', 'Editable Word'], ['evidence_csv', 'Evidence CSV'], ['json', 'Comparison JSON']].map(([format, label]) => <button key={format} type="button" className="btn btn-secondary" disabled={busy} onClick={() => void download(format)}>{label}</button>)}
+        {shownBaselines.length > 0 && <div className="bc-controls"><label>Panel title<input aria-label="Panel title" maxLength={256} value={panelTitle} onChange={e => setPanelTitle(e.target.value)} /></label><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void saveToPanel()}>Save to panel</button></div>}
+        {savedPanel && <p role="status">Saved panel: {savedPanel.id} (revision {savedPanel.revision}){savedPanel.tabs[0]?.panels[0]?.query?.browser_inputs?.query_sha256 ? ` · query ${savedPanel.tabs[0].panels[0].query.browser_inputs.query_sha256}` : ''}{savedPanel.tabs[0]?.panels[0]?.query?.browser_inputs?.selection_receipt_sha256 ? ` · selection receipt ${savedPanel.tabs[0].panels[0].query.browser_inputs.selection_receipt_sha256}` : ''}</p>}
+      </section>
     </>}
     {detail && snapshot && <ComparisonDetail row={detail} snapshot={snapshot} onClose={() => setDetail(null)} />}
   </div>

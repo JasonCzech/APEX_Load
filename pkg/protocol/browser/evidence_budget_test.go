@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -693,5 +697,281 @@ func TestProcessTreeRSSSumsTheRootAndEveryDescendant(t *testing.T) {
 	}
 	if got := processTreeRSS(samples, 99); got != 0 {
 		t.Fatalf("absent root RSS = %d", got)
+	}
+}
+
+// On Linux, /proc/<pid>/smaps_rollup Pss is preferred over stat VmRSS so shared
+// Zygote pages are not multiplied across every browser child process, while
+// processes without smaps_rollup fall back to VmRSS.
+func TestProcProcessSamplesPreferSmapsRollupPSSOverVmRSS(t *testing.T) {
+	root := t.TempDir()
+	writeProc := func(pid string, statLine string, smapsRollup string) {
+		t.Helper()
+		dir := root + "/" + pid
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dir+"/stat", []byte(statLine), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if smapsRollup != "" {
+			if err := os.WriteFile(dir+"/smaps_rollup", []byte(smapsRollup), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	writeProc(
+		"10",
+		"10 (driver) S 1 "+strings.Repeat("0 ", 9)+"100 100 0 0 0 0 0 0 0 0 1000",
+		"55f00000-7fff0000 ---p 00000000 00:00 0          [rollup]\nRss:                4000 kB\nPss:                1500 kB\nShared_Clean:       2500 kB\n",
+	)
+	writeProc(
+		"11",
+		"11 (chrome) S 10 "+strings.Repeat("0 ", 9)+"50 50 0 0 0 0 0 0 0 0 2000",
+		"55f00000-7fff0000 ---p 00000000 00:00 0          [rollup]\nRss:                8000 kB\nPss:                2200 kB\n",
+	)
+	writeProc(
+		"12",
+		"12 (helper) S 10 "+strings.Repeat("0 ", 9)+"20 20 0 0 0 0 0 0 0 0 500",
+		"",
+	)
+
+	samples, err := readProcProcessSamples(context.Background(), root)
+	if err != nil || len(samples) != 3 {
+		t.Fatalf("readProcProcessSamples = %+v, err=%v", samples, err)
+	}
+	byPID := map[int]processSample{}
+	for _, s := range samples {
+		byPID[s.PID] = s
+	}
+	pageBytes := int64(os.Getpagesize())
+	if s := byPID[10]; !s.PSSKnown || s.PSSKB != 1500 || s.RSSKB != 1500 || int64(s.VmRSSKB*1024) != 1000*pageBytes {
+		t.Fatalf("pid 10 sample = %+v", s)
+	}
+	if s := byPID[11]; !s.PSSKnown || s.PSSKB != 2200 || s.RSSKB != 2200 || int64(s.VmRSSKB*1024) != 2000*pageBytes {
+		t.Fatalf("pid 11 sample = %+v", s)
+	}
+	if s := byPID[12]; s.PSSKnown || s.PSSKB != 0 || int64(s.RSSKB*1024) != 500*pageBytes || s.VmRSSKB != s.RSSKB {
+		t.Fatalf("pid 12 fallback sample = %+v", s)
+	}
+
+	effectiveBytes, vmRSSBytes, pssBytes, pidCount := processTreeMemoryTotals(samples, 10)
+	wantEffective := int64(1500+2200)*1024 + 500*pageBytes
+	wantVmRSS := int64(1000+2000+500) * pageBytes
+	wantPSS := int64(1500+2200) * 1024
+	if pidCount != 3 || effectiveBytes != wantEffective || vmRSSBytes != wantVmRSS || pssBytes != wantPSS {
+		t.Fatalf("totals = (effective=%d, vmRSS=%d, pss=%d, pids=%d), want (%d, %d, %d, 3)", effectiveBytes, vmRSSBytes, pssBytes, pidCount, wantEffective, wantVmRSS, wantPSS)
+	}
+	if got := processTreeRSS(samples, 10); got != wantEffective {
+		t.Fatalf("processTreeRSS = %d, want %d", got, wantEffective)
+	}
+}
+
+const envTestMemoryAdmissionChild = "APEXLOAD_TEST_MEMORY_ADMISSION_CHILD"
+
+// TestBrowserMemoryAdmissionActual exercises real measureBrowserMemoryUsage and
+// resolvedBrowserMemoryLimit (not useTestEvidenceBudget) against live headless
+// Chromium contexts in a dedicated child process.
+func TestBrowserMemoryAdmissionActual(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live browser memory admission test in -short mode")
+	}
+	if os.Getenv(envTestMemoryAdmissionChild) == "1" {
+		runBrowserMemoryAdmissionChild(t)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprint(w, `<!doctype html><html><head><title>Memory Admission</title></head><body><h1 id="ready">ok</h1></body></html>`)
+	}))
+	defer server.Close()
+
+	cal := &Browser{}
+	if err := cal.Init(ctx, map[string]any{
+		"base_url":         server.URL,
+		"browser_engine":   "chromium",
+		"browser_headless": true,
+	}); err != nil {
+		requireBrowserRuntime(t, "chromium", err)
+	}
+	res, err := cal.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
+	if err != nil || !res.Success {
+		_ = cal.Teardown(context.Background())
+		t.Fatalf("calibration navigate: err=%v res=%+v", err, res)
+	}
+	breakdown, err := measureBrowserMemoryBreakdown(ctx)
+	_ = cal.Teardown(context.Background())
+	if err != nil || breakdown.TotalBytes <= 0 || breakdown.TreeBytes <= 0 {
+		t.Fatalf("calibration measureBrowserMemoryBreakdown = %+v, err=%v", breakdown, err)
+	}
+	// Allow Context 1 (plus >= 64 MiB headroom) in the child process while
+	// ensuring a subsequent context exceeds the limit once Context 1's memory
+	// and marginal reservations (128 MiB/context) are accounted for.
+	baselineMiB := breakdown.TotalBytes >> 20
+	limitMiB := max(baselineMiB+192, int64(320))
+	t.Logf(
+		"calibrated 1-context breakdown: total=%d MiB (gen_rss=%d MiB, gen_pss=%d MiB, tree=%d MiB, tree_vmrss=%d MiB, tree_pss=%d MiB, tree_pids=%d, cgroup_current=%d MiB, cgroup_limit=%d MiB) -> child %s=%d",
+		baselineMiB,
+		breakdown.GeneratorRSSBytes>>20,
+		breakdown.GeneratorPSSBytes>>20,
+		breakdown.TreeBytes>>20,
+		breakdown.TreeVmRSSBytes>>20,
+		breakdown.TreePSSBytes>>20,
+		breakdown.TreePIDCount,
+		breakdown.CgroupMemoryCurrentBytes>>20,
+		breakdown.CgroupMemoryLimitBytes>>20,
+		envBrowserMemoryLimitMB,
+		limitMiB,
+	)
+
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.v", "-test.run=^TestBrowserMemoryAdmissionActual$")
+	env := make([]string, 0, len(os.Environ())+2)
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, envBrowserMemoryLimitMB+"=") || strings.HasPrefix(kv, envTestMemoryAdmissionChild+"=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env,
+		envTestMemoryAdmissionChild+"=1",
+		envBrowserMemoryLimitMB+"="+strconv.FormatInt(limitMiB, 10),
+	)
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	t.Logf("child output:\n%s", string(out))
+	if err != nil {
+		t.Fatalf("memory admission child failed: %v", err)
+	}
+}
+
+func runBrowserMemoryAdmissionChild(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	limitBytes := resolvedBrowserMemoryLimit()
+	if limitBytes <= 0 {
+		t.Fatalf("resolvedBrowserMemoryLimit = %d, want > 0", limitBytes)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprint(w, `<!doctype html><html><head><title>Child Memory Admission</title></head><body><h1 id="ready">ok</h1></body></html>`)
+	}))
+	defer server.Close()
+
+	var admitted []*Browser
+	defer func() {
+		for _, b := range admitted {
+			_ = b.Teardown(context.Background())
+		}
+	}()
+
+	b1 := &Browser{}
+	if err := b1.Init(ctx, map[string]any{
+		"base_url":         server.URL,
+		"browser_engine":   "chromium",
+		"browser_headless": true,
+	}); err != nil {
+		t.Fatalf("b1 Init failed: %v", err)
+	}
+	admitted = append(admitted, b1)
+	if reason := b1.resourceLimitReason(); reason != "" {
+		t.Fatalf("b1 unexpectedly refused at admission: %q", reason)
+	}
+	res1, err := b1.Execute(ctx, &protocol.Action{Name: "open-1", Type: "browser_navigate", Target: "/"})
+	if err != nil || !res1.Success {
+		t.Fatalf("b1 navigate failed: err=%v res=%+v", err, res1)
+	}
+
+	// Wait past browserMemorySampleTTL so the next admission refreshes its
+	// sample against Context 1's live renderer process tree.
+	time.Sleep(browserMemorySampleTTL + 100*time.Millisecond)
+
+	breakdown, err := measureBrowserMemoryBreakdown(ctx)
+	if err != nil {
+		t.Fatalf("child measureBrowserMemoryBreakdown failed: %v", err)
+	}
+	t.Logf(
+		"child measured 1-context breakdown: total=%d MiB limit=%d MiB gen_rss=%d MiB gen_pss=%d MiB tree=%d MiB tree_vmrss=%d MiB tree_pss=%d MiB tree_pids=%d cgroup_current=%d MiB cgroup_limit=%d MiB",
+		breakdown.TotalBytes>>20,
+		limitBytes>>20,
+		breakdown.GeneratorRSSBytes>>20,
+		breakdown.GeneratorPSSBytes>>20,
+		breakdown.TreeBytes>>20,
+		breakdown.TreeVmRSSBytes>>20,
+		breakdown.TreePSSBytes>>20,
+		breakdown.TreePIDCount,
+		breakdown.CgroupMemoryCurrentBytes>>20,
+		breakdown.CgroupMemoryLimitBytes>>20,
+	)
+	if breakdown.TotalBytes <= 0 || breakdown.TreeBytes <= 0 || breakdown.TreePIDCount < 2 {
+		t.Fatalf("unexpected child memory breakdown: %+v", breakdown)
+	}
+	if runtime.GOOS == "linux" {
+		if breakdown.GeneratorPSSBytes <= 0 || breakdown.TreePSSBytes <= 0 {
+			t.Fatalf("linux smaps_rollup PSS missing in breakdown: %+v", breakdown)
+		}
+		if breakdown.TreeVmRSSBytes < breakdown.TreePSSBytes {
+			t.Fatalf("linux TreeVmRSSBytes (%d) < TreePSSBytes (%d)", breakdown.TreeVmRSSBytes, breakdown.TreePSSBytes)
+		}
+	}
+
+	var refused *Browser
+	for i := 2; i <= 8; i++ {
+		bn := &Browser{}
+		if err := bn.Init(ctx, map[string]any{
+			"base_url":         server.URL,
+			"browser_engine":   "chromium",
+			"browser_headless": true,
+		}); err != nil {
+			t.Fatalf("b%d Init returned error instead of admission outcome: %v", i, err)
+		}
+		admitted = append(admitted, bn)
+		if bn.resourceLimitReason() == resourceLimitAdmission {
+			refused = bn
+			t.Logf("context b%d refused by measured memory admission as expected", i)
+			break
+		}
+	}
+	if refused == nil {
+		t.Fatalf("expected a subsequent context to be refused by memory admission under limit %d MiB (stats=%+v)", limitBytes>>20, BrowserEvidenceStatsSnapshot())
+	}
+
+	stats := BrowserEvidenceStatsSnapshot()
+	t.Logf("child BrowserEvidenceStatsSnapshot: %+v", stats)
+	if stats.ContextsRefusedByMemory < 1 {
+		t.Fatalf("ContextsRefusedByMemory = %d, want >= 1", stats.ContextsRefusedByMemory)
+	}
+	if stats.ContextsUnmeasured != 0 {
+		t.Fatalf("ContextsUnmeasured = %d, want 0", stats.ContextsUnmeasured)
+	}
+	if stats.MemorySampleFailures != 0 {
+		t.Fatalf("MemorySampleFailures = %d, want 0", stats.MemorySampleFailures)
+	}
+
+	refusedRes, err := refused.Execute(ctx, &protocol.Action{Name: "open-refused", Type: "browser_navigate", Target: "/"})
+	if err != nil {
+		t.Fatalf("refused Execute returned error: %v", err)
+	}
+	if refusedRes.Success || !strings.Contains(refusedRes.ErrorMessage, resourceLimitAdmission) {
+		t.Fatalf("refused Execute result = %+v, want failure containing %q", refusedRes, resourceLimitAdmission)
+	}
+	if !slices.Contains(refusedRes.WarningCodes, "browser_resource_limit_"+resourceLimitAdmission) {
+		t.Fatalf("refused WarningCodes = %v, want browser_resource_limit_%s", refusedRes.WarningCodes, resourceLimitAdmission)
+	}
+
+	for _, b := range admitted {
+		_ = b.Teardown(context.Background())
+	}
+	admitted = nil
+	browserEvidenceBudget.mu.Lock()
+	liveAfterTeardown := len(browserEvidenceBudget.live)
+	browserEvidenceBudget.mu.Unlock()
+	if liveAfterTeardown != 0 {
+		t.Fatalf("live contexts after Teardown = %d, want 0", liveAfterTeardown)
 	}
 }

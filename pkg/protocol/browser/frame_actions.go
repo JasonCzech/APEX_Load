@@ -60,6 +60,14 @@ func (b *Browser) fillAction(ctx context.Context, action *protocol.Action, selec
 			return fmt.Errorf("browser_fill input_mode must be fill or type")
 		}
 	}
+	clear := true
+	if raw, set := action.Params["clear"]; set {
+		var ok bool
+		clear, ok = raw.(bool)
+		if !ok {
+			return fmt.Errorf("browser_fill clear must be a boolean")
+		}
+	}
 	delay, ok := actionParamFloatValue(action.Params, "typing_delay_ms")
 	if _, set := action.Params["typing_delay_ms"]; set && (!ok || math.IsNaN(delay) || math.IsInf(delay, 0) || math.Trunc(delay) != delay || delay < 0 || delay > 1000) {
 		return fmt.Errorf("browser_fill typing_delay_ms must be an integer between 0 and 1000")
@@ -78,8 +86,25 @@ func (b *Browser) fillAction(ctx context.Context, action *protocol.Action, selec
 			locator = b.currentPage().Locator(selector)
 		}
 		timeout := b.actionTimeout(action)
-		if err := locator.Fill("", playwright.LocatorFillOptions{Timeout: playwright.Float(b.timeoutMS(ctx, timeout))}); err != nil {
-			return err
+		if clear {
+			if err := locator.Fill("", playwright.LocatorFillOptions{Timeout: playwright.Float(b.timeoutMS(ctx, timeout))}); err != nil {
+				return err
+			}
+		} else {
+			if err := b.waitLocatorVisible(ctx, locator, timeout); err != nil {
+				return err
+			}
+			_, _ = locator.Evaluate(`el => {
+				if (typeof el.focus === "function") {
+					el.focus();
+				}
+				if (typeof el.value === "string" && typeof el.setSelectionRange === "function") {
+					try {
+						const len = el.value.length;
+						el.setSelectionRange(len, len);
+					} catch (_) {}
+				}
+			}`, nil, playwright.LocatorEvaluateOptions{Timeout: playwright.Float(b.timeoutMS(ctx, timeout))})
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -737,6 +762,143 @@ func (b *Browser) trySwitchWindow(action *protocol.Action) error {
 		}
 	}
 	return fmt.Errorf("browser_switch_window could not find page matching %q", target)
+}
+
+func (b *Browser) dispatchCloseWindow(ctx context.Context, action *protocol.Action) error {
+	timeout := b.actionTimeout(action)
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	closeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		err, retry := b.tryCloseWindow(closeCtx, action)
+		if err == nil || !retry {
+			return err
+		}
+		select {
+		case <-closeCtx.Done():
+			return err
+		case <-ticker.C:
+		}
+	}
+}
+
+func (b *Browser) tryCloseWindow(ctx context.Context, action *protocol.Action) (error, bool) {
+	pages := b.contextPages()
+	if len(pages) == 0 {
+		return fmt.Errorf("browser_close_window found no open pages"), false
+	}
+	targetPage, err, retry := b.selectWindowToClose(action, pages)
+	if err != nil {
+		return err, retry
+	}
+	if len(pages) <= 1 {
+		return fmt.Errorf("browser_close_window cannot close the last remaining page"), false
+	}
+	b.finalizePageDocuments(ctx, targetPage)
+	if err := targetPage.Close(); err != nil {
+		return fmt.Errorf("browser_close_window failed to close page: %w", err), false
+	}
+	b.censorDocumentEvidence(targetPage, "context_closed")
+	b.removePage(targetPage)
+	b.mu.Lock()
+	if b.refusedPage == targetPage {
+		b.refusedPage, b.refusedURL, b.refusal = nil, "", ""
+	}
+	b.mu.Unlock()
+	if active := b.currentPage(); active != nil {
+		b.registerPage(active, true)
+	} else if remaining := b.contextPages(); len(remaining) > 0 {
+		b.registerPage(remaining[len(remaining)-1], true)
+	}
+	b.currentFrameSelector = ""
+	return nil, false
+}
+
+func (b *Browser) selectWindowToClose(action *protocol.Action, pages []playwright.Page) (playwright.Page, error, bool) {
+	if action != nil && action.Params != nil {
+		for _, key := range []string{"index", "page_index", "window_index"} {
+			if raw, exists := action.Params[key]; exists {
+				index, ok := intFromAny(raw)
+				if !ok || index < 0 {
+					return nil, fmt.Errorf("browser_close_window index %q is out of range", fmt.Sprint(raw)), false
+				}
+				if index >= len(pages) {
+					return nil, fmt.Errorf("browser_close_window index %q is out of range", fmt.Sprint(raw)), true
+				}
+				return pages[index], nil, false
+			}
+		}
+		if indexRaw := firstActionString(action.Params, "index", "page_index", "window_index"); indexRaw != "" {
+			index, err := strconv.Atoi(indexRaw)
+			if err != nil || index < 0 {
+				return nil, fmt.Errorf("browser_close_window index %q is out of range", indexRaw), false
+			}
+			if index >= len(pages) {
+				return nil, fmt.Errorf("browser_close_window index %q is out of range", indexRaw), true
+			}
+			return pages[index], nil, false
+		}
+	}
+	target := ""
+	if action != nil {
+		target = strings.TrimSpace(action.Target)
+	}
+	if target != "" {
+		if index, err := strconv.Atoi(target); err == nil {
+			if index < 0 {
+				return nil, fmt.Errorf("browser_close_window target index %q is out of range", target), false
+			}
+			if index >= len(pages) {
+				return nil, fmt.Errorf("browser_close_window target index %q is out of range", target), true
+			}
+			return pages[index], nil, false
+		}
+	}
+	if target == "" && action != nil {
+		target = firstActionString(action.Params, "target", "url_contains", "title_contains", "name")
+	}
+	if target == "" {
+		if active := b.currentPage(); active != nil {
+			return active, nil, false
+		}
+		return pages[len(pages)-1], nil, false
+	}
+	for _, page := range pages {
+		title := ""
+		if pageTitle, err := page.Title(); err == nil {
+			title = pageTitle
+		}
+		if strings.Contains(page.URL(), target) || strings.Contains(title, target) {
+			return page, nil, false
+		}
+	}
+	return nil, fmt.Errorf("browser_close_window could not find page matching %q", target), true
+}
+
+func (b *Browser) finalizePageDocuments(ctx context.Context, page playwright.Page) {
+	if page == nil {
+		return
+	}
+	b.mu.Lock()
+	enabled := b.documentMetricsEnabled
+	finalizer := b.evidence.finalizer
+	b.mu.Unlock()
+	if !enabled || finalizer == "" {
+		return
+	}
+	finalizeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	stopClose := context.AfterFunc(finalizeCtx, func() {
+		_ = page.Close()
+	})
+	defer stopClose()
+	b.finalizeDocumentFrameBatch(finalizeCtx, page.Frames(), finalizer)
 }
 
 func (b *Browser) contextPages() []playwright.Page {

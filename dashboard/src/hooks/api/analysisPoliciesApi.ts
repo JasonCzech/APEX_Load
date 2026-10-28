@@ -28,6 +28,21 @@ export interface AnalysisPolicySave {
   definition: unknown
 }
 
+export interface AnalysisJourneyStepOption {
+  step_path: string
+  kind: 'transaction' | 'action'
+  name: string
+  action_type: string
+}
+
+export interface AnalysisJourneyScriptSteps {
+  script_id: string
+  script_name: string
+  protocol: string
+  structure_sha256?: string
+  steps: AnalysisJourneyStepOption[]
+}
+
 const POLICY_PAGE = 100
 const POLICIES_PER_KIND = 1000
 
@@ -56,5 +71,8 @@ export const analysisPoliciesApi = {
   },
   remove(projectId: string, id: string, revision: number) {
     return request<AnalysisPolicyRecord>(`/analysis/policies/${encodeURIComponent(id)}?${scoped(projectId, { revision: String(revision) })}`, { method: 'DELETE' })
+  },
+  listJourneySteps(projectId: string, signal?: AbortSignal) {
+    return request<AnalysisJourneyScriptSteps[]>(`/analysis/journey-steps?${scoped(projectId)}`, { signal })
   },
 }

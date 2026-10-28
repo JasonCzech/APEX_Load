@@ -1172,20 +1172,22 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setScheduleDraftBaseline(previous => ({ ...previous, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' }))
   }, [editingScheduleId, scheduleDefaults, scheduleDefaultsStatus])
 
-  const schedulePreviewKey = JSON.stringify([activeProjectID, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
+  const scheduleAnalysisPolicyProblem = runPolicySelectionProblem(scheduleDraft.analysis_policy_selections)
+  const schedulePreviewKey = JSON.stringify([activeProjectID, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until, scheduleDraft.analysis_policy_selections])
   const currentSchedulePreview = schedulePreview?.key === schedulePreviewKey ? schedulePreview : null
-  const schedulePreviewPending = Boolean(scenarioId && scheduleDraft.cron_expr.trim() && !currentSchedulePreview)
+  const schedulePreviewPending = Boolean(scenarioId && scheduleDraft.cron_expr.trim() && !scheduleAnalysisPolicyProblem && !currentSchedulePreview)
   const scheduleFormError = !editingScheduleId && scheduleDefaultsStatus !== 'ready' ? 'System scheduling defaults are not verified.'
     : !scheduleDraft.name.trim() ? 'Enter a schedule name.'
     : !scheduleDraft.cron_expr.trim() ? 'Enter a schedule frequency or cron expression.'
-      : currentSchedulePreview?.error || ''
+    : scheduleAnalysisPolicyProblem
+      || currentSchedulePreview?.error || ''
 
   // Live "next runs" preview: re-fetch (debounced) from the backend so the
   // shown fire times use the exact production cron evaluator (tz/DST/windows/
   // pause/Quartz specifiers) and cannot diverge from what the scheduler will do.
   useEffect(() => {
     const cron = scheduleDraft.cron_expr.trim()
-    if (!scenarioId || !cron || !canManageTests || typeof api.previewScenarioSchedule !== 'function') {
+    if (!scenarioId || !cron || scheduleAnalysisPolicyProblem || !canManageTests || typeof api.previewScenarioSchedule !== 'function') {
       setSchedulePreview(null)
       return
     }
@@ -1202,6 +1204,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         availability_windows: scheduleWindowsToPayload(scheduleDraft.availability_windows, scheduleDraft.timezone),
         disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
         disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
+        ...(scheduleDraft.analysis_policy_selections !== undefined ? { analysis_policy_selections: cloneRunPolicySelections(scheduleDraft.analysis_policy_selections) } : {}),
       }, 5).then(result => {
         if (!cancelled) setSchedulePreview({ key: schedulePreviewKey, occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '', clockChanges: result.clock_changes || [] })
       }).catch(err => {
@@ -1209,7 +1212,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       })
     }, 400)
     return () => { cancelled = true; window.clearTimeout(handle) }
-  }, [api, canManageTests, schedulePreviewKey, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
+  }, [api, canManageTests, scheduleAnalysisPolicyProblem, schedulePreviewKey, scenarioId, scheduleDraft.analysis_policy_selections, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
 
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
   const effectiveRunDuration = useMemo(() => getEffectiveRunDuration(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
@@ -2691,6 +2694,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 	  availability_windows: scheduleWindowsToPayload(scheduleDraft.availability_windows, scheduleDraft.timezone),
 	  disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
 	  disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
+	  ...(scheduleDraft.analysis_policy_selections !== undefined ? { analysis_policy_selections: cloneRunPolicySelections(scheduleDraft.analysis_policy_selections) } : {}),
 	  expected_revision: editingScheduleId ? scheduleDraft.revision : undefined,
 	}
 	try {
@@ -2731,6 +2735,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         availability_windows: scheduleWindowsToDraft(schedule.availability_windows),
         disabled_from: schedule.disabled_from ? formatDatetimeLocalValue(new Date(schedule.disabled_from)) : '',
         disabled_until: schedule.disabled_until ? formatDatetimeLocalValue(new Date(schedule.disabled_until)) : '',
+        ...(schedule.analysis_policy_selections !== undefined ? { analysis_policy_selections: cloneRunPolicySelections(schedule.analysis_policy_selections) } : {}),
       }
       replaceScheduleDraft(nextDraft)
     })
@@ -3113,6 +3118,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   </div>
                   <input className="settings-input" aria-labelledby="schedule-run-name-label" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
+                <RunPolicySelector
+                  projectId={activeProjectID}
+                  value={scheduleDraft.analysis_policy_selections}
+                  onChange={next => setScheduleDraft(prev => ({ ...prev, analysis_policy_selections: next }))}
+                  disabled={!canManageSchedules || scheduleSubmitting}
+                />
                 <section className="new-test-schedule-policy" aria-label="Effective schedule policies">
                   <h4>Effective schedule policies</h4>
                   {!editingScheduleId && scheduleDefaultsStatus !== 'ready' && <p role="alert">Scheduling defaults {scheduleDefaultsStatus === 'loading' ? 'are loading' : 'could not be loaded'}. Save is unavailable until they are verified.<button type="button" className="btn btn-secondary btn-sm" onClick={() => setScheduleDefaultsRetry(value => value + 1)}>Retry scheduling defaults</button></p>}
@@ -3260,6 +3271,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                 <div className="schedule-governance-chips">
                                   <span className="script-health-token">{formatScheduleToken(item.approval_policy || 'auto')}</span>
                                   <span className="script-health-token">{formatScheduleToken(item.missed_run_policy || 'skip')}</span>
+                                  {item.analysis_policy_selections?.browser && (
+                                    <span className="script-health-token">browser policy r{item.analysis_policy_selections.browser.revision}</span>
+                                  )}
+                                  {item.analysis_policy_selections?.journey && (
+                                    <span className="script-health-token">journey policy r{item.analysis_policy_selections.journey.revision}</span>
+                                  )}
                                 </div>
                               </td>
                               <td>
@@ -3689,7 +3706,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   <RunTraceContextSelector value={traceContext} onChange={setTraceContext} suggest={Boolean(elkConnectionId || dynatraceConnectionId || (monitorBindings?.length ?? 0) > 0)} />
                   </div>
                 </details>
-                <RunPolicySelector projectId={activeProjectID} value={analysisPolicySelections} onChange={setAnalysisPolicySelections} disabled={!canManageTests || creating} />
+                {pageMode !== 'schedules' && <RunPolicySelector projectId={activeProjectID} value={analysisPolicySelections} onChange={setAnalysisPolicySelections} disabled={!canManageTests || creating} />}
               </div>
             </section>
 
