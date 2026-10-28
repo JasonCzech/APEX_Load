@@ -21,7 +21,7 @@ async function startManagedChainTarget() {
     res.end('<!doctype html><html><head><title>Managed Chain Fixture</title></head><body>'
       + '<button id="go" type="button">Go</button><div id="status">idle</div>'
       + '<script>document.getElementById("go").addEventListener("click",function(){'
-      + 'fetch("/clicked?token=secret-query-token").then(function(){document.getElementById("status").textContent="clicked";});'
+      + 'fetch("/clicked?token=secret-query-token").then(function(r){return r.text();}).then(function(){setTimeout(function(){document.getElementById("status").textContent="clicked";},100);});'
       + '});</script></body></html>')
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))

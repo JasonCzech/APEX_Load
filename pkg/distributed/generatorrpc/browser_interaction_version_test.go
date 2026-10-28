@@ -93,6 +93,7 @@ func TestBrowserInteractionVersionStagesExactOutputWithoutTargetTraffic(t *testi
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(200) }))
 	defer target.Close()
 	service := newIsolatedService(t, 10, WithExecution())
+	defer shutdownSupervisionTestService(t, service)
 	for _, version := range []uint32{0, 1, 2, 3, 4} {
 		id := fmt.Sprintf("interaction-version-%d", version)
 		script := fmt.Sprintf("{\"name\":\"versioned\",\"protocol\":\"browser\",\"config\":{\"base_url\":%q,\"browser\":{\"capture_interactions\":true}},\"actions\":[{\"name\":\"open\",\"type\":\"browser_navigate\",\"target\":\"/\"}]}", target.URL)
