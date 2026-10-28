@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -143,6 +144,120 @@ func TestJavaHTTPVersionedTimingPreservesTimerResolution(t *testing.T) {
 		legacy, observed := base64OperationMeasurement(elapsed)
 		if legacy != max(elapsed, time.Nanosecond) || observed != float64(elapsed)/float64(time.Millisecond) {
 			t.Fatal(elapsed, legacy, observed)
+		}
+	}
+}
+
+func TestJavaHTTPSerializedRepresentationVsHTTPBodyAndContainedFootprint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	// 1. Embedded opaque-byte mode: serialized_representation_vs_http_body is computed with explicit compression & units, and ObjectFootprint stays unavailable_embedded_opaque_bytes.
+	embedded := &JavaHTTP{}
+	if err := embedded.Init(context.Background(), map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	defer embedded.Teardown(context.Background())
+
+	rawPayload := bytes.Repeat([]byte("java-serialized-payload-"), 16)
+	encodedBody := base64.StdEncoding.EncodeToString(rawPayload)
+	resIdentity, err := embedded.Execute(context.Background(), &protocol.Action{
+		Name:   "identity-call",
+		Method: "POST",
+		Target: server.URL,
+		Body:   []byte(encodedBody),
+	})
+	if err != nil || resIdentity == nil || resIdentity.ServerTelemetry == nil || resIdentity.ServerTelemetry.JavaHTTP == nil {
+		t.Fatalf("identity call failed: %v", err)
+	}
+	diagIdentity := resIdentity.ServerTelemetry.JavaHTTP
+	if diagIdentity.ObjectFootprint != "unavailable_embedded_opaque_bytes" || diagIdentity.ContainedObjectFootprint != nil {
+		t.Fatalf("expected embedded opaque-byte footprint unavailable, got %+v", diagIdentity)
+	}
+	cmpIdentity := diagIdentity.SerializedRepresentationVsHTTPBody()
+	if !cmpIdentity.Available || cmpIdentity.Compression != "identity" || cmpIdentity.AppliedRequestCompression != "none" || cmpIdentity.BytesUnit != "bytes" || cmpIdentity.RatioUnit != "ratio" {
+		t.Fatalf("unexpected identity comparison: %+v", cmpIdentity)
+	}
+	if cmpIdentity.DecodedRepresentationBytes == nil || *cmpIdentity.DecodedRepresentationBytes != int64(len(rawPayload)) || cmpIdentity.HTTPBodyBytes == nil || *cmpIdentity.HTTPBodyBytes != int64(len(rawPayload)) || cmpIdentity.DeltaBytes == nil || *cmpIdentity.DeltaBytes != 0 {
+		t.Fatalf("unexpected identity byte comparison: %+v", cmpIdentity)
+	}
+	if cmpIdentity.BodyPerRepresentationRatio == nil || *cmpIdentity.BodyPerRepresentationRatio != 1.0 {
+		t.Fatalf("expected ratio 1.0, got %+v", cmpIdentity.BodyPerRepresentationRatio)
+	}
+
+	resGzip, err := embedded.Execute(context.Background(), &protocol.Action{
+		Name:   "gzip-call",
+		Method: "POST",
+		Target: server.URL,
+		Body:   []byte(encodedBody),
+		Params: map[string]any{"content_encoding": "gzip"},
+	})
+	if err != nil || resGzip == nil || resGzip.ServerTelemetry == nil || resGzip.ServerTelemetry.JavaHTTP == nil {
+		t.Fatalf("gzip call failed: %v", err)
+	}
+	cmpGzip := resGzip.ServerTelemetry.JavaHTTP.SerializedRepresentationVsHTTPBody()
+	if !cmpGzip.Available || cmpGzip.Compression != "gzip" || cmpGzip.BodyPerRepresentationRatio == nil || *cmpGzip.BodyPerRepresentationRatio >= 1.0 {
+		t.Fatalf("expected compressed body < decoded representation, got %+v", cmpGzip)
+	}
+
+	resEmpty, err := embedded.Execute(context.Background(), &protocol.Action{
+		Name:   "empty-call",
+		Method: "POST",
+		Target: server.URL,
+	})
+	if err != nil || resEmpty == nil || resEmpty.ServerTelemetry == nil || resEmpty.ServerTelemetry.JavaHTTP == nil {
+		t.Fatalf("empty call failed: %v", err)
+	}
+	cmpEmpty := resEmpty.ServerTelemetry.JavaHTTP.SerializedRepresentationVsHTTPBody()
+	if cmpEmpty.Available || cmpEmpty.BodyPerRepresentationRatio != nil || cmpEmpty.UnavailableReason != "zero_decoded_representation_bytes" {
+		t.Fatalf("expected zero-decoded-bytes ratio to be unavailable, got %+v", cmpEmpty)
+	}
+	var emptySummary *protocol.JavaHTTPSummary
+	protocol.MergeJavaHTTPDiagnostic(&emptySummary, resEmpty.ServerTelemetry.JavaHTTP)
+	cmpEmptySummary := emptySummary.SerializedRepresentationVsHTTPBody()
+	if cmpEmptySummary.Available || cmpEmptySummary.BodyPerRepresentationRatio != nil || cmpEmptySummary.UnavailableReason != "zero_or_overflow_representation_bytes" {
+		t.Fatalf("expected zero-decoded-bytes summary ratio to be unavailable, got %+v", cmpEmptySummary)
+	}
+
+	// 2. Opt-in Contained JVM Object-Footprint Helper when JDK is available (using float64 config numbers as produced by json.Unmarshal).
+	if _, err := javarunner.ResolveJDK(context.Background(), javarunner.ResolveOptions{}); err == nil {
+		withFootprint := &JavaHTTP{}
+		if err := withFootprint.Init(context.Background(), map[string]any{
+			"java_http_footprint_fixture":      "approved_serializable_record",
+			"java_http_footprint_array_length": float64(256),
+			"java_http_footprint_chain_depth":  float64(8),
+			"java_http_footprint_max_nodes":    float64(512),
+			"java_http_footprint_max_depth":    float64(16),
+			"java_http_footprint_run_codec":    true,
+		}); err != nil {
+			t.Fatalf("Init with footprint helper: %v", err)
+		}
+		defer withFootprint.Teardown(context.Background())
+
+		resFp, err := withFootprint.Execute(context.Background(), &protocol.Action{
+			Name:   "footprint-call",
+			Method: "POST",
+			Target: server.URL,
+			Body:   []byte(encodedBody),
+		})
+		if err != nil || resFp == nil || !resFp.Success || resFp.ServerTelemetry == nil || resFp.ServerTelemetry.JavaHTTP == nil {
+			t.Fatalf("Execute with footprint helper failed: %+v err=%v", resFp, err)
+		}
+		fp := resFp.ServerTelemetry.JavaHTTP.ContainedObjectFootprint
+		if fp == nil || !fp.Valid() || fp.ReachableGraph.MaxNodes != 512 || fp.ReachableGraph.MaxDepth != 16 {
+			t.Fatalf("expected valid ContainedObjectFootprint with float64-configured bounds, got %+v", fp)
+		}
+		if !fp.ShallowObject.Available || fp.ShallowObject.Method != protocol.JavaHTTPShallowObjectMethodV1 || fp.ShallowObject.Bytes == nil || *fp.ShallowObject.Bytes <= 0 {
+			t.Fatalf("unexpected shallow footprint: %+v", fp.ShallowObject)
+		}
+		if !fp.ReachableGraph.Available || fp.ReachableGraph.Method != protocol.JavaHTTPReachableGraphMethodV1 || fp.ReachableGraph.Bytes == nil || *fp.ReachableGraph.Bytes <= *fp.ShallowObject.Bytes {
+			t.Fatalf("unexpected reachable graph footprint: %+v", fp.ReachableGraph)
+		}
+		if !fp.CodecExecuted || fp.JavaSerializationMs == nil || fp.JavaDeserializationMs == nil {
+			t.Fatalf("expected codec timings on approved_serializable_record, got %+v", fp)
 		}
 	}
 }

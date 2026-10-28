@@ -2128,6 +2128,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2361,6 +2431,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2594,6 +2734,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -2827,6 +3037,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3060,6 +3340,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3293,6 +3643,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3528,6 +3948,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3761,6 +4251,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -3994,6 +4554,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -5137,6 +5767,76 @@ export interface operations {
                   "enclosing_ms"?: number;
                   "samples"?: number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples"?: number;
+                  "java_deserialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_reachable_graph_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "java_serialization_ms"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "java_shallow_object_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth"?: number;
+                  "max_nodes"?: number;
+                  "reachable_graph_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "reachable_graph_method"?: string;
+                  "retained_heap_note"?: string;
+                  "samples"?: number;
+                  "serialized_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_available_samples"?: number;
+                  "shallow_fallback_bytes"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                  "shallow_method"?: string;
+                  "traversal_exhausted_samples"?: number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples"?: number;
+                  "unique_objects"?: {
+                    "count"?: number;
+                    "max_bytes"?: number;
+                    "min_bytes"?: number;
+                    "overflow"?: boolean;
+                    "sum_bytes"?: number;
+                  };
+                }) | null;
                 "decoded_per_encoded"?: {
                   "denominator_bytes"?: number;
                   "numerator_bytes"?: number;
@@ -35447,6 +36147,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -35945,6 +36715,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -41468,6 +42308,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -42157,6 +43067,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -49031,6 +50011,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -49323,6 +50373,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -50316,6 +51436,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -51046,6 +52236,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -51354,6 +52614,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -51813,6 +53143,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -52129,6 +53529,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -52425,6 +53895,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -52770,6 +54310,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -53288,6 +54898,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -65701,6 +67381,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -66199,6 +67949,76 @@ export interface operations {
                     "enclosing_ms": number;
                     "samples": number;
                   };
+                  "contained_object_footprint"?: ({
+                    "codec_samples": number;
+                    "java_deserialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_reachable_graph_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "java_serialization_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "java_shallow_object_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "jvm_version"?: string;
+                    "max_depth": number;
+                    "max_nodes": number;
+                    "reachable_graph_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "reachable_graph_method": string;
+                    "retained_heap_note": string;
+                    "samples": number;
+                    "serialized_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_available_samples": number;
+                    "shallow_fallback_bytes": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                    "shallow_method": string;
+                    "traversal_exhausted_samples": number;
+                    "unavailable_reason"?: string;
+                    "unavailable_samples": number;
+                    "unique_objects": {
+                      "count": number;
+                      "max_bytes": number;
+                      "min_bytes": number;
+                      "overflow"?: boolean;
+                      "sum_bytes": number;
+                    };
+                  }) | null;
                   "decoded_per_encoded": {
                     "denominator_bytes": number;
                     "numerator_bytes": number;
@@ -69875,6 +71695,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -70601,6 +72491,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -70909,6 +72869,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -71368,6 +73398,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -71684,6 +73784,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -71980,6 +74150,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -72325,6 +74565,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -72843,6 +75153,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -75201,6 +77581,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -75890,6 +78340,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -80394,6 +82914,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -80880,6 +83470,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -81429,6 +84089,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -81670,6 +84400,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -81911,6 +84711,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82152,6 +85022,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82393,6 +85333,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82634,6 +85644,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -82877,6 +85957,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -83118,6 +86268,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -83359,6 +86579,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -85158,6 +88448,76 @@ export interface operations {
                   "enclosing_ms": number;
                   "samples": number;
                 };
+                "contained_object_footprint"?: ({
+                  "codec_samples": number;
+                  "java_deserialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_reachable_graph_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "java_serialization_ms": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "java_shallow_object_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "jvm_version"?: string;
+                  "max_depth": number;
+                  "max_nodes": number;
+                  "reachable_graph_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "reachable_graph_method": string;
+                  "retained_heap_note": string;
+                  "samples": number;
+                  "serialized_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_available_samples": number;
+                  "shallow_fallback_bytes": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                  "shallow_method": string;
+                  "traversal_exhausted_samples": number;
+                  "unavailable_reason"?: string;
+                  "unavailable_samples": number;
+                  "unique_objects": {
+                    "count": number;
+                    "max_bytes": number;
+                    "min_bytes": number;
+                    "overflow"?: boolean;
+                    "sum_bytes": number;
+                  };
+                }) | null;
                 "decoded_per_encoded": {
                   "denominator_bytes": number;
                   "numerator_bytes": number;
@@ -92347,6 +95707,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -92639,6 +96069,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -93632,6 +97132,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -94362,6 +97932,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -94670,6 +98310,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -95129,6 +98839,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -95445,6 +99225,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -95741,6 +99591,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -96086,6 +100006,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -96604,6 +100594,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -115804,6 +119864,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -116096,6 +120226,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -117089,6 +121289,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -117819,6 +122089,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -118127,6 +122467,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -118586,6 +122996,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -118902,6 +123382,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -119198,6 +123748,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -119543,6 +124163,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -120061,6 +124751,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -136488,6 +141248,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -137177,6 +142007,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -138890,6 +143790,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -139579,6 +144549,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -141292,6 +146332,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -141981,6 +147091,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -143694,6 +148874,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -144383,6 +149633,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -146096,6 +151416,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -146785,6 +152175,76 @@ export interface operations {
                         "enclosing_ms": number;
                         "samples": number;
                       };
+                      "contained_object_footprint"?: ({
+                        "codec_samples": number;
+                        "java_deserialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_reachable_graph_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "java_serialization_ms": {
+                          "buckets": Array<number>;
+                          "count": number;
+                          "max": number;
+                          "min": number;
+                          "sum": number;
+                        };
+                        "java_shallow_object_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "jvm_version"?: string;
+                        "max_depth": number;
+                        "max_nodes": number;
+                        "reachable_graph_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "reachable_graph_method": string;
+                        "retained_heap_note": string;
+                        "samples": number;
+                        "serialized_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_available_samples": number;
+                        "shallow_fallback_bytes": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                        "shallow_method": string;
+                        "traversal_exhausted_samples": number;
+                        "unavailable_reason"?: string;
+                        "unavailable_samples": number;
+                        "unique_objects": {
+                          "count": number;
+                          "max_bytes": number;
+                          "min_bytes": number;
+                          "overflow"?: boolean;
+                          "sum_bytes": number;
+                        };
+                      }) | null;
                       "decoded_per_encoded": {
                         "denominator_bytes": number;
                         "numerator_bytes": number;
@@ -149912,6 +155372,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -150204,6 +155734,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -151197,6 +156797,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -151927,6 +157597,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -152235,6 +157975,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -152694,6 +158504,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -153010,6 +158890,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -153306,6 +159256,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -153651,6 +159671,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -154169,6 +160259,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -177754,6 +183914,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -178046,6 +184276,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -179039,6 +185339,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -179769,6 +186139,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -180077,6 +186517,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -180536,6 +187046,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -180852,6 +187432,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -181148,6 +187798,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -181493,6 +188213,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;
@@ -182011,6 +188801,76 @@ export interface operations {
                       "enclosing_ms": number;
                       "samples": number;
                     };
+                    "contained_object_footprint"?: ({
+                      "codec_samples": number;
+                      "java_deserialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_reachable_graph_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "java_serialization_ms": {
+                        "buckets": Array<number>;
+                        "count": number;
+                        "max": number;
+                        "min": number;
+                        "sum": number;
+                      };
+                      "java_shallow_object_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "jvm_version"?: string;
+                      "max_depth": number;
+                      "max_nodes": number;
+                      "reachable_graph_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "reachable_graph_method": string;
+                      "retained_heap_note": string;
+                      "samples": number;
+                      "serialized_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_available_samples": number;
+                      "shallow_fallback_bytes": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                      "shallow_method": string;
+                      "traversal_exhausted_samples": number;
+                      "unavailable_reason"?: string;
+                      "unavailable_samples": number;
+                      "unique_objects": {
+                        "count": number;
+                        "max_bytes": number;
+                        "min_bytes": number;
+                        "overflow"?: boolean;
+                        "sum_bytes": number;
+                      };
+                    }) | null;
                     "decoded_per_encoded": {
                       "denominator_bytes": number;
                       "numerator_bytes": number;

@@ -62,7 +62,9 @@ func baselineJavaHTTPValues(m *BaselineMeasurement) ([]baselineJavaValue, string
 		p        protocol.JavaHTTPBytePair
 		response bool
 	}{
-		{"Decoded / encoded request", s.DecodedPerEncoded, false}, {"Prepared / decoded request", s.PreparedPerDecoded, false}, {"Base64 / retained response", s.Base64PerRetained, true},
+		{"Decoded / encoded request", s.DecodedPerEncoded, false},
+		{"Prepared / decoded request", s.PreparedPerDecoded, false},
+		{"Base64 / retained response", s.Base64PerRetained, true},
 	} {
 		value, ok := item.p.Ratio()
 		ok = ok && item.p.Samples == s.Samples && (!item.response || completeResponses)
@@ -77,6 +79,21 @@ func baselineJavaHTTPValues(m *BaselineMeasurement) ([]baselineJavaValue, string
 		value, ok := item.d.Quantile(.95)
 		values = append(values, baselineJavaValue{item.name + " approximate P95", "ms", value, ok && item.d.Count == s.Samples})
 	}
+	if s.ContainedObjectFootprint != nil {
+		fp := s.ContainedObjectFootprint
+		shallowMean, shallowOK := fp.ShallowObjectBytes.MeanBytes()
+		shallowOK = shallowOK && fp.ShallowAvailableSamples == s.Samples
+		values = append(values, baselineJavaValue{"java_shallow_object_bytes mean", "bytes", shallowMean, shallowOK})
+		graphMean, graphOK := fp.ReachableGraphBytes.MeanBytes()
+		graphOK = graphOK && fp.ShallowAvailableSamples == s.Samples && fp.TraversalExhaustedSamples == 0
+		values = append(values, baselineJavaValue{"java_reachable_graph_bytes mean", "bytes", graphMean, graphOK})
+		if fp.CodecSamples > 0 {
+			serP95, serOK := fp.JavaSerializationMs.Quantile(.95)
+			values = append(values, baselineJavaValue{"java_serialization_ms approximate P95", "ms", serP95, serOK && fp.CodecSamples == s.Samples})
+			deserP95, deserOK := fp.JavaDeserializationMs.Quantile(.95)
+			values = append(values, baselineJavaValue{"java_deserialization_ms approximate P95", "ms", deserP95, deserOK && fp.CodecSamples == s.Samples})
+		}
+	}
 	return values, compression
 }
 func baselineJavaHTTPFindings(row BaselineComparisonRow, baselineID string, cell BaselineComparisonCell, policy BaselineComparisonPolicy) []BaselineComparisonFinding {
@@ -88,7 +105,7 @@ func baselineJavaHTTPFindings(row BaselineComparisonRow, baselineID string, cell
 	unverified := func(metric, reason string) BaselineComparisonFinding {
 		return BaselineComparisonFinding{BaselineID: baselineID, RowID: row.ID, Category: "transaction", Metric: "Java " + metric, Message: row.Group + " / " + row.Name + ": " + reason + "; no representation comparison scored", Status: "unverified"}
 	}
-	if len(current) == 0 || len(baseline) == 0 || identity != baseIdentity || len(cell.Qualification) > 0 || row.Window == nil || cell.Window == nil {
+	if len(current) == 0 || len(baseline) == 0 || len(current) != len(baseline) || identity != baseIdentity || len(cell.Qualification) > 0 || row.Window == nil || cell.Window == nil {
 		return []BaselineComparisonFinding{unverified("representation coverage", "Missing, partial or incompatible action/compression/window evidence")}
 	}
 	var findings []BaselineComparisonFinding
@@ -111,7 +128,11 @@ func baselineJavaHTTPFindings(row BaselineComparisonRow, baselineID string, cell
 		if pct != nil {
 			change = fmt.Sprintf("%+.3f%%", *pct)
 		}
-		message := fmt.Sprintf("%s / %s: %s %.6g vs %.6g %s (%+.6g %s; %s); %d/%d observed actions; request compression %s. Advisory evidence only; no acceptance threshold or causal claim.", row.Group, row.Name, a.name, a.value, b.value, a.unit, *delta, a.unit, change, baselineJavaHTTPPopulation(row.Current), baselineJavaHTTPPopulation(cell.Measurement), identity)
+		metricDetail := a.name
+		if a.name == "Prepared / decoded request" {
+			metricDetail = a.name + " (serialized_representation_vs_http_body)"
+		}
+		message := fmt.Sprintf("%s / %s: %s %.6g vs %.6g %s (%+.6g %s; %s); %d/%d observed actions; request compression %s. Advisory evidence only; no acceptance threshold or causal claim.", row.Group, row.Name, metricDetail, a.value, b.value, a.unit, *delta, a.unit, change, baselineJavaHTTPPopulation(row.Current), baselineJavaHTTPPopulation(cell.Measurement), identity)
 		findings = append(findings, BaselineComparisonFinding{BaselineID: baselineID, RowID: row.ID, Category: "transaction", Metric: "Java " + a.name, Message: message, Status: "review"})
 	}
 	return findings

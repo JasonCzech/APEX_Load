@@ -64,23 +64,23 @@ func TestJavaHTTPBaselineFindingsPreservePairedUnitsAndQualification(t *testing.
 	row := BaselineComparisonRow{ID: "java", Name: "request", Group: "group", Protocol: "java_http", Source: "action", Unit: "ms", Current: a, Window: window, Baselines: map[string]BaselineComparisonCell{"b": {Measurement: b, Window: window}}}
 	out := &BaselineComparisonSnapshot{Policy: defaultBaselineComparisonPolicy(), Baselines: []BaselineRunIdentity{{ID: "b"}}, Transactions: []BaselineComparisonRow{row}}
 	buildBaselineFindings(out)
-	found := map[string]bool{}
+	found := map[string]int{}
 	for _, f := range out.Findings {
 		if strings.HasPrefix(f.Metric, "Java ") {
-			found[f.Metric] = true
+			found[f.Metric]++
 			if f.Status != "review" || !strings.Contains(f.Message, "Advisory evidence only") {
 				t.Fatal("unqualified acceptance claim", f)
 			}
 			if strings.Contains(f.Metric, "body mean") && !strings.Contains(f.Message, "bytes") {
 				t.Fatal("wrong byte unit", f)
 			}
-			if strings.Contains(f.Metric, "Prepared / decoded") && !strings.Contains(f.Message, "2 vs 1 ratio") {
+			if strings.Contains(f.Metric, "Prepared / decoded") && (!strings.Contains(f.Message, "2 vs 1 ratio") || !strings.Contains(f.Message, "serialized_representation_vs_http_body")) {
 				t.Fatal("ratio", f)
 			}
 		}
 	}
-	if !found["Java Prepared request body mean"] || !found["Java Prepared / decoded request"] {
-		t.Fatal("missing Java findings", found)
+	if found["Java Prepared request body mean"] != 1 || found["Java Prepared / decoded request"] != 1 || len(found) != 2 {
+		t.Fatal("missing or duplicate Java findings", found)
 	}
 	for name, change := range map[string]func(*BaselineComparisonRow){
 		"legacy":  func(r *BaselineComparisonRow) { r.Current = &BaselineMeasurement{Samples: 100} },

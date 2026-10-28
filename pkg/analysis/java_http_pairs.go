@@ -18,7 +18,7 @@ type JavaHTTPPairedSums struct {
 func EvaluateJavaHTTPPairedSums(metric string, p JavaHTTPPairedSums) (DerivedValue, error) {
 	timeWork := metric == "java_http_base64_work_share"
 	switch metric {
-	case "java_http_decoded_per_encoded", "java_http_prepared_per_decoded", "java_http_base64_per_retained", "java_http_base64_work_share":
+	case "java_http_decoded_per_encoded", "java_http_prepared_per_decoded", "serialized_representation_vs_http_body", "java_http_base64_per_retained", "java_http_base64_work_share":
 	default:
 		return DerivedValue{}, errors.New("unsupported Java paired-sum metric")
 	}

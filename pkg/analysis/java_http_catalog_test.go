@@ -31,7 +31,7 @@ func TestJavaHTTPMetricCatalogHasOnlyExecutableRepresentationProfiles(t *testing
 			}
 		}
 	}
-	if n != 12 {
+	if n != 17 {
 		t.Fatal("measurement inventory", n)
 	}
 	if err := ValidateScalarAggregation(KindObservation, "ratio_of_sums"); err == nil {

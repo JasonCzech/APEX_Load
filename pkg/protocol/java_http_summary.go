@@ -109,10 +109,56 @@ type JavaHTTPSummary struct {
 	Base64Encode              DiagnosticDistribution `json:"base64_encode_ms"`
 	Enclosing                 DiagnosticDistribution `json:"enclosing_ms"`
 	Base64Work                JavaHTTPWorkPair       `json:"base64_work"`
-	ResponseUnavailable       int64                  `json:"response_unavailable"`
-	ResponseWindow            int64                  `json:"response_window"`
-	ResponseDiscarded         int64                  `json:"response_discarded"`
-	ObjectFootprint           string                 `json:"object_footprint"`
+	ResponseUnavailable       int64                           `json:"response_unavailable"`
+	ResponseWindow            int64                           `json:"response_window"`
+	ResponseDiscarded         int64                           `json:"response_discarded"`
+	ObjectFootprint           string                          `json:"object_footprint"`
+	ContainedObjectFootprint  *JavaHTTPObjectFootprintSummary `json:"contained_object_footprint,omitempty"`
+}
+
+// JavaHTTPObjectFootprintSummary aggregates opt-in contained JVM object-footprint
+// and codec timing measurements across observed java_http actions.
+type JavaHTTPObjectFootprintSummary struct {
+	Samples                   int64                  `json:"samples"`
+	JVMVersion                string                 `json:"jvm_version,omitempty"`
+	ShallowMethod             string                 `json:"shallow_method"`
+	ReachableGraphMethod      string                 `json:"reachable_graph_method"`
+	ShallowAvailableSamples   int64                  `json:"shallow_available_samples"`
+	UnavailableSamples        int64                  `json:"unavailable_samples"`
+	UnavailableReason         string                 `json:"unavailable_reason,omitempty"`
+	ShallowObjectBytes        JavaHTTPByteMoments    `json:"java_shallow_object_bytes"`
+	ShallowFallbackBytes      JavaHTTPByteMoments    `json:"shallow_fallback_bytes"`
+	ReachableGraphBytes       JavaHTTPByteMoments    `json:"java_reachable_graph_bytes"`
+	ReachableGraphFallback    JavaHTTPByteMoments    `json:"reachable_graph_fallback_bytes"`
+	UniqueObjects             JavaHTTPByteMoments    `json:"unique_objects"`
+	MaxNodes                  int                    `json:"max_nodes"`
+	MaxDepth                  int                    `json:"max_depth"`
+	TraversalExhaustedSamples int64                  `json:"traversal_exhausted_samples"`
+	RetainedHeapNote          string                 `json:"retained_heap_note"`
+	CodecSamples              int64                  `json:"codec_samples"`
+	SerializedBytes           JavaHTTPByteMoments    `json:"serialized_bytes"`
+	JavaSerializationMs       DiagnosticDistribution `json:"java_serialization_ms"`
+	JavaDeserializationMs     DiagnosticDistribution `json:"java_deserialization_ms"`
+}
+
+// JavaHTTPSerializedRepresentationVsHTTPBodySummary summarizes the paired
+// decoded serialized representation bytes vs prepared HTTP body bytes on the
+// wire across observed java_http actions.
+type JavaHTTPSerializedRepresentationVsHTTPBodySummary struct {
+	Metric                     string                 `json:"metric"`
+	Available                  bool                   `json:"available"`
+	UnavailableReason          string                 `json:"unavailable_reason,omitempty"`
+	Compression                string                 `json:"compression,omitempty"`
+	AppliedRequestCompression  string                 `json:"applied_request_compression,omitempty"`
+	Samples                    int64                  `json:"samples"`
+	DecodedRepresentationBytes JavaHTTPByteMoments    `json:"decoded_representation_bytes"`
+	HTTPBodyBytes              JavaHTTPByteMoments    `json:"http_body_bytes"`
+	BytesUnit                  string                 `json:"bytes_unit"`
+	BodyPerRepresentation      JavaHTTPBytePair       `json:"body_per_representation"`
+	BodyPerRepresentationRatio *float64               `json:"body_per_representation_ratio,omitempty"`
+	RatioUnit                  string                 `json:"ratio_unit"`
+	EnclosingMs                DiagnosticDistribution `json:"enclosing_ms"`
+	DurationUnit               string                 `json:"duration_unit"`
 }
 
 // ObserveJavaHTTPAction counts one actual java_http action execution in the
@@ -231,6 +277,59 @@ func MergeJavaHTTPDiagnostic(summary **JavaHTTPSummary, d *JavaHTTPDiagnostics) 
 	case "discarded":
 		s.ResponseDiscarded++
 	}
+	if d.ContainedObjectFootprint != nil {
+		mergeContainedObjectFootprintDiagnostic(&s.ContainedObjectFootprint, d.ContainedObjectFootprint)
+	}
+}
+
+func mergeContainedObjectFootprintDiagnostic(dst **JavaHTTPObjectFootprintSummary, e *JavaHTTPObjectFootprintEvidence) {
+	if dst == nil || e == nil {
+		return
+	}
+	if *dst == nil {
+		*dst = &JavaHTTPObjectFootprintSummary{
+			ShallowMethod:        JavaHTTPShallowObjectMethodV1,
+			ReachableGraphMethod: JavaHTTPReachableGraphMethodV1,
+			RetainedHeapNote:     JavaHTTPObjectFootprintRetainedNote,
+		}
+	}
+	f := *dst
+	f.Samples++
+	if f.JVMVersion == "" {
+		f.JVMVersion = e.JVMVersion
+	} else if f.JVMVersion != e.JVMVersion {
+		f.JVMVersion = "mixed"
+	}
+	if e.ShallowObject.Available && e.ShallowObject.Bytes != nil && e.ReachableGraph.Bytes != nil {
+		f.ShallowAvailableSamples++
+		f.ShallowObjectBytes.add(*e.ShallowObject.Bytes)
+		f.ReachableGraphBytes.add(*e.ReachableGraph.Bytes)
+	} else {
+		f.UnavailableSamples++
+		if f.UnavailableReason == "" {
+			f.UnavailableReason = e.ShallowObject.UnavailableReason
+		} else if f.UnavailableReason != e.ShallowObject.UnavailableReason {
+			f.UnavailableReason = "mixed"
+		}
+		if e.ShallowObject.FieldLayoutFallbackBytes != nil {
+			f.ShallowFallbackBytes.add(*e.ShallowObject.FieldLayoutFallbackBytes)
+		}
+		if e.ReachableGraph.FieldLayoutFallbackBytes != nil {
+			f.ReachableGraphFallback.add(*e.ReachableGraph.FieldLayoutFallbackBytes)
+		}
+	}
+	f.UniqueObjects.add(e.ReachableGraph.UniqueObjects)
+	f.MaxNodes = max(f.MaxNodes, e.ReachableGraph.MaxNodes)
+	f.MaxDepth = max(f.MaxDepth, e.ReachableGraph.MaxDepth)
+	if e.ReachableGraph.TraversalExhausted {
+		f.TraversalExhaustedSamples++
+	}
+	if e.CodecExecuted && e.SerializedBytes != nil && e.JavaSerializationMs != nil && e.JavaDeserializationMs != nil {
+		f.CodecSamples++
+		f.SerializedBytes.add(*e.SerializedBytes)
+		f.JavaSerializationMs.Add(*e.JavaSerializationMs)
+		f.JavaDeserializationMs.Add(*e.JavaDeserializationMs)
+	}
 }
 
 func (s *JavaHTTPSummary) Clone() *JavaHTTPSummary {
@@ -238,5 +337,63 @@ func (s *JavaHTTPSummary) Clone() *JavaHTTPSummary {
 		return nil
 	}
 	out := *s
+	if s.ContainedObjectFootprint != nil {
+		cf := *s.ContainedObjectFootprint
+		out.ContainedObjectFootprint = &cf
+	}
 	return &out
+}
+
+// SerializedRepresentationVsHTTPBody returns the summary-level paired
+// decoded serialized representation vs HTTP body comparison across observed
+// java_http actions.
+func (s *JavaHTTPSummary) SerializedRepresentationVsHTTPBody() JavaHTTPSerializedRepresentationVsHTTPBodySummary {
+	out := JavaHTTPSerializedRepresentationVsHTTPBodySummary{
+		Metric:       "serialized_representation_vs_http_body",
+		BytesUnit:    "bytes",
+		RatioUnit:    "ratio",
+		DurationUnit: "ms",
+	}
+	if s == nil || !s.Valid() {
+		out.UnavailableReason = "invalid_or_missing_summary"
+		return out
+	}
+	out.EnclosingMs = s.Enclosing
+	out.DecodedRepresentationBytes = s.RequestDecoded
+	out.HTTPBodyBytes = s.PreparedRequestBody
+	out.BodyPerRepresentation = s.PreparedPerDecoded
+	out.Samples = s.PreparedPerDecoded.Samples
+	applied := ""
+	switch {
+	case s.RequestCompressionNone > 0 && s.RequestCompressionGzip == 0 && s.RequestCompressionDeflate == 0:
+		applied = "none"
+	case s.RequestCompressionGzip > 0 && s.RequestCompressionNone == 0 && s.RequestCompressionDeflate == 0:
+		applied = "gzip"
+	case s.RequestCompressionDeflate > 0 && s.RequestCompressionNone == 0 && s.RequestCompressionGzip == 0:
+		applied = "deflate"
+	case s.RequestCompressionNone+s.RequestCompressionGzip+s.RequestCompressionDeflate > 0:
+		applied = "mixed"
+	}
+	out.AppliedRequestCompression = applied
+	if applied == "mixed" {
+		out.Compression = "mixed"
+	} else {
+		out.Compression = NormalizeJavaHTTPCompressionLabel(applied)
+	}
+	if s.PreparedPerDecoded.Samples == 0 {
+		out.UnavailableReason = "no_paired_request_representation_and_http_body"
+		return out
+	}
+	if applied == "mixed" {
+		out.UnavailableReason = "mixed_request_compression"
+		return out
+	}
+	if ratio, ok := s.PreparedPerDecoded.Ratio(); ok {
+		out.Available = true
+		out.BodyPerRepresentationRatio = &ratio
+	} else {
+		out.Available = false
+		out.UnavailableReason = "zero_or_overflow_representation_bytes"
+	}
+	return out
 }

@@ -41,6 +41,29 @@ func javaHTTPReportLines(name string, input *protocol.JavaHTTPSummary, populatio
 			lines = append(lines, item.name+": unavailable (missing pair, zero denominator or exact-sum bound exceeded)")
 		}
 	}
+	cmp := s.SerializedRepresentationVsHTTPBody()
+	if cmp.Available && cmp.BodyPerRepresentationRatio != nil {
+		lines = append(lines, fmt.Sprintf("serialized_representation_vs_http_body: %.6f ratio (%d / %d bytes; compression %s) across %d paired observations", *cmp.BodyPerRepresentationRatio, cmp.BodyPerRepresentation.NumeratorBytes, cmp.BodyPerRepresentation.DenominatorBytes, cmp.Compression, cmp.Samples))
+	} else {
+		lines = append(lines, fmt.Sprintf("serialized_representation_vs_http_body: unavailable (%s)", cmp.UnavailableReason))
+	}
+	if s.ContainedObjectFootprint != nil {
+		fp := s.ContainedObjectFootprint
+		if mean, ok := fp.ShallowObjectBytes.MeanBytes(); ok {
+			lines = append(lines, fmt.Sprintf("java_shallow_object_bytes (%s, JVM %s): %d observed samples; mean %.3f bytes; maximum %d bytes (%s)", fp.ShallowMethod, fp.JVMVersion, fp.ShallowObjectBytes.Count, mean, fp.ShallowObjectBytes.MaxBytes, fp.RetainedHeapNote))
+		} else {
+			lines = append(lines, fmt.Sprintf("java_shallow_object_bytes (%s, JVM %s): unavailable (%s; %s)", fp.ShallowMethod, fp.JVMVersion, fp.UnavailableReason, fp.RetainedHeapNote))
+		}
+		if mean, ok := fp.ReachableGraphBytes.MeanBytes(); ok {
+			objMean, _ := fp.UniqueObjects.MeanBytes()
+			lines = append(lines, fmt.Sprintf("java_reachable_graph_bytes (%s, JVM %s): %d observed samples; mean %.3f bytes; maximum %d bytes; mean %.1f unique objects (max_nodes=%d, max_depth=%d, traversal_exhausted=%d; %s)", fp.ReachableGraphMethod, fp.JVMVersion, fp.ReachableGraphBytes.Count, mean, fp.ReachableGraphBytes.MaxBytes, objMean, fp.MaxNodes, fp.MaxDepth, fp.TraversalExhaustedSamples, fp.RetainedHeapNote))
+		} else {
+			lines = append(lines, fmt.Sprintf("java_reachable_graph_bytes (%s, JVM %s): unavailable (%s; %s)", fp.ReachableGraphMethod, fp.JVMVersion, fp.UnavailableReason, fp.RetainedHeapNote))
+		}
+		if fp.CodecSamples > 0 {
+			lines = append(lines, fmt.Sprintf("java_serialization_ms: %.6f ms mean; java_deserialization_ms: %.6f ms mean across %d codec samples", fp.JavaSerializationMs.Sum/float64(fp.JavaSerializationMs.Count), fp.JavaDeserializationMs.Sum/float64(fp.JavaDeserializationMs.Count), fp.CodecSamples))
+		}
+	}
 	if share, ok := s.Base64Work.Share(); ok {
 		lines = append(lines, fmt.Sprintf("Base64 conversion work / enclosing wrapper time: %.3f%% across %d paired observations", share*100, s.Base64Work.Samples))
 	} else {

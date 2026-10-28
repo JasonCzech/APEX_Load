@@ -74,7 +74,46 @@ func (s *JavaHTTPSummary) Valid() bool {
 			return false
 		}
 	}
-	return s.ResponseUnavailable+s.ResponseWindow+s.ResponseDiscarded <= s.Samples
+	if s.ResponseUnavailable+s.ResponseWindow+s.ResponseDiscarded > s.Samples {
+		return false
+	}
+	if !javaHTTPObjectFootprintSummaryValid(s.ContainedObjectFootprint, s.Samples) {
+		return false
+	}
+	return true
+}
+
+func javaHTTPObjectFootprintSummaryValid(f *JavaHTTPObjectFootprintSummary, samples int64) bool {
+	if f == nil {
+		return true
+	}
+	if f.Samples <= 0 || f.Samples > samples || f.ShallowMethod != JavaHTTPShallowObjectMethodV1 || f.ReachableGraphMethod != JavaHTTPReachableGraphMethodV1 || f.RetainedHeapNote != JavaHTTPObjectFootprintRetainedNote {
+		return false
+	}
+	if f.ShallowAvailableSamples < 0 || f.UnavailableSamples < 0 || f.ShallowAvailableSamples+f.UnavailableSamples != f.Samples {
+		return false
+	}
+	if f.TraversalExhaustedSamples < 0 || f.TraversalExhaustedSamples > f.Samples || f.CodecSamples < 0 || f.CodecSamples > f.Samples {
+		return false
+	}
+	if f.MaxNodes < 1 || f.MaxNodes > 65536 || f.MaxDepth < 1 || f.MaxDepth > 256 {
+		return false
+	}
+	for _, m := range []JavaHTTPByteMoments{f.ShallowObjectBytes, f.ShallowFallbackBytes, f.ReachableGraphBytes, f.ReachableGraphFallback, f.UniqueObjects, f.SerializedBytes} {
+		if m.Count < 0 || m.Count > f.Samples || m.SumBytes < 0 || m.SumBytes > javaHTTPMaxExactBytes || m.MinBytes < 0 || m.MinBytes > m.MaxBytes || m.MaxBytes > 1<<40 {
+			return false
+		}
+		if m.Count == 0 && (m.SumBytes != 0 || m.MinBytes != 0 || m.MaxBytes != 0 || m.Overflow) {
+			return false
+		}
+	}
+	if f.ShallowObjectBytes.Count != f.ShallowAvailableSamples || f.ReachableGraphBytes.Count != f.ShallowAvailableSamples || f.UniqueObjects.Count != f.Samples || f.SerializedBytes.Count != f.CodecSamples {
+		return false
+	}
+	if !javaHTTPDurationSummaryValid(f.JavaSerializationMs, f.CodecSamples) || !javaHTTPDurationSummaryValid(f.JavaDeserializationMs, f.CodecSamples) {
+		return false
+	}
+	return f.JavaSerializationMs.Count == f.CodecSamples && f.JavaDeserializationMs.Count == f.CodecSamples
 }
 
 func javaHTTPFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
@@ -235,4 +274,81 @@ func MergeJavaHTTPSummary(dst **JavaHTTPSummary, src *JavaHTTPSummary) {
 	d.ResponseUnavailable += src.ResponseUnavailable
 	d.ResponseWindow += src.ResponseWindow
 	d.ResponseDiscarded += src.ResponseDiscarded
+	if src.ContainedObjectFootprint != nil {
+		mergeJavaHTTPObjectFootprintSummary(&d.ContainedObjectFootprint, src.ContainedObjectFootprint)
+	}
+}
+
+func mergeJavaHTTPObjectFootprintSummary(dst **JavaHTTPObjectFootprintSummary, src *JavaHTTPObjectFootprintSummary) {
+	if dst == nil || src == nil {
+		return
+	}
+	if *dst == nil {
+		cp := *src
+		*dst = &cp
+		return
+	}
+	d := *dst
+	d.Samples += src.Samples
+	if d.JVMVersion == "" {
+		d.JVMVersion = src.JVMVersion
+	} else if src.JVMVersion != "" && d.JVMVersion != src.JVMVersion {
+		d.JVMVersion = "mixed"
+	}
+	d.ShallowAvailableSamples += src.ShallowAvailableSamples
+	d.UnavailableSamples += src.UnavailableSamples
+	if d.UnavailableReason == "" {
+		d.UnavailableReason = src.UnavailableReason
+	} else if src.UnavailableReason != "" && d.UnavailableReason != src.UnavailableReason {
+		d.UnavailableReason = "mixed"
+	}
+	d.MaxNodes = max(d.MaxNodes, src.MaxNodes)
+	d.MaxDepth = max(d.MaxDepth, src.MaxDepth)
+	d.TraversalExhaustedSamples += src.TraversalExhaustedSamples
+	d.CodecSamples += src.CodecSamples
+	for _, x := range []struct {
+		d *JavaHTTPByteMoments
+		s JavaHTTPByteMoments
+	}{
+		{&d.ShallowObjectBytes, src.ShallowObjectBytes},
+		{&d.ShallowFallbackBytes, src.ShallowFallbackBytes},
+		{&d.ReachableGraphBytes, src.ReachableGraphBytes},
+		{&d.ReachableGraphFallback, src.ReachableGraphFallback},
+		{&d.UniqueObjects, src.UniqueObjects},
+		{&d.SerializedBytes, src.SerializedBytes},
+	} {
+		if x.s.Count == 0 {
+			continue
+		}
+		if x.d.Count == 0 || x.s.MinBytes < x.d.MinBytes {
+			x.d.MinBytes = x.s.MinBytes
+		}
+		x.d.Count += x.s.Count
+		x.d.MaxBytes = max(x.d.MaxBytes, x.s.MaxBytes)
+		if x.d.Overflow || x.s.Overflow || x.s.SumBytes > javaHTTPMaxExactBytes-x.d.SumBytes {
+			x.d.Overflow = true
+		} else {
+			x.d.SumBytes += x.s.SumBytes
+		}
+	}
+	for _, x := range []struct {
+		d *DiagnosticDistribution
+		s DiagnosticDistribution
+	}{
+		{&d.JavaSerializationMs, src.JavaSerializationMs},
+		{&d.JavaDeserializationMs, src.JavaDeserializationMs},
+	} {
+		if x.s.Count == 0 {
+			continue
+		}
+		if x.d.Count == 0 || x.s.Min < x.d.Min {
+			x.d.Min = x.s.Min
+		}
+		x.d.Count += x.s.Count
+		x.d.Sum += x.s.Sum
+		x.d.Max = max(x.d.Max, x.s.Max)
+		for i, n := range x.s.Buckets {
+			x.d.Buckets[i] += n
+		}
+	}
 }
