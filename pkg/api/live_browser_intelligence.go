@@ -65,6 +65,7 @@ type liveBrowserIntelligenceState struct {
 	mu                       sync.Mutex
 	testID                   string
 	projectID                string
+	adopted                  bool
 	distributed              bool
 	documentCaptureRequested bool
 	startedAt                time.Time
@@ -100,10 +101,43 @@ type liveBrowserIntelligenceState struct {
 	notifyCh         chan struct{}
 }
 
+func isAdoptedManagedTest(test *ManagedTest) bool {
+	if test == nil {
+		return false
+	}
+	return test.adoptedResume != nil || len(test.continuityFailovers) > 0 || (test.telemetrySources != nil && test.telemetrySources.wasAdopted())
+}
+
+func markProvisionalSnapshotTruncated(snap *ProvisionalBrowserIntelligenceSnapshot, reason string, updatedAt time.Time) {
+	if snap == nil {
+		return
+	}
+	snap.LiveTruncated = true
+	if reason != "" && !slices.Contains(snap.TruncatedReasons, reason) {
+		snap.TruncatedReasons = append(snap.TruncatedReasons, reason)
+	}
+	if !updatedAt.IsZero() && updatedAt.After(snap.UpdatedAt) {
+		snap.UpdatedAt = updatedAt.UTC()
+	}
+	if snap.Findings != nil {
+		snap.Findings.LiveTruncated = true
+		if snap.Findings.Result != nil {
+			snap.Findings.Result.LiveTruncated = true
+		}
+	}
+	if snap.Interactions != nil {
+		snap.Interactions.LiveTruncated = true
+	}
+	if snap.Journeys != nil {
+		snap.Journeys.LiveTruncated = true
+	}
+}
+
 func newLiveBrowserIntelligenceState(test *ManagedTest, expectedTargets []string) *liveBrowserIntelligenceState {
 	startedAt := time.Now().UTC()
 	var pins []RunPolicyPin
 	captureRequested := false
+	adopted := isAdoptedManagedTest(test)
 	testID, projectID := "", storage.DefaultProjectID
 	if test != nil {
 		testID = test.ID
@@ -124,9 +158,10 @@ func newLiveBrowserIntelligenceState(test *ManagedTest, expectedTargets []string
 			expected[trimmed] = true
 		}
 	}
-	return &liveBrowserIntelligenceState{
+	state := &liveBrowserIntelligenceState{
 		testID:                   testID,
 		projectID:                projectID,
+		adopted:                  adopted,
 		distributed:              len(expected) > 0,
 		documentCaptureRequested: captureRequested,
 		startedAt:                startedAt,
@@ -146,6 +181,14 @@ func newLiveBrowserIntelligenceState(test *ManagedTest, expectedTargets []string
 		doneCh:                make(chan struct{}),
 		notifyCh:              make(chan struct{}, 1),
 	}
+	if adopted {
+		state.markTruncatedLocked("controller_failover")
+	}
+	return state
+}
+
+func (s *liveBrowserIntelligenceState) hasEvidenceLocked() bool {
+	return s.documentRecords > 0 || s.interactionRecords > 0 || s.journeyEventCount > 0
 }
 
 func (s *liveBrowserIntelligenceState) markTruncatedLocked(reason string) {
@@ -368,7 +411,9 @@ func (s *liveBrowserIntelligenceState) evaluateSnapshot(tr *TestRunner, now time
 
 	s.mu.Lock()
 	s.dirty = false
-	s.firstEvaluated = true
+	if s.documentRecords > 0 || s.interactionRecords > 0 || s.journeyEventCount > 0 || s.liveTruncated {
+		s.firstEvaluated = true
+	}
 	liveTruncated := s.liveTruncated
 	truncatedReasons := slices.Clone(s.truncatedReasons)
 	allObserved, allCompleted := s.sourcesCompleteLocked(finalEvaluation)
@@ -440,10 +485,16 @@ func (s *liveBrowserIntelligenceState) evaluateFindingsLocked(tr *TestRunner, st
 	baselineRunID := ""
 	baselineArchiveSHA := ""
 	if policy.Baseline.Mode == "pinned_run" && strings.TrimSpace(policy.Baseline.RunID) != "" {
-		baselineRunID = strings.TrimSpace(policy.Baseline.RunID)
-		if tr != nil && tr.archiveStore != nil {
-			if rec, recErr := tr.archiveStore.GetRunArchive(baselineRunID); recErr == nil && rec != nil {
-				baselineArchiveSHA = strings.TrimSpace(rec.ManifestSHA256)
+		candidateRunID := strings.TrimSpace(policy.Baseline.RunID)
+		if tr != nil && tr.testStore != nil {
+			if baseTest, lookupErr := tr.testStore.GetTest(candidateRunID); lookupErr == nil && baseTest != nil && normalizeProjectID(baseTest.ProjectID) == normalizeProjectID(s.projectID) {
+				baselineRunID = baseTest.ID
+				policy.Baseline.RunID = baseTest.ID
+				if tr.archiveStore != nil {
+					if rec, recErr := tr.archiveStore.GetRunArchive(baselineRunID); recErr == nil && rec != nil {
+						baselineArchiveSHA = strings.TrimSpace(rec.ManifestSHA256)
+					}
+				}
 			}
 		}
 	}
@@ -603,6 +654,42 @@ func (s *liveBrowserIntelligenceState) evaluateJourneysLocked(store storage.Anal
 	return report
 }
 
+func (tr *TestRunner) restoreAdoptedProvisionalBrowserIntelligence(test *ManagedTest) bool {
+	if tr == nil || test == nil {
+		return false
+	}
+	tr.mu.RLock()
+	if test.provisionalBrowserIntelligence != nil {
+		tr.mu.RUnlock()
+		return true
+	}
+	liveState := tr.liveState
+	testID := test.ID
+	expectedProjectID := normalizeProjectID(test.ProjectID)
+	tr.mu.RUnlock()
+	if liveState == nil || strings.TrimSpace(testID) == "" {
+		return false
+	}
+	cached, err := liveState.GetRunSnapshot(context.Background(), testID)
+	if err != nil || cached == nil || cached.ProvisionalBrowserIntelligence == nil {
+		return false
+	}
+	if normalizeProjectID(cached.ProjectID) != expectedProjectID {
+		return false
+	}
+	restored := cloneProvisionalBrowserIntelligenceSnapshot(cached.ProvisionalBrowserIntelligence)
+	markProvisionalSnapshotTruncated(restored, "controller_failover", time.Time{})
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.tests[testID] != test {
+		return false
+	}
+	if test.provisionalBrowserIntelligence == nil {
+		test.provisionalBrowserIntelligence = restored
+	}
+	return test.provisionalBrowserIntelligence != nil
+}
+
 func (tr *TestRunner) startLiveBrowserIntelligence(test *ManagedTest, expectedTargets []string) {
 	if tr == nil || test == nil {
 		return
@@ -624,19 +711,11 @@ func (tr *TestRunner) startLiveBrowserIntelligence(test *ManagedTest, expectedTa
 	state := newLiveBrowserIntelligenceState(test, expectedTargets)
 	test.liveBrowserIntelligence = state
 	hasExistingSnap := test.provisionalBrowserIntelligence != nil
-	liveState := tr.liveState
-	testID := test.ID
+	adopted := state.adopted
 	tr.mu.Unlock()
 
-	if !hasExistingSnap && liveState != nil {
-		if cached, err := liveState.GetRunSnapshot(context.Background(), testID); err == nil && cached != nil && cached.ProvisionalBrowserIntelligence != nil {
-			tr.mu.Lock()
-			if tr.tests[testID] == test && test.liveBrowserIntelligence == state && test.provisionalBrowserIntelligence == nil {
-				test.provisionalBrowserIntelligence = cloneProvisionalBrowserIntelligenceSnapshot(cached.ProvisionalBrowserIntelligence)
-				hasExistingSnap = test.provisionalBrowserIntelligence != nil
-			}
-			tr.mu.Unlock()
-		}
+	if !hasExistingSnap && adopted {
+		hasExistingSnap = tr.restoreAdoptedProvisionalBrowserIntelligence(test)
 	}
 	if !hasExistingSnap {
 		tr.publishLiveBrowserIntelligenceSnapshot(test, state, time.Now().UTC(), false)
@@ -696,13 +775,27 @@ func (tr *TestRunner) publishLiveBrowserIntelligenceSnapshot(test *ManagedTest, 
 	if snapshot == nil {
 		return
 	}
+	state.mu.Lock()
+	adoptedWithoutPostFailoverEvidence := state.adopted && !state.hasEvidenceLocked()
+	state.mu.Unlock()
+
+	snapshotAt := time.Now().UTC()
+	if !now.IsZero() && now.UTC().After(snapshotAt) {
+		snapshotAt = now.UTC()
+	}
+
 	tr.mu.Lock()
 	if tr.tests[test.ID] != test || test.liveBrowserIntelligence != state {
 		tr.mu.Unlock()
 		return
 	}
+	if adoptedWithoutPostFailoverEvidence && test.provisionalBrowserIntelligence != nil {
+		preserved := cloneProvisionalBrowserIntelligenceSnapshot(test.provisionalBrowserIntelligence)
+		markProvisionalSnapshotTruncated(preserved, "controller_failover", snapshot.UpdatedAt)
+		snapshot = preserved
+	}
 	test.provisionalBrowserIntelligence = snapshot
-	runSnapshot := buildRunLiveStateSnapshotLocked(test, now)
+	runSnapshot := buildRunLiveStateSnapshotLocked(test, snapshotAt)
 	testID := test.ID
 	projectID := normalizeProjectID(test.ProjectID)
 	testName := test.Name
@@ -833,19 +926,33 @@ func (s *Server) liveBrowserIntelligenceForTest(ctx context.Context, testID stri
 	if s == nil || strings.TrimSpace(testID) == "" {
 		return nil, nil, false
 	}
+	expectedProjectID := ""
 	if s.runner != nil {
 		s.runner.mu.RLock()
 		current := s.runner.tests[testID]
+		if current != nil && current.Archive != nil && strings.TrimSpace(current.Archive.ManifestSHA256) != "" {
+			s.runner.mu.RUnlock()
+			return nil, nil, true
+		}
 		var state *liveBrowserIntelligenceState
 		var snap *ProvisionalBrowserIntelligenceSnapshot
 		var terminal bool
 		if current != nil {
+			expectedProjectID = normalizeProjectID(current.ProjectID)
 			state = current.liveBrowserIntelligence
 			snap = cloneProvisionalBrowserIntelligenceSnapshot(current.provisionalBrowserIntelligence)
 			terminal = isTerminalTestStatus(current.Status)
 		}
 		store := s.runner.liveState
 		s.runner.mu.RUnlock()
+		if expectedProjectID == "" {
+			if summary, ok := s.archiveDomainService().GetTestSummary(testID); ok && summary != nil {
+				if summary.Archive != nil && strings.TrimSpace(summary.Archive.ManifestSHA256) != "" {
+					return nil, nil, true
+				}
+				expectedProjectID = normalizeProjectID(summary.ProjectID)
+			}
+		}
 		if state != nil {
 			state.mu.Lock()
 			dirty := state.dirty
@@ -868,13 +975,15 @@ func (s *Server) liveBrowserIntelligenceForTest(ctx context.Context, testID stri
 			return state, snap, terminal
 		}
 		if store != nil {
-			if liveSnap, err := store.GetRunSnapshot(ctx, testID); err == nil && liveSnap != nil && liveSnap.ProvisionalBrowserIntelligence != nil {
+			if liveSnap, err := store.GetRunSnapshot(ctx, testID); err == nil && liveSnap != nil && liveSnap.ProvisionalBrowserIntelligence != nil &&
+				(expectedProjectID == "" || normalizeProjectID(liveSnap.ProjectID) == expectedProjectID) {
 				return state, cloneProvisionalBrowserIntelligenceSnapshot(liveSnap.ProvisionalBrowserIntelligence), terminal || isTerminalTestStatus(liveSnap.Status)
 			}
 		}
 	}
 	if s.cache != nil {
-		if liveSnap, err := s.cache.GetRunSnapshot(ctx, testID); err == nil && liveSnap != nil && liveSnap.ProvisionalBrowserIntelligence != nil {
+		if liveSnap, err := s.cache.GetRunSnapshot(ctx, testID); err == nil && liveSnap != nil && liveSnap.ProvisionalBrowserIntelligence != nil &&
+			(expectedProjectID == "" || normalizeProjectID(liveSnap.ProjectID) == expectedProjectID) {
 			return nil, cloneProvisionalBrowserIntelligenceSnapshot(liveSnap.ProvisionalBrowserIntelligence), isTerminalTestStatus(liveSnap.Status)
 		}
 	}
@@ -961,6 +1070,7 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 		if snap != nil && snap.Journeys != nil &&
 			snap.Journeys.Policy.ID == ref.ID && snap.Journeys.Policy.Revision == ref.Revision {
 			out := *snap.Journeys
+			out.Policy = ref
 			out.Provisional = true
 			out.LiveTruncated = snap.LiveTruncated
 			return &out, http.StatusOK, nil, true

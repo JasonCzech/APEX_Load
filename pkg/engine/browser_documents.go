@@ -377,11 +377,19 @@ func (mc *MetricsCollector) bindBrowserDocumentRedaction(p protocol.Protocol, re
 	state := &mc.browserDocuments
 	state.mu.Lock()
 	entries := append([]*browserDocumentRegistration(nil), state.entries...)
+	interactions := append([]*messagingProgressRegistration(nil), state.interactions...)
 	state.mu.Unlock()
 	for _, entry := range entries {
 		entry.mu.Lock()
 		if reflect.ValueOf(entry.provider) == reflect.ValueOf(p) {
 			entry.redaction = redaction
+		}
+		entry.mu.Unlock()
+	}
+	for _, entry := range interactions {
+		entry.mu.Lock()
+		if reflect.ValueOf(entry.har) == reflect.ValueOf(p) {
+			entry.harRedaction = redaction
 		}
 		entry.mu.Unlock()
 	}

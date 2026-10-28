@@ -30,12 +30,12 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, b
     const controller = new AbortController()
     setLoading(true)
     setError('')
-    browserFindingsApi.get(testId, controller.signal)
+    browserFindingsApi.get(testId, { signal: controller.signal, projectId })
       .then(next => { if (!controller.signal.aborted) setState(next) })
       .catch(err => { if (!controller.signal.aborted) { setState(null); setError(getErrorMessage(err, 'Unable to load browser findings')) } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [testId, reload])
+  }, [testId, projectId, reload])
 
   // A queued, running or provisional live evaluation is checked again until the finalized archive evaluation settles.
   const result = state?.result

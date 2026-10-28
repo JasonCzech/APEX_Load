@@ -1483,6 +1483,7 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	if !ok || !active || executionCtx == nil {
 		return
 	}
+	tr.restoreAdoptedProvisionalBrowserIntelligence(test)
 	if resume.finishStatus != "" {
 		// Phase A decided the outcome, but only Phase B can establish whether
 		// every old participant has stopped. A missing generator may keep its

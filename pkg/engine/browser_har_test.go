@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -218,3 +219,137 @@ func TestScrubLengthenedInteractionRecordIsSplitAtHandoff(t *testing.T) {
 		t.Fatalf("kept %d of %d interactions", kept, total)
 	}
 }
+
+type liveInteractionUnitSink struct {
+	interactionUnitSink
+	live []*protocol.BrowserInteractionEvidence
+}
+
+func (s *liveInteractionUnitSink) RecordLiveBrowserInteractionEvidence(evidence *protocol.BrowserInteractionEvidence) error {
+	s.live = append(s.live, evidence)
+	return nil
+}
+
+func TestLiveBrowserInteractionsUseCurrentRuntimeSecretMatcherAndRespectImportedCredentialPolicy(t *testing.T) {
+	const (
+		variableName  = "opaque_handle"
+		importedValue = "imp-cred-4471"
+		runtimeSecret = "runtime-secret-after-init-9921"
+	)
+	if scrubSensitiveTextWithConfig(importedValue, nil) != importedValue {
+		t.Fatalf("canary %q is removed by an origin-independent scrubber", importedValue)
+	}
+	gen := strings.Repeat("e", 32)
+
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			mc := NewMetricsCollector(16)
+			p := &interactionUnitProtocol{}
+			initialConfig := &RedactionConfig{}
+			entry := mc.registerMessagingProgressWithRedaction(p, "group", nil, func() *RedactionConfig { return initialConfig })
+			if entry == nil {
+				t.Fatal("expected messagingProgressRegistration for interaction provider")
+			}
+			sink := &liveInteractionUnitSink{}
+			entry.publishBrowser(sink, "us-east", func() *RedactionConfig { return initialConfig })
+
+			script := setRunEvidenceRedaction(importedCredentialVariableScript(variableName), mode.redact)
+			vu := runShapedVUser(t, script)
+			vu.Proto = p
+			vu.Metrics = mc
+			vu.RedactionConfig = initialConfig
+			vu.Variables[variableName] = importedValue
+			vu.bindRuntimeTextRedactor()
+
+			if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
+				t.Fatalf("refreshImportedCredentialRuntimeValues: %v", err)
+			}
+			if err := vu.observeExtractionClassification(&protocol.Result{
+				Extractions: map[string]string{"access_token": runtimeSecret},
+			}); err != nil {
+				t.Fatalf("observeExtractionClassification: %v", err)
+			}
+
+			p.evidence = []*protocol.BrowserInteractionEvidence{{
+				Version:          protocol.BrowserInteractionVersion,
+				SourceGeneration: gen,
+				Interactions: []protocol.BrowserInteraction{{
+					Version:           protocol.BrowserInteractionVersion,
+					SourceGeneration:  gen,
+					InteractionID:     gen + "-i-1",
+					ActionID:          gen + "-a-1",
+					DocumentID:        gen + "-idoc-" + strings.Repeat("b", 32),
+					FrameScope:        "main_frame",
+					Kind:              "click",
+					PointerType:       "mouse",
+					Points:            []protocol.BrowserInteractionPoint{{X: 100, Y: 100}},
+					ViewportWidth:     1000,
+					ViewportHeight:    700,
+					DeviceScaleFactor: 1,
+					LayoutRevision:    "0123456789abcdef",
+					Route:             "/orders/" + runtimeSecret + "/" + importedValue,
+					Outcome:           protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared},
+					Provenance:        protocol.InteractionProvenanceScripted,
+					Success:           true,
+					CapturedAt:        time.Now().UTC(),
+				}},
+			}}
+
+			mc.browserDocuments.sample(false)
+			if len(sink.live) != 1 || len(sink.live[0].Interactions) != 1 {
+				t.Fatalf("expected 1 live interaction record, got %+v", sink.live)
+			}
+			route := sink.live[0].Interactions[0].Route
+			if strings.Contains(route, runtimeSecret) {
+				t.Fatalf("platform-managed runtime secret %q leaked into live interaction route %q", runtimeSecret, route)
+			}
+			assertScriptSourcedRunEvidence(t, "live browser interaction route", route, importedValue, mode.redact)
+
+			// Verify second iteration after resetProtocolForIteration re-binds harRedaction.
+			const iter2Secret = "runtime-secret-iter2-7742"
+			vu.resetProtocolForIteration(context.Background())
+			if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
+				t.Fatalf("refreshImportedCredentialRuntimeValues iter2: %v", err)
+			}
+			if err := vu.observeExtractionClassification(&protocol.Result{
+				Extractions: map[string]string{"refresh_token": iter2Secret},
+			}); err != nil {
+				t.Fatalf("observeExtractionClassification iter2: %v", err)
+			}
+			p.evidence = []*protocol.BrowserInteractionEvidence{{
+				Version:          protocol.BrowserInteractionVersion,
+				SourceGeneration: gen,
+				Interactions: []protocol.BrowserInteraction{{
+					Version:           protocol.BrowserInteractionVersion,
+					SourceGeneration:  gen,
+					InteractionID:     gen + "-i-2",
+					ActionID:          gen + "-a-1",
+					DocumentID:        gen + "-idoc-" + strings.Repeat("b", 32),
+					FrameScope:        "main_frame",
+					Kind:              "click",
+					PointerType:       "mouse",
+					Points:            []protocol.BrowserInteractionPoint{{X: 120, Y: 140}},
+					ViewportWidth:     1000,
+					ViewportHeight:    700,
+					DeviceScaleFactor: 1,
+					LayoutRevision:    "0123456789abcdef",
+					Route:             "/orders/" + iter2Secret + "/" + importedValue,
+					Outcome:           protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared},
+					Provenance:        protocol.InteractionProvenanceScripted,
+					Success:           true,
+					CapturedAt:        time.Now().UTC(),
+				}},
+			}}
+			mc.browserDocuments.sample(false)
+			if len(sink.live) != 2 || len(sink.live[1].Interactions) != 1 {
+				t.Fatalf("expected 2nd live interaction record after resetProtocolForIteration, got %+v", sink.live)
+			}
+			route2 := sink.live[1].Interactions[0].Route
+			if strings.Contains(route2, iter2Secret) {
+				t.Fatalf("iter2 runtime secret %q leaked into live interaction route %q", iter2Secret, route2)
+			}
+			assertScriptSourcedRunEvidence(t, "live browser interaction route iter2", route2, importedValue, mode.redact)
+		})
+	}
+}
+

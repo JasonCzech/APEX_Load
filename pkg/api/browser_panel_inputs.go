@@ -122,8 +122,10 @@ func (s *Server) verifyAndPopulateBrowserPanelV2(ctx context.Context, projectID 
 					rcaBaselineID = strings.TrimSpace(payload.Assessment.BrowserBaseline.Baseline.TestID)
 				}
 				baselineOK := q.ComparisonRunID == "" || rcaBaselineID == q.ComparisonRunID || (rcaBaselineID == "" && payload.BrowserSelection == nil)
-				if policyOK && baselineOK && len(payload.Inputs.BrowserSelection) == 64 {
-					response.Current.selectionReceiptSHA256 = strings.ToLower(payload.Inputs.BrowserSelection)
+				if policyOK && len(payload.Inputs.BrowserSelection) == 64 {
+					if baselineOK {
+						response.Current.selectionReceiptSHA256 = strings.ToLower(payload.Inputs.BrowserSelection)
+					}
 					break
 				}
 			}

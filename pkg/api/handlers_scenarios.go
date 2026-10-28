@@ -565,12 +565,16 @@ func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Re
 	preview, err := schedules.PreviewScenarioScheduleRuns(r.PathValue("id"), req, count)
 	if err != nil {
 		status := http.StatusBadRequest
+		msg := err.Error()
 		if policyStatus, ok := runPolicyErrorStatus(err); ok {
 			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
 		} else if err.Error() == "scenario not found: "+r.PathValue("id") {
 			status = http.StatusNotFound
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, preview)
@@ -590,12 +594,16 @@ func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	schedule, err := schedules.CreateScenarioSchedule(r.PathValue("id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
+		msg := err.Error()
 		if policyStatus, ok := runPolicyErrorStatus(err); ok {
 			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
 		} else if err.Error() == "scenario not found: "+r.PathValue("id") {
 			status = http.StatusNotFound
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	projectID := schedules.ScenarioProjectID(r.PathValue("id"))
@@ -636,12 +644,16 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	schedule, ok, err := schedules.UpdateScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
+		msg := err.Error()
 		if policyStatus, ok := runPolicyErrorStatus(err); ok {
 			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
 		} else if errors.Is(err, errScheduleConcurrentChange) {
 			status = http.StatusConflict
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	if !ok {

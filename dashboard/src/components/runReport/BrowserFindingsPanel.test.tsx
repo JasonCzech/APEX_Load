@@ -74,7 +74,7 @@ describe('BrowserFindingsPanel', () => {
     mocks.request.mockResolvedValue(ready)
     act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj" canEvaluate={false} />))
     await flush()
-    expect(mocks.request).toHaveBeenCalledWith('/tests/run-1/archive/browser-findings', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(mocks.request).toHaveBeenCalledWith('/tests/run-1/archive/browser-findings', expect.objectContaining({ signal: expect.any(AbortSignal), projectId: 'proj' }))
     const text = container.textContent || ''
     expect(text).toContain('No overall score: a required metric has no qualified final observation. Missing: INP.')
     expect(text).toContain("1/2 required metrics observed · browser_score.v1 · Web vitals revision 2 (the run's pinned policy) · sha256 …abc.")

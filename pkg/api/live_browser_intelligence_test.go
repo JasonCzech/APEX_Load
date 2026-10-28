@@ -771,3 +771,350 @@ func TestLiveBrowserIntelligenceControllerBoundsAndTruncation(t *testing.T) {
 		t.Fatalf("expected all three provisional sub-snapshots to carry LiveTruncated=true: findings=%+v interactions=%+v journeys=%+v", snap.Findings, snap.Interactions, snap.Journeys)
 	}
 }
+
+func TestLiveBrowserIntelligencePinnedBaselineProjectCheckAndRefKeyResolution(t *testing.T) {
+	srv, store := baselineTestServer(t)
+	startedAt := time.Date(2026, 10, 27, 18, 0, 0, 0, time.UTC)
+
+	// 1. Same-project baseline run referenced by ref_key.
+	sameProjBaselineID := "run-base-same-proj"
+	sameProjManifestSHA := strings.Repeat("b", 64)
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:         sameProjBaselineID,
+		Name:       "Same Project Baseline",
+		ProjectID:  storage.DefaultProjectID,
+		ScenarioID: "scenario",
+		Status:     "COMPLETE",
+		Groups:     []any{},
+		StartTime:  startedAt.Add(-10 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveTest(sameProjBaseline): %v", err)
+	}
+	sameProjRefKey, err := store.EnsureTestRefKey(sameProjBaselineID, "RUN-BASE-SAME-PROJ")
+	if err != nil {
+		t.Fatalf("EnsureTestRefKey(sameProjBaseline): %v", err)
+	}
+	if err := store.SaveRunArchive(&storage.RunArchiveRecord{
+		TestID:         sameProjBaselineID,
+		ArchiveBackend: "filesystem",
+		ArchivePath:    t.TempDir(),
+		ManifestPath:   "manifest.json",
+		ManifestSHA256: sameProjManifestSHA,
+		CreatedAt:      startedAt.Add(-10 * time.Minute),
+		CompletedAt:    startedAt.Add(-5 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveRunArchive(sameProjBaseline): %v", err)
+	}
+
+	// 2. Foreign-project baseline run.
+	if err := store.SaveProject(&storage.Project{
+		ID:        "proj-foreign",
+		Name:      "Foreign Project",
+		CreatedAt: startedAt,
+		UpdatedAt: startedAt,
+	}); err != nil {
+		t.Fatalf("SaveProject(proj-foreign): %v", err)
+	}
+	foreignBaselineID := "run-base-foreign"
+	foreignManifestSHA := strings.Repeat("f", 64)
+	if err := store.SaveTest(&storage.TestRecord{
+		ID:         foreignBaselineID,
+		Name:       "Foreign Project Baseline",
+		ProjectID:  "proj-foreign",
+		ScenarioID: "",
+		Status:     "COMPLETE",
+		Groups:     []any{},
+		StartTime:  startedAt.Add(-10 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveTest(foreignBaseline): %v", err)
+	}
+	if err := store.SaveRunArchive(&storage.RunArchiveRecord{
+		TestID:         foreignBaselineID,
+		ArchiveBackend: "filesystem",
+		ArchivePath:    t.TempDir(),
+		ManifestPath:   "manifest.json",
+		ManifestSHA256: foreignManifestSHA,
+		CreatedAt:      startedAt.Add(-10 * time.Minute),
+		CompletedAt:    startedAt.Add(-5 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveRunArchive(foreignBaseline): %v", err)
+	}
+
+	obs := (e1Document{
+		id:        1,
+		metric:    "lcp",
+		engine:    "chromium",
+		device:    "desktop",
+		value:     4600,
+		qualified: true,
+	}).observation(startedAt.Add(1 * time.Second))
+	docEvidence := &protocol.BrowserDocumentEvidence{
+		Version:          protocol.BrowserEvidenceVersion,
+		SourceGeneration: d2Generation,
+		Observations:     []protocol.BrowserDocumentObservation{obs},
+	}
+
+	// Evaluate with same-project ref_key: must resolve canonical ID and load ManifestSHA256.
+	sameProjPin := saveBrowserPolicy(t, store, "pol-pinned-same-ref", 1, BrowserPolicyDefinition{
+		Version:  analysisPolicyVersion,
+		Baseline: BrowserPolicyBaseline{Mode: "pinned_run", RunID: sameProjRefKey},
+		Metrics:  []BrowserPolicyMetric{{Metric: "lcp", Good: 2500, Poor: 4000, Weight: 3}},
+	})
+	stateSame := newLiveBrowserIntelligenceState(&ManagedTest{
+		ID:        "run-live-same-ref",
+		ProjectID: storage.DefaultProjectID,
+		StartedAt: &startedAt,
+		initialArchiveProvenance: &RunArchiveProvenance{
+			ProjectID:  storage.DefaultProjectID,
+			PolicyPins: []RunPolicyPin{sameProjPin},
+		},
+		Groups: []TestGroup{{Name: "web", Protocol: "browser", VUsers: 1}},
+	}, nil)
+	stateSame.firstEvaluated = true
+	stateSame.recordDocumentEvidence(docEvidence)
+	snapSame := stateSame.evaluateSnapshot(srv.runner, startedAt.Add(2*time.Second), false)
+	if snapSame == nil || snapSame.Findings == nil || snapSame.Findings.Result == nil || len(snapSame.Findings.Result.Findings) == 0 {
+		t.Fatalf("expected findings for same-project ref_key baseline, got %+v", snapSame)
+	}
+	gotSameBaseline := snapSame.Findings.Result.Findings[0].Baseline
+	if gotSameBaseline.BaselineRunID != sameProjBaselineID || gotSameBaseline.BaselineArchiveSHA256 != sameProjManifestSHA {
+		t.Fatalf("same-project ref_key baseline = %+v, want BaselineRunID=%q BaselineArchiveSHA256=%q", gotSameBaseline, sameProjBaselineID, sameProjManifestSHA)
+	}
+
+	// Evaluate with foreign-project run ID: must NOT expose foreign BaselineRunID or ManifestSHA256.
+	foreignPin := saveBrowserPolicy(t, store, "pol-pinned-foreign", 1, BrowserPolicyDefinition{
+		Version:  analysisPolicyVersion,
+		Baseline: BrowserPolicyBaseline{Mode: "pinned_run", RunID: foreignBaselineID},
+		Metrics:  []BrowserPolicyMetric{{Metric: "lcp", Good: 2500, Poor: 4000, Weight: 3}},
+	})
+	stateForeign := newLiveBrowserIntelligenceState(&ManagedTest{
+		ID:        "run-live-foreign-base",
+		ProjectID: storage.DefaultProjectID,
+		StartedAt: &startedAt,
+		initialArchiveProvenance: &RunArchiveProvenance{
+			ProjectID:  storage.DefaultProjectID,
+			PolicyPins: []RunPolicyPin{foreignPin},
+		},
+		Groups: []TestGroup{{Name: "web", Protocol: "browser", VUsers: 1}},
+	}, nil)
+	stateForeign.firstEvaluated = true
+	stateForeign.recordDocumentEvidence(docEvidence)
+	snapForeign := stateForeign.evaluateSnapshot(srv.runner, startedAt.Add(2*time.Second), false)
+	if snapForeign == nil || snapForeign.Findings == nil || snapForeign.Findings.Result == nil || len(snapForeign.Findings.Result.Findings) == 0 {
+		t.Fatalf("expected findings for foreign baseline test, got %+v", snapForeign)
+	}
+	gotForeignBaseline := snapForeign.Findings.Result.Findings[0].Baseline
+	if gotForeignBaseline.BaselineRunID != "" || gotForeignBaseline.BaselineArchiveSHA256 != "" {
+		t.Fatalf("foreign baseline leaked across projects: %+v", gotForeignBaseline)
+	}
+}
+
+func TestLiveBrowserIntelligenceRound2Fixes(t *testing.T) {
+	srv, store := baselineTestServer(t)
+	pins := createPinnedBrowserAndJourneyPolicies(t, store)
+	startedAt := time.Date(2026, 10, 27, 19, 0, 0, 0, time.UTC)
+
+	// 1. t=0 evaluateSnapshot must not set firstEvaluated=true when no evidence or truncation exists,
+	// so the first real evidence arrival still signals notifyCh.
+	testNotify := &ManagedTest{
+		ID:        "run-live-notify-t0",
+		ProjectID: storage.DefaultProjectID,
+		Status:    "RUNNING",
+		CreatedAt: startedAt,
+		StartedAt: &startedAt,
+		initialArchiveProvenance: &RunArchiveProvenance{
+			ProjectID:  storage.DefaultProjectID,
+			PolicyPins: pins,
+		},
+		Groups: []TestGroup{{Name: "web", Protocol: "browser", VUsers: 1}},
+	}
+	stateNotify := newLiveBrowserIntelligenceState(testNotify, nil)
+	_ = stateNotify.evaluateSnapshot(srv.runner, startedAt, false)
+	stateNotify.mu.Lock()
+	firstEvalAtT0 := stateNotify.firstEvaluated
+	stateNotify.mu.Unlock()
+	if firstEvalAtT0 {
+		t.Fatal("expected firstEvaluated=false after empty t=0 evaluateSnapshot")
+	}
+	obs := (e1Document{
+		id:        1,
+		metric:    "lcp",
+		engine:    "chromium",
+		device:    "desktop",
+		value:     2100,
+		qualified: true,
+	}).observation(startedAt.Add(1 * time.Second))
+	stateNotify.recordDocumentEvidence(&protocol.BrowserDocumentEvidence{
+		Version:          protocol.BrowserEvidenceVersion,
+		SourceGeneration: d2Generation,
+		Observations:     []protocol.BrowserDocumentObservation{obs},
+	})
+	select {
+	case <-stateNotify.notifyCh:
+	default:
+		t.Fatal("expected notifyCh to receive wakeup on first real document evidence after t=0 publish")
+	}
+	_ = stateNotify.evaluateSnapshot(srv.runner, startedAt.Add(2*time.Second), false)
+	stateNotify.mu.Lock()
+	firstEvalAfterEvidence := stateNotify.firstEvaluated
+	stateNotify.mu.Unlock()
+	if !firstEvalAfterEvidence {
+		t.Fatal("expected firstEvaluated=true after evaluating real document evidence")
+	}
+
+	// 2. Adopted run failover preservation, project isolation, follower explicit policy ref,
+	// cacheRunSnapshot timestamp ordering, and attachFinalizedRunArchive clearing liveState.
+	liveStore := newSharedMemoryLiveStateStore()
+	srv.runner.setLiveStateStore(liveStore)
+
+	failoverTestID := "run-live-adopted-failover"
+	preFailoverJourneys := &JourneyRiskReport{
+		SchemaVersion: "journey_accounting.v1",
+		RunID:         failoverTestID,
+		Availability:  "available",
+		Provisional:   true,
+		Policy: JourneyPolicyRef{
+			ID:       "live-journey-pol",
+			Name:     "Live Journey Policy",
+			Revision: 1,
+			SHA256:   pins[1].SHA256,
+			Source:   "pinned",
+		},
+		Journeys: []JourneyAccounting{{ID: "checkout", Name: "Checkout flow", Completed: 3, Eligible: 3}},
+	}
+	preFailoverSnap := &ProvisionalBrowserIntelligenceSnapshot{
+		UpdatedAt: startedAt.Add(5 * time.Second),
+		Findings: &RunBrowserFindingsResponse{
+			RunID:       failoverTestID,
+			Status:      "ready",
+			Provisional: true,
+			Result: &BrowserIntelligenceResult{
+				RunID:       failoverTestID,
+				Provisional: true,
+			},
+		},
+		Interactions: &BrowserInteractionAnalysis{
+			RunID:       failoverTestID,
+			Version:     browserInteractionAnalysisVersion,
+			Status:      "ready",
+			Provisional: true,
+		},
+		Journeys: preFailoverJourneys,
+	}
+
+	// Seed liveState with a foreign-project snapshot first: restoreAdoptedProvisionalBrowserIntelligence must reject it.
+	if err := liveStore.SetRunSnapshot(context.Background(), RunLiveStateSnapshot{
+		TestID:                         failoverTestID,
+		ProjectID:                      "proj-foreign",
+		Status:                         "RUNNING",
+		UpdatedAt:                      startedAt.Add(5 * time.Second),
+		ProvisionalBrowserIntelligence: preFailoverSnap,
+	}, time.Minute); err != nil {
+		t.Fatalf("SetRunSnapshot(foreign): %v", err)
+	}
+	adoptedManaged := &ManagedTest{
+		ID:                  failoverTestID,
+		ProjectID:           storage.DefaultProjectID,
+		Name:                "Adopted Run",
+		Status:              "RUNNING",
+		CreatedAt:           startedAt,
+		StartedAt:           &startedAt,
+		continuityFailovers: []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: startedAt.Add(6 * time.Second)}},
+		initialArchiveProvenance: &RunArchiveProvenance{
+			ProjectID:  storage.DefaultProjectID,
+			PolicyPins: pins,
+		},
+		Groups: []TestGroup{{Name: "web", Protocol: "browser", VUsers: 1}},
+	}
+	srv.runner.mu.Lock()
+	srv.runner.tests[failoverTestID] = adoptedManaged
+	srv.runner.mu.Unlock()
+	if srv.runner.restoreAdoptedProvisionalBrowserIntelligence(adoptedManaged) {
+		t.Fatal("expected foreign-project cached provisional snapshot to be rejected")
+	}
+
+	// Seed liveState with matching project ID and verify adopted run restores and preserves it
+	// with LiveTruncated=true and "controller_failover" even when zero post-failover records arrive.
+	if err := liveStore.SetRunSnapshot(context.Background(), RunLiveStateSnapshot{
+		TestID:                         failoverTestID,
+		ProjectID:                      storage.DefaultProjectID,
+		Status:                         "RUNNING",
+		UpdatedAt:                      startedAt.Add(5 * time.Second),
+		ProvisionalBrowserIntelligence: preFailoverSnap,
+	}, time.Minute); err != nil {
+		t.Fatalf("SetRunSnapshot(same project): %v", err)
+	}
+	srv.runner.startLiveBrowserIntelligence(adoptedManaged, []string{"local"})
+	// Simulate publishFinalLocalMetrics writing a newer UpdatedAt before stopAndJoinLiveBrowserIntelligence
+	// calls publishLiveBrowserIntelligenceSnapshot with an older completedAt timestamp.
+	endedAt := startedAt.Add(10 * time.Second)
+	srv.runner.mu.Lock()
+	adoptedManaged.Status = "COMPLETE"
+	adoptedManaged.EndedAt = &endedAt
+	newerFinalSnap := buildRunLiveStateSnapshotLocked(adoptedManaged, time.Now().UTC().Add(2*time.Second))
+	newerFinalSnap.ProvisionalBrowserIntelligence = nil
+	srv.runner.mu.Unlock()
+	srv.runner.cacheRunSnapshot(newerFinalSnap)
+
+	srv.runner.stopAndJoinLiveBrowserIntelligence(adoptedManaged, endedAt)
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+		return err == nil && snap != nil && snap.ProvisionalBrowserIntelligence != nil
+	}, "stopAndJoinLiveBrowserIntelligence snapshot in liveStore")
+
+	cachedAfterStop, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+	if err != nil || cachedAfterStop == nil || cachedAfterStop.ProvisionalBrowserIntelligence == nil {
+		t.Fatalf("expected stopAndJoinLiveBrowserIntelligence snapshot to survive in liveStore, got %+v (err=%v)", cachedAfterStop, err)
+	}
+	decodedAfterStop := cachedAfterStop.ProvisionalBrowserIntelligence
+	if !decodedAfterStop.LiveTruncated || !slices.Contains(decodedAfterStop.TruncatedReasons, "controller_failover") {
+		t.Fatalf("expected controller_failover truncation on preserved snapshot, got %+v", decodedAfterStop)
+	}
+	if decodedAfterStop.Interactions == nil || decodedAfterStop.Interactions.Status != "ready" {
+		t.Fatalf("expected pre-failover ready interactions to be preserved when 0 post-failover records arrived, got %+v", decodedAfterStop.Interactions)
+	}
+
+	// Simulate follower (no local state in runner.tests) querying provisional journeys with explicit policy_id:
+	// out.Policy.Source must be updated to "requested" via ref.
+	srv.runner.mu.Lock()
+	delete(srv.runner.tests, failoverTestID)
+	srv.runner.mu.Unlock()
+	followerReport, status, journeyErr, handled := srv.provisionalRunJourneys(context.Background(), &ManagedTest{
+		ID:        failoverTestID,
+		ProjectID: storage.DefaultProjectID,
+		Status:    "COMPLETE",
+	}, "live-journey-pol", "1")
+	if !handled || journeyErr != nil || status != http.StatusOK || followerReport == nil {
+		t.Fatalf("follower provisionalRunJourneys = (%+v, %d, %v, %v)", followerReport, status, journeyErr, handled)
+	}
+	if followerReport.Policy.Source != "requested" {
+		t.Fatalf("follower provisionalRunJourneys Policy.Source = %q, want %q", followerReport.Policy.Source, "requested")
+	}
+
+	// Re-register adoptedManaged and attach finalized archive: must clear ProvisionalBrowserIntelligence in liveState
+	// and liveBrowserIntelligenceForTest must return nil, nil, true immediately.
+	srv.runner.mu.Lock()
+	srv.runner.tests[failoverTestID] = adoptedManaged
+	srv.runner.mu.Unlock()
+	srv.runner.attachFinalizedRunArchive(failoverTestID, &storage.RunArchiveRecord{
+		TestID:         failoverTestID,
+		ManifestSHA256: strings.Repeat("d", 64),
+	}, nil)
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+		return err == nil && snap != nil && snap.ProvisionalBrowserIntelligence == nil
+	}, "attachFinalizedRunArchive clearing ProvisionalBrowserIntelligence in liveStore")
+
+	cachedAfterAttach, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+	if err != nil || cachedAfterAttach == nil {
+		t.Fatalf("GetRunSnapshot after attach: %+v (err=%v)", cachedAfterAttach, err)
+	}
+	if cachedAfterAttach.ProvisionalBrowserIntelligence != nil {
+		t.Fatalf("expected attachFinalizedRunArchive to clear ProvisionalBrowserIntelligence in liveState, got %+v", cachedAfterAttach.ProvisionalBrowserIntelligence)
+	}
+	if gotState, gotSnap, gotTerm := srv.liveBrowserIntelligenceForTest(context.Background(), failoverTestID); gotState != nil || gotSnap != nil || !gotTerm {
+		t.Fatalf("expected liveBrowserIntelligenceForTest after archive attach to return (nil, nil, true), got (%v, %+v, %v)", gotState, gotSnap, gotTerm)
+	}
+}
+
+
