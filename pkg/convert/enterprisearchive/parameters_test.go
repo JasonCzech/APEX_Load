@@ -179,3 +179,42 @@ func TestParseParameterFileKeepsQuotedTabDelimiter(t *testing.T) {
 		t.Fatalf("first userName = %q (%v), want the second column only", value, ok)
 	}
 }
+
+func TestRewriteKnownParameterReferencesMultipartHeaders(t *testing.T) {
+	body := &dsl.MultipartBody{
+		Parts: []dsl.MultipartPart{
+			{
+				Name:        "field_{{var.token}}",
+				Value:       "val_{{var.token}}",
+				Filename:    "file_{{var.token}}.txt",
+				ContentType: "text/plain; boundary={{var.token}}",
+				Headers: map[string]string{
+					"X-Header-{{var.token}}": "header-val-{{var.token}}",
+					"X-Static":               "keep-{{var.unknown}}",
+				},
+			},
+		},
+	}
+	rewriteKnownParameterReferencesMultipart(body, map[string]struct{}{
+		"token": {},
+	})
+	part := body.Parts[0]
+	if part.Name != "field_{{param.token}}" ||
+		part.Value != "val_{{param.token}}" ||
+		part.Filename != "file_{{param.token}}.txt" ||
+		part.ContentType != "text/plain; boundary={{param.token}}" {
+		t.Fatalf("unexpected multipart part fields: %#v", part)
+	}
+	if len(part.Headers) != 2 {
+		t.Fatalf("part.Headers len = %d, want 2: %#v", len(part.Headers), part.Headers)
+	}
+	if got := part.Headers["X-Header-{{param.token}}"]; got != "header-val-{{param.token}}" {
+		t.Fatalf("rewritten header = %q, want %q (headers=%#v)", got, "header-val-{{param.token}}", part.Headers)
+	}
+	if _, exists := part.Headers["X-Header-{{var.token}}"]; exists {
+		t.Fatalf("old key X-Header-{{var.token}} was not replaced: %#v", part.Headers)
+	}
+	if got := part.Headers["X-Static"]; got != "keep-{{var.unknown}}" {
+		t.Fatalf("X-Static header = %q, want %q", got, "keep-{{var.unknown}}")
+	}
+}

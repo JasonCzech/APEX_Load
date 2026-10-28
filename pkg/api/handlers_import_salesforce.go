@@ -8,6 +8,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -42,11 +43,22 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 
 	salesforceNative := salesforceNativeRequested(r)
 	agentforceTransform := agentforceTransformRequested(r)
+	disableSalesforce := false
 	if result.EffectiveSettings != nil {
 		salesforceNative = result.EffectiveSettings.SalesforceNative
 		agentforceTransform = result.EffectiveSettings.AgentforceTransform
+		disableSalesforce = result.EffectiveSettings.DisableSalesforce
 	}
-	salesforceAugmentation := importreview.AugmentHARImportWithSalesforceProfile(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "salesforce_har", salesforceNative, agentforceTransform, false, profile)
+	salesforceAugmentation := salesforceHARAugmentation{
+		Script:         result.Script,
+		Correlations:   any(result.Correlations),
+		ReviewSections: harImportReviewSections(result),
+		Summary:        harImportSummary(result),
+		Source:         "salesforce_har",
+	}
+	if !disableSalesforce {
+		salesforceAugmentation = importreview.AugmentHARImportWithSalesforceProfile(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "salesforce_har", salesforceNative, agentforceTransform, false, profile)
+	}
 
 	preApplied := sampleCorrelationsToPreApplied(result.Correlations)
 	if salesforceAugmentation.Script != result.Script {
@@ -70,11 +82,12 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 			applyClientTimestamps(s, importReq.Data, result)
 			*warnings = result.Warnings
 			*unsupported = result.Unsupported
-			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && len(importReq.Opts.ParameterizationSelections) == 0 {
+			hasSelectedIDs := len(paramize.SelectedIDsForScript(importReq.Opts.ParameterizationSelections, 0)) > 0
+			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && !hasSelectedIDs {
 				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
 				*warnings = result.Warnings
 			}
-			if len(importReq.Opts.ParameterizationSelections) > 0 {
+			if hasSelectedIDs {
 				if _, err := importreview.ApplyParameterizationSelectionsToScript(s, 0, importReq.Opts.ParameterizationSelections); err != nil {
 					return err
 				}

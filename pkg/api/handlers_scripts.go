@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/convert/k6"
 	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
@@ -217,11 +218,18 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	req.Options.SalesforceNative = req.SalesforceNative
 	req.AgentforceTransform = firstNonNilBool(req.AgentforceTransform, req.Options.AgentforceTransform, parseOptionalBool(r.URL.Query().Get("agentforce_transform")))
 	req.Options.AgentforceTransform = req.AgentforceTransform
-	if !req.Parameterize && !req.Options.Parameterize {
-		if param := parseOptionalBool(r.URL.Query().Get("parameterize")); param != nil {
-			req.Parameterize = *param
-			req.Options.Parameterize = *param
-		}
+	if req.Parameterize || req.Options.Parameterize {
+		req.Parameterize = true
+		req.Options.Parameterize = true
+	} else if param := parseOptionalBool(r.URL.Query().Get("parameterize")); param != nil {
+		req.Parameterize = *param
+		req.Options.Parameterize = *param
+	}
+	if len(paramize.SelectedIDsForScript(req.ParameterizationSelections, 0)) > 0 ||
+		(len(paramize.SelectedIDsForScript(req.Options.ParameterizationSelections, 0)) == 0 && len(req.ParameterizationSelections) > 0) {
+		req.Options.ParameterizationSelections = req.ParameterizationSelections
+	} else {
+		req.ParameterizationSelections = req.Options.ParameterizationSelections
 	}
 	if _, err := sample.ValidateConversionPolicy(req.ConversionPolicy); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -344,11 +352,12 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 				*warnings = result.Warnings
 				*unsupported = result.Unsupported
 			}
-			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && len(selections) == 0 {
+			hasSelectedIDs := len(paramize.SelectedIDsForScript(selections, 0)) > 0
+			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && !hasSelectedIDs {
 				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
 				*warnings = result.Warnings
 			}
-			if len(selections) > 0 {
+			if hasSelectedIDs {
 				if _, err := importreview.ApplyParameterizationSelectionsToScript(s, 0, selections); err != nil {
 					return err
 				}

@@ -333,6 +333,11 @@ func (s *Server) attestRecordingBaselineCapture(
 		if prepareErr == nil && candidate != nil {
 			candidateDigest, digestErr := scriptCorrelationActionGraphDigest(candidate)
 			if digestErr == nil && candidateDigest == submittedDigest {
+				if converted.EffectiveSettings != nil {
+					sample.AttachEffectiveSettings(script, converted.EffectiveSettings)
+				} else if script != nil && script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+					delete(script.Metadata.Import.Preserved, sample.PreservedEffectiveSettingsKey)
+				}
 				return &attestedRecordingBaseline{
 					source:       "proxy_recording",
 					observations: recorder.SessionBaseline(session),
