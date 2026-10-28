@@ -35,8 +35,22 @@ const (
 func getBrowserInstance(engine string, headless bool, quic ...string) (playwright.Browser, error) {
 	globalMutex.Lock()
 	defer globalMutex.Unlock()
+	return getBrowserInstanceLocked(engine, headless, quic...)
+}
 
-	if globalPlaywright != nil && pendingHAROwnerNeedsDriverInheritance(globalPlaywright.Pid()) && !browserEvidenceBudget.hasOpenContext() && activePoolOperations.Load() == 0 {
+func getBrowserInstanceForContext(engine string, headless bool, quic ...string) (playwright.Browser, func(), error) {
+	globalMutex.Lock()
+	defer globalMutex.Unlock()
+	b, err := getBrowserInstanceLocked(engine, headless, quic...)
+	if err != nil {
+		return nil, nil, err
+	}
+	activePoolOperations.Add(1)
+	return b, func() { activePoolOperations.Add(-1) }, nil
+}
+
+func getBrowserInstanceLocked(engine string, headless bool, quic ...string) (playwright.Browser, error) {
+	if globalPlaywright != nil && pendingHAROwnerNeedsDriverInheritance(globalPlaywright.Pid()) && browserEvidenceBudget.liveCount() <= 1 && !browserEvidenceBudget.hasOpenContext() && activePoolOperations.Load() == 0 {
 		pw := globalPlaywright
 		globalPlaywright = nil
 		closers := make([]func() error, 0, len(globalBrowsers))

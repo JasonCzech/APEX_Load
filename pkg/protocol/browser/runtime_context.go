@@ -140,10 +140,11 @@ func (b *Browser) openAdmittedBrowserContext(ctx context.Context) error {
 	if err := b.applyHARCaptureOptions(&options); err != nil {
 		return err
 	}
-	pwBrowser, err := getBrowserInstance(b.engine, b.headless, b.quic)
+	pwBrowser, doneOpening, err := getBrowserInstanceForContext(b.engine, b.headless, b.quic)
 	if err != nil {
 		return errors.Join(err, b.discardHARWorkingFile())
 	}
+	defer doneOpening()
 	if err := b.checkBrowserVersion(pwBrowser.Version()); err != nil {
 		return errors.Join(err, b.discardHARWorkingFile())
 	}

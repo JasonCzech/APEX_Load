@@ -457,6 +457,11 @@ func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string
 	if err := json.Unmarshal(definition.Definition, &inputs.policy); err != nil {
 		return nil, fmt.Errorf("policy revision is invalid: %w", err)
 	}
+	if inputs.policy.Baseline.Mode == "pinned_run" && strings.TrimSpace(inputs.policy.Baseline.RunID) != "" {
+		if run, lookupErr := s.store.GetTest(strings.TrimSpace(inputs.policy.Baseline.RunID)); lookupErr == nil && run != nil && normalizeProjectID(run.ProjectID) == normalizeProjectID(projectID) {
+			inputs.policy.Baseline.RunID = run.ID
+		}
+	}
 	inputs.ref = BrowserPolicyRef{ID: definition.ID, Name: definition.Name, Revision: definition.Revision, SHA256: sum, Source: source}
 	preRCAMismatch := ""
 	if inputs.policy.Baseline.Mode != "" && inputs.policy.Baseline.Mode != "none" {
