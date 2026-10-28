@@ -20,27 +20,33 @@ export default function TelemetryPolicy({ evidence, acceptSegments = false, segm
   // A changed response cannot display the previous receipt while its digest is
   // pending. Cleanup fences delayed completions after replacement or unmount.
   const { policy, reason } = verified && verified.evidence === evidence ? verified.view : { reason: 'Verifying the retained policy digest…' }
-  return <section className="goal-status-card telemetry-policy-card" aria-label="Telemetry budget policy">
+  return <section className="goal-status-card telemetry-policy-card run-report-panel" aria-label="Telemetry budget policy">
     <h3>Telemetry budget policy</h3>
     {policy ? <>
       {policy.capture_boundary === 'in-run-policy-segment'
-        ? <p>{segmentSequence ? `Segment ${segmentSequence}, changed while the run ran` : "Captured when the run's policy changed while it ran"}: immutable receipt classifying the live telemetry from that change on. Later system settings or policy revisions do not rewrite these budgets.</p>
-        : <p>Immutable receipt captured before runtime staging. Later system settings or policy revisions do not rewrite these budgets.</p>}
-      <dl className="manifest-definition-grid">
-        <div><dt>Policy</dt><dd>{telemetryPolicyChosen(policy)
-          ? <>Project policy {policy.policy_id} · revision {policy.revision} ({policy.capture_boundary === 'in-run-policy-segment' ? 'chosen while the run ran' : 'chosen by the run'})</>
-          : <>{policy.capture_boundary === 'in-run-policy-segment' ? 'Threshold settings when the policy changed' : 'System threshold settings'} ({policy.policy_id} · revision {policy.revision})</>}</dd></div>
-        {policy.definition_sha256 ? <div><dt>Definition digest</dt><dd style={{ overflowWrap: 'anywhere' }}><code>{policy.definition_sha256}</code></dd></div> : null}
-        <div><dt>Policy hash</dt><dd style={{ overflowWrap: 'anywhere' }}><code>{policy.hash}</code></dd></div>
-        <div><dt>Captured at</dt><dd>{formatDisplayDateTime(policy.captured_at, { seconds: true })}</dd></div>
-        <div><dt>Controller publication interval</dt><dd>{policy.expected_controller_publication_interval_ms.toLocaleString()} ms · {policy.cadence_scope === 'local-controller-ticker' ? 'local controller ticker' : 'distributed controller coalescing gate'}</dd></div>
-        <div><dt>Sustained warning window</dt><dd>{policy.sustained_breach_window_ms.toLocaleString()} ms</dd></div>
-        <div><dt>Classification algorithm</dt><dd>{policy.classification_algorithm}</dd></div>
-      </dl>
-      <dl className="manifest-definition-grid" aria-label="Retained telemetry stage budgets">
-        {policy.budgets.map(budget => <div key={budget.stage}><dt>{telemetryStageLabels[budget.stage]}</dt><dd>{budget.enabled ? `${budget.limit_ms.toString()} ms` : 'Disabled (explicit zero)'}</dd></div>)}
-      </dl>
+        ? <p className="telemetry-policy-lead">{segmentSequence ? `Segment ${segmentSequence}, changed while the run ran` : "Captured when the run's policy changed while it ran"}: immutable receipt classifying the live telemetry from that change on. Later system settings or policy revisions do not rewrite these budgets.</p>
+        : <p className="telemetry-policy-lead">Immutable receipt captured before runtime staging. Later system settings or policy revisions do not rewrite these budgets.</p>}
+      <div className="telemetry-policy-group">
+        <h4 className="telemetry-policy-group-title">Admission &amp; provenance receipt</h4>
+        <dl className="manifest-definition-grid telemetry-policy-meta-grid">
+          <div className="manifest-definition"><dt>Policy</dt><dd>{telemetryPolicyChosen(policy)
+            ? <>Project policy {policy.policy_id} · revision {policy.revision} ({policy.capture_boundary === 'in-run-policy-segment' ? 'chosen while the run ran' : 'chosen by the run'})</>
+            : <>{policy.capture_boundary === 'in-run-policy-segment' ? 'Threshold settings when the policy changed' : 'System threshold settings'} ({policy.policy_id} · revision {policy.revision})</>}</dd></div>
+          <div className="manifest-definition"><dt>Captured at</dt><dd>{formatDisplayDateTime(policy.captured_at, { seconds: true })}</dd></div>
+          <div className="manifest-definition"><dt>Controller publication interval</dt><dd>{policy.expected_controller_publication_interval_ms.toLocaleString()} ms · {policy.cadence_scope === 'local-controller-ticker' ? 'local controller ticker' : 'distributed controller coalescing gate'}</dd></div>
+          <div className="manifest-definition"><dt>Sustained warning window</dt><dd>{policy.sustained_breach_window_ms.toLocaleString()} ms</dd></div>
+          <div className="manifest-definition"><dt>Classification algorithm</dt><dd>{policy.classification_algorithm}</dd></div>
+          {policy.definition_sha256 ? <div className="manifest-definition telemetry-policy-digest-cell"><dt>Definition digest</dt><dd className="telemetry-policy-digest"><code>{policy.definition_sha256}</code></dd></div> : null}
+          <div className="manifest-definition telemetry-policy-digest-cell"><dt>Policy hash</dt><dd className="telemetry-policy-digest"><code>{policy.hash}</code></dd></div>
+        </dl>
+      </div>
+      <div className="telemetry-policy-group">
+        <h4 className="telemetry-policy-group-title">Stage latency budgets</h4>
+        <dl className="manifest-definition-grid telemetry-policy-budgets-grid" aria-label="Retained telemetry stage budgets">
+          {policy.budgets.map(budget => <div key={budget.stage} className={`manifest-definition telemetry-budget-cell ${budget.enabled ? 'telemetry-budget-enabled' : 'telemetry-budget-disabled'}`}><dt>{telemetryStageLabels[budget.stage]}</dt><dd>{budget.enabled ? `${budget.limit_ms.toString()} ms` : 'Disabled (explicit zero)'}</dd></div>)}
+        </dl>
+      </div>
     </> : <p>{reason}</p>}
-    <p>Policy availability describes retained settings. It does not establish synchronized clocks, wall-time coverage, exact loss totals, or a telemetry CI verdict. Missing intervals remain unknown.</p>
+    <p className="telemetry-policy-disclaimer">Policy availability describes retained settings. It does not establish synchronized clocks, wall-time coverage, exact loss totals, or a telemetry CI verdict. Missing intervals remain unknown.</p>
   </section>
 }

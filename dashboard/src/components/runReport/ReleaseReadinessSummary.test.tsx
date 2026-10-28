@@ -27,8 +27,15 @@ describe('ReleaseReadinessSummary', () => {
     expect(container.textContent).toContain('Evidence coverage: 92%')
   })
 
-  it('stays out of the way when acceptance criteria give a verdict', async () => {
+  it('stays out of the way when acceptance criteria give a verdict and no major risks exist', async () => {
     await act(async () => root.render(<ReleaseReadinessSummary report={{ verdict: { status: 'Pass', conditional: false, failed: false, explanation: '' } } as unknown as RunArchiveReport} />))
     expect(container.textContent).toBe('')
+  })
+
+  it('surfaces major findings even when acceptance criteria give a verdict', async () => {
+    await act(async () => root.render(<ReleaseReadinessSummary report={{ verdict: { status: 'Pass', conditional: false, failed: false, explanation: '' } } as unknown as RunArchiveReport} findings={[{ id: 'F-01', title: 'Checkout pool saturation', severity: 'major', observed: 'Connection wait exceeded 400 ms' }]} />))
+    expect(container.textContent).toContain('Checkout pool saturation')
+    expect(container.textContent).toContain('Connection wait exceeded 400 ms')
+    expect(container.textContent).not.toContain('No acceptance criteria are set for this run')
   })
 })

@@ -84468,6 +84468,7 @@ export interface operations {
         "download"?: boolean;
         "format"?: string;
         "include_release_trend"?: string;
+        "population"?: string;
         "profile"?: string;
       };
     };
@@ -105048,6 +105049,7 @@ export interface operations {
       };
       "query"?: {
         "comparison_id"?: string;
+        "population"?: string;
         "profile"?: string;
       };
     };

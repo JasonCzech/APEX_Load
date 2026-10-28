@@ -791,7 +791,7 @@ export function useTestApi() {
   )
 
   const downloadTestReport = useCallback(
-    (id: string, profile: string, options?: ApiCallOptions & { comparisonId?: string }) => fetchBlob(`/tests/${id}/report${buildQuery({ profile, comparison_id: options?.comparisonId })}`, options),
+    (id: string, profile: string, options?: ApiCallOptions & { comparisonId?: string; population?: 'action' | 'transaction' | 'unknown' }) => fetchBlob(`/tests/${id}/report${buildQuery({ profile, comparison_id: options?.comparisonId, population: options?.population })}`, options),
     [],
   )
 
@@ -810,8 +810,8 @@ export function useTestApi() {
   )
 
   const downloadTestReportFormat = useCallback(
-    (id: string, profile: string, format: 'pdf' | 'csv' | 'docx' | 'analysis_zip', options?: ApiCallOptions & { comparisonId?: string }) =>
-      fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile, comparison_id: options?.comparisonId })}`, options),
+    (id: string, profile: string, format: 'pdf' | 'csv' | 'docx' | 'analysis_zip', options?: ApiCallOptions & { comparisonId?: string; population?: 'action' | 'transaction' | 'unknown' }) =>
+      fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile, comparison_id: options?.comparisonId, population: options?.population })}`, options),
     [],
   )
 

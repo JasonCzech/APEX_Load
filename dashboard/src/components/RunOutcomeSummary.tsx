@@ -37,7 +37,7 @@ export default function RunOutcomeSummary({ report, showPopulations = true, show
   // The version mix leads only when HTTP/3 was in play.
   const versionMix = report.network_phases?.version_mix
   const showVersions = usedHTTP3(versionMix)
-  return <section className="run-outcome-summary" aria-label="Run outcome">
+  return <section className="run-outcome-summary run-report-panel" aria-label="Run outcome">
     <h3>Run outcome</h3>
     <dl>
       <div><dt>Execution</dt><dd>{outcome.execution}</dd></div>
@@ -66,11 +66,11 @@ export default function RunOutcomeSummary({ report, showPopulations = true, show
 }
 
 export function RunMetricPopulations({ report }: { report: RunArchiveReport }) {
-  return <dl aria-label="Metric populations">
+  return <dl className="run-metric-populations-grid" aria-label="Metric populations">
       {(['action', 'transaction', 'unknown'] as const).map(key => {
         const metrics = report.metric_populations?.[key]
-        return <div key={key}><dt>{key === 'action' ? 'Requests / actions' : key === 'transaction' ? 'Named transactions' : 'Unclassified legacy records'}</dt><dd>{metrics?.transactions === 0 ? '0 records · no samples to evaluate' : metrics ? `${formatNumber(metrics.transactions, 0)} · ${formatNumber(metrics.errors, 0)} ${metrics.errors === 1 ? 'error' : 'errors'} · P95 ${formatMs(metrics.p95_ms)} · ${!Number.isFinite(metrics.average_rate_per_second) ? 'Elapsed-run average unavailable' : `${formatNumber(metrics.average_rate_per_second, 1)}/s elapsed-run average`}` : 'Unknown'}</dd></div>
+        return <div key={key} className="run-metric-population-card"><dt>{key === 'action' ? 'Requests / actions' : key === 'transaction' ? 'Named transactions' : 'Unclassified legacy records'}</dt><dd>{metrics?.transactions === 0 ? '0 records · no samples to evaluate' : metrics ? `${formatNumber(metrics.transactions, 0)} · ${formatNumber(metrics.errors, 0)} ${metrics.errors === 1 ? 'error' : 'errors'} · P95 ${formatMs(metrics.p95_ms)} · ${!Number.isFinite(metrics.average_rate_per_second) ? 'Elapsed-run average unavailable' : `${formatNumber(metrics.average_rate_per_second, 1)}/s elapsed-run average`}` : 'Unknown'}</dd></div>
       })}
-      <div><dt>Archive records</dt><dd>{report.overview?.transactions ?? 'Unavailable'}</dd></div>
+      <div className="run-metric-population-card"><dt>Archive records</dt><dd>{report.overview?.transactions ?? 'Unavailable'}</dd></div>
     </dl>
 }

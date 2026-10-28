@@ -113,10 +113,10 @@ export default function RunExecutionDetails({ test, report, history = [], histor
           <thead><tr><th scope="col">Group</th><th scope="col">Script</th><th scope="col">Configured VUsers</th><th scope="col">Configuration details</th></tr></thead>
           <tbody>{facts.groups.map((group, index) => <tr key={`${group.name}-${index}`}>
             <th scope="row">{group.name || 'Unnamed group'}</th><td>{group.script_name || group.script_id || 'Not recorded'}</td><td>{recordedNumber(group.vusers)}</td>
-            <td><details><summary>View configuration</summary><dl>
-              <dt>Protocol</dt><dd>{manifest?.scripts?.find(script => script.group_name === group.name)?.protocol || 'Not recorded'}</dd>
-              <dt>Ramp up</dt><dd>{group.ramp_up || 'Not recorded'}</dd>
-              <dt>Initialization</dt><dd>{group.initialization || 'Not recorded'}</dd>
+            <td><details><summary>View configuration</summary><dl className="manifest-definition-grid run-execution-group-config">
+              <div className="manifest-definition"><dt>Protocol</dt><dd>{manifest?.scripts?.find(script => script.group_name === group.name)?.protocol || 'Not recorded'}</dd></div>
+              <div className="manifest-definition"><dt>Ramp up</dt><dd>{group.ramp_up || 'Not recorded'}</dd></div>
+              <div className="manifest-definition"><dt>Initialization</dt><dd>{group.initialization || 'Not recorded'}</dd></div>
             </dl></details></td>
           </tr>)}</tbody>
         </table></div> : <p>No group configuration was retained.</p>}

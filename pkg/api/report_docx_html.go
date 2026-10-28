@@ -21,8 +21,8 @@ const (
 	docxTeal  = "0F766E"
 	docxNavy  = "1F2933"
 	docxSlate = "5B6875"
-	docxLine  = "D8CFC2"
-	docxSilk  = "F7F4EE"
+	docxLine  = "E2E8F0"
+	docxSilk  = "F8FAFC"
 )
 
 var docxWhitespace = regexp.MustCompile(`\s+`)

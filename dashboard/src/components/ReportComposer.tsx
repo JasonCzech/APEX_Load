@@ -1,7 +1,7 @@
 import LiveTableReportSummary from './LiveTableReportSummary'
 import { createPortal } from 'react-dom'
 import RunOutcomeSummary from './RunOutcomeSummary'
-import { reportAcceptance, formatReportPercent, defaultReportPopulation, populationLabels, reportPopulationOverview } from './runReport/reportPresentation'
+import { reportAcceptance, formatReportPercent, defaultReportPopulation, populationLabels, reportPopulationOverview, type MetricPopulation } from './runReport/reportPresentation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import Logo from './Logo'
@@ -26,9 +26,11 @@ const PROFILE_LABEL: Record<string, string> = REPORT_LENS_LABELS
 
 interface Props {
   comparisonId?: string
+  population?: MetricPopulation
   testId: string
   testName: string
   profile: ReportProfileId
+  onAnnotationsSaved?: (annotations: ReportAnnotations) => void
   onClose: () => void
 }
 
@@ -49,7 +51,7 @@ function reportDraftSnapshot(annotations: EditableReportAnnotations): string {
   })
 }
 
-export default function ReportComposer({ testId, testName, profile, onClose, comparisonId }: Props) {
+export default function ReportComposer({ testId, testName, profile, onClose, comparisonId, population, onAnnotationsSaved }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -180,6 +182,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
         findings: cleanedFindings,
       })
       applyAnnotations(response.annotations)
+      onAnnotationsSaved?.(response.annotations)
       setStatus('Saved')
       return true
     } catch (err: unknown) {
@@ -188,7 +191,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
     } finally {
       setSaving(false)
     }
-  }, [annotationsUpdatedAt, api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, verdictUpdatedAt, findings, applyAnnotations])
+  }, [annotationsUpdatedAt, api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, verdictUpdatedAt, findings, applyAnnotations, onAnnotationsSaved])
 
   const currentDraftSnapshot = useMemo(() => reportDraftSnapshot({
     title,
@@ -215,16 +218,24 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
   const handleClose = useCallback(() => runGuarded(onClose), [onClose, runGuarded])
   useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose: handleClose })
 
+  const effectivePopulation = population ?? (report?.metric_populations ? defaultReportPopulation(report) : undefined)
+  // Headline numbers use the selected metric population (or the run report's
+  // default population) so the preview and export match the on-screen KPIs.
+  const headlinePopulation = effectivePopulation ?? defaultReportPopulation(report)
+
   const handleDownloadHtml = useCallback(async () => {
     if (isDirty && !(await persist())) return
     try {
-      const blob = await (comparisonId ? api.downloadTestReport(testId, profile, { comparisonId }) : api.downloadTestReport(testId, profile))
+      const options = (comparisonId || effectivePopulation)
+        ? { ...(comparisonId ? { comparisonId } : {}), ...(effectivePopulation ? { population: effectivePopulation } : {}) }
+        : undefined
+      const blob = await (options ? api.downloadTestReport(testId, profile, options) : api.downloadTestReport(testId, profile))
       const slug = (testName || testId).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
       await downloadBlob(blob, `${slug || 'apexload'}-${profile}-report.html`)
     } catch (err: unknown) {
       setStatus(getErrorMessage(err, 'Download failed'))
     }
-  }, [api, isDirty, persist, testId, testName, profile, comparisonId])
+  }, [api, isDirty, persist, testId, testName, profile, comparisonId, effectivePopulation])
 
   const handlePrint = useCallback(() => {
     previewFrameRef.current?.contentWindow?.print()
@@ -241,18 +252,18 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
     let cancelled = false
     setPreviewLoading(true)
     setPreviewError('')
-    const previewDownload = comparisonId ? api.downloadTestReport(testId, profile, { comparisonId }) : api.downloadTestReport(testId, profile)
+    const options = (comparisonId || effectivePopulation)
+      ? { ...(comparisonId ? { comparisonId } : {}), ...(effectivePopulation ? { population: effectivePopulation } : {}) }
+      : undefined
+    const previewDownload = options ? api.downloadTestReport(testId, profile, options) : api.downloadTestReport(testId, profile)
     previewDownload.then(blob => blob.text())
       .then(html => { if (!cancelled) setPreviewHtml(html) })
       .catch((err: unknown) => { if (!cancelled) setPreviewError(getErrorMessage(err, 'Unable to render report preview')) })
       .finally(() => { if (!cancelled) setPreviewLoading(false) })
     return () => { cancelled = true }
-  }, [api, editing, loading, report, testId, profile, annotationsUpdatedAt, comparisonId])
+  }, [api, editing, loading, report, testId, profile, annotationsUpdatedAt, comparisonId, effectivePopulation])
 
   const overview = report?.overview
-  // Headline numbers use the run report's default population so the preview
-  // (and the export it renders) matches the on-screen KPI scorecard.
-  const headlinePopulation = defaultReportPopulation(report)
   const headline = reportPopulationOverview(report, headlinePopulation)
   const manifest = report?.manifest
   const slaBreached = manifest?.sla_breached ?? false
@@ -301,10 +312,17 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
   )
 
   const topActions = useMemo(() => {
-    const entries = Object.entries((report?.metric_populations ? report.by_request : report?.by_action) || {})
+    const source = !report?.metric_populations
+      ? report?.by_action
+      : headlinePopulation === 'transaction'
+        ? report.by_transaction
+        : headlinePopulation === 'unknown'
+          ? report.by_unknown
+          : report.by_request
+    const entries = Object.entries(source || {})
     entries.sort((a, b) => b[1].transactions - a[1].transactions)
     return entries.slice(0, profile === 'executive' ? 5 : 20)
-  }, [report?.by_action, report?.by_request, report?.metric_populations, profile])
+  }, [headlinePopulation, profile, report?.by_action, report?.by_request, report?.by_transaction, report?.by_unknown, report?.metric_populations])
 
   const appendSelectedNoteToSummary = useCallback(() => {
     if (!selectedNote) return
@@ -468,7 +486,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
             {has('graphs', !isAudit) && (
               <section className="report-section report-graphs">
                 <h2>Performance analysis</h2>
-                <ReportCharts report={report} />
+                <ReportCharts report={report} population={headlinePopulation} />
               </section>
             )}
 

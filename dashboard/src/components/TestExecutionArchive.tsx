@@ -1405,7 +1405,7 @@ export default function TestExecutionArchive({
             </div>
           )}
 
-          {view === 'report-summary-timeline' && archiveReport && <><PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><ElasticArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /></>}
+          {view === 'report-summary-timeline' && !hideReportExports && archiveReport && <><PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><ElasticArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /></>}
           {showReportSummaryTimelineView && (
             summaryTimelineEntriesAll.length > 0 ? (
               <div className="tx-section archive-summary-section">

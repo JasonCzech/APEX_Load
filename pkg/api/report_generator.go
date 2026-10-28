@@ -273,10 +273,7 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 		annotations = defaultReportAnnotations(report, testID, profile.ID)
 	}
 
-	actionStats := report.ByAction
-	if report.MetricPopulations != nil {
-		actionStats = report.ByRequest
-	}
+	actionStats, _ := reportPopulationActions(report)
 	actionRows := make([]runArchiveHTMLActionRow, 0, len(actionStats))
 	for name, stats := range actionStats {
 		actionRows = append(actionRows, runArchiveHTMLActionRow{Name: name, Stats: stats})
