@@ -8,7 +8,11 @@ import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, t
 import { buildAllowedOperationSet, canShowEndpointForDocs, classifyEndpointForDocs } from '../apiGuideAccess'
 import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
-import { parseSwaggerDocument, type SwaggerOperation } from './swaggerDocsParser'
+import { parseSwaggerDocument, type SwaggerOperation, type SwaggerDocument } from './swaggerDocsParser'
+
+import { canSaveApiResourceViaBridge, saveApiResourceViaBridge } from '../desktop/desktopFiles'
+import { downloadTextFile } from '../utils/fileUtils'
+import SwaggerOperationDetail from './SwaggerOperationDetail'
 
 function stripMarkdown(value: string) {
   return value
@@ -75,6 +79,7 @@ export default function SwaggerDocsPage({
   const [docsState, setDocsState] = useState<SwaggerDocsState | null>(null)
   const [loadError, setLoadError] = useState('')
   const [loadAttempt, setLoadAttempt] = useState(0)
+  const [downloadMessage, setDownloadMessage] = useState('')
   const document = useMemo(() => parseSwaggerDocument(docsState?.swaggerYaml || ''), [docsState?.swaggerYaml])
   const categories = useMemo(() => Array.from(new Set(document.operations.map(operation => operation.category))).sort(), [document.operations])
   const hash = useHelpHash()
@@ -154,6 +159,20 @@ export default function SwaggerDocsPage({
         </div>
       </section>
 
+      <div className="swagger-reference-links">
+        <button className="btn btn-secondary btn-sm" type="button" onClick={async () => {
+          try {
+            const outcome = canSaveApiResourceViaBridge()
+              ? await saveApiResourceViaBridge('/api/v1/docs/swagger.yaml', 'apexload-openapi.yaml')
+              : await downloadTextFile(docsState.swaggerYaml, 'apexload-openapi.yaml', 'application/yaml')
+            if (outcome === 'unavailable') throw new Error('The native save bridge became unavailable. Try the download again.')
+            setDownloadMessage(outcome === 'cancelled' ? 'Download cancelled.' : outcome === 'saved' ? 'OpenAPI document saved.' : 'OpenAPI download started.')
+          } catch (error) { setDownloadMessage(error instanceof Error ? error.message : 'OpenAPI download failed.') }
+        }}>Download OpenAPI</button>
+        <a href="#/docs?guide=general&article=authentication">Authentication guide</a>
+        <a href="#/docs?guide=quick-start">API workflow examples</a>
+      </div>
+      <span role="status">{downloadMessage}</span>
       <section className="swagger-docs-controls" aria-label="Swagger documentation filters">
         <label>
           <span>Search APIs</span>
@@ -168,7 +187,7 @@ export default function SwaggerDocsPage({
         </label>
         <label className="swagger-docs-access-filter">
           <span>Access</span>
-          <label className="swagger-docs-checkbox">
+          <span className="swagger-docs-checkbox">
             <input
               type="checkbox"
               checked={myAccessOnly}
@@ -176,14 +195,14 @@ export default function SwaggerDocsPage({
               onChange={event => setMyAccessOnly(event.target.checked)}
             />
             <span>My access only</span>
-          </label>
+          </span>
         </label>
       </section>
 
       <section className="swagger-docs-results" aria-live="polite">
         <div className="api-guide-section-header">
           <h3 className="sr-only">API Reference</h3>
-          <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown. All registered routes are included by default. Query/header names and types, request media/top-level fields, declared response statuses/media, and access requirements are generated from route and handler code; detailed validation rules remain handler-defined.</p>
+          <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown. All registered routes are included by default. Expand an endpoint for request examples, body schemas, response formats, and authentication. Examples use placeholder values; copying a request does not execute it.</p>
         </div>
         {filteredOperations.length === 0 ? (
           <div className="api-guide-callout">
@@ -198,6 +217,7 @@ export default function SwaggerDocsPage({
                 <SwaggerOperationCard
                   key={`${operation.method}-${operation.path}-${operation.operationId}`}
                   operation={operation}
+                  document={document}
                   catalogRoute={catalogRoute}
                   allowedOperations={allowedOperations}
                   effectiveAccessLoaded={effectiveAccessLoaded}
@@ -217,12 +237,14 @@ export default function SwaggerDocsPage({
 
 function SwaggerOperationCard({
   operation,
+  document,
   catalogRoute,
   allowedOperations,
   effectiveAccessLoaded,
   effectiveAccessError,
 }: {
   operation: SwaggerOperation
+  document: SwaggerDocument
   catalogRoute?: ApiEndpointCatalogRoute
   allowedOperations: Set<string>
   effectiveAccessLoaded: boolean
@@ -258,65 +280,7 @@ function SwaggerOperationCard({
               <dd>{operation.tags.length ? operation.tags.join(', ') : 'None'}</dd>
             </div>
           </dl>
-          {operation.requestBody && (
-            <div className="swagger-request-body-detail">
-              <h5>Request body {operation.requestBody.required ? '(required)' : '(optional)'}</h5>
-              {operation.requestBody.media.map(media => (
-                <div key={`${operation.operationId}-${media.mediaType}`}>
-                  <p><code>{media.mediaType}</code>{media.schemaRef ? <> · <code>{media.schemaRef}</code></> : media.schemaType ? ` · ${media.schemaType}` : ''}</p>
-                  {media.fields.length > 0 ? (
-                    <table>
-                      <thead><tr><th>Field</th><th>Type</th></tr></thead>
-                      <tbody>
-                        {media.fields.map(field => (
-                          <tr key={`${operation.operationId}-${media.mediaType}-${field.name}`}>
-                            <td><code>{field.name}</code></td>
-                            <td>{field.type}{field.format ? ` (${field.format})` : ''}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : <p>Payload fields are operation-specific or defined by the referenced schema.</p>}
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="swagger-detail-grid">
-            <div>
-              <h5>Parameters</h5>
-              {operation.parameters.length > 0 ? (
-                <table>
-                  <thead><tr><th>Name</th><th>In</th><th>Required</th><th>Type</th></tr></thead>
-                  <tbody>
-                    {operation.parameters.map(parameter => (
-                      <tr key={`${operation.operationId}-${parameter.location}-${parameter.name}`}>
-                        <td><code>{parameter.name}</code></td>
-                        <td>{parameter.location || 'n/a'}</td>
-                        <td>{parameter.required ? 'Yes' : 'No'}</td>
-                        <td>{parameter.type || 'string'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : <p>No path or query parameters are declared.</p>}
-            </div>
-            <div>
-              <h5>Responses</h5>
-              {operation.responses.length > 0 ? (
-                <table>
-                  <thead><tr><th>Status</th><th>Description</th></tr></thead>
-                  <tbody>
-                    {operation.responses.map(response => (
-                      <tr key={`${operation.operationId}-${response.status}`}>
-                        <td><code>{response.status}</code></td>
-                        <td>{response.description || 'Response'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : <p>No documented responses.</p>}
-            </div>
-          </div>
+          <SwaggerOperationDetail operation={operation} document={document} />
         </div>
       )}
     </details>
