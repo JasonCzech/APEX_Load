@@ -198229,6 +198229,58 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      validation_context:
+                        type: object
+                        properties:
+                          components:
+                            type: object
+                            properties:
+                              approvals:
+                                type: string
+                              capabilities:
+                                type: string
+                              policy:
+                                type: string
+                              scripts:
+                                type: string
+                              secret_references:
+                                type: string
+                            required:
+                              - approvals
+                              - capabilities
+                              - policy
+                              - scripts
+                              - secret_references
+                          contextual_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                cause:
+                                  type: string
+                                detail:
+                                  type: string
+                                subject:
+                                  type: string
+                              required:
+                                - cause
+                                - detail
+                          revision:
+                            type: string
+                          secret_reference_limit:
+                            type: integer
+                            format: int64
+                          secret_references_truncated:
+                            type: boolean
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - components
+                          - revision
+                          - secret_reference_limit
+                          - version
+                        nullable: true
                     required:
                       - items
                       - status
@@ -200546,6 +200598,58 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      validation_context:
+                        type: object
+                        properties:
+                          components:
+                            type: object
+                            properties:
+                              approvals:
+                                type: string
+                              capabilities:
+                                type: string
+                              policy:
+                                type: string
+                              scripts:
+                                type: string
+                              secret_references:
+                                type: string
+                            required:
+                              - approvals
+                              - capabilities
+                              - policy
+                              - scripts
+                              - secret_references
+                          contextual_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                cause:
+                                  type: string
+                                detail:
+                                  type: string
+                                subject:
+                                  type: string
+                              required:
+                                - cause
+                                - detail
+                          revision:
+                            type: string
+                          secret_reference_limit:
+                            type: integer
+                            format: int64
+                          secret_references_truncated:
+                            type: boolean
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - components
+                          - revision
+                          - secret_reference_limit
+                          - version
+                        nullable: true
                     required:
                       - items
                       - status
@@ -204114,6 +204218,58 @@ paths:
                       total_vusers:
                         type: integer
                         format: int64
+                      validation_context:
+                        type: object
+                        properties:
+                          components:
+                            type: object
+                            properties:
+                              approvals:
+                                type: string
+                              capabilities:
+                                type: string
+                              policy:
+                                type: string
+                              scripts:
+                                type: string
+                              secret_references:
+                                type: string
+                            required:
+                              - approvals
+                              - capabilities
+                              - policy
+                              - scripts
+                              - secret_references
+                          contextual_findings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                cause:
+                                  type: string
+                                detail:
+                                  type: string
+                                subject:
+                                  type: string
+                              required:
+                                - cause
+                                - detail
+                          revision:
+                            type: string
+                          secret_reference_limit:
+                            type: integer
+                            format: int64
+                          secret_references_truncated:
+                            type: boolean
+                          version:
+                            type: integer
+                            format: int64
+                        required:
+                          - components
+                          - revision
+                          - secret_reference_limit
+                          - version
+                        nullable: true
                     required:
                       - items
                       - status
@@ -208421,6 +208577,58 @@ paths:
                   total_vusers:
                     type: integer
                     format: int64
+                  validation_context:
+                    type: object
+                    properties:
+                      components:
+                        type: object
+                        properties:
+                          approvals:
+                            type: string
+                          capabilities:
+                            type: string
+                          policy:
+                            type: string
+                          scripts:
+                            type: string
+                          secret_references:
+                            type: string
+                        required:
+                          - approvals
+                          - capabilities
+                          - policy
+                          - scripts
+                          - secret_references
+                      contextual_findings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            cause:
+                              type: string
+                            detail:
+                              type: string
+                            subject:
+                              type: string
+                          required:
+                            - cause
+                            - detail
+                      revision:
+                        type: string
+                      secret_reference_limit:
+                        type: integer
+                        format: int64
+                      secret_references_truncated:
+                        type: boolean
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - components
+                      - revision
+                      - secret_reference_limit
+                      - version
+                    nullable: true
                 required:
                   - items
                   - status
@@ -208460,6 +208668,13 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: context_only
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Scenarios
       x-handler: handleValidateScenarioLoadModel
@@ -287780,6 +287995,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:

@@ -39,6 +39,7 @@ const apiMock = {
   listLoadModelTemplates: vi.fn(),
   getLoadModelSupportMatrix: vi.fn(),
   validateScenarioLoadModel: vi.fn(),
+  getScenarioValidationContext: vi.fn(),
   estimateTest: vi.fn(),
   createScenario: vi.fn(),
   // Keyed creates reach the createScenario mock; intent tests assert the key.
@@ -5872,6 +5873,62 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Start')).toBe(false)
 
     confirmSpy.mockRestore()
+  })
+
+  it('clears a scenario validation result whose controller context changed and ignores transient probe errors (AUTH-B1)', async () => {
+    const context = (overrides?: Partial<Record<'scripts' | 'capabilities' | 'policy' | 'approvals' | 'secret_references', string>>) => ({
+      version: 1,
+      revision: `svctx1:${JSON.stringify(overrides ?? {})}`,
+      components: {
+        scripts: overrides?.scripts ?? 'scripts-a',
+        capabilities: overrides?.capabilities ?? 'cap-a',
+        policy: overrides?.policy ?? 'policy-a',
+        approvals: overrides?.approvals ?? 'approvals-a',
+        secret_references: overrides?.secret_references ?? 'secrets-a',
+      },
+    })
+    let clock = 1_000_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    try {
+      apiMock.validateScenarioLoadModel.mockResolvedValueOnce({
+        status: 'ready',
+        status_counts: { ready: 1 },
+        total_vusers: 10,
+        items: [{ dimension: 'modeled_demand', status: 'ready', summary: 'Closed workload uses 10 VUsers.', target_vusers: 10 }],
+        validation_context: context(),
+      })
+      apiMock.getScenarioValidationContext.mockResolvedValue(context())
+      await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={() => {}} initialView="builder" />))
+      await flushPromises()
+      await chooseLibraryScriptForGroup()
+      await clickWizardStep('Review')
+      await clickButton('Validate load model')
+      await flushPromises()
+      expect(container.querySelector('.scenario-load-validation')?.textContent).toContain('Closed workload uses 10 VUsers.')
+
+      // A transient probe failure on focus leaves the held validation intact.
+      apiMock.getScenarioValidationContext.mockRejectedValueOnce(new ApiError('unavailable', 503, { error: 'unavailable' }))
+      clock += 6_000
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await flushPromises()
+      expect(container.querySelector('.scenario-load-validation')?.textContent).toContain('Closed workload uses 10 VUsers.')
+      expect(container.querySelector('.scenario-validation-stale-notice')).toBeNull()
+
+      // A changed constituent script or secret reference clears the result and names the causes.
+      apiMock.getScenarioValidationContext.mockResolvedValueOnce(context({
+        scripts: 'scripts-b',
+        approvals: 'approvals-b',
+        secret_references: 'secrets-b',
+      }))
+      clock += 12_000
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await flushPromises()
+      expect(container.querySelector('.scenario-load-validation')).toBeNull()
+      const notice = container.querySelector('.scenario-validation-stale-notice')?.textContent || ''
+      expect(notice).toContain('Validation results no longer apply: constituent scripts, Java approval, project secrets changed since the check. Validate load model again.')
+    } finally {
+      now.mockRestore()
+    }
   })
 })
 

@@ -1005,6 +1005,10 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 			return
 		}
+		if scriptRequiresJavaVuserAuthoringApproval(safeScript) {
+			writeError(w, http.StatusConflict, "Java Vuser scripts must be saved through authoring-session review and approval")
+			return
+		}
 		if strings.TrimSpace(safeScript.Version) == "" {
 			safeScript.Version = "1"
 		}

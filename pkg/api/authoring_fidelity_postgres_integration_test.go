@@ -68,4 +68,34 @@ func TestPostgresAuthoringFidelityLifecycle(t *testing.T) {
 		}
 		return store
 	})
+	t.Run("receipt_crash_boundaries_and_key_rotation", func(t *testing.T) {
+		subSchemaIdx := 0
+		runAuthoringReceiptCrashBoundariesAndKeyRotation(t, func() storage.Store {
+			subSchemaIdx++
+			subSchema := fmt.Sprintf("%s_receipt_%d", schema, subSchemaIdx)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := admin.ExecContext(ctx, "CREATE SCHEMA "+subSchema); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				_, _ = admin.ExecContext(ctx, "DROP SCHEMA "+subSchema+" CASCADE")
+			})
+			subParsed, err := url.Parse(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q := subParsed.Query()
+			q.Set("search_path", subSchema)
+			q.Set("application_name", subSchema)
+			subParsed.RawQuery = q.Encode()
+			store, err := storage.NewPostgresStore(subParsed.String(), storage.StoreConnectionOptions{MaxOpenConns: 4}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return store
+		})
+	})
 }

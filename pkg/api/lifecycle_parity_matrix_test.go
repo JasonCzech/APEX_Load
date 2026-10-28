@@ -260,6 +260,7 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 			t.Errorf("%s (%s) no longer validates its persisted copy with the stored validator", route, file)
 		}
 	}
+	server := NewServer(ServerConfig{})
 	for _, fixture := range lifecycleFixtures() {
 		t.Run(fixture.Name, func(t *testing.T) {
 			expected := append([]string{}, validateScript(fixture.Script())...)
@@ -272,6 +273,93 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 			}
 			if issues := append([]string{}, validateStoredExecutionScript(persistent)...); !reflect.DeepEqual(issues, expected) {
 				t.Fatalf("import save copy: issues %q, want %q", issues, expected)
+			}
+			for _, save := range []struct {
+				name, path, profile string
+				prefixed            bool
+			}{
+				{"generic", "/api/v1/scripts/import/commit-batch", "har", true},
+				{"enterprise", "/api/v1/scripts/import/enterprise-script-archive/save", enterpriseArchiveSaveProfile, true},
+				{"asyncapi", "/api/v1/scripts/import/asyncapi/commit-batch", "asyncapi", true},
+				{"jmeter", "/api/v1/scripts/import/jmeter/save", "jmeter", false},
+			} {
+				draft := fixture.Script()
+				draft.Name = fmt.Sprintf("Lifecycle %s %s", save.name, fixture.Name)
+				ensureScriptImportPreserved(draft, save.profile)
+				var payloadScript any = draft
+				if fixture.ImportTrust {
+					preview := server.newScriptImportResponseWithSourceSecrets(
+						httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil),
+						scriptImportResponseOptions{Script: draft, Scripts: []*dsl.Script{draft}},
+					)
+					if scripts, ok := preview["scripts"].([]any); ok && len(scripts) == 1 {
+						payloadScript = scripts[0]
+					}
+				}
+				payload := map[string]any{
+					"operation_id":   "parity-" + save.name + "-" + fixture.Name,
+					"source_profile": save.profile,
+					"scripts":        []any{payloadScript},
+				}
+				body, err := json.Marshal(payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req := httptest.NewRequest(http.MethodPost, save.path, bytes.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				server.mux.ServeHTTP(rec, req)
+				if len(expected) == 0 {
+					if fixture.ImportTrust {
+						if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "Java Vuser") {
+							t.Fatalf("%s: status %d body=%s, want 409 Java Vuser approval gate after persisted-copy validation", save.name, rec.Code, rec.Body.String())
+						}
+						continue
+					}
+					if rec.Code != http.StatusCreated {
+						t.Fatalf("%s: status %d, want 201: %s", save.name, rec.Code, rec.Body.String())
+					}
+					continue
+				}
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("%s: status %d, want 400: %s", save.name, rec.Code, rec.Body.String())
+				}
+				wantMsg := strings.Join(expected, "; ")
+				if save.prefixed {
+					wantMsg = "script 1: " + wantMsg
+				}
+				var errPayload map[string]any
+				if err := json.Unmarshal(rec.Body.Bytes(), &errPayload); err != nil {
+					t.Fatal(err)
+				}
+				if got, _ := errPayload["error"].(string); got != wantMsg {
+					t.Fatalf("%s: error %q, want %q", save.name, got, wantMsg)
+				}
+			}
+			if fixture.ImportTrust {
+				attested := fixture.Script()
+				ensureScriptImportPreserved(attested, enterpriseArchiveSaveProfile)
+				_ = server.newScriptImportResponseWithSourceSecrets(
+					httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil),
+					scriptImportResponseOptions{Script: attested},
+				)
+				sessionBody, err := json.Marshal(map[string]any{
+					"source":          enterpriseArchiveSaveProfile,
+					"name":            "Lifecycle Java approval",
+					"status":          "editing",
+					"idempotency_key": "parity-java-approval-" + fixture.Name,
+					"draft":           attested,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				sessionReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(sessionBody))
+				sessionReq.Header.Set("Content-Type", "application/json")
+				sessionRec := httptest.NewRecorder()
+				server.mux.ServeHTTP(sessionRec, sessionReq)
+				if sessionRec.Code != http.StatusCreated {
+					t.Fatalf("authoring session create: status %d body=%s", sessionRec.Code, sessionRec.Body.String())
+				}
 			}
 		})
 	}

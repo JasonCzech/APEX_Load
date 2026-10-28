@@ -615,6 +615,10 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 	}
 	session.ReviewState["pending_script_id"] = session.Draft.ID
 	session.ReviewState["approval_started_at"] = now.Format(time.RFC3339Nano)
+	if err := storage.CheckAuthoringReceiptFault(storage.AuthoringReceiptFaultPreClaim, "authoring_session_approve", session.ID); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "failed to persist authoring approval intent: "+err.Error())
+		return
+	}
 	claimed, err := s.compareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist authoring approval intent: "+err.Error())
@@ -625,6 +629,10 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 	intentUpdatedAt := session.UpdatedAt
+	if err := storage.CheckAuthoringReceiptFault(storage.AuthoringReceiptFaultPostClaimPreResourceInsert, "authoring_session_approve", session.ID); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "authoring approval interrupted before script promotion; retry will resume the durable approval intent: "+err.Error())
+		return
+	}
 	stored, err := s.runner.createAuthoringApprovedScriptDurable(session.Draft)
 	if err != nil {
 		session.Status = previousStatus
@@ -638,6 +646,10 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 			err = errors.Join(err, errors.New("approval intent changed before rollback"))
 		}
 		writeError(w, http.StatusInternalServerError, "failed to save approved script: "+err.Error())
+		return
+	}
+	if err := storage.CheckAuthoringReceiptFault(storage.AuthoringReceiptFaultPostResourceInsertPreBinding, "authoring_session_approve", session.ID); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "authoring approval interrupted before finalizing session; retry will resume the durable approval intent: "+err.Error())
 		return
 	}
 	now = time.Now()
@@ -661,6 +673,10 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 	}
 	if !finalized {
 		writeError(w, http.StatusConflict, "authoring session changed while approval was finalizing")
+		return
+	}
+	if err := storage.CheckAuthoringReceiptFault(storage.AuthoringReceiptFaultPostCommitDroppedResponse, "authoring_session_approve", session.ID); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "authoring approval response lost after commit; retry to replay: "+err.Error())
 		return
 	}
 	enrichAuthoringSession(session)

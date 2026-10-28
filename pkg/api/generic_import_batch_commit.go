@@ -394,6 +394,10 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %s", index+1, strings.Join(issues, "; ")))
 			return
 		}
+		if scriptRequiresJavaVuserAuthoringApproval(persistent) {
+			writeError(w, http.StatusConflict, "Java Vuser scripts must be saved through authoring-session review and approval")
+			return
+		}
 		persistent.ID = plannedIDs[index]
 		if !s.reserveImportUpdate(w, projectID, index, persistent, updateTargets[index], updates) {
 			return

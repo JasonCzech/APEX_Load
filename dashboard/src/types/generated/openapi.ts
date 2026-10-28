@@ -24980,6 +24980,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -58912,6 +58917,24 @@ export interface operations {
               "status": string;
               "status_counts": Record<string, number>;
               "total_vusers": number;
+              "validation_context"?: ({
+                "components": {
+                  "approvals": string;
+                  "capabilities": string;
+                  "policy": string;
+                  "scripts": string;
+                  "secret_references": string;
+                };
+                "contextual_findings"?: Array<{
+                  "cause": string;
+                  "detail": string;
+                  "subject"?: string;
+                }>;
+                "revision": string;
+                "secret_reference_limit": number;
+                "secret_references_truncated"?: boolean;
+                "version": number;
+              }) | null;
             }) | null;
             "preview": Array<{
               "art"?: ({
@@ -60236,6 +60259,24 @@ export interface operations {
               "status": string;
               "status_counts": Record<string, number>;
               "total_vusers": number;
+              "validation_context"?: ({
+                "components": {
+                  "approvals": string;
+                  "capabilities": string;
+                  "policy": string;
+                  "scripts": string;
+                  "secret_references": string;
+                };
+                "contextual_findings"?: Array<{
+                  "cause": string;
+                  "detail": string;
+                  "subject"?: string;
+                }>;
+                "revision": string;
+                "secret_reference_limit": number;
+                "secret_references_truncated"?: boolean;
+                "version": number;
+              }) | null;
             }) | null;
             "preview": Array<{
               "art"?: ({
@@ -168405,6 +168446,24 @@ export interface operations {
               "status": string;
               "status_counts": Record<string, number>;
               "total_vusers": number;
+              "validation_context"?: ({
+                "components": {
+                  "approvals": string;
+                  "capabilities": string;
+                  "policy": string;
+                  "scripts": string;
+                  "secret_references": string;
+                };
+                "contextual_findings"?: Array<{
+                  "cause": string;
+                  "detail": string;
+                  "subject"?: string;
+                }>;
+                "revision": string;
+                "secret_reference_limit": number;
+                "secret_references_truncated"?: boolean;
+                "version": number;
+              }) | null;
             }) | null;
             "scenario_draft": {
               "assignment"?: ({
@@ -204956,7 +205015,11 @@ export interface operations {
     };
   };
   "handleValidateScenarioLoadModel": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "context_only"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -205879,6 +205942,24 @@ export interface operations {
             "status": string;
             "status_counts": Record<string, number>;
             "total_vusers": number;
+            "validation_context"?: ({
+              "components": {
+                "approvals": string;
+                "capabilities": string;
+                "policy": string;
+                "scripts": string;
+                "secret_references": string;
+              };
+              "contextual_findings"?: Array<{
+                "cause": string;
+                "detail": string;
+                "subject"?: string;
+              }>;
+              "revision": string;
+              "secret_reference_limit": number;
+              "secret_references_truncated"?: boolean;
+              "version": number;
+            }) | null;
           }) | null;
         };
       };

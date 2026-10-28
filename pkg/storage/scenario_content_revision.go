@@ -496,6 +496,9 @@ func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []
 	if err := validateScenarioAuthoringPoolsActiveTx(tx, pools); err != nil {
 		return nil, err
 	}
+	if err := CheckAuthoringReceiptFault(AuthoringReceiptFaultPostClaimPreResourceInsert, AuthoringPurposeScenarioCreate, scenario.ID); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrAuthoringReceiptFaultBeforeCommit, err)
+	}
 	applied, err := createScenarioWithBindingsTx(tx, scenario, groups, pools, assignment, goals, runtime, traffic, joint)
 	if err != nil {
 		return nil, err
@@ -521,6 +524,11 @@ func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrScenarioAuthoringOutcomeUnknown, err)
+	}
+	if applied {
+		if err := CheckAuthoringReceiptFault(AuthoringReceiptFaultPostCommitDroppedResponse, AuthoringPurposeScenarioCreate, scenario.ID); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrScenarioAuthoringOutcomeUnknown, err)
+		}
 	}
 	return &ScenarioAuthoringMutationResult{Snapshot: snapshot, Applied: applied}, nil
 }

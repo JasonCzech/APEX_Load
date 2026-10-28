@@ -311,7 +311,7 @@ export type {
   RuntimeSettingsReview,
   ScenarioRuntimeSettingsDraft,
 } from './types/runtimeSettings'
-export type { LoadModelValidationItem, LoadModelValidationReport, LoadStageDraft } from './types/loadModels'
+export type { LoadModelValidationItem, LoadModelValidationReport, LoadStageDraft, ScenarioValidationContext, ScenarioValidationContextComponent } from './types/loadModels'
 export type {
   AssignmentRecommendation,
   ContinueOnErrorResolution,

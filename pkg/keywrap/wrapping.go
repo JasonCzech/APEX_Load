@@ -140,6 +140,72 @@ func (w *LocalAESKeyWrapper) UnwrapKey(_ context.Context, wrapped WrappedKey, aa
 	return w.aead.Open(nil, raw[:w.aead.NonceSize()], raw[w.aead.NonceSize():], aad)
 }
 
+// KeyRingWrapper wraps new data-encryption keys with the active master key and
+// unwraps existing envelopes with either the active key or any retired previous
+// key, enabling zero-downtime master key rotation.
+type KeyRingWrapper struct {
+	active   KeyWrapper
+	previous []KeyWrapper
+}
+
+func NewKeyRingWrapper(active KeyWrapper, previous ...KeyWrapper) (*KeyRingWrapper, error) {
+	if active == nil {
+		return nil, errors.New("active key wrapper is required")
+	}
+	filtered := make([]KeyWrapper, 0, len(previous))
+	for _, prev := range previous {
+		if prev != nil {
+			filtered = append(filtered, prev)
+		}
+	}
+	return &KeyRingWrapper{active: active, previous: filtered}, nil
+}
+
+func (w *KeyRingWrapper) WrapKey(ctx context.Context, plaintext, aad []byte) (WrappedKey, error) {
+	return w.active.WrapKey(ctx, plaintext, aad)
+}
+
+func (w *KeyRingWrapper) UnwrapKey(ctx context.Context, wrapped WrappedKey, aad []byte) ([]byte, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	key, err := w.active.UnwrapKey(ctx, wrapped, aad)
+	if err == nil {
+		return key, nil
+	}
+	errs := make([]error, 0, 1+len(w.previous))
+	errs = append(errs, err)
+	for _, prev := range w.previous {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		unwrapped, prevErr := prev.UnwrapKey(ctx, wrapped, aad)
+		if prevErr == nil {
+			return unwrapped, nil
+		}
+		errs = append(errs, prevErr)
+	}
+	return nil, errors.Join(errs...)
+}
+
+// RotateWrappedKey unwraps a data-encryption key with current and re-wraps the
+// exact same plaintext key material under next using the same AAD.
+func RotateWrappedKey(ctx context.Context, current, next KeyWrapper, wrapped WrappedKey, aad []byte) (WrappedKey, error) {
+	if current == nil || next == nil {
+		return WrappedKey{}, errors.New("current and next key wrappers are required")
+	}
+	plaintext, err := current.UnwrapKey(ctx, wrapped, aad)
+	if err != nil {
+		return WrappedKey{}, fmt.Errorf("unwrap key for rotation: %w", err)
+	}
+	defer clear(plaintext)
+	rewrapped, err := next.WrapKey(ctx, plaintext, aad)
+	if err != nil {
+		return WrappedKey{}, fmt.Errorf("rewrap key for rotation: %w", err)
+	}
+	return rewrapped, nil
+}
+
 type AzureKeyVaultKeyWrapper struct {
 	keyID      string
 	credential azcore.TokenCredential

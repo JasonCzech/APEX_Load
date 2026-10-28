@@ -138,6 +138,9 @@ func (s *SQLiteStore) createScriptAuthoringIfAbsent(script *dsl.Script, completi
 	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
 		return nil, err
 	}
+	if err := CheckAuthoringReceiptFault(AuthoringReceiptFaultPostClaimPreResourceInsert, AuthoringPurposeScriptCreate, script.ID); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrAuthoringReceiptFaultBeforeCommit, err)
+	}
 	result, err := tx.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, goal_config_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
@@ -161,6 +164,11 @@ func (s *SQLiteStore) createScriptAuthoringIfAbsent(script *dsl.Script, completi
 	if snapshotErr != nil {
 		return nil, snapshotErr
 	}
+	if rows == 1 {
+		if err := CheckAuthoringReceiptFault(AuthoringReceiptFaultPostResourceInsertPreBinding, AuthoringPurposeScriptCreate, script.ID); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrAuthoringReceiptFaultBeforeCommit, err)
+		}
+	}
 	if completion != nil && rows == 1 {
 		rendered, renderErr := outcome(snapshot)
 		if renderErr != nil {
@@ -172,6 +180,11 @@ func (s *SQLiteStore) createScriptAuthoringIfAbsent(script *dsl.Script, completi
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	if rows == 1 {
+		if err := CheckAuthoringReceiptFault(AuthoringReceiptFaultPostCommitDroppedResponse, AuthoringPurposeScriptCreate, script.ID); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrAuthoringReceiptFaultPostCommit, err)
+		}
 	}
 	return &ScriptAuthoringMutationResult{Snapshot: snapshot, Applied: rows == 1}, nil
 }

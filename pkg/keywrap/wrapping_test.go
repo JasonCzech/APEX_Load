@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -137,4 +138,84 @@ func TestAzureKeyVaultWrapperDoesNotReplayPlaintextKeyAcrossRedirect(t *testing.
 		t.Fatal("WrapKey replayed its plaintext key body to the redirect destination")
 	default:
 	}
+}
+
+func TestKeyRingWrapperAndRotateWrappedKeyPreserveKeyMaterial(t *testing.T) {
+	ctx := context.Background()
+	oldWrapper, err := NewLocalAESKeyWrapper(LocalKeyOptions{Key: []byte("0123456789abcdef0123456789abcdef"), KeyID: "master-v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newWrapper, err := NewLocalAESKeyWrapper(LocalKeyOptions{Key: []byte("fedcba9876543210fedcba9876543210"), KeyID: "master-v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aad := []byte("apexload:authoring-receipt-credential-key:v1")
+	dek := []byte("credential-hmac-secret-material!")
+
+	wrappedV1, err := oldWrapper.WrapKey(ctx, dek, aad)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ring, err := NewKeyRingWrapper(newWrapper, oldWrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unwrappedFromRing, err := ring.UnwrapKey(ctx, wrappedV1, aad)
+	if err != nil {
+		t.Fatalf("UnwrapKey v1 envelope via ring: %v", err)
+	}
+	if string(unwrappedFromRing) != string(dek) {
+		t.Fatalf("unwrapped key = %q, want %q", unwrappedFromRing, dek)
+	}
+
+	rotated, err := RotateWrappedKey(ctx, oldWrapper, newWrapper, wrappedV1, aad)
+	if err != nil {
+		t.Fatalf("RotateWrappedKey: %v", err)
+	}
+	if _, err := oldWrapper.UnwrapKey(ctx, rotated, aad); err == nil {
+		t.Fatal("old wrapper unwrapped rotated key envelope")
+	}
+	unwrappedV2, err := newWrapper.UnwrapKey(ctx, rotated, aad)
+	if err != nil {
+		t.Fatalf("newWrapper.UnwrapKey rotated envelope: %v", err)
+	}
+	if string(unwrappedV2) != string(dek) {
+		t.Fatalf("rotated unwrapped key = %q, want %q", unwrappedV2, dek)
+	}
+
+	// Verify canceled context aborts KeyRingWrapper.UnwrapKey immediately.
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := ring.UnwrapKey(canceledCtx, wrappedV1, aad); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ring.UnwrapKey with canceled context = %v, want context.Canceled", err)
+	}
+
+	// Verify joined error diagnostics when all wrappers fail.
+	errActive := errors.New("active-wrapper-failure")
+	errPrev := errors.New("previous-wrapper-failure")
+	failingRing, err := NewKeyRingWrapper(
+		failingTestKeyWrapper{err: errActive},
+		failingTestKeyWrapper{err: errPrev},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, unwrapErr := failingRing.UnwrapKey(ctx, wrappedV1, aad)
+	if !errors.Is(unwrapErr, errActive) || !errors.Is(unwrapErr, errPrev) {
+		t.Fatalf("failingRing.UnwrapKey error = %v, want joined errors containing %v and %v", unwrapErr, errActive, errPrev)
+	}
+}
+
+type failingTestKeyWrapper struct {
+	err error
+}
+
+func (f failingTestKeyWrapper) WrapKey(context.Context, []byte, []byte) (WrappedKey, error) {
+	return WrappedKey{}, f.err
+}
+
+func (f failingTestKeyWrapper) UnwrapKey(context.Context, WrappedKey, []byte) ([]byte, error) {
+	return nil, f.err
 }

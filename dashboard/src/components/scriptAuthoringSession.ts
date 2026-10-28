@@ -1,3 +1,4 @@
+import type { ScenarioValidationContext, ScenarioValidationContextComponent } from '../types/loadModels'
 import type { ScriptValidationContext, ScriptValidationContextComponent } from '../types/scripts'
 
 // Binding rules for the script authoring session. A validation result
@@ -130,7 +131,7 @@ export function scriptSaveAvailability(input: ScriptSaveInputs): { disabled: boo
 // What made a held result stale without an edit: a component of the
 // controller context, or the stored script itself (a stored-script probe
 // answered that a newer revision was saved).
-export type ValidationStaleCause = ScriptValidationContextComponent | 'stored_script'
+export type ValidationStaleCause = ScriptValidationContextComponent | ScenarioValidationContextComponent | 'stored_script'
 
 // validationContextChanges names the components of the controller context a
 // result was validated under that differ from the context observed now; a
@@ -143,7 +144,15 @@ export function validationContextChanges(validated: ScriptValidationContext | nu
   return changed.length > 0 ? changed : names
 }
 
+export function scenarioValidationContextChanges(validated: ScenarioValidationContext | null | undefined, observed: ScenarioValidationContext | null | undefined): ScenarioValidationContextComponent[] {
+  if (!validated?.revision || !observed?.revision || validated.revision === observed.revision) return []
+  const names: ScenarioValidationContextComponent[] = ['scripts', 'capabilities', 'policy', 'approvals', 'secret_references']
+  const changed = names.filter(name => validated.components?.[name] !== observed.components?.[name])
+  return changed.length > 0 ? changed : names
+}
+
 const CONTEXT_COMPONENT_LABELS: Record<ValidationStaleCause, string> = {
+  scripts: 'constituent scripts',
   capabilities: 'controller capabilities',
   policy: 'project or domain policy',
   approvals: 'Java approval',

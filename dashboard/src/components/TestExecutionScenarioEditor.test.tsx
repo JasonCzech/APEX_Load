@@ -10,6 +10,7 @@ import TestExecutionScenarioEditor from './TestExecutionScenarioEditor'
 
 const apiMock = {
   listScripts: vi.fn(),
+  getScenarioValidationContext: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -180,6 +181,65 @@ describe('TestExecutionScenarioEditor', () => {
     await act(async () => resolveScripts({ scripts: [{ id: 'script-1' }, { id: 'script-2' }] }))
     await flushPromises()
     expect(container.textContent).toContain('scripts:2')
+  })
+
+  it('marks held scenario validation stale with named reasons on focus when scripts, policy, capabilities, approvals, or secrets change, while ignoring read failures (AUTH-B1)', async () => {
+    const context = (overrides?: Partial<Record<'scripts' | 'capabilities' | 'policy' | 'approvals' | 'secret_references', string>>) => ({
+      version: 1,
+      revision: `svctx1:${JSON.stringify(overrides ?? {})}`,
+      components: {
+        scripts: overrides?.scripts ?? 'scripts-a',
+        capabilities: overrides?.capabilities ?? 'cap-a',
+        policy: overrides?.policy ?? 'policy-a',
+        approvals: overrides?.approvals ?? 'approvals-a',
+        secret_references: overrides?.secret_references ?? 'secrets-a',
+      },
+    })
+    let clock = 1_000_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    try {
+      apiMock.getScenarioValidationContext.mockResolvedValue(context())
+      await act(async () => root.render(<TestExecutionScenarioEditor open test={queuedRun()} onClose={vi.fn()} onSelectTest={vi.fn()} />))
+      await flushPromises()
+      expect(container.querySelector('.scenario-validation-stale-notice')).toBeNull()
+
+      // A transient read failure or null context on focus never marks held validation stale.
+      apiMock.getScenarioValidationContext.mockRejectedValueOnce(new Error('503 Service Unavailable'))
+      clock += 6_000
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await flushPromises()
+      expect(container.querySelector('.scenario-validation-stale-notice')).toBeNull()
+
+      apiMock.getScenarioValidationContext.mockResolvedValueOnce(null)
+      clock += 12_000
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await flushPromises()
+      expect(container.querySelector('.scenario-validation-stale-notice')).toBeNull()
+
+      // A changed constituent script, policy, and secret reference reports the exact named causes.
+      apiMock.getScenarioValidationContext.mockResolvedValueOnce(context({
+        scripts: 'scripts-b',
+        policy: 'policy-b',
+        secret_references: 'secrets-b',
+      }))
+      clock += 24_000
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await flushPromises()
+      const notice = container.querySelector('.scenario-validation-stale-notice')?.textContent || ''
+      expect(notice).toContain('Validation results no longer apply: constituent scripts, project or domain policy, project secrets changed since the check. Validate load model again.')
+
+      // Rechecking adopts the updated context and clears the stale notice.
+      apiMock.getScenarioValidationContext.mockResolvedValueOnce(context({
+        scripts: 'scripts-b',
+        policy: 'policy-b',
+        secret_references: 'secrets-b',
+      }))
+      await act(async () => buttonNamed('Recheck validation').dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await flushPromises()
+      expect(container.querySelector('.scenario-validation-stale-notice')).toBeNull()
+    } finally {
+      now.mockRestore()
+    }
   })
 })
 

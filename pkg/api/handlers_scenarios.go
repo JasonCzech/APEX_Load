@@ -380,9 +380,39 @@ func (s *Server) scenarioRequestProjectID(req CreateScenarioRequest) (string, er
 	return projectID, nil
 }
 
+func (s *Server) resolveScenarioValidationContextProjectID(r *http.Request, req CreateScenarioRequest) string {
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
+		return normalizeProjectID(authorized)
+	}
+	if strings.TrimSpace(req.ProjectID) != "" {
+		return normalizeProjectID(req.ProjectID)
+	}
+	for _, group := range req.Groups {
+		if script, ok := s.runner.GetScript(strings.TrimSpace(group.ScriptID)); ok && script != nil {
+			return normalizeProjectID(script.ProjectID)
+		}
+	}
+	return normalizeProjectID("")
+}
+
 func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.Request) {
 	var req CreateScenarioRequest
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("context_only")), "true") || strings.TrimSpace(r.URL.Query().Get("context_only")) == "1" {
+		projectID := s.resolveScenarioValidationContextProjectID(r, req)
+		validationCtx, err := s.buildScenarioValidationContext(r.Context(), projectID, req)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "scenario validation context is unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, &LoadModelValidationReport{
+			Status:            "ready",
+			StatusCounts:      map[string]int{},
+			Items:             []LoadModelValidationItem{},
+			ValidationContext: validationCtx,
+		})
 		return
 	}
 	projectID, projectErr := s.scenarioRequestProjectID(req)
@@ -408,6 +438,7 @@ func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.attachScenarioValidationContext(r, report, s.resolveScenarioValidationContextProjectID(r, req), req)
 	writeJSON(w, http.StatusOK, report)
 }
 
@@ -452,6 +483,8 @@ func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Reque
 	// Attach load-model validation best-effort: a validation error (e.g. a
 	// baseline script no longer in the library) should not hide the sizing math.
 	if validation, verr := s.runner.ValidateScenarioLoadModel(sizing.ScenarioDraft); verr == nil {
+		projectID := s.resolveScenarioValidationContextProjectID(r, sizing.ScenarioDraft)
+		s.attachScenarioValidationContext(r, validation, projectID, sizing.ScenarioDraft)
 		sizing.LoadModelValidation = validation
 	}
 	writeJSON(w, http.StatusOK, sizing)

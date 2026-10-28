@@ -302,3 +302,379 @@ func (s *Server) secretProviderFailure(ctx context.Context, binding scriptSecret
 	}
 	return nil
 }
+
+// ScenarioValidationContext identifies the composite controller context a
+// scenario validation result depends on: constituent scripts' content/revision
+// fingerprints, project capabilities, selected or default telemetry/browser/
+// journey/execution policy digests, Java/import approval digests, and
+// constituent scripts' secret-reference availability.
+type ScenarioValidationContext struct {
+	Version                   int                                     `json:"version"`
+	Revision                  string                                  `json:"revision"`
+	Components                ScenarioValidationContextComponents     `json:"components"`
+	Findings                  []importreview.ValidationContextFinding `json:"contextual_findings,omitempty"`
+	SecretReferencesTruncated bool                                    `json:"secret_references_truncated,omitempty"`
+	SecretReferenceLimit      int                                     `json:"secret_reference_limit"`
+}
+
+type ScenarioValidationContextComponents struct {
+	Scripts          string `json:"scripts"`
+	Capabilities     string `json:"capabilities"`
+	Policy           string `json:"policy"`
+	Approvals        string `json:"approvals"`
+	SecretReferences string `json:"secret_references"`
+}
+
+func (s *Server) buildScenarioValidationContext(ctx context.Context, projectID string, req CreateScenarioRequest) (*ScenarioValidationContext, error) {
+	if s == nil || s.store == nil {
+		return nil, errValidationContextUnavailable
+	}
+	key, err := s.persistentDigestKey(validationContextKeySetting, "validation context")
+	if err != nil {
+		return nil, err
+	}
+	digest := func(domain string, value any) (string, error) {
+		payload, err := json.Marshal(value)
+		if err != nil {
+			return "", err
+		}
+		mac := hmac.New(sha256.New, key)
+		_, _ = mac.Write([]byte(validationContextDomain + ":scenario:" + domain))
+		_, _ = mac.Write([]byte{0})
+		_, _ = mac.Write(payload)
+		return hex.EncodeToString(mac.Sum(nil)), nil
+	}
+	result := &ScenarioValidationContext{
+		Version:              validationContextVersion,
+		SecretReferenceLimit: validationContextSecretLimit,
+	}
+	projectID = normalizeProjectID(projectID)
+
+	type scriptComponentEntry struct {
+		GroupIndex      int    `json:"group_index"`
+		RequestedID     string `json:"requested_id"`
+		ScriptID        string `json:"script_id,omitempty"`
+		Status          string `json:"status"`
+		ContentRevision string `json:"content_revision,omitempty"`
+		ContentDigest   string `json:"content_digest,omitempty"`
+	}
+	type capabilityScriptWarning struct {
+		ScriptID string `json:"script_id"`
+		Warning  string `json:"warning"`
+	}
+	type approvalComponentEntry struct {
+		ScriptID     string             `json:"script_id"`
+		JavaApproval string             `json:"java_approval"`
+		Metadata     *dsl.ScriptMetadata `json:"metadata,omitempty"`
+	}
+	type secretScopeEntry struct {
+		ScriptID    string      `json:"script_id"`
+		Project     string      `json:"project"`
+		Application string      `json:"application,omitempty"`
+		Refused     bool        `json:"refused,omitempty"`
+		Names       [][2]string `json:"names"`
+	}
+
+	scriptEntries := make([]scriptComponentEntry, 0, len(req.Groups))
+	capWarnings := make([]capabilityScriptWarning, 0)
+	approvalEntries := make([]approvalComponentEntry, 0, len(req.Groups))
+	secretEntries := make([]secretScopeEntry, 0, len(req.Groups)+1)
+	anyTruncated := false
+
+	seenScripts := map[string]*StoredScript{}
+	orderedScripts := make([]*StoredScript, 0, len(req.Groups))
+
+	for idx, group := range req.Groups {
+		rawID := strings.TrimSpace(group.ScriptID)
+		if rawID == "" {
+			scriptEntries = append(scriptEntries, scriptComponentEntry{
+				GroupIndex:  idx,
+				RequestedID: "",
+				Status:      "missing",
+			})
+			continue
+		}
+		var stored *StoredScript
+		if s.runner != nil {
+			durable, found, readErr := s.runner.GetScriptAuthoringDurable(rawID)
+			if readErr != nil && !errors.Is(readErr, sql.ErrNoRows) && !errors.Is(readErr, storage.ErrScriptAuthoringNotFound) {
+				return nil, fmt.Errorf("read constituent script %q: %w", rawID, readErr)
+			}
+			if found && durable != nil {
+				stored = durable
+			} else if cached, ok := s.runner.GetScript(rawID); ok && cached != nil {
+				stored = cached
+			}
+		}
+		if stored == nil || stored.Script == nil || normalizeProjectID(stored.ProjectID) != projectID {
+			scriptEntries = append(scriptEntries, scriptComponentEntry{
+				GroupIndex:  idx,
+				RequestedID: rawID,
+				Status:      "missing",
+			})
+			result.Findings = append(result.Findings, importreview.ValidationContextFinding{
+				Cause:   "script_unavailable",
+				Subject: rawID,
+				Detail:  "constituent script is no longer available in this project",
+			})
+			continue
+		}
+		status := "active"
+		if stored.ArchivedAt != nil || stored.Script.ArchivedAt != nil {
+			status = "archived"
+			result.Findings = append(result.Findings, importreview.ValidationContextFinding{
+				Cause:   "script_unavailable",
+				Subject: stored.ID,
+				Detail:  "constituent script is archived",
+			})
+		}
+		contentDigest, err := scenarioConstituentScriptDigest(stored.Script)
+		if err != nil {
+			return nil, err
+		}
+		scriptEntries = append(scriptEntries, scriptComponentEntry{
+			GroupIndex:      idx,
+			RequestedID:     rawID,
+			ScriptID:        stored.ID,
+			Status:          status,
+			ContentRevision: stored.ContentRevision,
+			ContentDigest:   contentDigest,
+		})
+		if _, seen := seenScripts[stored.ID]; !seen {
+			seenScripts[stored.ID] = stored
+			orderedScripts = append(orderedScripts, stored)
+		}
+	}
+
+	for _, stored := range orderedScripts {
+		script := stored.Script
+		if warning := browserRuntimeWarning(script); warning != "" {
+			capWarnings = append(capWarnings, capabilityScriptWarning{ScriptID: stored.ID, Warning: warning})
+			result.Findings = append(result.Findings, importreview.ValidationContextFinding{
+				Cause:   "capability_unavailable",
+				Subject: stored.ID,
+				Detail:  warning,
+			})
+		}
+
+		javaApproval := "not_required"
+		if scriptRequiresJavaVuserAuthoringApproval(script) {
+			javaApproval = "required"
+			if s.runner != nil && strings.TrimSpace(script.ID) != "" {
+				conflict, err := s.runner.javaVuserApprovalState(script)
+				if err != nil {
+					return nil, fmt.Errorf("read Java Vuser approval for %q: %w", script.ID, err)
+				}
+				if conflict == "" {
+					javaApproval = "approved"
+				} else {
+					javaApproval = "stale"
+					result.Findings = append(result.Findings, importreview.ValidationContextFinding{
+						Cause:   "approval_stale",
+						Subject: script.ID,
+						Detail:  conflict,
+					})
+				}
+			} else {
+				result.Findings = append(result.Findings, importreview.ValidationContextFinding{
+					Cause:   "approval_required",
+					Subject: script.ID,
+					Detail:  "Java Vuser scripts require authoring-session review and approval",
+				})
+			}
+		}
+		approvalEntries = append(approvalEntries, approvalComponentEntry{
+			ScriptID:     stored.ID,
+			JavaApproval: javaApproval,
+			Metadata:     script.Metadata,
+		})
+
+		var binding scriptSecretBinding
+		var resolver engine.SecretResolver
+		if s.runner != nil {
+			binding = s.runner.secretBindingForScript(script)
+			resolver = s.runner.secretResolverForBinding(binding)
+		} else {
+			binding = scriptSecretBinding{ProjectID: projectID}
+		}
+		if binding.Err != nil {
+			return nil, fmt.Errorf("resolve secret references for %q: %w", stored.ID, binding.Err)
+		}
+		names, truncated, missing, err := validationContextSecrets(ctx, script, resolver)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.secretProviderFailure(ctx, binding, missing); err != nil {
+			return nil, fmt.Errorf("resolve secret references for %q: %w", stored.ID, err)
+		}
+		if truncated {
+			anyTruncated = true
+		}
+		unavailableDetail := "the referenced secret is not configured for this project"
+		if binding.Refused {
+			unavailableDetail = "the script's application assignment cannot supply secrets in this project"
+		}
+		for _, name := range missing {
+			result.Findings = append(result.Findings, importreview.ValidationContextFinding{
+				Cause:   "secret_unavailable",
+				Subject: name,
+				Detail:  unavailableDetail,
+			})
+		}
+		secretEntries = append(secretEntries, secretScopeEntry{
+			ScriptID:    stored.ID,
+			Project:     strings.TrimSpace(binding.ProjectID),
+			Application: binding.ApplicationID,
+			Refused:     binding.Refused,
+			Names:       names,
+		})
+	}
+
+	result.SecretReferencesTruncated = anyTruncated
+
+	capabilities := struct {
+		Catalog        AuthoringCapabilityResponse `json:"catalog"`
+		ScriptWarnings []capabilityScriptWarning   `json:"script_warnings,omitempty"`
+	}{
+		Catalog:        authoringCapabilityResponse(projectID),
+		ScriptWarnings: capWarnings,
+	}
+
+	acceptancePolicy, err := s.scenarioTelemetryPolicyContextState(projectID, storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, req.TelemetryAcceptancePolicyID)
+	if err != nil {
+		return nil, err
+	}
+	budgetPolicy, err := s.scenarioTelemetryPolicyContextState(projectID, storage.AnalysisDefinitionKindTelemetryPolicy, req.TelemetryBudgetPolicyID)
+	if err != nil {
+		return nil, err
+	}
+	policy := struct {
+		DomainRevision            string   `json:"domain_revision"`
+		DisabledFeatures          []string `json:"disabled_features"`
+		Authoring                 any      `json:"authoring"`
+		Features                  any      `json:"features"`
+		ScriptImports             any      `json:"script_imports"`
+		TelemetryAcceptancePolicy any      `json:"telemetry_acceptance_policy"`
+		TelemetryBudgetPolicy     any      `json:"telemetry_budget_policy"`
+	}{
+		TelemetryAcceptancePolicy: acceptancePolicy,
+		TelemetryBudgetPolicy:     budgetPolicy,
+	}
+	if featurePolicy, err := s.domainFeaturePolicyForProject(projectID); err != nil {
+		return nil, fmt.Errorf("read domain feature policy: %w", err)
+	} else if featurePolicy != nil {
+		policy.DomainRevision = featurePolicy.Revision
+		policy.DisabledFeatures = append([]string(nil), featurePolicy.DisabledFeatureIDs...)
+		sort.Strings(policy.DisabledFeatures)
+	}
+	project, err := s.store.GetProject(projectID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("read project: %w", err)
+	}
+	if err == nil && project != nil {
+		policy.Authoring = project.Settings.Authoring
+		policy.Features = project.Settings.Features
+	}
+	if s.runner != nil {
+		policy.ScriptImports = s.runner.GetSystemSettings().ScriptImports
+	}
+
+	components := []struct {
+		target *string
+		domain string
+		value  any
+	}{
+		{&result.Components.Scripts, "scripts", scriptEntries},
+		{&result.Components.Capabilities, "capabilities", capabilities},
+		{&result.Components.Policy, "policy", policy},
+		{&result.Components.Approvals, "approvals", approvalEntries},
+		{&result.Components.SecretReferences, "secret-references", secretEntries},
+	}
+	for _, component := range components {
+		value, err := digest(component.domain, component.value)
+		if err != nil {
+			return nil, err
+		}
+		*component.target = value[:32]
+	}
+	revision, err := digest("revision", result.Components)
+	if err != nil {
+		return nil, err
+	}
+	result.Revision = "svctx1:" + revision
+	return result, nil
+}
+
+func scenarioConstituentScriptDigest(script *dsl.Script) (string, error) {
+	if script == nil {
+		return "", nil
+	}
+	copyScript := *script
+	copyScript.CreatedAt = time.Time{}
+	copyScript.UpdatedAt = time.Time{}
+	raw, err := json.Marshal(copyScript)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:16]), nil
+}
+
+type scenarioTelemetryPolicyDigestState struct {
+	Choice     string          `json:"choice"`
+	Status     string          `json:"status"`
+	PolicyID   string          `json:"policy_id,omitempty"`
+	Definition json.RawMessage `json:"definition,omitempty"`
+}
+
+func (s *Server) scenarioTelemetryPolicyContextState(projectID, kind, choice string) (scenarioTelemetryPolicyDigestState, error) {
+	normalized := normalizeTelemetryPolicyChoice(choice)
+	state := scenarioTelemetryPolicyDigestState{
+		Choice: normalized,
+		Status: "none",
+	}
+	if s == nil || s.runner == nil {
+		return state, nil
+	}
+	policyStore, ok := s.runner.testStore.(storage.AnalysisDefinitionStore)
+	if !ok || policyStore == nil {
+		return state, nil
+	}
+	var (
+		found *storage.AnalysisDefinition
+		err   error
+	)
+	if normalized == "" {
+		found, err = projectDefaultPolicy(policyStore, projectID, kind)
+	} else {
+		found, err = projectPolicyByID(policyStore, projectID, kind, normalized)
+	}
+	if err != nil {
+		if errors.Is(err, errRunPolicyConfiguration) {
+			state.Status = "invalid"
+			return state, nil
+		}
+		return state, fmt.Errorf("read %s: %w", kind, err)
+	}
+	if found == nil {
+		if normalized != "" {
+			state.Status = "missing"
+		}
+		return state, nil
+	}
+	state.Status = "active"
+	state.PolicyID = found.ID
+	state.Definition = found.Definition
+	return state, nil
+}
+
+func (s *Server) attachScenarioValidationContext(r *http.Request, report *LoadModelValidationReport, projectID string, req CreateScenarioRequest) {
+	if report == nil {
+		return
+	}
+	ctx, err := s.buildScenarioValidationContext(r.Context(), projectID, req)
+	if err != nil {
+		return
+	}
+	report.ValidationContext = ctx
+}

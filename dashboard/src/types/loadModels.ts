@@ -21,6 +21,14 @@ export interface LoadModelValidationItem {
   target_tps?: number
 }
 
+export type ScenarioValidationContextComponent = 'scripts' | 'capabilities' | 'policy' | 'approvals' | 'secret_references'
+
+export interface ScenarioValidationContext {
+  version: number
+  revision: string
+  components: Record<ScenarioValidationContextComponent, string>
+}
+
 export interface LoadModelValidationReport {
   status: 'ready' | 'needs_review' | 'blocked' | string
   status_counts: Record<string, number>
@@ -29,4 +37,5 @@ export interface LoadModelValidationReport {
   peak_target_tps?: number
   capacity_advisory?: CapacityAdvisory
   assignment_recommendation?: AssignmentRecommendation
+  validation_context?: ScenarioValidationContext
 }

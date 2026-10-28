@@ -11,14 +11,15 @@ import (
 )
 
 type LoadModelValidationReport struct {
-	Status                   string                    `json:"status"`
-	StatusCounts             map[string]int            `json:"status_counts"`
-	Items                    []LoadModelValidationItem `json:"items"`
-	TotalVUsers              int                       `json:"total_vusers"`
-	PeakTargetTPS            float64                   `json:"peak_target_tps,omitempty"`
-	CapacityAdvisory         *CapacityAdvisory         `json:"capacity_advisory,omitempty"`
-	AssignmentRecommendation *AssignmentRecommendation `json:"assignment_recommendation,omitempty"`
-	RuntimeSettingsReview    *RuntimeSettingsReview    `json:"runtime_settings_review,omitempty"`
+	Status                   string                     `json:"status"`
+	StatusCounts             map[string]int             `json:"status_counts"`
+	Items                    []LoadModelValidationItem  `json:"items"`
+	TotalVUsers              int                        `json:"total_vusers"`
+	PeakTargetTPS            float64                    `json:"peak_target_tps,omitempty"`
+	CapacityAdvisory         *CapacityAdvisory          `json:"capacity_advisory,omitempty"`
+	AssignmentRecommendation *AssignmentRecommendation  `json:"assignment_recommendation,omitempty"`
+	RuntimeSettingsReview    *RuntimeSettingsReview     `json:"runtime_settings_review,omitempty"`
+	ValidationContext        *ScenarioValidationContext `json:"validation_context,omitempty"`
 }
 
 type LoadModelValidationItem struct {
