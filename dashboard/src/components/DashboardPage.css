@@ -1799,8 +1799,6 @@
 }
 
 .dashboard-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-/* A top summary must not reduce history to a single-row scroll viewport. */
-.dash .dash-activity .trend-table-wrap { max-height: max(320px, var(--dashboard-table-max-height, 60vh)); }
 
 /* Analysis workspaces keep controls and evidence together at every width. */
 .analysis-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }

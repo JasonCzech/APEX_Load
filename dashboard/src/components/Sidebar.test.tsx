@@ -53,6 +53,7 @@ describe('Sidebar', () => {
 
   const openWorkspaceContext = async () => {
     if (container.querySelector('#sidebar-workspace-context')?.getAttribute('aria-hidden') === 'false') return
+    await expandSidebar()
     const workspaceButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-workspace-context"]')
     expect(workspaceButton).not.toBeNull()
     await act(async () => {
@@ -71,6 +72,7 @@ describe('Sidebar', () => {
 
   const openDevView = async () => {
     if (container.querySelector('#sidebar-dev-view-panel')) return
+    await expandSidebar()
     const devToggle = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-dev-view-panel"]')
     expect(devToggle).not.toBeNull()
     await act(async () => {
@@ -642,9 +644,21 @@ describe('Sidebar', () => {
     await click(container.querySelector('.sidebar-nav'))
     expect(container.querySelector('.sidebar.collapsed')).toBeNull()
 
-    // Once open, empty space does not toggle it closed again.
+    // Occupied, noninteractive content does not toggle it.
+    await click(container.querySelector('.sidebar-nav-group-label'))
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    await click(container.querySelector('.sidebar-status'))
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+
+    // The footer's gap is also unused space.
+    await click(container.querySelector('.sidebar-footer-row'))
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
     await click(container.querySelector('.sidebar-nav'))
     expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+
+    // Empty space also closes the expanded sidebar.
+    await click(container.querySelector('.sidebar-nav'))
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
   })
 
   it('does not render raw SHA build versions as the badge label', async () => {
@@ -1140,7 +1154,7 @@ describe('Sidebar', () => {
     expect(menuButton('sidebar-application-options', 'New Application')).toBeDefined()
   })
 
-  it('expands the rail and reveals context controls when the workspace switcher is clicked while collapsed', async () => {
+  it('reveals context controls after expanding the rail', async () => {
     await act(async () => {
       root.render(
         <Sidebar
@@ -1239,7 +1253,7 @@ describe('Sidebar', () => {
     expect(mobileRule).toContain('flex-basis: 64px;')
   })
 
-  it('closes the expanded overlay on an outside click, Escape, and navigation', async () => {
+  it('keeps the sidebar expanded on an outside click and Escape, but collapses on navigation', async () => {
     const onNavigate = vi.fn()
     await act(async () => {
       root.render(<Sidebar active="dashboard" onNavigate={onNavigate} connectionState="connected" />)
@@ -1254,18 +1268,16 @@ describe('Sidebar', () => {
       underneath.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
       underneath.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
-    // Dismissing the overlay does not also activate what was underneath.
-    expect(activated).not.toHaveBeenCalled()
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    expect(activated).toHaveBeenCalledTimes(1)
     underneath.remove()
 
     await expandSidebar()
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     })
-    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
 
-    await expandSidebar()
     await act(async () => {
       navButton('Scripts')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1273,7 +1285,7 @@ describe('Sidebar', () => {
     expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
   })
 
-  it('closes an open workspace menu before the expanded overlay on Escape', async () => {
+  it('closes an open workspace menu on Escape without collapsing the sidebar', async () => {
     await act(async () => {
       root.render(
         <Sidebar
@@ -1300,7 +1312,22 @@ describe('Sidebar', () => {
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     })
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+  })
+
+  it('closes workspace controls when the chevron is activated by keyboard', async () => {
+    await act(async () => {
+      root.render(<Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" />)
+    })
+    await openWorkspaceContext()
+    expect(container.querySelector('.sidebar-workspace.open')).not.toBeNull()
+    await act(async () => {
+      // Keyboard activation produces a click without a preceding pointerdown.
+      container.querySelector<HTMLButtonElement>('.collapse-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    })
     expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+    expect(container.querySelector('.sidebar-workspace.open')).toBeNull()
+    expect(container.querySelector('#sidebar-workspace-context')?.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('shows hover popups only while the sidebar is collapsed, including the workspace pickers', async () => {
@@ -1320,8 +1347,7 @@ describe('Sidebar', () => {
 
     await act(async () => navButton('Scripts')?.focus())
     expect(tooltipText()).toBe('Scripts')
-    await act(async () => container.querySelector<HTMLButtonElement>('.workspace-summary')?.focus())
-    expect(tooltipText()).toBe('Mobility / Mobility Web / Application / Release')
+    expect(container.querySelector<HTMLButtonElement>('.workspace-summary')?.disabled).toBe(true)
     await act(async () => container.querySelector<HTMLButtonElement>('.collapse-btn')?.focus())
     expect(tooltipText()).toBe('Expand sidebar')
 
@@ -1367,12 +1393,8 @@ describe('Sidebar', () => {
     expect(avatar?.querySelector('.sidebar-rail-avatar-alert')).not.toBeNull()
     expect(avatar?.getAttribute('aria-label')).toContain('Local Viewer')
     expect(avatar?.getAttribute('aria-label')).toContain('Session expires in 2 min')
-    await act(async () => avatar?.focus())
-    expect(tooltipText()).toContain('Session expires in 2 min')
-
-    await act(async () => {
-      avatar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    expect(avatar?.disabled).toBe(true)
+    await expandSidebar()
     expect(container.querySelector('.sidebar.collapsed')).toBeNull()
     expect(container.querySelector('.sidebar-rail-avatar')).toBeNull()
     expect(container.querySelector('.sidebar-identity-session')?.textContent).toBe('Session expires in 2 min')

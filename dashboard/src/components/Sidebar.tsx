@@ -9,7 +9,6 @@ import { Application, ApplicationRepository, DashboardAuthStatus, Domain, Projec
 import BuildBadge from './BuildBadge'
 import Logo from './Logo'
 import ProjectModal from './ProjectModal'
-import { OPEN_PROJECT_PICKER_EVENT } from '../workspacePickerEvents'
 import './Sidebar.css'
 
 export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'shared-assets' | 'results' | 'activity' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
@@ -187,7 +186,7 @@ const NAV_GROUPS: { label: string; itemIds: NavPage[] }[] = [
   { label: 'Support', itemIds: ['docs'] },
 ]
 
-// Anything a click on the collapsed rail should leave to its own handler
+// Anything a click on the sidebar should leave to its own handler
 // rather than treating as "empty space".
 const RAIL_CONTROL_SELECTOR =
   'a, button, input, select, textarea, label, summary, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="dialog"], [tabindex]:not([tabindex="-1"])'
@@ -343,72 +342,20 @@ export default function Sidebar({
     }
   }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen, releaseOpen, workspaceOpen])
 
-  const anyModalOpen = showProjectModal || showApplicationModal || showReleaseModal
-  const anyMenuOpen = workspaceOpen || domainOpen || projectOpen || applicationOpen || releaseOpen
-
-  // The expanded overlay closes on an outside click or Escape. Escape closes an
-  // open workspace menu first, and a modal opened from the sidebar keeps it open.
-  useEffect(() => {
-    if (collapsed || anyModalOpen) {
-      return undefined
-    }
-
-    const collapse = () => {
-      closeWorkspaceMenus()
-      setDevViewOpen(false)
-      setCollapsed(true)
-    }
-
-    const swallowClick = (event: MouseEvent) => {
-      if (event.target instanceof Node && asideRef.current?.contains(event.target)) return
-      event.preventDefault()
-      event.stopPropagation()
-    }
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target
-      if (target instanceof Node && asideRef.current?.contains(target)) {
-        return
-      }
-      // The outside press only dismisses the overlay: the click that follows
-      // must not also activate whatever was underneath it.
-      // The listener outlives this effect (collapsing re-runs it), so its own
-      // timer removes it if no click follows (a drag or scroll).
-      document.addEventListener('click', swallowClick, { capture: true, once: true })
-      window.setTimeout(() => document.removeEventListener('click', swallowClick, true), 700)
-      collapse()
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !anyMenuOpen) {
-        collapse()
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown, true)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [anyMenuOpen, anyModalOpen, closeWorkspaceMenus, collapsed])
-
-  // While collapsed, a click on any empty part of the rail (such as the space
-  // below the icons) opens the sidebar. This is a pointer convenience only:
-  // keyboard and screen-reader users have the Expand sidebar button.
+  // Empty rail space toggles the sidebar without interfering with controls.
   useEffect(() => {
     const aside = asideRef.current
-    if (!collapsed || !aside) {
-      return undefined
+    if (!aside) return undefined
+    const toggleFromEmptySpace = (event: MouseEvent) => {
+      if (event.button !== 0 || !(event.target instanceof Element) || event.target.closest(RAIL_CONTROL_SELECTOR)) return
+      if (!event.target.matches('.sidebar, .sidebar-nav, .sidebar-nav-group, .sidebar-footer, .sidebar-footer-meta, .sidebar-footer-row')) return
+      closeWorkspaceMenus()
+      setDevViewOpen(false)
+      setCollapsed(value => !value)
     }
-    const expandFromEmptySpace = (event: MouseEvent) => {
-      if (event.button !== 0 || !(event.target instanceof Element) || event.target.closest(RAIL_CONTROL_SELECTOR)) {
-        return
-      }
-      setCollapsed(false)
-    }
-    aside.addEventListener('click', expandFromEmptySpace)
-    return () => aside.removeEventListener('click', expandFromEmptySpace)
-  }, [collapsed])
+    aside.addEventListener('click', toggleFromEmptySpace)
+    return () => aside.removeEventListener('click', toggleFromEmptySpace)
+  }, [closeWorkspaceMenus])
 
   const navigateTo = (page: NavPage) => {
     onNavigate(page)
@@ -444,22 +391,6 @@ export default function Sidebar({
     setReleaseOpen(false)
     setCollapsed(false)
   }
-
-  // Another surface (a link to a project this session cannot open) asks for
-  // the picker: expand the rail, open the project menu and focus its button.
-  useEffect(() => {
-    const openProjectPicker = () => {
-      setWorkspaceOpen(true)
-      setDomainOpen(false)
-      setProjectOpen(true)
-      setApplicationOpen(false)
-      setReleaseOpen(false)
-      setCollapsed(false)
-      window.setTimeout(() => projectSelectorRef.current?.querySelector<HTMLElement>('.project-selector')?.focus(), 0)
-    }
-    window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker)
-    return () => window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker)
-  }, [])
 
   // The 'user' preview emulates an editor, so it is named for that role.
   const devViewModeLabel = devViewMode === 'user' ? 'Editor' : 'Admin'
@@ -541,6 +472,7 @@ export default function Sidebar({
         <TooltipButton
           type="button"
           className="workspace-summary"
+          disabled={collapsed}
           onClick={toggleWorkspace}
           aria-label={`Workspace context. ${workspaceLabel}`}
           title={collapsed ? workspaceLabel : undefined}
@@ -822,13 +754,12 @@ export default function Sidebar({
         <div className="sidebar-footer-meta">
           {collapsed && authStatus?.authenticated && authStatus.user && identityName && (
             // The collapsed rail hides the identity card, so keep the signed-in
-            // user and any session-expiry warning visible as an avatar. Clicking
-            // it opens the sidebar on the full card with Sign out.
+            // user and any session-expiry warning visible as an avatar.
             <TooltipButton
               type="button"
               className={`sidebar-rail-avatar ${sessionExpiryNotice ? (sessionExpiryNotice === 'Session expired' ? 'session-expired' : 'session-warning') : ''}`}
-              onClick={() => setCollapsed(false)}
-              aria-label={[identityName, identityMeta, sessionExpiryNotice, 'Open account details'].filter(Boolean).join('. ')}
+              disabled
+              aria-label={[identityName, identityMeta, sessionExpiryNotice].filter(Boolean).join('. ')}
               title={[identityName, identityMeta, sessionExpiryNotice].filter(Boolean).join(' · ')}
               tooltipPlacement="right"
             >
@@ -864,6 +795,7 @@ export default function Sidebar({
               <TooltipButton
                 type="button"
                 className="dev-view-toggle"
+                disabled={collapsed}
                 aria-label={`Preview permissions. Current mode: ${devViewModeLabel}`}
                 title={collapsed ? `Preview permissions (${devViewModeLabel})` : undefined}
                 tooltipPlacement="right"
@@ -923,7 +855,13 @@ export default function Sidebar({
         </div>
         <TooltipButton
           className="collapse-btn"
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => {
+            if (!collapsed) {
+              closeWorkspaceMenus()
+              setDevViewOpen(false)
+            }
+            setCollapsed(!collapsed)
+          }}
           title={collapsed ? 'Expand sidebar' : undefined}
           tooltipPlacement="right"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}

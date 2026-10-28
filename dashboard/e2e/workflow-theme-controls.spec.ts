@@ -40,13 +40,14 @@ for (const theme of ['dark', 'light', 'solarized-dark', 'solarized-light', 'mono
     await expect(tooltip).toBeVisible()
     await page.keyboard.press('Escape')
     // The sidebar starts as the icon rail; expanded, labels are visible and the
-    // popup is suppressed. Escape closes the expanded overlay again.
+    // popup is suppressed. Escape leaves the sidebar expanded.
     await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await nav.focus()
     await expect(tooltip).toHaveCount(0)
     expect(await nav.evaluate(element => getComputedStyle(element, '::after').content)).toBe('none')
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Collapse sidebar', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
     await page.goto(`/#/settings?setting=platform&${scope}`)
     const checkbox = page.getByRole('checkbox', { name: 'Desktop Client Promotion', exact: true })
     await expect(checkbox).toBeVisible()

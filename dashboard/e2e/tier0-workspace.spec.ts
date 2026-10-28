@@ -169,6 +169,8 @@ test('the UI creates and scopes the complete workspace hierarchy', async ({ page
 
   // Release creation in the sidebar changes active scope. The repository tabs
   // below then prove that the same hierarchy is visible on the S2 route.
+  const expandSidebar = page.getByRole('button', { name: 'Expand sidebar', exact: true })
+  if (await expandSidebar.isVisible()) await expandSidebar.click()
   await page.getByRole('button', { name: /^Workspace context\./ }).click()
   await page.getByRole('button', { name: /Select release\. Current release:/ }).click()
   await page.getByRole('button', { name: 'New Release' }).click()

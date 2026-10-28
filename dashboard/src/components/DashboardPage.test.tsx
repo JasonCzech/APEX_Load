@@ -295,6 +295,45 @@ describe('DashboardPage', () => {
     vi.clearAllMocks()
   })
 
+  it('recomputes the recent runs viewport on nested scrolling and accounts for zoom', async () => {
+    const callbacks: ResizeObserverCallback[] = []
+    const observed: Element[] = []
+    const originalObserver = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class {
+      constructor(callback: ResizeObserverCallback) { callbacks.push(callback) }
+      observe(element: Element) { observed.push(element) }
+      unobserve() {}
+      disconnect() {}
+    } as typeof ResizeObserver
+    await act(async () => {
+      root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onNavigate={onNavigate} />)
+    })
+    await flushDashboard()
+    const table = container.querySelector<HTMLDivElement>('.dash-activity .trend-table-wrap')!
+    expect(table).toBeTruthy()
+    let top = 400
+    let width = 500
+    Object.defineProperty(table, 'offsetWidth', { configurable: true, value: 500 })
+    vi.spyOn(table, 'getBoundingClientRect').mockImplementation(() => ({ top, width } as DOMRect))
+    await act(async () => window.dispatchEvent(new Event('resize')))
+    expect(table.style.getPropertyValue('--dashboard-table-max-height')).toBe(`${window.innerHeight - 400 - 24}px`)
+
+    top = 200
+    width = 750 // 150% dashboard zoom
+    await act(async () => container.dispatchEvent(new Event('scroll')))
+    expect(table.style.getPropertyValue('--dashboard-table-max-height')).toBe(`${Math.floor((window.innerHeight - 200) / 1.5 - 24)}px`)
+
+    expect(observed.some(element => element.classList.contains('dash'))).toBe(true)
+    top = 300 // Summary expands without changing row count or scrolling.
+    await act(async () => callbacks.forEach(callback => callback([], {} as ResizeObserver)))
+    expect(table.style.getPropertyValue('--dashboard-table-max-height')).toBe(`${Math.floor((window.innerHeight - 300) / 1.5 - 24)}px`)
+
+    top = window.innerHeight + 100
+    await act(async () => container.dispatchEvent(new Event('scroll')))
+    expect(table.style.getPropertyValue('--dashboard-table-max-height')).toBe('80px')
+    globalThis.ResizeObserver = originalObserver
+  })
+
   it('wires snapshot cards to navigation targets without the removed summary cards', async () => {
     await act(async () => {
       root.render(

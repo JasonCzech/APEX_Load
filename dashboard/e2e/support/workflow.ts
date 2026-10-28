@@ -104,6 +104,8 @@ export async function createWorkspaceUI(page: Page, request: APIRequestContext, 
 
   // Release creation in the sidebar changes active scope. The repository tabs
   // below then prove that the same hierarchy is visible on the S2 route.
+  const expandSidebar = page.getByRole('button', { name: 'Expand sidebar', exact: true })
+  if (await expandSidebar.isVisible()) await expandSidebar.click()
   await page.getByRole('button', { name: /^Workspace context\./ }).click()
   await page.getByRole('button', { name: /Select release\. Current release:/ }).click()
   await page.getByRole('button', { name: 'New Release' }).click()
@@ -176,8 +178,8 @@ export async function login(page: Page, username = 'admin') {
 }
 /** The collapsed sidebar keeps the account card, with Sign out, behind its avatar; open it. */
 export async function showAccountCard(page: Page) {
-  const account = page.getByRole('button', { name: /Open account details$/ })
-  if (await account.isVisible()) await account.click()
+  const expand = page.getByRole('button', { name: 'Expand sidebar', exact: true })
+  if (await expand.isVisible()) await expand.click()
 }
 export async function signOut(page: Page) {
   await showAccountCard(page)

@@ -102,6 +102,8 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   user-select: none;
 }
 
+.sidebar-workspace > .ux-tooltip-anchor { width: 100%; }
+
 .sidebar-workspace {
   position: relative;
   border-bottom: 1px solid var(--border);

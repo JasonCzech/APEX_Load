@@ -397,18 +397,29 @@ function useBottomBoundedTable(dependencySignature: string) {
       const node = ref.current
       if (!node) return
       const rect = node.getBoundingClientRect()
-      const availableHeight = Math.floor(window.innerHeight - rect.top - tableBottomGutterPx)
+      // Bounding rectangles use screen pixels, while max-height is in the
+      // dashboard's zoomed CSS pixels.
+      const scale = node.offsetWidth > 0 ? rect.width / node.offsetWidth : 1
+      const availableHeight = Math.floor((window.innerHeight - rect.top) / (scale || 1) - tableBottomGutterPx)
       const nextMaxHeight = Math.max(tableMinimumViewportHeightPx, availableHeight)
       setMaxHeight(current => current === nextMaxHeight ? current : nextMaxHeight)
     }
 
     updateMaxHeight()
     window.addEventListener('resize', updateMaxHeight)
-    window.addEventListener('scroll', updateMaxHeight, { passive: true })
+    // The dashboard scrolls inside .main-content, not necessarily the window.
+    document.addEventListener('scroll', updateMaxHeight, { capture: true, passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateMaxHeight)
+    const column = ref.current?.closest('.dash-main-column')
+    if (column) observer?.observe(column)
+    // Summary and status content above the column can change its position.
+    const page = ref.current?.closest('.dash')
+    if (page) observer?.observe(page)
 
     return () => {
       window.removeEventListener('resize', updateMaxHeight)
-      window.removeEventListener('scroll', updateMaxHeight)
+      document.removeEventListener('scroll', updateMaxHeight, true)
+      observer?.disconnect()
     }
   }, [dependencySignature])
 

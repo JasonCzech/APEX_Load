@@ -61,7 +61,6 @@ import {
   withAppHistoryIndex,
   workspaceScopeForAppView,
 } from "./appRouting";
-import { requestProjectPicker } from "./workspacePickerEvents";
 import type { CommandCenterRouteView } from "./appRouting";
 import { appendBoundedMetricsHistory } from "./appMetricsHistory";
 import { mapExecutionMetricToHistoryPoint } from "./components/testExecutionMetricsModel";
@@ -3540,9 +3539,7 @@ function AppShell({
                         : "Loading project workspace…")}
                   {routeProjectScopeError && !projectsError && routeAssetScopeError === routeProjectScopeError && (
                     <div className="route-scope-recovery">
-                      <button className="btn btn-sm btn-secondary" type="button" onClick={requestProjectPicker}>
-                        Choose project
-                      </button>
+                      <span>Expand the sidebar and choose a project under Workspace.</span>
                       {activeProject && activeProject.id !== requestedRouteProjectID && (
                         <button
                           className="btn btn-sm btn-ghost"

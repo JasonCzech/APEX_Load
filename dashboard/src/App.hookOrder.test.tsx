@@ -566,7 +566,7 @@ describe('AppShell hook-order stability across navigation', () => {
     const alert = container.querySelector('[role="alert"]')
     expect(alert?.textContent).toContain('domain ID domain-missing')
     // The block offers a way out instead of a dead end.
-    expect(Array.from(document.querySelectorAll('.route-scope-recovery button')).map(button => button.textContent)).toContain('Choose project')
+    expect(container.querySelector('.route-scope-recovery')?.textContent).toContain('Expand the sidebar and choose a project under Workspace.')
     expect(alert?.textContent).toContain('project ID project-orphan')
     expect(container.querySelector('[role="status"]')?.textContent).not.toContain('Loading project workspace')
   })

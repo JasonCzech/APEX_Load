@@ -96,3 +96,56 @@ test('Dashboard labels failed health refreshes stale and recovers independently 
   failHealth = false
   await expect(page.getByRole('button', { name: 'Healthy API Health', exact: true })).toBeVisible({ timeout: 25_000 })
 })
+
+test('recent completed runs fit their rows and use the available viewport while scrolling', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Viewport run', duration: '1m', groups: [{ name: 'orders', script_id: scriptId, vusers: 1 }],
+  } })))
+  let rows = 1
+  await page.route('**/api/v1/tests**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (route.request().method() !== 'GET' || path !== '/api/v1/tests') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    const source = payload.tests.find((run: { id: string }) => run.id === id)
+    if (!source) return route.fulfill({ response, json: payload })
+    const tests = Array.from({ length: rows }, (_, index) => ({ ...source, id: `${id}-${index}`, name: `Viewport run ${index}`, status: 'COMPLETE', archive: undefined }))
+    return route.fulfill({ response, json: { ...payload, tests, total: tests.length } })
+  })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`/#/dashboard?${scopeQuery(workspace)}`)
+  await page.reload()
+  const rail = page.locator('aside.sidebar')
+  const workspaceButton = rail.locator('.workspace-summary')
+  const alignment = await workspaceButton.evaluate(element => {
+    const button = element.getBoundingClientRect()
+    const sidebar = element.closest('aside')!.getBoundingClientRect()
+    return { width: button.width, railWidth: sidebar.width, center: button.left + button.width / 2, railCenter: sidebar.left + sidebar.width / 2 }
+  })
+  expect(Math.abs(alignment.width - alignment.railWidth)).toBeLessThan(2)
+  expect(Math.abs(alignment.center - alignment.railCenter)).toBeLessThan(2)
+  const table = page.locator('.dash-activity .trend-table-wrap')
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  const one = await table.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }))
+  expect(one.height).toBe(one.content)
+
+  rows = 20
+  await page.reload()
+  await expect(table.locator('tbody tr')).toHaveCount(20)
+  await table.scrollIntoViewIfNeeded()
+  await page.locator('.main-content').evaluate(element => { element.scrollTop += 250 })
+  const geometry = () => table.evaluate(element => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom, height: element.clientHeight, content: element.scrollHeight, viewport: window.innerHeight }))
+  await expect.poll(async () => (await geometry()).bottom).toBeLessThanOrEqual(1000)
+  const many = await geometry()
+  expect(many.content).toBeGreaterThan(many.height)
+  expect(many.viewport - many.bottom).toBeLessThan(55)
+  await page.setViewportSize({ width: 1440, height: 1200 })
+  await expect.poll(async () => (await geometry()).height).toBeGreaterThan(many.height)
+  const taller = await geometry()
+  expect(taller.viewport - taller.bottom).toBeLessThan(55)
+})
