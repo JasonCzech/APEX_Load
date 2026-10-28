@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) handleGetReleaseTrendExport(w http.ResponseWriter, r *http.Request) {
@@ -163,14 +165,47 @@ func profileIncludesSection(profileID, section string) bool {
 
 // enrichArchiveReportForProfile attaches everything a profile's export
 // needs beyond the pure archive report: the release trend, identity names,
-// imported dashboard panels, the generated root cause and the browser
-// intelligence results, each only when the profile renders it.
+// imported dashboard panels, the generated root cause, browser intelligence
+// results, and active timeline annotations, each only when the profile renders it.
 func (s *Server) enrichArchiveReportForProfile(ctx context.Context, report *RunArchiveReport, profileID string) {
 	s.attachReleaseTrendForProfile(report, profileID)
 	s.attachIdentityNames(report)
 	s.attachDashboardPanelsForProfile(report, profileID)
 	s.attachRootCauseForProfile(report, profileID)
 	s.attachBrowserIntelligenceForProfile(ctx, report, profileID)
+	s.attachTimelineAnnotationsForProfile(report, profileID)
+}
+
+func (s *Server) attachTimelineAnnotationsForProfile(report *RunArchiveReport, profileID string) {
+	if s == nil || s.store == nil || report == nil || report.Manifest == nil || !profileIncludesSection(profileID, "graphs") {
+		return
+	}
+	store, ok := s.store.(storage.RunAnnotationStore)
+	if !ok {
+		return
+	}
+	testID := strings.TrimSpace(report.Manifest.TestID)
+	if testID == "" {
+		return
+	}
+	project := normalizeProjectID(report.Manifest.Provenance.ProjectID)
+	if s.runner != nil {
+		if test, ok := s.archiveDomainService().GetTestSummary(testID); ok && test != nil && strings.TrimSpace(test.ProjectID) != "" {
+			project = normalizeProjectID(test.ProjectID)
+		}
+	}
+	set, err := store.GetRunAnnotations(project, testID)
+	if err != nil {
+		slog.Warn("archive report: timeline annotations unavailable", "test", testID, "err", err)
+		return
+	}
+	active := make([]storage.RunAnnotation, 0, len(set.Annotations))
+	for _, a := range set.Annotations {
+		if a.DeletedAt == nil {
+			active = append(active, a)
+		}
+	}
+	report.TimelineAnnotations = active
 }
 
 // attachIdentityNames resolves the project/release/scenario display names for the

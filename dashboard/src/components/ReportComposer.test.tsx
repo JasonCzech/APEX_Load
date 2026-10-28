@@ -445,6 +445,40 @@ describe('ReportComposer test notes source panel', () => {
 		expect(container.textContent).toContain('action · kafka · consumer')
 	})
 
+	it('honors the selected metric population in preview and notifies parent on commentary save', async () => {
+		const report = {
+			...sampleReport(),
+			metric_populations: {
+				action: { transactions: 100, errors: 0, error_pct: 0, avg_response_ms: 40, peak_tps: 10 },
+				transaction: { transactions: 25, errors: 1, error_pct: 4, avg_response_ms: 210, peak_tps: 2.5 },
+			},
+			by_request: { 'GET /api/cart': { transactions: 100, errors: 0, error_pct: 0, avg_response_ms: 40, max_response_ms: 90 } },
+			by_transaction: { CheckoutFlow: { transactions: 25, errors: 1, error_pct: 4, avg_response_ms: 210, max_response_ms: 450 } },
+		}
+		apiMock.getTestArchiveReport.mockResolvedValueOnce(report)
+		apiMock.downloadTestReport.mockResolvedValue(new Blob(['<html><body><h1>Transaction report</h1></body></html>'], { type: 'text/html' }))
+		const onSaved = vi.fn()
+
+		await act(async () => {
+			root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile="engineer" population="transaction" onAnnotationsSaved={onSaved} onClose={() => {}} />)
+		})
+		await flush()
+		await flushFocus()
+
+		expect(apiMock.downloadTestReport).toHaveBeenCalledWith('test-1', 'engineer', { population: 'transaction' })
+
+		await click(button('Edit commentary'))
+		expect(container.textContent).toContain('Headline metrics: Named transactions · whole run')
+		expect(container.textContent).toContain('CheckoutFlow')
+
+		const narrativeInput = container.querySelector<HTMLTextAreaElement>('.report-narrative')!
+		await act(async () => setInputValue(narrativeInput, 'Updated transaction commentary'))
+		await click(button('Save'))
+		await flush()
+
+		expect(onSaved).toHaveBeenCalledTimes(1)
+	})
+
   async function renderComposer(profile: 'executive' | 'engineer' | 'audit' = 'executive', options: { edit?: boolean } = {}) {
     await act(async () => {
       root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile={profile} onClose={() => {}} />)

@@ -869,3 +869,235 @@
 .run-report-timeline-time-form label { display: grid; gap: 4px; font-size: 13px; }
 .run-report-timeline-time-form input, .run-report-timeline-time-form select { width: 100%; min-height: 34px; padding: 6px 8px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; }
 .run-report-timeline-time-form p { flex-basis: 100%; margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+
+/* Structured Telemetry budget policy & segments */
+.telemetry-policy-card h3,
+.telemetry-policy-segments-card h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.telemetry-policy-lead {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.telemetry-policy-group + .telemetry-policy-group {
+  margin-top: 16px;
+}
+
+.telemetry-policy-group-title {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+}
+
+.telemetry-policy-meta-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.telemetry-policy-digest-cell {
+  grid-column: 1 / -1;
+}
+
+.telemetry-policy-digest code {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-primary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.telemetry-policy-budgets-grid {
+  grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+}
+
+.telemetry-budget-cell dd {
+  font-weight: 700;
+}
+
+.telemetry-budget-disabled dd {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.telemetry-policy-disclaimer {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Structured RunOutcomeSummary & RunMetricPopulations cards */
+.run-outcome-summary h2,
+.run-outcome-summary h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.run-outcome-summary > dl,
+.run-metric-populations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.run-outcome-summary > dl > div,
+.run-metric-population-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  min-width: 0;
+}
+
+.run-outcome-summary > dl dt,
+.run-metric-population-card dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+}
+
+.run-outcome-summary > dl dd,
+.run-metric-population-card dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.run-outcome-summary > dl dd:first-of-type,
+.run-metric-population-card dd:first-of-type {
+  font-weight: 600;
+}
+
+.run-outcome-summary > dl dd + dd {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Structured Run timeline annotations & messaging diagnostics panels */
+.run-annotations-panel,
+.messaging-diagnostics-panel {
+  padding: 12px 16px;
+}
+
+.run-annotations-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.run-annotations-header p {
+  margin: 0;
+}
+
+.run-annotations-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.run-annotation-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.run-annotation-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.run-annotation-item p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.run-annotations-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) minmax(200px, 1fr);
+  gap: 10px 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.run-annotations-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.run-annotations-form .run-annotations-context-field {
+  grid-column: 1 / -1;
+}
+
+.run-annotations-form input,
+.run-annotations-form textarea {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.run-annotations-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-start;
+}
+
+@media (max-width: 640px) {
+  .run-annotations-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.run-execution-group-config {
+  margin-top: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.run-report-commentary-summary {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.run-report-commentary-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

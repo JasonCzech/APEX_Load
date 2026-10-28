@@ -39,10 +39,10 @@ export function TelemetryPolicySegmentList({ segments }: { segments?: unknown })
   }, [key])
   if (key === '') return null
   const view = verified && verified.key === key ? verified.view : { reason: 'Verifying the retained policy digests…' }
-  return <section className="goal-status-card telemetry-policy-segments-card" aria-label="Telemetry policy segments" data-testid="telemetry-policy-segments">
+  return <section className="goal-status-card telemetry-policy-segments-card run-report-panel" aria-label="Telemetry policy segments" data-testid="telemetry-policy-segments">
     <h3>Telemetry policy segments</h3>
     <p>This run's telemetry budget policy changed while it ran. Each segment classifies the intervals after it took effect; an interval a change fell inside, or classified while the run's segments could not be read, belongs to no segment: its budgets are not judged, though what no policy decides (losses, gaps, transaction, broker and throttling samples) still is.</p>
-    {view.segments ? <table className="data-table">
+    {view.segments ? <div className="run-report-table-wrap"><table className="data-table run-report-table">
       <thead><tr><th>Segment</th><th>From</th><th>Policy</th><th>Cadence</th><th>Policy hash</th></tr></thead>
       <tbody>
         {view.segments.map(segment => <tr key={segment.sequence}>
@@ -53,7 +53,7 @@ export function TelemetryPolicySegmentList({ segments }: { segments?: unknown })
           <td style={{ overflowWrap: 'anywhere' }}>{segment.policy ? <code>{segment.policy.hash}</code> : 'Receipt invalid'}</td>
         </tr>)}
       </tbody>
-    </table> : <p>{view.reason}</p>}
+    </table></div> : <p>{view.reason}</p>}
   </section>
 }
 

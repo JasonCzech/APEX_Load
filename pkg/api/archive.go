@@ -730,6 +730,12 @@ type RunArchiveReport struct {
 	// renders it ((*Server).attachBrowserIntelligenceForProfile), never to the
 	// JSON report, so it is not part of the JSON contract.
 	BrowserIntelligence *ReportBrowserIntelligence `json:"-"`
+	// SelectedPopulation is the analyst-chosen metric population ("action",
+	// "transaction", or "unknown") for a single report export request.
+	SelectedPopulation string `json:"-"`
+	// TimelineAnnotations holds active run timeline annotations for report
+	// exports that include the graphs section.
+	TimelineAnnotations []storage.RunAnnotation `json:"-"`
 }
 
 // RunArchiveLoadLevelSummary preserves the evidence collected while one

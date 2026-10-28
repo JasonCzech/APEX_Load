@@ -44,10 +44,10 @@ const (
 	reportChartPadB    = 30
 	reportChartAccent  = "#0f766e"
 	reportChartAccent2 = "#b45309"
-	reportChartGrid    = "#d8cfc2"
+	reportChartGrid    = "#e2e8f0"
 	reportChartInk     = "#1f2933"
 	reportChartMuted   = "#5b6875"
-	reportChartSurface = "#fffdf8"
+	reportChartSurface = "#ffffff"
 )
 
 // buildReportCharts derives all report graphs from the archived run report.
@@ -99,16 +99,9 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 			[]reportChartSeries{{Label: "Active VUsers", Color: reportChartAccent, Values: vusers}})
 	}
 
-	actions := report.ByAction
-	if report.MetricPopulations != nil {
-		actions = report.ByRequest
-	}
+	actions, average := reportPopulationActions(report)
 	if bars := topActionLatencyBars(actions, reportActionLatencyLimit); len(bars) > 0 {
 		charts.HasActions = true
-		average := report.Overview.AvgResponseMs
-		if report.MetricPopulations != nil {
-			average = report.MetricPopulations["action"].AvgResponseMs
-		}
 		charts.ActionLatency = svgBarChart(actionLatencyTitle(len(bars), len(actions)), "ms", bars, average)
 	}
 

@@ -674,9 +674,9 @@ export default function RunReportPage({
       </section>}
       {hasArchive && <RunArchiveCoverageNotice report={report} />}
       {showExport && hasArchive && <section className="run-report-panel" aria-label="Report export options">
-        <h2>Export report</h2><p>Exports use the {REPORT_LENS_LABELS[activeLens]} report audience selected above. Outputs cover the whole run, independent of the population selector below. Any release trend in an output uses the prior release run and names that reference.</p>
+        <h2>Export report</h2><p>Exports use the {REPORT_LENS_LABELS[activeLens]} report audience and {populationLabels[population]} metric population selected on this page. Outputs cover the whole run. Any release trend in an output uses the prior release run and names that reference.</p>
         <button className="btn btn-secondary" type="button" onClick={() => setShowComposer(true)}>Preview / edit commentary</button>
-        <RunReportExportActions testId={testId} lens={activeLens} testName={test.name} downloadHTML={(id, lens) => api.downloadTestReport(id, lens, { comparisonId: initialComparisonId })} downloadFormat={(id, lens, format) => api.downloadTestReportFormat(id, lens, format, { comparisonId: initialComparisonId })} />
+        <RunReportExportActions testId={testId} lens={activeLens} testName={test.name} downloadHTML={(id, lens) => api.downloadTestReport(id, lens, { comparisonId: initialComparisonId, population })} downloadFormat={(id, lens, format) => api.downloadTestReportFormat(id, lens, format, { comparisonId: initialComparisonId, population })} />
         <details><summary>Publish to Power BI</summary><RunReportPowerBIPublish testId={testId} publish={api.publishTestToPowerBI} getStatus={api.getPowerBIPublishStatus} /></details>
         <details><summary>Publish to Confluence</summary><RunReportConfluencePublish testId={testId} canPublish={canPublishConfluence} /></details>
       </section>}
@@ -702,9 +702,6 @@ export default function RunReportPage({
         {(comparison.limitedSamples || comparison.differentObservedLoad || comparison.observedLoadUnknown) && <strong>Limited comparability: {[comparison.limitedSamples && 'insufficient sample evidence', comparison.differentObservedLoad && 'different observed load', comparison.observedLoadUnknown && 'observed load unavailable'].filter(Boolean).join('; ')}. Do not use the deltas alone as acceptance evidence.</strong>}
       </section>}
       <OrchestrationReturn testId={testId} />
-      <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
-      <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
-      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} reloadKey={annotationReload} />
       <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${reportSectionForArea(name)}`} aria-controls={area === name ? `result-panel-${reportSectionForArea(name)}` : undefined} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
         onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${reportSectionForArea(areas[next])}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline comparison' : name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${reportSectionForArea(area)}`} aria-labelledby={`result-tab-${reportSectionForArea(area)}`} className="run-report-area-content">
@@ -726,6 +723,8 @@ export default function RunReportPage({
             {/* Each finding is a line with its one action, styled alike. */}
             {report?.error_patterns?.length ? <p>{report.error_patterns.length === 1 ? 'One error pattern was' : `${report.error_patterns.length.toLocaleString()} error patterns were`} captured across all populations. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Diagnostics')}>Investigate errors</button></p> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {formatFixed(report.completeness.score_pct, 0)}%. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
+            {annotations?.executive_narrative?.trim() && <div className="run-report-commentary-summary"><strong>{REPORT_LENS_LABELS[activeLens]} commentary:</strong> <p>{annotations.executive_narrative}</p></div>}
+            <div className="run-report-commentary-actions"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowComposer(true)}>Edit commentary &amp; findings</button></div>
           </section>
           {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
           <RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} />
@@ -774,7 +773,7 @@ export default function RunReportPage({
         {!hasArchive && area === 'Browser' && <p>Browser intelligence reads the run's archive. Check archive availability above.</p>}
         {area === 'Evidence' && hasArchive && <>
           {renderEvidence('report-completeness')}
-          {report && <section className="run-outcome-summary"><h2>Metric populations</h2><RunMetricPopulations report={report} /></section>}
+          {report && <section className="run-outcome-summary run-report-panel"><h2>Metric populations</h2><RunMetricPopulations report={report} /></section>}
           {renderEvidence('report-metadata')}
           <details><summary>Raw evidence downloads</summary><button className="btn btn-secondary" onClick={() => void archiveModel.onDownloadArchive()}>Download evidence bundle</button>{renderEvidence('report-assets')}</details>
           <details data-report-focus="monitor-evidence"><summary>Archived intervals and monitor evidence</summary>{renderEvidence('report-summary-timeline')}</details>
@@ -796,8 +795,11 @@ export default function RunReportPage({
         {!hasArchive && area === 'Diagnostics' && <><RetainedRunDiagnostics test={test} /><RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly /></>}
         {!hasArchive && area === 'Evidence' && <RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly />}
       </section>
+      <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
+      <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
+      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} reloadKey={annotationReload} />
       {showNotes && <TestNotesDialog testId={testId} testName={test.name} initialDraft={noteDraft || undefined} onClose={() => { setShowNotes(false); setNoteDraft('') }} />}
-      {showComposer && <ReportComposer comparisonId={initialComparisonId} testId={testId} testName={test.name} profile={activeLens} onClose={() => setShowComposer(false)} />}
+      {showComposer && <ReportComposer comparisonId={initialComparisonId} population={population} testId={testId} testName={test.name} profile={activeLens} onAnnotationsSaved={saved => { if (activeLensRef.current === activeLens && testIDRef.current === testId) setAnnotations(saved) }} onClose={() => setShowComposer(false)} />}
     </div>
   )
 }

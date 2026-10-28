@@ -84,15 +84,8 @@ func reportDocumentChartSpecs(report *RunArchiveReport) []reportDocumentChartSpe
 			base("vusers", "Active VUsers", "VUsers", reportChartSeries{Label: "Active VUsers", Color: reportChartAccent, Values: series(func(p RunArchiveSummaryPoint) float64 { return float64(p.ActiveVUsers) })}),
 		)
 	}
-	actions := report.ByAction
-	if report.MetricPopulations != nil {
-		actions = report.ByRequest
-	}
+	actions, average := reportPopulationActions(report)
 	if bars := topActionLatencyBars(actions, reportActionLatencyLimit); len(bars) > 0 {
-		average := report.Overview.AvgResponseMs
-		if report.MetricPopulations != nil {
-			average = report.MetricPopulations["action"].AvgResponseMs
-		}
 		specs = append(specs, reportDocumentChartSpec{ID: "action-latency", Title: actionLatencyTitle(len(bars), len(actions)), Unit: "ms", Bars: bars, HighlightAt: average, Height: max(192, 75+len(bars)*31)})
 	}
 	return specs
@@ -135,10 +128,10 @@ func buildReportDocumentCharts(report *RunArchiveReport) ([]reportDocumentChart,
 var (
 	chartTeal   = color.RGBA{15, 118, 110, 255}
 	chartAmber  = color.RGBA{180, 83, 9, 255}
-	chartGrid   = color.RGBA{216, 207, 194, 255}
+	chartGrid   = color.RGBA{226, 232, 240, 255}
 	chartInk    = color.RGBA{31, 41, 51, 255}
 	chartMuted  = color.RGBA{91, 104, 117, 255}
-	chartBorder = color.RGBA{220, 213, 202, 255}
+	chartBorder = color.RGBA{226, 232, 240, 255}
 )
 
 func rasterizeReportChart(spec reportDocumentChartSpec, regular, bold font.Face) (reportDocumentChart, error) {

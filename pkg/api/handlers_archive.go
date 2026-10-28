@@ -526,6 +526,11 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	// The report is now a memory snapshot. Release before cross-run enrichment
 	// so a one-archive budget cannot deadlock on its own baseline/trend read.
 	lease.Release()
+	selectedPopulation, ok := parseOptionalReportPopulation(w, r)
+	if !ok {
+		return
+	}
+	report.SelectedPopulation = selectedPopulation
 	if !s.attachSelectedBaselineComparison(w, r, report, r.URL.Query().Get("comparison_id")) {
 		return
 	}
@@ -1110,6 +1115,11 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	// The report is now a memory snapshot. Release before cross-run enrichment
 	// so a one-archive budget cannot deadlock on its own baseline/trend read.
 	lease.Release()
+	selectedPopulation, ok := parseOptionalReportPopulation(w, r)
+	if !ok {
+		return
+	}
+	report.SelectedPopulation = selectedPopulation
 	if !s.attachSelectedBaselineComparison(w, r, report, r.URL.Query().Get("comparison_id")) {
 		return
 	}

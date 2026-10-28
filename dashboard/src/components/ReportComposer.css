@@ -78,8 +78,8 @@
   --accent: #0f766e;
   --ink: #1f2933;
   --muted: #5b6875;
-  --line: #d8cfc2;
-  --surface: #fffdf8;
+  --line: #e2e8f0;
+  --surface: #ffffff;
   /* The paper is light in every theme. Remap the app tokens its controls and
      charts read, so dark themes do not put light text, borders and series on
      the white page; the series are the light palette validated at 3:1 here. */
@@ -90,9 +90,9 @@
   --border: var(--line);
   --border-subtle: var(--line);
   --bg-primary: var(--surface);
-  --bg-secondary: #f4efe6;
+  --bg-secondary: #f8fafc;
   --bg-card: var(--surface);
-  --bg-hover: #efe8dc;
+  --bg-hover: #f1f5f9;
   --accent-text: var(--accent);
   --chart-1: #1b50a9;
   --chart-2: #36772f;
@@ -108,7 +108,7 @@
   border-radius: 12px;
   padding: 40px 44px 48px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-  font: 15px/1.55 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font: 15px/1.55 "Inter", "Avenir Next", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .report-cover {
@@ -246,7 +246,7 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px 14px;
-  font: 15px/1.55 "Iowan Old Style", Georgia, serif;
+  font: 15px/1.55 "Inter", "Avenir Next", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--ink);
   background: #fff;
   resize: vertical;
@@ -313,7 +313,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 9px 10px;
-  background: #fffdf8;
+  background: #f8fafc;
   color: var(--ink);
   cursor: pointer;
 }
@@ -349,7 +349,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
-  background: #fffdf8;
+  background: #f8fafc;
   word-break: break-word;
 }
 
@@ -359,7 +359,7 @@
   --text-muted: var(--muted);
   --border: var(--line);
   --bg-card: #fff;
-  --bg-primary: #fffdf8;
+  --bg-primary: #ffffff;
   --accent: #0f766e;
   font: 13px/1.5 "Avenir Next", "Segoe UI", sans-serif;
 }

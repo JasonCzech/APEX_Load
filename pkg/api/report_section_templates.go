@@ -20,8 +20,8 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
       --blue:   #0f766e;
       --blue2:  #0c645d;
       --sky:    #e8f5f2;
-      --silver: #f7f4ee;
-      --line:   #d8cfc2;
+      --silver: #f8fafc;
+      --line:   #e2e8f0;
       --ink:    #1f2933;
       --slate:  #5b6875;
       --good:    #1a6e3c;
@@ -36,17 +36,17 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body {
-      font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+      font-family: "Inter", "Avenir Next", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 14.5px;
       line-height: 1.58;
       color: var(--ink);
-      background: #e8e3d9;
+      background: #f1f5f9;
     }
     .mono { overflow-wrap: anywhere; word-break: break-word; font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; }
-    .page { max-width: 960px; margin: 28px auto; background: #fffdf8; box-shadow: 0 1px 32px rgba(31,41,51,.14); }
+    .page { max-width: 960px; margin: 28px auto; background: #ffffff; box-shadow: 0 1px 32px rgba(31,41,51,.14); }
     .skip-link { position: absolute; left: -10000px; top: 8px; z-index: 10; background: #fff; color: var(--navy); padding: 8px 12px; }
     .skip-link:focus { left: 8px; }
-    .masthead { background: #fffdf8; padding: 22px 52px 20px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); }
+    .masthead { background: #ffffff; padding: 22px 52px 20px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); }
     .masthead-brand { display: flex; align-items: center; gap: 14px; }
     .brand-logo { height: 34px; width: auto; }
     .brand-unit { font-size: 12.5px; font-weight: 600; color: var(--blue); letter-spacing: .06em; text-transform: uppercase; line-height: 1.3; }
@@ -385,6 +385,17 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </div>
 {{else}}
 <p class="muted">No interval timeline was captured for this run, so time-series graphs are unavailable.</p>
+{{end}}
+{{if .Report.TimelineAnnotations}}
+<h3>Run timeline annotations</h3>
+<table>
+  <thead><tr><th>Timestamp</th><th>Label</th><th>Author</th><th>Context</th></tr></thead>
+  <tbody>
+  {{range .Report.TimelineAnnotations}}
+  <tr><td>{{formatTime .Timestamp}}</td><td>{{.Label}}</td><td>{{.CreatedBy}}</td><td>{{if .Text}}{{.Text}}{{else}}—{{end}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
 {{end}}
 {{with index .Annotations.SectionComments "performance"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
 {{end}}

@@ -21,9 +21,9 @@ import { type ChartExportColumn } from './exportableChartUtils'
 
 const ACCENT = '#0f766e'
 const ACCENT_2 = '#b45309'
-const GRID = '#d8cfc2'
+const GRID = '#e2e8f0'
 const INK = '#1f2933'
-const SURFACE = '#fffdf8'
+const SURFACE = '#ffffff'
 
 const tooltipStyle = {
   background: SURFACE,
@@ -70,13 +70,16 @@ const ACTION_BAR_LIMIT = 20
 // The busiest actions by transaction count (up to ACTION_BAR_LIMIT), drawn
 // slowest-first, each flagged against the run-wide average response time so
 // the chart can single out the offenders.
-function actionEntries(report: RunArchiveReport) {
-  return Object.entries((report.metric_populations ? report.by_request : report.by_action) || {})
+function actionEntries(report: RunArchiveReport, population: 'action' | 'transaction' | 'unknown' = 'action') {
+  if (!report.metric_populations) return Object.entries(report.by_action || {})
+  if (population === 'transaction') return Object.entries(report.by_transaction || {})
+  if (population === 'unknown') return Object.entries(report.by_unknown || {})
+  return Object.entries(report.by_request || {})
 }
 
-function buildActionBars(report: RunArchiveReport): ActionBar[] {
-  const runAverage = (report.metric_populations ? report.metric_populations.action?.avg_response_ms : report.overview?.avg_response_ms) ?? 0
-  const entries = actionEntries(report)
+function buildActionBars(report: RunArchiveReport, population: 'action' | 'transaction' | 'unknown' = 'action'): ActionBar[] {
+  const runAverage = (report.metric_populations ? report.metric_populations[population]?.avg_response_ms : report.overview?.avg_response_ms) ?? 0
+  const entries = actionEntries(report, population)
   entries.sort((a, b) => b[1].transactions - a[1].transactions)
   return entries
     .slice(0, ACTION_BAR_LIMIT)
@@ -119,9 +122,10 @@ function clock(timestamp: string): string {
 
 interface Props {
   report: RunArchiveReport
+  population?: 'action' | 'transaction' | 'unknown'
 }
 
-export default function ReportCharts({ report }: Props) {
+export default function ReportCharts({ report, population = 'action' }: Props) {
   const timeline = useMemo<TimelinePoint[]>(
     () =>
       (report.summary_timeline || []).map((point) => ({
@@ -137,9 +141,9 @@ export default function ReportCharts({ report }: Props) {
 
   const hasTarget = useMemo(() => timeline.some((point) => point.target > 0), [timeline])
 
-  const actionBars = useMemo(() => buildActionBars(report), [report])
-  const actionTotal = useMemo(() => actionEntries(report).length, [report])
-  const runAverageMs = round((report.metric_populations ? report.metric_populations.action?.avg_response_ms : report.overview?.avg_response_ms) ?? 0)
+  const actionBars = useMemo(() => buildActionBars(report, population), [report, population])
+  const actionTotal = useMemo(() => actionEntries(report, population).length, [report, population])
+  const runAverageMs = round((report.metric_populations ? report.metric_populations[population]?.avg_response_ms : report.overview?.avg_response_ms) ?? 0)
   const highlightsSlowActions = actionBars.some((bar) => bar.aboveRunAverage)
 
   const hasTimeline = timeline.length >= 2

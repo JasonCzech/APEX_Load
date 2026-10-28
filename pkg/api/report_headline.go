@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 )
@@ -27,6 +28,15 @@ func reportHeadline(report *RunArchiveReport) reportHeadlineMetrics {
 		return reportHeadlineMetrics{Label: "No archive records"}
 	}
 	if report.MetricPopulations != nil {
+		if sel := strings.TrimSpace(report.SelectedPopulation); sel == "action" || sel == "transaction" || sel == "unknown" {
+			if metrics, ok := report.MetricPopulations[sel]; ok && metrics.Transactions > 0 {
+				return reportHeadlineMetrics{
+					Population:            sel,
+					Label:                 reportPopulationLabel(sel) + " · whole run",
+					RunArchiveActionStats: metrics.RunArchiveActionStats,
+				}
+			}
+		}
 		for _, key := range []string{"action", "transaction", "unknown"} {
 			if metrics, ok := report.MetricPopulations[key]; ok && metrics.Transactions > 0 {
 				return reportHeadlineMetrics{
@@ -54,6 +64,44 @@ func reportHeadline(report *RunArchiveReport) reportHeadlineMetrics {
 			P95Ms:         ov.P95Ms,
 			P99Ms:         ov.P99Ms,
 		},
+	}
+}
+
+func reportPopulationActions(report *RunArchiveReport) (map[string]RunArchiveActionStats, float64) {
+	if report == nil {
+		return nil, 0
+	}
+	if report.MetricPopulations == nil {
+		return report.ByAction, report.Overview.AvgResponseMs
+	}
+	pop := strings.TrimSpace(report.SelectedPopulation)
+	if pop == "" {
+		pop = reportHeadline(report).Population
+	}
+	switch pop {
+	case "transaction":
+		if len(report.ByTransaction) > 0 || report.MetricPopulations["transaction"].Transactions > 0 {
+			return report.ByTransaction, report.MetricPopulations["transaction"].AvgResponseMs
+		}
+	case "unknown":
+		if len(report.ByUnknown) > 0 || report.MetricPopulations["unknown"].Transactions > 0 {
+			return report.ByUnknown, report.MetricPopulations["unknown"].AvgResponseMs
+		}
+	}
+	return report.ByRequest, report.MetricPopulations["action"].AvgResponseMs
+}
+
+func parseOptionalReportPopulation(w http.ResponseWriter, r *http.Request) (string, bool) {
+	pop := strings.TrimSpace(r.URL.Query().Get("population"))
+	if pop == "" {
+		return "", true
+	}
+	switch pop {
+	case "action", "transaction", "unknown":
+		return pop, true
+	default:
+		writeError(w, http.StatusBadRequest, "invalid population")
+		return "", false
 	}
 }
 

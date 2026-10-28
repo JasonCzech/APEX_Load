@@ -1,8 +1,13 @@
 package api
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // The archive overview mixes actions with their enclosing transactions and
@@ -40,8 +45,15 @@ func TestReportHeadlineUsesDashboardDefaultPopulation(t *testing.T) {
 
 	onlyTransactions := headlineTestReport()
 	delete(onlyTransactions.MetricPopulations, "action")
+	onlyTransactions.ByRequest = nil
+	onlyTransactions.ByTransaction = map[string]RunArchiveActionStats{
+		"CheckoutFlow": {Transactions: 610, AvgResponseMs: 1210, P95Ms: 1538},
+	}
 	if got := reportHeadline(onlyTransactions); got.Population != "transaction" || got.PeakTPS != 19.0 {
 		t.Fatalf("transaction-only headline = %+v", got)
+	}
+	if actions, _ := reportPopulationActions(onlyTransactions); len(actions) != 1 || actions["CheckoutFlow"].Transactions != 610 {
+		t.Fatalf("transaction-only default reportPopulationActions = %+v, want CheckoutFlow", actions)
 	}
 }
 
@@ -78,5 +90,74 @@ func TestFormatReportMsMatchesDashboard(t *testing.T) {
 		if got := formatReportMs(value); got != want {
 			t.Errorf("formatReportMs(%v) = %q, want %q", value, got, want)
 		}
+	}
+}
+
+func TestReportHeadlineAndActionsHonorSelectedPopulationAndTimelineAnnotations(t *testing.T) {
+	report := headlineTestReport()
+	report.ByRequest = map[string]RunArchiveActionStats{
+		"GET /checkout": {Transactions: 2991, AvgResponseMs: 1006, P95Ms: 1533},
+	}
+	report.ByTransaction = map[string]RunArchiveActionStats{
+		"CheckoutFlow": {Transactions: 610, AvgResponseMs: 1210, P95Ms: 1538},
+	}
+	report.SelectedPopulation = "transaction"
+	report.TimelineAnnotations = []storage.RunAnnotation{
+		{
+			ID:        "ann-1",
+			Timestamp: time.Date(2026, 10, 28, 12, 5, 0, 0, time.UTC),
+			Label:     "Pod autoscaled",
+			Text:      "KEDA scaled generator pool from 2 to 4 replicas",
+			CreatedBy: "analyst@example.com",
+		},
+	}
+
+	headline := reportHeadline(report)
+	if headline.Population != "transaction" || headline.Label != "Named transactions · whole run" || headline.Transactions != 610 {
+		t.Fatalf("selected transaction headline = %+v, want transaction population", headline)
+	}
+	actions, avg := reportPopulationActions(report)
+	if _, ok := actions["CheckoutFlow"]; !ok || avg != report.MetricPopulations["transaction"].AvgResponseMs {
+		t.Fatalf("reportPopulationActions = %+v (avg %v), want CheckoutFlow from ByTransaction", actions, avg)
+	}
+
+	htmlBytes, err := renderRunArchiveHTMLReportWithProfile(report, "engineer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlBytes)
+	for _, want := range []string{
+		"Named transactions · whole run",
+		"CheckoutFlow",
+		"Run timeline annotations",
+		"Pod autoscaled",
+		"KEDA scaled generator pool from 2 to 4 replicas",
+		"#f8fafc",
+		"#ffffff",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("rendered engineer report missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{"#fffdf8", "#f7f4ee", "#e8e3d9", "Iowan Old Style"} {
+		if strings.Contains(html, unwanted) {
+			t.Errorf("rendered engineer report still contains sepia/serif token %q", unwanted)
+		}
+	}
+}
+
+func TestParseOptionalReportPopulation(t *testing.T) {
+	for _, valid := range []string{"", "action", "transaction", "unknown"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/t1/report?population="+valid, nil)
+		got, ok := parseOptionalReportPopulation(rec, req)
+		if !ok || got != valid {
+			t.Fatalf("parseOptionalReportPopulation(%q) = (%q, %v), want (%q, true)", valid, got, ok, valid)
+		}
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/t1/report?population=bogus", nil)
+	if _, ok := parseOptionalReportPopulation(rec, req); ok || rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid population, got ok=%v status=%d", ok, rec.Code)
 	}
 }

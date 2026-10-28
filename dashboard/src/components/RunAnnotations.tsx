@@ -50,5 +50,17 @@ export default function RunAnnotations({ testId, startedAt, canEdit, onAnnotatio
       setAnnotations(next); setLabel(''); setText('')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Annotation save failed') } finally { setBusy(false) }
   }
-  return <details><summary>Run timeline annotations</summary><button disabled={busy} onClick={() => refresh(value => value + 1)}>Reload annotations</button>{error && <p role="alert">{error}</p>}{set && <><p>Revision {set.revision}. Notes are separate from immutable measurements; deleted notes retain their audit history.</p><ul>{set.annotations.filter(a => !a.deleted_at).map(a => <li key={a.id}><strong>{a.label}</strong> · {annotationTime(a.timestamp, startedAt)} · {a.created_by}<p>{a.text}</p>{canEdit && <button disabled={busy} onClick={() => void mutate(a.id)}>Delete annotation {a.label}</button>}</li>)}</ul>{canEdit && startedAt && <form onSubmit={event => { event.preventDefault(); void mutate() }}><label>Annotation elapsed seconds<input required type="number" min={0} max={86400} step="0.001" value={elapsed} onChange={event => setElapsed(Number(event.target.value))} /></label><label>Annotation label<input required maxLength={256} value={label} onChange={event => setLabel(event.target.value)} /></label><label>Annotation context<textarea maxLength={2048} value={text} onChange={event => setText(event.target.value)} /></label><button disabled={busy || !label.trim()}>Add timeline annotation</button></form>}</>}</details>
+  const activeAnnotations = (set?.annotations || []).filter(a => !a.deleted_at)
+  return <details className="run-report-panel run-annotations-panel">
+    <summary>Run timeline annotations</summary>
+    <div className="run-annotations-header">
+      {set && <p className="run-report-muted">Revision {set.revision}. Notes are separate from immutable measurements; deleted notes retain their audit history.</p>}
+      <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => refresh(value => value + 1)}>Reload annotations</button>
+    </div>
+    {error && <p className="run-report-error" role="alert">{error}</p>}
+    {set && <>
+      {activeAnnotations.length > 0 && <ul className="run-annotations-list">{activeAnnotations.map(a => <li key={a.id} className="run-annotation-item"><div className="run-annotation-item-header"><span><strong>{a.label}</strong> · {annotationTime(a.timestamp, startedAt)} · {a.created_by}</span>{canEdit && <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void mutate(a.id)}>Delete annotation {a.label}</button>}</div>{a.text && <p>{a.text}</p>}</li>)}</ul>}
+      {canEdit && startedAt && <form className="run-annotations-form" onSubmit={event => { event.preventDefault(); void mutate() }}><label>Annotation elapsed seconds<input required type="number" min={0} max={86400} step="0.001" value={elapsed} onChange={event => setElapsed(Number(event.target.value))} /></label><label>Annotation label<input required maxLength={256} value={label} onChange={event => setLabel(event.target.value)} /></label><label className="run-annotations-context-field">Annotation context<textarea maxLength={2048} value={text} onChange={event => setText(event.target.value)} /></label><div className="run-annotations-form-actions"><button type="submit" className="btn btn-secondary btn-sm" disabled={busy || !label.trim()}>Add timeline annotation</button></div></form>}
+    </>}
+  </details>
 }
