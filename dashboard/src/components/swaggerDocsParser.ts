@@ -29,6 +29,7 @@ export type SwaggerRequestBody = {
 }
 
 export type SwaggerOperation = {
+  source: string
   method: string
   path: string
   category: string
@@ -48,6 +49,7 @@ export type SwaggerDocument = {
   version: string
   serverUrl: string
   operations: SwaggerOperation[]
+  definitions: string
 }
 
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
@@ -277,6 +279,7 @@ function parseOperation(path: string, method: string, lines: string[]): SwaggerO
   const summary = readField(lines, 'summary', 6) || `${method.toUpperCase()} ${path}`
   const tags = parseTags(lines)
   return {
+    source: lines.join("\n"),
     method: method.toUpperCase(),
     path,
     category: categoryForPath(path),
@@ -328,5 +331,5 @@ export function parseSwaggerDocument(source: string): SwaggerDocument {
     }
   }
 
-  return { title, description, version, serverUrl, operations }
+  return { title, description, version, serverUrl, operations, definitions: lines.slice(0, lines.findIndex(line => line === "paths:")).join("\n") }
 }

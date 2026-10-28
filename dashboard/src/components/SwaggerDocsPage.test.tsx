@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import endpointCatalogRaw from '../../../docs/api-endpoint-catalog.json?raw'
 import swaggerYamlFixture from '../../../docs/swagger.yaml?raw'
 
+import { canSaveApiResourceViaBridge, saveApiResourceViaBridge } from '../desktop/desktopFiles'
+import { downloadTextFile } from '../utils/fileUtils'
 import { loadApiEndpointCatalog, loadSwaggerYaml } from '../apiDocsClient'
 import { parseEndpointCatalog } from '../apiEndpointCatalog'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
@@ -19,6 +21,9 @@ vi.mock('../apiDocsClient', () => ({
   loadApiEndpointCatalog: vi.fn(),
   loadSwaggerYaml: vi.fn(),
 }))
+
+vi.mock('../desktop/desktopFiles', () => ({ canSaveApiResourceViaBridge: vi.fn(), saveApiResourceViaBridge: vi.fn() }))
+vi.mock('../utils/fileUtils', () => ({ downloadTextFile: vi.fn() }))
 
 const endpointCatalogFixture = parseEndpointCatalog(endpointCatalogRaw)
 const loadApiEndpointCatalogMock = vi.mocked(loadApiEndpointCatalog)
@@ -57,6 +62,9 @@ describe('SwaggerDocsPage', () => {
     window.history.replaceState(null, '', '/')
     loadApiEndpointCatalogMock.mockReset()
     loadSwaggerYamlMock.mockReset()
+    vi.mocked(canSaveApiResourceViaBridge).mockReturnValue(false)
+    vi.mocked(saveApiResourceViaBridge).mockReset()
+    vi.mocked(downloadTextFile).mockReset()
     loadApiEndpointCatalogMock.mockResolvedValue(endpointCatalogFixture)
     loadSwaggerYamlMock.mockResolvedValue(swaggerYamlFixture)
     container = document.createElement('div')
@@ -322,6 +330,34 @@ paths:
     expect(scriptRows.some(row => row.includes('GET') && row.includes('/api/v1/scripts'))).toBe(true)
     expect(scriptRows.some(row => row.includes('POST') && row.includes('/api/v1/scripts') && row.includes('Create Script'))).toBe(false)
   }, 10_000)
+
+  it('streams the full generated OpenAPI document through the native bridge beyond the blob-save limit', async () => {
+    expect(new Blob([swaggerYamlFixture]).size).toBeGreaterThan(16 * 1024 * 1024)
+    vi.mocked(canSaveApiResourceViaBridge).mockReturnValue(true)
+    vi.mocked(saveApiResourceViaBridge).mockResolvedValue('saved')
+    await renderSwaggerDocsPage()
+    const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Download OpenAPI')!
+    await act(async () => button.click())
+    expect(saveApiResourceViaBridge).toHaveBeenCalledWith('/api/v1/docs/swagger.yaml', 'apexload-openapi.yaml')
+    expect(downloadTextFile).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('OpenAPI document saved.')
+    vi.mocked(saveApiResourceViaBridge).mockResolvedValueOnce('cancelled')
+    await act(async () => button.click())
+    expect(container.textContent).toContain('Download cancelled.')
+    vi.mocked(saveApiResourceViaBridge).mockRejectedValueOnce(new Error('Disk full'))
+    await act(async () => button.click())
+    expect(container.textContent).toContain('Disk full')
+    expect(downloadTextFile).not.toHaveBeenCalled()
+  })
+
+  it('downloads the authenticated in-memory spec in browsers', async () => {
+    vi.mocked(downloadTextFile).mockResolvedValue('browser_started')
+    await renderSwaggerDocsPage()
+    const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Download OpenAPI')!
+    await act(async () => button.click())
+    expect(downloadTextFile).toHaveBeenCalledWith(swaggerYamlFixture, 'apexload-openapi.yaml', 'application/yaml')
+    expect(container.textContent).toContain('OpenAPI download started.')
+  })
 
   it('shows a controller docs error when the OpenAPI document cannot be loaded', async () => {
     loadSwaggerYamlMock.mockRejectedValueOnce(new Error('swagger route unavailable'))

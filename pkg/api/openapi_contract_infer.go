@@ -184,6 +184,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyObjectActivityContract(route, &contract)
 		applySharedAssetUsageContract(route, &contract)
 		applyScenarioDraftDeleteContract(route, &contract)
+		applyAPIReferenceExamples(route, &contract, typeDefinitions)
 		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil
