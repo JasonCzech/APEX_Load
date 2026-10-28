@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { reportClientError } from '../utils/clientErrorReporting'
-import { markdownPlainText, parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
+import { MARKDOWN_ITALIC, markdownPlainText, parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
 import { declaresErDiagram, loadMermaidErDiagram } from './mermaidErDiagramLoader'
 import { highlightsCode, loadHelpCodeView } from './helpCodeViewLoader'
 
@@ -110,9 +110,20 @@ function safeMarkdownHref(href: string) {
   return ''
 }
 
+// Inline tokens. The leftmost token wins; at the same position, earlier
+// alternatives win: code span, bold (may contain code), link, then
+// single-asterisk emphasis. Tokens are dispatched by their prefix (match[0]),
+// so capture-group numbers in the combined pattern carry no meaning.
+const INLINE_TOKEN_SOURCE = [
+  /`[^`]+`/.source,
+  /\*\*(?:[^*`]|`[^`]+`)+\*\*/.source,
+  /\[[^\]]+\]\([^)]+\)/.source,
+  MARKDOWN_ITALIC.source,
+].map(source => `(?:${source})`).join('|')
+
 function renderMarkdownInline(text: string, keyPrefix: string, options: InlineOptions): ReactNode[] {
   const nodes: ReactNode[] = []
-  const pattern = /(`[^`]+`)|(\*\*(?:[^*`]|`[^`]+`)+\*\*)|(\[[^\]]+\]\([^)]+\))|((?<![*\w/`])\*(?:[^*`\s/]|[^*`\s/][^*`\n]*?[^*`\s/])\*(?![*\w/`]))/g
+  const pattern = new RegExp(INLINE_TOKEN_SOURCE, 'g')
   const plain: PlainText = (value, key) => options.identifierBreaks ? withIdentifierBreaks(value, key) : value
   let lastIndex = 0
   let match: RegExpExecArray | null
