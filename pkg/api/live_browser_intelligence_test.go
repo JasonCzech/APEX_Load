@@ -488,6 +488,10 @@ func TestLiveBrowserIntelligenceDistributedTwoGeneratorsAndTruncation(t *testing
 	}); err != nil {
 		t.Fatalf("SaveTest: %v", err)
 	}
+	refKey, err := store.EnsureTestRefKey(testID, "RUN-PROVISIONAL-DIST")
+	if err != nil {
+		t.Fatalf("EnsureTestRefKey: %v", err)
+	}
 	srv.runner.mu.Lock()
 	srv.runner.tests[testID] = managed
 	srv.runner.mu.Unlock()
@@ -598,15 +602,30 @@ func TestLiveBrowserIntelligenceDistributedTwoGeneratorsAndTruncation(t *testing
 	batchARepeatSeq.Telemetry = &generatorrpc.MetricsTelemetry{CollectionSequence: 10}
 	managed.liveBrowserIntelligence.observeGeneratorBatch("gen-a:50051", batchARepeatSeq, false)
 
+	backend := &distributedExecutionBackend{}
 	batchARepeat := batchA
+	batchARepeat.GeneratorID = ""
+	batchARepeat.BatchSequence = 2
 	batchARepeat.LifecycleState = "COMPLETE"
 	batchARepeat.Telemetry = &generatorrpc.MetricsTelemetry{CollectionSequence: 10, CollectionRepeated: true}
-	managed.liveBrowserIntelligence.observeGeneratorBatch("gen-a:50051", batchARepeat, true)
+	backend.applyRemoteMetricsBatch(srv.runner, managed, "gen-a:50051", batchARepeat)
 
-	// Gen-b finishes with terminal=true so its unfinished attempt becomes censored.
-	managed.liveBrowserIntelligence.observeGeneratorBatch("gen-b:50051", batchB, true)
+	// Gen-b finishes with terminal LifecycleState="COMPLETE" via applyRemoteMetricsBatch
+	// so its unfinished attempt becomes censored and completedTargets["gen-b:50051"] is recorded.
+	batchB.GeneratorID = ""
+	batchB.LifecycleState = "COMPLETE"
+	backend.applyRemoteMetricsBatch(srv.runner, managed, "gen-b:50051", batchB)
 
 	srv.runner.stopAndJoinLiveBrowserIntelligence(managed, startedAt.Add(5*time.Second))
+
+	// Query provisional interactions by ReferenceKey to verify ref_key resolution.
+	reqIntRef := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+refKey+"/archive/browser-interactions", nil)
+	reqIntRef.SetPathValue("id", refKey)
+	recIntRef := httptest.NewRecorder()
+	srv.handleGetRunArchiveBrowserInteractions(recIntRef, reqIntRef)
+	if recIntRef.Code != http.StatusOK {
+		t.Fatalf("provisional interactions by ref_key status = %d, body = %s", recIntRef.Code, recIntRef.Body.String())
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testID+"/archive/journeys", nil)
 	req.SetPathValue("id", testID)
@@ -627,6 +646,16 @@ func TestLiveBrowserIntelligenceDistributedTwoGeneratorsAndTruncation(t *testing
 	}
 	if journeyResp.Journeys[0].Completed != 1 || journeyResp.Journeys[0].Aborted != 0 || journeyResp.Journeys[0].Eligible != 1 || journeyResp.Journeys[0].Censored != 1 {
 		t.Fatalf("journey[0] counts = %+v, want Completed=1 Aborted=0 Eligible=1 Censored=1 (deduplicated across repeated final collection)", journeyResp.Journeys[0])
+	}
+
+	if err := srv.runner.teardownActiveTestsAfterLeadershipLoss(context.Background()); err != nil {
+		t.Fatalf("teardownActiveTestsAfterLeadershipLoss: %v", err)
+	}
+	srv.runner.mu.RLock()
+	hasLiveAfterLoss := managed.liveBrowserIntelligence != nil || managed.provisionalBrowserIntelligence != nil
+	srv.runner.mu.RUnlock()
+	if hasLiveAfterLoss {
+		t.Fatal("expected teardownActiveTestsAfterLeadershipLoss to clear liveBrowserIntelligence and provisionalBrowserIntelligence")
 	}
 }
 

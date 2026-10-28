@@ -623,9 +623,24 @@ func (tr *TestRunner) startLiveBrowserIntelligence(test *ManagedTest, expectedTa
 	}
 	state := newLiveBrowserIntelligenceState(test, expectedTargets)
 	test.liveBrowserIntelligence = state
+	hasExistingSnap := test.provisionalBrowserIntelligence != nil
+	liveState := tr.liveState
+	testID := test.ID
 	tr.mu.Unlock()
 
-	tr.publishLiveBrowserIntelligenceSnapshot(test, state, time.Now().UTC(), false)
+	if !hasExistingSnap && liveState != nil {
+		if cached, err := liveState.GetRunSnapshot(context.Background(), testID); err == nil && cached != nil && cached.ProvisionalBrowserIntelligence != nil {
+			tr.mu.Lock()
+			if tr.tests[testID] == test && test.liveBrowserIntelligence == state && test.provisionalBrowserIntelligence == nil {
+				test.provisionalBrowserIntelligence = cloneProvisionalBrowserIntelligenceSnapshot(cached.ProvisionalBrowserIntelligence)
+				hasExistingSnap = test.provisionalBrowserIntelligence != nil
+			}
+			tr.mu.Unlock()
+		}
+	}
+	if !hasExistingSnap {
+		tr.publishLiveBrowserIntelligenceSnapshot(test, state, time.Now().UTC(), false)
+	}
 
 	interval := liveBrowserIntelligenceTickInterval
 	if interval <= 0 {
@@ -653,7 +668,7 @@ func (tr *TestRunner) startLiveBrowserIntelligence(test *ManagedTest, expectedTa
 	}()
 }
 
-func (s *liveBrowserIntelligenceState) stopAndJoin() {
+func (s *liveBrowserIntelligenceState) stop() {
 	if s == nil {
 		return
 	}
@@ -663,6 +678,13 @@ func (s *liveBrowserIntelligenceState) stopAndJoin() {
 		s.mu.Unlock()
 		close(s.stopCh)
 	})
+}
+
+func (s *liveBrowserIntelligenceState) stopAndJoin() {
+	if s == nil {
+		return
+	}
+	s.stop()
 	<-s.doneCh
 }
 
@@ -732,6 +754,9 @@ func (tr *TestRunner) stopAndJoinLiveBrowserIntelligenceByID(testID string) {
 func releaseLiveBrowserIntelligenceLocked(test *ManagedTest) {
 	if test == nil {
 		return
+	}
+	if test.liveBrowserIntelligence != nil {
+		test.liveBrowserIntelligence.stop()
 	}
 	test.liveBrowserIntelligence = nil
 	test.provisionalBrowserIntelligence = nil
@@ -804,56 +829,63 @@ func (sink liveBrowserIntelligenceSink) RecordLiveBrowserInteractionEvidence(evi
 	return nil
 }
 
-func (s *Server) liveBrowserIntelligenceForTest(ctx context.Context, testID string) (*liveBrowserIntelligenceState, *ProvisionalBrowserIntelligenceSnapshot) {
+func (s *Server) liveBrowserIntelligenceForTest(ctx context.Context, testID string) (*liveBrowserIntelligenceState, *ProvisionalBrowserIntelligenceSnapshot, bool) {
 	if s == nil || strings.TrimSpace(testID) == "" {
-		return nil, nil
+		return nil, nil, false
 	}
 	if s.runner != nil {
 		s.runner.mu.RLock()
 		current := s.runner.tests[testID]
 		var state *liveBrowserIntelligenceState
 		var snap *ProvisionalBrowserIntelligenceSnapshot
+		var terminal bool
 		if current != nil {
 			state = current.liveBrowserIntelligence
 			snap = cloneProvisionalBrowserIntelligenceSnapshot(current.provisionalBrowserIntelligence)
+			terminal = isTerminalTestStatus(current.Status)
 		}
 		store := s.runner.liveState
 		s.runner.mu.RUnlock()
 		if state != nil {
 			state.mu.Lock()
 			dirty := state.dirty
+			stopped := state.stopped
 			state.mu.Unlock()
+			if stopped {
+				terminal = true
+			}
 			if snap == nil || dirty {
-				s.runner.publishLiveBrowserIntelligenceSnapshot(current, state, time.Now().UTC(), isTerminalTestStatus(current.Status))
+				s.runner.publishLiveBrowserIntelligenceSnapshot(current, state, time.Now().UTC(), terminal)
 				s.runner.mu.RLock()
 				if s.runner.tests[testID] == current {
 					snap = cloneProvisionalBrowserIntelligenceSnapshot(current.provisionalBrowserIntelligence)
+					terminal = terminal || isTerminalTestStatus(current.Status)
 				}
 				s.runner.mu.RUnlock()
 			}
 		}
 		if snap != nil {
-			return state, snap
+			return state, snap, terminal
 		}
 		if store != nil {
 			if liveSnap, err := store.GetRunSnapshot(ctx, testID); err == nil && liveSnap != nil && liveSnap.ProvisionalBrowserIntelligence != nil {
-				return state, cloneProvisionalBrowserIntelligenceSnapshot(liveSnap.ProvisionalBrowserIntelligence)
+				return state, cloneProvisionalBrowserIntelligenceSnapshot(liveSnap.ProvisionalBrowserIntelligence), terminal || isTerminalTestStatus(liveSnap.Status)
 			}
 		}
 	}
 	if s.cache != nil {
 		if liveSnap, err := s.cache.GetRunSnapshot(ctx, testID); err == nil && liveSnap != nil && liveSnap.ProvisionalBrowserIntelligence != nil {
-			return nil, cloneProvisionalBrowserIntelligenceSnapshot(liveSnap.ProvisionalBrowserIntelligence)
+			return nil, cloneProvisionalBrowserIntelligenceSnapshot(liveSnap.ProvisionalBrowserIntelligence), isTerminalTestStatus(liveSnap.Status)
 		}
 	}
-	return nil, nil
+	return nil, nil, false
 }
 
 func (s *Server) provisionalRunBrowserFindings(ctx context.Context, test *ManagedTest) (*RunBrowserFindingsResponse, bool) {
 	if s == nil || test == nil {
 		return nil, false
 	}
-	_, snap := s.liveBrowserIntelligenceForTest(ctx, test.ID)
+	_, snap, _ := s.liveBrowserIntelligenceForTest(ctx, test.ID)
 	if snap == nil || snap.Findings == nil {
 		return nil, false
 	}
@@ -873,7 +905,10 @@ func (s *Server) provisionalRunBrowserInteractions(ctx context.Context, testID s
 	if s == nil || strings.TrimSpace(testID) == "" {
 		return nil, false
 	}
-	_, snap := s.liveBrowserIntelligenceForTest(ctx, testID)
+	if test, ok := s.archiveDomainService().GetTestSummary(testID); ok && test != nil && strings.TrimSpace(test.ID) != "" {
+		testID = test.ID
+	}
+	_, snap, _ := s.liveBrowserIntelligenceForTest(ctx, testID)
 	if snap == nil || snap.Interactions == nil {
 		return nil, false
 	}
@@ -887,7 +922,10 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 	if s == nil || test == nil {
 		return nil, 0, nil, false
 	}
-	state, snap := s.liveBrowserIntelligenceForTest(ctx, test.ID)
+	state, snap, terminal := s.liveBrowserIntelligenceForTest(ctx, test.ID)
+	if !terminal {
+		terminal = isTerminalTestStatus(test.Status)
+	}
 	if state == nil && snap == nil {
 		return nil, 0, nil, false
 	}
@@ -915,7 +953,7 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 		}
 		if state != nil {
 			state.mu.Lock()
-			_, allCompleted := state.sourcesCompleteLocked(isTerminalTestStatus(test.Status))
+			_, allCompleted := state.sourcesCompleteLocked(terminal || state.stopped)
 			report := state.evaluateJourneysLocked(store, requestedID, requestedRevision, allCompleted)
 			state.mu.Unlock()
 			return report, http.StatusOK, nil, true
@@ -937,7 +975,7 @@ func (s *Server) provisionalRunJourneys(ctx context.Context, test *ManagedTest, 
 	}
 	if state != nil {
 		state.mu.Lock()
-		_, allCompleted := state.sourcesCompleteLocked(isTerminalTestStatus(test.Status))
+		_, allCompleted := state.sourcesCompleteLocked(terminal || state.stopped)
 		report := state.evaluateJourneysLocked(store, requestedID, requestedRevision, allCompleted)
 		state.mu.Unlock()
 		return report, http.StatusOK, nil, true

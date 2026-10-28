@@ -556,6 +556,9 @@ func TestBrowserPanelInputPinsHTTPV2PolicyTombstoneAndSelectionReceipt(t *testin
 		}
 	}
 	saveCompletedRCA(selectionSHA, 0)
+	// A subsequent manual/ad-hoc RCA analysis without a BrowserSelection receipt
+	// must not shadow the earlier policy-matched selection receipt for v2 panels.
+	saveCompletedRCA("", 1)
 
 	q := tupleQuery()
 	q.QueryVersion = 5

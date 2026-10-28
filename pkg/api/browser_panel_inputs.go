@@ -90,27 +90,41 @@ func (s *Server) verifyAndPopulateBrowserPanelV2(ctx context.Context, projectID 
 	}
 	if rcaStore, ok := s.store.(storage.RCAStore); ok && response.Current.manifest != nil {
 		if archiveDigest, err := rcaEvidenceDigest(response.Current.manifest); err == nil {
-			if latest, err := rcaStore.LatestCompletedRCAAnalysis(projectID, response.Current.RunID); err == nil && latest != nil {
-				payload := rcaAnalysisPayloadOf(latest)
-				if payload.Assessment != nil && payload.Inputs.Archive == archiveDigest && (payload.BrowserSelection == nil || validateRCABrowserSelection(payload) == nil) {
-					policyOK := true
-					for _, pin := range response.Current.policyPins {
-						if pin.Kind == storage.AnalysisDefinitionKindBrowserPolicy {
-							policyOK = rcaBrowserBaselineMatchesPolicy(response.Current.manifest, payload, BrowserPolicyRef{SHA256: pin.SHA256})
-							break
-						}
+			var candidates []*storage.RCAAnalysis
+			if reader, ok := rcaStore.(completedRCAAnalysesReader); ok {
+				candidates, _ = reader.CompletedRCAAnalyses(projectID, response.Current.RunID)
+			}
+			if len(candidates) == 0 {
+				if latest, err := rcaStore.LatestCompletedRCAAnalysis(projectID, response.Current.RunID); err == nil && latest != nil {
+					candidates = []*storage.RCAAnalysis{latest}
+				}
+			}
+			for _, cand := range candidates {
+				if cand == nil {
+					continue
+				}
+				payload := rcaAnalysisPayloadOf(cand)
+				if payload.Assessment == nil || payload.Inputs.Archive != archiveDigest || (payload.BrowserSelection != nil && validateRCABrowserSelection(payload) != nil) {
+					continue
+				}
+				policyOK := true
+				for _, pin := range response.Current.policyPins {
+					if pin.Kind == storage.AnalysisDefinitionKindBrowserPolicy {
+						policyOK = rcaBrowserBaselineMatchesPolicy(response.Current.manifest, payload, BrowserPolicyRef{SHA256: pin.SHA256})
+						break
 					}
-					rcaBaselineID := strings.TrimSpace(payload.Request.BaselineTestID)
-					if rcaBaselineID == "" && payload.BrowserSelection != nil {
-						rcaBaselineID = strings.TrimSpace(payload.BrowserSelection.SelectedTestID)
-					}
-					if rcaBaselineID == "" && payload.Assessment.BrowserBaseline != nil {
-						rcaBaselineID = strings.TrimSpace(payload.Assessment.BrowserBaseline.Baseline.TestID)
-					}
-					baselineOK := q.ComparisonRunID == "" || rcaBaselineID == q.ComparisonRunID || (rcaBaselineID == "" && payload.BrowserSelection == nil)
-					if policyOK && baselineOK && len(payload.Inputs.BrowserSelection) == 64 {
-						response.Current.selectionReceiptSHA256 = strings.ToLower(payload.Inputs.BrowserSelection)
-					}
+				}
+				rcaBaselineID := strings.TrimSpace(payload.Request.BaselineTestID)
+				if rcaBaselineID == "" && payload.BrowserSelection != nil {
+					rcaBaselineID = strings.TrimSpace(payload.BrowserSelection.SelectedTestID)
+				}
+				if rcaBaselineID == "" && payload.Assessment.BrowserBaseline != nil {
+					rcaBaselineID = strings.TrimSpace(payload.Assessment.BrowserBaseline.Baseline.TestID)
+				}
+				baselineOK := q.ComparisonRunID == "" || rcaBaselineID == q.ComparisonRunID || (rcaBaselineID == "" && payload.BrowserSelection == nil)
+				if policyOK && baselineOK && len(payload.Inputs.BrowserSelection) == 64 {
+					response.Current.selectionReceiptSHA256 = strings.ToLower(payload.Inputs.BrowserSelection)
+					break
 				}
 			}
 		}

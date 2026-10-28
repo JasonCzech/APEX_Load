@@ -2028,6 +2028,11 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 				test.remoteMetricsAcceptedRevision++
 				revision = test.remoteMetricsAcceptedRevision
 				stageRecorderLocked(test).observeGeneratorBatch(target, batch)
+				if test.liveBrowserIntelligence != nil {
+					ownForLive := own
+					ownForLive.Telemetry = batch.Telemetry
+					test.liveBrowserIntelligence.observeGeneratorBatch(target, ownForLive, isTerminalRemoteLifecycle(batch.LifecycleState))
+				}
 			} else {
 				batch = prior
 			}
@@ -2039,6 +2044,11 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			test.remoteMetricsAcceptedRevision++
 			revision = test.remoteMetricsAcceptedRevision
 			stageRecorderLocked(test).observeGeneratorBatch(target, batch)
+			if test.liveBrowserIntelligence != nil {
+				ownForLive := own
+				ownForLive.Telemetry = batch.Telemetry
+				test.liveBrowserIntelligence.observeGeneratorBatch(target, ownForLive, isTerminalRemoteLifecycle(batch.LifecycleState))
+			}
 			stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 		}
 	}

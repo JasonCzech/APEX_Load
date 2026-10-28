@@ -1617,7 +1617,9 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	tr.retainRunRendezvousUntil(lifecycleCtx, test.ID, rendezvousTerm)
 	rendezvousTransferred = true
 	tr.broadcastEvent("test_adopted", eventSnapshot)
-	for _, target := range orderedMetricsTargets(streams, b.configuredTargets()) {
+	metricsTargets := orderedMetricsTargets(streams, b.configuredTargets())
+	tr.startLiveBrowserIntelligence(test, metricsTargets)
+	for _, target := range metricsTargets {
 		go b.consumeMetrics(lifecycleCtx, tr, test, target, streams[target])
 	}
 	if !stopping {
