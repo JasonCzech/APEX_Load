@@ -392,6 +392,8 @@ type MetricAggregate struct {
 	AvgTTFBMs        float64
 	BytesSent        int64
 	BytesReceived    int64
+	ByteEvidence     string
+	ByteSamples      int64
 	TPS              float64
 	DurationDigest   *engine.TDigestSnapshot
 	DurationSketch   *engine.DurationSketchSnapshot
@@ -2318,6 +2320,8 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		AvgTTFBMs:        value.GetAvgTtfbMs(),
 		BytesSent:        value.GetBytesSent(),
 		BytesReceived:    value.GetBytesReceived(),
+		ByteEvidence:     value.GetByteEvidence(),
+		ByteSamples:      value.GetByteSamples(),
 		TPS:              value.GetTps(),
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
 		DurationSketch:   durationSketchSnapshotFromProto(value.GetDurationSketch()),
@@ -2386,6 +2390,8 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		AvgTtfbMs:            value.AvgTTFBMs,
 		BytesSent:            value.BytesSent,
 		BytesReceived:        value.BytesReceived,
+		ByteEvidence:         value.ByteEvidence,
+		ByteSamples:          value.ByteSamples,
 		Tps:                  value.TPS,
 		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
 		DurationSketch:       durationSketchSnapshotToProto(value.DurationSketch),

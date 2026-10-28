@@ -389,6 +389,8 @@ type ActionMetrics struct {
 	P99              time.Duration
 	BytesSent        int64
 	BytesRecv        int64
+	ByteEvidence     string `json:"byte_evidence,omitempty"`
+	ByteSamples      int64  `json:"byte_samples,omitempty"`
 	// Exemplars are this window's requests whose trace context was sent.
 	Exemplars          []TraceExemplar `json:"exemplars,omitempty"`
 	exemplarCandidates int64
@@ -1267,8 +1269,7 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 		}
 		protocol.ObserveJavaHTTPAction(&metrics.ServerTelemetry.JavaHTTP, diagnostic)
 	}
-	metrics.BytesSent += result.BytesSent
-	metrics.BytesRecv += result.BytesReceived
+	protocol.RecordIntervalByteSample(&metrics.ByteEvidence, &metrics.ByteSamples, &metrics.BytesSent, &metrics.BytesRecv, result)
 	if result.Duration < metrics.MinDuration {
 		metrics.MinDuration = result.Duration
 	}

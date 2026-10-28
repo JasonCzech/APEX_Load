@@ -208,6 +208,9 @@ func (s *Server) prepareNativeAnalysisComparison(ctx context.Context, project st
 		if snapshot == nil {
 			in, err := imports.GetAnalysisImport(selection.DatasetID)
 			if err != nil || in == nil || in.ProjectID != project || in.State != "ready" {
+				if selection.DatasetArtifactSHA256 != "" {
+					return ctx, nil, "", errors.New("missing_input: committed dataset not found in project")
+				}
 				return ctx, nil, "", errors.New("committed dataset not found in project")
 			}
 			snapshot, err = snapshotAnalysisQueryDataset(in)

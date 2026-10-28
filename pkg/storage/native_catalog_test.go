@@ -65,7 +65,11 @@ func TestCatalogQueryProfilesMatchNativeValidators(t *testing.T) {
 					}
 					for i, filter := range profile.AllowedFilters {
 						if mask&(1<<i) != 0 {
-							q.Filters[filter] = "selected"
+							if filter == "protocol" {
+								q.Filters[filter] = "http"
+							} else {
+								q.Filters[filter] = "selected"
+							}
 						}
 					}
 					for _, required := range profile.RequiredFilters {

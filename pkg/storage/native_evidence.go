@@ -86,6 +86,10 @@ type NativeIntervalMetric struct {
 	DurationDigest *engine.TDigestSnapshot `json:"duration_digest,omitempty"`
 	Count          int64                   `json:"count"`
 	Errors         int64                   `json:"errors"`
+	BytesSent      int64                   `json:"bytes_sent,omitempty"`
+	BytesReceived  int64                   `json:"bytes_received,omitempty"`
+	ByteEvidence   string                  `json:"byte_evidence,omitempty"`
+	ByteSamples    int64                   `json:"byte_samples,omitempty"`
 	Avg            float64                 `json:"avg"`
 	P50            float64                 `json:"p50"`
 	P90            float64                 `json:"p90"`
@@ -152,10 +156,10 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 	if len(q.Dimensions) > 1 || q.MaxSeries < 1 || q.MaxSeries > 20 {
 		return errors.New("choose at most one grouping and 1–20 series")
 	}
-	// The evidence executors read action and transaction observations only;
+	// The evidence executors read action, transaction, and byte observations;
 	// message and browser document populations belong to archive panels.
-	if q.Population != "action" && q.Population != "transaction" {
-		return errors.New("evidence queries select the action or transaction population")
+	if q.Population != "action" && q.Population != "transaction" && q.Population != analysis.PopulationByte {
+		return errors.New("evidence queries select the action, transaction, or byte population")
 	}
 	group := ""
 	if len(q.Dimensions) > 0 {
@@ -165,6 +169,14 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 	case "", "action", "property", "region", "dependency", "network_profile", "hierarchy", "phase":
 	default:
 		return errors.New("unsupported grouping")
+	}
+	if q.Population == analysis.PopulationByte {
+		if group != "" && group != "action" {
+			return errors.New("byte evidence queries support only ungrouped or action-grouped selections")
+		}
+		if q.EvidenceMode == "live" && q.Aggregation != "sum" && q.Aggregation != "rate" {
+			return errors.New("live interval byte totals cannot synthesize per-request size distributions; use sum or rate, or query completed archive observations")
+		}
 	}
 	if group == "property" && (q.PropertyName == "" || q.Population != "action") {
 		return errors.New("property grouping requires an action population and property name")
@@ -191,7 +203,7 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 			return errors.New("moving derivations need merged live buckets or archive evidence")
 		}
 	}
-	if q.EvidenceMode == "live" {
+	if q.EvidenceMode == "live" && q.Population != analysis.PopulationByte {
 		jointDimensions := NativeActionDimensionsRequired(q)
 		if jointDimensions && (q.Population != "action" || q.LiveBucketMode != "merged" || q.PropertyName != "" || (group != "" && group != "action" && group != "network_profile" && group != "hierarchy" && group != "phase")) {
 			return errors.New("live dimension intersections require merged action evidence v3; property intersections are separate")

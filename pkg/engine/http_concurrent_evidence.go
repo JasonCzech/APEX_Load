@@ -272,10 +272,14 @@ func omitConcurrentPublicEvidence(result *protocol.Result) {
 	originalError := result.ErrorMessage
 	// A result carrying byte evidence keeps it and its protocol, so its byte
 	// counts stay measurements of their population (NA-C). Only adapters
-	// with constant dependency types (HTTP and the protocols wrapping it) set
-	// byte evidence; every other dependency type, which an action parameter
-	// can shape, is cleared.
+	// with constant dependency types (HTTP, gRPC, WebSocket, and the protocols
+	// wrapping HTTP) set byte evidence; every other dependency type, which an
+	// action parameter can shape, is cleared.
 	dependency, byteEvidence := result.DependencyType, result.ByteEvidence
+	if byteEvidence == protocol.ByteEvidenceGRPCUncompressedPayload && result.ServerTelemetry != nil && result.ServerTelemetry.GRPC != nil && result.ServerTelemetry.GRPC.Valid() {
+		result.BytesSent = result.ServerTelemetry.GRPC.RequestBytes
+		result.BytesReceived = result.ServerTelemetry.GRPC.ResponseBytes
+	}
 	for _, field := range concurrentPublicStringPointers(result) {
 		*field = ""
 	}

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -113,6 +115,16 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	enrich := flags.Bool("enrich", false, "capture a new root-cause evidence revision before analysis")
 	baselineID := flags.String("baseline-id", "", "baseline run for root-cause analysis")
 	wait := flags.Duration("wait", 0, "rca analyze, status and show: poll up to this long until the analysis ends (show: until an automatic analysis completes); at most 10m")
+	outFile := flags.String("out", "", "stream output directly to this file path")
+	population := flags.String("population", "", "analysis population (action, transaction, byte, message, browser_document, java_http_action)")
+	aggregation := flags.String("aggregation", "", "analysis aggregation (avg, min, max, sum, count, rate, p50, p75, p90, p95, p99)")
+	protocol := flags.String("protocol", "", "analysis protocol filter (http, grpc, websocket)")
+	actionFilter := flags.String("action", "", "analysis action filter")
+	bucketSeconds := flags.Int("bucket-seconds", 0, "analysis bucket width in seconds")
+	startSeconds := flags.Int("start-seconds", 0, "analysis window start offset in seconds")
+	endSeconds := flags.Int("end-seconds", 0, "analysis window end offset in seconds")
+	liveBucketMode := flags.String("live-bucket-mode", "", "live bucket mode (merged or source)")
+	chunkBytes := flags.Int64("chunk-bytes", 0, "upload chunk size in bytes (1024 to 4194304)")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -438,7 +450,12 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				if len(body) > 0 {
 					return errors.New("--file is not accepted by replay-panel")
 				}
-				return client.replaySavedPanel(ctx, *project, *id, *revision, out)
+				targetOut, closeOut, err := openWorkflowOutput(*outFile, out)
+				if err != nil {
+					return err
+				}
+				defer closeOut()
+				return client.replaySavedPanel(ctx, *project, *id, *revision, targetOut)
 			}
 			path = "/api/v1/monitoring/dashboard-definitions/" + url.PathEscape(*id)
 			switch action {
@@ -466,15 +483,29 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				return errors.New("--file JSON panel definition with project_id is required")
 			}
 			method, path = http.MethodPost, "/api/v1/monitoring/dashboard-definitions"
-		case "run-query":
-			// A native query of one run's archive (and a comparison run).
+		case "run-query", "evidence-query", "byte-query":
 			if err := requireID(); err != nil {
 				return err
 			}
-			if len(body) == 0 {
-				return errors.New("--file JSON query is required")
+			if action == "byte-query" && *mode != "live" && *mode != "archive" {
+				return errors.New("--mode must be live or archive")
 			}
-			method, path = http.MethodPost, "/api/v1/tests/"+url.PathEscape(*id)+"/archive/native-series"
+			if len(body) == 0 {
+				if *metric == "" {
+					return errors.New("--file JSON query is required")
+				}
+				built, err := buildAnalysisFlagQuery(action, *mode, *population, *metric, *aggregation, *protocol, *actionFilter, *startSeconds, *endSeconds, *bucketSeconds, *liveBucketMode)
+				if err != nil {
+					return err
+				}
+				body = built
+			}
+			method = http.MethodPost
+			if action == "evidence-query" || (action == "byte-query" && *mode == "live") {
+				path = "/api/v1/tests/" + url.PathEscape(*id) + "/native-evidence"
+			} else {
+				path = "/api/v1/tests/" + url.PathEscape(*id) + "/archive/native-series"
+			}
 		case "list", "create", "capabilities", "catalog", "compare", "mappings", "save-mapping", "comparisons", "save-comparison":
 			if *project == "" {
 				return errors.New("--project is required")
@@ -528,7 +559,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				}
 				path += "/files/" + url.PathEscape(*fileID) + "/preview"
 			case "upload":
-				return client.uploadAnalysisFile(ctx, *id, *fileID, *file, out)
+				return client.uploadAnalysisFile(ctx, *id, *fileID, *file, *chunkBytes, out)
 			case "associate":
 				method = http.MethodPut
 				path = "/api/v1/analysis/datasets/" + url.PathEscape(*id) + "/association"
@@ -542,7 +573,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, telemetry-policy-change, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, precision-review, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, replay-panel, run-query")
+				return errors.New("analysis actions: telemetry-policy, telemetry-policy-change, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, precision-review, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, replay-panel, run-query, evidence-query, byte-query")
 			}
 		}
 	default:
@@ -553,6 +584,12 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			return err
 		}
 	}
+	targetOut, closeOut, err := openWorkflowOutput(*outFile, out)
+	if err != nil {
+		return err
+	}
+	defer closeOut()
+	out = targetOut
 	if kind == "analysis" && action == "panel" && *revision != "" {
 		// A controller that predates saved revisions ignores ?revision and
 		// answers the current definition: refuse it rather than print it as
@@ -723,6 +760,164 @@ func sameReplayPanelInputs(a, b storage.BrowserPanelInputs) bool {
 	return a.Baseline == nil || sameReplayPanelRunInput(*a.Baseline, *b.Baseline)
 }
 
+func sameReplaySavedSourcePin(a, b storage.SavedPanelSourcePin) bool {
+	if a.RunID != b.RunID || a.ManifestSHA256 != b.ManifestSHA256 || a.DatasetID != b.DatasetID || a.DatasetArtifactSHA256 != b.DatasetArtifactSHA256 || a.SourceID != b.SourceID || a.Protocol != b.Protocol || len(a.PolicyPins) != len(b.PolicyPins) {
+		return false
+	}
+	for i := range a.PolicyPins {
+		if a.PolicyPins[i] != b.PolicyPins[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameReplaySavedPanelInputs(a, b storage.SavedPanelInputs) bool {
+	if a.Version != b.Version || a.CatalogVersion != b.CatalogVersion || a.Alignment != b.Alignment || a.CoveragePolicy != b.CoveragePolicy || a.Population != b.Population || a.Metric != b.Metric || a.Aggregation != b.Aggregation || a.QuerySHA256 != b.QuerySHA256 || a.Drilldown != b.Drilldown || len(a.PolicyPins) != len(b.PolicyPins) {
+		return false
+	}
+	for i := range a.PolicyPins {
+		if a.PolicyPins[i] != b.PolicyPins[i] {
+			return false
+		}
+	}
+	if !sameReplaySavedSourcePin(a.Current, b.Current) {
+		return false
+	}
+	if (a.Baseline == nil) != (b.Baseline == nil) || (a.Baseline != nil && !sameReplaySavedSourcePin(*a.Baseline, *b.Baseline)) {
+		return false
+	}
+	if (a.Overlay == nil) != (b.Overlay == nil) || (a.Overlay != nil && !sameReplaySavedSourcePin(*a.Overlay, *b.Overlay)) {
+		return false
+	}
+	if b.ComparisonID != "" && (a.ComparisonID != b.ComparisonID || a.ComparisonRevision != b.ComparisonRevision || a.ComparisonSHA256 != b.ComparisonSHA256) {
+		return false
+	}
+	return true
+}
+
+func (c *ApiClient) replayComparisonPanel(ctx context.Context, project, panelID string, q storage.AnalyticsQuery) ([]byte, error) {
+	p := *q.PanelInputs
+	var compareReq map[string]any
+	if p.ComparisonID != "" {
+		rawDefs, err := c.workflowRequest(ctx, http.MethodGet, "/api/v1/analysis/comparisons?project_id="+url.QueryEscape(project), nil, "")
+		if err != nil {
+			return nil, err
+		}
+		var defs []storage.AnalysisDefinition
+		if err := json.Unmarshal(rawDefs, &defs); err != nil {
+			return nil, err
+		}
+		var matched *storage.AnalysisDefinition
+		for i := range defs {
+			if defs[i].ID == p.ComparisonID {
+				matched = &defs[i]
+				break
+			}
+		}
+		if matched == nil {
+			return nil, fmt.Errorf("missing_input: panel %q saved comparison definition %q was not found", panelID, p.ComparisonID)
+		}
+		sum := sha256.Sum256(matched.Definition)
+		if matched.Revision != p.ComparisonRevision || hex.EncodeToString(sum[:]) != p.ComparisonSHA256 {
+			return nil, fmt.Errorf("stale: panel %q saved comparison definition %q changed since save", panelID, p.ComparisonID)
+		}
+		if err := json.Unmarshal(matched.Definition, &compareReq); err != nil {
+			return nil, err
+		}
+	} else {
+		if p.Baseline == nil {
+			return nil, fmt.Errorf("panel %q dataset replay requires a baseline pin or comparison_id", panelID)
+		}
+		anchorRunID := p.Current.RunID
+		if anchorRunID == "" {
+			anchorRunID = p.Baseline.RunID
+		}
+		if anchorRunID == "" {
+			return nil, fmt.Errorf("panel %q dataset comparison replay requires comparison_id in panel_inputs to anchor the UTC comparison window", panelID)
+		}
+		rawRun, err := c.workflowRequest(ctx, http.MethodGet, "/api/v1/tests/"+url.PathEscape(anchorRunID), nil, "")
+		if err != nil {
+			return nil, err
+		}
+		var runMeta struct {
+			StartTime time.Time  `json:"start_time"`
+			StartedAt *time.Time `json:"started_at"`
+		}
+		if err := json.Unmarshal(rawRun, &runMeta); err != nil {
+			return nil, err
+		}
+		anchor := runMeta.StartTime
+		if anchor.IsZero() && runMeta.StartedAt != nil {
+			anchor = *runMeta.StartedAt
+		}
+		if anchor.IsZero() {
+			return nil, fmt.Errorf("panel %q comparison replay requires a started run or comparison_id to anchor the UTC comparison window", panelID)
+		}
+		from := anchor.UTC().Add(time.Duration(q.StartSeconds) * time.Second)
+		to := anchor.UTC().Add(time.Duration(q.EndSeconds) * time.Second)
+		left := map[string]any{
+			"metric":      q.Metric,
+			"aggregation": q.Aggregation,
+		}
+		if p.Current.DatasetID != "" {
+			left["dataset_id"] = p.Current.DatasetID
+			left["dataset_artifact_sha256"] = p.Current.DatasetArtifactSHA256
+		} else {
+			left["run_id"] = p.Current.RunID
+			left["archive_manifest_sha256"] = p.Current.ManifestSHA256
+		}
+		if p.Current.SourceID != "" {
+			left["source_id"] = p.Current.SourceID
+		}
+		if p.Current.Protocol != "" {
+			left["protocol"] = p.Current.Protocol
+		} else if proto := q.Filters["protocol"]; proto != "" {
+			left["protocol"] = proto
+		}
+		right := map[string]any{
+			"metric":      q.Metric,
+			"aggregation": q.Aggregation,
+		}
+		if p.Baseline.DatasetID != "" {
+			right["dataset_id"] = p.Baseline.DatasetID
+			right["dataset_artifact_sha256"] = p.Baseline.DatasetArtifactSHA256
+		} else {
+			right["run_id"] = p.Baseline.RunID
+			right["archive_manifest_sha256"] = p.Baseline.ManifestSHA256
+		}
+		if p.Baseline.SourceID != "" {
+			right["source_id"] = p.Baseline.SourceID
+		}
+		if p.Baseline.Protocol != "" {
+			right["protocol"] = p.Baseline.Protocol
+		} else if proto := q.Filters["protocol"]; proto != "" {
+			right["protocol"] = proto
+		}
+		if action := q.Filters["action"]; action != "" {
+			left["transaction"] = action
+			right["transaction"] = action
+		}
+		compareReq = map[string]any{
+			"left":            left,
+			"right":           right,
+			"from":            from.Format(time.RFC3339),
+			"to":              to.Format(time.RFC3339),
+			"bucket_seconds":  q.BucketSeconds,
+			"max_lag_seconds": p.Drilldown.MaxLagSeconds,
+			"mode":            "overlay",
+			"alignment":       p.Alignment,
+			"coverage_policy": p.CoveragePolicy,
+			"catalog_version": p.CatalogVersion,
+		}
+	}
+	reqBytes, err := json.Marshal(compareReq)
+	if err != nil {
+		return nil, err
+	}
+	return c.workflowRequest(ctx, http.MethodPost, "/api/v1/analysis/compare?project_id="+url.QueryEscape(project), bytes.NewReader(reqBytes), "application/json")
+}
+
 func (c *ApiClient) replaySavedPanel(ctx context.Context, project, id, revision string, out io.Writer) error {
 	path := "/api/v1/monitoring/dashboard-definitions/" + url.PathEscape(id)
 	if revision != "" {
@@ -750,6 +945,10 @@ func (c *ApiClient) replaySavedPanel(ctx context.Context, project, id, revision 
 	if project != "" && def.ProjectID != "" && def.ProjectID != project {
 		return fmt.Errorf("dashboard definition %q belongs to project %q, not %q", id, def.ProjectID, project)
 	}
+	effectiveProject := def.ProjectID
+	if effectiveProject == "" {
+		effectiveProject = project
+	}
 	var items []replayedSavedPanelItem
 	for _, tab := range def.Tabs {
 		for _, panel := range tab.Panels {
@@ -757,6 +956,50 @@ func (c *ApiClient) replaySavedPanel(ctx context.Context, project, id, revision 
 				continue
 			}
 			q := *panel.Query
+			if q.PanelInputs != nil {
+				storage.NormalizeSavedPanelQueryDefaults(&q)
+				if err := storage.ValidateSavedPanelInputs(q); err != nil {
+					return fmt.Errorf("panel %q has invalid or missing panel input pins: %w", panel.ID, err)
+				}
+				if len(items) >= 20 {
+					return errors.New("saved dashboard definition exceeds 20 pinned panels")
+				}
+				runID := q.PanelInputs.Current.RunID
+				var seriesRaw []byte
+				if q.PanelInputs.Current.DatasetID != "" || (q.PanelInputs.Baseline != nil && q.PanelInputs.Baseline.DatasetID != "") || q.Population == "" {
+					if runID == "" {
+						runID = q.PanelInputs.Current.DatasetID
+					}
+					seriesRaw, err = c.replayComparisonPanel(ctx, effectiveProject, panel.ID, q)
+				} else {
+					if err := storage.ValidateNativeArchiveQuery(q); err != nil {
+						return fmt.Errorf("panel %q has invalid archive query: %w", panel.ID, err)
+					}
+					reqBytes, mErr := json.Marshal(q)
+					if mErr != nil {
+						return mErr
+					}
+					seriesRaw, err = c.workflowRequest(ctx, http.MethodPost, "/api/v1/tests/"+url.PathEscape(runID)+"/archive/native-series", bytes.NewReader(reqBytes), "application/json")
+				}
+				if err != nil {
+					return err
+				}
+				var seriesCheck struct {
+					PanelInputs *storage.SavedPanelInputs `json:"panel_inputs"`
+				}
+				if err := json.Unmarshal(seriesRaw, &seriesCheck); err != nil || seriesCheck.PanelInputs == nil || !sameReplaySavedPanelInputs(*q.PanelInputs, *seriesCheck.PanelInputs) {
+					return fmt.Errorf("panel %q replay returned mismatched or missing panel input pins", panel.ID)
+				}
+				items = append(items, replayedSavedPanelItem{
+					TabID:    tab.ID,
+					PanelID:  panel.ID,
+					Title:    panel.Title,
+					RunID:    runID,
+					Query:    q,
+					Response: json.RawMessage(seriesRaw),
+				})
+				continue
+			}
 			if q.BrowserInputs == nil && q.QueryVersion != 4 && q.QueryVersion != 5 {
 				continue
 			}
@@ -816,6 +1059,76 @@ func (c *ApiClient) replaySavedPanel(ctx context.Context, project, id, revision 
 	}
 	_, err = fmt.Fprintln(out, string(encoded))
 	return err
+}
+
+func openWorkflowOutput(path string, fallback io.Writer) (io.Writer, func() error, error) {
+	if path == "" {
+		return fallback, func() error { return nil }, nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, nil, err
+	}
+	return f, f.Close, nil
+}
+
+func buildAnalysisFlagQuery(action, mode, population, metric, aggregation, protocol, actionFilter string, startSeconds, endSeconds, bucketSeconds int, liveBucketMode string) ([]byte, error) {
+	q := storage.AnalyticsQuery{
+		Population:    population,
+		Metric:        metric,
+		Aggregation:   aggregation,
+		StartSeconds:  startSeconds,
+		EndSeconds:    endSeconds,
+		BucketSeconds: bucketSeconds,
+	}
+	if action == "byte-query" && q.Population == "" {
+		q.Population = "byte"
+	}
+	if q.Aggregation == "" {
+		if q.Metric == "bytes_sent_rate" || q.Metric == "bytes_received_rate" {
+			q.Aggregation = "rate"
+		} else if q.Population == "byte" {
+			q.Aggregation = "sum"
+		} else {
+			q.Aggregation = "avg"
+		}
+	}
+	if protocol != "" || actionFilter != "" {
+		q.Filters = map[string]string{}
+		if protocol != "" {
+			q.Filters["protocol"] = protocol
+		}
+		if actionFilter != "" {
+			q.Filters["action"] = actionFilter
+		}
+	}
+	if action == "evidence-query" || (action == "byte-query" && mode == "live") {
+		q.EvidenceMode = mode
+		if q.EvidenceMode == "" {
+			q.EvidenceMode = "live"
+		}
+		if liveBucketMode != "" {
+			q.LiveBucketMode = liveBucketMode
+		} else if q.EvidenceMode == "live" {
+			q.LiveBucketMode = "merged"
+		}
+		q.MaxSeries = 1
+		if q.BucketSeconds == 0 {
+			q.BucketSeconds = 10
+		}
+		if q.EndSeconds == 0 {
+			q.EndSeconds = 60
+		}
+		if err := storage.ValidateNativeEvidenceQuery(q); err != nil {
+			return nil, err
+		}
+		return json.Marshal(q)
+	}
+	storage.NormalizeSavedPanelQueryDefaults(&q)
+	if err := storage.ValidateNativeArchiveQuery(q); err != nil {
+		return nil, err
+	}
+	return json.Marshal(q)
 }
 
 // verdictError is a command's verdict on what it checked, with the exit
@@ -901,9 +1214,18 @@ func (c *ApiClient) workflowStream(ctx context.Context, method, path string, bod
 	return err
 }
 
-func (c *ApiClient) uploadAnalysisFile(ctx context.Context, id, fileID, path string, out io.Writer) error {
+const defaultAnalysisUploadChunkSize = int64(4 << 20)
+
+func (c *ApiClient) uploadAnalysisFile(ctx context.Context, id, fileID, path string, chunkBytes int64, out io.Writer) error {
 	if path == "" || fileID == "" {
 		return errors.New("--file and --file-id are required")
+	}
+	chunkSize := defaultAnalysisUploadChunkSize
+	if chunkBytes != 0 {
+		if chunkBytes < 1024 || chunkBytes > defaultAnalysisUploadChunkSize {
+			return errors.New("--chunk-bytes must be between 1024 and 4194304")
+		}
+		chunkSize = chunkBytes
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -936,7 +1258,6 @@ func (c *ApiClient) uploadAnalysisFile(ctx context.Context, id, fileID, path str
 	if selected == nil || selected.Size != info.Size() || filepath.Base(selected.RelativePath) != filepath.Base(path) {
 		return errors.New("file does not match the import descriptor")
 	}
-	const chunkSize = int64(4 << 20)
 	// Replay acknowledged prefixes: the server's digest check verifies that a
 	// resumed upload uses the same immutable input without buffering the file.
 	for offset := int64(0); offset < info.Size(); offset += chunkSize {

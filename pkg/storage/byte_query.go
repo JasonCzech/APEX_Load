@@ -6,15 +6,25 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
-// validateNativeByteQuery admits an archive selection of HTTP actions' body
-// bytes (NA-C): no grouping, property or derivation, and at most an exact
-// action filter; a comparison run is allowed.
+// validateNativeByteQuery admits an archive selection of protocol actions'
+// measured payload/body bytes (NA-C): no grouping, property or derivation, and
+// at most an exact action filter and/or canonical protocol filter (http, grpc,
+// websocket); a comparison run is allowed.
 func validateNativeByteQuery(q AnalyticsQuery) error {
 	if len(q.Dimensions) != 0 || q.Overlay || q.PropertyName != "" || q.PropertyValue != "" || q.MaxSeries > 1 || q.MaxSeries < 0 || q.Derivation != nil {
-		return errors.New("byte queries select HTTP actions without grouping, properties or derived operations")
+		return errors.New("byte queries select actions without grouping, properties or derived operations")
 	}
 	for k, v := range q.Filters {
-		if k != "action" || v == "" || len(v) > 256 {
+		switch k {
+		case "action":
+			if v == "" || len(v) > 256 {
+				return errors.New("byte queries filter only by one exact action identity")
+			}
+		case "protocol":
+			if v != "http" && v != "grpc" && v != "websocket" {
+				return errors.New("byte queries filter protocol only by http, grpc, or websocket")
+			}
+		default:
 			return errors.New("byte queries filter only by one exact action identity")
 		}
 	}

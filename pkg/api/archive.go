@@ -23,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/runcontract"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const archiveSchemaVersion = "apexload.archive.v4"
@@ -693,7 +694,8 @@ type RunArchiveReport struct {
 	// captured for this run. Like ReleaseTrend it is nil by default and attached at the
 	// storage-aware handler layer (attachDashboardPanels) from the run's frozen
 	// snapshot, so buildRunArchiveReport stays a pure function of one archive record.
-	DashboardPanels *RunArchiveDashboardPanels `json:"dashboard_panels,omitempty"`
+	DashboardPanels     *RunArchiveDashboardPanels     `json:"dashboard_panels,omitempty"`
+	SavedAnalysisPanels []RunArchiveSavedAnalysisPanel `json:"saved_analysis_panels,omitempty"`
 	// RootCauseView is the generated root cause every report format renders
 	// (v2 where the project presents it, else v1). It is attached at the
 	// handler layer (attachRootCause); a report without it renders the v1
@@ -752,6 +754,23 @@ type RunArchiveDashboardPanels struct {
 type RunArchiveDashboard struct {
 	Title  string                     `json:"title"`
 	Panels []RunArchiveDashboardPanel `json:"panels"`
+}
+
+// RunArchiveSavedAnalysisPanel summarizes a project's saved analysis panel
+// pinned to this run, including its frozen v2 pins and live readiness status
+// ("ready", "stale", or "missing_input").
+type RunArchiveSavedAnalysisPanel struct {
+	DashboardID       string                      `json:"dashboard_id"`
+	DashboardName     string                      `json:"dashboard_name"`
+	DashboardRevision int64                       `json:"dashboard_revision"`
+	TabID             string                      `json:"tab_id"`
+	PanelID           string                      `json:"panel_id"`
+	Title             string                      `json:"title"`
+	Status            string                      `json:"status"`
+	Reason            string                      `json:"reason,omitempty"`
+	Query             storage.AnalyticsQuery      `json:"query"`
+	PanelInputs       *storage.SavedPanelInputs   `json:"panel_inputs,omitempty"`
+	BrowserInputs     *storage.BrowserPanelInputs `json:"browser_inputs,omitempty"`
 }
 
 type RunArchiveDashboardPanel struct {

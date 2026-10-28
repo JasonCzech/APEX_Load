@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -144,7 +145,7 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 			}
 			// Recheck ownership on save and again at execution; saved definitions
 			// never grant access to datasets/runs that have moved or been deleted.
-			for _, selection := range []AnalysisSeriesSelection{comparison.Left, comparison.Right} {
+			for _, selection := range []*AnalysisSeriesSelection{&comparison.Left, &comparison.Right} {
 				if selection.DatasetID != "" {
 					imports, ok := s.store.(storage.AnalysisImportStore)
 					if !ok {
@@ -153,16 +154,48 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 					}
 					dataset, err := imports.GetAnalysisImport(selection.DatasetID)
 					if err != nil || dataset.ProjectID != project || dataset.State != "ready" {
-						writeError(w, 404, "dataset not found in project")
+						writeError(w, 404, "missing_input: dataset not found in project")
 						return
+					}
+					if err := checkAnalysisDatasetPin(selection.DatasetArtifactSHA256, dataset); err != nil {
+						writeError(w, 409, err.Error())
+						return
+					}
+					if selection.DatasetArtifactSHA256 == "" && len(dataset.Normalized) > 0 {
+						selection.DatasetArtifactSHA256 = analysisDatasetArtifactSHA256(dataset)
 					}
 				} else {
 					run, err := s.store.GetTest(selection.RunID)
 					if err != nil || run.ProjectID != project {
-						writeError(w, 404, "run not found in project")
+						writeError(w, 404, "missing_input: run not found in project")
 						return
 					}
+					record, hasArchive := s.archiveDomainService().GetRunArchiveContext(r.Context(), selection.RunID)
+					if selection.ArchiveManifestSHA256 != "" {
+						if !hasArchive || record == nil {
+							writeError(w, 404, "missing_input: pinned run archive not found")
+							return
+						}
+						if err := s.checkAnalysisRunArchivePin(r.Context(), selection.RunID, selection.ArchiveManifestSHA256, run); err != nil {
+							writeError(w, 409, err.Error())
+							return
+						}
+					} else if hasArchive && record != nil && len(record.ManifestSHA256) == 64 {
+						selection.ArchiveManifestSHA256 = strings.ToLower(record.ManifestSHA256)
+					}
 				}
+			}
+			if comparison.CatalogVersion == "" {
+				comparison.CatalogVersion = analysis.CatalogVersion
+			}
+			if comparison.Alignment == "" {
+				comparison.Alignment = "utc"
+			}
+			if comparison.CoveragePolicy == "" {
+				comparison.CoveragePolicy = "complete_bucket"
+			}
+			if frozen, err := json.Marshal(comparison); err == nil {
+				in.Definition = frozen
 			}
 		}
 	}

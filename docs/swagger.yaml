@@ -17711,6 +17711,179 @@ paths:
                             format: int64
                           step:
                             type: string
+                    saved_analysis_panels:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          browser_inputs:
+                            type: object
+                            properties:
+                              baseline:
+                                type: object
+                                description: 'Go type: BrowserPanelRunInput'
+                                additionalProperties: true
+                                nullable: true
+                              current:
+                                type: object
+                                description: 'Go type: BrowserPanelRunInput'
+                                additionalProperties: true
+                              policy_pins:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserPanelPolicyPin'
+                                  additionalProperties: true
+                              query_sha256:
+                                type: string
+                              selection_receipt_sha256:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            nullable: true
+                          dashboard_id:
+                            type: string
+                          dashboard_name:
+                            type: string
+                          dashboard_revision:
+                            type: integer
+                            format: int64
+                          panel_id:
+                            type: string
+                          panel_inputs:
+                            type: object
+                            properties:
+                              aggregation:
+                                type: string
+                              alignment:
+                                type: string
+                              baseline:
+                                type: object
+                                description: 'Go type: SavedPanelSourcePin'
+                                additionalProperties: true
+                                nullable: true
+                              catalog_version:
+                                type: string
+                              comparison_id:
+                                type: string
+                              comparison_revision:
+                                type: integer
+                                format: int64
+                              comparison_sha256:
+                                type: string
+                              coverage_policy:
+                                type: string
+                              current:
+                                type: object
+                                description: 'Go type: SavedPanelSourcePin'
+                                additionalProperties: true
+                              drilldown:
+                                type: object
+                                description: 'Go type: SavedPanelDrilldownBounds'
+                                additionalProperties: true
+                              metric:
+                                type: string
+                              overlay:
+                                type: object
+                                description: 'Go type: SavedPanelSourcePin'
+                                additionalProperties: true
+                                nullable: true
+                              policy_pins:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BrowserPanelPolicyPin'
+                                  additionalProperties: true
+                              population:
+                                type: string
+                              query_sha256:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                            nullable: true
+                          query:
+                            type: object
+                            properties:
+                              aggregation:
+                                type: string
+                              alignment:
+                                type: string
+                              browser_inputs:
+                                type: object
+                                description: 'Go type: BrowserPanelInputs'
+                                additionalProperties: true
+                                nullable: true
+                              browser_tuple_mode:
+                                type: string
+                              bucket_seconds:
+                                type: integer
+                                format: int64
+                              catalog_version:
+                                type: string
+                              comparison_run_id:
+                                type: string
+                              coverage_policy:
+                                type: string
+                              derivation:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              end_seconds:
+                                type: integer
+                                format: int64
+                              evidence_mode:
+                                type: string
+                              filters:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              joint_evidence:
+                                type: boolean
+                              live_bucket_mode:
+                                type: string
+                              max_series:
+                                type: integer
+                                format: int64
+                              metric:
+                                type: string
+                              overlay:
+                                type: boolean
+                              overlay_selection:
+                                type: object
+                                description: 'Go type: NativeOverlaySelection'
+                                additionalProperties: true
+                                nullable: true
+                              panel_inputs:
+                                type: object
+                                description: 'Go type: SavedPanelInputs'
+                                additionalProperties: true
+                                nullable: true
+                              population:
+                                type: string
+                              property_name:
+                                type: string
+                              property_value:
+                                type: string
+                              query_version:
+                                type: integer
+                                format: int64
+                              start_seconds:
+                                type: integer
+                                format: int64
+                          reason:
+                            type: string
+                          status:
+                            type: string
+                          tab_id:
+                            type: string
+                          title:
+                            type: string
                     schema_version:
                       type: string
                     sla_rollup:
@@ -27892,9 +28065,15 @@ paths:
             schema:
               type: object
               properties:
+                alignment:
+                  type: string
                 bucket_seconds:
                   type: integer
                   format: int64
+                catalog_version:
+                  type: string
+                coverage_policy:
+                  type: string
                 from:
                   type: string
                   format: date-time
@@ -27902,6 +28081,8 @@ paths:
                   type: object
                   properties:
                     aggregation:
+                      type: string
+                    archive_manifest_sha256:
                       type: string
                     dataset_artifact_sha256:
                       type: string
@@ -27937,6 +28118,8 @@ paths:
                   type: object
                   properties:
                     aggregation:
+                      type: string
+                    archive_manifest_sha256:
                       type: string
                     dataset_artifact_sha256:
                       type: string
@@ -28368,12 +28551,202 @@ paths:
                         - schema_version
                         - source
                         - timestamp_utc
+                  panel_inputs:
+                    type: object
+                    properties:
+                      aggregation:
+                        type: string
+                      alignment:
+                        type: string
+                      baseline:
+                        type: object
+                        properties:
+                          dataset_artifact_sha256:
+                            type: string
+                          dataset_id:
+                            type: string
+                          manifest_sha256:
+                            type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          source_id:
+                            type: string
+                        nullable: true
+                      catalog_version:
+                        type: string
+                      comparison_id:
+                        type: string
+                      comparison_revision:
+                        type: integer
+                        format: int64
+                      comparison_sha256:
+                        type: string
+                      coverage_policy:
+                        type: string
+                      current:
+                        type: object
+                        properties:
+                          dataset_artifact_sha256:
+                            type: string
+                          dataset_id:
+                            type: string
+                          manifest_sha256:
+                            type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          source_id:
+                            type: string
+                      drilldown:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          end_seconds:
+                            type: integer
+                            format: int64
+                          max_lag_seconds:
+                            type: integer
+                            format: int64
+                          max_series:
+                            type: integer
+                            format: int64
+                          start_seconds:
+                            type: integer
+                            format: int64
+                        required:
+                          - bucket_seconds
+                          - end_seconds
+                          - max_series
+                          - start_seconds
+                      metric:
+                        type: string
+                      overlay:
+                        type: object
+                        properties:
+                          dataset_artifact_sha256:
+                            type: string
+                          dataset_id:
+                            type: string
+                          manifest_sha256:
+                            type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          source_id:
+                            type: string
+                        nullable: true
+                      policy_pins:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                          required:
+                            - id
+                            - kind
+                            - revision
+                            - sha256
+                      population:
+                        type: string
+                      query_sha256:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - aggregation
+                      - alignment
+                      - catalog_version
+                      - coverage_policy
+                      - current
+                      - drilldown
+                      - metric
+                      - query_sha256
+                      - version
+                    nullable: true
                   request:
                     type: object
                     properties:
+                      alignment:
+                        type: string
                       bucket_seconds:
                         type: integer
                         format: int64
+                      catalog_version:
+                        type: string
+                      coverage_policy:
+                        type: string
                       from:
                         type: string
                         format: date-time
@@ -28381,6 +28754,8 @@ paths:
                         type: object
                         properties:
                           aggregation:
+                            type: string
+                          archive_manifest_sha256:
                             type: string
                           dataset_artifact_sha256:
                             type: string
@@ -28418,6 +28793,8 @@ paths:
                         type: object
                         properties:
                           aggregation:
+                            type: string
+                          archive_manifest_sha256:
                             type: string
                           dataset_artifact_sha256:
                             type: string
@@ -28893,9 +29270,15 @@ paths:
                 definition:
                   type: object
                   properties:
+                    alignment:
+                      type: string
                     bucket_seconds:
                       type: integer
                       format: int64
+                    catalog_version:
+                      type: string
+                    coverage_policy:
+                      type: string
                     from:
                       type: string
                       format: date-time
@@ -28903,6 +29286,8 @@ paths:
                       type: object
                       properties:
                         aggregation:
+                          type: string
+                        archive_manifest_sha256:
                           type: string
                         dataset_artifact_sha256:
                           type: string
@@ -28938,6 +29323,8 @@ paths:
                       type: object
                       properties:
                         aggregation:
+                          type: string
+                        archive_manifest_sha256:
                           type: string
                         dataset_artifact_sha256:
                           type: string
@@ -29387,9 +29774,15 @@ paths:
                 definition:
                   type: object
                   properties:
+                    alignment:
+                      type: string
                     bucket_seconds:
                       type: integer
                       format: int64
+                    catalog_version:
+                      type: string
+                    coverage_policy:
+                      type: string
                     from:
                       type: string
                       format: date-time
@@ -29397,6 +29790,8 @@ paths:
                       type: object
                       properties:
                         aggregation:
+                          type: string
+                        archive_manifest_sha256:
                           type: string
                         dataset_artifact_sha256:
                           type: string
@@ -29432,6 +29827,8 @@ paths:
                       type: object
                       properties:
                         aggregation:
+                          type: string
+                        archive_manifest_sha256:
                           type: string
                         dataset_artifact_sha256:
                           type: string
@@ -73127,6 +73524,8 @@ paths:
                               properties:
                                 aggregation:
                                   type: string
+                                alignment:
+                                  type: string
                                 browser_inputs:
                                   type: object
                                   description: 'Go type: BrowserPanelInputs'
@@ -73137,7 +73536,11 @@ paths:
                                 bucket_seconds:
                                   type: integer
                                   format: int64
+                                catalog_version:
+                                  type: string
                                 comparison_run_id:
+                                  type: string
+                                coverage_policy:
                                   type: string
                                 derivation:
                                   type: object
@@ -73170,6 +73573,11 @@ paths:
                                 overlay_selection:
                                   type: object
                                   description: 'Go type: NativeOverlaySelection'
+                                  additionalProperties: true
+                                  nullable: true
+                                panel_inputs:
+                                  type: object
+                                  description: 'Go type: SavedPanelInputs'
                                   additionalProperties: true
                                   nullable: true
                                 population:
@@ -97520,6 +97928,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -97621,6 +98040,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -100953,6 +101383,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -101093,6 +101534,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -102437,6 +102889,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -102552,6 +103015,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -102830,6 +103304,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -103501,6 +103986,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -105525,6 +106021,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -105626,6 +106133,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -108958,6 +109476,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -109098,6 +109627,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -110442,6 +110982,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -110557,6 +111108,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -110835,6 +111397,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -111506,6 +112079,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -113525,6 +114109,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -113626,6 +114221,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -116958,6 +117564,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -117098,6 +117715,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -118442,6 +119070,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -118557,6 +119196,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -118835,6 +119485,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -119506,6 +120167,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -121537,6 +122209,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -121638,6 +122321,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -124970,6 +125664,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -125110,6 +125815,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -126454,6 +127170,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -126569,6 +127296,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -126847,6 +127585,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -127518,6 +128267,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -129549,6 +130309,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -129650,6 +130421,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -132982,6 +133764,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -133122,6 +133915,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -134466,6 +135270,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -134581,6 +135396,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -134859,6 +135685,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -135530,6 +136367,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -137561,6 +138409,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -137662,6 +138521,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -140994,6 +141864,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -141134,6 +142015,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -142478,6 +143370,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -142593,6 +143496,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -142871,6 +143785,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -143542,6 +144467,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -145573,6 +146509,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -145674,6 +146621,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -149006,6 +149964,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -149146,6 +150115,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -150490,6 +151470,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -150605,6 +151596,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -150883,6 +151885,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -151554,6 +152567,17 @@ paths:
                                     description: 'Go type: TransactionGroupShare'
                                     additionalProperties: true
                                     nullable: true
+                                byte_evidence:
+                                  type: string
+                                byte_samples:
+                                  type: integer
+                                  format: int64
+                                bytes_received:
+                                  type: integer
+                                  format: int64
+                                bytes_sent:
+                                  type: integer
+                                  format: int64
                                 correlation_count:
                                   type: integer
                                   format: int64
@@ -382895,6 +383919,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -384163,6 +385198,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -387130,6 +388176,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -387267,6 +388324,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -388675,6 +389743,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -388789,6 +389868,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -389066,6 +390156,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -389803,6 +390904,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -390217,6 +391329,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -391540,6 +392663,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -394608,6 +395742,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -395890,6 +397035,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -397335,6 +398491,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -399313,6 +400480,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -402898,6 +404076,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -404166,6 +405355,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -407133,6 +408333,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -407270,6 +408481,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -408678,6 +409900,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -408792,6 +410025,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -409069,6 +410313,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -409806,6 +411061,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -410220,6 +411486,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -411543,6 +412820,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -414611,6 +415899,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -415893,6 +417192,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -417338,6 +418648,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -419316,6 +420637,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -432199,6 +433531,8 @@ paths:
               properties:
                 aggregation:
                   type: string
+                alignment:
+                  type: string
                 browser_inputs:
                   type: object
                   properties:
@@ -432280,7 +433614,11 @@ paths:
                 bucket_seconds:
                   type: integer
                   format: int64
+                catalog_version:
+                  type: string
                 comparison_run_id:
+                  type: string
+                coverage_policy:
                   type: string
                 derivation:
                   type: object
@@ -432340,6 +433678,155 @@ paths:
                       type: string
                     source_id:
                       type: string
+                  nullable: true
+                panel_inputs:
+                  type: object
+                  properties:
+                    aggregation:
+                      type: string
+                    alignment:
+                      type: string
+                    baseline:
+                      type: object
+                      properties:
+                        dataset_artifact_sha256:
+                          type: string
+                        dataset_id:
+                          type: string
+                        manifest_sha256:
+                          type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        source_id:
+                          type: string
+                      nullable: true
+                    catalog_version:
+                      type: string
+                    comparison_id:
+                      type: string
+                    comparison_revision:
+                      type: integer
+                      format: int64
+                    comparison_sha256:
+                      type: string
+                    coverage_policy:
+                      type: string
+                    current:
+                      type: object
+                      properties:
+                        dataset_artifact_sha256:
+                          type: string
+                        dataset_id:
+                          type: string
+                        manifest_sha256:
+                          type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        source_id:
+                          type: string
+                    drilldown:
+                      type: object
+                      properties:
+                        bucket_seconds:
+                          type: integer
+                          format: int64
+                        end_seconds:
+                          type: integer
+                          format: int64
+                        max_lag_seconds:
+                          type: integer
+                          format: int64
+                        max_series:
+                          type: integer
+                          format: int64
+                        start_seconds:
+                          type: integer
+                          format: int64
+                    metric:
+                      type: string
+                    overlay:
+                      type: object
+                      properties:
+                        dataset_artifact_sha256:
+                          type: string
+                        dataset_id:
+                          type: string
+                        manifest_sha256:
+                          type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        source_id:
+                          type: string
+                      nullable: true
+                    policy_pins:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
+                    population:
+                      type: string
+                    query_sha256:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
                   nullable: true
                 population:
                   type: string
@@ -432684,6 +434171,190 @@ paths:
                         format: int64
                     required:
                       - operation
+                    nullable: true
+                  panel_inputs:
+                    type: object
+                    properties:
+                      aggregation:
+                        type: string
+                      alignment:
+                        type: string
+                      baseline:
+                        type: object
+                        properties:
+                          dataset_artifact_sha256:
+                            type: string
+                          dataset_id:
+                            type: string
+                          manifest_sha256:
+                            type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          source_id:
+                            type: string
+                        nullable: true
+                      catalog_version:
+                        type: string
+                      comparison_id:
+                        type: string
+                      comparison_revision:
+                        type: integer
+                        format: int64
+                      comparison_sha256:
+                        type: string
+                      coverage_policy:
+                        type: string
+                      current:
+                        type: object
+                        properties:
+                          dataset_artifact_sha256:
+                            type: string
+                          dataset_id:
+                            type: string
+                          manifest_sha256:
+                            type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          source_id:
+                            type: string
+                      drilldown:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          end_seconds:
+                            type: integer
+                            format: int64
+                          max_lag_seconds:
+                            type: integer
+                            format: int64
+                          max_series:
+                            type: integer
+                            format: int64
+                          start_seconds:
+                            type: integer
+                            format: int64
+                        required:
+                          - bucket_seconds
+                          - end_seconds
+                          - max_series
+                          - start_seconds
+                      metric:
+                        type: string
+                      overlay:
+                        type: object
+                        properties:
+                          dataset_artifact_sha256:
+                            type: string
+                          dataset_id:
+                            type: string
+                          manifest_sha256:
+                            type: string
+                          policy_pins:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                              required:
+                                - id
+                                - kind
+                                - revision
+                                - sha256
+                          protocol:
+                            type: string
+                          run_id:
+                            type: string
+                          source_id:
+                            type: string
+                        nullable: true
+                      policy_pins:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                            revision:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                          required:
+                            - id
+                            - kind
+                            - revision
+                            - sha256
+                      population:
+                        type: string
+                      query_sha256:
+                        type: string
+                      version:
+                        type: integer
+                        format: int64
+                    required:
+                      - aggregation
+                      - alignment
+                      - catalog_version
+                      - coverage_policy
+                      - current
+                      - drilldown
+                      - metric
+                      - query_sha256
+                      - version
                     nullable: true
                   removed:
                     type: array
@@ -454603,6 +456274,420 @@ paths:
                         - avg_step_ms
                         - samples
                         - step
+                  saved_analysis_panels:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        browser_inputs:
+                          type: object
+                          properties:
+                            baseline:
+                              type: object
+                              properties:
+                                manifest_sha256:
+                                  type: string
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserPanelPolicyPin'
+                                    additionalProperties: true
+                                run_id:
+                                  type: string
+                                tuple_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - manifest_sha256
+                                - run_id
+                                - tuple_ids
+                              nullable: true
+                            current:
+                              type: object
+                              properties:
+                                manifest_sha256:
+                                  type: string
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserPanelPolicyPin'
+                                    additionalProperties: true
+                                run_id:
+                                  type: string
+                                tuple_ids:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - manifest_sha256
+                                - run_id
+                                - tuple_ids
+                            policy_pins:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            query_sha256:
+                              type: string
+                            selection_receipt_sha256:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - current
+                            - query_sha256
+                            - version
+                          nullable: true
+                        dashboard_id:
+                          type: string
+                        dashboard_name:
+                          type: string
+                        dashboard_revision:
+                          type: integer
+                          format: int64
+                        panel_id:
+                          type: string
+                        panel_inputs:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            alignment:
+                              type: string
+                            baseline:
+                              type: object
+                              properties:
+                                dataset_artifact_sha256:
+                                  type: string
+                                dataset_id:
+                                  type: string
+                                manifest_sha256:
+                                  type: string
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserPanelPolicyPin'
+                                    additionalProperties: true
+                                protocol:
+                                  type: string
+                                run_id:
+                                  type: string
+                                source_id:
+                                  type: string
+                              nullable: true
+                            catalog_version:
+                              type: string
+                            comparison_id:
+                              type: string
+                            comparison_revision:
+                              type: integer
+                              format: int64
+                            comparison_sha256:
+                              type: string
+                            coverage_policy:
+                              type: string
+                            current:
+                              type: object
+                              properties:
+                                dataset_artifact_sha256:
+                                  type: string
+                                dataset_id:
+                                  type: string
+                                manifest_sha256:
+                                  type: string
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserPanelPolicyPin'
+                                    additionalProperties: true
+                                protocol:
+                                  type: string
+                                run_id:
+                                  type: string
+                                source_id:
+                                  type: string
+                            drilldown:
+                              type: object
+                              properties:
+                                bucket_seconds:
+                                  type: integer
+                                  format: int64
+                                end_seconds:
+                                  type: integer
+                                  format: int64
+                                max_lag_seconds:
+                                  type: integer
+                                  format: int64
+                                max_series:
+                                  type: integer
+                                  format: int64
+                                start_seconds:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - bucket_seconds
+                                - end_seconds
+                                - max_series
+                                - start_seconds
+                            metric:
+                              type: string
+                            overlay:
+                              type: object
+                              properties:
+                                dataset_artifact_sha256:
+                                  type: string
+                                dataset_id:
+                                  type: string
+                                manifest_sha256:
+                                  type: string
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserPanelPolicyPin'
+                                    additionalProperties: true
+                                protocol:
+                                  type: string
+                                run_id:
+                                  type: string
+                                source_id:
+                                  type: string
+                              nullable: true
+                            policy_pins:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            population:
+                              type: string
+                            query_sha256:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          required:
+                            - aggregation
+                            - alignment
+                            - catalog_version
+                            - coverage_policy
+                            - current
+                            - drilldown
+                            - metric
+                            - query_sha256
+                            - version
+                          nullable: true
+                        query:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            alignment:
+                              type: string
+                            browser_inputs:
+                              type: object
+                              properties:
+                                baseline:
+                                  type: object
+                                  description: 'Go type: BrowserPanelRunInput'
+                                  additionalProperties: true
+                                  nullable: true
+                                current:
+                                  type: object
+                                  description: 'Go type: BrowserPanelRunInput'
+                                  additionalProperties: true
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserPanelPolicyPin'
+                                    additionalProperties: true
+                                query_sha256:
+                                  type: string
+                                selection_receipt_sha256:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - current
+                                - query_sha256
+                                - version
+                              nullable: true
+                            browser_tuple_mode:
+                              type: string
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            catalog_version:
+                              type: string
+                            comparison_run_id:
+                              type: string
+                            coverage_policy:
+                              type: string
+                            derivation:
+                              type: object
+                              properties:
+                                minimum_coverage:
+                                  type: number
+                                  format: double
+                                operation:
+                                  type: string
+                                window_buckets:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - operation
+                              nullable: true
+                            dimensions:
+                              type: array
+                              items:
+                                type: string
+                            end_seconds:
+                              type: integer
+                              format: int64
+                            evidence_mode:
+                              type: string
+                            filters:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            joint_evidence:
+                              type: boolean
+                            live_bucket_mode:
+                              type: string
+                            max_series:
+                              type: integer
+                              format: int64
+                            metric:
+                              type: string
+                            overlay:
+                              type: boolean
+                            overlay_selection:
+                              type: object
+                              properties:
+                                aggregation:
+                                  type: string
+                                dataset_artifact_sha256:
+                                  type: string
+                                dataset_id:
+                                  type: string
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                host:
+                                  type: string
+                                max_lag_seconds:
+                                  type: integer
+                                  format: int64
+                                metric:
+                                  type: string
+                                source_id:
+                                  type: string
+                              required:
+                                - aggregation
+                                - metric
+                              nullable: true
+                            panel_inputs:
+                              type: object
+                              properties:
+                                aggregation:
+                                  type: string
+                                alignment:
+                                  type: string
+                                baseline:
+                                  type: object
+                                  description: 'Go type: SavedPanelSourcePin'
+                                  additionalProperties: true
+                                  nullable: true
+                                catalog_version:
+                                  type: string
+                                comparison_id:
+                                  type: string
+                                comparison_revision:
+                                  type: integer
+                                  format: int64
+                                comparison_sha256:
+                                  type: string
+                                coverage_policy:
+                                  type: string
+                                current:
+                                  type: object
+                                  description: 'Go type: SavedPanelSourcePin'
+                                  additionalProperties: true
+                                drilldown:
+                                  type: object
+                                  description: 'Go type: SavedPanelDrilldownBounds'
+                                  additionalProperties: true
+                                metric:
+                                  type: string
+                                overlay:
+                                  type: object
+                                  description: 'Go type: SavedPanelSourcePin'
+                                  additionalProperties: true
+                                  nullable: true
+                                policy_pins:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserPanelPolicyPin'
+                                    additionalProperties: true
+                                population:
+                                  type: string
+                                query_sha256:
+                                  type: string
+                                version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - aggregation
+                                - alignment
+                                - catalog_version
+                                - coverage_policy
+                                - current
+                                - drilldown
+                                - metric
+                                - query_sha256
+                                - version
+                              nullable: true
+                            population:
+                              type: string
+                            property_name:
+                              type: string
+                            property_value:
+                              type: string
+                            query_version:
+                              type: integer
+                              format: int64
+                            start_seconds:
+                              type: integer
+                              format: int64
+                          required:
+                            - aggregation
+                            - metric
+                        reason:
+                          type: string
+                        status:
+                          type: string
+                        tab_id:
+                          type: string
+                        title:
+                          type: string
+                      required:
+                        - dashboard_id
+                        - dashboard_name
+                        - dashboard_revision
+                        - panel_id
+                        - query
+                        - status
+                        - tab_id
+                        - title
                   schema_version:
                     type: string
                   sla_rollup:
@@ -465077,6 +467162,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -466345,6 +468441,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -469312,6 +471419,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -469449,6 +471567,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -470857,6 +472986,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -470971,6 +473111,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -471248,6 +473399,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -471985,6 +474147,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -472399,6 +474572,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -473722,6 +475906,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -476790,6 +478985,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -478072,6 +480278,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -479517,6 +481734,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -481495,6 +483723,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -484917,6 +487156,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -486185,6 +488435,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -489152,6 +491413,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -489289,6 +491561,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -490697,6 +492980,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -490811,6 +493105,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -491088,6 +493393,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -491825,6 +494141,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -492239,6 +494566,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -493562,6 +495900,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -496630,6 +498979,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -497912,6 +500272,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -499357,6 +501728,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -501335,6 +503717,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -510821,6 +513214,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -512089,6 +514493,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -515056,6 +517471,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -515193,6 +517619,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -516601,6 +519038,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -516715,6 +519163,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -516992,6 +519451,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -517729,6 +520199,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -518143,6 +520624,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -519466,6 +521958,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -522534,6 +525037,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -523816,6 +526330,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -525261,6 +527786,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -527239,6 +529775,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -535756,6 +538303,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -535893,6 +538451,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -537301,6 +539870,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -537415,6 +539995,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -537692,6 +540283,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -538429,6 +541031,17 @@ paths:
                                   description: 'Go type: TransactionGroupShare'
                                   additionalProperties: true
                                   nullable: true
+                              byte_evidence:
+                                type: string
+                              byte_samples:
+                                type: integer
+                                format: int64
+                              bytes_received:
+                                type: integer
+                                format: int64
+                              bytes_sent:
+                                type: integer
+                                format: int64
                               correlation_count:
                                 type: integer
                                 format: int64
@@ -538831,6 +541444,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -540154,6 +542778,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -543222,6 +545857,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -544504,6 +547150,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -545949,6 +548606,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -547927,6 +550595,17 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            byte_evidence:
+                              type: string
+                            byte_samples:
+                              type: integer
+                              format: int64
+                            bytes_received:
+                              type: integer
+                              format: int64
+                            bytes_sent:
+                              type: integer
+                              format: int64
                             correlation_count:
                               type: integer
                               format: int64
@@ -550299,6 +552978,8 @@ paths:
               properties:
                 aggregation:
                   type: string
+                alignment:
+                  type: string
                 browser_inputs:
                   type: object
                   properties:
@@ -550380,7 +553061,11 @@ paths:
                 bucket_seconds:
                   type: integer
                   format: int64
+                catalog_version:
+                  type: string
                 comparison_run_id:
+                  type: string
+                coverage_policy:
                   type: string
                 derivation:
                   type: object
@@ -550440,6 +553125,155 @@ paths:
                       type: string
                     source_id:
                       type: string
+                  nullable: true
+                panel_inputs:
+                  type: object
+                  properties:
+                    aggregation:
+                      type: string
+                    alignment:
+                      type: string
+                    baseline:
+                      type: object
+                      properties:
+                        dataset_artifact_sha256:
+                          type: string
+                        dataset_id:
+                          type: string
+                        manifest_sha256:
+                          type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        source_id:
+                          type: string
+                      nullable: true
+                    catalog_version:
+                      type: string
+                    comparison_id:
+                      type: string
+                    comparison_revision:
+                      type: integer
+                      format: int64
+                    comparison_sha256:
+                      type: string
+                    coverage_policy:
+                      type: string
+                    current:
+                      type: object
+                      properties:
+                        dataset_artifact_sha256:
+                          type: string
+                        dataset_id:
+                          type: string
+                        manifest_sha256:
+                          type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        source_id:
+                          type: string
+                    drilldown:
+                      type: object
+                      properties:
+                        bucket_seconds:
+                          type: integer
+                          format: int64
+                        end_seconds:
+                          type: integer
+                          format: int64
+                        max_lag_seconds:
+                          type: integer
+                          format: int64
+                        max_series:
+                          type: integer
+                          format: int64
+                        start_seconds:
+                          type: integer
+                          format: int64
+                    metric:
+                      type: string
+                    overlay:
+                      type: object
+                      properties:
+                        dataset_artifact_sha256:
+                          type: string
+                        dataset_id:
+                          type: string
+                        manifest_sha256:
+                          type: string
+                        policy_pins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              kind:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        source_id:
+                          type: string
+                      nullable: true
+                    policy_pins:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
+                    population:
+                      type: string
+                    query_sha256:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
                   nullable: true
                 population:
                   type: string

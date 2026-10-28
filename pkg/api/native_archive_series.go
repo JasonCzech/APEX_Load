@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -54,6 +55,7 @@ type NativeArchiveSeries struct {
 }
 type NativeArchiveResponse struct {
 	BrowserInputs           *storage.BrowserPanelInputs    `json:"browser_inputs,omitempty"`
+	PanelInputs             *storage.SavedPanelInputs      `json:"panel_inputs,omitempty"`
 	BrowserTupleComparisons []NativeBrowserTupleComparison `json:"browser_tuple_comparisons,omitempty"`
 	// Derivation names the catalog operation the current series values are.
 	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
@@ -71,6 +73,9 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &q) {
 		return
 	}
+	if q.PanelInputs != nil {
+		storage.NormalizeSavedPanelQueryDefaults(&q)
+	}
 	if err := storage.ValidateNativeArchiveQuery(q); err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -79,12 +84,20 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 	archives := s.archiveDomainService()
 	current, ok := archives.GetTest(r.PathValue("id"))
 	if !ok {
+		if q.PanelInputs != nil {
+			writeError(w, 404, "missing_input: test not found")
+			return
+		}
 		writeError(w, 404, "test not found")
 		return
 	}
 	if q.ComparisonRunID != "" {
 		baseline, exists := archives.GetTest(q.ComparisonRunID)
 		if !exists || !testsShareProject(current, baseline) {
+			if q.PanelInputs != nil {
+				writeError(w, 404, "missing_input: comparison test not found")
+				return
+			}
 			writeError(w, 404, "comparison test not found")
 			return
 		}
@@ -98,12 +111,19 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 	load := func(id string) (NativeArchiveSeries, error) {
 		record, exists := archives.GetRunArchiveContext(ctx, id)
 		if !exists {
+			if q.PanelInputs != nil {
+				return NativeArchiveSeries{}, errors.New("missing_input: completed archive unavailable")
+			}
 			return NativeArchiveSeries{}, errors.New("completed archive unavailable")
 		}
 		return buildNativeArchiveSeries(ctx, record, q)
 	}
 	series, err := load(current.ID)
 	if err != nil {
+		if q.PanelInputs != nil && !strings.HasPrefix(err.Error(), "missing_input:") && !strings.HasPrefix(err.Error(), "stale:") {
+			writeError(w, 422, "stale: "+err.Error())
+			return
+		}
 		writeError(w, 422, err.Error())
 		return
 	}
@@ -111,6 +131,10 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 	if q.ComparisonRunID != "" {
 		baseline, err := load(q.ComparisonRunID)
 		if err != nil {
+			if q.PanelInputs != nil && !strings.HasPrefix(err.Error(), "missing_input:") && !strings.HasPrefix(err.Error(), "stale:") {
+				writeError(w, 422, "stale: "+err.Error())
+				return
+			}
 			writeError(w, 422, err.Error())
 			return
 		}
@@ -148,6 +172,10 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := bindBrowserPanelInputs(q, &response); err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
+	if err := s.bindAndVerifySavedPanelInputs(ctx, normalizeProjectID(current.ProjectID), q, &response); err != nil {
 		writeError(w, 422, err.Error())
 		return
 	}
@@ -192,13 +220,13 @@ func buildNativeArchiveSeriesForTest(ctx context.Context, record *storage.RunArc
 	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return result, errors.New("completed archive with execution start time required")
 	}
-	if (q.QueryVersion == 4 || q.QueryVersion == 5) && record.ManifestSHA256 == "" {
+	if (q.QueryVersion == 4 || q.QueryVersion == 5 || q.PanelInputs != nil) && record.ManifestSHA256 == "" {
 		return result, errors.New("browser input publication digest unavailable")
 	}
 	result.archiveManifestSHA256 = record.ManifestSHA256
 	result.manifest = manifest
 	policyPins, pinErr := browserPanelPolicyPinsFromManifest(manifest)
-	if q.QueryVersion == 5 && pinErr != nil {
+	if (q.QueryVersion == 5 || q.PanelInputs != nil) && pinErr != nil {
 		return result, pinErr
 	}
 	result.policyPins = policyPins

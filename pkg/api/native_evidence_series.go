@@ -195,6 +195,9 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 	if q.LiveBucketMode == "merged" {
 		return buildMergedNativeLiveEvidence(ctx, start, history, q)
 	}
+	if q.Population == analysis.PopulationByte {
+		return buildNativeLiveByteEvidence(ctx, start, history, q)
+	}
 	out := nativeEvidenceEnvelope(start, q)
 	dimension := nativeGroup(q)
 	if dimension == "" || dimension == "action" {
@@ -318,6 +321,9 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 	}
 	if archiveExecutionCompletedAt(manifest).IsZero() || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() {
 		return out, errors.New("completed archive with execution start required")
+	}
+	if q.Population == analysis.PopulationByte {
+		return buildNativeGroupedByteArchive(ctx, record, manifest, q)
 	}
 	out = nativeEvidenceEnvelope(*manifest.Provenance.StartedAt, q)
 	type bucket struct {

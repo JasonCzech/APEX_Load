@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -39,6 +40,9 @@ type AnalysisSeriesSelection struct {
 	// artifacts it was saved against (the dataset's artifact_sha256); a
 	// dataset that changed since is refused rather than read.
 	DatasetArtifactSHA256 string `json:"dataset_artifact_sha256,omitempty"`
+	// ArchiveManifestSHA256 pins a run selection to the run archive manifest
+	// SHA-256 it was saved against; a run archive that changed since is refused.
+	ArchiveManifestSHA256 string `json:"archive_manifest_sha256,omitempty"`
 }
 
 type AnalysisComparisonRequest struct {
@@ -49,6 +53,9 @@ type AnalysisComparisonRequest struct {
 	BucketSeconds  int                                                 `json:"bucket_seconds"`
 	MaxLagSeconds  int                                                 `json:"max_lag_seconds"`
 	Mode           string                                              `json:"mode"` // overlay or correlation
+	Alignment      string                                              `json:"alignment,omitempty"`
+	CoveragePolicy string                                              `json:"coverage_policy,omitempty"`
+	CatalogVersion string                                              `json:"catalog_version,omitempty"`
 	providerSeries map[analysisSeriesSelectionKey]analysis.MetricPoint `json:"-"`
 	// sampleExclusions, when set, receives each run selection's raw sample
 	// exclusions (reasons bucketing would reduce to missing buckets).
@@ -69,6 +76,15 @@ func (q AnalysisComparisonRequest) validate() error {
 	if q.Mode != "overlay" && q.Mode != "correlation" {
 		return errors.New("choose overlay or correlation")
 	}
+	if q.Alignment != "" && q.Alignment != "utc" && q.Alignment != "elapsed" {
+		return errors.New("alignment must be utc or elapsed")
+	}
+	if q.CoveragePolicy != "" && q.CoveragePolicy != "complete_bucket" && q.CoveragePolicy != "required" {
+		return errors.New("coverage_policy must be complete_bucket or required")
+	}
+	if q.CatalogVersion != "" && q.CatalogVersion != analysis.CatalogVersion {
+		return errors.New("unsupported catalog_version")
+	}
 	for _, s := range []AnalysisSeriesSelection{q.Left, q.Right} {
 		if s.DatasetID != "" {
 			if err := validateImportedIdentitySelection(s); err != nil {
@@ -81,6 +97,9 @@ func (q AnalysisComparisonRequest) validate() error {
 		if s.DatasetArtifactSHA256 != "" && (s.DatasetID == "" || !analysisDatasetArtifactDigestValid(s.DatasetArtifactSHA256)) {
 			return errors.New("dataset_artifact_sha256 pins a dataset selection and is a lowercase SHA-256")
 		}
+		if s.ArchiveManifestSHA256 != "" && (s.RunID == "" || !analysisDatasetArtifactDigestValid(s.ArchiveManifestSHA256)) {
+			return errors.New("archive_manifest_sha256 pins a run selection and is a lowercase SHA-256")
+		}
 		for k, v := range s.Dimensions {
 			if k == "" || len(k) > 128 || len(v) > 128 {
 				return errors.New("invalid selected dimensions")
@@ -88,7 +107,11 @@ func (q AnalysisComparisonRequest) validate() error {
 		}
 		switch s.Aggregation {
 		case "avg", "min", "max", "sum", "count", "rate", "p50", "p95", "p99":
-		case "p75", "p90", "p999":
+		case "p90":
+			if s.DatasetID == "" && !isAnalysisByteMetric(s.Metric) {
+				return errors.New("unsupported aggregation")
+			}
+		case "p75", "p999":
 			// Only an imported summary can declare these statistics.
 			if s.DatasetID == "" {
 				return errors.New("unsupported aggregation")
@@ -215,7 +238,7 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		writeError(w, 409, "associate the external dataset with this run before comparison")
 		return
 	}
-	response := AnalysisComparisonResponse{Left: left, Right: right, Request: requested, TimeWindow: completedAnalysisTimeWindow(ctx), Advisory: true, Interpretation: "Correlation is association, not proof of causation.", ArtifactSelections: completedAnalysisArtifactSelections(ctx)}
+	response := AnalysisComparisonResponse{Left: left, Right: right, Request: requested, TimeWindow: completedAnalysisTimeWindow(ctx), Advisory: true, Interpretation: "Correlation is association, not proof of causation.", ArtifactSelections: completedAnalysisArtifactSelections(ctx), PanelInputs: s.buildComparisonSavedPanelInputs(ctx, project, q)}
 	if q.Mode == "overlay" {
 		leftProvider, leftNative := q.providerSeries[analysisSelectionKey(q.Left)]
 		rightProvider, rightNative := q.providerSeries[analysisSelectionKey(q.Right)]
@@ -316,6 +339,9 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		}
 		in, err := store.GetAnalysisImport(selection.DatasetID)
 		if err != nil || in == nil || in.ProjectID != project || in.State != "ready" {
+			if selection.DatasetArtifactSHA256 != "" {
+				return nil, "", errors.New("missing_input: committed dataset not found in project")
+			}
 			return nil, "", errors.New("committed dataset not found in project")
 		}
 		if err := checkAnalysisDatasetPin(selection.DatasetArtifactSHA256, in); err != nil {
@@ -343,7 +369,15 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 	}
 	run, err := s.store.GetTest(selection.RunID)
 	if err != nil || run.ProjectID != project {
+		if selection.ArchiveManifestSHA256 != "" {
+			return nil, "", errors.New("missing_input: run not found in project")
+		}
 		return nil, "", errors.New("run not found in project")
+	}
+	if selection.ArchiveManifestSHA256 != "" {
+		if err := s.checkAnalysisRunArchivePin(ctx, selection.RunID, selection.ArchiveManifestSHA256, run); err != nil {
+			return nil, "", err
+		}
 	}
 	points := []analysis.MetricPoint{}
 	exactPrometheusWindow := false
@@ -433,8 +467,11 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 			}
 		}
 	} else {
+		if isAnalysisByteMetric(selection.Metric) {
+			return s.loadRunByteAnalysisSelection(ctx, project, selection, q)
+		}
 		if selection.Metric != "transaction.duration" || selection.Transaction == "" {
-			return nil, "", errors.New("select a monitor source or a named transaction.duration measurement")
+			return nil, "", errors.New("select a monitor source, a byte metric, or a named transaction.duration measurement")
 		}
 		record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, selection.RunID)
 		if !ok {
@@ -656,9 +693,128 @@ func checkAnalysisDatasetPin(pinned string, in *storage.AnalysisImport) error {
 		return nil
 	}
 	if current := analysisDatasetArtifactSHA256(in); current != pinned {
-		return fmt.Errorf("%w: it was saved against artifacts %s, and the dataset now holds %s; save the selection again to read the current artifacts", errAnalysisDatasetChanged, shortDigest(pinned), shortDigest(current))
+		return fmt.Errorf("stale: %w: it was saved against artifacts %s, and the dataset now holds %s; save the selection again to read the current artifacts", errAnalysisDatasetChanged, shortDigest(pinned), shortDigest(current))
 	}
 	return nil
+}
+
+func (s *Server) checkAnalysisRunArchivePin(ctx context.Context, runID, pinned string, run *storage.TestRecord) error {
+	if pinned == "" {
+		return nil
+	}
+	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, runID)
+	if !ok || record == nil {
+		return errors.New("missing_input: completed run archive not found")
+	}
+	if record.ManifestSHA256 == "" || !strings.EqualFold(record.ManifestSHA256, pinned) {
+		return fmt.Errorf("stale: %w: run archive changed since the selection was saved (expected %s, got %s)", errAnalysisDatasetChanged, shortDigest(pinned), shortDigest(record.ManifestSHA256))
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil || (run != nil && !runArchiveManifestMatchesStoredTest(manifest, run, s.store)) {
+		return fmt.Errorf("stale: %w: run archive manifest changed or is unreadable", errAnalysisDatasetChanged)
+	}
+	return nil
+}
+
+func (s *Server) buildComparisonSourcePin(ctx context.Context, project string, sel AnalysisSeriesSelection) (storage.SavedPanelSourcePin, bool) {
+	pin := storage.SavedPanelSourcePin{
+		SourceID: strings.TrimSpace(sel.SourceID),
+		Protocol: strings.ToLower(strings.TrimSpace(sel.Protocol)),
+	}
+	if sel.DatasetID != "" {
+		pin.DatasetID = sel.DatasetID
+		pin.DatasetArtifactSHA256 = sel.DatasetArtifactSHA256
+		if pin.DatasetArtifactSHA256 == "" {
+			if imports, ok := s.store.(storage.AnalysisImportStore); ok {
+				if in, err := imports.GetAnalysisImport(sel.DatasetID); err == nil && in != nil && in.ProjectID == project {
+					pin.DatasetArtifactSHA256 = analysisDatasetArtifactSHA256(in)
+				}
+			}
+		}
+		return pin, len(pin.DatasetArtifactSHA256) == 64
+	}
+	if sel.RunID != "" {
+		pin.RunID = sel.RunID
+		pin.ManifestSHA256 = sel.ArchiveManifestSHA256
+		if record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, sel.RunID); ok && record != nil {
+			if pin.ManifestSHA256 == "" {
+				pin.ManifestSHA256 = record.ManifestSHA256
+			}
+			if manifest, err := loadRunArchiveManifestFromRecord(record); err == nil {
+				if pPins, err := browserPanelPolicyPinsFromManifest(manifest); err == nil && len(pPins) > 0 {
+					pin.PolicyPins = pPins
+				}
+			}
+		}
+		return pin, len(pin.ManifestSHA256) == 64
+	}
+	return pin, false
+}
+
+func (s *Server) buildComparisonSavedPanelInputs(ctx context.Context, project string, q AnalysisComparisonRequest) *storage.SavedPanelInputs {
+	current, okCurrent := s.buildComparisonSourcePin(ctx, project, q.Left)
+	baseline, okBaseline := s.buildComparisonSourcePin(ctx, project, q.Right)
+	if !okCurrent || !okBaseline {
+		return nil
+	}
+	alignment := q.Alignment
+	if alignment == "" {
+		alignment = "utc"
+	}
+	coverage := q.CoveragePolicy
+	if coverage == "" {
+		coverage = "complete_bucket"
+	}
+	catalogVersion := q.CatalogVersion
+	if catalogVersion == "" {
+		catalogVersion = analysis.CatalogVersion
+	}
+	panelQuery := storage.AnalyticsQuery{
+		QueryVersion:   5,
+		CatalogVersion: catalogVersion,
+		Alignment:      alignment,
+		CoveragePolicy: coverage,
+		Metric:         q.Left.Metric,
+		Aggregation:    q.Left.Aggregation,
+		BucketSeconds:  q.BucketSeconds,
+		EndSeconds:     max(1, int(q.To.Sub(q.From).Seconds())),
+	}
+	if isAnalysisByteMetric(q.Left.Metric) {
+		panelQuery.Population = analysis.PopulationByte
+	}
+	if proto := strings.ToLower(strings.TrimSpace(q.Left.Protocol)); proto != "" || q.Left.Transaction != "" {
+		panelQuery.Filters = map[string]string{}
+		if proto != "" {
+			panelQuery.Filters["protocol"] = proto
+		}
+		if q.Left.Transaction != "" {
+			panelQuery.Filters["action"] = q.Left.Transaction
+		}
+	}
+	if current.RunID != "" && baseline.RunID != "" {
+		panelQuery.ComparisonRunID = baseline.RunID
+	}
+	storage.NormalizeSavedPanelQueryDefaults(&panelQuery)
+	return &storage.SavedPanelInputs{
+		Version:        2,
+		CatalogVersion: panelQuery.CatalogVersion,
+		Alignment:      panelQuery.Alignment,
+		CoveragePolicy: panelQuery.CoveragePolicy,
+		Population:     panelQuery.Population,
+		Metric:         panelQuery.Metric,
+		Aggregation:    panelQuery.Aggregation,
+		QuerySHA256:    storage.SavedPanelQueryDigest(panelQuery),
+		PolicyPins:     current.PolicyPins,
+		Drilldown: storage.SavedPanelDrilldownBounds{
+			StartSeconds:  panelQuery.StartSeconds,
+			EndSeconds:    panelQuery.EndSeconds,
+			BucketSeconds: panelQuery.BucketSeconds,
+			MaxSeries:     panelQuery.MaxSeries,
+			MaxLagSeconds: q.MaxLagSeconds,
+		},
+		Current:  current,
+		Baseline: &baseline,
+	}
 }
 
 func shortDigest(digest string) string {

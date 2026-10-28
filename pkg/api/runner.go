@@ -1548,6 +1548,10 @@ type TxMetrics struct {
 	CorrelationCount   int64                   `json:"correlation_count,omitempty"`
 	Count              int64                   `json:"count"`
 	Errors             int64                   `json:"errors"`
+	BytesSent          int64                   `json:"bytes_sent,omitempty"`
+	BytesReceived      int64                   `json:"bytes_received,omitempty"`
+	ByteEvidence       string                  `json:"byte_evidence,omitempty"`
+	ByteSamples        int64                   `json:"byte_samples,omitempty"`
 	AvgMs              float64                 `json:"avg_ms"`
 	P50Ms              float64                 `json:"p50_ms"`
 	P90Ms              float64                 `json:"p90_ms"`

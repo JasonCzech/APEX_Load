@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 772,
+    "routes": 774,
     "public": 31,
-    "protected": 741,
-    "rbac": 736,
+    "protected": 743,
+    "rbac": 738,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 772,
+    "green": 774,
     "partial": 0,
     "missing": 0
   },
@@ -837,6 +837,29 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/analysis/imports/{id}/attest-writer-stopped",
+      "operation_id": "handleAnalysisImportAttestWriterStopped",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/analysis/imports/{id}/commit",
       "operation_id": "handleAnalysisCommit",
       "public": false,
@@ -941,6 +964,33 @@
       "method": "POST",
       "path": "/api/v1/analysis/imports/{id}/precision-review",
       "operation_id": "handleAnalysisPrecisionReview",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/journey-steps",
+      "operation_id": "handleListAnalysisJourneySteps",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

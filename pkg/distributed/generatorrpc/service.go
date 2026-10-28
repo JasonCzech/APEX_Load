@@ -3668,6 +3668,8 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 			AvgTTFBMs:        metrics.AvgTTFBMs,
 			BytesSent:        metrics.BytesSent,
 			BytesReceived:    metrics.BytesRecv,
+			ByteEvidence:     metrics.ByteEvidence,
+			ByteSamples:      metrics.ByteSamples,
 			Exemplars:        append([]engine.TraceExemplar(nil), metrics.Exemplars...),
 		})
 	}
@@ -3941,6 +3943,14 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out := MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
+	var measuredBytesSent, measuredBytesReceived int64
+	hasByteEvidence := false
+	for _, value := range values {
+		if value.Count > 0 && strings.TrimSpace(value.ByteEvidence) != "" {
+			hasByteEvidence = true
+			break
+		}
+	}
 	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
@@ -3964,11 +3974,18 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		weightedTTFBMs += value.AvgTTFBMs * count
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
+		if hasByteEvidence {
+			protocol.MergeIntervalByteEvidence(&out.ByteEvidence, &out.ByteSamples, &measuredBytesSent, &measuredBytesReceived, value.Count, value.ByteEvidence, value.ByteSamples, value.BytesSent, value.BytesReceived)
+		}
 		out.TPS += value.TPS
 		durations.Add(value.Count, value.DurationDigest, value.DurationSketch)
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	if hasByteEvidence && (protocol.IsMeasuredByteEvidence(out.ByteEvidence) || out.ByteEvidence == protocol.ByteEvidenceNone) {
+		out.BytesSent = measuredBytesSent
+		out.BytesReceived = measuredBytesReceived
 	}
 	if javaUncounted {
 		out.JavaHTTP.ForgetPopulation()

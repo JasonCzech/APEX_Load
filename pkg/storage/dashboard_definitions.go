@@ -77,10 +77,14 @@ const AnalyticsQueryVersion = 3
 
 type AnalyticsQuery struct {
 	BrowserInputs *BrowserPanelInputs `json:"browser_inputs,omitempty"`
+	PanelInputs   *SavedPanelInputs   `json:"panel_inputs,omitempty"`
 	// BrowserTupleMode separates complete document measurement tuples in v3 archive panels.
 	BrowserTupleMode string `json:"browser_tuple_mode,omitempty"`
 	// QueryVersion names the query semantics the panel was saved under.
 	QueryVersion     int                     `json:"query_version,omitempty"`
+	CatalogVersion   string                  `json:"catalog_version,omitempty"`
+	Alignment        string                  `json:"alignment,omitempty"`
+	CoveragePolicy   string                  `json:"coverage_policy,omitempty"`
 	LiveBucketMode   string                  `json:"live_bucket_mode,omitempty"`
 	EvidenceMode     string                  `json:"evidence_mode,omitempty"`
 	OverlaySelection *NativeOverlaySelection `json:"overlay_selection,omitempty"`
@@ -176,7 +180,10 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
-			if (q.QueryVersion == 4 || q.QueryVersion == 5) && q.BrowserInputs == nil {
+			if q.PanelInputs != nil {
+				NormalizeSavedPanelQueryDefaults(q)
+			}
+			if (q.QueryVersion == 4 || q.QueryVersion == 5) && q.BrowserInputs == nil && q.PanelInputs == nil {
 				return errors.New("saved browser query version 4 or 5 requires evaluated input pins")
 			}
 			if err := validateAnalyticsQueryVersion(*q); err != nil {
@@ -201,10 +208,15 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				if err := ValidateNativeArchiveQuery(*q); err != nil {
 					return err
 				}
-			} else if q.PropertyName != "" || q.PropertyValue != "" || q.ComparisonRunID != "" || q.StartSeconds != 0 || q.EndSeconds != 0 {
+			} else if q.PanelInputs == nil && (q.PropertyName != "" || q.PropertyValue != "" || q.ComparisonRunID != "" || q.StartSeconds != 0 || q.EndSeconds != 0) {
 				return errors.New("archive query fields require an explicit population")
 			}
-			if err := analysis.ValidateDashboardQuery(q.Metric, q.Aggregation, q.Dimensions, q.Filters); err != nil {
+			hasPinnedDataset := q.PanelInputs != nil && (q.PanelInputs.Current.DatasetID != "" || (q.PanelInputs.Baseline != nil && q.PanelInputs.Baseline.DatasetID != ""))
+			if hasPinnedDataset && q.Population == "" {
+				if strings.TrimSpace(q.Metric) == "" || len(q.Metric) > 256 || analysis.ValidateScalarAggregationName(q.Aggregation) != nil {
+					return fmt.Errorf("dashboard panel %q: invalid dataset metric or aggregation", panel.ID)
+				}
+			} else if err := analysis.ValidateDashboardQuery(q.Metric, q.Aggregation, q.Dimensions, q.Filters); err != nil {
 				return fmt.Errorf("dashboard panel %q: %w", panel.ID, err)
 			}
 			if q.Derivation != nil {
@@ -481,6 +493,15 @@ type DashboardDefinitionRevision struct {
 // validateAnalyticsQueryVersion refuses query semantics newer than this
 // controller's, when a query is saved and when it runs.
 func validateAnalyticsQueryVersion(q AnalyticsQuery) error {
+	if q.Alignment != "" && q.Alignment != "elapsed" && q.Alignment != "utc" {
+		return errors.New("alignment must be elapsed or utc")
+	}
+	if q.CoveragePolicy != "" && q.CoveragePolicy != "complete_bucket" && q.CoveragePolicy != "required" {
+		return errors.New("coverage_policy must be complete_bucket or required")
+	}
+	if q.CatalogVersion != "" && q.CatalogVersion != analysis.CatalogVersion {
+		return errors.New("unsupported catalog_version")
+	}
 	if err := validateBrowserPanelInputs(q); err != nil {
 		return err
 	}

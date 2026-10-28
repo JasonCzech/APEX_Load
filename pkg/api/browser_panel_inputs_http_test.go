@@ -625,3 +625,193 @@ func TestBrowserPanelInputPinsHTTPV2PolicyTombstoneAndSelectionReceipt(t *testin
 		t.Fatalf("tombstoned policy accepted on save %d %s", tombstonedSave.Code, tombstonedSave.Body.String())
 	}
 }
+
+func TestSavedPanelInputsV2ComparisonToSavedPanelToReportAndStaleMissingStates(t *testing.T) {
+	server, project, record, _ := browserPanelHTTPFixture(t)
+	baseRecord, baseStart := nativeSeriesFixture(t)
+	baseRecord.TestID = "run-baseline"
+	rawBase, err := os.ReadFile(baseRecord.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var baseManifest RunArchiveManifest
+	if err := json.Unmarshal(rawBase, &baseManifest); err != nil {
+		t.Fatal(err)
+	}
+	baseManifest.TestID = baseRecord.TestID
+	baseManifest.Provenance.ProjectID = project
+	rawBase, err = json.Marshal(baseManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(baseRecord.ManifestPath, rawBase, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	baseRecord.ManifestSHA256 = sha256BytesHex(rawBase)
+	server.runner.mu.Lock()
+	server.runner.tests[baseRecord.TestID] = &ManagedTest{ID: baseRecord.TestID, Name: "Baseline", ProjectID: project, Status: "COMPLETE"}
+	server.runner.archives[baseRecord.TestID] = baseRecord
+	server.runner.mu.Unlock()
+	if err := server.store.SaveTest(&storage.TestRecord{ID: baseRecord.TestID, Name: "Baseline", ProjectID: project, Status: "COMPLETE", StartTime: baseStart}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRunArchive(baseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 1: Preview an archive comparison query with UI defaults omitted; controller returns PanelInputs v2 with frozen defaults.
+	q := storage.AnalyticsQuery{
+		Population:      "action",
+		Metric:          "response_time",
+		Aggregation:     "p95",
+		ComparisonRunID: baseRecord.TestID,
+		EndSeconds:      60,
+		BucketSeconds:   10,
+	}
+	previewResp := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", q)
+	if previewResp.Code != http.StatusOK {
+		t.Fatalf("preview %d: %s", previewResp.Code, previewResp.Body.String())
+	}
+	var preview NativeArchiveResponse
+	if err := json.Unmarshal(previewResp.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.PanelInputs == nil || preview.PanelInputs.Version != 2 || preview.PanelInputs.Current.ManifestSHA256 != record.ManifestSHA256 || preview.PanelInputs.Baseline == nil || preview.PanelInputs.Baseline.ManifestSHA256 != baseRecord.ManifestSHA256 {
+		t.Fatalf("unexpected preview panel_inputs: %+v", preview.PanelInputs)
+	}
+
+	// Verify buildComparisonSavedPanelInputs for a protocol- and transaction-filtered byte comparison passes ValidateSavedPanelInputs and saves cleanly into a dashboard definition.
+	byteCompareReq := AnalysisComparisonRequest{
+		Left: AnalysisSeriesSelection{
+			RunID:       record.TestID,
+			Metric:      "bytes_sent",
+			Aggregation: "sum",
+			Protocol:    "http",
+			Transaction: "login",
+		},
+		Right: AnalysisSeriesSelection{
+			RunID:       baseRecord.TestID,
+			Metric:      "bytes_sent",
+			Aggregation: "sum",
+			Protocol:    "http",
+			Transaction: "login",
+		},
+		From:          baseStart,
+		To:            baseStart.Add(60 * time.Second),
+		BucketSeconds: 10,
+		Mode:          "overlay",
+	}
+	bytePins := server.buildComparisonSavedPanelInputs(context.Background(), project, byteCompareReq)
+	if bytePins == nil || bytePins.Population != "byte" || bytePins.Drilldown.MaxSeries != 1 {
+		t.Fatalf("expected byte comparison PanelInputs with Population=byte and MaxSeries=1, got %+v", bytePins)
+	}
+	bytePanelQuery := storage.AnalyticsQuery{
+		QueryVersion:    5,
+		Population:      "byte",
+		Metric:          "bytes_sent",
+		Aggregation:     "sum",
+		ComparisonRunID: baseRecord.TestID,
+		Alignment:       bytePins.Alignment,
+		CoveragePolicy:  bytePins.CoveragePolicy,
+		CatalogVersion:  bytePins.CatalogVersion,
+		BucketSeconds:   10,
+		EndSeconds:      60,
+		Filters:         map[string]string{"protocol": "http", "action": "login"},
+		PanelInputs:     bytePins,
+	}
+	if err := storage.ValidateSavedPanelInputs(bytePanelQuery); err != nil {
+		t.Fatalf("ValidateSavedPanelInputs rejected comparison byte panel: %v", err)
+	}
+
+	// Step 2: Save the general panel definition with frozen PanelInputs v2.
+	q.PanelInputs = preview.PanelInputs
+	definition := storage.DashboardDefinition{
+		ProjectID:  project,
+		Name:       "General Pinned Comparison Panel",
+		Visibility: "project",
+		Tabs: []storage.DashboardTab{{
+			ID:    "main",
+			Title: "Main",
+			Panels: []storage.DashboardPanel{{
+				ID:    "p-rt",
+				Title: "Response Time P95",
+				Kind:  "line",
+				W:     12,
+				H:     8,
+				Query: &q,
+			}},
+		}},
+	}
+	saveResp := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", definition)
+	if saveResp.Code != http.StatusCreated {
+		t.Fatalf("save general pinned panel %d: %s", saveResp.Code, saveResp.Body.String())
+	}
+	var savedDef storage.DashboardDefinition
+	if err := json.Unmarshal(saveResp.Body.Bytes(), &savedDef); err != nil {
+		t.Fatal(err)
+	}
+	savedQ := *savedDef.Tabs[0].Panels[0].Query
+	if savedQ.Alignment != "elapsed" || savedQ.CoveragePolicy != "complete_bucket" || savedQ.CatalogVersion == "" || savedQ.MaxSeries != 1 {
+		t.Fatalf("expected frozen UI defaults on saved query, got %+v", savedQ)
+	}
+
+	// Step 3: Check RunArchiveReport includes SavedAnalysisPanels with Status "ready", and replay with an Overlay pin preserves Overlay in response.PanelInputs.
+	overlayQ := savedQ
+	overlayInputs := *savedQ.PanelInputs
+	overlayInputs.Overlay = &storage.SavedPanelSourcePin{
+		RunID:          baseRecord.TestID,
+		ManifestSHA256: baseRecord.ManifestSHA256,
+	}
+	overlayQ.PanelInputs = &overlayInputs
+	overlayReplay := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", overlayQ)
+	if overlayReplay.Code != http.StatusOK {
+		t.Fatalf("expected 200 on replay with Overlay pin, got %d: %s", overlayReplay.Code, overlayReplay.Body.String())
+	}
+	report := &RunArchiveReport{Manifest: &RunArchiveManifest{TestID: record.TestID, Provenance: RunArchiveProvenance{ProjectID: project}}}
+	server.attachDashboardPanels(report)
+	if len(report.SavedAnalysisPanels) != 1 || report.SavedAnalysisPanels[0].Status != "ready" {
+		t.Fatalf("expected 1 ready SavedAnalysisPanel on archive report, got %+v", report.SavedAnalysisPanels)
+	}
+
+	// Step 4: Modify the baseline archive manifest -> Report and Replay surface explicit "stale" state.
+	mutatedBase := append([]byte(nil), rawBase...)
+	mutatedBase = append(mutatedBase, ' ')
+	if err := os.WriteFile(baseRecord.ManifestPath, mutatedBase, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nextBase := *baseRecord
+	nextBase.ManifestSHA256 = sha256BytesHex(mutatedBase)
+	server.runner.mu.Lock()
+	server.runner.archives[baseRecord.TestID] = &nextBase
+	server.runner.mu.Unlock()
+	if err := server.store.SaveRunArchive(&nextBase); err != nil {
+		t.Fatal(err)
+	}
+	staleReport := &RunArchiveReport{Manifest: &RunArchiveManifest{TestID: record.TestID, Provenance: RunArchiveProvenance{ProjectID: project}}}
+	server.attachDashboardPanels(staleReport)
+	if len(staleReport.SavedAnalysisPanels) != 1 || staleReport.SavedAnalysisPanels[0].Status != "stale" {
+		t.Fatalf("expected stale status in report after baseline archive change, got %+v", staleReport.SavedAnalysisPanels)
+	}
+	staleReplay := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", savedQ)
+	if staleReplay.Code != http.StatusUnprocessableEntity || !strings.Contains(staleReplay.Body.String(), "stale:") {
+		t.Fatalf("expected 422 stale error on replay, got %d: %s", staleReplay.Code, staleReplay.Body.String())
+	}
+
+	// Step 5: Delete the baseline run -> Report and Replay surface explicit "missing_input" state.
+	server.runner.mu.Lock()
+	delete(server.runner.tests, baseRecord.TestID)
+	delete(server.runner.archives, baseRecord.TestID)
+	server.runner.mu.Unlock()
+	if err := server.store.DeleteTest(baseRecord.TestID); err != nil {
+		t.Fatal(err)
+	}
+	missingReport := &RunArchiveReport{Manifest: &RunArchiveManifest{TestID: record.TestID, Provenance: RunArchiveProvenance{ProjectID: project}}}
+	server.attachDashboardPanels(missingReport)
+	if len(missingReport.SavedAnalysisPanels) != 1 || missingReport.SavedAnalysisPanels[0].Status != "missing_input" {
+		t.Fatalf("expected missing_input status in report after baseline deletion, got %+v", missingReport.SavedAnalysisPanels)
+	}
+	missingReplay := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/tests/run/archive/native-series", savedQ)
+	if (missingReplay.Code != http.StatusNotFound && missingReplay.Code != http.StatusUnprocessableEntity) || !strings.Contains(missingReplay.Body.String(), "missing_input:") {
+		t.Fatalf("expected missing_input error on replay after baseline deletion, got %d: %s", missingReplay.Code, missingReplay.Body.String())
+	}
+}

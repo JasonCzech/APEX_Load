@@ -444,6 +444,16 @@ func TestWebSocketSendRequiresOpenConnection(t *testing.T) {
 	if !strings.Contains(result.ErrorMessage, "not open") {
 		t.Fatalf("ErrorMessage = %q", result.ErrorMessage)
 	}
+	if result.ByteEvidence != protocol.ByteEvidenceNone {
+		t.Fatalf("send ByteEvidence without connection = %q, want %q", result.ByteEvidence, protocol.ByteEvidenceNone)
+	}
+	recvResult, err := ws.Execute(context.Background(), &protocol.Action{Name: "recv", Type: "ws_receive"})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if recvResult.Success || recvResult.ByteEvidence != protocol.ByteEvidenceNone {
+		t.Fatalf("recv without connection = success:%v byte_evidence:%q, want false / %q", recvResult.Success, recvResult.ByteEvidence, protocol.ByteEvidenceNone)
+	}
 }
 
 func TestWebSocketSendReconnectsAfterClosedConnection(t *testing.T) {

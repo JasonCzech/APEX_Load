@@ -317,6 +317,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	if result.BusinessTransaction {
 		population = "transaction"
 	}
+	bytesSent, bytesReceived, byteEvidence := protocol.ArchiveByteMeasurement(result)
 	event := TransactionEvent{
 		CSVExportIDs:          result.CSVExportIDs,
 		ExtractionsIncomplete: result.ExtractionsIncomplete,
@@ -350,9 +351,9 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		ConnectMs:             durationMillis(result.ConnectTime),
 		TLSMs:                 durationMillis(result.TLSTime),
 		TTFBMs:                durationMillis(result.TTFB),
-		BytesSent:             result.BytesSent,
-		BytesReceived:         result.BytesReceived,
-		ByteEvidence:          protocol.ByteEvidence(result),
+		BytesSent:             bytesSent,
+		BytesReceived:         bytesReceived,
+		ByteEvidence:          byteEvidence,
 		StatusCode:            result.StatusCode,
 		Success:               result.Success,
 		ErrorMessage:          result.ErrorMessage,

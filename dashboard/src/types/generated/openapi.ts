@@ -6451,6 +6451,69 @@ export interface operations {
               "samples"?: number;
               "step"?: string;
             }>;
+            "saved_analysis_panels"?: Array<{
+              "browser_inputs"?: ({
+                "baseline"?: (Record<string, unknown>) | null;
+                "current"?: Record<string, unknown>;
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "query_sha256"?: string;
+                "selection_receipt_sha256"?: string;
+                "version"?: number;
+              }) | null;
+              "dashboard_id"?: string;
+              "dashboard_name"?: string;
+              "dashboard_revision"?: number;
+              "panel_id"?: string;
+              "panel_inputs"?: ({
+                "aggregation"?: string;
+                "alignment"?: string;
+                "baseline"?: (Record<string, unknown>) | null;
+                "catalog_version"?: string;
+                "comparison_id"?: string;
+                "comparison_revision"?: number;
+                "comparison_sha256"?: string;
+                "coverage_policy"?: string;
+                "current"?: Record<string, unknown>;
+                "drilldown"?: Record<string, unknown>;
+                "metric"?: string;
+                "overlay"?: (Record<string, unknown>) | null;
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "population"?: string;
+                "query_sha256"?: string;
+                "version"?: number;
+              }) | null;
+              "query"?: {
+                "aggregation"?: string;
+                "alignment"?: string;
+                "browser_inputs"?: (Record<string, unknown>) | null;
+                "browser_tuple_mode"?: string;
+                "bucket_seconds"?: number;
+                "catalog_version"?: string;
+                "comparison_run_id"?: string;
+                "coverage_policy"?: string;
+                "derivation"?: (Record<string, unknown>) | null;
+                "dimensions"?: Array<string>;
+                "end_seconds"?: number;
+                "evidence_mode"?: string;
+                "filters"?: Record<string, string>;
+                "joint_evidence"?: boolean;
+                "live_bucket_mode"?: string;
+                "max_series"?: number;
+                "metric"?: string;
+                "overlay"?: boolean;
+                "overlay_selection"?: (Record<string, unknown>) | null;
+                "panel_inputs"?: (Record<string, unknown>) | null;
+                "population"?: string;
+                "property_name"?: string;
+                "property_value"?: string;
+                "query_version"?: number;
+                "start_seconds"?: number;
+              };
+              "reason"?: string;
+              "status"?: string;
+              "tab_id"?: string;
+              "title"?: string;
+            }>;
             "schema_version"?: string;
             "sla_rollup"?: ({
               "evaluated"?: number;
@@ -11043,10 +11106,14 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "alignment"?: string;
           "bucket_seconds"?: number;
+          "catalog_version"?: string;
+          "coverage_policy"?: string;
           "from"?: string;
           "left"?: {
             "aggregation"?: string;
+            "archive_manifest_sha256"?: string;
             "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
@@ -11063,6 +11130,7 @@ export interface operations {
           "mode"?: string;
           "right"?: {
             "aggregation"?: string;
+            "archive_manifest_sha256"?: string;
             "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
@@ -11214,11 +11282,83 @@ export interface operations {
               "unit"?: string;
               "value"?: (number) | null;
             }>;
+            "panel_inputs"?: ({
+              "aggregation": string;
+              "alignment": string;
+              "baseline"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "catalog_version": string;
+              "comparison_id"?: string;
+              "comparison_revision"?: number;
+              "comparison_sha256"?: string;
+              "coverage_policy": string;
+              "current": {
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              };
+              "drilldown": {
+                "bucket_seconds": number;
+                "end_seconds": number;
+                "max_lag_seconds"?: number;
+                "max_series": number;
+                "start_seconds": number;
+              };
+              "metric": string;
+              "overlay"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "revision": number;
+                "sha256": string;
+              }>;
+              "population"?: string;
+              "query_sha256": string;
+              "version": number;
+            }) | null;
             "request": {
+              "alignment"?: string;
               "bucket_seconds": number;
+              "catalog_version"?: string;
+              "coverage_policy"?: string;
               "from": string;
               "left": {
                 "aggregation": string;
+                "archive_manifest_sha256"?: string;
                 "dataset_artifact_sha256"?: string;
                 "dataset_id"?: string;
                 "dimensions"?: Record<string, string>;
@@ -11235,6 +11375,7 @@ export interface operations {
               "mode": string;
               "right": {
                 "aggregation": string;
+                "archive_manifest_sha256"?: string;
                 "dataset_artifact_sha256"?: string;
                 "dataset_id"?: string;
                 "dimensions"?: Record<string, string>;
@@ -11634,10 +11775,14 @@ export interface operations {
         "application/json": {
           "created_at"?: string;
           "definition"?: {
+            "alignment"?: string;
             "bucket_seconds"?: number;
+            "catalog_version"?: string;
+            "coverage_policy"?: string;
             "from"?: string;
             "left"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -11654,6 +11799,7 @@ export interface operations {
             "mode"?: string;
             "right"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -13013,10 +13159,14 @@ export interface operations {
         "application/json": {
           "created_at"?: string;
           "definition"?: {
+            "alignment"?: string;
             "bucket_seconds"?: number;
+            "catalog_version"?: string;
+            "coverage_policy"?: string;
             "from"?: string;
             "left"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -13033,6 +13183,7 @@ export interface operations {
             "mode"?: string;
             "right"?: {
               "aggregation"?: string;
+              "archive_manifest_sha256"?: string;
               "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
@@ -41892,6 +42043,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -41922,6 +42077,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -42950,6 +43109,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -42988,6 +43151,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -43385,6 +43552,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -43419,6 +43590,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -43502,6 +43677,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -43716,6 +43895,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -50026,6 +50209,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -50388,6 +50575,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -51319,6 +51510,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -51357,6 +51552,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -51775,6 +51974,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -51809,6 +52012,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -51892,6 +52099,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -52127,6 +52338,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -52251,6 +52466,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -52629,6 +52848,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -53544,6 +53767,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -53910,6 +54137,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -54325,6 +54556,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -54913,6 +55148,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -71614,6 +71853,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -71652,6 +71895,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72070,6 +72317,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72104,6 +72355,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72187,6 +72442,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72422,6 +72681,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72542,6 +72805,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -72920,6 +73187,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -73835,6 +74106,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -74201,6 +74476,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -74616,6 +74895,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -75204,6 +75487,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -77201,6 +77488,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -77231,6 +77522,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -78259,6 +78554,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -78297,6 +78596,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -78694,6 +78997,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -78728,6 +79035,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -78811,6 +79122,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -79025,6 +79340,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -89349,6 +89668,146 @@ export interface operations {
               "samples": number;
               "step": string;
             }>;
+            "saved_analysis_panels"?: Array<{
+              "browser_inputs"?: ({
+                "baseline"?: ({
+                  "manifest_sha256": string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "run_id": string;
+                  "tuple_ids": Array<string>;
+                }) | null;
+                "current": {
+                  "manifest_sha256": string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "run_id": string;
+                  "tuple_ids": Array<string>;
+                };
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "query_sha256": string;
+                "selection_receipt_sha256"?: string;
+                "version": number;
+              }) | null;
+              "dashboard_id": string;
+              "dashboard_name": string;
+              "dashboard_revision": number;
+              "panel_id": string;
+              "panel_inputs"?: ({
+                "aggregation": string;
+                "alignment": string;
+                "baseline"?: ({
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "manifest_sha256"?: string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "protocol"?: string;
+                  "run_id"?: string;
+                  "source_id"?: string;
+                }) | null;
+                "catalog_version": string;
+                "comparison_id"?: string;
+                "comparison_revision"?: number;
+                "comparison_sha256"?: string;
+                "coverage_policy": string;
+                "current": {
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "manifest_sha256"?: string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "protocol"?: string;
+                  "run_id"?: string;
+                  "source_id"?: string;
+                };
+                "drilldown": {
+                  "bucket_seconds": number;
+                  "end_seconds": number;
+                  "max_lag_seconds"?: number;
+                  "max_series": number;
+                  "start_seconds": number;
+                };
+                "metric": string;
+                "overlay"?: ({
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "manifest_sha256"?: string;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "protocol"?: string;
+                  "run_id"?: string;
+                  "source_id"?: string;
+                }) | null;
+                "policy_pins"?: Array<Record<string, unknown>>;
+                "population"?: string;
+                "query_sha256": string;
+                "version": number;
+              }) | null;
+              "query": {
+                "aggregation": string;
+                "alignment"?: string;
+                "browser_inputs"?: ({
+                  "baseline"?: (Record<string, unknown>) | null;
+                  "current": Record<string, unknown>;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "query_sha256": string;
+                  "selection_receipt_sha256"?: string;
+                  "version": number;
+                }) | null;
+                "browser_tuple_mode"?: string;
+                "bucket_seconds"?: number;
+                "catalog_version"?: string;
+                "comparison_run_id"?: string;
+                "coverage_policy"?: string;
+                "derivation"?: ({
+                  "minimum_coverage"?: number;
+                  "operation": string;
+                  "window_buckets"?: number;
+                }) | null;
+                "dimensions"?: Array<string>;
+                "end_seconds"?: number;
+                "evidence_mode"?: string;
+                "filters"?: Record<string, string>;
+                "joint_evidence"?: boolean;
+                "live_bucket_mode"?: string;
+                "max_series"?: number;
+                "metric": string;
+                "overlay"?: boolean;
+                "overlay_selection"?: ({
+                  "aggregation": string;
+                  "dataset_artifact_sha256"?: string;
+                  "dataset_id"?: string;
+                  "dimensions"?: Record<string, string>;
+                  "host"?: string;
+                  "max_lag_seconds"?: number;
+                  "metric": string;
+                  "source_id"?: string;
+                }) | null;
+                "panel_inputs"?: ({
+                  "aggregation": string;
+                  "alignment": string;
+                  "baseline"?: (Record<string, unknown>) | null;
+                  "catalog_version": string;
+                  "comparison_id"?: string;
+                  "comparison_revision"?: number;
+                  "comparison_sha256"?: string;
+                  "coverage_policy": string;
+                  "current": Record<string, unknown>;
+                  "drilldown": Record<string, unknown>;
+                  "metric": string;
+                  "overlay"?: (Record<string, unknown>) | null;
+                  "policy_pins"?: Array<Record<string, unknown>>;
+                  "population"?: string;
+                  "query_sha256": string;
+                  "version": number;
+                }) | null;
+                "population"?: string;
+                "property_name"?: string;
+                "property_value"?: string;
+                "query_version"?: number;
+                "start_seconds"?: number;
+              };
+              "reason"?: string;
+              "status": string;
+              "tab_id": string;
+              "title": string;
+            }>;
             "schema_version": string;
             "sla_rollup"?: ({
               "evaluated": number;
@@ -95778,6 +96237,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -96140,6 +96603,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -97071,6 +97538,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -97109,6 +97580,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -97527,6 +98002,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -97561,6 +98040,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -97644,6 +98127,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -97879,6 +98366,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -98003,6 +98494,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -98381,6 +98876,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -99296,6 +99795,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -99662,6 +100165,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -100077,6 +100584,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -100665,6 +101176,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -116034,6 +116549,7 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "alignment"?: string;
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
@@ -116069,7 +116585,9 @@ export interface operations {
           }) | null;
           "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
+          "catalog_version"?: string;
           "comparison_run_id"?: string;
+          "coverage_policy"?: string;
           "derivation"?: ({
             "minimum_coverage"?: number;
             "operation"?: string;
@@ -116093,6 +116611,74 @@ export interface operations {
             "max_lag_seconds"?: number;
             "metric"?: string;
             "source_id"?: string;
+          }) | null;
+          "panel_inputs"?: ({
+            "aggregation"?: string;
+            "alignment"?: string;
+            "baseline"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "catalog_version"?: string;
+            "comparison_id"?: string;
+            "comparison_revision"?: number;
+            "comparison_sha256"?: string;
+            "coverage_policy"?: string;
+            "current"?: {
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            };
+            "drilldown"?: {
+              "bucket_seconds"?: number;
+              "end_seconds"?: number;
+              "max_lag_seconds"?: number;
+              "max_series"?: number;
+              "start_seconds"?: number;
+            };
+            "metric"?: string;
+            "overlay"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
+            "population"?: string;
+            "query_sha256"?: string;
+            "version"?: number;
           }) | null;
           "population"?: string;
           "property_name"?: string;
@@ -116203,6 +116789,74 @@ export interface operations {
               "operation": string;
               "window_buckets"?: number;
             }) | null;
+            "panel_inputs"?: ({
+              "aggregation": string;
+              "alignment": string;
+              "baseline"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "catalog_version": string;
+              "comparison_id"?: string;
+              "comparison_revision"?: number;
+              "comparison_sha256"?: string;
+              "coverage_policy": string;
+              "current": {
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              };
+              "drilldown": {
+                "bucket_seconds": number;
+                "end_seconds": number;
+                "max_lag_seconds"?: number;
+                "max_series": number;
+                "start_seconds": number;
+              };
+              "metric": string;
+              "overlay"?: ({
+                "dataset_artifact_sha256"?: string;
+                "dataset_id"?: string;
+                "manifest_sha256"?: string;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "revision": number;
+                  "sha256": string;
+                }>;
+                "protocol"?: string;
+                "run_id"?: string;
+                "source_id"?: string;
+              }) | null;
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "revision": number;
+                "sha256": string;
+              }>;
+              "population"?: string;
+              "query_sha256": string;
+              "version": number;
+            }) | null;
             "removed": Array<string>;
             "warnings": Array<string>;
           };
@@ -116253,6 +116907,7 @@ export interface operations {
       content: {
         "application/json": {
           "aggregation"?: string;
+          "alignment"?: string;
           "browser_inputs"?: ({
             "baseline"?: ({
               "manifest_sha256"?: string;
@@ -116288,7 +116943,9 @@ export interface operations {
           }) | null;
           "browser_tuple_mode"?: string;
           "bucket_seconds"?: number;
+          "catalog_version"?: string;
           "comparison_run_id"?: string;
+          "coverage_policy"?: string;
           "derivation"?: ({
             "minimum_coverage"?: number;
             "operation"?: string;
@@ -116312,6 +116969,74 @@ export interface operations {
             "max_lag_seconds"?: number;
             "metric"?: string;
             "source_id"?: string;
+          }) | null;
+          "panel_inputs"?: ({
+            "aggregation"?: string;
+            "alignment"?: string;
+            "baseline"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "catalog_version"?: string;
+            "comparison_id"?: string;
+            "comparison_revision"?: number;
+            "comparison_sha256"?: string;
+            "coverage_policy"?: string;
+            "current"?: {
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            };
+            "drilldown"?: {
+              "bucket_seconds"?: number;
+              "end_seconds"?: number;
+              "max_lag_seconds"?: number;
+              "max_series"?: number;
+              "start_seconds"?: number;
+            };
+            "metric"?: string;
+            "overlay"?: ({
+              "dataset_artifact_sha256"?: string;
+              "dataset_id"?: string;
+              "manifest_sha256"?: string;
+              "policy_pins"?: Array<{
+                "id"?: string;
+                "kind"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+              }>;
+              "protocol"?: string;
+              "run_id"?: string;
+              "source_id"?: string;
+            }) | null;
+            "policy_pins"?: Array<{
+              "id"?: string;
+              "kind"?: string;
+              "revision"?: number;
+              "sha256"?: string;
+            }>;
+            "population"?: string;
+            "query_sha256"?: string;
+            "version"?: number;
           }) | null;
           "population"?: string;
           "property_name"?: string;
@@ -117060,10 +117785,13 @@ export interface operations {
               "kind"?: string;
               "query"?: ({
                 "aggregation"?: string;
+                "alignment"?: string;
                 "browser_inputs"?: (Record<string, unknown>) | null;
                 "browser_tuple_mode"?: string;
                 "bucket_seconds"?: number;
+                "catalog_version"?: string;
                 "comparison_run_id"?: string;
+                "coverage_policy"?: string;
                 "derivation"?: (Record<string, unknown>) | null;
                 "dimensions"?: Array<string>;
                 "end_seconds"?: number;
@@ -117075,6 +117803,7 @@ export interface operations {
                 "metric"?: string;
                 "overlay"?: boolean;
                 "overlay_selection"?: (Record<string, unknown>) | null;
+                "panel_inputs"?: (Record<string, unknown>) | null;
                 "population"?: string;
                 "property_name"?: string;
                 "property_value"?: string;
@@ -119935,6 +120664,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -120297,6 +121030,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -121228,6 +121965,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -121266,6 +122007,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -121684,6 +122429,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -121718,6 +122467,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -121801,6 +122554,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -122036,6 +122793,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -122160,6 +122921,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -122538,6 +123303,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -123453,6 +124222,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -123819,6 +124592,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -124234,6 +125011,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -124822,6 +125603,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -140888,6 +141673,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -140918,6 +141707,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -141946,6 +142739,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -141984,6 +142781,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -142381,6 +143182,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -142415,6 +143220,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -142498,6 +143307,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -142712,6 +143525,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -143430,6 +144247,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -143460,6 +144281,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -144488,6 +145313,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -144526,6 +145355,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -144923,6 +145756,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -144957,6 +145794,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145040,6 +145881,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145254,6 +146099,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -145972,6 +146821,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -146002,6 +146855,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147030,6 +147887,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147068,6 +147929,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147465,6 +148330,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147499,6 +148368,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147582,6 +148455,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -147796,6 +148673,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -148514,6 +149395,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -148544,6 +149429,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -149572,6 +150461,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -149610,6 +150503,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -150007,6 +150904,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -150041,6 +150942,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -150124,6 +151029,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -150338,6 +151247,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -151056,6 +151969,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -151086,6 +152003,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -152114,6 +153035,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -152152,6 +153077,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -152549,6 +153478,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -152583,6 +153516,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -152666,6 +153603,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -152880,6 +153821,10 @@ export interface operations {
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                  "byte_evidence"?: string;
+                  "byte_samples"?: number;
+                  "bytes_received"?: number;
+                  "bytes_sent"?: number;
                   "correlation_count"?: number;
                   "correlation_ids"?: Array<string>;
                   "count": number;
@@ -155443,6 +156388,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -155805,6 +156754,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -156736,6 +157689,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -156774,6 +157731,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -157192,6 +158153,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -157226,6 +158191,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -157309,6 +158278,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -157544,6 +158517,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -157668,6 +158645,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -158046,6 +159027,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -158961,6 +159946,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -159327,6 +160316,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -159742,6 +160735,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -160330,6 +161327,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -184003,6 +185004,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -184365,6 +185370,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -185296,6 +186305,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -185334,6 +186347,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -185752,6 +186769,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -185786,6 +186807,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -185869,6 +186894,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -186104,6 +187133,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -186228,6 +187261,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -186606,6 +187643,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -187521,6 +188562,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -187887,6 +188932,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -188302,6 +189351,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;
@@ -188890,6 +189943,10 @@ export interface operations {
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
+                "byte_evidence"?: string;
+                "byte_samples"?: number;
+                "bytes_received"?: number;
+                "bytes_sent"?: number;
                 "correlation_count"?: number;
                 "correlation_ids"?: Array<string>;
                 "count": number;

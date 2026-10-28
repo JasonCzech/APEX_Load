@@ -1217,6 +1217,10 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		AvgTTFBMs:          aggregate.AvgTTFBMs,
 		Count:              aggregate.Count,
 		Errors:             aggregate.Errors,
+		BytesSent:          aggregate.BytesSent,
+		BytesReceived:      aggregate.BytesReceived,
+		ByteEvidence:       aggregate.ByteEvidence,
+		ByteSamples:        aggregate.ByteSamples,
 		AvgMs:              aggregate.AvgMs,
 		P50Ms:              aggregate.P50Ms,
 		P90Ms:              aggregate.P90Ms,
@@ -1687,6 +1691,14 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out := generatorrpc.MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
+	var measuredBytesSent, measuredBytesReceived int64
+	hasByteEvidence := false
+	for _, value := range values {
+		if value.Count > 0 && strings.TrimSpace(value.ByteEvidence) != "" {
+			hasByteEvidence = true
+			break
+		}
+	}
 	javaUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
@@ -1710,12 +1722,19 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		ttfbSum += value.AvgTTFBMs * count
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
+		if hasByteEvidence {
+			protocol.MergeIntervalByteEvidence(&out.ByteEvidence, &out.ByteSamples, &measuredBytesSent, &measuredBytesReceived, value.Count, value.ByteEvidence, value.ByteSamples, value.BytesSent, value.BytesReceived)
+		}
 		out.TPS += value.TPS
 		out.Exemplars = engine.MergeTraceExemplars(out.Exemplars, value.Exemplars)
 		durations.Add(value.Count, value.DurationDigest, value.DurationSketch)
 	}
 	if out.Count == 0 {
 		return nil
+	}
+	if hasByteEvidence && (protocol.IsMeasuredByteEvidence(out.ByteEvidence) || out.ByteEvidence == protocol.ByteEvidenceNone) {
+		out.BytesSent = measuredBytesSent
+		out.BytesReceived = measuredBytesReceived
 	}
 	if javaUncounted {
 		out.JavaHTTP.ForgetPopulation()

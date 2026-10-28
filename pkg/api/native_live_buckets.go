@@ -18,6 +18,9 @@ import (
 // Distributions cannot be split by time; this completion-cohort convention is
 // explicit in the response and never claims exact transaction event-time bins.
 func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history []*LiveMetrics, q storage.AnalyticsQuery) (NativeEvidenceResponse, error) {
+	if q.Population == "byte" {
+		return buildMergedNativeLiveByteEvidence(ctx, start, history, q)
+	}
 	out := nativeEvidenceEnvelope(start, q)
 	out.LiveBucketMode = "merged"
 	n := (q.EndSeconds - q.StartSeconds + q.BucketSeconds - 1) / q.BucketSeconds
