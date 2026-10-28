@@ -47,9 +47,11 @@ type AnalysisImport struct {
 	Rejections                     []analysis.ParquetRejectionSummary    `json:"rejections,omitempty"`
 	RejectionArtifacts             []string                              `json:"rejection_artifacts,omitempty"`
 	RejectionSHA256                map[string]string                     `json:"rejection_sha256,omitempty"`
+	Originals                      []string                              `json:"originals,omitempty"`
 	Normalized                     []string                              `json:"normalized,omitempty"`
 	NormalizedSHA256               map[string]string                     `json:"normalized_sha256,omitempty"`
 	ObsoleteObjects                []string                              `json:"obsolete_objects,omitempty"`
+	WriterAttestation              *AnalysisWriterAttestation            `json:"writer_attestation,omitempty"`
 	MappingID                      string                                `json:"mapping_id,omitempty"`
 	MappingRevision                int64                                 `json:"mapping_revision,omitempty"`
 	RunID                          string                                `json:"run_id,omitempty"`
@@ -273,6 +275,8 @@ func (s *SQLiteStore) ListAnalysisImports(project string, limit, offset int) ([]
 func analysisImportOwnedOutputsEqual(a, b AnalysisImport) bool {
 	return a.PartitionManifestVersion == b.PartitionManifestVersion && reflect.DeepEqual(a.PartitionManifest, b.PartitionManifest) &&
 		a.Accepted == b.Accepted && a.Rejected == b.Rejected &&
+		reflect.DeepEqual(a.WriterAttestation, b.WriterAttestation) &&
+		(len(a.Originals) == 0 && len(b.Originals) == 0 || reflect.DeepEqual(a.Originals, b.Originals)) &&
 		(len(a.Normalized) == 0 && len(b.Normalized) == 0 || reflect.DeepEqual(a.Normalized, b.Normalized)) &&
 		(len(a.NormalizedSHA256) == 0 && len(b.NormalizedSHA256) == 0 || reflect.DeepEqual(a.NormalizedSHA256, b.NormalizedSHA256)) &&
 		(len(a.RejectionArtifacts) == 0 && len(b.RejectionArtifacts) == 0 || reflect.DeepEqual(a.RejectionArtifacts, b.RejectionArtifacts)) &&

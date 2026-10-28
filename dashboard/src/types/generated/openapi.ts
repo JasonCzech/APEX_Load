@@ -10554,6 +10554,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -10603,6 +10604,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -10816,6 +10823,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -10865,6 +10873,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -10931,6 +10945,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -10980,6 +10995,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -13325,6 +13346,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -13374,6 +13396,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -13396,6 +13424,65 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisImportAttestWriterStopped": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "reason"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -13481,6 +13568,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -13530,6 +13618,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -13637,6 +13731,7 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "originals"?: Array<string>;
             "partition_manifest"?: ({
               "dataset_id": string;
               "digest": string;
@@ -13686,6 +13781,12 @@ export interface operations {
             "state": string;
             "updated_at": string;
             "upload_writer_version"?: number;
+            "writer_attestation"?: ({
+              "actor": string;
+              "at": string;
+              "prover"?: Record<string, unknown>;
+              "reason"?: string;
+            }) | null;
           }) | null;
         };
       };
@@ -13767,6 +13868,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -13823,6 +13929,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -13987,6 +14098,7 @@ export interface operations {
               "normalized"?: Array<string>;
               "normalized_sha256"?: Record<string, string>;
               "obsolete_objects"?: Array<string>;
+              "originals"?: Array<string>;
               "partition_manifest"?: ({
                 "dataset_id": string;
                 "digest": string;
@@ -14021,6 +14133,12 @@ export interface operations {
               "state": string;
               "updated_at": string;
               "upload_writer_version"?: number;
+              "writer_attestation"?: ({
+                "actor": string;
+                "at": string;
+                "prover"?: Record<string, unknown>;
+                "reason"?: string;
+              }) | null;
             }) | null;
           };
         };
@@ -207796,6 +207914,9 @@ export interface paths {
   "/api/v1/analysis/imports/{id}": {
     "get": operations["handleAnalysisImport_3"];
     "delete": operations["handleAnalysisImport_2"];
+  };
+  "/api/v1/analysis/imports/{id}/attest-writer-stopped": {
+    "post": operations["handleAnalysisImportAttestWriterStopped"];
   };
   "/api/v1/analysis/imports/{id}/commit": {
     "post": operations["handleAnalysisCommit"];

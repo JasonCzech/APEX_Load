@@ -41,6 +41,7 @@ type AnalysisUploadWriter struct {
 	// artifact write, recorded at Begin before any I/O. Termination records a
 	// proven exit of that process (see analysis_writer_ownership.go).
 	Incarnation *procidentity.Identity     `json:",omitempty"`
+	Volume      *AnalysisWriterVolume      `json:",omitempty"`
 	Termination *AnalysisWriterTermination `json:",omitempty"`
 }
 type AnalysisUploadRequest struct {
@@ -74,6 +75,9 @@ func analysisUploadValidate(w *AnalysisUploadWriter) error {
 		return ErrAnalysisAuthority
 	}
 	if w.Incarnation != nil && !analysisWriterIdentityValid(*w.Incarnation) {
+		return ErrAnalysisAuthority
+	}
+	if w.Volume != nil && w.Volume.Identity != "" && !analysisValidVolumeIdentity(w.Volume.Identity) {
 		return ErrAnalysisAuthority
 	}
 	// A proven exit only ever abandons; a filesystem proof is also closure.
@@ -227,7 +231,7 @@ func (s *SQLiteStore) BeginAnalysisUploadWriter(ctx context.Context, req Analysi
 	if err != nil {
 		return nil, err
 	}
-	w := &AnalysisUploadWriter{ID: uuid.NewString(), ProjectID: req.ProjectID, ImportID: req.ImportID, FileID: req.FileID, Revision: req.Revision, Offset: req.Offset, Bytes: req.Bytes, SHA256: req.SHA256, FileSHA256: req.FileSHA256, State: "pending", CreatedAt: now, Incarnation: analysisWriterIncarnationFrom(ctx)}
+	w := &AnalysisUploadWriter{ID: uuid.NewString(), ProjectID: req.ProjectID, ImportID: req.ImportID, FileID: req.FileID, Revision: req.Revision, Offset: req.Offset, Bytes: req.Bytes, SHA256: req.SHA256, FileSHA256: req.FileSHA256, State: "pending", CreatedAt: now, Incarnation: analysisWriterIncarnationFrom(ctx), Volume: analysisWriterVolumeFrom(ctx)}
 	w.ObjectKey = analysisUploadObjectKey(*w)
 	w.TemporaryKey = analysisAttemptKey(w.ProjectID, w.ImportID, "upload-"+w.ID+".tmp")
 	if err = analysisUploadWrite(ctx, tx, w, true); err != nil {

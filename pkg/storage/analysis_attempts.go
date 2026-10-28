@@ -28,6 +28,7 @@ type AnalysisAttempt struct {
 	ImportID                 string          `json:"import_id"`
 	Revision                 int64           `json:"revision"`
 	InputDigest              string          `json:"input_digest"`
+	Originals                []string        `json:"originals,omitempty"`
 	Normalized               []string        `json:"normalized"`
 	Rejections               []string        `json:"rejections"`
 	Obsolete                 []string        `json:"obsolete,omitempty"`
@@ -43,6 +44,7 @@ type AnalysisAttempt struct {
 	// artifact writes, recorded at Claim before any I/O. Termination records a
 	// proven exit of that process (see analysis_writer_ownership.go).
 	Incarnation *procidentity.Identity     `json:"incarnation,omitempty"`
+	Volume      *AnalysisWriterVolume      `json:"volume,omitempty"`
 	Termination *AnalysisWriterTermination `json:"termination,omitempty"`
 }
 type AnalysisAttemptPublication struct {
@@ -160,7 +162,7 @@ func analysisAttemptJournalInsert(ctx context.Context, tx *storeTx, a *AnalysisA
 	return nil
 }
 
-var analysisAttemptOutputName = regexp.MustCompile(`^normalized-[a-z0-9][a-z0-9_.-]{0,140}\.parquet$`)
+var analysisAttemptOutputName = regexp.MustCompile(`^(?:normalized-[a-z0-9][a-z0-9_.-]{0,140}|original-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.parquet$`)
 
 func analysisAttemptOwnedOutputKey(project, id, key string) bool {
 	if parsed, err := uuid.Parse(id); err != nil || parsed.String() != id {
@@ -193,7 +195,7 @@ func analysisAttemptQuiescedKeys(ctx context.Context, tx *storeTx, project, id s
 		if json.Unmarshal([]byte(body), &prior) != nil || prior.ProjectID != project || prior.ImportID != id {
 			return nil, ErrAnalysisAuthority
 		}
-		for _, key := range append(append([]string{}, prior.Normalized...), prior.Rejections...) {
+		for _, key := range append(append(append([]string{}, prior.Originals...), prior.Normalized...), prior.Rejections...) {
 			if !analysisAttemptOwnedOutputKey(project, id, key) {
 				return nil, ErrAnalysisAuthority
 			}
@@ -325,8 +327,11 @@ func (s *SQLiteStore) ClaimAnalysisImportAttempt(ctx context.Context, id, projec
 		return nil, nil, err
 	}
 	oldOwner, oldState := in.Owner, in.State
-	a := &AnalysisAttempt{PartitionManifestVersion: analysis.PartitionManifestVersion, ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: revision + 1, InputDigest: inputDigest, CreatedAt: now, AbsoluteExpiry: now.Add(16 * time.Minute), Normalized: []string{}, Rejections: []string{}, Incarnation: analysisWriterIncarnationFrom(ctx)}
-	for i := range in.Files {
+	a := &AnalysisAttempt{PartitionManifestVersion: analysis.PartitionManifestVersion, ID: uuid.NewString(), ProjectID: project, ImportID: id, Revision: revision + 1, InputDigest: inputDigest, CreatedAt: now, AbsoluteExpiry: now.Add(16 * time.Minute), Normalized: []string{}, Rejections: []string{}, Incarnation: analysisWriterIncarnationFrom(ctx), Volume: analysisWriterVolumeFrom(ctx)}
+	for i, file := range in.Files {
+		if parsedFileID, parseErr := uuid.Parse(file.ID); parseErr == nil && parsedFileID.String() == file.ID {
+			a.Originals = append(a.Originals, analysisAttemptKey(project, id, fmt.Sprintf("original-%s-%s.parquet", a.ID, file.ID)))
+		}
 		for j := range in.Mapping.Measures {
 			a.Normalized = append(a.Normalized, analysisAttemptKey(project, id, fmt.Sprintf("normalized-%s-part-%04d-%02d.parquet", a.ID, i, j)))
 			if in.AllowRejected {
@@ -334,6 +339,7 @@ func (s *SQLiteStore) ClaimAnalysisImportAttempt(ctx context.Context, id, projec
 			}
 		}
 	}
+	in.ObsoleteObjects = append(in.ObsoleteObjects, in.Originals...)
 	in.ObsoleteObjects = append(in.ObsoleteObjects, in.Normalized...)
 	in.ObsoleteObjects = append(in.ObsoleteObjects, in.RejectionArtifacts...)
 	a.Obsolete = append([]string{}, in.ObsoleteObjects...)
@@ -355,6 +361,11 @@ func (s *SQLiteStore) ClaimAnalysisImportAttempt(ctx context.Context, id, projec
 	in.Error = ""
 	in.Accepted, in.Rejected = 0, 0
 	in.Rejections = nil
+	if len(a.Originals) > 0 {
+		in.Originals = append([]string{}, a.Originals...)
+	} else {
+		in.Originals = nil
+	}
 	in.Normalized = append([]string{}, a.Normalized...)
 	in.RejectionArtifacts = append([]string{}, a.Rejections...)
 	in.NormalizedSHA256 = nil
@@ -477,6 +488,9 @@ func ValidateAnalysisPublication(in AnalysisImport, a AnalysisAttempt) error {
 	if in.ID != a.ImportID || in.ProjectID != a.ProjectID || in.Owner != a.ID || in.Revision != a.Revision || in.State != "normalizing" || in.Accepted < 0 || in.Rejected < 0 || !reflect.DeepEqual(in.Normalized, a.Normalized) || len(in.NormalizedSHA256) != len(a.Normalized) || len(in.RejectionArtifacts) != len(in.RejectionSHA256) {
 		return ErrAnalysisAuthority
 	}
+	if len(in.Originals) > 0 && !reflect.DeepEqual(in.Originals, a.Originals) {
+		return ErrAnalysisAuthority
+	}
 	if in.PartitionManifestVersion != a.PartitionManifestVersion {
 		return ErrAnalysisAuthority
 	}
@@ -591,6 +605,11 @@ func (s *SQLiteStore) PublishAnalysisImportAttempt(ctx context.Context, p Analys
 	committed.RunID = in.RunID
 	committed.Error = ""
 	committed.ObsoleteObjects = nil
+	if len(a.Originals) > 0 {
+		committed.Originals = append([]string{}, a.Originals...)
+	} else {
+		committed.Originals = nil
+	}
 	a.PublicationDigest = p.Digest
 	a.Published = &committed
 	if err = analysisAttemptJournalWrite(ctx, tx, a); err != nil {
@@ -757,7 +776,7 @@ func (s *SQLiteStore) AnalysisAttemptCleanupPlan(ctx context.Context, job Analys
 		return AnalysisAttemptCleanupPlan{}, err
 	}
 	plan := AnalysisAttemptCleanupPlan{Keys: []string{}}
-	for _, key := range append(append(append([]string{}, a.Normalized...), a.Rejections...), a.Obsolete...) {
+	for _, key := range append(append(append(append([]string{}, a.Originals...), a.Normalized...), a.Rejections...), a.Obsolete...) {
 		if !analysisAttemptOwnedOutputKey(job.ProjectID, importID, key) {
 			return AnalysisAttemptCleanupPlan{}, ErrAnalysisAuthority
 		}
@@ -784,12 +803,16 @@ func (s *SQLiteStore) AnalysisAttemptCleanupPlan(ctx context.Context, job Analys
 		if !a.WritersQuiesced {
 			plan.Blocked = true
 		} else if a.PublicationDigest == "" || in == nil || in.State == "cancelled" || in.State == "deleted" || in.State == "deleting" {
+			plan.Keys = append(plan.Keys, a.Originals...)
 			plan.Keys = append(plan.Keys, a.Normalized...)
 			plan.Keys = append(plan.Keys, a.Rejections...)
 		}
 	}
 	if in != nil {
 		protected := map[string]bool{}
+		for _, key := range in.Originals {
+			protected[key] = true
+		}
 		for _, key := range in.Normalized {
 			protected[key] = true
 		}

@@ -392,12 +392,137 @@ func exerciseAnalysisWriterOwnership(t *testing.T, first, second *SQLiteStore) {
 			t.Fatal("unbounded inventory page accepted", err)
 		}
 	})
+	t.Run("volume identity CAS and mint-time locality binding", func(t *testing.T) {
+		volA := uuid.NewString()
+		volB := uuid.NewString()
+		got, err := first.EnsureAnalysisVolumeIdentity(volA)
+		if err != nil || got != volA {
+			t.Fatal("initial volume identity bind", got, err)
+		}
+		if _, err := second.EnsureAnalysisVolumeIdentity(volB); err == nil {
+			t.Fatal("mismatched volume identity accepted without rebind")
+		}
+		if err := second.RebindAnalysisVolumeIdentity(volB); err != nil {
+			t.Fatal("volume identity rebind", err)
+		}
+		if got, err := first.GetAnalysisVolumeIdentity(); err != nil || got != volB {
+			t.Fatal("rebound volume identity read", got, err)
+		}
+		// Mint an attempt on local volume volB, then judge with mismatched volA:
+		// local proof must be withheld (treated as remote/unproven).
+		ctxLocalVol := WithAnalysisWriterVolume(WithAnalysisWriterIncarnation(t.Context(), writerIncarnationA), AnalysisWriterVolume{Identity: volB, LocalFilesystem: true})
+		inMismatch, attMismatch := claimAttemptWithCtx(t, first, ctxLocalVol, false)
+		scopeWrongVol := writerExitScope(true, writerIncarnationA)
+		scopeWrongVol.VolumeIdentity = volA
+		outcome, err := second.ResolveExitedAnalysisAttempt(t.Context(), inMismatch.ProjectID, attMismatch.ID, scopeWrongVol)
+		if err != nil || !outcome.Proved || outcome.Quiesced || !outcome.RemoteCommitUnproven {
+			t.Fatal("mismatched volume identity granted local quiescence", outcome, err)
+		}
+		// Mint an attempt with mint-time LocalFilesystem=false (e.g., network share):
+		// even if the judge later claims LocalFilesystem=true, it stays remote/unproven.
+		ctxNetVol := WithAnalysisWriterVolume(WithAnalysisWriterIncarnation(t.Context(), writerIncarnationA), AnalysisWriterVolume{Identity: volB, LocalFilesystem: false})
+		inNet, attNet := claimAttemptWithCtx(t, first, ctxNetVol, false)
+		scopeRightVol := writerExitScope(true, writerIncarnationA)
+		scopeRightVol.VolumeIdentity = volB
+		outcome, err = second.ResolveExitedAnalysisAttempt(t.Context(), inNet.ProjectID, attNet.ID, scopeRightVol)
+		if err != nil || !outcome.Proved || outcome.Quiesced || !outcome.RemoteCommitUnproven {
+			t.Fatal("non-local mint-time volume granted local quiescence", outcome, err)
+		}
+		// Mint an attempt with matching local volume volB: local quiescence succeeds.
+		inLocal, attLocal := claimAttemptWithCtx(t, first, ctxLocalVol, false)
+		outcome, err = second.ResolveExitedAnalysisAttempt(t.Context(), inLocal.ProjectID, attLocal.ID, scopeRightVol)
+		if err != nil || !outcome.Proved || !outcome.Quiesced || outcome.RemoteCommitUnproven {
+			t.Fatal("matching local volume did not grant local quiescence", outcome, err)
+		}
+	})
+	t.Run("per-attempt originals isolation and cleanup", func(t *testing.T) {
+		ctxA := WithAnalysisWriterIncarnation(t.Context(), writerIncarnationA)
+		in, a := claimAttemptWithCtx(t, first, ctxA, true)
+		if len(a.Originals) != 1 || len(in.Originals) != 1 || a.Originals[0] != in.Originals[0] {
+			t.Fatal("per-attempt original key not planned on UUID file", a.Originals, in.Originals)
+		}
+		outcome, err := second.ResolveExitedAnalysisAttempt(t.Context(), in.ProjectID, a.ID, writerExitScope(true, writerIncarnationA))
+		if err != nil || !outcome.ImportFailed || !outcome.Quiesced {
+			t.Fatal("exited attempt resolution", outcome, err)
+		}
+		failed := requireImportState(t, second, in.ID, "failed")
+		retry, b, err := second.ClaimAnalysisImportAttempt(WithAnalysisWriterIncarnation(t.Context(), writerIncarnationB), in.ID, in.ProjectID, failed.Revision, time.Minute)
+		if err != nil {
+			t.Fatal("retry claim", err)
+		}
+		if len(b.Originals) != 1 || b.Originals[0] == a.Originals[0] {
+			t.Fatal("retry reused exited attempt's original key", a.Originals, b.Originals)
+		}
+		if !slices.Contains(retry.ObsoleteObjects, a.Originals[0]) || slices.Contains(retry.ObsoleteObjects, b.Originals[0]) {
+			t.Fatal("obsolete objects did not track prior attempt's original key", retry.ObsoleteObjects)
+		}
+		planA, err := second.AnalysisAttemptCleanupPlan(t.Context(), AnalysisCleanupJob{Kind: "attempt", ProjectID: in.ProjectID, ResourceID: a.ID})
+		if err != nil || planA.Blocked || !slices.Contains(planA.Keys, a.Originals[0]) || slices.Contains(planA.Keys, b.Originals[0]) {
+			t.Fatal("exited attempt cleanup plan missing own original or touched retry original", planA, err)
+		}
+		if err := second.FailAnalysisImportAttempt(t.Context(), retry.ID, retry.ProjectID, b.ID, b.Revision, ""); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("admin attestation resolves remote, unjudgeable and legacy writers", func(t *testing.T) {
+		in, a := claimAttemptWithCtx(t, first, WithAnalysisWriterIncarnation(t.Context(), writerIncarnationForeign), true)
+		// Cannot attest while import is still live ("normalizing").
+		if _, err := second.AttestAnalysisImportWritersStopped(WithAnalysisWriterIncarnation(t.Context(), writerIncarnationB), in.ProjectID, in.ID, "admin@example.com", "pod terminated"); !errors.Is(err, ErrAnalysisAuthority) {
+			t.Fatal("attested live normalizing import", err)
+		}
+		current := requireImportState(t, first, in.ID, "normalizing")
+		current.State = "cancelled"
+		if _, err := first.SaveAnalysisImport(*current, current.Revision); err != nil {
+			t.Fatal(err)
+		}
+		// Cannot self-attest from the same controller incarnation that is still an unclosed writer.
+		if _, err := first.AttestAnalysisImportWritersStopped(WithAnalysisWriterIncarnation(t.Context(), writerIncarnationForeign), in.ProjectID, in.ID, "admin@example.com", "self attest"); !errors.Is(err, ErrAnalysisWriterActive) {
+			t.Fatal("self-attestation of active writer accepted", err)
+		}
+		statusBefore, err := second.AnalysisDatasetCleanupStatus(t.Context(), in.ProjectID, in.ID, hereOnHostA)
+		if err != nil || statusBefore.Ready || statusBefore.UnjudgeableWriters != 1 {
+			t.Fatal("expected unjudgeable writer before attestation", statusBefore, err)
+		}
+		attested, err := second.AttestAnalysisImportWritersStopped(WithAnalysisWriterIncarnation(t.Context(), writerIncarnationB), in.ProjectID, in.ID, "admin@example.com", "verified pod and remote storage quiesced")
+		if err != nil || attested.WriterAttestation == nil || attested.WriterAttestation.Actor != "admin@example.com" {
+			t.Fatal("admin attestation failed", attested, err)
+		}
+		statusAfter, err := second.AnalysisDatasetCleanupStatus(t.Context(), in.ProjectID, in.ID, hereOnHostA)
+		if err != nil || !statusAfter.Ready {
+			t.Fatal("dataset cleanup not ready after admin attestation", statusAfter, err)
+		}
+		plan, err := second.AnalysisAttemptCleanupPlan(t.Context(), AnalysisCleanupJob{Kind: "attempt", ProjectID: in.ProjectID, ResourceID: a.ID})
+		if err != nil || plan.Blocked || !slices.Contains(plan.Keys, a.Originals[0]) || !slices.Contains(plan.Keys, a.Normalized[0]) {
+			t.Fatal("attempt cleanup plan still blocked after admin attestation", plan, err)
+		}
+	})
 }
 
 func claimAttemptAs(t *testing.T, s *SQLiteStore, incarnation procidentity.Identity) (*AnalysisImport, *AnalysisAttempt) {
 	t.Helper()
-	mapped := nativeAttemptMappedFixture(t, s)
-	in, a, err := s.ClaimAnalysisImportAttempt(WithAnalysisWriterIncarnation(t.Context(), incarnation), mapped.ID, mapped.ProjectID, mapped.Revision, time.Minute)
+	return claimAttemptWithCtx(t, s, WithAnalysisWriterIncarnation(t.Context(), incarnation), false)
+}
+
+func claimAttemptWithCtx(t *testing.T, s *SQLiteStore, ctx context.Context, uuidFile bool) (*AnalysisImport, *AnalysisAttempt) {
+	t.Helper()
+	var mapped *AnalysisImport
+	if !uuidFile {
+		mapped = nativeAttemptMappedFixture(t, s)
+	} else {
+		template := nativeAttemptMappedFixture(t, s)
+		in := AnalysisImport{ID: uuid.NewString(), ProjectID: "monitor-p", Name: "native fixture", State: "uploading", Files: []AnalysisImportFile{{ID: uuid.NewString(), RelativePath: "fixture.parquet", Size: 100, Uploaded: 100}}}
+		saved, err := s.SaveAnalysisImport(in, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved.Mapping = template.Mapping
+		saved.State = "mapped"
+		mapped, err = s.SaveAnalysisImport(*saved, saved.Revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	in, a, err := s.ClaimAnalysisImportAttempt(ctx, mapped.ID, mapped.ProjectID, mapped.Revision, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -95,6 +95,9 @@ func TestAnalysisAcceptanceRawAndCounterPopulationsReconcile(t *testing.T) {
 		}
 		var stored bytes.Buffer
 		key := analysisObjectKey(in.ProjectID, in.ID, "original-"+in.Files[index].ID+".parquet")
+		if index < len(in.Originals) && in.Originals[index] != "" {
+			key = in.Originals[index]
+		}
 		if _, err := analysisObjectRead(context.Background(), key, &stored, int64(len(data))+1); err != nil || !bytes.Equal(stored.Bytes(), data) {
 			t.Fatalf("file %d stored original differs from the source: %d bytes, %v", index, stored.Len(), err)
 		}

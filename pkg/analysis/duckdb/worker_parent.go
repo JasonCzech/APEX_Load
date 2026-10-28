@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 )
 
 type workerProcessProfile struct {
@@ -244,10 +245,20 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 		return nil, err
 	}
 	options.profile.memoryBytes = a.bootstrap.Limits.MemoryBytes
+	if writeWorkerAttemptOwner(a.path, a.bootstrap.Identity.AttemptID, true, nil) != nil {
+		closeAll()
+		return nil, errWorkerProtocol
+	}
 	process, startErr := workerStartOwned(a, cmd, bootRead, a.directory, commandRead, options.profile)
 	if startErr != nil && process == nil {
+		_ = writeWorkerAttemptOwner(a.path, a.bootstrap.Identity.AttemptID, false, nil)
 		closeAll()
 		return nil, startErr
+	}
+	if cmd.Process != nil {
+		if workerID, idErr := procidentity.Of(cmd.Process.Pid); idErr == nil {
+			_ = writeWorkerAttemptOwner(a.path, a.bootstrap.Identity.AttemptID, false, &workerID)
+		}
 	}
 	a.mu.Lock()
 	a.started = true
@@ -471,6 +482,7 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 			waited = true
 			waitErr = err
 			waitDone = nil
+			_ = writeWorkerAttemptOwner(a.path, a.bootstrap.Identity.AttemptID, false, nil)
 			if options.testAfterWaitConsumed != nil {
 				options.testAfterWaitConsumed()
 			}

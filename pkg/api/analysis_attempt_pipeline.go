@@ -79,7 +79,11 @@ func (s *Server) normalizeAnalysisImportOwned(parent context.Context, store stor
 				return err
 			}
 			sourceIO.TrackOwner(reader)
-			_, writeErr := analysisObjectWrite(ctx, analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet"), reader)
+			originalKey := analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet")
+			if i < len(in.Originals) && in.Originals[i] != "" {
+				originalKey = in.Originals[i]
+			}
+			_, writeErr := analysisObjectWrite(ctx, originalKey, reader)
 			closeErr := sourceIO.CloseOwner(reader)
 			sourceIO.Joined()
 			if err = errors.Join(writeErr, closeErr); err != nil {

@@ -385,6 +385,15 @@ func (o *sqliteStoreOverlay) ArchiveRelease(a0 string) error {
 	return o.base().ArchiveRelease(a0)
 }
 
+func (o *sqliteStoreOverlay) AttestAnalysisImportWritersStopped(a0 context.Context, a1 string, a2 string, a3 string, a4 string) (*storage.AnalysisImport, error) {
+	if fake, ok := o.fake.(interface {
+		AttestAnalysisImportWritersStopped(context.Context, string, string, string, string) (*storage.AnalysisImport, error)
+	}); ok {
+		return fake.AttestAnalysisImportWritersStopped(a0, a1, a2, a3, a4)
+	}
+	return o.base().AttestAnalysisImportWritersStopped(a0, a1, a2, a3, a4)
+}
+
 func (o *sqliteStoreOverlay) AuthorizeTelemetryNotificationDelivery(a0 context.Context, a1 storage.TelemetryNotificationDelivery, a2 time.Time) (bool, error) {
 	if fake, ok := o.fake.(interface {
 		AuthorizeTelemetryNotificationDelivery(context.Context, storage.TelemetryNotificationDelivery, time.Time) (bool, error)
@@ -2683,6 +2692,13 @@ func (o *sqliteStoreOverlay) EnsureAnalysisStorageIdentity(a0 string) error {
 	return o.base().EnsureAnalysisStorageIdentity(a0)
 }
 
+func (o *sqliteStoreOverlay) EnsureAnalysisVolumeIdentity(a0 string) (string, error) {
+	if fake, ok := o.fake.(interface{ EnsureAnalysisVolumeIdentity(string) (string, error) }); ok {
+		return fake.EnsureAnalysisVolumeIdentity(a0)
+	}
+	return o.base().EnsureAnalysisVolumeIdentity(a0)
+}
+
 func (o *sqliteStoreOverlay) EnsureDynatraceOperationSchema() error {
 	if fake, ok := o.fake.(interface{ EnsureDynatraceOperationSchema() error }); ok {
 		return fake.EnsureDynatraceOperationSchema()
@@ -2930,6 +2946,13 @@ func (o *sqliteStoreOverlay) GetAnalysisPolicyRevision(a0 string, a1 string, a2 
 		return fake.GetAnalysisPolicyRevision(a0, a1, a2)
 	}
 	return o.base().GetAnalysisPolicyRevision(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) GetAnalysisVolumeIdentity() (string, error) {
+	if fake, ok := o.fake.(interface{ GetAnalysisVolumeIdentity() (string, error) }); ok {
+		return fake.GetAnalysisVolumeIdentity()
+	}
+	return o.base().GetAnalysisVolumeIdentity()
 }
 
 func (o *sqliteStoreOverlay) GetAppDynamicsConnection(a0 string) (*storage.AppDynamicsConnection, error) {
@@ -5885,6 +5908,13 @@ func (o *sqliteStoreOverlay) ReadProjectLiveTableRecovery(a0 context.Context, a1
 		return fake.ReadProjectLiveTableRecovery(a0, a1, a2)
 	}
 	return o.base().ReadProjectLiveTableRecovery(a0, a1, a2)
+}
+
+func (o *sqliteStoreOverlay) RebindAnalysisVolumeIdentity(a0 string) error {
+	if fake, ok := o.fake.(interface{ RebindAnalysisVolumeIdentity(string) error }); ok {
+		return fake.RebindAnalysisVolumeIdentity(a0)
+	}
+	return o.base().RebindAnalysisVolumeIdentity(a0)
 }
 
 func (o *sqliteStoreOverlay) RebindArchiveRefreshToFinalization(a0 string, a1 string) (*storage.ArchiveFinalizationJob, bool, error) {

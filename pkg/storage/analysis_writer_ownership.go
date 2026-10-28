@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 )
 
@@ -41,11 +42,34 @@ import (
 // workflow (its import may be retried, its upload offset reused) but keeps
 // its cleanup and the dataset's deletion blocked: remote commit unproven.
 
-// AnalysisWriterProofIncarnationExited is the only termination proof kind.
+// AnalysisWriterProofIncarnationExited is the automatic exit termination proof kind.
 const AnalysisWriterProofIncarnationExited = "incarnation_exited"
+
+// AnalysisWriterProofAdminAttested is the administrator attestation proof kind.
+const AnalysisWriterProofAdminAttested = "admin_attested"
+
+// ErrAnalysisWriterActive refuses administrator attestation for a writer that
+// is still active on the attesting controller process.
+var ErrAnalysisWriterActive = errors.New("analytical writer is active on this controller")
 
 // analysisWriterExitedReason is the import error after a proven exit.
 const analysisWriterExitedReason = "Normalization stopped because the controller running it exited; commit the import again to retry."
+
+// AnalysisWriterAttestation records an explicit administrator intervention
+// attesting that a dataset's remote, unjudgeable or legacy writers have stopped.
+type AnalysisWriterAttestation struct {
+	Actor  string                `json:"actor"`
+	Reason string                `json:"reason,omitempty"`
+	At     time.Time             `json:"at"`
+	Prover procidentity.Identity `json:"prover,omitempty"`
+}
+
+// AnalysisWriterVolume records the bound archive volume identity and locality
+// observed when a writer generation was minted.
+type AnalysisWriterVolume struct {
+	Identity        string `json:"identity,omitempty"`
+	LocalFilesystem bool   `json:"local_filesystem"`
+}
 
 // AnalysisWriterTermination is the durable record of a proven writer exit.
 type AnalysisWriterTermination struct {
@@ -54,7 +78,8 @@ type AnalysisWriterTermination struct {
 	At     time.Time             `json:"at"`
 	// RemoteCommitUnproven retains cleanup and deletion: the backend may still
 	// apply a commit request the exited process had already sent.
-	RemoteCommitUnproven bool `json:"remote_commit_unproven,omitempty"`
+	RemoteCommitUnproven bool                       `json:"remote_commit_unproven,omitempty"`
+	Attestation          *AnalysisWriterAttestation `json:"attestation,omitempty"`
 }
 
 // AnalysisWriterExitScope is the prover's judgement authority. Exited must
@@ -64,6 +89,7 @@ type AnalysisWriterExitScope struct {
 	Prover          procidentity.Identity
 	Exited          func(procidentity.Identity) bool
 	LocalFilesystem bool
+	VolumeIdentity  string
 }
 
 // AnalysisWriterExitOutcome reports the generation's ownership after a
@@ -95,9 +121,33 @@ type AnalysisWriterOwnershipStore interface {
 	ResolveExitedAnalysisAttempt(ctx context.Context, project, attemptID string, scope AnalysisWriterExitScope) (AnalysisWriterExitOutcome, error)
 	ResolveExitedAnalysisUploadWriter(ctx context.Context, project, writerID string, scope AnalysisWriterExitScope) (AnalysisWriterExitOutcome, error)
 	ResolveExitedAnalysisUploadCursor(ctx context.Context, req AnalysisUploadRequest, scope AnalysisWriterExitScope) (int, error)
+	AttestAnalysisImportWritersStopped(ctx context.Context, project, importID, actor, reason string) (*AnalysisImport, error)
 }
 
-type analysisWriterIncarnationKey struct{}
+type (
+	analysisWriterIncarnationKey struct{}
+	analysisWriterVolumeKey      struct{}
+)
+
+// WithAnalysisWriterVolume binds the archive volume identity and locality
+// observed at writer mint time.
+func WithAnalysisWriterVolume(ctx context.Context, v AnalysisWriterVolume) context.Context {
+	if ctx == nil || v.Identity != "" && !analysisValidVolumeIdentity(v.Identity) {
+		return ctx
+	}
+	return context.WithValue(ctx, analysisWriterVolumeKey{}, v)
+}
+
+func analysisWriterVolumeFrom(ctx context.Context) *AnalysisWriterVolume {
+	if ctx == nil {
+		return nil
+	}
+	v, ok := ctx.Value(analysisWriterVolumeKey{}).(AnalysisWriterVolume)
+	if !ok || v.Identity != "" && !analysisValidVolumeIdentity(v.Identity) {
+		return nil
+	}
+	return &v
+}
 
 // WithAnalysisWriterIncarnation binds the controller process that will perform
 // a new generation's artifact writes. Claim and Begin record it durably; a
@@ -127,7 +177,23 @@ func analysisWriterIdentityValid(id procidentity.Identity) bool {
 }
 
 func analysisWriterTerminationValid(t *AnalysisWriterTermination, incarnation *procidentity.Identity) bool {
-	return t != nil && incarnation != nil && t.Proof == AnalysisWriterProofIncarnationExited && analysisWriterIdentityValid(t.Prover) && t.Prover != *incarnation && !t.At.IsZero()
+	if t == nil || t.At.IsZero() {
+		return false
+	}
+	switch t.Proof {
+	case AnalysisWriterProofIncarnationExited:
+		return incarnation != nil && analysisWriterIdentityValid(t.Prover) && t.Prover != *incarnation
+	case AnalysisWriterProofAdminAttested:
+		if t.RemoteCommitUnproven || t.Attestation == nil || len(t.Attestation.Actor) < 1 || len(t.Attestation.Actor) > 256 || len(t.Attestation.Reason) < 3 || len(t.Attestation.Reason) > 1024 || t.Attestation.At.IsZero() {
+			return false
+		}
+		if incarnation != nil && analysisWriterIdentityValid(t.Prover) && t.Prover == *incarnation {
+			return false
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func (scope AnalysisWriterExitScope) valid() bool {
@@ -140,8 +206,24 @@ func (scope AnalysisWriterExitScope) judge(incarnation *procidentity.Identity) b
 	return incarnation != nil && analysisWriterIdentityValid(*incarnation) && *incarnation != scope.Prover && scope.Exited(*incarnation)
 }
 
-func (scope AnalysisWriterExitScope) termination(now time.Time) *AnalysisWriterTermination {
-	return &AnalysisWriterTermination{Proof: AnalysisWriterProofIncarnationExited, Prover: scope.Prover, At: now, RemoteCommitUnproven: !scope.LocalFilesystem}
+func (scope AnalysisWriterExitScope) localFor(v *AnalysisWriterVolume) bool {
+	if !scope.LocalFilesystem {
+		return false
+	}
+	if v == nil {
+		return true
+	}
+	if !v.LocalFilesystem {
+		return false
+	}
+	if v.Identity != "" && scope.VolumeIdentity != "" && v.Identity != scope.VolumeIdentity {
+		return false
+	}
+	return true
+}
+
+func (scope AnalysisWriterExitScope) termination(now time.Time, v *AnalysisWriterVolume) *AnalysisWriterTermination {
+	return &AnalysisWriterTermination{Proof: AnalysisWriterProofIncarnationExited, Prover: scope.Prover, At: now, RemoteCommitUnproven: !scope.localFor(v)}
 }
 
 // analysisWriterSnapshot reads one bounded journal payload without locks.
@@ -244,10 +326,11 @@ func (s *SQLiteStore) ResolveExitedAnalysisAttempt(ctx context.Context, project,
 	}
 	// Failing an owned import always records the proof that allowed it; a
 	// generation its own process had already quiesced has no remote doubt.
+	local := scope.localFor(a.Volume)
 	if prove || a.Termination == nil {
-		a.Termination = scope.termination(now)
-		a.Termination.RemoteCommitUnproven = !scope.LocalFilesystem && !a.WritersQuiesced
-		a.WritersQuiesced = a.WritersQuiesced || scope.LocalFilesystem
+		a.Termination = scope.termination(now, a.Volume)
+		a.Termination.RemoteCommitUnproven = !local && !a.WritersQuiesced
+		a.WritersQuiesced = a.WritersQuiesced || local
 	}
 	if owned {
 		oldRevision := in.Revision
@@ -285,9 +368,10 @@ func resolveExitedAnalysisUploadWriterTx(ctx context.Context, tx *storeTx, w *An
 	if err != nil {
 		return false, err
 	}
-	w.Termination = scope.termination(now)
+	local := scope.localFor(w.Volume)
+	w.Termination = scope.termination(now, w.Volume)
 	w.State = "abandoned"
-	w.PhysicallyClosed = scope.LocalFilesystem
+	w.PhysicallyClosed = local
 	if err = analysisUploadWrite(ctx, tx, w, false); err != nil {
 		return false, err
 	}
@@ -443,3 +527,171 @@ func (s *SQLiteStore) ListAnalysisWriterOwnershipCandidates(ctx context.Context,
 		return out, "", nil
 	}
 }
+
+// AttestAnalysisImportWritersStopped records an explicit administrator
+// attestation that all remote, unjudgeable, unrecorded or legacy writers of
+// one dataset have stopped. It never attests a writer whose incarnation is the
+// attesting controller itself while still active, and never touches any other
+// dataset's state or cleanup plans.
+func (s *SQLiteStore) AttestAnalysisImportWritersStopped(ctx context.Context, project, importID, actor, reason string) (*AnalysisImport, error) {
+	actor = strings.TrimSpace(actor)
+	reason = strings.TrimSpace(reason)
+	if project == "" || len(project) > 128 || len(actor) < 1 || len(actor) > 256 || len(reason) < 3 || len(reason) > 1024 {
+		return nil, ErrAnalysisAuthority
+	}
+	if parsed, err := uuid.Parse(importID); err != nil || parsed.String() != importID {
+		return nil, ErrAnalysisAuthority
+	}
+	var prover procidentity.Identity
+	if inc := analysisWriterIncarnationFrom(ctx); inc != nil {
+		prover = *inc
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err = analysisWriterLockProject(ctx, tx, project); err != nil {
+		return nil, err
+	}
+	in, err := analysisAttemptLoad(ctx, tx, importID, project)
+	if err != nil {
+		return nil, err
+	}
+	if in.State != "cancelled" && in.State != "failed" && in.State != "deleting" {
+		return nil, ErrAnalysisAuthority
+	}
+	now, err := preciseDatabaseTimeContext(ctx, tx, tx.dialect)
+	if err != nil {
+		return nil, err
+	}
+	attemptRows, err := tx.QueryContext(ctx, `SELECT payload FROM analysis_attempt_journal WHERE project_id=? AND import_id=? ORDER BY id`, project, importID)
+	if err != nil {
+		return nil, err
+	}
+	attempts := []AnalysisAttempt{}
+	for attemptRows.Next() {
+		if len(attempts) >= 4096 {
+			attemptRows.Close()
+			return nil, ErrAnalysisAuthority
+		}
+		var body string
+		if err = attemptRows.Scan(&body); err != nil {
+			attemptRows.Close()
+			return nil, err
+		}
+		var a AnalysisAttempt
+		if json.Unmarshal([]byte(body), &a) != nil || a.ProjectID != project || a.ImportID != importID {
+			attemptRows.Close()
+			return nil, ErrAnalysisAuthority
+		}
+		attempts = append(attempts, a)
+	}
+	if err = errors.Join(attemptRows.Err(), attemptRows.Close()); err != nil {
+		return nil, err
+	}
+	uploadRows, err := tx.QueryContext(ctx, `SELECT id,file_id,chunk_offset,payload FROM analysis_upload_writers WHERE project_id=? AND import_id=? ORDER BY id`, project, importID)
+	if err != nil {
+		return nil, err
+	}
+	uploads := []AnalysisUploadWriter{}
+	for uploadRows.Next() {
+		if len(uploads) >= analysisUploadMaxWriters {
+			uploadRows.Close()
+			return nil, ErrAnalysisAuthority
+		}
+		var rowID, fileID, raw string
+		var offset int64
+		var w AnalysisUploadWriter
+		if err = uploadRows.Scan(&rowID, &fileID, &offset, &raw); err != nil {
+			uploadRows.Close()
+			return nil, err
+		}
+		if len(raw) > 4096 || json.Unmarshal([]byte(raw), &w) != nil || w.ID != rowID || w.FileID != fileID || w.Offset != offset || w.ProjectID != project || w.ImportID != importID || analysisUploadValidate(&w) != nil {
+			uploadRows.Close()
+			return nil, ErrAnalysisAuthority
+		}
+		uploads = append(uploads, w)
+	}
+	if err = errors.Join(uploadRows.Err(), uploadRows.Close()); err != nil {
+		return nil, err
+	}
+	if analysisWriterIdentityValid(prover) {
+		for _, a := range attempts {
+			if !a.WritersQuiesced && a.Termination == nil && a.Incarnation != nil && *a.Incarnation == prover {
+				return nil, ErrAnalysisWriterActive
+			}
+		}
+		for _, w := range uploads {
+			if (!w.PhysicallyClosed || w.State == "pending") && w.Termination == nil && w.Incarnation != nil && *w.Incarnation == prover {
+				return nil, ErrAnalysisWriterActive
+			}
+		}
+	}
+	att := &AnalysisWriterAttestation{
+		Actor:  actor,
+		Reason: reason,
+		At:     now,
+		Prover: prover,
+	}
+	term := &AnalysisWriterTermination{
+		Proof:                AnalysisWriterProofAdminAttested,
+		Prover:               prover,
+		At:                   now,
+		RemoteCommitUnproven: false,
+		Attestation:          att,
+	}
+	for i := range attempts {
+		a := &attempts[i]
+		if !a.WritersQuiesced || a.LegacyWriterUnknown || a.Termination != nil && a.Termination.RemoteCommitUnproven {
+			a.WritersQuiesced = true
+			a.LegacyWriterUnknown = false
+			a.Termination = term
+			if in.State == "cancelled" || in.State == "deleting" || in.State == "deleted" || a.ID != in.Owner {
+				a.CleanupQueued = true
+			}
+			if err = analysisAttemptJournalWrite(ctx, tx, a); err != nil {
+				return nil, err
+			}
+			if a.CleanupQueued {
+				if err = queueAnalysisCleanupTx(tx, "attempt", project, a.ID); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	for i := range uploads {
+		w := &uploads[i]
+		if !w.PhysicallyClosed || w.State == "pending" || w.Termination != nil && w.Termination.RemoteCommitUnproven {
+			w.State = "abandoned"
+			if w.Rejection == "" {
+				w.Rejection = "writer_attested_stopped"
+			}
+			w.PhysicallyClosed = true
+			w.Termination = term
+			if err = analysisUploadWrite(ctx, tx, w, false); err != nil {
+				return nil, err
+			}
+			if err = queueAnalysisCleanupTx(tx, "upload-writer", project, w.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	oldRevision, oldOwner, oldState := in.Revision, in.Owner, in.State
+	in.WriterAttestation = att
+	in.Revision++
+	in.UpdatedAt = now
+	if err = analysisAttemptUpdate(ctx, tx, in, oldRevision, oldOwner, oldState); err != nil {
+		return nil, err
+	}
+	if in.State == "cancelled" || in.State == "deleting" {
+		if err = queueAnalysisCleanupTx(tx, "dataset", project, in.ID); err != nil {
+			return nil, err
+		}
+	}
+	if tx.Commit() != nil {
+		return nil, ErrAnalysisPublicationUnknown
+	}
+	return in, nil
+}
+

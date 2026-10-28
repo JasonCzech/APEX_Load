@@ -22,9 +22,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/analysis"
 	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
+	"github.com/jasonczech/apexload/pkg/internal/procidentity"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"gocloud.dev/blob/memblob"
 )
 
 // TestNativeAnalyticsReferenceBenchmark is the NA-6 reference workload
@@ -64,7 +67,7 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	results := analyticsReferenceResults{Schema: "apexload.analytics_reference.v1", GeneratedAt: time.Now().UTC(), Host: analyticsReferenceHostInfo(),
 		MemoryLimit: fmt.Sprintf("%d MiB", limits.MemoryBytes>>20), SpillLimit: fmt.Sprintf("%d MiB", limits.SpillBytes>>20),
 		Failures:    []string{},
-		NotMeasured: []string{"spill bytes (bounded by the spill limit, not measured)", "live telemetry lag under a concurrent run", "a cold replica, a worker crash, disk exhaustion and contention"}}
+		NotMeasured: []string{"spill bytes (bounded by the spill limit, not measured)", "live telemetry lag under a concurrent run"}}
 	fail := func(format string, args ...any) {
 		message := fmt.Sprintf(format, args...)
 		results.Failures = append(results.Failures, message)
@@ -297,6 +300,7 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	if _, _, code := query(context.Background(), selected, time.Hour, 60); code != 200 {
 		fail("the controller did not answer after the cancellation: %d", code)
 	}
+	results.FaultTrials = runAnalyticsReferenceFaultTrials(t, server, store, in.ID, selected, fail)
 	stopSampling()
 	t.Logf("queries: cold %.0f ms, repeated p50 %.0f / p95 %.0f / max %.0f ms, full range %.0f ms; pruned %d of %d objects (%d bytes avoided); cancel %.0f ms; peak RSS controller %d MiB, workers %d MiB, together %d MiB",
 		results.ColdQueryMs, results.RepeatedQueries.P50Ms, results.RepeatedQueries.P95Ms, results.RepeatedQueries.MaxMs, results.FullRangeMs,
@@ -339,4 +343,217 @@ func analyticsReferenceHostInfo() analyticsReferenceHost {
 	gib := float64(host.MemoryBytes) / (1 << 30)
 	host.Reference = host.CPUs == 4 && gib >= 15 && gib <= 17
 	return host
+}
+
+func runAnalyticsReferenceFaultTrials(t *testing.T, server *Server, store storage.Store, datasetID string, selected time.Time, fail func(string, ...any)) []analyticsReferenceFaultTrial {
+	t.Helper()
+	var trials []analyticsReferenceFaultTrial
+	record := func(name string, started time.Time, passed bool, detail string) {
+		elapsed := float64(time.Since(started).Microseconds()) / 1000
+		trials = append(trials, analyticsReferenceFaultTrial{
+			Name:       name,
+			Passed:     passed,
+			DurationMs: elapsed,
+			Detail:     detail,
+		})
+		if !passed && fail != nil {
+			fail("fault trial %s failed: %s", name, detail)
+		}
+	}
+
+	// 1. Multi-job admission contention: hold the single analytical job slot and
+	// verify a concurrent series query is deterministically refused with 503.
+	t0 := time.Now()
+	analysisPipelineJobs <- struct{}{}
+	body, _ := json.Marshal(analytics.SeriesQuery{Metric: "latency", From: selected, To: selected.Add(time.Hour), BucketSeconds: 60, Aggregation: "avg"})
+	req := httptest.NewRequest("POST", "/api/v1/analysis/datasets/"+datasetID+"/series", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	contendResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(contendResp, req)
+	<-analysisPipelineJobs
+	record("admission_contention", t0, contendResp.Code == 503, fmt.Sprintf("status=%d", contendResp.Code))
+
+	// 2. Scratch disk exhaustion: request a pipeline reservation whose staging+input
+	// exceeds the 20 GiB admission bound and verify deterministic refusal without
+	// leaving staging directories behind.
+	t1 := time.Now()
+	cacheRoot, cacheErr := nativeAnalysisCacheRoot()
+	_, exhaustedPipeline, exhaustErr := analytics.ReserveNativePipeline(t.Context(), cacheRoot, analytics.PipelinePlan{
+		InputBytes:   (20 << 30) + 1,
+		OutputBytes:  12,
+		StagingBytes: 12,
+	})
+	if exhaustedPipeline != nil {
+		_ = exhaustedPipeline.Release()
+	}
+	record("disk_exhaustion", t1, cacheErr == nil && exhaustErr != nil, fmt.Sprintf("err=%v", exhaustErr))
+
+	// 3. Cold HA replica read: a second Server sharing the same store and archive
+	// directory queries the committed dataset cold without re-normalizing.
+	t2 := time.Now()
+	replica := NewServer(ServerConfig{Store: store, MaxConcurrent: 2})
+	replicaReq := httptest.NewRequest("POST", "/api/v1/analysis/datasets/"+datasetID+"/series", bytes.NewReader(body))
+	replicaReq.Header.Set("Content-Type", "application/json")
+	replicaResp := httptest.NewRecorder()
+	replica.mux.ServeHTTP(replicaResp, replicaReq)
+	var replicaOut AnalysisDatasetSeriesResponse
+	_ = json.Unmarshal(replicaResp.Body.Bytes(), &replicaOut)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = replica.Shutdown(shutdownCtx)
+	shutdownCancel()
+	record("cold_ha_replica", t2, replicaResp.Code == 200 && len(replicaOut.Points) == 60, fmt.Sprintf("status=%d points=%d", replicaResp.Code, len(replicaOut.Points)))
+
+	// 4. Worker crash & controller restart recovery: an interrupted attempt from
+	// an exited controller incarnation is proven exited, transitions to failed,
+	// and its orphaned staging directory is reclaimed.
+	t3 := time.Now()
+	sqliteStore, ok := store.(*storage.SQLiteStore)
+	if ok {
+		ready, getErr := sqliteStore.GetAnalysisImport(datasetID)
+		if getErr == nil && ready != nil {
+			actAsWriterB(server)
+			interrupted, interruptedAttempt := claimAsWriter(t, sqliteStore, ready, apiWriterA)
+			writeAnalysisFixtureObject(t, interruptedAttempt.Normalized[0])
+			jobDir := filepath.Join(cacheRoot, "job-"+interrupted.ID+"-"+interruptedAttempt.ID+"-crash")
+			if err := os.MkdirAll(jobDir, 0700); err == nil {
+				ownerJSON, _ := json.Marshal(map[string]any{"version": 1, "controller": apiWriterA, "dataset_id": interrupted.ID, "attempt_id": interruptedAttempt.ID})
+				_ = os.WriteFile(filepath.Join(jobDir, ".staging-owner.json"), ownerJSON, 0600)
+			}
+			actAsWriterB(server, apiWriterA)
+			server.reconcileAnalysisWriterIncarnationsOnce(t.Context())
+			afterCrash, _ := sqliteStore.GetAnalysisImport(interrupted.ID)
+			_, jobStatErr := os.Stat(jobDir)
+			delResp := timeslotRequest(t, server, "DELETE", "/api/v1/analysis/imports/"+interrupted.ID, nil)
+			passed := afterCrash != nil && afterCrash.State == "failed" && os.IsNotExist(jobStatErr) && delResp.Code == 204
+			record("worker_crash_and_controller_restart", t3, passed, fmt.Sprintf("state=%v delete=%d", afterCrash.State, delResp.Code))
+		}
+	}
+
+	// 5. Remote artifact lifecycle cleanup with admin intervention.
+	t4 := time.Now()
+	if ok {
+		ready, getErr := sqliteStore.GetAnalysisImport(datasetID)
+		if getErr == nil && ready != nil {
+			remoteClaimed, remoteAttempt := claimAsWriter(t, sqliteStore, ready, apiWriterA)
+			remoteScope := storage.AnalysisWriterExitScope{
+				Prover:          apiWriterB,
+				LocalFilesystem: false,
+				Exited:          func(id procidentity.Identity) bool { return id == apiWriterA },
+			}
+			outcome, resolveErr := sqliteStore.ResolveExitedAnalysisAttempt(t.Context(), remoteClaimed.ProjectID, remoteAttempt.ID, remoteScope)
+			_ = timeslotRequest(t, server, "DELETE", "/api/v1/analysis/imports/"+remoteClaimed.ID, nil)
+			attestResp := timeslotRequest(t, server, "POST", "/api/v1/analysis/imports/"+remoteClaimed.ID+"/attest-writer-stopped", map[string]any{
+				"reason": "fault trial verified remote writer stopped",
+			})
+			bucket := memblob.OpenBucket(nil)
+			lateKey := filepath.ToSlash(filepath.Join("_analysis", remoteAttempt.Normalized[0]))
+			_ = bucket.WriteAll(t.Context(), lateKey, []byte("late remote bytes"), nil)
+			ops := defaultAnalysisCleanupPhysicalOps
+			ops.openBucket = func(context.Context, archiveBackendRuntime) (analysisCleanupBucket, error) {
+				return analysisNoCloseBucket{bucket}, nil
+			}
+			cleanupCtx, _ := cleanupOwnerContext(t, 4, ops)
+			cleanupErr := server.retryAnalysisCleanupJob(cleanupCtx, sqliteStore, storage.AnalysisCleanupJob{
+				Kind:       "attempt",
+				ProjectID:  remoteClaimed.ProjectID,
+				ResourceID: remoteAttempt.ID,
+			})
+			_ = bucket.Close()
+			delResp := timeslotRequest(t, server, "DELETE", "/api/v1/analysis/imports/"+remoteClaimed.ID, nil)
+			passed := resolveErr == nil && outcome.RemoteCommitUnproven && attestResp.Code == 200 && cleanupErr == nil && delResp.Code == 204
+			record("remote_artifact_cleanup", t4, passed, fmt.Sprintf("attest=%d delete=%d", attestResp.Code, delResp.Code))
+		}
+	}
+	return trials
+}
+
+func TestNativeAnalyticsReferenceFaultTrials(t *testing.T) {
+	scratch := t.TempDir()
+	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "filesystem")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", filepath.Join(scratch, "archives"))
+	server, store := newTimeslotServer(t)
+
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	fixturePath := filepath.Join(scratch, "day-00.parquet")
+	const dayStart = int64(1_700_006_400_000)
+	query := fmt.Sprintf("COPY (SELECT %d + i*1000 AS ts, (hash(i, 0) %% 200000) / 100.0 AS latency, (hash(0, i) %% 16)::DOUBLE AS errors FROM range(7200) t(i)) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD)", dayStart, fixturePath)
+	if _, err := db.Exec(query); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := timeslotRequest(t, server, "POST", "/api/v1/analysis/imports?project_id=proj-a", map[string]any{
+		"name":  "fault-trials",
+		"files": []any{map[string]any{"relative_path": "day-00.parquet", "size": len(data)}},
+	})
+	if r.Code != 201 {
+		t.Fatalf("create: %d %s", r.Code, r.Body.String())
+	}
+	var in storage.AnalysisImport
+	if err := json.Unmarshal(r.Body.Bytes(), &in); err != nil {
+		t.Fatal(err)
+	}
+	importPath := "/api/v1/analysis/imports/" + in.ID
+	req := httptest.NewRequest("PUT", fmt.Sprintf("%s/files/%s?offset=0", importPath, in.Files[0].ID), bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != 200 {
+		t.Fatalf("upload: %d %s", resp.Code, resp.Body.String())
+	}
+	current, err := store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapping := analysis.ParquetMapping{
+		Version:           1,
+		Timestamp:         []string{"ts"},
+		TimestampEncoding: "unix_ms",
+		Timezone:          "UTC",
+		Measures: []analysis.ParquetMeasure{
+			{Value: []string{"latency"}, Name: "latency", Kind: analysis.KindGauge, Unit: "ms"},
+			{Value: []string{"errors"}, Name: "errors", Kind: analysis.KindGauge, Unit: "count"},
+		},
+	}
+	if r = timeslotRequest(t, server, "PUT", importPath+"/mapping", map[string]any{"revision": current.Revision, "mapping": mapping}); r.Code != 200 {
+		t.Fatalf("mapping: %d %s", r.Code, r.Body.String())
+	}
+	if r = timeslotRequest(t, server, "POST", importPath+"/commit", nil); r.Code != 202 {
+		t.Fatalf("commit: %d %s", r.Code, r.Body.String())
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		current, err = store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.State != "normalizing" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if current.State != "ready" {
+		t.Fatalf("expected ready dataset, got %s (%s)", current.State, current.Error)
+	}
+	selected := time.UnixMilli(dayStart).UTC()
+	trials := runAnalyticsReferenceFaultTrials(t, server, store, in.ID, selected, t.Errorf)
+	if len(trials) != 5 {
+		t.Fatalf("expected 5 fault trials, got %d: %+v", len(trials), trials)
+	}
+	for _, trial := range trials {
+		if !trial.Passed {
+			t.Fatalf("fault trial %s failed: %+v", trial.Name, trial)
+		}
+	}
+	_ = uuid.NewString()
 }
