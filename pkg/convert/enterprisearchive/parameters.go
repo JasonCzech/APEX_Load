@@ -791,12 +791,18 @@ func rewriteKnownParameterReferencesMultipart(body *dsl.MultipartBody, names map
 		}
 		part.Filename = rewriteKnownParameterReferences(part.Filename, names)
 		part.ContentType = rewriteKnownParameterReferences(part.ContentType, names)
-		for key, value := range part.Headers {
-			rewrittenKey := rewriteKnownParameterReferences(key, names)
-			if rewrittenKey != key {
-				delete(part.Headers, key)
+		if len(part.Headers) > 0 {
+			keys := make([]string, 0, len(part.Headers))
+			for key := range part.Headers {
+				keys = append(keys, key)
 			}
-			part.Headers[rewrittenKey] = rewriteKnownParameterReferences(value, names)
+			sort.Strings(keys)
+			rewrittenHeaders := make(map[string]string, len(part.Headers))
+			for _, key := range keys {
+				rewrittenKey := rewriteKnownParameterReferences(key, names)
+				rewrittenHeaders[rewrittenKey] = rewriteKnownParameterReferences(part.Headers[key], names)
+			}
+			part.Headers = rewrittenHeaders
 		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -415,6 +416,20 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				// survive a controller restart. A new attempt remains fail-closed.
 				if errors.Is(baselineErr, errRecordingCaptureSourceNotFound) && attempt != nil && !attempt.created {
 					baselineSourcesUnavailable[index] = true
+					if claims[index] == nil {
+						if settings, ok := sample.ReadEffectiveSettings(persistent); !ok || !sample.HasNonDefaultRecordingConversionSettings(settings) {
+							if persistent.Protocol != "websocket" && len(persistent.Actions) > 0 {
+								if defaultSettings, resolveErr := sample.ResolveConversionPolicy(sample.PolicyResolutionInput{
+									EntryPoint: sample.EntryPointRecorderConvert,
+									Format:     "har",
+								}); resolveErr == nil {
+									sample.AttachEffectiveSettings(persistent, defaultSettings)
+								}
+							} else if persistent.Metadata != nil && persistent.Metadata.Import != nil && persistent.Metadata.Import.Preserved != nil {
+								delete(persistent.Metadata.Import.Preserved, sample.PreservedEffectiveSettingsKey)
+							}
+						}
+					}
 				} else {
 					status := http.StatusConflict
 					if errors.Is(baselineErr, errRecordingCaptureSourceNotFound) {
@@ -608,6 +623,20 @@ func recoveredImportDisclosureIdentity(script *dsl.Script) *dsl.Script {
 	}
 	if projected.Metadata != nil && projected.Metadata.Import != nil {
 		projected.Metadata.Import.Source = ""
+		if projected.Metadata.Import.Preserved != nil {
+			delete(projected.Metadata.Import.Preserved, sample.PreservedEffectiveSettingsKey)
+			if len(projected.Metadata.Import.Preserved) == 0 {
+				projected.Metadata.Import.Preserved = nil
+			}
+		}
+		if projected.Metadata.Import.SourceScriptName == "" &&
+			projected.Metadata.Import.Preserved == nil &&
+			len(projected.Metadata.Import.Inputs) == 0 {
+			projected.Metadata.Import = nil
+		}
+		if projected.Metadata.Import == nil && projected.Metadata.RuntimePolicy == nil {
+			projected.Metadata = nil
+		}
 	}
 	return projected
 }

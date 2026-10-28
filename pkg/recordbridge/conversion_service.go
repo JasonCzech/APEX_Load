@@ -159,20 +159,21 @@ type BrowserRecordingParameterizationSelection struct {
 }
 
 type BrowserHTTPScriptOptions struct {
-	AsyncScan           *bool
-	RecordingProfileID  string
-	ConversionPolicy    string
-	CorrelationMode     string
-	ResourceMode        string
-	PageTitleChecks     *bool
-	IncludeAssertions   *bool
-	InferExtractors     *bool
-	IncludeStaticAssets *bool
-	DisableSalesforce   *bool
-	SalesforceNative    *bool
-	AgentforceTransform *bool
-	HTTPVersionMode     string
-	Parameterize        bool
+	AsyncScan                     *bool
+	RecordingProfileID            string
+	ConversionPolicy              string
+	CorrelationMode               string
+	ResourceMode                  string
+	PageTitleChecks               *bool
+	IncludeAssertions             *bool
+	InferExtractors               *bool
+	IncludeStaticAssets           *bool
+	DisableSalesforce             *bool
+	SalesforceNative              *bool
+	AgentforceTransform           *bool
+	HTTPVersionMode               string
+	Parameterize                  bool
+	HasParameterizationSelections bool
 }
 
 type BrowserHTTPScript struct {
@@ -316,7 +317,9 @@ func ApplyBrowserRecordingParameterizationSelections(
 			continue
 		}
 		for _, id := range selection.SelectedIDs {
-			selected[strings.TrimSpace(id)] = true
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				selected[trimmed] = true
+			}
 		}
 	}
 	if len(selected) == 0 {
@@ -487,11 +490,12 @@ func ComposeRecordingSessionConversion(
 		profileID = strings.TrimSpace(req.ProfileID)
 	}
 
+	hasSelectedIDs := len(paramize.SelectedIDsForScript(req.ParameterizationSelections, 0)) > 0
 	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{
 		ConversionPolicy:    strings.TrimSpace(req.ConversionPolicy),
 		CorrelationMode:     strings.TrimSpace(req.CorrelationMode),
 		RecordingProfileID:  profileID,
-		Parameterize:        req.Parameterize,
+		Parameterize:        req.Parameterize || hasSelectedIDs,
 		DeferParameterize:   true,
 		PageTitleChecks:     req.PageTitleChecks,
 		ResourceMode:        strings.TrimSpace(req.ResourceMode),
@@ -590,7 +594,7 @@ func ComposeRecordingSessionConversion(
 					*warnings = result.Warnings
 					*unsupported = result.Diagnostics
 				}
-				if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && len(req.ParameterizationSelections) == 0 {
+				if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && !hasSelectedIDs {
 					var paramWarnings []string
 					if result.EffectiveSettings.ConversionPolicy == sample.ConversionPolicyUnifiedV1 {
 						paramWarnings = importreview.ApplyAutoParameterizationToScript(s)
@@ -600,7 +604,7 @@ func ComposeRecordingSessionConversion(
 					result.Warnings = append(result.Warnings, paramWarnings...)
 					*warnings = result.Warnings
 				}
-				if len(req.ParameterizationSelections) > 0 {
+				if hasSelectedIDs {
 					if _, err := importreview.ApplyParameterizationSelectionsToScript(s, 0, req.ParameterizationSelections); err != nil {
 						return err
 					}
@@ -706,27 +710,69 @@ func (s *Service) HandlePreviewRecordingConversion(w http.ResponseWriter, r *htt
 	})
 }
 
+func hasAnyBrowserRecordingParameterizationSelections(
+	selections []BrowserRecordingParameterizationSelection,
+) bool {
+	for _, selection := range selections {
+		for _, id := range selection.SelectedIDs {
+			if strings.TrimSpace(id) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasBrowserRecordingParameterizationSelectionsForScript(
+	selections []BrowserRecordingParameterizationSelection,
+	scriptIndex int,
+) bool {
+	for _, selection := range selections {
+		if selection.ScriptIndex != scriptIndex {
+			continue
+		}
+		for _, id := range selection.SelectedIDs {
+			if strings.TrimSpace(id) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (req BrowserRecordingConvertRequest) HTTPScriptOptions() BrowserHTTPScriptOptions {
 	profileID := strings.TrimSpace(req.RecordingProfileID)
 	if profileID == "" {
 		profileID = strings.TrimSpace(req.ProfileID)
 	}
 	return BrowserHTTPScriptOptions{
-		AsyncScan:           req.AsyncScan,
-		RecordingProfileID:  profileID,
-		ConversionPolicy:    req.ConversionPolicy,
-		CorrelationMode:     req.CorrelationMode,
-		ResourceMode:        req.ResourceMode,
-		PageTitleChecks:     req.PageTitleChecks,
-		IncludeAssertions:   req.IncludeAssertions,
-		InferExtractors:     req.InferExtractors,
-		IncludeStaticAssets: req.IncludeStaticAssets,
-		DisableSalesforce:   req.DisableSalesforce,
-		SalesforceNative:    req.SalesforceNative,
-		AgentforceTransform: req.AgentforceTransform,
-		HTTPVersionMode:     req.HTTPVersionMode,
-		Parameterize:        req.Parameterize,
+		AsyncScan:                     req.AsyncScan,
+		RecordingProfileID:            profileID,
+		ConversionPolicy:              req.ConversionPolicy,
+		CorrelationMode:               req.CorrelationMode,
+		ResourceMode:                  req.ResourceMode,
+		PageTitleChecks:               req.PageTitleChecks,
+		IncludeAssertions:             req.IncludeAssertions,
+		InferExtractors:               req.InferExtractors,
+		IncludeStaticAssets:           req.IncludeStaticAssets,
+		DisableSalesforce:             req.DisableSalesforce,
+		SalesforceNative:              req.SalesforceNative,
+		AgentforceTransform:           req.AgentforceTransform,
+		HTTPVersionMode:               req.HTTPVersionMode,
+		Parameterize:                  req.Parameterize,
+		HasParameterizationSelections: hasAnyBrowserRecordingParameterizationSelections(req.ParameterizationSelections),
 	}
+}
+
+func (req BrowserRecordingConvertRequest) HTTPScriptOptionsForIndex(scriptIndex int) BrowserHTTPScriptOptions {
+	opts := req.HTTPScriptOptions()
+	if scriptIndex >= 0 {
+		opts.HasParameterizationSelections = hasBrowserRecordingParameterizationSelectionsForScript(
+			req.ParameterizationSelections,
+			scriptIndex,
+		)
+	}
+	return opts
 }
 
 func (req BrowserRecordingPreviewRequest) ConvertRequest() BrowserRecordingConvertRequest {
@@ -784,13 +830,13 @@ func (s *Service) ConvertBrowserRecording(artifact *recbrowser.Session, info *Br
 		SplitAtTransactions: req.SplitAtTransactions,
 	})
 	projectID := importreview.NormalizeProjectID(info.ProjectID)
-	for _, sc := range result.Scripts {
+	for scriptIndex, sc := range result.Scripts {
 		if sc == nil {
 			continue
 		}
 		sc.ProjectID = projectID
 		AttachRecordingProvenance(sc, artifact, info)
-		if req.Parameterize {
+		if req.Parameterize && !hasBrowserRecordingParameterizationSelectionsForScript(req.ParameterizationSelections, scriptIndex) {
 			ApplyAutoParameterization(sc)
 		}
 	}
@@ -847,7 +893,7 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 		Profile:             profile,
 		EntryPoint:          sample.EntryPointBrowserHTTP,
 		HTTPVersionMode:     scriptOptions.HTTPVersionMode,
-		Parameterize:        scriptOptions.Parameterize,
+		Parameterize:        scriptOptions.Parameterize || scriptOptions.HasParameterizationSelections,
 	}
 	// The HTTP script times the transactions marked while recording with the
 	// browser script's start and end markers, each request carries the
@@ -935,7 +981,7 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 		BeforeFinalize: func(s *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error {
 			importreview.ApplyClientGeneratedUUIDs(s, artifact.HAR, result)
 			importreview.ApplyClientTimestamps(s, artifact.HAR, result)
-			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize {
+			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && !scriptOptions.HasParameterizationSelections {
 				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
 			}
 			*warnings = result.Warnings
@@ -1105,7 +1151,7 @@ func (s *Service) HandleVerifyBrowserRecording(w http.ResponseWriter, r *http.Re
 	result := s.ConvertBrowserRecording(artifact, info, req.Conversion)
 	scripts := append([]*dsl.Script(nil), result.Scripts...)
 	if req.Conversion.AlsoCreateHTTPScript {
-		generated, err := s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, req.Conversion.HTTPScriptOptions())
+		generated, err := s.CreateHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, req.Conversion.HTTPScriptOptionsForIndex(len(result.Scripts)))
 		if err != nil {
 			s.writeError(w, http.StatusUnprocessableEntity, "HTTP conversion failed: "+err.Error())
 			return
