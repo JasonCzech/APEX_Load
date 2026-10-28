@@ -363,8 +363,8 @@ func (s *Server) buildScenarioValidationContext(ctx context.Context, projectID s
 		Warning  string `json:"warning"`
 	}
 	type approvalComponentEntry struct {
-		ScriptID     string             `json:"script_id"`
-		JavaApproval string             `json:"java_approval"`
+		ScriptID     string              `json:"script_id"`
+		JavaApproval string              `json:"java_approval"`
 		Metadata     *dsl.ScriptMetadata `json:"metadata,omitempty"`
 	}
 	type secretScopeEntry struct {

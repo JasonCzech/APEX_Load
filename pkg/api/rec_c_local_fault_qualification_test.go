@@ -421,8 +421,8 @@ func (c *reccRealClient) StreamArchiveArtifact(ctx context.Context, request gene
 
 func buildRECCLoadScript(targetURL, loadToken, runID, testID string) *dsl.Script {
 	headers := map[string]string{
-		"Authorization":        "Bearer " + loadToken,
-		"X-Apexload-Fault-Run": runID,
+		"Authorization":         "Bearer " + loadToken,
+		"X-Apexload-Fault-Run":  runID,
 		"X-Apexload-Fault-Test": testID,
 	}
 	return &dsl.Script{
@@ -1290,8 +1290,10 @@ func runRECCNoSpareCapacity(t *testing.T, rep int) reccScenarioRepResult {
 	discoveryMS := msSince(discoveryStart)
 
 	resumeStart := time.Now()
-	// Stop survivor gen-c gracefully before restartPhaseB force-stops it so in-flight
-	// HTTP requests drain cleanly for exact archive transaction reconciliation.
+	// Ensure adopted survivor gen-c emits at least 1 request under gen2 before stopping
+	// it gracefully prior to restartPhaseB so multi-generation traffic is deterministically
+	// observed even on heavily loaded CI runners.
+	target.waitForGenerationTraffic(t, targetServer.URL, f.test.ID, gen2, 1)
 	rotatedToken := f.test.remoteRunSupervisionToken
 	stopRealGeneratorGracefully(t, ctx, genC, f.test.ID, gen2, rotatedToken[:])
 	if ok, _ := f.restartPhaseB(t); ok {

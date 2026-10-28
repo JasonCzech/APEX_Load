@@ -1054,4 +1054,3 @@ func (s *Server) loadRunByteAnalysisSelection(ctx context.Context, project strin
 	}
 	return points, selection.RunID, nil
 }
-

@@ -76,4 +76,3 @@ func (s *SQLiteStore) RebindAnalysisVolumeIdentity(identity string) error {
 	_, err := s.db.Exec(`INSERT INTO app_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, analysisVolumeIdentitySettingKey, identity, time.Now().UTC())
 	return err
 }
-

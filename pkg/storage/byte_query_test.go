@@ -14,7 +14,9 @@ func TestNativeByteQueryValidation(t *testing.T) {
 		func(*AnalyticsQuery) {},
 		func(q *AnalyticsQuery) { q.Filters = map[string]string{"action": "login"} },
 		func(q *AnalyticsQuery) { q.Filters = map[string]string{"protocol": "http"} },
-		func(q *AnalyticsQuery) { q.Filters = map[string]string{"protocol": "grpc", "action": "Greeter/SayHello"} },
+		func(q *AnalyticsQuery) {
+			q.Filters = map[string]string{"protocol": "grpc", "action": "Greeter/SayHello"}
+		},
 		func(q *AnalyticsQuery) { q.Filters = map[string]string{"protocol": "websocket", "action": "ws_send"} },
 		func(q *AnalyticsQuery) { q.Metric, q.Aggregation = "bytes_received", "p95" },
 		func(q *AnalyticsQuery) { q.Metric, q.Aggregation = "bytes_received_rate", "rate" },

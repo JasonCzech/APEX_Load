@@ -35,7 +35,7 @@ func interruptedEvacuationHasDurableFenceProof(test *ManagedTest) bool {
 }
 
 func targetShardAssignmentChanged(before, next map[string][]GeneratorShardSummary, target string) bool {
-	groups := make(map[string]struct{}, len(before)+len(next))
+	groups := make(map[string]struct{})
 	for group := range before {
 		groups[group] = struct{}{}
 	}

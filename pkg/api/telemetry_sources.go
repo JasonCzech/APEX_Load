@@ -1425,4 +1425,3 @@ func (l *telemetrySourceLedger) reconcileJointEvidence(
 	complete = originComplete && len(truncatedWindows) == 0
 	return complete, truncatedWindows, verified
 }
-

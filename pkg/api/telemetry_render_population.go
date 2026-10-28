@@ -435,7 +435,7 @@ func assignTelemetryPublicationLocked(test *ManagedTest, live *LiveMetrics) {
 			}
 			newestCtrl := telemetry.newestCollectedControllerAt
 			if newestCtrl.IsZero() {
-				if ! telemetry.newestCollectedAt.IsZero() && !distributed {
+				if !telemetry.newestCollectedAt.IsZero() && !distributed {
 					newestCtrl = telemetry.newestCollectedAt
 				} else if !distributed {
 					newestCtrl = telemetry.CollectedAt

@@ -1743,25 +1743,25 @@ func TestEvacuationRestartResumesThroughPhaseB(t *testing.T) {
 			survivor := newRestartGenerator(t, "gen-c", 10, false)
 			f, spare := newEvacuationRestartFixture(t, restartOptions{rollForwardOptions: rollForwardOptions{noCapacity: true}}, func(f *evacuationRollbackFixture) {
 				f.test.Assignment.TolerateGeneratorLoss = lossTolerant
-			if withLiveTables {
-				prepareLostTermLiveTables(t, f, "durable", "discard")
-				for index := range f.test.Groups {
-					base := *f.test.Groups[0].script
-					base.Actions = append([]dsl.Action{
-						{Name: "push", Type: "live_table", Params: map[string]any{"alias": "work", "operation": "push", "values": map[string]any{"value": "ok"}}},
-					}, base.Actions...)
-					f.test.Groups[index].ScriptID, f.test.Groups[index].ScriptName, f.test.Groups[index].script = base.ID, base.Name, &base
+				if withLiveTables {
+					prepareLostTermLiveTables(t, f, "durable", "discard")
+					for index := range f.test.Groups {
+						base := *f.test.Groups[0].script
+						base.Actions = append([]dsl.Action{
+							{Name: "push", Type: "live_table", Params: map[string]any{"alias": "work", "operation": "push", "values": map[string]any{"value": "ok"}}},
+						}, base.Actions...)
+						f.test.Groups[index].ScriptID, f.test.Groups[index].ScriptName, f.test.Groups[index].script = base.ID, base.Name, &base
+					}
 				}
+				f.runSurvivorShareOn(t, survivor)
+			})
+			if withLiveTables {
+				// Simulate a fresh successor process that must restore durable
+				// live tables from the store during Phase A.
+				f.tr.liveTablesMu.Lock()
+				delete(f.tr.liveTables, f.test.ID)
+				f.tr.liveTablesMu.Unlock()
 			}
-			f.runSurvivorShareOn(t, survivor)
-		})
-		if withLiveTables {
-			// Simulate a fresh successor process that must restore durable
-			// live tables from the store during Phase A.
-			f.tr.liveTablesMu.Lock()
-			delete(f.tr.liveTables, f.test.ID)
-			f.tr.liveTablesMu.Unlock()
-		}
 			f.spareGen.outcome = pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED
 			owner, generation := f.tr.leadership.executionLeaseTerm()
 			if err := f.tr.adoptOrphanedRuns(); err != nil {

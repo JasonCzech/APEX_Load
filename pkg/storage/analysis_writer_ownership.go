@@ -694,4 +694,3 @@ func (s *SQLiteStore) AttestAnalysisImportWritersStopped(ctx context.Context, pr
 	}
 	return in, nil
 }
-

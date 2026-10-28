@@ -253,4 +253,3 @@ func MergeIntervalByteEvidence(dstEvidence *string, dstSamples, dstSent, dstRece
 	}
 	*dstSamples += srcSamples
 }
-

@@ -8,21 +8,21 @@ import "math"
 // Response bytes describe the retained, possibly decoded/formatted representation
 // supplied to the wrapper; availability is explicit and old fields are unchanged.
 type JavaHTTPDiagnostics struct {
-	Version                   int      `json:"version"`
-	Mode                      string   `json:"mode"`
-	InputState                string   `json:"input_state"`
-	RequestEncodedBytes       int64    `json:"request_encoded_bytes"`
-	RequestDecodedBytes       *int64   `json:"request_decoded_bytes,omitempty"`
-	PreparedRequestBodyBytes  *int64   `json:"prepared_request_body_bytes,omitempty"`
-	AppliedRequestCompression string   `json:"applied_request_compression,omitempty"`
-	ResponseState             string   `json:"response_state"`
-	ResponseRetainedBytes     *int64   `json:"response_retained_bytes,omitempty"`
-	ResponseBase64Bytes       *int64   `json:"response_base64_bytes,omitempty"`
-	Base64DecodeMs            *float64                          `json:"base64_decode_ms,omitempty"`
-	Base64EncodeMs            *float64                          `json:"base64_encode_ms,omitempty"`
-	EnclosingMs               float64                           `json:"enclosing_ms"`
-	ObjectFootprint           string                            `json:"object_footprint"`
-	ContainedObjectFootprint  *JavaHTTPObjectFootprintEvidence  `json:"contained_object_footprint,omitempty"`
+	Version                   int                              `json:"version"`
+	Mode                      string                           `json:"mode"`
+	InputState                string                           `json:"input_state"`
+	RequestEncodedBytes       int64                            `json:"request_encoded_bytes"`
+	RequestDecodedBytes       *int64                           `json:"request_decoded_bytes,omitempty"`
+	PreparedRequestBodyBytes  *int64                           `json:"prepared_request_body_bytes,omitempty"`
+	AppliedRequestCompression string                           `json:"applied_request_compression,omitempty"`
+	ResponseState             string                           `json:"response_state"`
+	ResponseRetainedBytes     *int64                           `json:"response_retained_bytes,omitempty"`
+	ResponseBase64Bytes       *int64                           `json:"response_base64_bytes,omitempty"`
+	Base64DecodeMs            *float64                         `json:"base64_decode_ms,omitempty"`
+	Base64EncodeMs            *float64                         `json:"base64_encode_ms,omitempty"`
+	EnclosingMs               float64                          `json:"enclosing_ms"`
+	ObjectFootprint           string                           `json:"object_footprint"`
+	ContainedObjectFootprint  *JavaHTTPObjectFootprintEvidence `json:"contained_object_footprint,omitempty"`
 }
 
 const (

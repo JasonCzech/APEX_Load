@@ -115,9 +115,9 @@ type durableJointStream struct {
 	Source              string
 	ExecutionGeneration uint64
 	Epoch               string
-	AcceptedRanges      [][2]uint64           `json:",omitempty"`
-	IgnoredRanges       [][2]uint64           `json:",omitempty"`
-	DroppedRanges       [][2]uint64           `json:",omitempty"`
+	AcceptedRanges      [][2]uint64            `json:",omitempty"`
+	IgnoredRanges       [][2]uint64            `json:",omitempty"`
+	DroppedRanges       [][2]uint64            `json:",omitempty"`
 	Windows             []TelemetryJointWindow `json:",omitempty"`
 	DroppedWindows      []TelemetryJointWindow `json:",omitempty"`
 	FirstStartUnixMs    int64                  `json:",omitempty"`
@@ -126,26 +126,26 @@ type durableJointStream struct {
 }
 
 type durableRenderPopulation struct {
-	ReferenceClientID string                       `json:"reference_client_id,omitempty"`
-	Epoch             string                       `json:"epoch,omitempty"`
-	FirstSequence     uint64                       `json:"first_sequence,omitempty"`
-	LastSequence      uint64                       `json:"last_sequence,omitempty"`
-	PublishedEligible int64                        `json:"published_eligible"`
-	Eligible          int64                        `json:"eligible"`
-	Rendered          int64                        `json:"rendered"`
-	Superseded        int64                        `json:"superseded"`
-	Unqualified       map[string]int64             `json:"unqualified,omitempty"`
-	Unreported        int64                        `json:"unreported"`
-	Ineligible        int64                        `json:"ineligible,omitempty"`
-	Unknown           int64                        `json:"unknown,omitempty"`
-	SampledFrom       *time.Time                   `json:"sampled_from,omitempty"`
-	PriorEpochs       []TelemetryRenderPopulation  `json:"prior_epochs,omitempty"`
-	EndToEndDigest    *engine.TDigestSnapshot      `json:"end_to_end_digest,omitempty"`
-	EndToEndMax       float64                      `json:"end_to_end_max,omitempty"`
-	EndToEndExcluded  map[string]int64             `json:"end_to_end_excluded,omitempty"`
-	NewestDigest      *engine.TDigestSnapshot      `json:"newest_digest,omitempty"`
-	NewestMax         float64                      `json:"newest_max,omitempty"`
-	DeliverySignal    string                       `json:"delivery_signal,omitempty"`
+	ReferenceClientID string                      `json:"reference_client_id,omitempty"`
+	Epoch             string                      `json:"epoch,omitempty"`
+	FirstSequence     uint64                      `json:"first_sequence,omitempty"`
+	LastSequence      uint64                      `json:"last_sequence,omitempty"`
+	PublishedEligible int64                       `json:"published_eligible"`
+	Eligible          int64                       `json:"eligible"`
+	Rendered          int64                       `json:"rendered"`
+	Superseded        int64                       `json:"superseded"`
+	Unqualified       map[string]int64            `json:"unqualified,omitempty"`
+	Unreported        int64                       `json:"unreported"`
+	Ineligible        int64                       `json:"ineligible,omitempty"`
+	Unknown           int64                       `json:"unknown,omitempty"`
+	SampledFrom       *time.Time                  `json:"sampled_from,omitempty"`
+	PriorEpochs       []TelemetryRenderPopulation `json:"prior_epochs,omitempty"`
+	EndToEndDigest    *engine.TDigestSnapshot     `json:"end_to_end_digest,omitempty"`
+	EndToEndMax       float64                     `json:"end_to_end_max,omitempty"`
+	EndToEndExcluded  map[string]int64            `json:"end_to_end_excluded,omitempty"`
+	NewestDigest      *engine.TDigestSnapshot     `json:"newest_digest,omitempty"`
+	NewestMax         float64                     `json:"newest_max,omitempty"`
+	DeliverySignal    string                      `json:"delivery_signal,omitempty"`
 }
 
 func validDurableRenderPopulation(d *durableRenderPopulation) bool {

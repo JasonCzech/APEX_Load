@@ -547,7 +547,8 @@ func (tr *TestRunner) restartEvacuationReplacement(b *distributedExecutionBacken
 		return false
 	case status == "STOPPING" && strings.HasPrefix(reason, uncertainEvacuationReasonPrefix):
 		// The reshard's fail-closed path holds the run and stops what it touched.
-		slog.Warn("restart of a missing evacuation replacement failed closed", "test_id", test.ID, "error", err)
+		safeTestID := strings.ReplaceAll(strings.ReplaceAll(test.ID, "\n", ""), "\r", "")
+		slog.Warn("restart of a missing evacuation replacement failed closed", "test_id", safeTestID, "error", err)
 		return false
 	case status != "RUNNING" && status != "PAUSED":
 		// A stop requested meanwhile owns the run, and Phase B opens the
@@ -555,7 +556,8 @@ func (tr *TestRunner) restartEvacuationReplacement(b *distributedExecutionBacken
 		// there is nothing to resume.
 		if len(resume.adopted) == 0 {
 			if _, err := tr.finishStoppedRunEvacuationRestartWithoutSurvivor(executionCtx, b, test); err != nil {
-				slog.Warn("finish stopped evacuation restart without a survivor", "test_id", test.ID, "error", err)
+				safeTestID := strings.ReplaceAll(strings.ReplaceAll(test.ID, "\n", ""), "\r", "")
+				slog.Warn("finish stopped evacuation restart without a survivor", "test_id", safeTestID, "error", err)
 			}
 			return false
 		}

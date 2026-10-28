@@ -87,28 +87,28 @@ func (m JavaHTTPByteMoments) MeanBytes() (float64, bool) {
 // zero means a legacy peer that did not count it, and callers fall back to their
 // own action count. It cannot establish Java object footprint or network delivery.
 type JavaHTTPSummary struct {
-	Population                int64                  `json:"population,omitempty"`
-	RequestCompressionNone    int64                  `json:"request_compression_none"`
-	RequestCompressionGzip    int64                  `json:"request_compression_gzip"`
-	RequestCompressionDeflate int64                  `json:"request_compression_deflate"`
-	Version                   int                    `json:"version"`
-	Mode                      string                 `json:"mode"`
-	Samples                   int64                  `json:"samples"`
-	InvalidSamples            int64                  `json:"invalid_samples"`
-	SampleLimitReached        bool                   `json:"sample_limit_reached,omitempty"`
-	Incomplete                bool                   `json:"incomplete,omitempty"`
-	RequestEncoded            JavaHTTPByteMoments    `json:"request_encoded"`
-	RequestDecoded            JavaHTTPByteMoments    `json:"request_decoded"`
-	PreparedRequestBody       JavaHTTPByteMoments    `json:"prepared_request_body"`
-	ResponseRetained          JavaHTTPByteMoments    `json:"response_retained"`
-	ResponseBase64            JavaHTTPByteMoments    `json:"response_base64"`
-	DecodedPerEncoded         JavaHTTPBytePair       `json:"decoded_per_encoded"`
-	PreparedPerDecoded        JavaHTTPBytePair       `json:"prepared_per_decoded"`
-	Base64PerRetained         JavaHTTPBytePair       `json:"base64_per_retained"`
-	Base64Decode              DiagnosticDistribution `json:"base64_decode_ms"`
-	Base64Encode              DiagnosticDistribution `json:"base64_encode_ms"`
-	Enclosing                 DiagnosticDistribution `json:"enclosing_ms"`
-	Base64Work                JavaHTTPWorkPair       `json:"base64_work"`
+	Population                int64                           `json:"population,omitempty"`
+	RequestCompressionNone    int64                           `json:"request_compression_none"`
+	RequestCompressionGzip    int64                           `json:"request_compression_gzip"`
+	RequestCompressionDeflate int64                           `json:"request_compression_deflate"`
+	Version                   int                             `json:"version"`
+	Mode                      string                          `json:"mode"`
+	Samples                   int64                           `json:"samples"`
+	InvalidSamples            int64                           `json:"invalid_samples"`
+	SampleLimitReached        bool                            `json:"sample_limit_reached,omitempty"`
+	Incomplete                bool                            `json:"incomplete,omitempty"`
+	RequestEncoded            JavaHTTPByteMoments             `json:"request_encoded"`
+	RequestDecoded            JavaHTTPByteMoments             `json:"request_decoded"`
+	PreparedRequestBody       JavaHTTPByteMoments             `json:"prepared_request_body"`
+	ResponseRetained          JavaHTTPByteMoments             `json:"response_retained"`
+	ResponseBase64            JavaHTTPByteMoments             `json:"response_base64"`
+	DecodedPerEncoded         JavaHTTPBytePair                `json:"decoded_per_encoded"`
+	PreparedPerDecoded        JavaHTTPBytePair                `json:"prepared_per_decoded"`
+	Base64PerRetained         JavaHTTPBytePair                `json:"base64_per_retained"`
+	Base64Decode              DiagnosticDistribution          `json:"base64_decode_ms"`
+	Base64Encode              DiagnosticDistribution          `json:"base64_encode_ms"`
+	Enclosing                 DiagnosticDistribution          `json:"enclosing_ms"`
+	Base64Work                JavaHTTPWorkPair                `json:"base64_work"`
 	ResponseUnavailable       int64                           `json:"response_unavailable"`
 	ResponseWindow            int64                           `json:"response_window"`
 	ResponseDiscarded         int64                           `json:"response_discarded"`

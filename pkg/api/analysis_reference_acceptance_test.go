@@ -91,9 +91,9 @@ type analyticsReferenceResults struct {
 	// Peak RSS sampled during the import and the queries: of the controller
 	// process, of its native worker processes, and of the two together at
 	// one instant. Spill is bounded by SpillLimit but not measured.
-	PeakControllerRSSBytes int64    `json:"peak_controller_rss_bytes"`
-	PeakWorkerRSSBytes     int64    `json:"peak_worker_rss_bytes"`
-	PeakCombinedRSSBytes   int64    `json:"peak_combined_rss_bytes"`
+	PeakControllerRSSBytes int64                          `json:"peak_controller_rss_bytes"`
+	PeakWorkerRSSBytes     int64                          `json:"peak_worker_rss_bytes"`
+	PeakCombinedRSSBytes   int64                          `json:"peak_combined_rss_bytes"`
 	MemoryLimit            string                         `json:"memory_limit"`
 	SpillLimit             string                         `json:"spill_limit"`
 	FaultTrials            []analyticsReferenceFaultTrial `json:"fault_trials,omitempty"`
