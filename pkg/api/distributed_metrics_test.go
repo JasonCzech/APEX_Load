@@ -781,13 +781,16 @@ func TestBuildLiveMetricsFromDistributedBatchNetworkPhasesAndErrorBreakdown(t *t
 func TestAggregateDistributedGeneratorStats(t *testing.T) {
 	t.Run("CPU averages over active pods, max preserved, GC pause maxed", func(t *testing.T) {
 		stats := []generatorrpc.GeneratorStats{
-			{ActiveVUsers: 5, CPUPercent: 90, MemoryBytes: 100, GCPauseMs: 120},
-			{ActiveVUsers: 5, CPUPercent: 60, MemoryBytes: 200, GCPauseMs: 40},
-			{ActiveVUsers: 5, CPUPercent: 30, MemoryBytes: 300, GCPauseMs: 0},
+			{ActiveVUsers: 5, CPUPercent: 90, CPUFreePct: 10, MemoryBytes: 100, MemFreeMB: 1000, NetSentKbps: 10, NetRecvKbps: 20, DiskReadKbps: 30, DiskWriteKbps: 40, ContainerCPUPeriodsDelta: 5, GCPauseMs: 120},
+			{ActiveVUsers: 5, CPUPercent: 60, CPUFreePct: 40, MemoryBytes: 200, MemFreeMB: 2000, NetSentKbps: 15, NetRecvKbps: 25, DiskReadKbps: 35, DiskWriteKbps: 45, ContainerCPUPeriodsDelta: 7, GCPauseMs: 40},
+			{ActiveVUsers: 5, CPUPercent: 30, CPUFreePct: 70, MemoryBytes: 300, MemFreeMB: 3000, NetSentKbps: 25, NetRecvKbps: 35, DiskReadKbps: 45, DiskWriteKbps: 55, ContainerCPUPeriodsDelta: 9, GCPauseMs: 0},
 		}
 		agg := aggregateDistributedGeneratorStats(stats)
 		if agg.CPUPercent != 60 {
 			t.Fatalf("CPUPercent = %v, want 60 (avg of 90,60,30)", agg.CPUPercent)
+		}
+		if agg.CPUFreePct != 40 {
+			t.Fatalf("CPUFreePct = %v, want 40 (avg of 10,40,70)", agg.CPUFreePct)
 		}
 		if agg.CPUProcessPctMax != 90 {
 			t.Fatalf("CPUProcessPctMax = %v, want 90", agg.CPUProcessPctMax)
@@ -798,19 +801,38 @@ func TestAggregateDistributedGeneratorStats(t *testing.T) {
 		if agg.MemoryBytes != 600 {
 			t.Fatalf("MemoryBytes = %d, want 600 (sum)", agg.MemoryBytes)
 		}
+		if agg.MemFreeMB != 6000 {
+			t.Fatalf("MemFreeMB = %v, want 6000 (sum)", agg.MemFreeMB)
+		}
+		if agg.NetSentKbps != 50 || agg.NetRecvKbps != 80 || agg.DiskReadKbps != 110 || agg.DiskWriteKbps != 140 {
+			t.Fatalf("I/O rates = net(%v,%v) disk(%v,%v), want net(50,80) disk(110,140)", agg.NetSentKbps, agg.NetRecvKbps, agg.DiskReadKbps, agg.DiskWriteKbps)
+		}
+		if agg.ContainerCPUPeriodsDelta != 21 {
+			t.Fatalf("ContainerCPUPeriodsDelta = %d, want 21 (sum)", agg.ContainerCPUPeriodsDelta)
+		}
 		if agg.ActiveVUsers != 15 {
 			t.Fatalf("ActiveVUsers = %d, want 15 (sum)", agg.ActiveVUsers)
+		}
+		resources := resourcesFromGeneratorStats(agg)
+		if resources.CPUFreePct != 40 || resources.MemFreeMb != 6000 ||
+			resources.NetSentKbps != 50 || resources.NetRecvKbps != 80 ||
+			resources.DiskReadKbps != 110 || resources.DiskWriteKbps != 140 ||
+			resources.ContainerCPUPeriodsDelta != 21 {
+			t.Fatalf("resourcesFromGeneratorStats = %#v, want CPUFreePct/MemFreeMb/Net/Disk/ContainerCPUPeriodsDelta mapped", resources)
 		}
 	})
 
 	t.Run("idle pods are excluded from the CPU average", func(t *testing.T) {
 		stats := []generatorrpc.GeneratorStats{
-			{ActiveVUsers: 10, CPUPercent: 90},
-			{ActiveVUsers: 0, CPUPercent: 10},
+			{ActiveVUsers: 10, CPUPercent: 90, CPUFreePct: 10},
+			{ActiveVUsers: 0, CPUPercent: 10, CPUFreePct: 90},
 		}
 		agg := aggregateDistributedGeneratorStats(stats)
 		if agg.CPUPercent != 90 {
 			t.Fatalf("CPUPercent = %v, want 90 (idle pod excluded)", agg.CPUPercent)
+		}
+		if agg.CPUFreePct != 10 {
+			t.Fatalf("CPUFreePct = %v, want 10 (idle pod excluded)", agg.CPUFreePct)
 		}
 		if agg.CPUProcessPctMax != 90 {
 			t.Fatalf("CPUProcessPctMax = %v, want 90", agg.CPUProcessPctMax)
@@ -819,12 +841,15 @@ func TestAggregateDistributedGeneratorStats(t *testing.T) {
 
 	t.Run("all-idle falls back to averaging every pod", func(t *testing.T) {
 		stats := []generatorrpc.GeneratorStats{
-			{ActiveVUsers: 0, CPUPercent: 40},
-			{ActiveVUsers: 0, CPUPercent: 20},
+			{ActiveVUsers: 0, CPUPercent: 40, CPUFreePct: 60},
+			{ActiveVUsers: 0, CPUPercent: 20, CPUFreePct: 80},
 		}
 		agg := aggregateDistributedGeneratorStats(stats)
 		if agg.CPUPercent != 30 {
 			t.Fatalf("CPUPercent = %v, want 30 (fallback avg of all)", agg.CPUPercent)
+		}
+		if agg.CPUFreePct != 70 {
+			t.Fatalf("CPUFreePct = %v, want 70 (fallback avg of all)", agg.CPUFreePct)
 		}
 	})
 }

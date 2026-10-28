@@ -184,6 +184,9 @@ type archiveResourceSample struct {
 	CPUSystemPct                      float64   `json:"cpu_system_pct,omitempty"`
 	CPUIOWaitPct                      float64   `json:"cpu_iowait_pct,omitempty"`
 	CPUStealPct                       float64   `json:"cpu_steal_pct,omitempty"`
+	Load1                             float64   `json:"load1,omitempty"`
+	Load5                             float64   `json:"load5,omitempty"`
+	Load15                            float64   `json:"load15,omitempty"`
 	ThreadCount                       int32     `json:"thread_count,omitempty"`
 	OpenFDCount                       int32     `json:"open_fd_count,omitempty"`
 	GoroutineCount                    int32     `json:"goroutine_count,omitempty"`
@@ -207,7 +210,10 @@ type archiveResourceSample struct {
 	TCPRetransmitsPerSec              float64   `json:"tcp_retransmits_per_sec,omitempty"`
 	TCPEstablished                    int       `json:"tcp_established,omitempty"`
 	TCPTimeWait                       int       `json:"tcp_time_wait,omitempty"`
+	EphemeralPortUtilizationPct       float64   `json:"ephemeral_port_utilization_pct,omitempty"`
 	DiskIOTimePct                     float64   `json:"disk_io_time_pct,omitempty"`
+	DiskWeightedIOTimePct             float64   `json:"disk_weighted_io_time_pct,omitempty"`
+	DiskInProgress                    uint64    `json:"disk_in_progress,omitempty"`
 
 	// ContainerCPUPeriodsDelta is the CFS periods since the previous sample.
 	ContainerCPUPeriodsDelta uint64 `json:"container_cpu_periods_delta,omitempty"`
@@ -727,6 +733,9 @@ type parquetResourceSample struct {
 	CPUSystemPct                      float64 `parquet:"name=cpu_system_pct, type=DOUBLE"`
 	CPUIOWaitPct                      float64 `parquet:"name=cpu_iowait_pct, type=DOUBLE"`
 	CPUStealPct                       float64 `parquet:"name=cpu_steal_pct, type=DOUBLE"`
+	Load1                             float64 `parquet:"name=load1, type=DOUBLE"`
+	Load5                             float64 `parquet:"name=load5, type=DOUBLE"`
+	Load15                            float64 `parquet:"name=load15, type=DOUBLE"`
 	ThreadCount                       int32   `parquet:"name=thread_count, type=INT32"`
 	OpenFDCount                       int32   `parquet:"name=open_fd_count, type=INT32"`
 	GoroutineCount                    int32   `parquet:"name=goroutine_count, type=INT32"`
@@ -750,7 +759,10 @@ type parquetResourceSample struct {
 	TCPRetransmitsPerSec              float64 `parquet:"name=tcp_retransmits_per_sec, type=DOUBLE"`
 	TCPEstablished                    int32   `parquet:"name=tcp_established, type=INT32"`
 	TCPTimeWait                       int32   `parquet:"name=tcp_time_wait, type=INT32"`
+	EphemeralPortUtilizationPct       float64 `parquet:"name=ephemeral_port_utilization_pct, type=DOUBLE"`
 	DiskIOTimePct                     float64 `parquet:"name=disk_io_time_pct, type=DOUBLE"`
+	DiskWeightedIOTimePct             float64 `parquet:"name=disk_weighted_io_time_pct, type=DOUBLE"`
+	DiskInProgress                    int64   `parquet:"name=disk_in_progress, type=INT64"`
 }
 
 type parquetIntervalSummary struct {
@@ -1317,6 +1329,9 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 		CPUSystemPct:                      resources.CPUSystemPct,
 		CPUIOWaitPct:                      resources.CPUIOWaitPct,
 		CPUStealPct:                       resources.CPUStealPct,
+		Load1:                             resources.Load1,
+		Load5:                             resources.Load5,
+		Load15:                            resources.Load15,
 		ThreadCount:                       resources.ThreadCount,
 		OpenFDCount:                       resources.OpenFDCount,
 		GoroutineCount:                    resources.GoroutineCount,
@@ -1340,7 +1355,10 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 		TCPRetransmitsPerSec:              resources.TCPRetransmitsPerSec,
 		TCPEstablished:                    resources.TCPEstablished,
 		TCPTimeWait:                       resources.TCPTimeWait,
+		EphemeralPortUtilizationPct:       resources.EphemeralPortUtilizationPct,
 		DiskIOTimePct:                     resources.DiskIOTimePct,
+		DiskWeightedIOTimePct:             resources.DiskWeightedIOTimePct,
+		DiskInProgress:                    resources.DiskInProgress,
 		ContainerCPUPeriodsDelta:          resources.ContainerCPUPeriodsDelta,
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
@@ -1829,6 +1847,9 @@ func toParquetResources(items []archiveResourceSample) []parquetResourceSample {
 			CPUSystemPct:                      item.CPUSystemPct,
 			CPUIOWaitPct:                      item.CPUIOWaitPct,
 			CPUStealPct:                       item.CPUStealPct,
+			Load1:                             item.Load1,
+			Load5:                             item.Load5,
+			Load15:                            item.Load15,
 			ThreadCount:                       item.ThreadCount,
 			OpenFDCount:                       item.OpenFDCount,
 			GoroutineCount:                    item.GoroutineCount,
@@ -1852,7 +1873,10 @@ func toParquetResources(items []archiveResourceSample) []parquetResourceSample {
 			TCPRetransmitsPerSec:              item.TCPRetransmitsPerSec,
 			TCPEstablished:                    int32(item.TCPEstablished),
 			TCPTimeWait:                       int32(item.TCPTimeWait),
+			EphemeralPortUtilizationPct:       item.EphemeralPortUtilizationPct,
 			DiskIOTimePct:                     item.DiskIOTimePct,
+			DiskWeightedIOTimePct:             item.DiskWeightedIOTimePct,
+			DiskInProgress:                    int64(item.DiskInProgress),
 		})
 	}
 	return rows

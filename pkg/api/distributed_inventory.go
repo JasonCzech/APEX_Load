@@ -186,7 +186,13 @@ func resourcesFromGeneratorStats(stats generatorrpc.GeneratorStats) *engine.Syst
 	return &engine.SystemResources{
 		CPUProcessPct:                     stats.CPUPercent,
 		CPUProcessPctMax:                  stats.CPUProcessPctMax,
+		CPUFreePct:                        stats.CPUFreePct,
 		MemProcessMb:                      float64(stats.MemoryBytes) / (1024 * 1024),
+		MemFreeMb:                         stats.MemFreeMB,
+		NetSentKbps:                       stats.NetSentKbps,
+		NetRecvKbps:                       stats.NetRecvKbps,
+		DiskReadKbps:                      stats.DiskReadKbps,
+		DiskWriteKbps:                     stats.DiskWriteKbps,
 		CPUUserPct:                        stats.CPUUserPct,
 		CPUSystemPct:                      stats.CPUSystemPct,
 		CPUIOWaitPct:                      stats.CPUIOWaitPct,
@@ -204,6 +210,7 @@ func resourcesFromGeneratorStats(stats generatorrpc.GeneratorStats) *engine.Syst
 		ContainerCPULimitCores:            stats.ContainerCPULimitCores,
 		ContainerCPUUsagePct:              stats.ContainerCPUUsagePct,
 		ContainerCPUThrottledPeriodsDelta: stats.ContainerCPUThrottledPeriodsDelta,
+		ContainerCPUPeriodsDelta:          stats.ContainerCPUPeriodsDelta,
 		ContainerCPUThrottledSecondsRate:  stats.ContainerCPUThrottledSecondsRate,
 		ContainerMemoryWorkingSetMB:       stats.ContainerMemoryWorkingSetMB,
 		ContainerMemoryLimitMB:            stats.ContainerMemoryLimitMB,
@@ -226,13 +233,13 @@ func resourcesFromGeneratorStats(stats generatorrpc.GeneratorStats) *engine.Syst
 
 // aggregateDistributedGeneratorStats rolls up per-generator stats into one fleet
 // snapshot, using semantics appropriate to each field:
-//   - additive counters/rates (memory, goroutines, FDs, *Delta, *PerSec, TCP
-//     counts, container capacity totals) are SUMMED;
+//   - additive counters/rates (memory, goroutines, FDs, *Delta, *PerSec, *Kbps,
+//     TCP counts, container capacity totals) are SUMMED;
 //   - saturation gauges (usage %, load averages, disk %, GC pause) take the worst
 //     (MAX) pod;
-//   - process CPU% is AVERAGED across generators actively running VUsers —
-//     summing it would exceed 100% and is meaningless as a single line. The
-//     worst-pod process CPU% is preserved in CPUProcessPctMax.
+//   - process CPU% and free CPU% are AVERAGED across generators actively running
+//     VUsers — summing them would exceed 100% and is meaningless as a single
+//     line. The worst-pod process CPU% is preserved in CPUProcessPctMax.
 //
 // Per-generator detail remains available via the generator-resource snapshots.
 func aggregateDistributedGeneratorStats(stats []generatorrpc.GeneratorStats) generatorrpc.GeneratorStats {
@@ -241,17 +248,24 @@ func aggregateDistributedGeneratorStats(stats []generatorrpc.GeneratorStats) gen
 		return combined
 	}
 	cpuSum := 0.0
+	cpuFreeSum := 0.0
 	activeCount := 0
 	for _, s := range stats {
 		combined.ActiveVUsers += s.ActiveVUsers
 		combined.CompletedIterations += s.CompletedIterations
 		combined.MemoryBytes += s.MemoryBytes
+		combined.MemFreeMB += s.MemFreeMB
+		combined.NetSentKbps += s.NetSentKbps
+		combined.NetRecvKbps += s.NetRecvKbps
+		combined.DiskReadKbps += s.DiskReadKbps
+		combined.DiskWriteKbps += s.DiskWriteKbps
 		combined.GoroutineCount += s.GoroutineCount
 		combined.ThreadCount += s.ThreadCount
 		combined.OpenFDCount += s.OpenFDCount
 		combined.GCCountDelta += s.GCCountDelta
 		combined.ContainerCPULimitCores += s.ContainerCPULimitCores
 		combined.ContainerCPUThrottledPeriodsDelta += s.ContainerCPUThrottledPeriodsDelta
+		combined.ContainerCPUPeriodsDelta += s.ContainerCPUPeriodsDelta
 		combined.ContainerCPUThrottledSecondsRate += s.ContainerCPUThrottledSecondsRate
 		combined.ContainerMemoryWorkingSetMB += s.ContainerMemoryWorkingSetMB
 		combined.ContainerMemoryLimitMB += s.ContainerMemoryLimitMB
@@ -285,17 +299,22 @@ func aggregateDistributedGeneratorStats(stats []generatorrpc.GeneratorStats) gen
 
 		if s.ActiveVUsers > 0 {
 			cpuSum += s.CPUPercent
+			cpuFreeSum += s.CPUFreePct
 			activeCount++
 		}
 	}
 	if activeCount > 0 {
 		combined.CPUPercent = cpuSum / float64(activeCount)
+		combined.CPUFreePct = cpuFreeSum / float64(activeCount)
 	} else {
 		total := 0.0
+		totalFree := 0.0
 		for _, s := range stats {
 			total += s.CPUPercent
+			totalFree += s.CPUFreePct
 		}
 		combined.CPUPercent = total / float64(len(stats))
+		combined.CPUFreePct = totalFree / float64(len(stats))
 	}
 	return combined
 }

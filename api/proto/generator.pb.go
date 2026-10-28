@@ -7650,6 +7650,13 @@ type GeneratorStats struct {
 	DiskIoTimePct                     float64                `protobuf:"fixed64,35,opt,name=disk_io_time_pct,json=diskIoTimePct,proto3" json:"disk_io_time_pct,omitempty"`
 	DiskWeightedIoTimePct             float64                `protobuf:"fixed64,36,opt,name=disk_weighted_io_time_pct,json=diskWeightedIoTimePct,proto3" json:"disk_weighted_io_time_pct,omitempty"`
 	DiskInProgress                    uint64                 `protobuf:"varint,37,opt,name=disk_in_progress,json=diskInProgress,proto3" json:"disk_in_progress,omitempty"`
+	CpuFreePct                        float64                `protobuf:"fixed64,39,opt,name=cpu_free_pct,json=cpuFreePct,proto3" json:"cpu_free_pct,omitempty"`
+	MemFreeMb                         float64                `protobuf:"fixed64,40,opt,name=mem_free_mb,json=memFreeMb,proto3" json:"mem_free_mb,omitempty"`
+	NetSentKbps                       float64                `protobuf:"fixed64,41,opt,name=net_sent_kbps,json=netSentKbps,proto3" json:"net_sent_kbps,omitempty"`
+	NetRecvKbps                       float64                `protobuf:"fixed64,42,opt,name=net_recv_kbps,json=netRecvKbps,proto3" json:"net_recv_kbps,omitempty"`
+	DiskReadKbps                      float64                `protobuf:"fixed64,43,opt,name=disk_read_kbps,json=diskReadKbps,proto3" json:"disk_read_kbps,omitempty"`
+	DiskWriteKbps                     float64                `protobuf:"fixed64,44,opt,name=disk_write_kbps,json=diskWriteKbps,proto3" json:"disk_write_kbps,omitempty"`
+	ContainerCpuPeriodsDelta          uint64                 `protobuf:"varint,45,opt,name=container_cpu_periods_delta,json=containerCpuPeriodsDelta,proto3" json:"container_cpu_periods_delta,omitempty"`
 	unknownFields                     protoimpl.UnknownFields
 	sizeCache                         protoimpl.SizeCache
 }
@@ -7946,6 +7953,55 @@ func (x *GeneratorStats) GetDiskWeightedIoTimePct() float64 {
 func (x *GeneratorStats) GetDiskInProgress() uint64 {
 	if x != nil {
 		return x.DiskInProgress
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetCpuFreePct() float64 {
+	if x != nil {
+		return x.CpuFreePct
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetMemFreeMb() float64 {
+	if x != nil {
+		return x.MemFreeMb
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetNetSentKbps() float64 {
+	if x != nil {
+		return x.NetSentKbps
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetNetRecvKbps() float64 {
+	if x != nil {
+		return x.NetRecvKbps
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetDiskReadKbps() float64 {
+	if x != nil {
+		return x.DiskReadKbps
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetDiskWriteKbps() float64 {
+	if x != nil {
+		return x.DiskWriteKbps
+	}
+	return 0
+}
+
+func (x *GeneratorStats) GetContainerCpuPeriodsDelta() uint64 {
+	if x != nil {
+		return x.ContainerCpuPeriodsDelta
 	}
 	return 0
 }
@@ -10480,7 +10536,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fnetwork_profile\x18\x15 \x01(\tR\x0enetworkProfile\x12\x1c\n" +
 	"\thierarchy\x18\x16 \x01(\tR\thierarchy\x12\x14\n" +
 	"\x05phase\x18\x17 \x01(\tR\x05phase\x12\x1b\n" +
-	"\tpage_name\x18\x18 \x01(\tR\bpageName\"\xf7\r\n" +
+	"\tpage_name\x18\x18 \x01(\tR\bpageName\"\x8e\x10\n" +
 	"\x0eGeneratorStats\x121\n" +
 	"\x14completed_iterations\x18& \x01(\x03R\x13completedIterations\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
@@ -10522,7 +10578,15 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1eephemeral_port_utilization_pct\x18\" \x01(\x01R\x1bephemeralPortUtilizationPct\x12'\n" +
 	"\x10disk_io_time_pct\x18# \x01(\x01R\rdiskIoTimePct\x128\n" +
 	"\x19disk_weighted_io_time_pct\x18$ \x01(\x01R\x15diskWeightedIoTimePct\x12(\n" +
-	"\x10disk_in_progress\x18% \x01(\x04R\x0ediskInProgress\"\xb4\x01\n" +
+	"\x10disk_in_progress\x18% \x01(\x04R\x0ediskInProgress\x12 \n" +
+	"\fcpu_free_pct\x18' \x01(\x01R\n" +
+	"cpuFreePct\x12\x1e\n" +
+	"\vmem_free_mb\x18( \x01(\x01R\tmemFreeMb\x12\"\n" +
+	"\rnet_sent_kbps\x18) \x01(\x01R\vnetSentKbps\x12\"\n" +
+	"\rnet_recv_kbps\x18* \x01(\x01R\vnetRecvKbps\x12$\n" +
+	"\x0edisk_read_kbps\x18+ \x01(\x01R\fdiskReadKbps\x12&\n" +
+	"\x0fdisk_write_kbps\x18, \x01(\x01R\rdiskWriteKbps\x12=\n" +
+	"\x1bcontainer_cpu_periods_delta\x18- \x01(\x04R\x18containerCpuPeriodsDelta\"\xb4\x01\n" +
 	"\rControlSignal\x126\n" +
 	"\x06adjust\x18\x01 \x01(\v2\x1c.apexload.v1.VUserAdjustmentH\x00R\x06adjust\x12.\n" +
 	"\x04stop\x18\x02 \x01(\v2\x18.apexload.v1.StopRequestH\x00R\x04stop\x121\n" +
