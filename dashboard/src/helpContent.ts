@@ -109,6 +109,12 @@ function matchesSectionSlug(name: string, section: string): boolean {
   const target = sectionSlug(section)
   return sectionSlug(name) === target || sectionSlug(name.replace(/\//g, ' ')) === target
 }
+// Links that land in a cross-file multi-article source (one .md split into
+// several catalogue articles by `sections`) must pick the owning article
+// without loading the target first. Most fragments resolve because they name
+// a catalogue section; add `path#fragment` here only for a fragment that is a
+// subsection of one. The "keeps repository-style fragments navigable" test
+// fails when an entry is needed.
 const CROSS_FILE_SECTION_OWNER: Record<string, string> = {
   'docs/CICD_INTEGRATION.md#root-cause-summary': 'github',
   'docs/CICD_INTEGRATION.md#run-validity-gate': 'github',
@@ -123,6 +129,9 @@ const CROSS_FILE_SECTION_OWNER: Record<string, string> = {
   'docs/HELP_CENTER.md#authentication-or-permission-denied': 'troubleshooting',
   'docs/HELP_CENTER.md#create-and-prove-the-script': 'first-test',
 }
+// Repository documents that are not bundled into Help, mapped to the bundled
+// article that covers the same ground. A link to an unbundled file that is not
+// listed here renders as plain text, and the navigability test reports it.
 const COMPANION_ARTICLE_MAP: Record<string, { id: string; section?: string }> = {
   'docs/ROOT_CAUSE_ANALYSIS.md': { id: 'root-cause', section: 'root-cause-analysis' },
   'docs/PROMETHEUS_MONITORING.md': { id: 'monitoring-governance', section: 'prometheus-target-system-test-monitoring' },
@@ -147,12 +156,27 @@ const COMPANION_ARTICLE_MAP: Record<string, { id: string; section?: string }> = 
   'docs/NODE_FAILURE_READINESS_PLAN.md': { id: 'platform', section: 'enterprise-platform-architecture-runbook' },
   'docs/PERFORMANCE_BENCHMARKS.md': { id: 'browser', section: 'browser-execution-and-mobile-emulation' },
 }
+// The repository is private and Help ships inside the build, so Help never
+// links to GitHub (the repository, its docs site or raw file hosts) or to
+// LoadRunner documentation. Monitoring and vendor documentation stays linked.
+// A host is blocked when it equals a listed name or is a subdomain of it.
+const BLOCKED_LINK_HOSTS = ['github.com', 'githubusercontent.com', 'admhelp.microfocus.com', 'admhelp.opentext.com']
+export function isBlockedHelpLink(href: string): boolean {
+  // Parse without a base first, exactly as the renderer's safeMarkdownHref
+  // does, so `https:github.com/x` is judged by the host it would open. Only an
+  // href that is not absolute, such as protocol-relative //host/path or a
+  // document-relative path, uses the base.
+  // URL already lowercases and IDNA-maps http(s) hostnames.
+  let url: URL
+  try { url = new URL(href) } catch {
+    try { url = new URL(href, 'https://help.invalid/') } catch { return false }
+  }
+  const host = url.hostname.replace(/\.+$/, '')
+  return BLOCKED_LINK_HOSTS.some(blocked => host === blocked || host.endsWith(`.${blocked}`))
+}
 export function resolveHelpLink(href: string, current: HelpArticle, source: string): string {
   if (href.startsWith('#/')) return href
-  if (/^(https?:|mailto:)/i.test(href)) {
-    if (/github\.com|admhelp\.microfocus\.com/i.test(href)) return ''
-    return href
-  }
+  if (/^(https?:|mailto:)/i.test(href)) return isBlockedHelpLink(href) ? '' : href
   const [rawPath, rawSection] = href.split('#')
   let section: string
   try { section = decodeURIComponent(rawSection || '') } catch { return '' }

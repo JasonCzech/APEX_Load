@@ -19,6 +19,8 @@ The server exposes structured tools for the documented API surface:
 - `run_archive_browser_*`, `run_archive_journeys`, `analysis_policy_*`: browser findings, interaction patterns, one request's HAR entry, journey accounting, and revisioned browser and journey policies.
 - `dynatrace_*`, `elastic_*`, `prometheus_*`, `monitor_*`, `monitoring_*`: governed Dynatrace, Elasticsearch/OpenSearch, and Prometheus connections, inspections, monitor sources, scenario monitor bindings, monitoring collectors, and run telemetry.
 - `browser_replay_session_*`, `recorder_*`, `ai_*`, `integrations_*`, `report_*`, `results_*`: browser replay sessions, recording sessions, AI assistance, integrations, report profiles, and external imports.
+- `script_import_file`, `script_validate_import_file`: upload an Enterprise Script Archive, JMeter, DevWeb, HAR, recorder, OpenAPI, or WSDL file from the bridge machine, or validate an Enterprise Script Archive or JMeter file without saving.
+- `list_tests`, `get_test_details`, `start_test`, `stop_test`, `pause_test`, `resume_test`, `list_scripts`, `get_system_health`: compatibility aliases for the matching `run_*`, `script_list`, and `system_health` tools. Prefer the canonical names in new agent prompts.
 
 Stable resources are also available:
 
