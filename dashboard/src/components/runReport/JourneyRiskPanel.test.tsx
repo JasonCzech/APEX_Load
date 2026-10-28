@@ -191,13 +191,15 @@ describe('JourneyRiskPanel', () => {
     expect(formatJourneyBoundary({ action: 'Submit', step_path: 'actions[2]' })).toBe('action Submit (actions[2])')
   })
 
-  it('polls provisional live journey accounting and replaces it when the archive is finalized', async () => {
+  it('polls provisional live journey accounting without flickering on ReferenceKey and clears on run switch', async () => {
     vi.useFakeTimers()
     try {
+      let resolveRun2: ((val: typeof report) => void) | undefined
       mocks.api.getTestArchiveJourneys
         .mockResolvedValueOnce({ ...report, provisional: true, live_truncated: true })
         .mockResolvedValueOnce(report)
-      act(() => root.render(<JourneyRiskPanel testId="run-1" />))
+        .mockImplementationOnce(() => new Promise(resolve => { resolveRun2 = resolve }))
+      act(() => root.render(<JourneyRiskPanel testId="RUN-REF-1" />))
       await act(async () => { await Promise.resolve() })
       await act(async () => { await Promise.resolve() })
       expect(container.querySelector('[data-provisional="true"]')).not.toBeNull()
@@ -209,6 +211,18 @@ describe('JourneyRiskPanel', () => {
       await act(async () => { await Promise.resolve() })
       expect(container.querySelector('[data-provisional="true"]')).toBeNull()
       expect(container.textContent).not.toContain('Provisional live journey accounting')
+
+      // Switching testId must immediately clear the previous run's report and show loading state.
+      act(() => root.render(<JourneyRiskPanel testId="RUN-REF-2" />))
+      expect(container.textContent).toContain('Accounting journeys…')
+      expect(container.textContent).not.toContain('Checkout journeys revision 2')
+
+      await act(async () => {
+        resolveRun2?.({ ...report, run_id: 'run-2' })
+        await Promise.resolve()
+      })
+      await act(async () => { await Promise.resolve() })
+      expect(container.textContent).toContain('Checkout journeys revision 2')
     } finally {
       vi.useRealTimers()
     }

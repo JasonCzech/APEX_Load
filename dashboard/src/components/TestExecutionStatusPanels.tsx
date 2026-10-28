@@ -19,8 +19,15 @@ import { formatGapToTarget, goalStanding, isOffTarget } from './goalThroughputMo
 // The segments list renders only once a run's policy changed (two or more
 // segments) and the change form only for an editor of a running or paused
 // run, so the live route loads them on use.
-const TelemetryPolicySegmentList = lazy(() => import('./TelemetryPolicySegments').then(module => ({ default: module.TelemetryPolicySegmentList })))
-const TelemetryBudgetChange = lazy(() => import('./TelemetryPolicySegments').then(module => ({ default: module.TelemetryBudgetChange })))
+let telemetryPolicySegmentsPromise: Promise<typeof import('./TelemetryPolicySegments')> | undefined
+function loadTelemetryPolicySegments() {
+  return (telemetryPolicySegmentsPromise ??= import('./TelemetryPolicySegments').catch(err => {
+    telemetryPolicySegmentsPromise = undefined
+    throw err
+  }))
+}
+const TelemetryPolicySegmentList = lazy(() => loadTelemetryPolicySegments().then(module => ({ default: module.TelemetryPolicySegmentList })))
+const TelemetryBudgetChange = lazy(() => loadTelemetryPolicySegments().then(module => ({ default: module.TelemetryBudgetChange })))
 
 interface LiveMetricsSummary {
   browser_documents?: BrowserDocumentSummary | null

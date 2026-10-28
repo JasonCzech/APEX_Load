@@ -40,20 +40,14 @@ func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, sele
 	})
 	if err != nil && b.engine == "webkit" {
 		if strings.Contains(err.Error(), "intercepts pointer events") && b.webkitElementUnoccludedAtCenter(ctx, targetLocator, timeout) {
-			return targetLocator.Tap(playwright.LocatorTapOptions{
-				Force:   playwright.Bool(true),
-				Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
-			})
+			return b.runTouchScript(ctx, action, selector, syntheticTapOperation(), "browser tap")
 		}
 		if timeout > tapTimeout && ctx.Err() == nil {
 			err = targetLocator.Tap(playwright.LocatorTapOptions{
 				Timeout: playwright.Float(b.timeoutMS(ctx, timeout-tapTimeout)),
 			})
 			if err != nil && strings.Contains(err.Error(), "intercepts pointer events") && b.webkitElementUnoccludedAtCenter(ctx, targetLocator, timeout) {
-				return targetLocator.Tap(playwright.LocatorTapOptions{
-					Force:   playwright.Bool(true),
-					Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
-				})
+				return b.runTouchScript(ctx, action, selector, syntheticTapOperation(), "browser tap")
 			}
 		}
 	}

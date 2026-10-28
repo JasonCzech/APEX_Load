@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import type { ScriptDebugRuntimeState } from '../src/types/replay'
-import { login } from './support/workflow'
+import { expectDebugOutcome, login } from './support/workflow'
 
 // Deterministic recording/replay fixtures exercise the review UI without
 // requiring a headed workstation browser in CI. Go integration tests cover capture.
@@ -79,6 +79,7 @@ test('a narrow browser cockpit keeps assertion evidence and the captured viewpor
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await page.locator('.topbar-debug-action-run').click()
+  await expectDebugOutcome(page, 'failed')
   const cockpit = page.locator('.script-browser-evidence')
   await expect(cockpit.locator('[aria-label="Assertion result"]')).toContainText('Hello operator')
   await expect(page.locator('.topbar-debug-action-step')).toContainText('Restart step')

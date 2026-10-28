@@ -124,7 +124,11 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if status, ok := runPolicyErrorStatus(err); ok {
-			writeError(w, status, err.Error())
+			msg := err.Error()
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
+			writeError(w, status, msg)
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -321,14 +325,18 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		status := http.StatusBadRequest
+		msg := err.Error()
 		if errors.Is(err, errScenarioConcurrentChange) {
 			status = http.StatusConflict
 		} else if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
 			status = http.StatusForbidden
 		} else if policyStatus, ok := runPolicyErrorStatus(err); ok {
 			status = policyStatus
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
 		}
-		writeError(w, status, err.Error())
+		writeError(w, status, msg)
 		return
 	}
 	if !ok {

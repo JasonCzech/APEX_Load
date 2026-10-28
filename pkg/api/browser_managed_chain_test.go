@@ -44,9 +44,11 @@ func browserManagedAuthorReplayRunArchiveHARChain(t *testing.T, browserEngine, p
 	var mu sync.Mutex
 	counts := map[string]int{}
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		counts[r.URL.Path]++
-		mu.Unlock()
+		if r.Method != http.MethodHead {
+			mu.Lock()
+			counts[r.URL.Path]++
+			mu.Unlock()
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		switch r.URL.Path {
 		case "/":

@@ -675,6 +675,11 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 		f, openErr := openHARRegular(o.root, "working.har", false)
 		if openErr != nil {
 			publicationErr = openErr
+		} else if info, statErr := f.Stat(); statErr != nil {
+			publicationErr = errors.Join(statErr, f.Close())
+		} else if info.Size() > maxRuntimeHARBytes {
+			_ = f.Close()
+			publicationErr = fmt.Errorf("browser HAR exceeds size limit")
 		} else {
 			data, readErr := io.ReadAll(io.LimitReader(f, maxRuntimeHARBytes+1))
 			readErr = errors.Join(readErr, f.Close())

@@ -46,8 +46,8 @@ export default function CommandCenterBrowserGroups({ testId, groups, metrics, ra
   }>({ findings: null, interactions: null, journeys: null })
 
   useEffect(() => {
+    setLiveIntelligence({ findings: null, interactions: null, journeys: null })
     if (!testId) {
-      setLiveIntelligence({ findings: null, interactions: null, journeys: null })
       return undefined
     }
     let cancelled = false

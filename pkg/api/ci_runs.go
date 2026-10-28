@@ -380,7 +380,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			_, err := choice.validate(req.ProjectID, choice.id)
 			switch {
 			case errors.Is(err, errRunPolicyStoreUnavailable):
-				writeError(w, http.StatusServiceUnavailable, err.Error())
+				writeError(w, http.StatusServiceUnavailable, "analysis policy store unavailable")
 				return
 			case errors.Is(err, errRunPolicyConfiguration):
 				writeError(w, http.StatusConflict, err.Error())
@@ -398,7 +398,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			if err := s.runner.validateSelectedRunAnalysisPolicies(req.ProjectID, req.AnalysisPolicySelections); err != nil {
 				switch {
 				case errors.Is(err, errRunPolicyStoreUnavailable):
-					writeError(w, http.StatusServiceUnavailable, err.Error())
+					writeError(w, http.StatusServiceUnavailable, "analysis policy store unavailable")
 					return
 				case errors.Is(err, errRunPolicyConfiguration):
 					writeError(w, http.StatusConflict, err.Error())
@@ -591,7 +591,11 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		// failing after the pre-check stays retryable (503), and a policy
 		// changed since stays a conflict (409), as at the pre-check.
 		if status, ok := runPolicyErrorStatus(err); ok {
-			writeError(w, status, err.Error())
+			msg := err.Error()
+			if errors.Is(err, errRunPolicyStoreUnavailable) {
+				msg = "analysis policy store unavailable"
+			}
+			writeError(w, status, msg)
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())

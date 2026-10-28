@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ func TestBrowserInteractionV4AndAuthoredPageV3NativeIntegration(t *testing.T) {
 			}))
 			t.Cleanup(xoriginServer.Close)
 
+			var popupServed atomic.Bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/redirect":
@@ -33,7 +35,17 @@ func TestBrowserInteractionV4AndAuthoredPageV3NativeIntegration(t *testing.T) {
 					fmt.Fprint(w, "download payload")
 				case "/popup":
 					w.Header().Set("Content-Type", "text/html")
-					fmt.Fprint(w, `<!doctype html><h1>Popup Window</h1><button id="popup-btn">Popup Go</button>`)
+					fmt.Fprint(w, `<!doctype html><h1>Popup Window</h1><button id="popup-btn">Popup Go</button><script>fetch('/popup-loaded',{method:'POST'})</script>`)
+				case "/popup-loaded":
+					popupServed.Store(true)
+					w.WriteHeader(http.StatusNoContent)
+				case "/popup-ready":
+					w.Header().Set("Content-Type", "text/plain")
+					if popupServed.Load() {
+						fmt.Fprint(w, "1")
+					} else {
+						fmt.Fprint(w, "0")
+					}
 				case "/frame2d":
 					w.Header().Set("Content-Type", "text/html")
 					fmt.Fprint(w, `<!doctype html><style>html,body{margin:0;padding:0}#fbtn{position:absolute;left:20px;top:10px;width:80px;height:40px}</style><button id="fbtn">Frame 2D</button>`)
@@ -78,7 +90,7 @@ func TestBrowserInteractionV4AndAuthoredPageV3NativeIntegration(t *testing.T) {
 <button id="spa-route" onclick="history.pushState({step:1}, '', '/app/orders'); document.querySelector('#heading').textContent='Orders'">Orders</button>
 <button id="alert-btn" onclick="alert('confirmed'); document.querySelector('#heading').textContent='Alerted'">Alert</button>
 <a id="dl-link" href="/download.txt" download="report.txt">Download</a>
-<a id="popup-link" href="/popup" target="_blank" onclick="setTimeout(()=>{const d=document.createElement('div');d.id='popup-opened';d.textContent='opened';document.body.appendChild(d)},40)">Open Popup</a>
+<a id="popup-link" href="/popup" target="_blank" onclick="const poll=()=>{fetch('/popup-ready').then(r=>r.text()).then(t=>{if(t==='1')setTimeout(()=>{const d=document.createElement('div');d.id='popup-opened';d.textContent='opened';document.body.appendChild(d)},50);else setTimeout(poll,20)})};setTimeout(poll,20)">Open Popup</a>
 <iframe id="child2d" src="/frame2d"></iframe>
 <iframe id="child3d" src="/frame3d"></iframe>
 <iframe id="xorigin" src=%q></iframe>
@@ -250,7 +262,7 @@ func TestBrowserInteractionV4AndAuthoredPageV3NativeIntegration(t *testing.T) {
 				Name:                   "open_popup_click",
 				Type:                   "browser_click",
 				Selector:               "#popup-link",
-				Sync:                   &protocol.BrowserSyncPolicy{Type: "element_visible", Value: "#popup-opened", TimeoutMs: 2000},
+				Sync:                   &protocol.BrowserSyncPolicy{Type: "element_visible", Value: "#popup-opened", TimeoutMs: 5000},
 				BrowserAuthoredStep:    step(10),
 				BrowserActionExecution: exec(7),
 			})

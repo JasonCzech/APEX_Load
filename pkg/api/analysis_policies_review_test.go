@@ -375,7 +375,7 @@ func TestPolicyStoreFailureAtStartIsAServiceUnavailableResponse(t *testing.T) {
 	}
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+run.ID+"/start", nil))
-	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" || !strings.Contains(response.Body.String(), "start_admission_temporarily_unavailable") {
+	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" || !strings.Contains(response.Body.String(), "start_admission_temporarily_unavailable") || !strings.Contains(response.Body.String(), "analysis policy store unavailable") || strings.Contains(response.Body.String(), "database is locked") {
 		t.Fatalf("policy store failure at Start: %d %s", response.Code, response.Body.String())
 	}
 }

@@ -47,19 +47,19 @@ func TestTransactionBufferLiveBrowserEvidenceAndProtoRoundTrip(t *testing.T) {
 	txBuf := &transactionBuffer{}
 	sink := combineSinks(primary, txBuf)
 
-	docSink, ok := engine.ResultSink(sink).(engine.BrowserDocumentEvidenceSink)
+	docSink, ok := sink.(engine.BrowserDocumentEvidenceSink)
 	if !ok {
 		t.Fatal("combinedSink must implement BrowserDocumentEvidenceSink")
 	}
-	intSink, ok := engine.ResultSink(sink).(engine.BrowserInteractionEvidenceSink)
+	intSink, ok := sink.(engine.BrowserInteractionEvidenceSink)
 	if !ok {
 		t.Fatal("combinedSink must implement BrowserInteractionEvidenceSink")
 	}
-	liveDocSink, ok := engine.ResultSink(sink).(engine.LiveBrowserDocumentEvidenceSink)
+	liveDocSink, ok := sink.(engine.LiveBrowserDocumentEvidenceSink)
 	if !ok {
 		t.Fatal("combinedSink must implement LiveBrowserDocumentEvidenceSink")
 	}
-	liveIntSink, ok := engine.ResultSink(sink).(engine.LiveBrowserInteractionEvidenceSink)
+	liveIntSink, ok := sink.(engine.LiveBrowserInteractionEvidenceSink)
 	if !ok {
 		t.Fatal("combinedSink must implement LiveBrowserInteractionEvidenceSink")
 	}

@@ -949,6 +949,12 @@ func (tr *TestRunner) cacheRunSnapshot(snapshot RunLiveStateSnapshot) {
 			snapshot.UpdatedAt = pending.latest.UpdatedAt
 		}
 		if pending.latest.UpdatedAt.IsZero() || snapshot.Status != pending.latest.Status || !snapshot.UpdatedAt.Before(pending.latest.UpdatedAt) {
+			if snapshot.LiveMetrics == nil && pending.latest.LiveMetrics != nil {
+				snapshot.LiveMetrics = pending.latest.LiveMetrics
+				if snapshot.HistoryPoints == 0 {
+					snapshot.HistoryPoints = pending.latest.HistoryPoints
+				}
+			}
 			pending.latest = snapshot
 			pending.dirty = true
 		}

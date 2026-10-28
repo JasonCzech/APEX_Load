@@ -109,7 +109,7 @@ func (p *zeroRampOrderProtocol) Execute(context.Context, *protocol.Action) (*pro
 	p.mu.Unlock()
 	return &protocol.Result{Success: true, Duration: time.Millisecond}, nil
 }
-func (p *zeroRampOrderProtocol) Teardown(context.Context) error          { return nil }
+func (p *zeroRampOrderProtocol) Teardown(context.Context) error    { return nil }
 func (p *zeroRampOrderProtocol) HealthCheck(context.Context) error { return nil }
 
 func TestBrowserSourceSteadyPhasePrecedesZeroRampVUserExecution(t *testing.T) {

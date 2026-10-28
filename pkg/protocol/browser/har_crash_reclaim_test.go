@@ -472,7 +472,13 @@ func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) 
 	}
 	driverExitElapsed := time.Since(killedAt)
 	t.Logf("engine=%s pid=%d driver=%d exited after %s", engine, os.Getpid(), driver, driverExitElapsed.Round(time.Millisecond))
-	plans := PlanRuntimeHARWorkingCleanup(dir, 128)
+	var plans []RuntimeHARWorkingPruneCandidate
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		plans = PlanRuntimeHARWorkingCleanup(dir, 128)
+		if len(plans) > 0 {
+			break
+		}
+	}
 	if len(plans) != 1 || !plans[0].Abandoned {
 		manifest, _ := os.ReadFile(filepath.Join(generationDir, "manifest.json"))
 		entries, _ := os.ReadDir(generationDir)

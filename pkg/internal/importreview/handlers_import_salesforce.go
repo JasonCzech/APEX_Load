@@ -50,7 +50,7 @@ func augmentHARImportWithSalesforceProfile(result *har.ConvertResult, data []byt
 	if profile != nil {
 		analyzeOpts.CorrelationSettings = &profile.Correlation
 	}
-	if result != nil && result.EffectiveSettings != nil {
+	if result.EffectiveSettings != nil {
 		infer := result.EffectiveSettings.InferExtractors
 		// The generic HAR threshold (HighConfidenceOnly) is false for legacy
 		// HAR imports; native rewrites keep their own threshold.

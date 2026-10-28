@@ -151,7 +151,7 @@ func validateSolaceManagementTarget(t *ManagementTarget) error {
 		return solaceManagementConfigError()
 	}
 	a := t.solaceApproval
-	if a == nil || a.roots == nil || a.certificateCount < 1 || a.certificateCount > kafkaManagementMaxTrustCertificates || len(a.roots.Subjects()) != a.certificateCount || len(a.trustDigest) != 64 || len(a.routes) != len(t.Scope.Entities) { //nolint:staticcheck // the pool is built from the approved CA file, not SystemCertPool, so Subjects lists every certificate
+	if a == nil || a.roots == nil || a.certificateCount < 1 || a.certificateCount > kafkaManagementMaxTrustCertificates || a.roots.Equal(x509.NewCertPool()) || len(a.trustDigest) != 64 || len(a.routes) != len(t.Scope.Entities) {
 		return solaceManagementConfigError()
 	}
 	digest, err := solaceManagementSettingsDigest(t)

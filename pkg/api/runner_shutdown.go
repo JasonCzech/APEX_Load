@@ -153,6 +153,9 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		// committed by this controller once it has lost leadership, whether
 		// the run is still active or awaits its archive's publication retry.
 		releaseHeldJointPublicationsLocked(test)
+		if test.liveBrowserIntelligence == nil {
+			test.provisionalBrowserIntelligence = nil
+		}
 		activeStatus := false
 		switch test.Status {
 		case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":

@@ -59,12 +59,15 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(current => loadedRunIdRef.current === testId ? current : true)
+    if (loadedRunIdRef.current !== testId) {
+      setReport(null)
+      setLoading(true)
+    }
     setFailure(null)
     getTestArchiveJourneys(testId, selection, { signal: controller.signal })
       .then(next => {
         if (!controller.signal.aborted) {
-          loadedRunIdRef.current = next.run_id
+          loadedRunIdRef.current = testId
           setReport(next)
         }
       })

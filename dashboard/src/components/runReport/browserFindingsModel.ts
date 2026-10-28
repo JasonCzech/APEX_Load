@@ -68,10 +68,8 @@ export const browserFindingsApi = {
   get: (runId: string, signalOrOptions?: AbortSignal | { signal?: AbortSignal; projectId?: string }, options?: { projectId?: string }) => {
     const signal = signalOrOptions instanceof AbortSignal ? signalOrOptions : signalOrOptions?.signal
     const projectId = (signalOrOptions instanceof AbortSignal ? options?.projectId : signalOrOptions?.projectId)?.trim()
-    return request<RunBrowserFindings>(`/tests/${encodeURIComponent(runId)}/archive/browser-findings`, {
-      signal,
-      ...(projectId ? { projectId } as Record<string, unknown> : {}),
-    })
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+    return request<RunBrowserFindings>(`/tests/${encodeURIComponent(runId)}/archive/browser-findings${query}`, { signal })
   },
   evaluate: (projectId: string, runId: string) =>
     request<{ id: string; state: string }>(`/analysis/evaluations?project_id=${encodeURIComponent(projectId)}`, { method: 'POST', body: JSON.stringify({ kind: 'browser_intelligence', request: { run: runId } }) }),

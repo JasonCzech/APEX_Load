@@ -213,7 +213,7 @@ func ResolveConversionPolicy(input PolicyResolutionInput) (*EffectiveSettings, e
 		reviewOnly = false
 	}
 
-	effectiveCorrMode := CorrelationModeAll
+	var effectiveCorrMode string
 	switch {
 	case !inferExtractors:
 		effectiveCorrMode = CorrelationModeDisabled

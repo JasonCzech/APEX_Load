@@ -74,7 +74,7 @@ describe('BrowserFindingsPanel', () => {
     mocks.request.mockResolvedValue(ready)
     act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj" canEvaluate={false} />))
     await flush()
-    expect(mocks.request).toHaveBeenCalledWith('/tests/run-1/archive/browser-findings', expect.objectContaining({ signal: expect.any(AbortSignal), projectId: 'proj' }))
+    expect(mocks.request).toHaveBeenCalledWith('/tests/run-1/archive/browser-findings?project_id=proj', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const text = container.textContent || ''
     expect(text).toContain('No overall score: a required metric has no qualified final observation. Missing: INP.')
     expect(text).toContain("1/2 required metrics observed · browser_score.v1 · Web vitals revision 2 (the run's pinned policy) · sha256 …abc.")
@@ -178,5 +178,23 @@ describe('BrowserFindingsPanel', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('resets stale findings immediately when testId or projectId changes', async () => {
+    mocks.request.mockResolvedValueOnce(ready)
+    act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj-a" canEvaluate={false} />))
+    await flush()
+    expect(container.textContent).toContain('LCP p75 is high.')
+
+    let resolveNext!: (value: unknown) => void
+    mocks.request.mockReturnValueOnce(new Promise(resolve => { resolveNext = resolve }))
+    act(() => root.render(<BrowserFindingsPanel testId="run-2" projectId="proj-b" canEvaluate={false} />))
+    expect(mocks.request).toHaveBeenLastCalledWith('/tests/run-2/archive/browser-findings?project_id=proj-b', { signal: expect.any(AbortSignal) })
+    expect(container.textContent).not.toContain('LCP p75 is high.')
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Loading browser findings…')
+
+    resolveNext({ run_id: 'run-2', status: 'not_evaluated' })
+    await flush()
+    expect(container.textContent).toContain('This run has no browser evaluation.')
   })
 })

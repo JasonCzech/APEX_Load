@@ -93,33 +93,33 @@ type Browser struct {
 	// generation, published with its native HAR.
 	harEvidenceGeneration string
 	// interactionsEnabled records gesture interaction evidence (E3).
-	interactionsEnabled  bool
-	interactionVersion   int
-	authoredPageVersion  int
-	interactions         browserInteractionState
+	interactionsEnabled   bool
+	interactionVersion    int
+	authoredPageVersion   int
+	interactions          browserInteractionState
 	currentNavPreSequence uint64
-	activePageBindings   map[playwright.Page]*protocol.BrowserAuthoredPageBinding
-	lifecycleRouteSeq    map[string]uint64
-	lastActionPopup      playwright.Page
-	lastDownloadOutcome  *protocol.BrowserInteractionOutcome
-	harMonitorStop       chan struct{}
-	harMonitorWG         sync.WaitGroup
-	harLimitExceeded     chan struct{}
-	harLimitOnce         sync.Once
-	harObservedBytes     int64
-	harObservedEntries   int
-	harInFlightExceeded  bool
-	runtimeTextRedactor  protocol.TextRedactor
-	runtimeSecretsActive func() bool
-	mobile               bool
-	touchMode            bool
-	orientation          string
-	orientationExplicit  bool
-	deviceScaleFactor    float64
-	cpuThrottleRate      float64
-	cpuThrottleExplicit  bool
-	viewportW            int
-	viewportH            int
+	activePageBindings    map[playwright.Page]*protocol.BrowserAuthoredPageBinding
+	lifecycleRouteSeq     map[string]uint64
+	lastActionPopup       playwright.Page
+	lastDownloadOutcome   *protocol.BrowserInteractionOutcome
+	harMonitorStop        chan struct{}
+	harMonitorWG          sync.WaitGroup
+	harLimitExceeded      chan struct{}
+	harLimitOnce          sync.Once
+	harObservedBytes      int64
+	harObservedEntries    int
+	harInFlightExceeded   bool
+	runtimeTextRedactor   protocol.TextRedactor
+	runtimeSecretsActive  func() bool
+	mobile                bool
+	touchMode             bool
+	orientation           string
+	orientationExplicit   bool
+	deviceScaleFactor     float64
+	cpuThrottleRate       float64
+	cpuThrottleExplicit   bool
+	viewportW             int
+	viewportH             int
 
 	pwContext            playwright.BrowserContext
 	pwPage               playwright.Page

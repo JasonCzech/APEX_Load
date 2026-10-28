@@ -1117,4 +1117,229 @@ func TestLiveBrowserIntelligenceRound2Fixes(t *testing.T) {
 	}
 }
 
+func TestLiveBrowserIntelligenceRound3Fixes(t *testing.T) {
+	srv, store := baselineTestServer(t)
+	pins := createPinnedBrowserAndJourneyPolicies(t, store)
+	startedAt := time.Date(2026, 10, 27, 20, 0, 0, 0, time.UTC)
 
+	liveStore := newSharedMemoryLiveStateStore()
+	srv.runner.setLiveStateStore(liveStore)
+
+	failoverTestID := "run-live-round3-failover"
+	preFailoverSnap := &ProvisionalBrowserIntelligenceSnapshot{
+		UpdatedAt: startedAt.Add(3 * time.Second),
+		Findings: &RunBrowserFindingsResponse{
+			RunID:       failoverTestID,
+			Status:      "ready",
+			Provisional: true,
+			Result: &BrowserIntelligenceResult{
+				RunID:       failoverTestID,
+				Provisional: true,
+			},
+		},
+		Interactions: &BrowserInteractionAnalysis{
+			RunID:       failoverTestID,
+			Version:     browserInteractionAnalysisVersion,
+			Status:      "ready",
+			Provisional: true,
+			Patterns:    []BrowserInteractionPattern{{ID: "p-pre", Kind: interactionPatternScriptedRepetition, Count: 3}},
+		},
+		Journeys: &JourneyRiskReport{
+			SchemaVersion: "journey_accounting.v1",
+			RunID:         failoverTestID,
+			Availability:  "available",
+			Provisional:   true,
+			Policy: JourneyPolicyRef{
+				ID:       "live-journey-pol",
+				Name:     "Live Journey Policy",
+				Revision: 1,
+				SHA256:   pins[1].SHA256,
+				Source:   "pinned",
+			},
+			Journeys: []JourneyAccounting{{ID: "checkout", Name: "Checkout flow", Completed: 4, Eligible: 4}},
+		},
+	}
+
+	// Seed liveState with untruncated pre-failover snapshot and LiveMetrics.
+	if err := liveStore.SetRunSnapshot(context.Background(), RunLiveStateSnapshot{
+		TestID:                         failoverTestID,
+		ProjectID:                      storage.DefaultProjectID,
+		Status:                         "RUNNING",
+		UpdatedAt:                      startedAt.Add(3 * time.Second),
+		LiveMetrics:                    &LiveMetrics{ActiveVUsers: 4, Requests: 42},
+		HistoryPoints:                  7,
+		ProvisionalBrowserIntelligence: preFailoverSnap,
+	}, time.Minute); err != nil {
+		t.Fatalf("SetRunSnapshot: %v", err)
+	}
+
+	adoptedManaged := &ManagedTest{
+		ID:                  failoverTestID,
+		ProjectID:           storage.DefaultProjectID,
+		Name:                "Adopted Round 3 Run",
+		Status:              "RUNNING",
+		CreatedAt:           startedAt,
+		StartedAt:           &startedAt,
+		continuityFailovers: []RunFailover{{PriorGeneration: 1, Generation: 2, AdoptedAt: startedAt.Add(4 * time.Second)}},
+		initialArchiveProvenance: &RunArchiveProvenance{
+			ProjectID:  storage.DefaultProjectID,
+			PolicyPins: pins,
+		},
+		Groups: []TestGroup{{Name: "web", Protocol: "browser", VUsers: 1}},
+	}
+	srv.runner.mu.Lock()
+	srv.runner.tests[failoverTestID] = adoptedManaged
+	srv.runner.mu.Unlock()
+
+	// 1. High 1: startLiveBrowserIntelligence -> restoreAdoptedProvisionalBrowserIntelligence must immediately
+	// persist the controller_failover truncated snapshot back to liveState before any post-failover batch arrives.
+	srv.runner.startLiveBrowserIntelligence(adoptedManaged, []string{"local"})
+	t.Cleanup(func() {
+		srv.runner.stopAndJoinLiveBrowserIntelligence(adoptedManaged, startedAt.Add(15*time.Second))
+	})
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+		return err == nil && snap != nil && snap.ProvisionalBrowserIntelligence != nil && snap.ProvisionalBrowserIntelligence.LiveTruncated
+	}, "restoreAdoptedProvisionalBrowserIntelligence persisting controller_failover snapshot to liveStore")
+
+	restoredInStore, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+	if err != nil || restoredInStore == nil || restoredInStore.ProvisionalBrowserIntelligence == nil {
+		t.Fatalf("expected restored snapshot in liveStore, got %+v (err=%v)", restoredInStore, err)
+	}
+	if restoredInStore.LiveMetrics == nil || restoredInStore.LiveMetrics.Requests != 42 || restoredInStore.HistoryPoints != 7 {
+		t.Fatalf("expected pre-failover LiveMetrics and HistoryPoints to be preserved on adoption, got LiveMetrics=%+v HistoryPoints=%d", restoredInStore.LiveMetrics, restoredInStore.HistoryPoints)
+	}
+	if !restoredInStore.ProvisionalBrowserIntelligence.LiveTruncated ||
+		!slices.Contains(restoredInStore.ProvisionalBrowserIntelligence.TruncatedReasons, "controller_failover") {
+		t.Fatalf("expected LiveTruncated=true and controller_failover in liveStore immediately after adoption, got %+v", restoredInStore.ProvisionalBrowserIntelligence)
+	}
+	if restoredInStore.ProvisionalBrowserIntelligence.Journeys == nil ||
+		!slices.Contains(restoredInStore.ProvisionalBrowserIntelligence.Journeys.IncompleteReasons, "controller_failover") {
+		t.Fatalf("expected controller_failover in Journeys.IncompleteReasons, got %+v", restoredInStore.ProvisionalBrowserIntelligence.Journeys)
+	}
+
+	// 2. High 2A: Record 1 post-failover document while 0 interactions and 0 journey events have arrived.
+	// publishLiveBrowserIntelligenceSnapshot must update Findings while preserving pre-failover Interactions, Journeys, and LiveMetrics!
+	obs := (e1Document{
+		id:        1,
+		metric:    "lcp",
+		engine:    "chromium",
+		device:    "desktop",
+		value:     3100,
+		qualified: true,
+	}).observation(startedAt.Add(5 * time.Second))
+	adoptedManaged.liveBrowserIntelligence.recordDocumentEvidence(&protocol.BrowserDocumentEvidence{
+		Version:          protocol.BrowserEvidenceVersion,
+		SourceGeneration: d2Generation,
+		Observations:     []protocol.BrowserDocumentObservation{obs},
+	})
+	srv.runner.snapshotWriteMu.Lock()
+	delete(srv.runner.snapshotWrites, failoverTestID)
+	srv.runner.snapshotWriteMu.Unlock()
+	srv.runner.publishLiveBrowserIntelligenceSnapshot(adoptedManaged, adoptedManaged.liveBrowserIntelligence, startedAt.Add(6*time.Second), false)
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+		return err == nil && snap != nil && snap.ProvisionalBrowserIntelligence != nil &&
+			snap.ProvisionalBrowserIntelligence.Findings != nil &&
+			snap.ProvisionalBrowserIntelligence.Findings.Result != nil &&
+			snap.ProvisionalBrowserIntelligence.Findings.Result.Score.Coverage.Observed > 0
+	}, "post-failover publishLiveBrowserIntelligenceSnapshot in liveStore")
+	afterDocInStore, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+	if err != nil || afterDocInStore == nil || afterDocInStore.LiveMetrics == nil || afterDocInStore.LiveMetrics.Requests != 42 || afterDocInStore.HistoryPoints != 7 {
+		t.Fatalf("expected pre-failover LiveMetrics and HistoryPoints in liveStore after post-failover browser snapshot publish while adoptedManaged.LiveMetrics == nil, got %+v (err=%v)", afterDocInStore, err)
+	}
+	coalesceAt := time.Now().UTC().Add(10 * time.Second)
+	srv.runner.cacheRunSnapshot(RunLiveStateSnapshot{
+		TestID:                         failoverTestID,
+		ProjectID:                      storage.DefaultProjectID,
+		Status:                         "RUNNING",
+		UpdatedAt:                      coalesceAt,
+		ProvisionalBrowserIntelligence: afterDocInStore.ProvisionalBrowserIntelligence,
+	})
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+		return err == nil && snap != nil && snap.UpdatedAt.Equal(coalesceAt)
+	}, "cacheRunSnapshot with nil LiveMetrics coalesced in liveStore")
+	afterCoalesceInStore, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
+	if err != nil || afterCoalesceInStore == nil || afterCoalesceInStore.LiveMetrics == nil || afterCoalesceInStore.LiveMetrics.Requests != 42 || afterCoalesceInStore.HistoryPoints != 7 {
+		t.Fatalf("expected cacheRunSnapshot to preserve pending.latest LiveMetrics and HistoryPoints when snapshot.LiveMetrics == nil, got %+v (err=%v)", afterCoalesceInStore, err)
+	}
+
+	srv.runner.mu.RLock()
+	afterDocSnap := cloneProvisionalBrowserIntelligenceSnapshot(adoptedManaged.provisionalBrowserIntelligence)
+	srv.runner.mu.RUnlock()
+	if afterDocSnap == nil || !afterDocSnap.LiveTruncated || !slices.Contains(afterDocSnap.TruncatedReasons, "controller_failover") {
+		t.Fatalf("expected truncated snapshot after doc publish, got %+v", afterDocSnap)
+	}
+	if afterDocSnap.Findings == nil || afterDocSnap.Findings.Result == nil || !afterDocSnap.Findings.LiveTruncated {
+		t.Fatalf("expected updated post-failover Findings with LiveTruncated=true, got %+v", afterDocSnap.Findings)
+	}
+	if afterDocSnap.Interactions == nil || afterDocSnap.Interactions.Status != "ready" || len(afterDocSnap.Interactions.Patterns) != 1 || !afterDocSnap.Interactions.LiveTruncated {
+		t.Fatalf("expected pre-failover ready Interactions to be preserved when only doc evidence arrived, got %+v", afterDocSnap.Interactions)
+	}
+	if afterDocSnap.Journeys == nil || afterDocSnap.Journeys.Availability != "available" || len(afterDocSnap.Journeys.Journeys) != 1 || afterDocSnap.Journeys.Journeys[0].Completed != 4 || !afterDocSnap.Journeys.LiveTruncated {
+		t.Fatalf("expected pre-failover available Journeys to be preserved when only doc evidence arrived, got %+v", afterDocSnap.Journeys)
+	}
+
+	// 3. High 2B: On the adopted leader (state != nil, journeyEventCount == 0), querying provisionalRunJourneys
+	// with explicit matching ?policy=live-journey-pol&revision=1 must return the preserved pre-failover report!
+	leaderMatchingReport, status, journeyErr, handled := srv.provisionalRunJourneys(context.Background(), adoptedManaged, "live-journey-pol", "1")
+	if !handled || journeyErr != nil || status != http.StatusOK || leaderMatchingReport == nil {
+		t.Fatalf("adopted leader provisionalRunJourneys(matching policy) = (%+v, %d, %v, %v)", leaderMatchingReport, status, journeyErr, handled)
+	}
+	if leaderMatchingReport.Policy.Source != "requested" || !leaderMatchingReport.LiveTruncated || !leaderMatchingReport.Incomplete ||
+		!slices.Contains(leaderMatchingReport.IncompleteReasons, "controller_failover") ||
+		len(leaderMatchingReport.Journeys) != 1 || leaderMatchingReport.Journeys[0].Completed != 4 {
+		t.Fatalf("adopted leader matching policy report lost pre-failover journeys or truncation metadata: %+v", leaderMatchingReport)
+	}
+
+	// Save a second revision of live-journey-pol and query ?policy=live-journey-pol&revision=2 on the adopted leader:
+	// since revision 2 does not match snap.Journeys.Policy.Revision (1), it evaluates over post-failover state and must still mark
+	// LiveTruncated=true, Incomplete=true, and IncompleteReasons containing "live_truncated" and "controller_failover".
+	journeyDef, err := store.GetAnalysisDefinition(storage.DefaultProjectID, "live-journey-pol", 1)
+	if err != nil || journeyDef == nil {
+		t.Fatalf("GetAnalysisDefinition(live-journey-pol@1): %v", err)
+	}
+	if _, err := store.SaveAnalysisDefinition(storage.AnalysisDefinition{
+		ID:         "live-journey-pol",
+		ProjectID:  storage.DefaultProjectID,
+		Kind:       storage.AnalysisDefinitionKindJourneyPolicy,
+		Name:       "Live Journey Policy v2",
+		Revision:   2,
+		Definition: journeyDef.Definition,
+	}, 1); err != nil {
+		t.Fatalf("SaveAnalysisDefinition(live-journey-pol@2): %v", err)
+	}
+	leaderOtherRevReport, status, journeyErr, handled := srv.provisionalRunJourneys(context.Background(), adoptedManaged, "live-journey-pol", "2")
+	if !handled || journeyErr != nil || status != http.StatusOK || leaderOtherRevReport == nil {
+		t.Fatalf("adopted leader provisionalRunJourneys(rev 2) = (%+v, %d, %v, %v)", leaderOtherRevReport, status, journeyErr, handled)
+	}
+	if !leaderOtherRevReport.LiveTruncated || !leaderOtherRevReport.Incomplete ||
+		!slices.Contains(leaderOtherRevReport.IncompleteReasons, "live_truncated") ||
+		!slices.Contains(leaderOtherRevReport.IncompleteReasons, "controller_failover") {
+		t.Fatalf("expected LiveTruncated=true and controller_failover in IncompleteReasons for ad-hoc rev 2 evaluation on adopted leader, got %+v", leaderOtherRevReport)
+	}
+
+	// 4. Low 1: If a terminal test already nilled liveBrowserIntelligence (e.g. after stop) while residual
+	// provisionalBrowserIntelligence remained set, teardownActiveTestsAfterLeadershipLoss must clear it.
+	residualTest := &ManagedTest{
+		ID:                             "run-residual-provisional",
+		ProjectID:                      storage.DefaultProjectID,
+		Status:                         "COMPLETE",
+		provisionalBrowserIntelligence: cloneProvisionalBrowserIntelligenceSnapshot(preFailoverSnap),
+	}
+	srv.runner.mu.Lock()
+	srv.runner.tests[residualTest.ID] = residualTest
+	srv.runner.mu.Unlock()
+	if err := srv.runner.teardownActiveTestsAfterLeadershipLoss(context.Background()); err != nil {
+		t.Fatalf("teardownActiveTestsAfterLeadershipLoss: %v", err)
+	}
+	srv.runner.mu.RLock()
+	residualAfterLoss := residualTest.provisionalBrowserIntelligence
+	srv.runner.mu.RUnlock()
+	if residualAfterLoss != nil {
+		t.Fatalf("expected teardownActiveTestsAfterLeadershipLoss to clear residual provisionalBrowserIntelligence even when liveBrowserIntelligence == nil, got %+v", residualAfterLoss)
+	}
+}
