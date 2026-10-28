@@ -139,7 +139,8 @@ type oasRequestBody struct {
 }
 
 type oasMediaType struct {
-	Schema oasSchema `yaml:"schema"`
+	Schema  oasSchema `yaml:"schema"`
+	Example any       `yaml:"example,omitempty"`
 }
 
 type oasSchema struct {

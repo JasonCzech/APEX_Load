@@ -670,3 +670,53 @@ test('left sidebar index extends towards the visible window bottom or fits its c
 
   await page.screenshot({ path: testInfo.outputPath('help-sidebar-height.png'), animations: 'disabled' })
 })
+
+test('API reference examples match real handlers and remain usable at narrow widths', async ({ page }, testInfo) => {
+  await page.goto('/#/swagger?search=/api/v1/scripts/validate')
+  const card = page.locator('.swagger-operation-card')
+  await expect(card).toHaveCount(1)
+  await card.locator(':scope > summary').click()
+  await expect(card.getByRole('heading', { name: 'Request body (required)', exact: true })).toBeVisible()
+  const bodyCode = card.locator('pre[aria-label="Example body"]').first()
+  const payload = JSON.parse(await bodyCode.innerText())
+  const validation = await page.request.post('/api/v1/scripts/validate', { data: payload })
+  expect(validation.ok()).toBe(true)
+  expect((await validation.json()).valid).toBe(true)
+  await card.locator('.swagger-curl > summary').click()
+  const command = await card.locator('pre[aria-label="cURL request"]').innerText()
+  expect(command).toContain('/api/v1/scripts/validate')
+  expect(command).toContain('Authorization: Bearer <token>')
+  expect(command).toContain('Validate an HTTP flow')
+  // Exercise the clipboard action, independently of operating-system permission prompts.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { document.documentElement.dataset.referenceCopy = text } } })
+    document.execCommand = () => false
+  })
+  await card.getByRole('button', { name: 'Copy curl request', exact: true }).click()
+  await expect(card.getByText('Copied to clipboard.', { exact: true })).toBeVisible()
+  expect(await page.locator('html').getAttribute('data-reference-copy')).toBe(command)
+  await card.getByRole('combobox', { name: 'Response status', exact: true }).selectOption('401')
+  await expect(card).toContainText('Authentication required or invalid.')
+  await expect(card.locator('pre[aria-label="Example body"]').last()).toContainText('"error"')
+  await page.screenshot({ path: testInfo.outputPath('api-reference-desktop.png'), animations: 'disabled' })
+  await page.setViewportSize({ width: 760, height: 1000 })
+  await expect(card.getByRole('combobox', { name: 'Request format', exact: true })).toBeVisible()
+  expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  const results = await page.evaluate(async () => {
+    const axeWindow = window as typeof window & { axe: typeof axe }
+    return axeWindow.axe.run(document.querySelector('.swagger-docs-page')!, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })
+  })
+  expect(results.violations.map(violation => ({ id: violation.id, nodes: violation.nodes.map(node => node.target) }))).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('api-reference-narrow.png'), animations: 'disabled' })
+  const downloadEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download OpenAPI', exact: true }).click()
+  expect((await downloadEvent).suggestedFilename()).toBe('apexload-openapi.yaml')
+
+  await page.goto('/#/swagger?search=handleListScripts')
+  const listCard = page.locator('.swagger-operation-card')
+  await listCard.locator(':scope > summary').click()
+  await expect(listCard).toContainText('values above 1000 are capped')
+  await expect(listCard).toContainText('No request body is declared')
+  await expect(listCard.locator('pre[aria-label="Example body"]')).toContainText('"scripts": []')
+})
