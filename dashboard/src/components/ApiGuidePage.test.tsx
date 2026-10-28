@@ -182,4 +182,55 @@ describe('Help documentation', () => {
     await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Copy example')!.click())
     expect(container.textContent).toContain('Copy unavailable. Select the example and copy manually.')
   })
+  it('extends the left sidebar index down towards the bottom edge and updates dynamically', async () => {
+    await navigate('#/docs?guide=user-guide&article=scenarios')
+    await render()
+    const sidebar = container.querySelector<HTMLElement>('.help-sidebar')
+    expect(sidebar).not.toBeNull()
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    vi.spyOn(sidebar!, 'getBoundingClientRect').mockReturnValue({
+      top: 200,
+      bottom: 744,
+      left: 100,
+      right: 364,
+      width: 264,
+      height: 544,
+      x: 100,
+      y: 200,
+      toJSON: () => {},
+    })
+
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'))
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    })
+
+    // Available height: 800 - 200 - 28 = 572px
+    expect(sidebar?.style.getPropertyValue('--help-sidebar-max-height')).toBe('572px')
+
+    // Factoring in dashboard zoom
+    document.documentElement.style.setProperty('--dashboard-zoom', '1.25')
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'))
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    })
+    // Available height: Math.floor((800 - 200) / 1.25 - 28) = 452px
+    expect(sidebar?.style.getPropertyValue('--help-sidebar-max-height')).toBe('452px')
+    document.documentElement.style.removeProperty('--dashboard-zoom')
+
+    // On narrow screens (<= 1100px), custom max-height is removed
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 })
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'))
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    })
+    expect(sidebar?.style.getPropertyValue('--help-sidebar-max-height')).toBe('')
+
+    // Unmounting cleans up event listeners
+    const removeListenerSpy = vi.spyOn(window, 'removeEventListener')
+    await act(async () => root.unmount())
+    expect(removeListenerSpy).toHaveBeenCalledWith('resize', expect.any(Function))
+  })
 })
