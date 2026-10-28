@@ -56,26 +56,12 @@ func nativeStagingScopeFrom(ctx context.Context) nativeStagingScope {
 	return scope
 }
 
-func workerSafeScopeToken(s string) bool {
-	if len(s) < 1 || len(s) > 64 {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' {
-			return false
-		}
-	}
-	return true
-}
-
+// prefix returns a compact directory prefix so that nested worker scratch
+// directories (<cacheRoot>/job-<rand>/native-<rand>) stay well below the
+// Win32 CreateProcessW lpCurrentDirectory MAX_PATH (258-char) limit even when
+// the archive root lives under a deep temporary directory; DatasetID and
+// AttemptID are persisted in .staging-owner.json and .worker-owner.json.
 func (s nativeStagingScope) prefix() string {
-	if workerSafeScopeToken(s.DatasetID) && workerSafeScopeToken(s.AttemptID) {
-		return "job-" + s.DatasetID + "-" + s.AttemptID + "-"
-	}
-	if workerSafeScopeToken(s.DatasetID) {
-		return "job-" + s.DatasetID + "-"
-	}
 	return "job-"
 }
 

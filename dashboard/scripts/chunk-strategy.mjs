@@ -117,6 +117,9 @@ export function chunkNameForModule(id) {
   if (id.includes('/node_modules/@tanstack/react-virtual/') || id.includes('/node_modules/@tanstack/virtual-core/')) {
     return 'vendor-virtual'
   }
+  if (id.includes('/node_modules/yaml/')) {
+    return 'vendor-yaml'
+  }
   if (id.includes('/three/')) {
     return 'vendor-three'
   }
@@ -144,6 +147,7 @@ export function chunkNameForModule(id) {
 export const chunkGroupOrder = Object.freeze([
   'vendor',
   'vendor-virtual',
+  'vendor-yaml',
   'vendor-three',
   'vendor-recharts',
   'vendor-codemirror-languages',

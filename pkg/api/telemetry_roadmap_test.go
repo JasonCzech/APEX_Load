@@ -83,7 +83,9 @@ func TestTelemetryPublicationWindowStartBoundsAndClientRenderCalibration(t *test
 	}
 	assignTelemetryPublicationLocked(test, live1)
 	pub1 := live1.Telemetry.Publication.clone()
-	stageRecorderLocked(test).RegisterPresentationProof(pub1.Epoch, pub1.Sequence, "proof-seq-1")
+	if pub1 != nil {
+		stageRecorderLocked(test).RegisterPresentationProof(pub1.Epoch, pub1.Sequence, "proof-seq-1")
+	}
 	server.runner.mu.Unlock()
 
 	if pub1 == nil || pub1.OldestObservationStartAt == nil {

@@ -76,7 +76,7 @@ func newWorkerAttempt(ctx context.Context, parent string, b workerBootstrap, adm
 	if err != nil || !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 {
 		return nil, errWorkerProtocol
 	}
-	path, err := workerCreateScratchDirectory(parent, "native-"+b.Identity.AttemptID+"-", a)
+	path, err := workerCreateScratchDirectory(parent, "native-", a)
 	a.path = path
 	if err != nil {
 		return nil, errWorkerOwnership

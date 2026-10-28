@@ -565,8 +565,7 @@ func writeFootprintAgentJar(classDir, outputJar string) error {
 	defer out.Close()
 
 	zw := zip.NewWriter(out)
-	manifestHeader := &zip.FileHeader{Name: "META-INF/MANIFEST.MF", Method: zip.Deflate}
-	manifestHeader.SetModTime(time.Unix(0, 0).UTC())
+	manifestHeader := &zip.FileHeader{Name: "META-INF/MANIFEST.MF", Method: zip.Deflate, Modified: time.Unix(0, 0).UTC()}
 	mw, err := zw.CreateHeader(manifestHeader)
 	if err != nil {
 		_ = zw.Close()
@@ -585,8 +584,7 @@ func writeFootprintAgentJar(classDir, outputJar string) error {
 			_ = zw.Close()
 			return err
 		}
-		header := &zip.FileHeader{Name: filepath.ToSlash(rel), Method: zip.Deflate}
-		header.SetModTime(time.Unix(0, 0).UTC())
+		header := &zip.FileHeader{Name: filepath.ToSlash(rel), Method: zip.Deflate, Modified: time.Unix(0, 0).UTC()}
 		fw, err := zw.CreateHeader(header)
 		if err != nil {
 			_ = zw.Close()
