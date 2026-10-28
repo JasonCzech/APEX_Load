@@ -210,9 +210,10 @@ requirement — not optional. When adding or modifying code:
 - Do not mock internal packages unless required for isolation; prefer testing against real implementations.
 
 ## Commit Policy
-Before any commit, agents **must** run a code review of the changes being committed and fix
-every finding, low severity included. Repeat the review and fix cycle until a review round
-finds no issues, and commit only then.
+Before any commit, agents **must** obtain an independent code review of the changes being
+committed from a reviewer other than the agent that authored the changes; self-review does
+not satisfy this requirement. Fix every finding, low severity included. Repeat the independent
+review and fix cycle until an independent review round finds no issues, and commit only then.
 
 ## QA Review Records
 Review records under `docs/qa/reviews/` and `docs/archive/qa-reviews/` are Markdown only, apart from
