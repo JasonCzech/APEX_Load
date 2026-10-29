@@ -9,7 +9,10 @@ import RunReportPage from './RunReportPage'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { rcaTestReportView, rcaTestResponse, rcaTestSummary } from './rca/rcaTestFixture'
 
-vi.mock('../hooks/apiClient', () => ({ request: vi.fn().mockResolvedValue({ revision: 0, annotations: [] }) }))
+vi.mock('../hooks/apiClient', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../hooks/apiClient')>(),
+  request: vi.fn().mockResolvedValue({ revision: 0, annotations: [] }),
+}))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

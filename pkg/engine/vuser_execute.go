@@ -61,16 +61,16 @@ func (vu *VUser) cutOffByStop(message string) bool {
 	return strings.Contains(message, "context deadline exceeded") && vu.hardStopped()
 }
 
-func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig, logCfg dsl.LogConfig) {
+func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig, logCfg dsl.LogConfig) error {
 	if result == nil {
-		return
+		return nil
 	}
 	// A request cut off by the run stopping is not an error of the system
 	// under test; counting it put a burst of errors (often 100% of a final,
 	// otherwise empty sample) at the end of every stopped run. LoadRunner
 	// likewise leaves work caught in progress at stop out of the results.
 	if !result.Success && vu.cutOffByStop(result.ErrorMessage) {
-		return
+		return nil
 	}
 	if vu.Script != nil && len(vu.Script.Config.Results.CSVExports) > 0 {
 		result.CSVExportIDs = []string{}
@@ -99,7 +99,8 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result.NetworkProfile == "" && vu.Script != nil {
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
 	}
-	if err := vu.mergeExtractions(result); err != nil {
+	extractionErr := vu.mergeExtractions(result)
+	if err := extractionErr; err != nil {
 		result.Success = false
 		result.ExtractionsIncomplete = true
 		result.Extractions = nil
@@ -149,6 +150,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
 	}
+	return extractionErr
 }
 
 // Explicit aggregation keys remain internal metric identity even when public
@@ -318,6 +320,11 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	// not pass through recordResult. Apply the same detach, exact-secret
 	// redaction, and evidence bounds before either metrics or archive sinks can
 	// retain adapter-controlled metadata or error text.
+	var debugTransaction *protocol.Result
+	if vu.unredactedDebug {
+		detached := *tx
+		debugTransaction = &detached
+	}
 	if vu.runtimeCredentialRedactionErr != nil {
 		clearUnredactableResultEvidence(tx)
 	}
@@ -332,6 +339,9 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	}
 	if sink, ok := vu.ResultSink.(TransactionSink); ok {
 		_ = sink.RecordTransaction(tx)
+	}
+	if debugTransaction != nil {
+		return debugTransaction
 	}
 	return tx
 }
@@ -994,6 +1004,10 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		}
 		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
 		if err != nil {
+			if vu.unredactedDebug && result != nil {
+				vu.captureFailedRetryDebug(result)
+				vu.debugRetryError = fmt.Errorf("%s", cloneBoundedResultString(err.Error(), min(maxResultErrorBytes, maxConcurrentRichEvidenceBytes/max(1, vu.debugRetryGroupCount)/16)))
+			}
 			if result != nil && (result.ExtractionsIncomplete || len(result.Extractions) != 0) {
 				// Diagnostic outputs will be discarded without a variable merge.
 				// Their classification cannot silently disappear while an earlier
@@ -1001,6 +1015,9 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 				// Prepared workers own this error; the join propagates it before
 				// any source-ordered parent publication.
 				vu.failRuntimeCredentialRedaction(fmt.Errorf("runtime credential diagnostic extraction classification unavailable"))
+				if vu.debugRetryEvidence != nil {
+					vu.debugRetryEvidence.CredentialClassificationError = vu.runtimeCredentialRedactionError().Error()
+				}
 				err = fmt.Errorf("runtime credential diagnostic extraction classification unavailable")
 			}
 			// Adapters are permitted to return diagnostic Result data alongside an
@@ -1028,11 +1045,13 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		applyMessageDetailRequest(result, action)
 		if prepared {
 			if err := classification.observe(vu, result); err != nil {
+				vu.captureFailedRetryDebug(result)
 				clearUnredactableResultEvidence(result)
 				return result, nil
 			}
 		} else {
 			if err := vu.observeExtractionClassification(result); err != nil {
+				vu.captureFailedRetryDebug(result)
 				clearUnredactableResultEvidence(result)
 				// A complete matcher cannot be recovered by another retry. No
 				// further traffic/publication may use the discarded output.
@@ -1052,6 +1071,19 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 	}
 
 	return lastResult, nil
+}
+
+// Capture only for debugger replay before credential classification clears the
+// result. The worker owns this bounded copy; it never enters result sinks.
+func (vu *VUser) captureFailedRetryDebug(result *protocol.Result) {
+	if !vu.unredactedDebug || result == nil {
+		return
+	}
+	vu.debugRetryEvidence = captureUnredactedConcurrentResult(result, max(1, vu.debugRetryGroupCount))
+	if vu.runtimeCredentialRedactionError() != nil {
+		vu.debugRetryEvidence.CredentialClassificationError = vu.runtimeCredentialRedactionError().Error()
+	}
+	moveUnappliedReplayExtractions(vu.debugRetryEvidence)
 }
 
 func applyMessageDetailRequest(result *protocol.Result, action *protocol.Action) {

@@ -1,4 +1,5 @@
 import DialogLayer from './ux/DialogLayer'
+import { ReplayExtractions } from './ReplayExtractions'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
@@ -56,11 +57,11 @@ function sourceStepLabel(event: BrowserReplayEvent): string {
 function findViewportEvent(events: BrowserReplayEvent[], selectedIndex?: number | null) {
   if (typeof selectedIndex === 'number' && selectedIndex >= 0) {
     const selected = events[selectedIndex]
-    if (selected?.screenshot_base64 || selected?.snapshot?.screenshot_base64) return selected
+    if (selected) return selected
   }
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]
-    if (event.screenshot_base64 || event.snapshot?.screenshot_base64 || event.page_url || event.dom_summary) {
+    if (event.screenshot_base64 || event.snapshot?.screenshot_base64 || event.screenshot_omitted || event.snapshot?.screenshot_omitted || event.protocol_evidence?.screenshot_capture_error || event.page_url || event.dom_summary) {
       return event
     }
   }
@@ -194,6 +195,7 @@ export default function BrowserReplayDebugger({
     ? events[selectedEventIndex] || viewportEvent || events[0] || null
     : viewportEvent || events[0] || null
   const screenshot = viewportEvent?.screenshot_base64 || viewportEvent?.snapshot?.screenshot_base64
+  const screenshotError = typeof viewportEvent?.protocol_evidence?.screenshot_capture_error === 'string' ? viewportEvent.protocol_evidence.screenshot_capture_error : undefined
   const pageURL = viewportEvent?.page_url || viewportEvent?.snapshot?.page_url
   const pageTitle = viewportEvent?.page_title || viewportEvent?.snapshot?.page_title || viewportEvent?.dom_summary?.title
   const status = session?.status || (running ? 'running' : report?.stopped ? 'stopped' : report?.success ? 'completed' : report ? 'failed' : 'idle')
@@ -209,6 +211,7 @@ export default function BrowserReplayDebugger({
     [selectedEvent],
   )
   const selectedHTML = selectedEvent?.html || selectedEvent?.snapshot?.html
+  const htmlError = typeof selectedEvent?.protocol_evidence?.html_capture_error === 'string' ? selectedEvent.protocol_evidence.html_capture_error : undefined
   const selectedClientMetrics = eventClientMetrics(selectedEvent)
   const suggestedLocator = suggestedLocatorForEvent(selectedEvent)
   const assertionFailure = selectedEvent?.protocol_evidence?.assertion_failure as { expected?: unknown; actual?: unknown; type?: unknown } | undefined
@@ -334,6 +337,8 @@ export default function BrowserReplayDebugger({
             )}
           </div>
           <div className="browser-viewport-stage">
+            {screenshotError && <p role="status">Screenshot capture failed: {screenshotError}</p>}
+            {(viewportEvent?.screenshot_omitted || viewportEvent?.snapshot?.screenshot_omitted) && <p role="status">A screenshot was omitted because it exceeded the retained evidence limit.</p>}
             {screenshot ? (
               <button
                 type="button"
@@ -342,12 +347,12 @@ export default function BrowserReplayDebugger({
               >
                 <img src={`data:image/png;base64,${screenshot}`} alt="Browser replay viewport" />
               </button>
-            ) : (
+            ) : !(screenshotError || viewportEvent?.screenshot_omitted || viewportEvent?.snapshot?.screenshot_omitted) ? (
               <div className="browser-viewport-empty">
                 <strong>No screenshot yet</strong>
                 <span>Use a screenshot action or enable per-action capture for a live viewport.</span>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -441,6 +446,9 @@ export default function BrowserReplayDebugger({
             )}
             {selectedEvent ? (
               <div className="browser-debugger-detail-grid">
+                {htmlError && <p role="status">HTML capture failed: {htmlError}</p>}
+                {Boolean(selectedEvent.protocol_evidence_omitted_count) && <p role="status">{selectedEvent.protocol_evidence_omitted_count} protocol evidence {selectedEvent.protocol_evidence_omitted_count === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}
+                <ReplayExtractions event={selectedEvent} />
                 <div className="browser-debugger-detail-item">
                   <span>Action</span>
                   <strong>{selectedEvent.action_type} {selectedEvent.target || selectedEvent.selector || ''}</strong>

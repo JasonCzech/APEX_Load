@@ -157,6 +157,14 @@ describe('results against the last replay', () => {
     expect(savedValueResult(extractor, replay({ extractions: { doc: 'v1' } }, {}, true)).state).toBe('unchecked')
     expect(savedValueResult(extractor, null).detail).toBe('Not replayed yet')
   })
+
+  it('uses applied streamed child values, including prototype-like names, without using rejected values', () => {
+    const extractor = { name: '__proto__', source: 'body', type: 'xpath_custom', expression: '//x' }
+    const children = [{ action_name: 'child', success: true, extractions: JSON.parse('{"__proto__":"value"}') as Record<string, string> }]
+    expect(savedValueResult(extractor, replay({ streamed_children: children }))).toEqual({ state: 'passed', detail: 'Saved “value” in the last replay' })
+    const rejected = [{ action_name: 'child', success: false, unapplied_extractions: { constructor: 'rejected' } }]
+    expect(savedValueResult({ ...extractor, name: 'constructor' }, replay({ streamed_children: rejected })).state).toBe('unchecked')
+  })
 })
 
 describe('the replay of a step', () => {

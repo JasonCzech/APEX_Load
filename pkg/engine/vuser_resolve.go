@@ -214,20 +214,33 @@ func (vu *VUser) bindRuntimeTextRedactor() {
 		return
 	}
 	vu.runtimeRedaction.Store(vu.resultPublicationRedactionConfig())
-	bindProtocolRuntimeRedaction(vu.Proto, func() *RedactionConfig { return vu.runtimeRedaction.Load() })
+	bindProtocolRuntimeRedaction(vu.Proto, vu.runtimeRedaction.Load, vu.runtimeRedaction.snapshot)
 	vu.Metrics.bindBrowserDocumentRedaction(vu.Proto, func() *RedactionConfig { return vu.runtimeRedaction.Load() })
 }
 
 // bindProtocolRuntimeRedaction installs the evidence gate before protocol Init
 // as well as after VUser construction. Browser Init can otherwise create a raw
 // Playwright HAR working file before the VUser has a chance to suppress it.
-func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *RedactionConfig) {
+func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *RedactionConfig, snapshots ...func() (*RedactionConfig, func(func() bool) bool)) {
 	if proto == nil || provider == nil {
 		return
 	}
 	if setter, ok := proto.(protocol.RuntimeTextRedactorSetter); ok {
 		setter.SetRuntimeTextRedactor(func(value string) string {
 			return scrubSensitiveTextWithConfig(value, currentRedactionConfig(provider))
+		})
+	}
+	if setter, ok := proto.(protocol.RuntimeBoundedTextRedactorSetter); ok {
+		setter.SetRuntimeBoundedTextRedactor(func(value string) (string, bool) {
+			return boundedRuntimeDiagnosticText(value, provider)
+		})
+	}
+	if setter, ok := proto.(protocol.RuntimeBoundedTextRedactorSnapshotSetter); ok {
+		setter.SetRuntimeBoundedTextRedactorSnapshot(func() (protocol.BoundedTextRedactor, protocol.BoundedTextRedactorCommitGuard) {
+			if len(snapshots) > 0 && snapshots[0] != nil {
+				return snapshotVersionedBoundedRuntimeDiagnosticText(snapshots[0])
+			}
+			return snapshotBoundedRuntimeDiagnosticText(provider)
 		})
 	}
 	if setter, ok := proto.(protocol.RuntimeSecretActivitySetter); ok {

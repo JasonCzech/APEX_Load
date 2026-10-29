@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"maps"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -59,11 +60,49 @@ func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	cloned.CorrelationEvidence = nil
 	cloned.Headers = cloneStringMap(event.Headers)
 	cloned.Extractions = cloneStringMap(event.Extractions)
+	if protocol.ValidateExtractions(event.UnappliedExtractions) == nil {
+		cloned.UnappliedExtractions = cloneStringMap(event.UnappliedExtractions)
+	} else {
+		cloned.UnappliedExtractions = nil
+		cloned.UnappliedExtractionsOmittedCount += len(event.UnappliedExtractions)
+	}
 	cloned.Console = cloneConsoleEntries(event.Console)
 	cloned.Network = cloneNetworkEntries(event.Network)
 	cloned.DOMSummary = cloneDOMSummary(event.DOMSummary)
 	cloned.ClientMetrics = cloneClientMetrics(event.ClientMetrics)
-	cloned.ProtocolEvidence = cloneAnyMap(event.ProtocolEvidence)
+	var omitted int
+	cloned.ProtocolEvidence, omitted = cloneReplayDebugEvidence(event.ProtocolEvidence, maxReplayDebugEvidenceBytes)
+	cloned.ProtocolEvidenceOmittedCount += omitted
+	cloned.StreamedChildren = nil
+	remaining := maxReplayStreamedBytes
+	for i, child := range event.StreamedChildren {
+		if i >= maxReplayStreamedChildren {
+			cloned.StreamedChildrenOmittedCount += len(event.StreamedChildren) - i
+			break
+		}
+		child.ActionName = cloneBoundedResultString(child.ActionName, maxReplayIdentityBytes)
+		child.ErrorMessage = cloneBoundedResultString(child.ErrorMessage, maxReplayErrorBytes)
+		child.CredentialClassificationError = cloneBoundedResultString(child.CredentialClassificationError, maxReplayErrorBytes)
+		if protocol.ValidateExtractions(child.Extractions) != nil {
+			child.ExtractionsOmittedCount += len(child.Extractions)
+			child.Extractions = nil
+		} else {
+			child.Extractions = cloneStringMap(child.Extractions)
+		}
+		if protocol.ValidateExtractions(child.UnappliedExtractions) != nil {
+			child.UnappliedExtractionsOmittedCount += len(child.UnappliedExtractions)
+			child.UnappliedExtractions = nil
+		} else {
+			child.UnappliedExtractions = cloneStringMap(child.UnappliedExtractions)
+		}
+		encoded, err := json.Marshal(child)
+		if err != nil || len(encoded) > remaining {
+			cloned.StreamedChildrenOmittedCount++
+			continue
+		}
+		remaining -= len(encoded)
+		cloned.StreamedChildren = append(cloned.StreamedChildren, child)
+	}
 	cloned.Diagnosis = cloneReplayDiagnosis(event.Diagnosis)
 	cloned.RepairSuggestions = cloneReplayRepairSuggestions(event.RepairSuggestions)
 	if event.RequestIndex != nil {

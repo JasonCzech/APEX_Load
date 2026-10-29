@@ -6374,6 +6374,7 @@ describe('ScriptEditor', () => {
     await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))!
     await act(async () => { optionsButton.click() })
+    expect(container.textContent).toContain('Debugger sessions and exports can contain unredacted credentials and values.')
     const afterFailure = container.querySelector<HTMLSelectElement>('select[aria-label="After a failure"]')!
     // The default names what a test run of this script does (it opts out of continue-on-error).
     expect(afterFailure.selectedOptions[0].textContent).toBe('As a test run: stop this iteration')
@@ -7399,6 +7400,15 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
+    const utilityResizer = container.querySelector('[aria-label="Resize right sidebar"]') as HTMLDivElement | null
+    expect(utilityResizer).toBeTruthy()
+    expect(utilityResizer?.getAttribute('aria-controls')).toBe('script-details-panel')
+    await act(async () => {
+      utilityResizer?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    })
+    expect(Number(utilityResizer?.getAttribute('aria-valuenow'))).toBeGreaterThan(600)
+    expect(Number(window.localStorage.getItem('authorUtilityWidth'))).toBeGreaterThan(600)
+
     const debugTab = findOpenDebuggerButton(container)
     expect(debugTab).toBeTruthy()
     if (!debugTab) {
@@ -7446,6 +7456,11 @@ describe('ScriptEditor', () => {
     expect(actionsResizer.getAttribute('aria-valuenow')).toBe('324')
     expect(panelResizer.getAttribute('aria-valuenow')).toBe('344')
     expect(bottomResizer.getAttribute('aria-valuenow')).toBe('244')
+
+    await act(async () => {
+      panelResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    })
+    expect(Number(panelResizer.getAttribute('aria-valuenow'))).toBeGreaterThan(600)
   })
 
   it('surfaces script load failures when fetching by id', async () => {

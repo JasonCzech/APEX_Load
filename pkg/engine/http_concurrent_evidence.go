@@ -63,20 +63,26 @@ func boundConcurrentCompletedResult(result *protocol.Result, count int, config *
 	allowance := maxConcurrentRichEvidenceBytes / count
 	bodyLimit, snapshotLimit := allowance/2, allowance/2
 	preOmitted, preOmittedBodyBytes := false, 0
+	preOmittedScreenshot := false
 	// With no exact matcher or custom rule, an oversized graph cannot shrink
 	// into the retained allowance. Drop it whole before the generic scrubber:
 	// discarded bytes expose no prefixes and need no expensive projection.
 	if !hasRuntimeSecretReplacers(config) && (config == nil || len(config.compiled) == 0) {
 		if len(result.ResponseBody) > min(bodyLimit/2, maxRetainedResultEvidenceBytes/2) {
 			preOmitted, preOmittedBodyBytes = true, len(result.ResponseBody)
+			preOmittedScreenshot = result.ScreenshotBase64 != "" || result.ScreenshotOmitted
 			clearConcurrentRichEvidence(result)
 		}
 		if result.Snapshot != nil && len(result.Snapshot.ResponseBody) > min(snapshotLimit/2, defaultErrorSnapshotMaxBytes/2) {
 			preOmitted = true
+			preOmittedScreenshot = preOmittedScreenshot || result.Snapshot.ScreenshotBase64 != "" || result.Snapshot.ScreenshotOmitted
 			result.Snapshot = nil
 		}
 	}
 	scrubConcurrentPublicResult(result, config)
+	if preOmittedScreenshot && !config.HasRuntimeSecretMaterial() {
+		result.ScreenshotOmitted = true
+	}
 	metadataPointers := concurrentPublicStringPointers(result)
 	metadataBefore := make([]string, len(metadataPointers))
 	for i, field := range metadataPointers {
@@ -102,6 +108,7 @@ func boundConcurrentCompletedResult(result *protocol.Result, count int, config *
 		result.PageTitle = rich.PageTitle
 		result.HTML = rich.HTML
 		result.ScreenshotBase64 = rich.ScreenshotBase64
+		result.ScreenshotOmitted = result.ScreenshotOmitted || rich.ScreenshotOmitted
 		result.ConsoleEntries = rich.ConsoleEntries
 		result.NetworkEntries = rich.NetworkEntries
 		result.DOMSummary = rich.DOMSummary
@@ -164,9 +171,15 @@ func boundConcurrentCompletedResult(result *protocol.Result, count int, config *
 	snapshotComplete := reflect.DeepEqual(originalSnapshot, result.Snapshot)
 	protocolComplete := reflect.DeepEqual(originalProtocolEvidence, result.ProtocolEvidence)
 	if !richComplete {
+		if originalRich.ScreenshotBase64 != "" {
+			result.ScreenshotOmitted = true
+		}
 		clearConcurrentRichEvidence(result)
 	}
 	if !snapshotComplete {
+		if result.ScreenshotBase64 == "" && originalSnapshot != nil && (originalSnapshot.ScreenshotBase64 != "" || originalSnapshot.ScreenshotOmitted) {
+			result.ScreenshotOmitted = true
+		}
 		result.Snapshot = nil
 	}
 	if !protocolComplete {
@@ -270,6 +283,7 @@ func omitConcurrentPublicEvidence(result *protocol.Result) {
 		return
 	}
 	originalError := result.ErrorMessage
+	result.ScreenshotOmitted = false
 	// A result carrying byte evidence keeps it and its protocol, so its byte
 	// counts stay measurements of their population (NA-C). Only adapters
 	// with constant dependency types (HTTP, gRPC, WebSocket, and the protocols

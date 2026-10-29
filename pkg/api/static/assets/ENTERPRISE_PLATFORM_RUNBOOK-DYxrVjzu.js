@@ -94,6 +94,13 @@ Use at least two controller replicas with:
 
 The example HA deployment is in \`deployments/k8s/ha/controller-ha-deployment.example.yaml\`.
 
+Script debugger sessions and their live WebSocket events stay on the controller
+that started the session; their raw evidence is not sent through Redis/Valkey
+fanout. Configure the ingress or load balancer to route both the debugger's API
+requests and its WebSocket connection to that controller for the session's
+lifetime. The example deployment does not configure this affinity. A controller
+failure ends its local debugger sessions.
+
 
 ## Enterprise Platform Architecture Runbook
 

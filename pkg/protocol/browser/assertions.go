@@ -28,14 +28,20 @@ func boundedAssertionDeclared(raw string) string {
 	return declared
 }
 
+type browserAssertionHTMLCapture struct {
+	attempted bool
+	err       error
+}
+
 func (b *Browser) evaluateBrowserAssertions(action *protocol.Action, assertions []protocol.Assertion, result *protocol.Result) error {
-	_, err := b.evaluateBrowserAssertionsWithOutcomes(context.Background(), action, assertions, result, false)
+	_, err, _ := b.evaluateBrowserAssertionsWithOutcomes(context.Background(), action, assertions, result, false)
 	return err
 }
 
-func (b *Browser) evaluateBrowserAssertionsWithOutcomes(ctx context.Context, action *protocol.Action, assertions []protocol.Assertion, result *protocol.Result, actionFailed bool) ([]protocol.BrowserInteractionOutcome, error) {
+func (b *Browser) evaluateBrowserAssertionsWithOutcomes(ctx context.Context, action *protocol.Action, assertions []protocol.Assertion, result *protocol.Result, actionFailed bool) ([]protocol.BrowserInteractionOutcome, error, browserAssertionHTMLCapture) {
+	htmlCapture := browserAssertionHTMLCapture{attempted: result.HTML != ""}
 	if len(assertions) == 0 {
-		return nil, nil
+		return nil, nil, htmlCapture
 	}
 	outcomes := make([]protocol.BrowserInteractionOutcome, 0, len(assertions))
 	if actionFailed {
@@ -47,7 +53,7 @@ func (b *Browser) evaluateBrowserAssertionsWithOutcomes(ctx context.Context, act
 				Reason:   "action_failed",
 			})
 		}
-		return outcomes, nil
+		return outcomes, nil, htmlCapture
 	}
 	var firstErr error
 	for _, assertion := range assertions {
@@ -61,16 +67,16 @@ func (b *Browser) evaluateBrowserAssertionsWithOutcomes(ctx context.Context, act
 			})
 			continue
 		}
-		outcome, err := b.evaluateSingleBrowserAssertion(ctx, action, assertion, declared, result)
+		outcome, err := b.evaluateSingleBrowserAssertion(ctx, action, assertion, declared, result, &htmlCapture)
 		outcomes = append(outcomes, outcome)
 		if err != nil {
 			firstErr = err
 		}
 	}
-	return outcomes, firstErr
+	return outcomes, firstErr, htmlCapture
 }
 
-func (b *Browser) evaluateSingleBrowserAssertion(ctx context.Context, action *protocol.Action, assertion protocol.Assertion, declared string, result *protocol.Result) (protocol.BrowserInteractionOutcome, error) {
+func (b *Browser) evaluateSingleBrowserAssertion(ctx context.Context, action *protocol.Action, assertion protocol.Assertion, declared string, result *protocol.Result, htmlCapture *browserAssertionHTMLCapture) (protocol.BrowserInteractionOutcome, error) {
 	notReached := func(reason string, err error) (protocol.BrowserInteractionOutcome, error) {
 		if ctx != nil && ctx.Err() != nil {
 			reason = "context_canceled"
@@ -118,9 +124,11 @@ func (b *Browser) evaluateSingleBrowserAssertion(ctx context.Context, action *pr
 		}
 		return met()
 	case "body_contains":
-		if result.HTML == "" && b.currentPage() != nil {
+		if !htmlCapture.attempted && b.currentPage() != nil {
+			htmlCapture.attempted = true
 			html, err := b.captureHTML(ctx)
 			if err != nil {
+				htmlCapture.err = err
 				return notReached("evaluation_error", err)
 			}
 			result.HTML = html
@@ -130,9 +138,11 @@ func (b *Browser) evaluateSingleBrowserAssertion(ctx context.Context, action *pr
 		}
 		return met()
 	case "body_not_contains":
-		if result.HTML == "" && b.currentPage() != nil {
+		if !htmlCapture.attempted && b.currentPage() != nil {
+			htmlCapture.attempted = true
 			html, err := b.captureHTML(ctx)
 			if err != nil {
+				htmlCapture.err = err
 				return notReached("evaluation_error", err)
 			}
 			result.HTML = html

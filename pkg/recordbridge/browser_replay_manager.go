@@ -1405,6 +1405,7 @@ func CloneBrowserErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.Error
 		return nil
 	}
 	cloned := *snapshot
+	cloned.Resources = protocol.CloneResourceSnapshots(snapshot.Resources)
 	cloned.RequestHeaders = CloneBrowserStringMap(snapshot.RequestHeaders)
 	cloned.ResponseHeaders = CloneBrowserStringMap(snapshot.ResponseHeaders)
 	cloned.ConsoleEntries = CloneBrowserConsoleEntries(snapshot.ConsoleEntries)
@@ -1414,44 +1415,9 @@ func CloneBrowserErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.Error
 }
 
 func CloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayActionEvent {
-	cloned := event
-	// Raw correlation evidence is an internal, single-use value and must never
-	// cross a public session snapshot boundary.
-	cloned.CorrelationEvidence = nil
-	cloned.Headers = CloneBrowserStringMap(event.Headers)
-	cloned.Extractions = CloneBrowserStringMap(event.Extractions)
-	cloned.Console = CloneBrowserConsoleEntries(event.Console)
-	cloned.Network = CloneBrowserNetworkEntries(event.Network)
-	cloned.DOMSummary = CloneBrowserDOMSummary(event.DOMSummary)
-	cloned.ClientMetrics = CloneBrowserClientMetrics(event.ClientMetrics)
-	cloned.ProtocolEvidence = protocol.BoundProtocolEvidence(event.ProtocolEvidence)
-	cloned.Diagnosis = CloneBrowserReplayDiagnosis(event.Diagnosis)
-	cloned.RepairSuggestions = CloneBrowserReplayRepairSuggestions(event.RepairSuggestions)
-	if event.RequestIndex != nil {
-		requestIndex := *event.RequestIndex
-		cloned.RequestIndex = &requestIndex
-	}
-	if event.Iteration != nil {
-		iteration := *event.Iteration
-		cloned.Iteration = &iteration
-	}
-	if len(event.StepPath) > 0 {
-		cloned.StepPath = append([]string(nil), event.StepPath...)
-	}
-	if len(event.IterationPath) > 0 {
-		cloned.IterationPath = append([]int(nil), event.IterationPath...)
-	}
-	if event.Snapshot != nil {
-		snapshot := *event.Snapshot
-		snapshot.Resources = protocol.CloneResourceSnapshots(event.Snapshot.Resources)
-		snapshot.RequestHeaders = CloneBrowserStringMap(event.Snapshot.RequestHeaders)
-		snapshot.ResponseHeaders = CloneBrowserStringMap(event.Snapshot.ResponseHeaders)
-		snapshot.ConsoleEntries = CloneBrowserConsoleEntries(event.Snapshot.ConsoleEntries)
-		snapshot.NetworkEntries = CloneBrowserNetworkEntries(event.Snapshot.NetworkEntries)
-		snapshot.DOMSummary = CloneBrowserDOMSummary(event.Snapshot.DOMSummary)
-		cloned.Snapshot = &snapshot
-	}
-	return cloned
+	// Use the engine's debug retention projection, including its omission
+	// receipts, instead of applying the smaller ordinary protocol-evidence limit.
+	return engine.BoundReplayActionEventForRetention(event, true)
 }
 
 func CloneBrowserReplayArtifactManifest(manifest *engine.ReplayArtifactManifest) *engine.ReplayArtifactManifest {
@@ -1562,6 +1528,8 @@ func CloneBrowserClientMetrics(metrics *protocol.ClientMetrics) *protocol.Client
 		return nil
 	}
 	cloned := *metrics
+	cloned.DocumentEvidence = metrics.DocumentEvidence.Clone()
+	cloned.RuntimeAvailability = metrics.RuntimeAvailability.Clone()
 	return &cloned
 }
 

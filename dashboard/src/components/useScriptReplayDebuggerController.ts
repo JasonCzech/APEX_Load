@@ -126,6 +126,13 @@ function loadPaneSize(kind: DebuggerResizeKind): number {
   }
 }
 
+function debuggerVarsMaximum(target: HTMLElement): number {
+  const shell = target.closest('.debugger-shell') as HTMLElement | null
+  const shellWidth = shell?.getBoundingClientRect().width || window.innerWidth
+  const railWidth = shell?.querySelector<HTMLElement>('.debugger-rail')?.getBoundingClientRect().width || DEBUGGER_LAYOUT_DEFAULTS.rail
+  return Math.max(DEBUGGER_LAYOUT_LIMITS.vars.min, Math.round(shellWidth - railWidth - 100))
+}
+
 function currentDebugAncestorKeys(action?: ScriptDebugAction): Set<string> {
   const keys = new Set<string>()
   if (!action) return keys
@@ -180,6 +187,9 @@ export function useScriptReplayDebuggerController({
   const [expandedDebugSequences, setExpandedDebugSequences] = useState<Set<string>>(() => new Set())
   const [debuggerRailWidth, setDebuggerRailWidth] = useState(() => loadPaneSize('rail'))
   const [debuggerVarsWidth, setDebuggerVarsWidth] = useState(() => loadPaneSize('vars'))
+  const [debuggerDetailElement, setDebuggerDetailElement] = useState<HTMLElement | null>(null)
+  const [debuggerVarsActualWidth, setDebuggerVarsActualWidth] = useState<number | null>(null)
+  const [debuggerVarsMaximumWidth, setDebuggerVarsMaximumWidth] = useState(() => Math.max(DEBUGGER_LAYOUT_LIMITS.vars.min, window.innerWidth - 100))
   const [debuggerBottomHeight, setDebuggerBottomHeight] = useState(() => loadPaneSize('bottom'))
   const [activeDebuggerResize, setActiveDebuggerResize] = useState<DebuggerResizeKind | null>(null)
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
@@ -239,6 +249,25 @@ export function useScriptReplayDebuggerController({
     } catch { /* storage may be unavailable */ }
   }, [debuggerBottomHeight, debuggerRailWidth, debuggerVarsWidth])
 
+  // Keep the splitter's accessible value in sync with the rendered track when
+  // a saved width is constrained by a smaller window. Preserve the saved width
+  // until the operator actually resizes it again.
+  useEffect(() => {
+    if (!debuggerDetailElement) return
+    const updateSize = () => {
+      const width = debuggerDetailElement.getBoundingClientRect().width
+      setDebuggerVarsActualWidth(width > 0 ? Math.round(width) : null)
+      setDebuggerVarsMaximumWidth(debuggerVarsMaximum(debuggerDetailElement))
+    }
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateSize)
+    observer?.observe(debuggerDetailElement)
+    const shell = debuggerDetailElement.closest('.debugger-shell')
+    if (shell) observer?.observe(shell)
+    return () => { window.removeEventListener('resize', updateSize); observer?.disconnect() }
+  }, [debuggerDetailElement, debuggerRailWidth])
+
   useEffect(() => {
     if (!debugRawAutoScroll || !debugRawOutputRef.current) return
     debugRawOutputRef.current.scrollTop = debugRawOutputRef.current.scrollHeight
@@ -278,7 +307,7 @@ export function useScriptReplayDebuggerController({
   const handleDebuggerResizeKeyDown = useCallback((kind: DebuggerResizeKind, event: ReactKeyboardEvent<HTMLDivElement>) => {
     const limits = DEBUGGER_LAYOUT_LIMITS[kind]
     const step = limits.step * (event.shiftKey ? 2 : 1)
-    const currentValue = kind === 'rail' ? debuggerRailWidth : kind === 'vars' ? debuggerVarsWidth : debuggerBottomHeight
+    const currentValue = kind === 'rail' ? debuggerRailWidth : kind === 'vars' ? (event.currentTarget.parentElement?.getBoundingClientRect().width || debuggerVarsWidth) : debuggerBottomHeight
     let nextValue: number | null = null
     if (kind === 'bottom') {
       if (event.key === 'ArrowUp') nextValue = currentValue + step
@@ -291,11 +320,11 @@ export function useScriptReplayDebuggerController({
       else if (event.key === 'ArrowRight') nextValue = currentValue - step
     }
     if (event.key === 'Home') nextValue = limits.min
-    if (event.key === 'End') nextValue = limits.max
+    if (event.key === 'End') nextValue = kind === 'vars' ? debuggerVarsMaximum(event.currentTarget) : limits.max
     if (nextValue === null) return
     event.preventDefault()
     if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', nextValue))
-    else if (kind === 'vars') setDebuggerVarsWidth(clampDebuggerPaneSize('vars', nextValue))
+    else if (kind === 'vars') setDebuggerVarsWidth(Math.min(debuggerVarsMaximum(event.currentTarget), clampDebuggerPaneSize('vars', nextValue)))
     else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', nextValue))
   }, [debuggerBottomHeight, debuggerRailWidth, debuggerVarsWidth])
 
@@ -303,13 +332,14 @@ export function useScriptReplayDebuggerController({
     const startX = event.clientX
     const startY = event.clientY
     const startRail = debuggerRailWidth
-    const startVars = debuggerVarsWidth
+    const startVars = kind === 'vars' ? (event.currentTarget.parentElement?.getBoundingClientRect().width || debuggerVarsWidth) : debuggerVarsWidth
     const startBottom = debuggerBottomHeight
+    const maxVars = kind === 'vars' ? debuggerVarsMaximum(event.currentTarget) : 0
     const started = startPointerDrag(event, {
       cursor: kind === 'bottom' ? 'row-resize' : 'col-resize',
       onMove: moveEvent => {
         if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', startRail + (moveEvent.clientX - startX)))
-        else if (kind === 'vars') setDebuggerVarsWidth(clampDebuggerPaneSize('vars', startVars - (moveEvent.clientX - startX)))
+        else if (kind === 'vars') setDebuggerVarsWidth(Math.min(maxVars, clampDebuggerPaneSize('vars', startVars - (moveEvent.clientX - startX))))
         else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', startBottom - (moveEvent.clientY - startY)))
       },
       onEnd: () => setActiveDebuggerResize(null),
@@ -344,6 +374,9 @@ export function useScriptReplayDebuggerController({
     debuggerStatusState,
     debuggerTab,
     debuggerVarsWidth,
+    debuggerVarsActualWidth,
+    debuggerVarsMaximumWidth,
+    setDebuggerDetailElement,
     debugRailFilter,
     debugRawAutoScroll,
     debugRawLevel,

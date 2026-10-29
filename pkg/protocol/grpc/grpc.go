@@ -50,21 +50,23 @@ func init() {
 }
 
 type GRPC struct {
-	target       string
-	conn         *googlegrpc.ClientConn
-	metadata     metadata.MD
-	useReflect   bool
-	plainText    bool
-	maxRecvBytes int
-	callTimeout  time.Duration
-	methods      map[string]protoreflect.MethodDescriptor
-	methodOrder  []string
-	mu           sync.Mutex
+	unredactedDebugSnapshots bool
+	target                   string
+	conn                     *googlegrpc.ClientConn
+	metadata                 metadata.MD
+	useReflect               bool
+	plainText                bool
+	maxRecvBytes             int
+	callTimeout              time.Duration
+	methods                  map[string]protoreflect.MethodDescriptor
+	methodOrder              []string
+	mu                       sync.Mutex
 }
 
 func (g *GRPC) Name() string { return "grpc" }
 
 func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
+	g.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	g.target, _ = stringConfig(config, "base_url")
 	if g.target == "" {
 		g.target, _ = stringConfig(config, "grpc_target")
@@ -144,16 +146,17 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 
+	effectiveMetadata := g.callMetadata(action)
 	err = nil
 	switch action.Type {
 	case "grpc_unary":
-		err = g.invokeUnary(callCtx, action, result)
+		err = g.invokeUnary(callCtx, action, result, effectiveMetadata)
 	case "grpc_server_stream":
-		err = g.invokeServerStream(callCtx, action, result)
+		err = g.invokeServerStream(callCtx, action, result, effectiveMetadata)
 	case "grpc_client_stream":
-		err = g.invokeClientStream(callCtx, action, result)
+		err = g.invokeClientStream(callCtx, action, result, effectiveMetadata)
 	case "grpc_bidi_stream":
-		err = g.invokeBidiStream(callCtx, action, result)
+		err = g.invokeBidiStream(callCtx, action, result, effectiveMetadata)
 	default:
 		err = fmt.Errorf("unsupported grpc action type: %s", action.Type)
 	}
@@ -166,7 +169,7 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Success = false
 		result.StatusCode = int(grpcstatus.Code(err))
 		result.ErrorMessage = err.Error()
-		result.Snapshot = g.buildSnapshot(action, result)
+		result.Snapshot = g.buildSnapshot(action, result, effectiveMetadata)
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
@@ -176,32 +179,39 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	return result, nil
 }
 
-func (g *GRPC) buildSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+func (g *GRPC) buildSnapshot(action *protocol.Action, result *protocol.Result, effectiveMetadata metadata.MD) *protocol.ErrorSnapshot {
 	if action == nil || result == nil {
 		return nil
 	}
 	requestURL := strings.TrimSpace(action.Target)
-	if action.RedactedTarget != "" {
+	if !g.unredactedDebugSnapshots && action.RedactedTarget != "" {
 		requestURL = strings.TrimSpace(action.RedactedTarget)
 	}
 	if g.target != "" && requestURL != "" && !strings.Contains(requestURL, "://") {
 		requestURL = strings.TrimRight(g.target, "/") + "/" + strings.TrimLeft(requestURL, "/")
 	}
-	headers := cloneMetadataHeaders(action.Headers)
-	if len(action.RedactedHeaders) > 0 {
+	var headers map[string]string
+	var headersOmitted bool
+	if g.unredactedDebugSnapshots {
+		headers, headersOmitted = protocol.FlattenGRPCSnapshotMetadata(map[string][]string(effectiveMetadata))
+	} else if len(action.RedactedHeaders) > 0 {
 		headers = cloneMetadataHeaders(action.RedactedHeaders)
+	} else {
+		headers = cloneMetadataHeaders(action.Headers)
 	}
 	body := string(action.Body)
-	if len(action.RedactedBody) > 0 {
+	if !g.unredactedDebugSnapshots && len(action.RedactedBody) > 0 {
 		body = string(action.RedactedBody)
 	}
 	return &protocol.ErrorSnapshot{
-		RequestMethod:  action.Type,
-		RequestURL:     requestURL,
-		RequestHeaders: headers,
-		RequestBody:    body,
-		ResponseStatus: result.StatusCode,
-		ResponseBody:   result.ResponseBody,
+		RequestMethod:                 action.Type,
+		RequestURL:                    requestURL,
+		RequestHeaders:                headers,
+		RequestHeadersOmitted:         headersOmitted,
+		RequestWireHeadersUnavailable: g.unredactedDebugSnapshots,
+		RequestBody:                   body,
+		ResponseStatus:                result.StatusCode,
+		ResponseBody:                  result.ResponseBody,
 	}
 }
 
@@ -235,7 +245,7 @@ func (g *GRPC) HealthCheck(ctx context.Context) error {
 	}
 }
 
-func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result *protocol.Result, effectiveMetadata metadata.MD) error {
 	method, err := g.resolveMethod(ctx, action.Target)
 	if err != nil {
 		return err
@@ -243,7 +253,7 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	if method.IsStreamingClient() || method.IsStreamingServer() {
 		return fmt.Errorf("grpc_unary requires a unary method, got streaming method %q", action.Target)
 	}
-	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
+	callCtx := metadata.NewOutgoingContext(ctx, effectiveMetadata)
 
 	request := dynamicpb.NewMessage(method.Input())
 	if len(action.Body) > 0 {
@@ -278,7 +288,7 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	return g.applyResponseChecks(action, result, responseBody)
 }
 
-func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, result *protocol.Result, effectiveMetadata metadata.MD) error {
 	method, err := g.resolveMethod(ctx, action.Target)
 	if err != nil {
 		return err
@@ -286,7 +296,7 @@ func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, 
 	if !method.IsStreamingServer() || method.IsStreamingClient() {
 		return fmt.Errorf("grpc_server_stream requires a server-streaming method, got %q", action.Target)
 	}
-	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
+	callCtx := metadata.NewOutgoingContext(ctx, effectiveMetadata)
 
 	callCtx = beginRPC(callCtx, method)
 	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method), rpcCodecOption(callCtx))
@@ -323,7 +333,7 @@ func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, 
 	return g.applyResponseChecks(action, result, responseBody)
 }
 
-func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, result *protocol.Result, effectiveMetadata metadata.MD) error {
 	method, err := g.resolveMethod(ctx, action.Target)
 	if err != nil {
 		return err
@@ -331,7 +341,7 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 	if !method.IsStreamingClient() || method.IsStreamingServer() {
 		return fmt.Errorf("grpc_client_stream requires a client-streaming method, got %q", action.Target)
 	}
-	callCtx := metadata.NewOutgoingContext(ctx, g.callMetadata(action))
+	callCtx := metadata.NewOutgoingContext(ctx, effectiveMetadata)
 	bodies, err := streamBodies(action)
 	if err != nil {
 		return err
@@ -379,7 +389,7 @@ func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, 
 	return g.applyResponseChecks(action, result, responseBody)
 }
 
-func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, result *protocol.Result, effectiveMetadata metadata.MD) error {
 	method, err := g.resolveMethod(ctx, action.Target)
 	if err != nil {
 		return err
@@ -387,7 +397,7 @@ func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, re
 	if !method.IsStreamingClient() || !method.IsStreamingServer() {
 		return fmt.Errorf("grpc_bidi_stream requires a bidirectional streaming method, got %q", action.Target)
 	}
-	callCtx, cancel := context.WithCancel(metadata.NewOutgoingContext(ctx, g.callMetadata(action)))
+	callCtx, cancel := context.WithCancel(metadata.NewOutgoingContext(ctx, effectiveMetadata))
 	defer cancel()
 	bodies, err := streamBodies(action)
 	if err != nil {

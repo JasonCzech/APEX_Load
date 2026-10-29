@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,8 +23,8 @@ import (
 // the OAuth 2.0 JWT bearer flow, asks Salesforce's single-access UI bridge for
 // a one-time frontdoor URL, opens that URL in a throwaway context with no
 // evidence capture, and seeds the observer's context with the cookies it
-// leaves. The token, the frontdoor URL and its one-time password never reach
-// the observer's evidence or an error message.
+// leaves. The token and frontdoor URL do not reach browser evidence; errors
+// disclose their detail only when the interactive debugger requests it.
 
 const (
 	salesforceJWTLoginURLKey   = "browser_session_jwt_login_url"
@@ -47,12 +48,13 @@ const (
 
 // salesforceJWTSession is one observer's salesforce_jwt sign-in.
 type salesforceJWTSession struct {
-	loginURL   string
-	clientID   string
-	privateKey string
-	audience   string
-	startURL   string
-	username   string
+	loginURL        string
+	clientID        string
+	privateKey      string
+	audience        string
+	startURL        string
+	username        string
+	unredactedDebug bool
 	// allowedHosts is the script's target policy, which the token endpoint,
 	// the instance and the frontdoor URL must all satisfy.
 	allowedHosts []string
@@ -84,13 +86,14 @@ func (b *Browser) configureSalesforceJWTSession(config map[string]any) error {
 		return nil
 	}
 	session := &salesforceJWTSession{
-		loginURL:     strings.TrimRight(loginURL, "/"),
-		clientID:     strings.TrimSpace(protocol.ConfigString(config, salesforceJWTClientIDKey)),
-		privateKey:   protocol.ConfigString(config, salesforceJWTPrivateKeyKey),
-		audience:     strings.TrimSpace(protocol.ConfigString(config, salesforceJWTAudienceKey)),
-		startURL:     protocol.ConfigString(config, salesforceJWTStartURLKey),
-		username:     strings.TrimSpace(protocol.ConfigString(config, "browser_identity_username")),
-		allowedHosts: append([]string(nil), b.allowedTargetHosts...),
+		loginURL:        strings.TrimRight(loginURL, "/"),
+		clientID:        strings.TrimSpace(protocol.ConfigString(config, salesforceJWTClientIDKey)),
+		privateKey:      protocol.ConfigString(config, salesforceJWTPrivateKeyKey),
+		audience:        strings.TrimSpace(protocol.ConfigString(config, salesforceJWTAudienceKey)),
+		startURL:        protocol.ConfigString(config, salesforceJWTStartURLKey),
+		username:        strings.TrimSpace(protocol.ConfigString(config, "browser_identity_username")),
+		unredactedDebug: b.debugDisclosureEnabled(),
+		allowedHosts:    append([]string(nil), b.allowedTargetHosts...),
 	}
 	switch {
 	case session.username == "":
@@ -172,9 +175,7 @@ func (b *Browser) salesforceJWTStorageState(ctx context.Context, pwBrowser playw
 		WaitUntil: playwright.WaitUntilStateDomcontentloaded,
 		Timeout:   playwright.Float(float64(remaining / time.Millisecond)),
 	}); err != nil {
-		// The error names the frontdoor URL and its one-time password: report
-		// only its kind.
-		return nil, fmt.Errorf("salesforce_jwt sign-in for %s: the UI bridge page did not load (%s)", session.username, navigationFailureKind(err))
+		return nil, salesforceNavigationError(session.username, err, session.unredactedDebug)
 	}
 	if SalesforceSignInURL(page.URL()) {
 		return nil, fmt.Errorf("salesforce_jwt sign-in for %s: the UI bridge sent the user to sign in", session.username)
@@ -184,6 +185,22 @@ func (b *Browser) salesforceJWTStorageState(ctx context.Context, pwBrowser playw
 		return nil, fmt.Errorf("salesforce_jwt sign-in for %s: read the bridged session: %w", session.username, err)
 	}
 	return state.ToOptionalStorageState(), nil
+}
+
+// The browser's navigation errors include the one-time frontdoor URL. Only an
+// interactive debugger can see the original; ordinary callers receive its kind.
+func salesforceNavigationError(username string, err error, debug bool) error {
+	if debug {
+		return fmt.Errorf("salesforce_jwt sign-in for %s: the UI bridge page did not load: %w", username, err)
+	}
+	// Preserve cancellation identity without retaining a URL that may have
+	// appeared in the original error chain.
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		if errors.Is(err, cause) {
+			return fmt.Errorf("salesforce_jwt sign-in for %s: the UI bridge page did not load: %w", username, cause)
+		}
+	}
+	return fmt.Errorf("salesforce_jwt sign-in for %s: the UI bridge page did not load (%s)", username, navigationFailureKind(err))
 }
 
 var navigationErrorCode = regexp.MustCompile(`net::ERR_[A-Z_]+`)
@@ -202,12 +219,13 @@ func navigationFailureKind(err error) string {
 
 func (s *salesforceJWTSession) tokenRequest() httpprotocol.OAuthTokenRequest {
 	return httpprotocol.OAuthTokenRequest{
-		TokenURL:   s.loginURL + salesforceJWTTokenPath,
-		GrantType:  httpprotocol.OAuthGrantJWTBearer,
-		ClientID:   s.clientID,
-		Subject:    s.username,
-		PrivateKey: s.privateKey,
-		Audience:   s.audience,
+		TokenURL:              s.loginURL + salesforceJWTTokenPath,
+		GrantType:             httpprotocol.OAuthGrantJWTBearer,
+		ClientID:              s.clientID,
+		Subject:               s.username,
+		PrivateKey:            s.privateKey,
+		Audience:              s.audience,
+		UnredactedDebugErrors: s.unredactedDebug,
 	}
 }
 
@@ -265,7 +283,7 @@ func (s *salesforceJWTSession) singleAccess(ctx context.Context, token httpproto
 		return "", true, fmt.Errorf("the UI bridge rejected the access token (401)")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", false, fmt.Errorf("the UI bridge returned %d%s", response.StatusCode, singleAccessErrorDetail(body, token.AccessToken))
+		return "", false, fmt.Errorf("the UI bridge returned %d%s", response.StatusCode, singleAccessErrorDetail(body, token.AccessToken, s.unredactedDebug))
 	}
 	var payload struct {
 		FrontdoorURI string `json:"frontdoor_uri"`
@@ -281,9 +299,9 @@ func (s *salesforceJWTSession) singleAccess(ctx context.Context, token httpproto
 	return payload.FrontdoorURI, false, nil
 }
 
-// singleAccessErrorDetail is a refusal's error code and message, bounded,
-// without the bearer token should the endpoint echo it.
-func singleAccessErrorDetail(body []byte, accessToken string) string {
+// singleAccessErrorDetail bounds a refusal's code and message, withholding an
+// echoed bearer token unless interactive debugging explicitly permits it.
+func singleAccessErrorDetail(body []byte, accessToken string, debug bool) string {
 	var detail string
 	var oauth struct {
 		Error       string `json:"error"`
@@ -299,7 +317,7 @@ func singleAccessErrorDetail(body []byte, accessToken string) string {
 	case json.Unmarshal(body, &rest) == nil && len(rest) > 0:
 		detail = strings.TrimSpace(rest[0].ErrorCode + " " + rest[0].Message)
 	}
-	if accessToken != "" {
+	if accessToken != "" && !debug {
 		detail = strings.ReplaceAll(detail, accessToken, "[redacted]")
 	}
 	detail = strings.Join(strings.Fields(detail), " ")

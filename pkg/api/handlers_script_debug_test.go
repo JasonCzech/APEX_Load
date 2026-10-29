@@ -711,6 +711,25 @@ func TestScriptDebugManagerReplayProgressRefreshesActivity(t *testing.T) {
 	}
 }
 
+func TestAsyncReplayProgressDoesNotConsumeDebuggerStep(t *testing.T) {
+	manager := NewScriptDebugManager(nil)
+	current := &engine.ReplayActionEvent{Phase: "action", ActionName: "current"}
+	session := &ScriptDebugSession{ID: "async-progress", Status: ScriptDebugRunning, stepOnce: true, CurrentEvent: current, CurrentEventIndex: 3}
+	manager.sessions[session.ID] = session
+	async := &engine.ReplayActionEvent{Phase: "async", ActionName: "background", Extractions: map[string]string{"token": "value"}}
+	manager.handleReplayProgress(context.Background(), session, engine.ReplayProgressEvent{Type: engine.ReplayProgressEventRun, EventIndex: 4, Event: async})
+	if session.Status != ScriptDebugRunning || !session.stepOnce || session.CurrentEvent != current || session.CurrentEventIndex != 3 {
+		t.Fatalf("async progress disturbed the pending step: status=%s step=%v event=%+v index=%d", session.Status, session.stepOnce, session.CurrentEvent, session.CurrentEventIndex)
+	}
+	if len(session.Events) != 1 || session.Events[0].Extractions["token"] != "value" {
+		t.Fatalf("async event not retained: %+v", session.Events)
+	}
+	manager.handleReplayProgress(context.Background(), session, engine.ReplayProgressEvent{Type: engine.ReplayProgressEventRun, EventIndex: 5, Event: &engine.ReplayActionEvent{Phase: "action", ActionName: "next"}})
+	if session.Status != ScriptDebugPaused || session.stepOnce || session.CurrentEventIndex != 5 {
+		t.Fatalf("normal event did not finish the step: status=%s step=%v index=%d", session.Status, session.stepOnce, session.CurrentEventIndex)
+	}
+}
+
 func TestScriptDebugManagerCancelsIdlePausedSession(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	lastActivity := now.Add(-2 * time.Minute)

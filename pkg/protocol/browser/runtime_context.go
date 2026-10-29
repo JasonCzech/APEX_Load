@@ -675,13 +675,18 @@ func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGene
 	if activate {
 		b.pwPage = page
 	}
+	// Capture the context generation while holding mu, so a delayed page
+	// registration cannot attach itself to a later browser context.
+	b.wsMu.Lock()
+	wsPageGeneration := b.wsPageGeneration
+	b.wsMu.Unlock()
 	b.mu.Unlock()
 	// The context's page event can register a page before the context is
 	// stored; the association installs on the first registration that has it.
 	// Close and crash handlers come first: installing the association makes
 	// blocking protocol calls, and a popup can close while they run.
 	if !known {
-		b.observePageWebSockets(page)
+		b.observePageWebSockets(page, wsPageGeneration)
 		b.mu.Lock()
 		sourceGeneration := b.evidence.generation
 		b.mu.Unlock()

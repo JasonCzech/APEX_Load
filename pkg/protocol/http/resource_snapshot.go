@@ -19,11 +19,12 @@ var processHTTPResourceEvidenceBudget = responseCaptureBudget{limit: 16 << 20}
 
 type resourceCaptureKey struct{}
 type resourceCapture struct {
-	mu        sync.Mutex
-	entries   []protocol.ResourceSnapshot
-	omitted   int
-	remaining int
-	lease     *responseCaptureLease
+	mu         sync.Mutex
+	entries    []protocol.ResourceSnapshot
+	omitted    int
+	remaining  int
+	lease      *responseCaptureLease
+	unredacted bool
 }
 
 func newResourceCapture(limit int64) *resourceCapture {
@@ -35,7 +36,7 @@ func newResourceCapture(limit int64) *resourceCapture {
 	return &resourceCapture{remaining: int(min(limit/4, 256<<10)), lease: processHTTPResourceEvidenceBudget.lease()}
 }
 
-func resourceCaptureHeaders(headers http.Header) (map[string]string, bool) {
+func resourceCaptureHeaders(headers http.Header, unredacted bool) (map[string]string, bool) {
 	if len(headers) == 0 {
 		return nil, false
 	}
@@ -61,7 +62,10 @@ func resourceCaptureHeaders(headers http.Header) (map[string]string, bool) {
 		}
 		out[key] = value
 	}
-	return scrub.Headers(out, scrub.Policy{}), truncated
+	if !unredacted {
+		out = scrub.Headers(out, scrub.Policy{})
+	}
+	return out, truncated
 }
 
 func (c *resourceCapture) record(entry protocol.NetworkEntry, request, response http.Header, body []byte, cached bool, complete bool) {
@@ -78,13 +82,19 @@ func (c *resourceCapture) record(entry protocol.NetworkEntry, request, response 
 	if len(url) > 8192 {
 		url = "[not retained: URL limit]"
 	}
-	requestHeaders, requestTruncated := resourceCaptureHeaders(request)
-	responseHeaders, responseTruncated := resourceCaptureHeaders(response)
-	r := protocol.ResourceSnapshot{RequestURL: scrub.ValueURL(url, scrub.Policy{}), RequestHeaders: requestHeaders, ResponseHeaders: responseHeaders, Truncated: requestTruncated || responseTruncated || len(entry.URL) > 8192, ResponseStatus: entry.StatusCode, CacheHit: cached, FailureKind: entry.FailureKind, ResponseBodyState: "not_captured"}
+	requestHeaders, requestTruncated := resourceCaptureHeaders(request, c.unredacted)
+	responseHeaders, responseTruncated := resourceCaptureHeaders(response, c.unredacted)
+	if !c.unredacted {
+		url = scrub.ValueURL(url, scrub.Policy{})
+	}
+	r := protocol.ResourceSnapshot{RequestURL: url, RequestHeaders: requestHeaders, ResponseHeaders: responseHeaders, Truncated: requestTruncated || responseTruncated || len(entry.URL) > 8192, ResponseStatus: entry.StatusCode, CacheHit: cached, FailureKind: entry.FailureKind, ResponseBodyState: "not_captured"}
 	// Never retain a prefix of an unredacted secret or opaque binary payload.
 	// Runtime-secret scrubbing follows in the engine before final byte projection.
 	if complete && len(body) <= 32<<10 && textualResourceBody(response.Get("Content-Type"), body) {
-		r.ResponseBody = scrub.Value(string(body), scrub.Policy{})
+		r.ResponseBody = string(body)
+		if !c.unredacted {
+			r.ResponseBody = scrub.Value(r.ResponseBody, scrub.Policy{})
+		}
 		r.ResponseBodyState = "captured"
 		if len(body) == 0 {
 			r.ResponseBodyState = "empty"

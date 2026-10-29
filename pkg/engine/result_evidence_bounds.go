@@ -23,14 +23,15 @@ func boundResultEvidence(result *protocol.Result) {
 	}
 	boundResultMetadata(result)
 	projection, _ := boundedErrorSnapshot(&protocol.ErrorSnapshot{
-		ResponseBody:     result.ResponseBody,
-		PageURL:          result.PageURL,
-		PageTitle:        result.PageTitle,
-		HTML:             result.HTML,
-		ScreenshotBase64: result.ScreenshotBase64,
-		ConsoleEntries:   result.ConsoleEntries,
-		NetworkEntries:   result.NetworkEntries,
-		DOMSummary:       result.DOMSummary,
+		ResponseBody:      result.ResponseBody,
+		PageURL:           result.PageURL,
+		PageTitle:         result.PageTitle,
+		HTML:              result.HTML,
+		ScreenshotBase64:  result.ScreenshotBase64,
+		ScreenshotOmitted: result.ScreenshotOmitted,
+		ConsoleEntries:    result.ConsoleEntries,
+		NetworkEntries:    result.NetworkEntries,
+		DOMSummary:        result.DOMSummary,
 	}, maxRetainedResultEvidenceBytes)
 	if projection != nil {
 		result.ResponseBody = projection.ResponseBody
@@ -38,6 +39,7 @@ func boundResultEvidence(result *protocol.Result) {
 		result.PageTitle = projection.PageTitle
 		result.HTML = projection.HTML
 		result.ScreenshotBase64 = projection.ScreenshotBase64
+		result.ScreenshotOmitted = projection.ScreenshotOmitted
 		result.ConsoleEntries = projection.ConsoleEntries
 		result.NetworkEntries = projection.NetworkEntries
 		result.DOMSummary = projection.DOMSummary

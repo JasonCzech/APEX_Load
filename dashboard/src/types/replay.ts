@@ -67,6 +67,10 @@ export interface ReplayArtifactManifest {
 }
 
 export interface ProtocolEvidence {
+  /** Concurrent request extraction evidence did not fit or could not be retained. */
+  concurrent_group_extractions_omitted?: boolean
+  /** Number omitted when the bounded debugger capture could count them. */
+  concurrent_group_extractions_omitted_count?: number
   response_content_state?: 'complete' | 'collection_window' | 'unavailable'
   response_content_basis?: 'decoded' | 'identity'
   response_content_source?: 'wire' | 'cache'
@@ -137,6 +141,8 @@ export interface BrowserReplaySnapshot {
   request_method?: string
   request_url?: string
   request_headers?: Record<string, string>
+  request_headers_omitted?: boolean
+  request_wire_headers_unavailable?: boolean
   request_body?: string
   response_status?: number
   response_headers?: Record<string, string>
@@ -145,10 +151,22 @@ export interface BrowserReplaySnapshot {
   page_title?: string
   html?: string
   screenshot_base64?: string
+  screenshot_omitted?: boolean
   console_entries?: BrowserReplayConsoleEntry[]
   network_entries?: BrowserReplayNetworkEntry[]
   dom_summary?: BrowserReplayDomSummary
   client_metrics?: ClientMetrics
+}
+
+export interface StreamedReplayChild {
+  action_name: string
+  success: boolean
+  error_message?: string
+  extractions?: Record<string, string>
+  extractions_omitted_count?: number
+  unapplied_extractions?: Record<string, string>
+  unapplied_extractions_omitted_count?: number
+  credential_classification_error?: string
 }
 
 export interface BrowserReplayEvent {
@@ -177,10 +195,17 @@ export interface BrowserReplayEvent {
   completed_at: string
   duration_ms: number
   extractions?: Record<string, string>
+  unapplied_extractions?: Record<string, string>
+  unapplied_extractions_omitted_count?: number
+  streamed_children?: StreamedReplayChild[]
+  streamed_children_omitted_count?: number
+  protocol_evidence_omitted_count?: number
+  credential_classification_error?: string
   page_url?: string
   page_title?: string
   html?: string
   screenshot_base64?: string
+  screenshot_omitted?: boolean
   console_entries?: BrowserReplayConsoleEntry[]
   network_entries?: BrowserReplayNetworkEntry[]
   dom_summary?: BrowserReplayDomSummary

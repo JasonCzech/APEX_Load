@@ -40,6 +40,7 @@ var apiKeyRateLimitUnsetWarningLogged atomic.Bool
 
 type authUserContextKey struct{}
 type authServiceAccountContextKey struct{}
+type websocketAuthSettingsContextKey struct{}
 type authorizedProjectContextKey struct{}
 type mutationProjectContextKey struct{}
 
@@ -191,6 +192,7 @@ type authAuditRecorder interface {
 type authMiddlewareOptions struct {
 	recorder            authAuditRecorder
 	localAuthGeneration func() string
+	debugAuthSettings   func(context.Context) (AuthSettings, error)
 }
 
 type authMiddlewareOption func(*authMiddlewareOptions)
@@ -201,6 +203,31 @@ func withAuthAuditRecorder(recorder authAuditRecorder) authMiddlewareOption {
 
 func withLocalAuthGeneration(generation func() string) authMiddlewareOption {
 	return func(o *authMiddlewareOptions) { o.localAuthGeneration = generation }
+}
+
+func withDebugAuthSettings(settings func(context.Context) (AuthSettings, error)) authMiddlewareOption {
+	return func(o *authMiddlewareOptions) { o.debugAuthSettings = settings }
+}
+
+// These routes can return live debugger values, including resolved credentials.
+// They need a fresh durable authorization policy before resolving the caller.
+func isRawScriptDebugRequest(r *http.Request) bool {
+	if r == nil || r.URL == nil {
+		return false
+	}
+	path := r.URL.Path
+	if strings.HasPrefix(path, "/api/v1/script-debug/sessions/") || strings.HasPrefix(path, "/api/v1/replay/sessions/") {
+		return true
+	}
+	return r.Method == http.MethodPost && strings.HasPrefix(path, "/api/v1/scripts/") &&
+		(strings.HasSuffix(path, "/debug/sessions") || strings.HasSuffix(path, "/replay/sessions"))
+}
+
+func (o authMiddlewareOptions) requestSettings(r *http.Request, fallback func() AuthSettings) (AuthSettings, error) {
+	if o.debugAuthSettings != nil && isRawScriptDebugRequest(r) {
+		return o.debugAuthSettings(r.Context())
+	}
+	return normalizeAuthSettings(fallback()), nil
 }
 
 func (o authMiddlewareOptions) resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.Store) (authResolution, error) {
@@ -240,7 +267,19 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 				return
 			}
 
-			current := normalizeAuthSettings(settings())
+			current, settingsErr := options.requestSettings(r, settings)
+			if settingsErr != nil {
+				// Do not write an audit event through the same unavailable store:
+				// that would defeat the bounded admission on this failure path.
+				writeError(w, http.StatusServiceUnavailable, "authentication settings unavailable")
+				return
+			}
+			if r.Method == http.MethodGet && r.URL.Path == "/api/v1/ws" {
+				// The WebSocket must be bound to the same provider configuration
+				// that authenticated its upgrade, even if settings change between
+				// this middleware and the handler constructing its authorizer.
+				r = r.WithContext(context.WithValue(r.Context(), websocketAuthSettingsContextKey{}, current))
+			}
 			if resolution, _, ok := devPreviewResolutionForRequest(current, r); ok {
 				if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
@@ -299,7 +338,13 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			current := normalizeAuthSettings(settings())
+			current, settingsErr := options.requestSettings(r, settings)
+			if settingsErr != nil {
+				// This is a service failure, not an authorization denial. Avoid an
+				// unbounded audit write to the store whose admission just failed.
+				writeError(w, http.StatusServiceUnavailable, "authentication settings unavailable")
+				return
+			}
 			requirement := accessRequirement{
 				GlobalRoles:  globalRoles,
 				ProjectRoles: projectRoles,

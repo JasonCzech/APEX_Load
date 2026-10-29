@@ -535,6 +535,90 @@ func TestReplayRuntimeSnapshotRedactsLocalKnownValuesAndKeepsStructuralIndices(t
 	}
 }
 
+func TestReplayRuntimeSnapshotShowsExtractedSecret(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Session", "debug-session-secret")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	controller := &runtimeSnapshotController{t: t}
+	script := &dsl.Script{Name: "Extractor", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: server.URL}, Actions: []dsl.Action{{Name: "Request", Type: "GET", Target: "/", Extractors: []dsl.Extractor{{Name: "session_token", Source: "header", Type: "header", Expression: "X-Session"}}}}}
+	report, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true, DebugController: controller, UnredactedDebug: true})
+	if err != nil || report == nil || !report.Success || len(controller.after) != 1 {
+		t.Fatalf("replay failed: %v", err)
+	}
+	binding := runtimeBinding(t, controller.after[0], "session_token")
+	if binding.ValueState != "assigned" || runtimeValue(t, binding.Value) != "debug-session-secret" {
+		t.Fatalf("live extractor value: %#v", binding)
+	}
+	ordinary, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil || ordinary == nil || len(ordinary.Events) != 1 || ordinary.Events[0].Extractions["session_token"] != redactedPayloadValue {
+		t.Fatal("ordinary replay report exposed the extractor value")
+	}
+}
+
+func TestReplayRuntimeSnapshotShowsLiveValuesWithoutRedaction(t *testing.T) {
+	vu := runtimeTestVUser([]dsl.Parameter{{Name: "password", Type: "counter"}}, nil)
+	vu.unredactedDebug = true
+	config, err := NewRedactionConfig([]RedactionRule{{Pattern: "secret", Replacement: "masked"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vu.RedactionConfig = WithSecretValueRedaction(config, []string{"secret-value"})
+	vu.Variables = map[string]string{"password": "secret-value", "neutral": "secret-value", "slot2": "ordinary", "slot[REDACTED]": "other"}
+	vu.Parameters.runtimeObservations["password"] = parameterRuntimeObservation{state: "observed", value: "secret-value", eventID: "observed-event"}
+	vu.replayRuntime.frames = []ReplayRuntimeFrame{{Kind: "foreach", Phase: "action", ActionIndex: 2, StepPath: []string{"loop[2]"}, IterationPath: []int{2}}}
+	vu.recordReplayRuntimeRow("datasource", "source2", "row2", dataRowReceipt{ordinal: 2, selection: "sequential", state: "selected"})
+	location := runtimeTestLocation()
+	location.ActionIndex = 2
+	location.ActionName = "secret-value"
+	location.ParentActionName = "Parent2"
+	location.Target = "/secret-value"
+	location.StepPath = []string{"default[2]"}
+	location.IterationPath = []int{2}
+	s := vu.captureReplayRuntimeSnapshot("before_action", location)
+	for _, name := range []string{"password", "neutral"} {
+		v := runtimeBinding(t, s, name)
+		if v.ValueState != "assigned" || runtimeValue(t, v.Value) != "secret-value" {
+			t.Fatalf("binding %s: %#v", name, v)
+		}
+	}
+	parameter := runtimeParameter(t, s, "password")
+	if parameter.ValueState != "observed" || runtimeValue(t, parameter.Value) != "secret-value" {
+		t.Fatalf("parameter: %#v", parameter)
+	}
+	if s.State != "complete" || s.Location.ActionName != location.ActionName || s.Location.Target != location.Target {
+		t.Fatal("authored location was changed")
+	}
+	if s.Location.ActionIndex != 2 || s.Location.StepPath[0] != "default[2]" || s.Frames[0].StepPath[0] != "loop[2]" || s.Frames[0].IterationPath[0] != 2 || *s.Rows[0].RowOrdinal != 2 || s.Rows[0].Selection != "sequential" || s.Location.Method != "GET" {
+		t.Fatal("structural receipts changed")
+	}
+	if runtimeBinding(t, s, "slot2").Name != "slot2" || runtimeBinding(t, s, "slot[REDACTED]").Name != "slot[REDACTED]" {
+		t.Fatal("binding names were changed")
+	}
+	if vu.Variables["neutral"] != "secret-value" || vu.RedactionConfig == nil {
+		t.Fatal("snapshot mutated execution state")
+	}
+	// Debug capture is independent of the normal publication redactor's health.
+	vu.RedactionConfig = &RedactionConfig{runtimeSecretValues: map[string]struct{}{"secret-value": {}}}
+	unavailableMatcher := vu.captureReplayRuntimeSnapshot("before_action", location)
+	if unavailableMatcher.State != "complete" || runtimeValue(t, runtimeBinding(t, unavailableMatcher, "password").Value) != "secret-value" {
+		t.Fatal("unusable publication matcher suppressed live debugger data")
+	}
+
+	vu.Variables = map[string]string{"a": "secret-value", "z_password": "secret-value"}
+	for i := 0; i < 300; i++ {
+		vu.Variables[fmt.Sprintf("m%03d", i)] = "x"
+	}
+	vu.Parameters = nil
+	vu.replayRuntime.frames = nil
+	vu.replayRuntime.rows = map[string]ReplayRuntimeRow{}
+	bounded := vu.captureReplayRuntimeSnapshot("before_action", runtimeTestLocation())
+	if bounded.State != "bounded" || len(bounded.Variables) != 256 || bounded.Omissions.Variables != 46 || runtimeValue(t, runtimeBinding(t, bounded, "a").Value) != "secret-value" {
+		t.Fatal("bounded snapshot did not retain live value")
+	}
+}
+
 func TestReplayRuntimeSnapshotCapsOmitWholeValuesAndBoundAllArrays(t *testing.T) {
 	t.Run("unscannable values", func(t *testing.T) {
 		vu := runtimeTestVUser(nil, nil)

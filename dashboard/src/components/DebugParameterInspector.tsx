@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import type { ScriptDefinition } from '../types/scripts'
 import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import { runtimeIdentityNameIsKnown, runtimeValueLabel } from './debugRuntimeState'
@@ -11,7 +11,6 @@ export function DebugParameterInspector({ script, name, values, event, matchesDr
 }) {
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [name])
-  const [revealed, setRevealed] = useState(false)
   const currentParameter = runtimeParameter?.name === name && runtimeIdentityNameIsKnown(name) ? runtimeParameter : undefined
   const parameter = script.parameters?.find(item => item.name === name)
   if (!parameter) return null
@@ -28,6 +27,6 @@ export function DebugParameterInspector({ script, name, values, event, matchesDr
     {currentMode && !evidenceUnavailable ? <p role="status">{currentParameter ? `${currentParameter.state.replace(/_/g, ' ')} · ${currentParameter.update_policy.replace(/_/g, ' ')} · ${runtimeValueLabel(currentParameter)} · ${currentParameter.observed_event_id || 'No actual-use receipt'}` : 'Current parameter state unavailable. Not captured: no unambiguous held-boundary receipt.'}</p> : null}
     {event && !evidenceUnavailable && !currentMode && <p>{event.action_name || 'Selected event'} · iteration {event.iteration ?? 'not recorded'} · {event.phase}</p>}
     {event && !evidenceUnavailable && !currentMode && !matchesDraft && <p role="status">Draft changed since replay. Captured evidence belongs to the recorded revision.</p>}
-    {evidenceUnavailable ? <p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p> : currentMode ? null : value === undefined ? <p>Not captured for this parameter at the selected event. Inspect the captured request for resolved template values.</p> : <><output>{revealed ? value : '••••••••'}</output><button type="button" onClick={() => setRevealed(value => !value)}>{revealed ? 'Hide captured value' : 'Reveal captured value'}</button></>}
+    {evidenceUnavailable ? <p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p> : currentMode ? null : value === undefined ? <p>Not captured for this parameter at the selected event. Inspect the captured request for resolved template values.</p> : <output>{value}</output>}
   </section>
 }

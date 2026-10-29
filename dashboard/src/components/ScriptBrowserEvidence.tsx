@@ -6,6 +6,7 @@ import SnapshotTextPreview from './SnapshotTextPreview'
 import RepairSuggestionList from './RepairSuggestionList'
 import { BrowserReplayScreenshotDialog } from './BrowserReplayDebugger'
 import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
+import { ReplayExtractions } from './ReplayExtractions'
 
 const tabs = ['Screenshot', 'Assertions', 'DOM', 'Network', 'Browser console', 'Variables'] as const
 
@@ -81,6 +82,8 @@ export default function ScriptBrowserEvidence({ event, running, variables, proje
   ) : null
   const snapshot = event?.snapshot
   const screenshot = event?.screenshot_base64 || snapshot?.screenshot_base64
+  const screenshotError = typeof event?.protocol_evidence?.screenshot_capture_error === 'string' ? event.protocol_evidence.screenshot_capture_error : undefined
+  const htmlError = typeof event?.protocol_evidence?.html_capture_error === 'string' ? event.protocol_evidence.html_capture_error : undefined
   const failure = event?.protocol_evidence?.assertion_failure as { expected?: unknown; actual?: unknown; type?: string } | undefined
   const showValue = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value) ?? 'Not captured'
   return <section className="script-browser-evidence" aria-label={event ? 'Selected browser action evidence' : undefined}>
@@ -109,12 +112,12 @@ export default function ScriptBrowserEvidence({ event, running, variables, proje
           {tabs.map(name => <button key={name} type="button" aria-pressed={tab === name} className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}
         </div>
         <div className="selected-evidence-body" aria-label={tab}>
-          {tab === 'Screenshot' && (screenshot ? <><button type="button" className="btn btn-sm btn-secondary" onClick={() => setFullSize(true)}>View full size</button><img className="selected-evidence-screenshot" src={`data:image/png;base64,${screenshot}`} alt={`Screenshot after ${event.action_name || event.action_type}`} /></> : <p>No screenshot was captured for this action. Enable per-action capture in Runtime Settings and debug again.</p>)}
-          {tab === 'Assertions' && <SnapshotBodyPreview body={JSON.stringify(event.protocol_evidence || { result: event.success ? 'Action passed; no detailed assertion result captured.' : event.error_message }, null, 2)} headers={{ 'Content-Type': 'application/json' }} />}
-          {tab === 'DOM' && <><SnapshotBodyPreview body={JSON.stringify(event.dom_summary || snapshot?.dom_summary || {}, null, 2)} headers={{ 'Content-Type': 'application/json' }} /><SnapshotTextPreview text={event.html || snapshot?.html || 'No HTML captured for this action.'} /></>}
+          {tab === 'Screenshot' && <>{screenshotError && <p role="status">Screenshot capture failed: {screenshotError}</p>}{(event.screenshot_omitted || snapshot?.screenshot_omitted) && <p role="status">A screenshot was omitted because it exceeded the retained evidence limit.</p>}{screenshot ? <><button type="button" className="btn btn-sm btn-secondary" onClick={() => setFullSize(true)}>View full size</button><img className="selected-evidence-screenshot" src={`data:image/png;base64,${screenshot}`} alt={`Screenshot after ${event.action_name || event.action_type}`} /></> : !(screenshotError || event.screenshot_omitted || snapshot?.screenshot_omitted) && <p>No screenshot was captured for this action. Enable per-action capture in Runtime Settings and debug again.</p>}</>}
+          {tab === 'Assertions' && <>{Boolean(event.protocol_evidence_omitted_count) && <p role="status">{event.protocol_evidence_omitted_count} protocol evidence {event.protocol_evidence_omitted_count === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}<SnapshotBodyPreview body={JSON.stringify(event.protocol_evidence || { result: event.success ? 'Action passed; no detailed assertion result captured.' : event.error_message }, null, 2)} headers={{ 'Content-Type': 'application/json' }} /></>}
+          {tab === 'DOM' && <>{htmlError && <p role="status">HTML capture failed: {htmlError}</p>}<SnapshotBodyPreview body={JSON.stringify(event.dom_summary || snapshot?.dom_summary || {}, null, 2)} headers={{ 'Content-Type': 'application/json' }} /><SnapshotTextPreview text={event.html || snapshot?.html || (htmlError ? '' : 'No HTML captured for this action.')} /></>}
           {tab === 'Network' && <SnapshotTextPreview text={formatNetworkEntries(event.network_entries || snapshot?.network_entries || []) || 'No network entries captured for this action.'} />}
           {tab === 'Browser console' && <SnapshotTextPreview text={formatConsoleEntries(event.console_entries || snapshot?.console_entries || []) || 'No browser console entries captured for this action.'} />}
-          {tab === 'Variables' && <SnapshotBodyPreview body={JSON.stringify(variables || event.extractions || {}, null, 2)} headers={{ 'Content-Type': 'application/json' }} />}
+          {tab === 'Variables' && <><SnapshotBodyPreview body={JSON.stringify(variables || event.extractions || {}, null, 2)} headers={{ 'Content-Type': 'application/json' }} /><ReplayExtractions event={event} /></>}
         </div>
         {fullSize && screenshot && <BrowserReplayScreenshotDialog src={`data:image/png;base64,${screenshot}`} onClose={() => setFullSize(false)} />}
       </>

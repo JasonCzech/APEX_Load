@@ -2,6 +2,7 @@ import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptAssertionDefinition as Assertion, ScriptExtractorDefinition as Extractor } from '../types/scripts'
 import { evaluateExtractor } from './extractorMatch'
 import { headersAndBodySurface, setCookieSurface } from './extractorSurface'
+import { appliedReplayExtractions } from './replayExtractionValues'
 
 // What the checks tab offers: checks added by what they test (the DSL's
 // assertion types stay as they are), each with labelled fields, and each
@@ -343,7 +344,8 @@ export function savedValueResult(extractor: Extractor, replay: ChecksReplay | nu
     const value = Object.entries(headers).find(([name]) => name.toLowerCase() === extractor.expression.trim().toLowerCase())?.[1]
     return value === undefined ? { state: 'failed', detail: 'No match: the response has no such header' } : { state: 'passed', detail: `Saves ${quoted(value)}` }
   }
-  const fromReplay = event.extractions?.[extractor.name]
+  const applied = appliedReplayExtractions(event)
+  const fromReplay = Object.prototype.hasOwnProperty.call(applied, extractor.name) ? applied[extractor.name] : undefined
   if (surface === undefined) {
     if (fromReplay !== undefined && !replay.stale) return { state: 'passed', detail: `Saved ${quoted(fromReplay)} in the last replay` }
     return { state: 'unchecked', detail: 'Checked when the script runs' }

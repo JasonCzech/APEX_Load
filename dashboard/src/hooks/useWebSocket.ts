@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { WSMessage } from '../types'
-import { wsUrl } from './apiClient'
+import { readDevPreviewContext, wsUrl } from './apiClient'
 import { bridgeWsUrl, type BrowserRecorderBridgeConnection } from './api/browserRecorderBridge'
+import { useDevView } from './useDevView'
 
 export type WebSocketConnectionState = 'connecting' | 'connected' | 'disconnected'
 
@@ -27,6 +28,9 @@ const RECONNECT_MAX_DELAY_MS = 30000
 const RECONNECT_JITTER_MS = 1000
 
 export function useWebSocket({ testId, projectId, enabled = true, onMessage, onOpen, bridge }: UseWebSocketOptions = {}) {
+  const { mode: devViewMode } = useDevView()
+  const socketPreviewMode = !testId && !bridge ? devViewMode : 'admin'
+  const previewProjectId = socketPreviewMode === 'user' ? readDevPreviewContext().projectId : ''
   const [connectionState, setConnectionState] = useState<WebSocketConnectionState>(
     enabled ? 'connecting' : 'disconnected',
   )
@@ -42,6 +46,8 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
     enabled ? 'enabled' : 'disabled',
     testId || '',
     projectId || '',
+    socketPreviewMode,
+    previewProjectId,
     bridge?.origin || '',
     bridge?.session_id || '',
     bridge?.token || '',
@@ -66,7 +72,16 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
     // the backoff timer) — never open a second one.
     if (wsRef.current) return
 
-    const query = !testId && projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+    const params = new URLSearchParams()
+    if (!testId && projectId) params.set('project_id', projectId)
+    // Browsers cannot send the preview headers used by fetch. This hint only
+    // narrows the simulated identity; the controller ignores it outside its
+    // non-production development mode. Never send it to a recorder bridge.
+    if (socketPreviewMode === 'user') {
+      params.set('apexload_dev_view', 'user')
+      if (previewProjectId) params.set('apexload_dev_project', previewProjectId)
+    }
+    const query = params.size ? `?${params.toString()}` : ''
     const path = testId ? `/api/v1/tests/${testId}/stream` : `/api/v1/ws${query}`
     const url = bridge && !testId ? bridgeWsUrl(bridge, path) : wsUrl(path)
 
@@ -119,7 +134,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
     ws.onerror = () => {
       ws.close()
     }
-  }, [bridge, enabled, projectId, testId])
+  }, [bridge, enabled, previewProjectId, projectId, socketPreviewMode, testId])
 
   useEffect(() => {
     shouldReconnectRef.current = true

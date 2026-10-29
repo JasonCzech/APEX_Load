@@ -1,4 +1,5 @@
 import DebugCompletionSummary from './DebugCompletionSummary'
+import { appliedReplayExtractions } from './replayExtractionValues'
 import { captureDebugTransactionDefinitions } from './debugTransactionModel'
 import { useDebugCompletionSummary } from './debugCompletionModel'
 import { downloadBlob } from '../utils/fileUtils'
@@ -1443,6 +1444,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     try { const val = window.localStorage.getItem('authorRailWidth'); const n = val ? parseInt(val, 10) : NaN; return Number.isFinite(n) ? n : null } catch { return null }
   })
   const [authorRailResizing, setAuthorRailResizing] = useState(false)
+  const authorUtilityRef = useRef<HTMLDivElement | null>(null)
+  const [authorUtilityWidth, setAuthorUtilityWidth] = useState<number | null>(() => {
+    try {
+      const value = Number(window.localStorage.getItem('authorUtilityWidth'))
+      return Number.isFinite(value) && value >= 220 ? value : null
+    } catch { return null }
+  })
+  const [authorUtilityResizing, setAuthorUtilityResizing] = useState(false)
+  const [authorUtilityActualWidth, setAuthorUtilityActualWidth] = useState<number | null>(null)
+  const [authorUtilityMaxWidth, setAuthorUtilityMaxWidth] = useState(() => Math.max(220, window.innerWidth - 360))
 
   useEffect(() => {
     try {
@@ -2350,7 +2361,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           : replayEvent.error_message || `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`,
         timestamp: replayEvent.completed_at || replayEvent.started_at,
         success: replayEvent.success,
-        changedVariables: Object.keys(replayEvent.extractions || {}),
+        changedVariables: Object.keys(appliedReplayExtractions(replayEvent)),
       }))
       if (typeof msg.event_index === 'number' && msg.event_index >= 0) {
         if (followExecutionRef.current) setExpandedReplayEvent(msg.event_index)
@@ -2531,7 +2542,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           : replayEvent.error_message || `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`,
         timestamp: replayEvent.completed_at || replayEvent.started_at,
         success: replayEvent.success,
-        changedVariables: Object.keys(replayEvent.extractions || {}),
+        changedVariables: Object.keys(appliedReplayExtractions(replayEvent)),
       }))
       if (typeof msg.event_index === 'number' && msg.event_index >= 0) {
         if (followExecutionRef.current) setExpandedReplayEvent(msg.event_index)
@@ -2574,7 +2585,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           : replayEvent.error_message || `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`,
         timestamp: replayEvent.completed_at || replayEvent.started_at,
         success: replayEvent.success,
-        changedVariables: Object.keys(replayEvent.extractions || {}),
+        changedVariables: Object.keys(appliedReplayExtractions(replayEvent)),
       }))
       if (typeof msg.event_index === 'number' && msg.event_index >= 0) {
         if (followExecutionRef.current) setExpandedReplayEvent(msg.event_index)
@@ -4483,6 +4494,65 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     })
     if (started) setAuthorRailResizing(true)
   }
+
+  const authorUtilityMaximum = () => {
+    const grid = authorUtilityRef.current?.closest('.actions-content-grid') as HTMLElement | null
+    const width = grid?.getBoundingClientRect().width || window.innerWidth
+    const outlineBox = authorRailRef.current?.getBoundingClientRect()
+    const utilityBox = authorUtilityRef.current?.getBoundingClientRect()
+    const outlineAboveUtility = outlineBox && utilityBox && outlineBox.bottom <= utilityBox.top + 1
+    const outline = outlineAboveUtility ? 0 : outlineBox?.width || (authorOutlineCollapsed ? 32 : authorRailWidth ?? 280)
+    return Math.max(220, Math.round(width - outline - 80))
+  }
+  const clampAuthorUtility = (width: number) => Math.max(220, Math.min(authorUtilityMaximum(), Math.round(width)))
+  const startAuthorUtilityDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const startX = event.clientX
+    const startWidth = authorUtilityRef.current?.getBoundingClientRect().width || authorUtilityWidth || 320
+    const started = startPointerDrag(event, {
+      cursor: 'col-resize',
+      onMove: move => setAuthorUtilityWidth(clampAuthorUtility(startWidth + startX - move.clientX)),
+      onEnd: () => setAuthorUtilityResizing(false),
+    })
+    if (started) setAuthorUtilityResizing(true)
+  }
+  const handleAuthorUtilityResizeKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const width = authorUtilityRef.current?.getBoundingClientRect().width || authorUtilityWidth || 320
+    const step = event.shiftKey ? 48 : 24
+    let next: number
+    if (event.key === 'ArrowLeft') next = width + step
+    else if (event.key === 'ArrowRight') next = width - step
+    else if (event.key === 'Home') next = 220
+    else if (event.key === 'End') next = authorUtilityMaximum()
+    else return
+    event.preventDefault()
+    setAuthorUtilityWidth(clampAuthorUtility(next))
+  }
+
+  useEffect(() => {
+    try {
+      if (authorUtilityWidth == null) window.localStorage.removeItem('authorUtilityWidth')
+      else window.localStorage.setItem('authorUtilityWidth', String(authorUtilityWidth))
+    } catch { /* storage may be unavailable */ }
+  }, [authorUtilityWidth])
+
+  useEffect(() => {
+    const sidebar = authorUtilityRef.current
+    if (!sidebar || authorRightSidebarCollapsed || workspaceTab !== 'author') return
+    const updateSize = () => {
+      const width = sidebar.getBoundingClientRect().width
+      setAuthorUtilityActualWidth(width > 0 ? Math.round(width) : null)
+      setAuthorUtilityMaxWidth(authorUtilityMaximum())
+    }
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateSize)
+    observer?.observe(sidebar)
+    const grid = sidebar.closest('.actions-content-grid')
+    if (grid) observer?.observe(grid)
+    return () => { window.removeEventListener('resize', updateSize); observer?.disconnect() }
+  // Width and outline changes can alter the maximum available to the sidebar.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authorOutlineCollapsed, authorRailWidth, authorRightSidebarCollapsed, workspaceTab])
 
   useEffect(() => {
     if (authorRailWidth == null) return
@@ -7632,7 +7702,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         <RowActions className="script-editor-more" label="script editor">
           {replayGate.kind === 'blocked' && <button type="button" className="btn btn-sm btn-ghost" onClick={goToReplayBlocker}>Resolve blockers ({replayGate.blockers.length})</button>}
           {scriptId && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowHistory(true)}>History</button>}
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorUtilityWidth(null); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
         </RowActions>
       </div>
       {showHistory && scriptId && <ObjectHistoryDialog title={`History · ${currentDraftScript.name || 'Script'}`} projectId={projectId} resourceType="script" resourceId={scriptId} activity={activity} onClose={() => setShowHistory(false)} />}
@@ -8260,7 +8330,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
             <div
               className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}
-              style={!authorOutlineCollapsed && authorRailWidth != null ? ({ ['--author-rail-width']: `${authorRailWidth}px` } as React.CSSProperties) : undefined}
+              style={{
+                ...(!authorOutlineCollapsed && authorRailWidth != null ? { '--author-rail-width': `${authorRailWidth}px` } : {}),
+                ...(!authorRightSidebarCollapsed && authorUtilityWidth != null ? { '--author-utility-width': `min(${authorUtilityWidth}px, max(220px, calc(100% - ${(authorOutlineCollapsed ? 32 : authorRailWidth ?? 280) + 80}px)))` } : {}),
+                ...(!authorRightSidebarCollapsed && authorUtilityWidth != null ? { '--author-utility-requested': `${authorUtilityWidth}px` } : {}),
+              } as React.CSSProperties}
             >
               {!authorOutlineCollapsed && (
                 <div
@@ -8331,7 +8405,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   />
                 )), centerTabMountTarget('imported-metadata')!)}
 
-              <div id="script-details-panel" className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
+              {!authorRightSidebarCollapsed && <div
+                className={`author-utility-resize ${authorUtilityResizing ? 'resizing' : ''}`}
+                role="separator"
+                tabIndex={0}
+                aria-orientation="vertical"
+                aria-label="Resize right sidebar"
+                aria-controls="script-details-panel"
+                aria-valuemin={220}
+                aria-valuemax={authorUtilityMaxWidth}
+                aria-valuenow={authorUtilityActualWidth ?? authorUtilityWidth ?? 320}
+                title="Drag to resize the right sidebar"
+                onPointerDown={startAuthorUtilityDrag}
+                onKeyDown={handleAuthorUtilityResizeKey}
+              />}
+              <div ref={authorUtilityRef} id="script-details-panel" className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (
                   <PanelToggle className="utility-sidebar-restore ux-panel-rail" side="end" expanded={false} panelName="right sidebar" collapsedLabel={authorRightSidebarContext.railLabel} controls="script-details-panel" onToggle={() => setAuthorRightSidebarCollapsed(false)} />
                 ) : (

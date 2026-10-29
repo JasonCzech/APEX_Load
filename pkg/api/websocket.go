@@ -103,15 +103,18 @@ type HubStats struct {
 type Client struct {
 	hub       *Hub
 	conn      *websocket.Conn
-	send      chan []byte
+	send      chan hubBroadcast
 	testID    string // empty = all tests, set = specific test
 	projectID string // empty = all projects, set = specific project
 	// testProjectID is the project a test stream was authorized for. An event
 	// that names another project is a different run reusing the ID.
-	testProjectID string
-	authorized    func() bool
-	slotHeld      bool
-	slotOnce      sync.Once
+	testProjectID   string
+	authorized      func() bool
+	debugAuthorized func(context.Context, string) bool
+	authContext     context.Context
+	authCancel      context.CancelFunc
+	slotHeld        bool
+	slotOnce        sync.Once
 }
 
 type websocketFanoutEnvelope struct {
@@ -128,6 +131,8 @@ type hubBroadcast struct {
 	testID       string
 	projectID    string
 	broadcastAll bool
+	debug        bool
+	debugProject string
 }
 
 func NewHub() *Hub {
@@ -212,7 +217,7 @@ func (h *Hub) Run() {
 					}
 				}
 				select {
-				case client.send <- msg.payload:
+				case client.send <- msg:
 				default:
 					h.droppedClientMsgs.Add(1)
 					// slow client — drop message
@@ -240,7 +245,9 @@ func (h *Hub) Stop() {
 }
 
 func (h *Hub) Broadcast(msg []byte) {
-	broadcast := newHubBroadcast(msg)
+	// A caller may reuse or mutate its buffer after Broadcast returns. Preserve
+	// the classified payload so authorization always covers the bytes delivered.
+	broadcast := newHubBroadcast(append([]byte(nil), msg...))
 	h.broadcastLocal(broadcast)
 	h.publishFanout(broadcast)
 }
@@ -262,6 +269,12 @@ func (h *Hub) broadcastLocal(msg hubBroadcast) {
 }
 
 func (h *Hub) publishFanout(msg hubBroadcast) {
+	// Debugger sessions and their raw evidence are owned by one controller.
+	// Never put credentials on a shared pub/sub bus, including during rolling
+	// upgrades when an older subscriber would not enforce editor access.
+	if msg.debug {
+		return
+	}
 	h.fanoutMu.RLock()
 	bus := h.fanout
 	channel := h.fanoutChannel
@@ -326,17 +339,17 @@ func (h *Hub) BroadcastScopedJSON(testID string, projectID string, v any) {
 		slog.Error("failed to marshal broadcast", "err", err)
 		return
 	}
-	broadcast := hubBroadcast{
-		payload:   data,
-		testID:    strings.TrimSpace(testID),
-		projectID: strings.TrimSpace(projectID),
-	}
+	broadcast := newHubBroadcast(data)
+	broadcast.testID = strings.TrimSpace(testID)
+	broadcast.projectID = strings.TrimSpace(projectID)
+	broadcast.broadcastAll = false
 	h.broadcastLocal(broadcast)
 	h.publishFanout(broadcast)
 }
 
 func newHubBroadcast(payload []byte) hubBroadcast {
 	var envelope struct {
+		Type         string `json:"type"`
 		TestID       string `json:"test_id"`
 		ProjectID    string `json:"project_id"`
 		BroadcastAll bool   `json:"broadcast_all"`
@@ -351,6 +364,8 @@ func newHubBroadcast(payload []byte) hubBroadcast {
 		testID:       envelope.TestID,
 		projectID:    envelope.ProjectID,
 		broadcastAll: broadcastAll,
+		debug:        strings.HasPrefix(envelope.Type, "script_debug_"),
+		debugProject: strings.TrimSpace(envelope.ProjectID),
 	}
 }
 
@@ -374,15 +389,19 @@ func (h *Hub) Stats() HubStats {
 }
 
 func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, projectID string, authorized ...func() bool) {
-	h.serveScopedWS(w, r, testID, projectID, "", authorized...)
+	h.serveScopedWS(w, r, testID, projectID, "", nil, authorized...)
+}
+
+func (h *Hub) serveProjectWS(w http.ResponseWriter, r *http.Request, projectID string, authorized func() bool, debugAuthorized func(context.Context, string) bool) {
+	h.serveScopedWS(w, r, "", projectID, "", debugAuthorized, authorized)
 }
 
 // serveTestWS binds a test stream to the project it was authorized for.
 func (h *Hub) serveTestWS(w http.ResponseWriter, r *http.Request, testID, testProjectID string, authorized func() bool) {
-	h.serveScopedWS(w, r, testID, "", testProjectID, authorized)
+	h.serveScopedWS(w, r, testID, "", testProjectID, nil, authorized)
 }
 
-func (h *Hub) serveScopedWS(w http.ResponseWriter, r *http.Request, testID, projectID, testProjectID string, authorized ...func() bool) {
+func (h *Hub) serveScopedWS(w http.ResponseWriter, r *http.Request, testID, projectID, testProjectID string, debugAuthorized func(context.Context, string) bool, authorized ...func() bool) {
 	select {
 	case <-h.done:
 		http.Error(w, "websocket hub is shutting down", http.StatusServiceUnavailable)
@@ -404,14 +423,18 @@ func (h *Hub) serveScopedWS(w http.ResponseWriter, r *http.Request, testID, proj
 		return
 	}
 
+	authContext, authCancel := context.WithCancel(context.Background())
 	client := &Client{
-		hub:           h,
-		conn:          conn,
-		send:          make(chan []byte, websocketClientSendBuffer),
-		testID:        testID,
-		projectID:     projectID,
-		testProjectID: strings.TrimSpace(testProjectID),
-		slotHeld:      true,
+		hub:             h,
+		conn:            conn,
+		send:            make(chan hubBroadcast, websocketClientSendBuffer),
+		testID:          testID,
+		projectID:       projectID,
+		testProjectID:   strings.TrimSpace(testProjectID),
+		debugAuthorized: debugAuthorized,
+		authContext:     authContext,
+		authCancel:      authCancel,
+		slotHeld:        true,
 	}
 	if len(authorized) > 0 {
 		client.authorized = authorized[0]
@@ -420,11 +443,13 @@ func (h *Hub) serveScopedWS(w http.ResponseWriter, r *http.Request, testID, proj
 	select {
 	case h.register <- client:
 	case <-h.done:
+		authCancel()
 		client.releaseSlot()
 		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"), time.Now().Add(time.Second))
 		_ = conn.Close()
 		return
 	case <-r.Context().Done():
+		authCancel()
 		client.releaseSlot()
 		_ = conn.Close()
 		return
@@ -445,6 +470,7 @@ func (c *Client) releaseSlot() {
 
 func (c *Client) readPump() {
 	defer func() {
+		c.authCancel()
 		select {
 		case c.hub.unregister <- c:
 		case <-c.hub.done:
@@ -471,6 +497,7 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
 		ticker.Stop()
+		c.authCancel()
 		c.conn.Close()
 	}()
 
@@ -484,7 +511,13 @@ func (c *Client) writePump() {
 				c.conn.WriteMessage(websocket.CloseMessage, nil)
 				return
 			}
-			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			// Revalidate at delivery, not merely at the next ping: debugger
+			// events contain raw credentials and can outlive a role revocation
+			// while queued. Other clients may continue receiving normal events.
+			if !c.mayDeliverMessage(msg) {
+				continue
+			}
+			if err := c.conn.WriteMessage(websocket.TextMessage, msg.payload); err != nil {
 				return
 			}
 
@@ -499,4 +532,15 @@ func (c *Client) writePump() {
 			}
 		}
 	}
+}
+
+func (c *Client) mayDeliverMessage(msg hubBroadcast) bool {
+	if !msg.debug {
+		return true
+	}
+	ctx := c.authContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return c.debugAuthorized != nil && c.debugAuthorized(ctx, msg.debugProject)
 }

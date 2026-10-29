@@ -10120,20 +10120,18 @@
       "authenticated": true,
       "state": "GREEN",
       "enforcement": "specialized resource authentication middleware and shared access profile",
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
         "global": [
           "editor",
           "project_admin",
-          "system_admin",
-          "viewer"
+          "system_admin"
         ],
         "project": [
           "editor",
-          "project_admin",
-          "viewer"
+          "project_admin"
         ]
       },
       "denied_role": "qa_contract_unlisted",
@@ -10172,20 +10170,18 @@
       "authenticated": true,
       "state": "GREEN",
       "enforcement": "specialized resource authentication middleware and shared access profile",
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
         "global": [
           "editor",
           "project_admin",
-          "system_admin",
-          "viewer"
+          "system_admin"
         ],
         "project": [
           "editor",
-          "project_admin",
-          "viewer"
+          "project_admin"
         ]
       },
       "denied_role": "qa_contract_unlisted",
@@ -11424,20 +11420,18 @@
       "authenticated": true,
       "state": "GREEN",
       "enforcement": "specialized resource authentication middleware and shared access profile",
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
         "global": [
           "editor",
           "project_admin",
-          "system_admin",
-          "viewer"
+          "system_admin"
         ],
         "project": [
           "editor",
-          "project_admin",
-          "viewer"
+          "project_admin"
         ]
       },
       "denied_role": "qa_contract_unlisted",
@@ -11476,20 +11470,18 @@
       "authenticated": true,
       "state": "GREEN",
       "enforcement": "specialized resource authentication middleware and shared access profile",
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
         "global": [
           "editor",
           "project_admin",
-          "system_admin",
-          "viewer"
+          "system_admin"
         ],
         "project": [
           "editor",
-          "project_admin",
-          "viewer"
+          "project_admin"
         ]
       },
       "denied_role": "qa_contract_unlisted",

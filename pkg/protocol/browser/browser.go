@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/selector"
 	playwright "github.com/mxschmitt/playwright-go"
 )
@@ -93,33 +96,38 @@ type Browser struct {
 	// generation, published with its native HAR.
 	harEvidenceGeneration string
 	// interactionsEnabled records gesture interaction evidence (E3).
-	interactionsEnabled   bool
-	interactionVersion    int
-	authoredPageVersion   int
-	interactions          browserInteractionState
-	currentNavPreSequence uint64
-	activePageBindings    map[playwright.Page]*protocol.BrowserAuthoredPageBinding
-	lifecycleRouteSeq     map[string]uint64
-	lastActionPopup       playwright.Page
-	lastDownloadOutcome   *protocol.BrowserInteractionOutcome
-	harMonitorStop        chan struct{}
-	harMonitorWG          sync.WaitGroup
-	harLimitExceeded      chan struct{}
-	harLimitOnce          sync.Once
-	harObservedBytes      int64
-	harObservedEntries    int
-	harInFlightExceeded   bool
-	runtimeTextRedactor   protocol.TextRedactor
-	runtimeSecretsActive  func() bool
-	mobile                bool
-	touchMode             bool
-	orientation           string
-	orientationExplicit   bool
-	deviceScaleFactor     float64
-	cpuThrottleRate       float64
-	cpuThrottleExplicit   bool
-	viewportW             int
-	viewportH             int
+	interactionsEnabled        bool
+	interactionVersion         int
+	authoredPageVersion        int
+	interactions               browserInteractionState
+	currentNavPreSequence      uint64
+	activePageBindings         map[playwright.Page]*protocol.BrowserAuthoredPageBinding
+	lifecycleRouteSeq          map[string]uint64
+	lastActionPopup            playwright.Page
+	lastDownloadOutcome        *protocol.BrowserInteractionOutcome
+	harMonitorStop             chan struct{}
+	harMonitorWG               sync.WaitGroup
+	harLimitExceeded           chan struct{}
+	harLimitOnce               sync.Once
+	harObservedBytes           int64
+	harObservedEntries         int
+	harInFlightExceeded        bool
+	runtimeTextRedactor        protocol.TextRedactor
+	runtimeBoundedTextRedactor protocol.BoundedTextRedactor
+	runtimeBoundedTextSnapshot protocol.BoundedTextRedactorSnapshot
+	wsProjectionManaged        bool
+	wsProjectionRevision       uint64
+	runtimeSecretsActive       func() bool
+	unredactedDebug            bool
+	mobile                     bool
+	touchMode                  bool
+	orientation                string
+	orientationExplicit        bool
+	deviceScaleFactor          float64
+	cpuThrottleRate            float64
+	cpuThrottleExplicit        bool
+	viewportW                  int
+	viewportH                  int
 
 	pwContext            playwright.BrowserContext
 	pwPage               playwright.Page
@@ -195,6 +203,10 @@ type Browser struct {
 	wsEvents    []browserWSEvent
 	wsSeq       int64
 	wsWatermark int64
+	// wsEpoch fences frames captured across a navigation reset. wsPageGeneration
+	// separately fences handlers owned by a closed browser context.
+	wsEpoch          uint64
+	wsPageGeneration uint64
 	// wsLastWaitMinSeq keeps the action-local lower bound used by the last
 	// successful wait so an immediate assert can validate the same frame without
 	// rewinding the wait watermark for future waits.
@@ -230,14 +242,100 @@ type Browser struct {
 func (b *Browser) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
 	b.mu.Lock()
 	b.runtimeTextRedactor = redactor
+	b.wsProjectionRevision++
+	if redactor != nil {
+		b.wsProjectionManaged = true
+	}
 	b.mu.Unlock()
 }
 
+// SetRuntimeBoundedTextRedactor installs a fail-closed projection for
+// WebSocket evidence from untrusted frames. The matcher uses separate raw data.
+func (b *Browser) SetRuntimeBoundedTextRedactor(redactor protocol.BoundedTextRedactor) {
+	b.mu.Lock()
+	b.runtimeBoundedTextRedactor = redactor
+	b.wsProjectionRevision++
+	if redactor != nil {
+		b.wsProjectionManaged = true
+	}
+	b.mu.Unlock()
+}
+
+// SetRuntimeBoundedTextRedactorSnapshot captures one versioned policy for a
+// complete WebSocket evidence publication.
+func (b *Browser) SetRuntimeBoundedTextRedactorSnapshot(snapshot protocol.BoundedTextRedactorSnapshot) {
+	b.mu.Lock()
+	b.runtimeBoundedTextSnapshot = snapshot
+	b.wsProjectionRevision++
+	if snapshot != nil {
+		b.wsProjectionManaged = true
+	}
+	b.mu.Unlock()
+}
+
+type wsTextProjection struct {
+	redactor protocol.BoundedTextRedactor
+	guard    protocol.BoundedTextRedactorCommitGuard
+	revision uint64
+	managed  bool
+	debug    bool
+}
+
+func (b *Browser) wsProjectionSnapshot() (projection wsTextProjection) {
+	b.mu.Lock()
+	// A direct bounded callback has no policy-publication fence. It is unsafe
+	// for retained evidence even though its individual calls are work-bounded.
+	projection = wsTextProjection{revision: b.wsProjectionRevision, managed: b.wsProjectionManaged, debug: b.unredactedDebug}
+	factory := b.runtimeBoundedTextSnapshot
+	b.mu.Unlock()
+	if factory != nil && !projection.debug {
+		projection.redactor = nil
+		defer func() {
+			if recover() != nil {
+				projection.redactor, projection.guard = nil, nil
+			}
+		}()
+		redactor, guard := factory()
+		if redactor != nil && guard != nil {
+			projection.redactor, projection.guard = redactor, guard
+		}
+	}
+	return projection
+}
+
+func (p wsTextProjection) redact(value string) (projected string, ok bool) {
+	defer func() {
+		if recover() != nil {
+			projected, ok = "", false
+		}
+	}()
+	const maxProjectionBytes = 16 << 10
+	if len(value) > maxProjectionBytes || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+		return "", false
+	}
+	if p.redactor == nil {
+		// With no runtime redactor there are no engine-managed exact matches to
+		// preserve. The fixed built-in scrubber is bounded by the input limit.
+		// A legacy-only callback cannot provide the bounded work guarantee.
+		if p.managed {
+			return "", false
+		}
+		projected := scrub.Value(value, scrub.Policy{})
+		return projected, len(projected) <= maxProjectionBytes && utf8.ValidString(projected) && !strings.ContainsRune(projected, 0)
+	}
+	projected, ok = p.redactor(value)
+	return projected, ok && len(projected) <= maxProjectionBytes && utf8.ValidString(projected) && !strings.ContainsRune(projected, 0)
+}
+
 // SetRuntimeSecretActivity installs the VUser-owned, memory-only signal used
-// to suppress pixel evidence whenever governed secret material is available.
+// to suppress ordinary pixel evidence whenever governed secret material is available.
 func (b *Browser) SetRuntimeSecretActivity(active func() bool) {
 	b.mu.Lock()
 	b.runtimeSecretsActive = active
+	b.wsProjectionRevision++
+	if active != nil {
+		b.wsProjectionManaged = true
+	}
 	b.mu.Unlock()
 }
 
@@ -473,11 +571,11 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	navOutcome := b.observeActionPageTransitionV3(actionCtx, action, result, preActionPage, preActionNavSeq)
 	actionDuration := time.Since(result.StartTime)
 	result.Duration = actionDuration
-	assertionOutcomes, assertionErr := b.evaluateBrowserAssertionsWithOutcomes(actionCtx, action, action.Assertions, result, actionErr != nil || b.peekDialogError() != nil)
+	assertionOutcomes, assertionErr, assertionHTML := b.evaluateBrowserAssertionsWithOutcomes(actionCtx, action, action.Assertions, result, actionErr != nil || b.peekDialogError() != nil)
 	if actionErr == nil && assertionErr == nil {
 		actionErr = b.afterActionDelay(actionCtx)
 	}
-	b.finalizeActionResultWithAssertions(actionCtx, action, result, actionErr, assertionErr, true, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
+	b.finalizeActionResultWithAssertions(actionCtx, action, result, actionErr, assertionErr, true, assertionHTML, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
 	b.captureBrowserInteraction(actionCtx, action, result, actionErr, interactionStart, interactionSync, dialogOutcome, downloadOutcome, assertionOutcomes, navOutcome)
 	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
 		b.noteHARSLABreach()

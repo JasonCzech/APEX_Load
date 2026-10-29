@@ -89,6 +89,8 @@ export function hasStructuredReplaySnapshot(snapshot?: BrowserReplaySnapshot | n
     snapshot?.request_method
     || snapshot?.request_url
     || snapshot?.request_headers
+    || snapshot?.request_headers_omitted
+    || snapshot?.request_wire_headers_unavailable
     || snapshot?.request_body
     || snapshot?.response_status
     || snapshot?.response_headers

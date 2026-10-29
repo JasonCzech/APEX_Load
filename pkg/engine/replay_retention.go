@@ -52,6 +52,9 @@ func appendReplayReportEvent(report *ReplayReport, event ReplayActionEvent) Repl
 	recordReplayArtifactManifestEvent(report, event)
 	if budget := report.messageDetailBudget; budget != nil && event.Snapshot != nil {
 		if budget.retainedItems >= budget.maxItems || min(budget.maxItemBytes, budget.remainingBytes) < snapshotBaseOverhead {
+			if event.Screenshot == "" && (event.Snapshot.ScreenshotBase64 != "" || event.Snapshot.ScreenshotOmitted) {
+				event.ScreenshotOmitted = true
+			}
 			event.Snapshot = nil
 			event.ResponseBodyState = "not_retained"
 			report.TruncatedEventEvidenceCount++
@@ -148,7 +151,10 @@ func BoundReplayActionEventForRetention(event ReplayActionEvent, includeRichEvid
 		boundReplayEventScalarFields(&bounded)
 		return bounded
 	}
-	bounded := *cloneReplayActionEvent(event)
+	source := event
+	source.Snapshot = nil
+	bounded := *cloneReplayActionEvent(source)
+	bounded.Snapshot, _ = boundedErrorSnapshot(event.Snapshot, defaultErrorSnapshotMaxBytes)
 	boundReplayEventScalarFields(&bounded)
 	return bounded
 }
@@ -192,6 +198,7 @@ func boundReplayEventScalarFields(event *ReplayActionEvent) {
 	event.Target = truncateReplayScalar(event.Target, maxReplayEndpointBytes)
 	event.Selector = truncateReplayScalar(event.Selector, maxReplayEndpointBytes)
 	event.ErrorMessage = truncateReplayScalar(event.ErrorMessage, maxReplayErrorBytes)
+	event.CredentialClassificationError = truncateReplayScalar(event.CredentialClassificationError, maxReplayErrorBytes)
 	event.PageURL = truncateReplayScalar(event.PageURL, maxReplayEndpointBytes)
 	event.PageTitle = truncateReplayScalar(event.PageTitle, maxReplayIdentityBytes)
 	event.SourceStepID = truncateReplayScalar(event.SourceStepID, maxReplayIdentityBytes)
@@ -219,11 +226,21 @@ func stripReplayEventRichEvidence(event *ReplayActionEvent) {
 	event.Headers = nil
 	event.Body = ""
 	event.Extractions = nil
+	event.UnappliedExtractionsOmittedCount += len(event.UnappliedExtractions)
+	event.UnappliedExtractions = nil
+	event.StreamedChildrenOmittedCount += len(event.StreamedChildren)
+	event.StreamedChildren = nil
 	event.HTML = ""
+	if event.Screenshot != "" || (event.Snapshot != nil && (event.Snapshot.ScreenshotBase64 != "" || event.Snapshot.ScreenshotOmitted)) {
+		event.ScreenshotOmitted = true
+	}
 	event.Screenshot = ""
 	event.Console = nil
 	event.Network = nil
 	event.DOMSummary = nil
+	if len(event.ProtocolEvidence) > 0 {
+		event.ProtocolEvidenceOmittedCount++
+	}
 	event.ProtocolEvidence = nil
 	if event.Snapshot != nil {
 		event.ResponseBodyState = "not_retained"
@@ -245,7 +262,7 @@ func stripReplayEventRichEvidence(event *ReplayActionEvent) {
 }
 
 func replayEventHasRichEvidence(event ReplayActionEvent) bool {
-	if event.Value != "" || len(event.Headers) > 0 || event.Body != "" || len(event.Extractions) > 0 ||
+	if event.Value != "" || len(event.Headers) > 0 || event.Body != "" || len(event.Extractions) > 0 || len(event.UnappliedExtractions) > 0 || len(event.StreamedChildren) > 0 ||
 		event.HTML != "" || event.Screenshot != "" || len(event.Console) > 0 || len(event.Network) > 0 ||
 		event.DOMSummary != nil || len(event.ProtocolEvidence) > 0 || event.Snapshot != nil ||
 		len(event.RepairSuggestions) > 0 {

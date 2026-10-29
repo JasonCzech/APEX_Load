@@ -68,6 +68,11 @@ const (
 
 	devViewModeAdmin = "admin"
 	devViewModeUser  = "user"
+
+	// WebSocket constructors cannot attach the preview headers used by fetch.
+	// These query fields are accepted only on the controller socket in dev mode.
+	devViewQuery      = "apexload_dev_view"
+	devProjectIDQuery = "apexload_dev_project"
 )
 
 func devPreviewModeForRequest(settings AuthSettings, r *http.Request) (string, bool) {
@@ -79,7 +84,15 @@ func devPreviewModeForRequest(settings AuthSettings, r *http.Request) (string, b
 	if settings.Mode != authModeDev {
 		return "", false
 	}
-	switch strings.ToLower(strings.TrimSpace(r.Header.Get(devViewHeader))) {
+	mode := strings.ToLower(strings.TrimSpace(r.Header.Get(devViewHeader)))
+	if mode == "" && isDevPreviewWebSocketRequest(r) {
+		// The query can only narrow the normal dev identity to the simulated
+		// user. An admin or malformed value is not a query-based grant.
+		if strings.ToLower(strings.TrimSpace(r.URL.Query().Get(devViewQuery))) == devViewModeUser {
+			mode = devViewModeUser
+		}
+	}
+	switch mode {
 	case devViewModeAdmin:
 		return devViewModeAdmin, true
 	case devViewModeUser:
@@ -89,12 +102,23 @@ func devPreviewModeForRequest(settings AuthSettings, r *http.Request) (string, b
 	}
 }
 
+func isDevPreviewWebSocketRequest(r *http.Request) bool {
+	return r != nil && r.URL != nil && r.Method == http.MethodGet && r.URL.Path == "/api/v1/ws"
+}
+
 func devPreviewUserForRequest(r *http.Request, mode string) *AuthenticatedUser {
 	if mode != devViewModeUser {
 		return nil
 	}
 	projectRoles := make(map[string]map[string]struct{})
-	if rawProjectID := strings.TrimSpace(r.Header.Get(devProjectIDHeader)); rawProjectID != "" {
+	rawProjectID := strings.TrimSpace(r.Header.Get(devProjectIDHeader))
+	if rawProjectID == "" && strings.TrimSpace(r.Header.Get(devViewHeader)) == "" && isDevPreviewWebSocketRequest(r) && strings.EqualFold(strings.TrimSpace(r.URL.Query().Get(devViewQuery)), devViewModeUser) {
+		candidate := strings.TrimSpace(r.URL.Query().Get(devProjectIDQuery))
+		if len(candidate) <= maxDesktopDevProjectIDLength && desktopDevProjectIDPattern.MatchString(candidate) {
+			rawProjectID = candidate
+		}
+	}
+	if rawProjectID != "" {
 		projectRoles[normalizeProjectID(rawProjectID)] = map[string]struct{}{RoleEditor: {}}
 	}
 	domainRoles := map[string]map[string]struct{}{

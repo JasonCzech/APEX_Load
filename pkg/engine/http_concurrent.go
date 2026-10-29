@@ -49,6 +49,8 @@ type preparedHTTPChild struct {
 	publicationRedactionFailed             bool
 	retrySensitiveValues                   []string
 	result                                 *protocol.Result
+	debugEvidence                          *ReplayActionEvent
+	debugError                             error
 	err                                    error
 	started, completed                     time.Time
 }
@@ -313,12 +315,31 @@ func (vu *VUser) runConcurrentHTTP(ctx context.Context, action dsl.Action, errCf
 				if ctx.Err() != nil {
 					child.err = ctx.Err()
 				} else {
-					executor := &VUser{Proto: vu.Proto, Script: vu.Script, RedactionConfig: child.redaction, structuredBodyResolvedAction: nil}
+					executor := &VUser{Proto: vu.Proto, Script: vu.Script, RedactionConfig: child.redaction, structuredBodyResolvedAction: nil, unredactedDebug: vu.unredactedDebug, debugRetryGroupCount: len(children)}
 					if child.structuredBody {
 						executor.structuredBodyResolvedAction = child.action
 					}
 					history := &httpRetryClassificationHistory{base: child.redaction, allowance: maxConcurrentRetryClassificationBytes / len(children)}
 					child.result, child.err = executor.executeRetryInternal(ctx, child.action, errCfg, nil, history)
+					if vu.unredactedDebug {
+						debugResult := child.result
+						if debugResult != nil && len(debugResult.ProtocolEvidence) == 0 {
+							copyResult := *debugResult
+							copyResult.ProtocolEvidence = buildUnredactedReplayProtocolEvidence(child.action, debugResult)
+							copyResult.ProtocolEvidenceOmittedCount = debugResult.ProtocolEvidenceOmittedCount
+							debugResult = &copyResult
+						}
+						child.debugEvidence = executor.debugRetryEvidence
+						if child.debugEvidence == nil {
+							child.debugEvidence = captureUnredactedConcurrentResult(debugResult, len(children))
+						}
+						if child.err != nil {
+							child.debugError = executor.debugRetryError
+							if child.debugError == nil {
+								child.debugError = fmt.Errorf("%s", cloneBoundedResultString(child.err.Error(), min(maxResultErrorBytes, maxConcurrentRichEvidenceBytes/max(1, len(children))/16)))
+							}
+						}
+					}
 					child.retrySensitiveValues = history.observedValues()
 					if executor.runtimeCredentialRedactionErr != nil {
 						child.publicationRedactionFailed = true

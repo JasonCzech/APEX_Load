@@ -117,6 +117,8 @@ describe('script editor replay model', () => {
     expect(hasStructuredReplaySnapshot({})).toBe(false)
     expect(hasStructuredReplaySnapshot({ response_status: 200 })).toBe(true)
     expect(hasStructuredReplaySnapshot({ request_headers: {} })).toBe(true)
+    expect(hasStructuredReplaySnapshot({ request_headers_omitted: true })).toBe(true)
+    expect(hasStructuredReplaySnapshot({ request_wire_headers_unavailable: true })).toBe(true)
   })
 
   it('parses replay variables safely', () => {

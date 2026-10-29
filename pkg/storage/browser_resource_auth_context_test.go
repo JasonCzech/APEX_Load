@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+func TestHasUsersContext(t *testing.T) {
+	store := resourceIdentityStore(t)
+	if exists, err := store.HasUsersContext(context.Background()); err != nil || exists {
+		t.Fatalf("empty store = %v, %v", exists, err)
+	}
+	now := time.Now().UTC()
+	if err := store.SaveUser(&User{ID: "bootstrap-user", Subject: "bootstrap-user", Active: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if exists, err := store.HasUsersContext(context.Background()); err != nil || !exists {
+		t.Fatalf("populated store = %v, %v", exists, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := store.HasUsersContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled read returned %v", err)
+	}
+}
+
 func TestBrowserResourceAuthContextMatchesEstablishedSQLProjection(t *testing.T) {
 	checkBrowserResourceAuthSQLProjection(t, resourceIdentityStore(t))
 }
@@ -45,6 +64,10 @@ func checkBrowserResourceAuthSQLProjection(t *testing.T, store *SQLiteStore) {
 		ordinary   func() (any, error)
 		contextual func(context.Context) (any, error)
 	}{
+		{"has_users", func() (any, error) {
+			users, err := store.ListUsers(UserFilter{Limit: 1})
+			return len(users) > 0, err
+		}, func(ctx context.Context) (any, error) { return store.HasUsersContext(ctx) }},
 		{"user_and_bindings", func() (any, error) { return store.GetUserBySubject(" " + user.Subject + " ") }, func(ctx context.Context) (any, error) {
 			return store.GetUserBySubjectContext(ctx, " "+user.Subject+" ")
 		}},

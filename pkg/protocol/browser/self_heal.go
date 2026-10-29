@@ -148,10 +148,10 @@ func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Resul
 	safePrimary = b.redactRuntimeText(safePrimary)
 	safeHealed := b.redactRuntimeText(healed)
 	slog.Warn("browser selector self-healed",
-		"action", action.Name,
+		"action", b.redactRuntimeText(action.Name),
 		"primary_selector", safePrimary,
 		"healed_selector", safeHealed,
-		"candidate_kind", candidate.Kind,
+		"candidate_kind", b.redactRuntimeText(candidate.Kind),
 		"candidate_confidence", candidate.Confidence)
 	if result == nil {
 		return
@@ -159,11 +159,15 @@ func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Resul
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
 	}
-	b.recordSelfHealMetrics(action, result, safePrimary, true, stats)
+	b.recordSelfHealMetrics(action, result, primary, true, stats)
+	evidencePrimary, evidenceHealed := safePrimary, safeHealed
+	if b.debugDisclosureEnabled() {
+		evidencePrimary, evidenceHealed = primary, healed
+	}
 	evidence := map[string]any{
 		"action":           action.Name,
-		"primary_selector": safePrimary,
-		"healed_selector":  safeHealed,
+		"primary_selector": evidencePrimary,
+		"healed_selector":  evidenceHealed,
 		"candidate_kind":   candidate.Kind,
 		"confidence":       candidate.Confidence,
 		"reason":           candidate.Reason,
@@ -192,6 +196,9 @@ func (b *Browser) recordSelfHealMetrics(action *protocol.Action, result *protoco
 		safePrimary = action.RedactedSelector
 	}
 	safePrimary = b.redactRuntimeText(safePrimary)
+	if b.debugDisclosureEnabled() {
+		safePrimary = primary
+	}
 	metrics := map[string]any{
 		"action":           action.Name,
 		"primary_selector": safePrimary,
@@ -202,6 +209,14 @@ func (b *Browser) recordSelfHealMetrics(action *protocol.Action, result *protoco
 	}
 	result.ProtocolEvidence["selector_self_heal_metrics"] = metrics
 	result.ProtocolEvidence["self_heal_metrics"] = metrics
+}
+
+// The flag is installed from the internal replay configuration and guarded by
+// the same mutex as WebSocket evidence's disclosure policy.
+func (b *Browser) debugDisclosureEnabled() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.unredactedDebug
 }
 
 func (b *Browser) selectorSelfHealEnabled() bool {

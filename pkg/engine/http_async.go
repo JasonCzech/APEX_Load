@@ -455,9 +455,20 @@ func (vu *VUser) applyAsyncResults(ctx context.Context, conversation *asyncConve
 		status := strconv.Itoa(result.StatusCode)
 		success := result.Success
 		body := result.ResponseBody
-		vu.recordResult(result, cfg.ErrorHandling, cfg.Log)
+		var debugResult *ReplayActionEvent
+		if vu.unredactedDebug && vu.onAsyncResult != nil {
+			debugResult = captureUnredactedReplayResult(result)
+			debugResult.ActionName = cloneBoundedResultString(result.ActionName, maxReplayIdentityBytes)
+		}
+		extractionErr := vu.recordResult(result, cfg.ErrorHandling, cfg.Log)
+		if debugResult != nil {
+			applyReplayExtractionFailure(debugResult, extractionErr)
+			if vu.runtimeCredentialRedactionError() != nil {
+				debugResult.CredentialClassificationError = vu.runtimeCredentialRedactionError().Error()
+			}
+		}
 		if vu.onAsyncResult != nil {
-			vu.onAsyncResult(result)
+			vu.onAsyncResult(result, debugResult)
 		}
 		if len(conversation.onResponse) == 0 {
 			continue

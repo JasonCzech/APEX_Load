@@ -150,6 +150,8 @@ export interface SnapshotCopySection {
   request_method?: string
   request_url?: string
   request_headers?: Record<string, string>
+  request_headers_omitted?: boolean
+  request_wire_headers_unavailable?: boolean
   request_body?: string
   response_status?: number
   response_headers?: Record<string, string>
@@ -170,6 +172,8 @@ export function formatSnapshotRequestLineAndHeaders(snapshot?: SnapshotCopySecti
     '',
     'Headers',
     formatCapturedHeaders(snapshot?.request_headers),
+    ...(snapshot?.request_wire_headers_unavailable ? ['Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.'] : []),
+    ...(snapshot?.request_headers_omitted ? ['Some request headers were omitted or shortened by retention limits.'] : []),
   ].join('\n')
 }
 
@@ -203,6 +207,8 @@ export function formatSnapshotRequestSection(snapshot?: SnapshotCopySection): st
     '',
     'Headers',
     formatCapturedHeaders(snapshot?.request_headers),
+    ...(snapshot?.request_wire_headers_unavailable ? ['Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.'] : []),
+    ...(snapshot?.request_headers_omitted ? ['Some request headers were omitted or shortened by retention limits.'] : []),
     '',
     'Body',
     formatCapturedBody(snapshot?.request_body, snapshot?.request_headers, 'No request body captured'),

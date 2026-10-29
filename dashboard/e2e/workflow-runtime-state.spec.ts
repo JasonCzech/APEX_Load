@@ -76,6 +76,10 @@ async function openDebugger(page: Page, workspace: Workspace, id: string) {
   await options.getByRole('checkbox', { name: 'Step through (start paused)' }).check()
   await options.getByRole('button', { name: 'Done', exact: true }).click()
 }
+async function openDebugSidePanel(page: Page) {
+  await page.getByRole('region', { name: 'Debugger center workbench', exact: true }).getByRole('tab', { name: 'DSL', exact: true }).click()
+  await expect(page.getByRole('separator', { name: 'Resize debug panel', exact: true })).toBeVisible()
+}
 
 async function alignEvidenceScrollports(focus: Locator) {
   await focus.evaluate(element => {
@@ -201,6 +205,7 @@ test('current paused values and parameter receipts survive inspection without co
   expect(before.runtime_state.snapshot!.rows).toContainEqual(expect.objectContaining({ kind: 'datasource', source: 'people', row_ordinal: 1, state: 'selected' }))
   await stableInspections(request, before)
   expect(observed).toHaveLength(startCount)
+  await openDebugSidePanel(page)
   await page.getByRole('tab', { name: 'Live Variables', exact: true }).click()
   const watches = page.getByRole('region', { name: 'Variable watches', exact: true })
   await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).toHaveValue('current')
@@ -211,6 +216,18 @@ test('current paused values and parameter receipts survive inspection without co
   expect(parameter(afterAssignment.runtime_state.snapshot!, 'sequence')).toMatchObject({ state: 'observed', value: '42' })
   await expect(watches).toContainText('assigned_number')
   await expect(watches).toContainText('42')
+  const debugPanelResizer = page.getByRole('separator', { name: 'Resize debug panel', exact: true })
+  await debugPanelResizer.focus()
+  await debugPanelResizer.press('Home')
+  const currentBindings = page.getByRole('region', { name: 'Current variable bindings table', exact: true })
+  const parameterReceipts = page.getByRole('region', { name: 'Parameter runtime receipts table', exact: true })
+  // Compact rails use labelled cards, so no heading is squeezed into a narrow column.
+  await expect.poll(() => currentBindings.locator('tbody tr').first().evaluate(element => getComputedStyle(element).display)).toBe('block')
+  await debugPanelResizer.press('End')
+  // A wide rail expands to readable table columns rather than retaining the narrow layout.
+  await expect.poll(() => parameterReceipts.locator('table').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(850)
+  await expect.poll(() => parameterReceipts.locator('thead th').evaluateAll(headings => headings.every(heading => heading.clientWidth >= 120 && heading.scrollWidth <= heading.clientWidth + 1))).toBe(true)
+  await debugPanelResizer.press('Home')
   await stableInspections(request, afterAssignment)
   expect(observed).toHaveLength(startCount)
   await page.getByRole('button', { name: 'Step', exact: true }).click()
@@ -253,6 +270,7 @@ test('current paused values and parameter receipts survive inspection without co
   const terminal = await getSession(request, initial.id)
   expectEnvelope(terminal)
   expect(terminal.runtime_state).toMatchObject({ state: 'unavailable', reason: 'session_terminal', snapshot: null })
+  await openDebugSidePanel(page)
   // The ended session opens on recorded values; asking for the current state says it is gone.
   await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).not.toHaveValue('current')
   await expect(watches).toContainText('This is historical evidence, not current engine state.')
@@ -262,6 +280,17 @@ test('current paused values and parameter receipts survive inspection without co
   await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('retained')
   await expect(watches).toContainText('Retained history')
   await expect(watches).toContainText('assigned_number')
+  const historicalTable = page.getByRole('region', { name: 'Variable values and provenance', exact: true })
+  await debugPanelResizer.focus()
+  await debugPanelResizer.press('Home')
+  await expect.poll(() => historicalTable.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+  await expect.poll(() => historicalTable.locator('thead th').evaluateAll(headings => headings.every(heading => heading.scrollWidth <= heading.clientWidth + 1))).toBe(true)
+  await historicalTable.evaluate(element => { element.scrollLeft = element.scrollWidth })
+  await expect.poll(() => historicalTable.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+  await debugPanelResizer.focus()
+  await debugPanelResizer.press('End')
+  await expect.poll(() => historicalTable.evaluate(element => element.clientWidth)).toBeGreaterThanOrEqual(680)
+  await expect.poll(() => historicalTable.locator('table').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(680)
   const exported = await request.get(`/api/v1/script-debug/sessions/${initial.id}/export?format=json`)
   expect(exported.ok()).toBe(true)
   const exportBody = await exported.json()

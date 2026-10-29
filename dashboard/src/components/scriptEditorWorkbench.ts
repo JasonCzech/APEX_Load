@@ -87,7 +87,8 @@ export const DEBUGGER_LAYOUT_DEFAULTS: Record<DebuggerResizeKind, number> = {
 
 export const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; min: number; step: number }> = {
   rail: { min: 180, max: 560, step: 24 },
-  vars: { min: 220, max: 600, step: 24 },
+  // The effective maximum is the available workbench width, not a fixed pixel cap.
+  vars: { min: 220, max: Number.POSITIVE_INFINITY, step: 24 },
   bottom: { min: 140, max: 640, step: 24 },
 }
 

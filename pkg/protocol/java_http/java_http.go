@@ -39,18 +39,19 @@ func init() {
 }
 
 type JavaHTTP struct {
-	http                 *httpproto.HTTP
-	baseURL              string
-	codec                string
-	helperMode           string
-	contentType          string
-	accept               string
-	bodyEncoding         string
-	preserveBinaryResult bool
-	objectSchema         string
-	requestMapping       map[string]string
-	responseMapping      map[string]string
-	footprintReq         *javarunner.FootprintRequest
+	unredactedDebugSnapshots bool
+	http                     *httpproto.HTTP
+	baseURL                  string
+	codec                    string
+	helperMode               string
+	contentType              string
+	accept                   string
+	bodyEncoding             string
+	preserveBinaryResult     bool
+	objectSchema             string
+	requestMapping           map[string]string
+	responseMapping          map[string]string
+	footprintReq             *javarunner.FootprintRequest
 }
 
 var (
@@ -61,6 +62,7 @@ var (
 func (j *JavaHTTP) Name() string { return "java_http" }
 
 func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
+	j.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	if baseURL, ok := config["base_url"].(string); ok {
 		j.baseURL = strings.TrimSpace(baseURL)
 	}
@@ -251,7 +253,7 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 			DependencyType:  "java_http",
 			ErrorMessage:    fmt.Sprintf("unsupported java_http action body encoding: %s", bodyEncoding),
 			ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
-			Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
+			Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared, j.unredactedDebugSnapshots),
 		}, nil
 	}
 	zeroBytes := int64(0)
@@ -272,7 +274,7 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 				DependencyType:  "java_http",
 				ErrorMessage:    fmt.Sprintf("invalid base64 java_http body: %v", err),
 				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
-				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
+				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared, j.unredactedDebugSnapshots),
 			}, nil
 		}
 		decodedBytes := int64(len(decoded))
@@ -497,22 +499,25 @@ func firstHeaderValue(headers map[string]string, key string) string {
 	return ""
 }
 
-func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action) *protocol.ErrorSnapshot {
+func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action, unredactedDebug ...bool) *protocol.ErrorSnapshot {
+	raw := len(unredactedDebug) > 0 && unredactedDebug[0]
 	if action == nil {
 		return nil
 	}
 	method := javaHTTPActionMethod(action)
 	requestURL := resolveJavaHTTPURL(baseURL, action.Target)
-	if strings.TrimSpace(action.RedactedTarget) != "" {
+	if !raw && strings.TrimSpace(action.RedactedTarget) != "" {
 		requestURL = resolveJavaHTTPURL(baseURL, action.RedactedTarget)
 	}
 	requestBody := string(action.Body)
-	if len(action.RedactedBody) > 0 {
+	if !raw && len(action.RedactedBody) > 0 {
 		requestBody = string(action.RedactedBody)
 	}
 	requestHeaders := cloneHeaders(action.Headers)
-	for key, value := range action.RedactedHeaders {
-		requestHeaders[key] = value
+	if !raw {
+		for key, value := range action.RedactedHeaders {
+			requestHeaders[key] = value
+		}
 	}
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  method,

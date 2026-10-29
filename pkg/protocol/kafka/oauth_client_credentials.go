@@ -51,11 +51,24 @@ func explicitOAuthToken(ctx context.Context, c config) (string, error) {
 	transport.Proxy = protocol.NewTargetPolicyProxy(transport.Proxy, c.AllowedTargetHosts)
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Timeout: 30 * time.Second, Transport: protocol.NewTargetPolicyRoundTripper(transport, c.AllowedTargetHosts)}
-	token, err := httpprotocol.FetchOAuth2Token(ctx, httpprotocol.OAuthTokenRequest{TokenURL: c.OAuthTokenURL, GrantType: httpprotocol.OAuthGrantClientCredentials, ClientID: c.OAuthClientID, ClientSecret: c.OAuthClientSecret, Scope: c.OAuthClientScope, ClientAuthentication: c.OAuthAuthenticationMethod, HTTPClient: client})
+	return explicitOAuthTokenWithClient(ctx, c, client)
+}
+
+func explicitOAuthTokenWithClient(ctx context.Context, c config, client *http.Client) (string, error) {
+	if err := validateExplicitOAuth(c); err != nil {
+		return "", err
+	}
+	token, err := httpprotocol.FetchOAuth2Token(ctx, explicitOAuthTokenRequest(c, client))
 	if err != nil {
 		return "", fmt.Errorf("Kafka OAuth token acquisition failed: %w", err)
 	}
 	return token.AccessToken, nil
+}
+
+// Constructing the request in one place keeps the debug disclosure flag on
+// the same singleflight boundary as the ordinary credential request.
+func explicitOAuthTokenRequest(c config, client *http.Client) httpprotocol.OAuthTokenRequest {
+	return httpprotocol.OAuthTokenRequest{TokenURL: c.OAuthTokenURL, GrantType: httpprotocol.OAuthGrantClientCredentials, ClientID: c.OAuthClientID, ClientSecret: c.OAuthClientSecret, Scope: c.OAuthClientScope, ClientAuthentication: c.OAuthAuthenticationMethod, HTTPClient: client, UnredactedDebugErrors: c.UnredactedDebugErrors}
 }
 
 // ValidateOAuthTokenEndpoint checks the structural contract without resolving

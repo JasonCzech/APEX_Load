@@ -69,6 +69,9 @@ func (b *Browser) closeWithContext(ctx context.Context) (result error) {
 	b.censorDocumentEvidence(nil, "context_closed")
 	b.mu.Lock()
 	b.closing = true
+	// Lock order is mu then wsMu, as in page registration. Fence events before
+	// publishing the closing state or beginning any potentially blocking work.
+	b.retireWSEvents()
 	b.retireNetworkWorkersLocked()
 	requestPolicyStop := b.requestPolicyStop
 	b.requestPolicyStop = nil
@@ -179,6 +182,9 @@ func (b *Browser) closeWithContext(ctx context.Context) (result error) {
 	b.mu.Unlock()
 	b.mu.Lock()
 	b.runtimeTextRedactor = nil
+	b.runtimeBoundedTextRedactor = nil
+	b.runtimeBoundedTextSnapshot = nil
+	b.wsProjectionRevision++
 	b.runtimeSecretsActive = nil
 	b.mu.Unlock()
 	b.storageState = nil

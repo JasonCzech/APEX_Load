@@ -188,3 +188,16 @@ func TestRuntimeSecretHARSuppressionWarning(t *testing.T) {
 		})
 	}
 }
+
+func TestRuntimeSecretHARRemainsSuppressedForDebugger(t *testing.T) {
+	b := &Browser{unredactedDebug: true, harCapturePolicy: HARCaptureAlways, harDir: t.TempDir()}
+	b.SetRuntimeSecretActivity(func() bool { return true })
+	var options playwright.BrowserNewContextOptions
+	if err := b.applyHARCaptureOptions(&options); err != nil {
+		t.Fatal(err)
+	}
+	if options.RecordHarPath != nil || b.harOwner != nil || b.harWorkingPath != "" {
+		t.Fatal("debugger enabled HAR capture with runtime secrets")
+	}
+	assertHARDirEmpty(t, b.harDir)
+}

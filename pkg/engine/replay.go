@@ -57,6 +57,9 @@ type ReplayOptions struct {
 	ContinueOnError *bool
 	OnProgress      func(ReplayProgressEvent)
 	DebugController ReplayDebugController
+	// UnredactedDebug exposes runtime values only to an authorized debugger session.
+	// It must not be enabled for ordinary replay reports or unauthorized recipients.
+	UnredactedDebug bool
 }
 
 type ReplayProgressEvent struct {
@@ -200,47 +203,67 @@ type ReplayReport struct {
 	retainedSnapshotClones  map[*protocol.ErrorSnapshot]*protocol.ErrorSnapshot
 }
 
+// ReplayStreamedChildEvidence describes one streamed result before aggregate
+// publication. Outputs distinguish admitted variables from rejected evidence.
+type ReplayStreamedChildEvidence struct {
+	ActionName                       string            `json:"action_name"`
+	Success                          bool              `json:"success"`
+	ErrorMessage                     string            `json:"error_message,omitempty"`
+	Extractions                      map[string]string `json:"extractions,omitempty"`
+	ExtractionsOmittedCount          int               `json:"extractions_omitted_count,omitempty"`
+	UnappliedExtractions             map[string]string `json:"unapplied_extractions,omitempty"`
+	UnappliedExtractionsOmittedCount int               `json:"unapplied_extractions_omitted_count,omitempty"`
+	CredentialClassificationError    string            `json:"credential_classification_error,omitempty"`
+}
+
 type ReplayActionEvent struct {
 	// AuthoredStep identifies the definition, not proof that dispatch occurred.
-	AuthoredStep      *protocol.BrowserAuthoredStep `json:"authored_step,omitempty"`
-	ResponseBodyState string                        `json:"response_body_state,omitempty"`
-	EventID           string                        `json:"event_id,omitempty"`
-	ActionIndex       int                           `json:"action_index"`
-	EventIndex        int                           `json:"event_index"`
-	Phase             string                        `json:"phase"`
-	ActionName        string                        `json:"action_name"`
-	ActionType        string                        `json:"action_type"`
-	Method            string                        `json:"method,omitempty"`
-	Target            string                        `json:"target"`
-	Selector          string                        `json:"selector,omitempty"`
-	Value             string                        `json:"value,omitempty"`
-	Headers           map[string]string             `json:"headers,omitempty"`
-	Body              string                        `json:"body,omitempty"`
-	StartedAt         time.Time                     `json:"started_at"`
-	CompletedAt       time.Time                     `json:"completed_at"`
-	DurationMs        float64                       `json:"duration_ms"`
-	StatusCode        int                           `json:"status_code,omitempty"`
-	Success           bool                          `json:"success"`
-	ErrorMessage      string                        `json:"error_message,omitempty"`
-	Extractions       map[string]string             `json:"extractions,omitempty"`
-	PageURL           string                        `json:"page_url,omitempty"`
-	PageTitle         string                        `json:"page_title,omitempty"`
-	HTML              string                        `json:"html,omitempty"`
-	Screenshot        string                        `json:"screenshot_base64,omitempty"`
-	Console           []protocol.ConsoleEntry       `json:"console_entries,omitempty"`
-	Network           []protocol.NetworkEntry       `json:"network_entries,omitempty"`
-	DOMSummary        *protocol.DOMSummary          `json:"dom_summary,omitempty"`
-	ClientMetrics     *protocol.ClientMetrics       `json:"client_metrics,omitempty"`
-	ProtocolEvidence  map[string]any                `json:"protocol_evidence,omitempty"`
-	Snapshot          *protocol.ErrorSnapshot       `json:"snapshot,omitempty"`
-	SourceStepID      string                        `json:"source_step_id,omitempty"`
-	SourceStepIndex   int                           `json:"source_step_index,omitempty"`
-	SourceAction      string                        `json:"source_action,omitempty"`
-	SourceActionName  string                        `json:"source_action_name,omitempty"`
-	SourceTransaction string                        `json:"source_transaction,omitempty"`
-	SourceProfile     string                        `json:"source_profile,omitempty"`
-	Diagnosis         *ReplayDiagnosis              `json:"diagnosis,omitempty"`
-	RepairSuggestions []ReplayRepairSuggestion      `json:"repair_suggestions,omitempty"`
+	AuthoredStep                     *protocol.BrowserAuthoredStep `json:"authored_step,omitempty"`
+	ResponseBodyState                string                        `json:"response_body_state,omitempty"`
+	EventID                          string                        `json:"event_id,omitempty"`
+	ActionIndex                      int                           `json:"action_index"`
+	EventIndex                       int                           `json:"event_index"`
+	Phase                            string                        `json:"phase"`
+	ActionName                       string                        `json:"action_name"`
+	ActionType                       string                        `json:"action_type"`
+	Method                           string                        `json:"method,omitempty"`
+	Target                           string                        `json:"target"`
+	Selector                         string                        `json:"selector,omitempty"`
+	Value                            string                        `json:"value,omitempty"`
+	Headers                          map[string]string             `json:"headers,omitempty"`
+	Body                             string                        `json:"body,omitempty"`
+	StartedAt                        time.Time                     `json:"started_at"`
+	CompletedAt                      time.Time                     `json:"completed_at"`
+	DurationMs                       float64                       `json:"duration_ms"`
+	StatusCode                       int                           `json:"status_code,omitempty"`
+	Success                          bool                          `json:"success"`
+	ErrorMessage                     string                        `json:"error_message,omitempty"`
+	Extractions                      map[string]string             `json:"extractions,omitempty"`
+	UnappliedExtractions             map[string]string             `json:"unapplied_extractions,omitempty"`
+	UnappliedExtractionsOmittedCount int                           `json:"unapplied_extractions_omitted_count,omitempty"`
+	PageURL                          string                        `json:"page_url,omitempty"`
+	PageTitle                        string                        `json:"page_title,omitempty"`
+	HTML                             string                        `json:"html,omitempty"`
+	Screenshot                       string                        `json:"screenshot_base64,omitempty"`
+	ScreenshotOmitted                bool                          `json:"screenshot_omitted,omitempty"`
+	Console                          []protocol.ConsoleEntry       `json:"console_entries,omitempty"`
+	Network                          []protocol.NetworkEntry       `json:"network_entries,omitempty"`
+	DOMSummary                       *protocol.DOMSummary          `json:"dom_summary,omitempty"`
+	ClientMetrics                    *protocol.ClientMetrics       `json:"client_metrics,omitempty"`
+	ProtocolEvidence                 map[string]any                `json:"protocol_evidence,omitempty"`
+	ProtocolEvidenceOmittedCount     int                           `json:"protocol_evidence_omitted_count,omitempty"`
+	CredentialClassificationError    string                        `json:"credential_classification_error,omitempty"`
+	StreamedChildren                 []ReplayStreamedChildEvidence `json:"streamed_children,omitempty"`
+	StreamedChildrenOmittedCount     int                           `json:"streamed_children_omitted_count,omitempty"`
+	Snapshot                         *protocol.ErrorSnapshot       `json:"snapshot,omitempty"`
+	SourceStepID                     string                        `json:"source_step_id,omitempty"`
+	SourceStepIndex                  int                           `json:"source_step_index,omitempty"`
+	SourceAction                     string                        `json:"source_action,omitempty"`
+	SourceActionName                 string                        `json:"source_action_name,omitempty"`
+	SourceTransaction                string                        `json:"source_transaction,omitempty"`
+	SourceProfile                    string                        `json:"source_profile,omitempty"`
+	Diagnosis                        *ReplayDiagnosis              `json:"diagnosis,omitempty"`
+	RepairSuggestions                []ReplayRepairSuggestion      `json:"repair_suggestions,omitempty"`
 	// Sub-request / sub-step identity for leaves of a container action
 	// (http_sequence / control_if / control_loop). Absent for a plain top-level
 	// action so existing events serialize unchanged.
@@ -324,6 +347,13 @@ type ReplayDiagnosisSummary struct {
 // builtins when ReplayOptions.Seed is not set, so replays are reproducible.
 const defaultReplaySeed int64 = 1
 
+func replayStartupErrorText(opts ReplayOptions, err error, config *RedactionConfig) string {
+	if opts.UnredactedDebug && opts.DebugController != nil {
+		return cloneBoundedResultString(err.Error(), maxResultErrorBytes)
+	}
+	return scrubSensitiveTextWithConfig(err.Error(), config)
+}
+
 func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (*ReplayReport, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
@@ -351,7 +381,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	}
 	redactionConfig, err := NewRedactionConfig(opts.RedactionRules)
 	if err != nil {
-		return nil, fmt.Errorf("redaction config: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("redaction config: %s", replayStartupErrorText(opts, err, nil))
 	}
 	secretResolver := opts.SecretResolver
 	if secretResolver == nil {
@@ -361,13 +391,13 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	secretResolver, secretValues, err := snapshotReferencedSecretsContext(resolutionCtx, script, secretResolver)
 	resolutionCancel()
 	if err != nil {
-		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("inspect script secret references: %s", replayStartupErrorText(opts, err, nil))
 	}
 	// One shared chokepoint with engine.New, NewMultiGroup, and shakeout; see
 	// script_sourced_run_evidence.go.
 	secretValues, scriptSourcedValues, importedCredentials, err := runtimeSecretValuesForScript(script, secretResolver, secretValues)
 	if err != nil {
-		return nil, fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("inspect retained import credentials: %s", replayStartupErrorText(opts, err, nil))
 	}
 	// seedSecretValues is origin-independent: an operator-supplied replay variable
 	// is governed by its NAME, not by the script. It stays platform-managed and is
@@ -381,7 +411,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	secretValues = append(secretValues, seedSecretValues...)
 	redactionConfig, scriptSourcedDropped, err := buildRuntimeSecretRedaction(redactionConfig, secretValues, scriptSourcedValues)
 	if err != nil {
-		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("prepare runtime secret redaction: %s", replayStartupErrorText(opts, err, nil))
 	}
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
@@ -429,15 +459,20 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if err := validateLiveTableBindings(script, liveClient, liveClientID, liveBindings); err != nil {
 		return nil, err
 	}
-	groupName = scrubReplayGroupName(groupName, redactionConfig)
+	if !opts.UnredactedDebug || opts.DebugController == nil {
+		groupName = scrubReplayGroupName(groupName, redactionConfig)
+	}
 
 	proto, err := protocol.Get(script.Protocol)
 	if err != nil {
-		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+		return nil, fmt.Errorf("protocol init: %s", replayStartupErrorText(opts, err, redactionConfig))
 	}
 
 	_, captureCorrelationEvidence := opts.DebugController.(ReplayDebugControllerCorrelationObserver)
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)
+	if opts.UnredactedDebug && opts.DebugController != nil {
+		protoConfig[protocol.ReplayUnredactedDebugConfigKey] = true
+	}
 	// A replay runs as the session's first identity.
 	authoredScript := script
 	identity, err := browserIdentityForOrdinal(script, 0)
@@ -448,17 +483,17 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("browser session identity: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+		return nil, fmt.Errorf("browser session identity: %s", replayStartupErrorText(opts, err, redactionConfig))
 	}
 	requiredFeatures := dsl.RequiredNativeRuntimeFeatures(script)
 	if protocol.RuntimeFeaturesSatisfy(requiredFeatures, protocol.FeatureNativeDataJavaV1) {
 		targets, err := runtimePreflightTargets(ctx, script, secretResolver)
 		if err != nil {
-			return nil, fmt.Errorf("native runtime preflight: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+			return nil, fmt.Errorf("native runtime preflight: %s", replayStartupErrorText(opts, err, redactionConfig))
 		}
 		_, supported, err := protocol.RunRuntimePreflight(ctx, proto, protocol.RuntimePreflightRequest{Config: protoConfig, Targets: targets, RequiredFeatures: requiredFeatures})
 		if err != nil {
-			return nil, fmt.Errorf("native runtime preflight: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+			return nil, fmt.Errorf("native runtime preflight: %s", replayStartupErrorText(opts, err, redactionConfig))
 		}
 		if !supported {
 			return nil, nativeServiceUnavailable("native Java preflight unavailable")
@@ -502,7 +537,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		}
 	}
 	bindProtocolRuntimeRedaction(proto, func() *RedactionConfig { return redactionConfig })
-	if err := callProtocolInit(ctx, proto, protoConfig, redactionConfig); err != nil {
+	if err := callProtocolInit(ctx, proto, protoConfig, redactionConfig, opts.UnredactedDebug && opts.DebugController != nil); err != nil {
 		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
 		discardUnreportedHAR()
 		return nil, fmt.Errorf("protocol init: %s", err)
@@ -528,7 +563,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
-		return nil, fmt.Errorf("data source init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+		return nil, fmt.Errorf("data source init: %s", replayStartupErrorText(opts, err, redactionConfig))
 	}
 
 	startedAt := time.Now()
@@ -564,6 +599,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	})
 
 	vu = &VUser{
+		unredactedDebug:              opts.UnredactedDebug && opts.DebugController != nil,
 		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: 1},
 		ID:                           0,
 		Group:                        groupName,
@@ -629,13 +665,21 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Ignore:     script.Config.ThinkTime.Ignore,
 	}
 
-	vu.onAsyncResult = func(result *protocol.Result) { appendReplayAsyncEvent(vu, report, result) }
+	vu.onAsyncResult = func(result *protocol.Result, raw *ReplayActionEvent) {
+		event := appendReplayAsyncEvent(vu, report, result, raw)
+		kind := ReplayProgressActionCompleted
+		if !event.Success {
+			kind = ReplayProgressActionFailed
+		}
+		publishReplayProgress(onProgress, ReplayProgressEvent{Type: kind, EventID: event.EventID, SessionID: report.ReplaySessionID, Timestamp: event.CompletedAt, EventIndex: event.EventIndex, Event: cloneReplayActionEvent(event)})
+		publishReplayProgress(onProgress, ReplayProgressEvent{Type: ReplayProgressEventRun, EventID: event.EventID, SessionID: report.ReplaySessionID, Timestamp: event.CompletedAt, EventIndex: event.EventIndex, Event: cloneReplayActionEvent(event)})
+	}
 	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 	if shouldContinue {
 		if controller, ok := vu.Proto.(protocol.IterationController); ok {
 			if err := controller.BeginIteration(ctx); err != nil {
 				report.Success = false
-				report.Error = "prepare replay iteration: " + scrubSensitiveError(err, vu.RedactionConfig).Error()
+				report.Error = "prepare replay iteration: " + vu.replayPublicationError(err)
 				shouldContinue = false
 			}
 		}
@@ -649,7 +693,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	teardownCancel()
 	vu.stopAllAsyncConversations(teardownCtx, "replay end")
 	finalizedSourceTransactions := vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker during replay")
-	appendReplaySourceTransactionFinalizations(report, finalizedSourceTransactions, vu.RedactionConfig, onProgress)
+	appendReplaySourceTransactionFinalizations(report, finalizedSourceTransactions, vu.RedactionConfig, onProgress, vu.unredactedDebug)
 
 	report.CompletedAt = time.Now()
 	if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
@@ -659,7 +703,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		}
 	}
 	report.FinalVariables = vu.replayFinalVariables()
-	if vu.runtimeCredentialRedactionErr != nil {
+	if vu.runtimeCredentialRedactionErr != nil && !vu.unredactedDebug {
 		OmitUnavailableReplayReport(report)
 	} else {
 		setReplayReportSnapshots(report)
@@ -698,9 +742,10 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 // appendReplayAsyncEvent reports one background conversation response
 // (http_async_start) as an "async" replay event. A failed response fails the
 // replay without stopping it, as a failed response does in a load test.
-func appendReplayAsyncEvent(vu *VUser, report *ReplayReport, result *protocol.Result) {
+func appendReplayAsyncEvent(vu *VUser, report *ReplayReport, result *protocol.Result, debug ...*ReplayActionEvent) ReplayActionEvent {
 	event := ReplayActionEvent{
 		EventIndex:  report.nextEventIndex(),
+		EventID:     replayLeafEventID(report.ReplaySessionID, "async", -1, report.nextEventIndex(), nil),
 		ActionIndex: -1,
 		Phase:       "async",
 		ActionName:  result.ActionName,
@@ -717,9 +762,16 @@ func appendReplayAsyncEvent(vu *VUser, report *ReplayReport, result *protocol.Re
 		if message == "" {
 			message = "async response failed"
 		}
-		event.ErrorMessage = scrubSensitiveError(errors.New(message), vu.resultPublicationRedactionConfig()).Error()
+		event.ErrorMessage = vu.replayPublicationError(errors.New(message))
 	}
-	appendReplayReportEvent(report, event)
+	if len(debug) > 0 && debug[0] != nil {
+		applyUnredactedReplayResult(&event, debug[0])
+		event.ActionName = debug[0].ActionName
+		if !event.Success && event.ErrorMessage == "" {
+			event.ErrorMessage = "async response failed"
+		}
+	}
+	return appendReplayReportEvent(report, event)
 }
 
 // TakeHARArtifacts hands over the native HARs a replay recorded, once.
@@ -741,6 +793,7 @@ func appendReplaySourceTransactionFinalizations(
 	results []*protocol.Result,
 	redactionConfig *RedactionConfig,
 	onProgress func(ReplayProgressEvent),
+	unredacted ...bool,
 ) {
 	if report == nil || len(results) == 0 {
 		return
@@ -753,7 +806,10 @@ func appendReplaySourceTransactionFinalizations(
 			report.Error = fmt.Sprintf("%d source transactions ended without matching end markers", len(results))
 		}
 	}
-	report.Error = scrubSensitiveTextWithConfig(report.Error, redactionConfig)
+	debugRaw := len(unredacted) > 0 && unredacted[0]
+	if !debugRaw {
+		report.Error = scrubSensitiveTextWithConfig(report.Error, redactionConfig)
+	}
 
 	for _, result := range results {
 		if result == nil {
@@ -785,7 +841,9 @@ func appendReplaySourceTransactionFinalizations(
 			SourceProfile:     result.SourceProfile,
 		}
 		attachReplayDiagnosis(&event)
-		scrubReplayActionEvent(&event, redactionConfig)
+		if !debugRaw {
+			scrubReplayActionEvent(&event, redactionConfig)
+		}
 		event = appendReplayReportEvent(report, event)
 
 		debugAction := &ReplayDebugAction{
@@ -1318,11 +1376,13 @@ func publishConditionEvidence(
 		IterationPath: append([]int(nil), iterationPath...),
 	}
 	ev := evidence
-	scrubReplayDebugAction(dbg, vu.resultPublicationRedactionConfig())
-	if vu.resultPublicationUnavailable() {
+	if !vu.unredactedDebug {
+		scrubReplayDebugAction(dbg, vu.resultPublicationRedactionConfig())
+	}
+	if !vu.unredactedDebug && vu.resultPublicationUnavailable() {
 		omitUnredactableReplayDebugAction(dbg)
 		ev.Expr, ev.Left, ev.Right, ev.Op = "", "", "", ""
-	} else {
+	} else if !vu.unredactedDebug {
 		ev.Expr = scrubSensitiveTextWithConfig(ev.Expr, vu.resultPublicationRedactionConfig())
 		ev.Left = scrubSensitiveTextWithConfig(ev.Left, vu.resultPublicationRedactionConfig())
 		ev.Right = scrubSensitiveTextWithConfig(ev.Right, vu.resultPublicationRedactionConfig())
@@ -1364,11 +1424,13 @@ func runReplayUnit(
 	applyReplayUnitIdentityDebug(&debugAction, unit)
 	runtimeLocation := *cloneReplayDebugAction(debugAction)
 	defer vu.enterReplayRuntimeEvent(eventID)()
-	scrubReplayDebugAction(&debugAction, vu.resultPublicationRedactionConfig())
-	if vu.runtimeCredentialRedactionErr != nil {
+	if !vu.unredactedDebug {
+		scrubReplayDebugAction(&debugAction, vu.resultPublicationRedactionConfig())
+	}
+	if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
 		omitUnredactableReplayDebugAction(&debugAction)
 	}
-	if vu.resultPublicationUnavailable() {
+	if !vu.unredactedDebug && vu.resultPublicationUnavailable() {
 		debugAction.Target, debugAction.Selector, debugAction.SourceStepID = "", "", ""
 		debugAction.ActionName = "Concurrent request"
 	}
@@ -1405,28 +1467,32 @@ func runReplayUnit(
 			StartedAt:    now,
 			CompletedAt:  now,
 			Success:      false,
-			ErrorMessage: scrubSensitiveTextWithConfig(unit.synthErr.Error(), vu.resultPublicationRedactionConfig()),
+			ErrorMessage: vu.replayPublicationError(unit.synthErr),
 		}
 		applyReplaySourceMetadata(&event, unit.action.Metadata)
 		attachReplayDiagnosis(&event)
 	} else if unit.prepared != nil {
 		child := unit.prepared
 		_, capture := debugController.(ReplayDebugControllerCorrelationObserver)
-		event, shouldContinue = finishReplayProtocolAction(ctx, vu, unit.action, child.action, child.result, child.err, child.started, child.completed, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, true, globalThinkCfg, report, capture, nil)
+		event, shouldContinue = finishReplayProtocolAction(ctx, vu, unit.action, child.action, child.result, child.err, child.started, child.completed, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, true, globalThinkCfg, report, capture, nil, child.debugEvidence, child.debugError)
 	} else {
 		_, captureCorrelationEvidence := debugController.(ReplayDebugControllerCorrelationObserver)
 		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, vu.browserReplayAuthoredStep(unit))
 	}
 	event.AuthoredStep = vu.browserReplayAuthoredStep(unit).Clone()
 	applyReplayUnitIdentityEvent(&event, unit)
-	if vu.runtimeCredentialRedactionErr != nil {
+	if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
 		omitUnredactableReplayActionEvent(&event)
 		omitUnredactableReplayDebugAction(&debugAction)
 	}
 	if observer, ok := debugController.(ReplayDebugControllerCorrelationObserver); ok {
 		observer.ObserveCorrelationEvidence(ctx, debugAction, &event)
 	}
-	scrubReplayActionEvent(&event, vu.resultPublicationRedactionConfig())
+	if vu.unredactedDebug {
+		event.CorrelationEvidence = nil
+	} else {
+		scrubReplayActionEvent(&event, vu.resultPublicationRedactionConfig())
+	}
 	event = appendReplayReportEvent(report, event)
 
 	actionProgressType := ReplayProgressActionCompleted
@@ -1456,7 +1522,9 @@ func runReplayUnit(
 			if report.Error == "" {
 				report.Error = vu.replayPublicationError(err)
 			}
-			scrubReplayActionEvent(&event, vu.resultPublicationRedactionConfig())
+			if !vu.unredactedDebug {
+				scrubReplayActionEvent(&event, vu.resultPublicationRedactionConfig())
+			}
 			return event, shouldContinue, true
 		}
 	}
@@ -1563,7 +1631,7 @@ func runReplayAction(
 			if dsl.CanonicalActionType(action.Type) != "source_transaction" {
 				vu.noteSourceTransactionResult(action, false)
 			}
-			errorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+			errorMessage = vu.replayPublicationError(err)
 		}
 		if err == nil {
 			if ended, name, transactionSuccess := vu.sourceTransactionActionOutcome(action); ended && !transactionSuccess {
@@ -1608,7 +1676,7 @@ func runReplayAction(
 	if err := vu.beforeWebSocketAction(ctx, action.Type); err != nil {
 		event := ReplayActionEvent{EventID: eventID, ActionIndex: actionIndex, EventIndex: eventIndex, Phase: phase, ActionName: action.Name, ActionType: action.Type}
 		event.Success = false
-		event.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+		event.ErrorMessage = vu.replayPublicationError(err)
 		attachReplayDiagnosis(&event)
 		return event, false
 	}
@@ -1617,25 +1685,75 @@ func runReplayAction(
 		resolved.BrowserAuthoredStep = authored[0].Clone()
 	}
 	start := time.Now()
-	var streamedChildFailure *protocol.Result
+	vu.debugRetryEvidence, vu.debugRetryError = nil, nil
+	var streamedChildFailure *replayStreamedFailure
+	var streamedChildren []ReplayStreamedChildEvidence
+	streamedBytes, omittedChildren := 0, 0
 	result, err := vu.executeWithRetryStream(ctx, resolved, vu.Script.Config.ErrorHandling, func(child *protocol.Result) error {
 		if child == nil {
 			return nil
 		}
-		vu.recordResult(child, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
+		var raw *ReplayActionEvent
+		rawActionName := cloneBoundedResultString(child.ActionName, maxReplayIdentityBytes)
+		generatedProtocolEvidence := false
+		if vu.unredactedDebug {
+			raw = captureUnredactedReplayResult(child)
+			if len(raw.ProtocolEvidence) == 0 {
+				raw.ProtocolEvidence = buildUnredactedReplayProtocolEvidence(resolved, child)
+				raw.ProtocolEvidenceOmittedCount += child.ProtocolEvidenceOmittedCount
+				generatedProtocolEvidence = true
+				bounded := BoundReplayActionEventForRetention(*raw, true)
+				raw = &bounded
+			}
+		}
+		extractionErr := vu.recordResult(child, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
+		if raw != nil {
+			applyReplayExtractionFailure(raw, extractionErr)
+			if vu.runtimeCredentialRedactionError() != nil {
+				raw.CredentialClassificationError = vu.runtimeCredentialRedactionError().Error()
+			}
+			if generatedProtocolEvidence && !child.Success && raw.ProtocolEvidence != nil {
+				raw.ProtocolEvidence["status"] = "failed"
+			}
+		}
+		if raw != nil {
+			entry := ReplayStreamedChildEvidence{ActionName: rawActionName, Success: child.Success, ErrorMessage: raw.ErrorMessage, Extractions: raw.Extractions, UnappliedExtractions: raw.UnappliedExtractions, UnappliedExtractionsOmittedCount: raw.UnappliedExtractionsOmittedCount, CredentialClassificationError: raw.CredentialClassificationError}
+			if count, ok := raw.ProtocolEvidence["concurrent_group_extractions_omitted_count"].(int); ok && len(raw.UnappliedExtractions) == 0 && raw.UnappliedExtractionsOmittedCount == 0 {
+				entry.ExtractionsOmittedCount = count
+			}
+			encoded, encodeErr := json.Marshal(entry)
+			if encodeErr != nil || len(streamedChildren) >= maxReplayStreamedChildren || len(encoded) > maxReplayStreamedBytes-streamedBytes {
+				omittedChildren++
+			} else {
+				streamedChildren = append(streamedChildren, entry)
+				streamedBytes += len(encoded)
+			}
+		}
 		vu.noteSourceTransactionResult(action, child.Success)
 		if !child.Success && streamedChildFailure == nil {
 			failure := *child
-			streamedChildFailure = &failure
+			streamedChildFailure = &replayStreamedFailure{result: &failure, debug: raw}
 		}
 		return nil
 	})
 	vu.acceptWebSocketCallback(action, result, err)
 	completedAt := time.Now()
-	return finishReplayProtocolAction(ctx, vu, action, resolved, result, err, start, completedAt, phase, actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, streamedChildFailure)
+	debugEvidence, debugError := vu.debugRetryEvidence, vu.debugRetryError
+	vu.debugRetryEvidence, vu.debugRetryError = nil, nil
+	event, ok := finishReplayProtocolAction(ctx, vu, action, resolved, result, err, start, completedAt, phase, actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, streamedChildFailure, debugEvidence, debugError)
+	event.StreamedChildren, event.StreamedChildrenOmittedCount = streamedChildren, omittedChildren
+	if vu.unredactedDebug && vu.runtimeCredentialRedactionError() != nil {
+		event.CredentialClassificationError = vu.runtimeCredentialRedactionError().Error()
+	}
+	return event, ok
 }
 
-func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Action, resolved *protocol.Action, result *protocol.Result, err error, start, completedAt time.Time, phase string, actionIndex, eventIndex int, eventID string, continueOnError, ignoreThinkTime bool, globalThinkCfg protocol.ThinkTimeConfig, report *ReplayReport, captureCorrelationEvidence bool, streamedChildFailure *protocol.Result) (ReplayActionEvent, bool) {
+type replayStreamedFailure struct {
+	result *protocol.Result
+	debug  *ReplayActionEvent
+}
+
+func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Action, resolved *protocol.Action, result *protocol.Result, err error, start, completedAt time.Time, phase string, actionIndex, eventIndex int, eventID string, continueOnError, ignoreThinkTime bool, globalThinkCfg protocol.ThinkTimeConfig, report *ReplayReport, captureCorrelationEvidence bool, streamedChildFailure *replayStreamedFailure, preparedDebug *ReplayActionEvent, preparedError error) (ReplayActionEvent, bool) {
 	event := ReplayActionEvent{
 		EventID:     eventID,
 		ActionIndex: actionIndex,
@@ -1654,7 +1772,11 @@ func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Actio
 		DurationMs:  float64(completedAt.Sub(start).Microseconds()) / 1000,
 	}
 	applyReplaySourceMetadata(&event, action.Metadata)
-	if vu.resultPublicationUnavailable() {
+	if vu.unredactedDebug {
+		event.Target, event.Selector, event.Value = resolved.Target, resolved.Selector, resolved.Value
+		event.Headers, event.Body = cloneStringMap(resolved.Headers), string(resolved.Body)
+	}
+	if !vu.unredactedDebug && vu.resultPublicationUnavailable() {
 		event.Target, event.Selector, event.Value, event.Body, event.Headers = "", "", "", "", nil
 		event.ActionName = "Concurrent request"
 		event.SourceStepID, event.SourceAction, event.SourceActionName, event.SourceProfile = "", "", "", ""
@@ -1665,18 +1787,50 @@ func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Actio
 		event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
 		discardCorrelationEvidence(result)
 		event.Success = false
+		if vu.unredactedDebug {
+			var raw *ReplayActionEvent
+			if preparedDebug != nil {
+				raw = cloneReplayActionEvent(*preparedDebug)
+			} else if result != nil {
+				raw = captureUnredactedReplayResult(result)
+			}
+			if raw != nil {
+				// A result returned with an error is diagnostic only: recordResult
+				// never admitted its outputs to the VUser. Keep those outputs as
+				// evidence, not as applied extractions used to reconstruct variables.
+				moveUnappliedReplayExtractions(raw)
+				applyUnredactedReplayResult(&event, raw)
+			}
+			if result != nil {
+				event.StatusCode = result.StatusCode
+			} else if raw != nil {
+				event.StatusCode = raw.StatusCode
+			}
+		}
 		event.ErrorMessage = vu.replayPublicationError(err)
+		if vu.unredactedDebug && preparedError != nil {
+			event.ErrorMessage = preparedError.Error()
+		}
 		if event.ErrorMessage == "" {
 			event.ErrorMessage = fmt.Sprintf("%s %q failed", phase, action.Name)
 		}
-		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, &protocol.Result{
+		failureResult := &protocol.Result{
 			ActionName:     action.Name,
 			StartTime:      start,
 			Duration:       completedAt.Sub(start),
 			Success:        false,
 			ErrorMessage:   event.ErrorMessage,
 			DependencyType: inferReplayDependencyType(resolved),
-		})
+		}
+		if !vu.unredactedDebug {
+			event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, failureResult)
+		} else if len(event.ProtocolEvidence) == 0 {
+			event.ProtocolEvidence = buildUnredactedReplayProtocolEvidence(resolved, failureResult)
+			event.ProtocolEvidenceOmittedCount += failureResult.ProtocolEvidenceOmittedCount
+		}
+		if vu.unredactedDebug {
+			applyRawReplayActionEvidence(&event, resolved)
+		}
 		attachReplayDiagnosis(&event)
 		if continueOnError && ctx.Err() == nil {
 			_ = applyReplayActionThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg)
@@ -1713,8 +1867,22 @@ func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Actio
 	} else if logCfg.OnErrorOnly || logCfg.Level == "extended" {
 		logger.Info("replay action ok", actionLogAttrs(logName, logAction, result, logCfg, false, vu.resultPublicationRedactionConfig())...)
 	}
+	// Keep a detached, bounded debugger projection before recordResult sanitizes
+	// the result for its metrics sinks and stored evidence.
+	var debugResult *ReplayActionEvent
+	if vu.unredactedDebug {
+		if preparedDebug != nil {
+			debugResult = cloneReplayActionEvent(*preparedDebug)
+		} else {
+			debugResult = captureUnredactedReplayResult(result)
+			if len(debugResult.ProtocolEvidence) == 0 {
+				debugResult.ProtocolEvidence = buildUnredactedReplayProtocolEvidence(resolved, result)
+				debugResult.ProtocolEvidenceOmittedCount += result.ProtocolEvidenceOmittedCount
+			}
+		}
+	}
 	retainedSnapshotCount := len(vu.SnapshotStore.Snapshots())
-	vu.recordResult(result, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
+	extractionErr := vu.recordResult(result, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
 	vu.noteSourceTransactionResult(action, result.Success)
 	event.StatusCode = result.StatusCode
 	event.Success = result.Success
@@ -1724,6 +1892,7 @@ func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Actio
 	event.PageTitle = result.PageTitle
 	event.HTML = result.HTML
 	event.Screenshot = result.ScreenshotBase64
+	event.ScreenshotOmitted = result.ScreenshotOmitted
 	event.Console = cloneConsoleEntries(result.ConsoleEntries)
 	event.Network = cloneNetworkEntries(result.NetworkEntries)
 	event.DOMSummary = cloneDOMSummary(result.DOMSummary)
@@ -1733,18 +1902,53 @@ func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Actio
 		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, result)
 	}
 	event.Snapshot = result.Snapshot
-	if streamedChildFailure != nil {
-		event.Success = false
-		event.ErrorMessage = streamedChildFailure.ErrorMessage
-		if event.ErrorMessage == "" {
-			event.ErrorMessage = fmt.Sprintf("streamed child %q failed", streamedChildFailure.ActionName)
+	if debugResult != nil {
+		applyReplayExtractionFailure(debugResult, extractionErr)
+		if vu.runtimeCredentialRedactionError() != nil {
+			debugResult.CredentialClassificationError = vu.runtimeCredentialRedactionError().Error()
 		}
-		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, streamedChildFailure)
-		if streamedChildFailure.Snapshot != nil {
-			event.Snapshot = streamedChildFailure.Snapshot
+		fallbackEvidence := event.ProtocolEvidence
+		applyUnredactedReplayResult(&event, debugResult)
+		if len(event.ProtocolEvidence) == 0 {
+			event.ProtocolEvidence = fallbackEvidence
+		} else if preparedDebug != nil {
+			// Concurrent publication adds these operational receipts after the
+			// raw child was captured. Preserve them alongside its raw evidence.
+			for _, key := range []string{"concurrent_group_duration_ms", "concurrent_group_evidence_bounded", "concurrent_group_evidence_details_complete", "concurrent_group_response_bytes_omitted", "concurrent_group_correlation_omitted", "concurrent_group_extractions_omitted"} {
+				if value, ok := fallbackEvidence[key]; ok {
+					event.ProtocolEvidence[key] = value
+				}
+			}
 		}
 	}
-	if streamedChildFailure == nil && !result.Success && result.Snapshot != nil && vu.SnapshotStore != nil {
+	if streamedChildFailure != nil {
+		child := streamedChildFailure.result
+		event.Success = false
+		event.ErrorMessage = child.ErrorMessage
+		if event.ErrorMessage == "" {
+			event.ErrorMessage = fmt.Sprintf("streamed child %q failed", child.ActionName)
+		}
+		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, child)
+		if child.Snapshot != nil {
+			event.Snapshot = child.Snapshot
+		}
+		if streamedChildFailure.debug != nil {
+			childDebug := streamedChildFailure.debug
+			mergeReplayUnappliedExtractions(&event, childDebug)
+			if childDebug.ErrorMessage != "" {
+				event.ErrorMessage = childDebug.ErrorMessage
+			}
+			event.ProtocolEvidence = childDebug.ProtocolEvidence
+			event.ProtocolEvidenceOmittedCount = childDebug.ProtocolEvidenceOmittedCount
+			if childDebug.Snapshot != nil {
+				event.Snapshot = childDebug.Snapshot
+			}
+		}
+	}
+	if vu.unredactedDebug {
+		applyRawReplayActionEvidence(&event, resolved)
+	}
+	if debugResult == nil && streamedChildFailure == nil && !result.Success && result.Snapshot != nil && vu.SnapshotStore != nil {
 		if retained := vu.SnapshotStore.Snapshots(); len(retained) > retainedSnapshotCount {
 			// Reuse the store's detached bounded copy so ReplayReport.Events and
 			// ReplayReport.Snapshots do not retain two copies of the same evidence.
@@ -1781,6 +1985,268 @@ func finishReplayProtocolAction(ctx context.Context, vu *VUser, action dsl.Actio
 	}
 
 	return event, true
+}
+
+// Preserve an admission failure added by recordResult after the debugger's
+// raw projection was captured. The engine rejected these extractions, so do not
+// present them as values retained in the VUser.
+func applyReplayExtractionFailure(event *ReplayActionEvent, err error) {
+	if event == nil || err == nil {
+		return
+	}
+	message := "extraction retention failed: " + err.Error()
+	if event.ErrorMessage != "" {
+		// Reserve room for the admission error so a long original failure does
+		// not hide the reason no extraction was retained.
+		remaining := maxReplayErrorBytes - len(message) - len("; ")
+		if remaining > 0 {
+			message = truncateReplayScalar(event.ErrorMessage, remaining) + "; " + message
+		}
+	}
+	event.ErrorMessage = truncateReplayScalar(message, maxReplayErrorBytes)
+	moveUnappliedReplayExtractions(event)
+	if metadata, ok := event.ProtocolEvidence["metadata"].(map[string]any); ok {
+		delete(metadata, "extractions")
+	}
+	if _, ok := event.ProtocolEvidence["status"]; ok {
+		event.ProtocolEvidence["status"] = "failed"
+	}
+}
+
+// Replay protocol evidence normally prefers the redacted action projection.
+// The debugger has an explicit raw-data contract, so synthesize from the
+// original action while leaving that projection untouched for ordinary output.
+func buildUnredactedReplayProtocolEvidence(action *protocol.Action, result *protocol.Result) map[string]any {
+	if action == nil {
+		return protocol.BuildProtocolEvidence(nil, result)
+	}
+	raw := *action
+	raw.RedactedTarget = ""
+	raw.RedactedHeaders = nil
+	raw.RedactedParams = nil
+	raw.RedactedSOAP = nil
+	return protocol.BuildProtocolEvidence(&raw, result)
+}
+
+// Restore action-derived metadata without replacing adapter-specific evidence.
+// The caller uses this only for authorized debugger publication.
+func applyRawReplayActionEvidence(event *ReplayActionEvent, action *protocol.Action) {
+	if event == nil || action == nil || len(event.ProtocolEvidence) == 0 {
+		return
+	}
+	if action.RedactedTarget != "" && event.ProtocolEvidence["target"] == strings.TrimSpace(action.RedactedTarget) {
+		target := strings.TrimSpace(action.Target)
+		event.ProtocolEvidence["target"] = cloneBoundedResultString(target, maxReplayEndpointBytes)
+		if len(target) > maxReplayEndpointBytes {
+			event.ProtocolEvidenceOmittedCount++
+		}
+	}
+	metadata, ok := event.ProtocolEvidence["metadata"].(map[string]any)
+	if !ok {
+		return
+	}
+	values := make(map[string]any, 3)
+	if len(action.RedactedHeaders) > 0 && event.ProtocolEvidence["protocol"] != "soap" {
+		if _, exists := metadata["headers"]; exists {
+			values["headers"] = action.Headers
+		}
+	}
+	if len(action.RedactedParams) > 0 {
+		if _, exists := metadata["params"]; exists {
+			values["params"] = action.Params
+		}
+	}
+	if action.RedactedSOAP != nil && action.SOAP != nil {
+		if _, exists := metadata["soap"]; exists {
+			values["soap"] = action.SOAP
+		}
+	}
+	bounded, omitted := cloneReplayDebugEvidence(values, maxReplayDebugEvidenceBytes)
+	event.ProtocolEvidenceOmittedCount += omitted
+	if rawHeaders, ok := bounded["headers"].(map[string]string); ok {
+		// Protocol adapters may add headers after authoring (SOAPAction,
+		// Content-Type, Accept). Overlay authored keys without discarding them.
+		headers, _ := metadata["headers"].(map[string]string)
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		for key, value := range rawHeaders {
+			for existing := range headers {
+				if strings.EqualFold(existing, key) {
+					delete(headers, existing)
+				}
+			}
+			headers[key] = value
+		}
+		metadata["headers"] = headers
+	}
+	if params, ok := bounded["params"]; ok {
+		metadata["params"] = params
+	}
+	if rawSOAP, ok := bounded["soap"].(map[string]any); ok {
+		soap, _ := metadata["soap"].(map[string]any)
+		if soap == nil {
+			soap = make(map[string]any)
+		}
+		for key, value := range rawSOAP {
+			soap[key] = value
+		}
+		metadata["soap"] = soap
+	}
+}
+
+// captureUnredactedReplayResult detaches the debugger-only view before the
+// shared result is scrubbed and published to metrics or archive sinks.
+func captureUnredactedReplayResult(result *protocol.Result) *ReplayActionEvent {
+	// Use the same bounded projection as a single-child concurrent group. It
+	// validates extraction sizes before cloning and bounds rich collections
+	// while copying them, rather than first cloning an adapter-owned graph.
+	event := captureUnredactedConcurrentResult(result, 1)
+	boundReplayEventScalarFields(event)
+	return event
+}
+
+// Concurrent children complete before the join; give each a fixed share of the
+// same group evidence budget before retaining any debugger-only copies. This
+// also bounds data on failure paths that never reach joined publication.
+func captureUnredactedConcurrentResult(result *protocol.Result, count int) *ReplayActionEvent {
+	if result == nil {
+		return nil
+	}
+	allowance := maxConcurrentRichEvidenceBytes / max(1, count)
+	quarter := allowance / 4
+	out := &ReplayActionEvent{StatusCode: result.StatusCode, ProtocolEvidenceOmittedCount: result.ProtocolEvidenceOmittedCount}
+	omittedExtractions := 0
+	out.ErrorMessage = cloneBoundedResultString(result.ErrorMessage, min(maxResultErrorBytes, quarter/4))
+	if protocol.ValidateExtractions(result.Extractions) == nil {
+		remaining := quarter / 2
+		keys := make([]string, 0, len(result.Extractions))
+		for key := range result.Extractions {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			value := result.Extractions[key]
+			cost := len(key) + len(value) + snapshotMapEntryOverhead
+			if cost > remaining {
+				omittedExtractions++
+				continue
+			}
+			if out.Extractions == nil {
+				out.Extractions = make(map[string]string)
+			}
+			out.Extractions[strings.Clone(key)] = strings.Clone(value)
+			remaining -= cost
+		}
+	} else {
+		omittedExtractions = len(result.Extractions)
+	}
+	rich, _ := boundedErrorSnapshot(&protocol.ErrorSnapshot{
+		PageURL: result.PageURL, PageTitle: result.PageTitle, HTML: result.HTML,
+		ScreenshotBase64: result.ScreenshotBase64, ScreenshotOmitted: result.ScreenshotOmitted, ConsoleEntries: result.ConsoleEntries,
+		NetworkEntries: result.NetworkEntries, DOMSummary: result.DOMSummary,
+	}, quarter)
+	if rich != nil {
+		out.PageURL, out.PageTitle, out.HTML, out.Screenshot = rich.PageURL, rich.PageTitle, rich.HTML, rich.ScreenshotBase64
+		out.ScreenshotOmitted = rich.ScreenshotOmitted
+		out.Console, out.Network, out.DOMSummary = rich.ConsoleEntries, rich.NetworkEntries, rich.DOMSummary
+	}
+	out.Snapshot, _ = boundedErrorSnapshot(result.Snapshot, min(defaultErrorSnapshotMaxBytes, quarter))
+	// Structured evidence and client metrics share the last quarter. Their
+	// existing bounded cloners are applied before serializing for accounting.
+	remaining := quarter
+	if evidence, omitted := cloneReplayDebugEvidence(result.ProtocolEvidence, remaining); evidence != nil {
+		out.ProtocolEvidenceOmittedCount += omitted
+		if encoded, err := json.Marshal(evidence); err == nil && len(encoded) <= remaining {
+			out.ProtocolEvidence = evidence
+			remaining -= len(encoded)
+		} else {
+			out.ProtocolEvidenceOmittedCount++
+		}
+	} else {
+		out.ProtocolEvidenceOmittedCount += omitted
+	}
+	if metrics := cloneClientMetrics(result.ClientMetrics); metrics != nil {
+		metrics.DeviceProfile = cloneBoundedResultString(metrics.DeviceProfile, 1024)
+		metrics.DevicePlatform = cloneBoundedResultString(metrics.DevicePlatform, 1024)
+		metrics.DeviceTier = cloneBoundedResultString(metrics.DeviceTier, 1024)
+		metrics.BrowserEngine = cloneBoundedResultString(metrics.BrowserEngine, 1024)
+		if encoded, err := json.Marshal(metrics); err == nil && len(encoded) <= remaining {
+			out.ClientMetrics = metrics
+		}
+	}
+	if omittedExtractions > 0 {
+		if out.ProtocolEvidence == nil {
+			out.ProtocolEvidence = make(map[string]any)
+		}
+		out.ProtocolEvidence["concurrent_group_extractions_omitted"] = true
+		out.ProtocolEvidence["concurrent_group_extractions_omitted_count"] = omittedExtractions
+	}
+	return out
+}
+
+// Merge rejected child outputs without confusing them with applied variables.
+// Preserve the parent value on collision and count the omitted child value.
+func mergeReplayUnappliedExtractions(event, child *ReplayActionEvent) {
+	if event == nil || child == nil {
+		return
+	}
+	event.UnappliedExtractionsOmittedCount += child.UnappliedExtractionsOmittedCount
+	if len(child.UnappliedExtractions) == 0 {
+		return
+	}
+	values := cloneStringMap(event.UnappliedExtractions)
+	if values == nil {
+		values = make(map[string]string)
+	}
+	keys := make([]string, 0, len(child.UnappliedExtractions))
+	for key := range child.UnappliedExtractions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, exists := values[key]; exists {
+			event.UnappliedExtractionsOmittedCount++
+			continue
+		}
+		values[key] = child.UnappliedExtractions[key]
+		if protocol.ValidateExtractions(values) != nil {
+			delete(values, key)
+			event.UnappliedExtractionsOmittedCount++
+		}
+	}
+	event.UnappliedExtractions = values
+}
+
+// Diagnostic outputs were never merged into the live variable state.
+func moveUnappliedReplayExtractions(event *ReplayActionEvent) {
+	if event == nil {
+		return
+	}
+	if event.Extractions != nil {
+		event.UnappliedExtractions = event.Extractions
+		event.Extractions = nil
+	}
+	if omitted, ok := event.ProtocolEvidence["concurrent_group_extractions_omitted_count"].(int); ok && omitted > event.UnappliedExtractionsOmittedCount {
+		event.UnappliedExtractionsOmittedCount = omitted
+	}
+}
+
+func applyUnredactedReplayResult(event, raw *ReplayActionEvent) {
+	if event == nil || raw == nil {
+		return
+	}
+	event.ErrorMessage, event.Extractions = raw.ErrorMessage, raw.Extractions
+	event.CredentialClassificationError = raw.CredentialClassificationError
+	event.ProtocolEvidenceOmittedCount = raw.ProtocolEvidenceOmittedCount
+	event.UnappliedExtractions, event.UnappliedExtractionsOmittedCount = raw.UnappliedExtractions, raw.UnappliedExtractionsOmittedCount
+	event.PageURL, event.PageTitle, event.HTML, event.Screenshot = raw.PageURL, raw.PageTitle, raw.HTML, raw.Screenshot
+	event.ScreenshotOmitted = raw.ScreenshotOmitted
+	event.Console, event.Network, event.DOMSummary = raw.Console, raw.Network, raw.DOMSummary
+	event.ClientMetrics, event.ProtocolEvidence, event.Snapshot = raw.ClientMetrics, raw.ProtocolEvidence, raw.Snapshot
+	if event.Snapshot != nil {
+		event.ResponseBodyState = event.Snapshot.ResponseBodyState
+	}
 }
 
 func applyReplayActionThinkTime(
@@ -2459,6 +2925,7 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	event.ActionType = scrubSensitiveTextWithConfig(event.ActionType, config)
 	event.Method = scrubSensitiveTextWithConfig(event.Method, config)
 	event.ErrorMessage = scrubSensitiveTextWithConfig(event.ErrorMessage, config)
+	event.CredentialClassificationError = scrubSensitiveTextWithConfig(event.CredentialClassificationError, config)
 	event.Target = scrubSensitiveTextWithConfig(event.Target, config)
 	event.Selector = scrubSensitiveTextWithConfig(event.Selector, config)
 	event.Value = scrubSensitiveTextWithConfig(event.Value, config)
@@ -2467,7 +2934,20 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	event.PageURL = scrubSensitiveTextWithConfig(event.PageURL, config)
 	event.PageTitle = scrubSensitiveTextWithConfig(event.PageTitle, config)
 	event.HTML = scrubSensitiveTextWithConfig(event.HTML, config)
+	if config.HasRuntimeSecretMaterial() {
+		event.Screenshot = ""
+		event.ScreenshotOmitted = false
+	}
 	event.Extractions = scrubSensitiveExtractions(event.Extractions, config)
+	event.UnappliedExtractions = scrubSensitiveExtractions(event.UnappliedExtractions, config)
+	for i := range event.StreamedChildren {
+		child := &event.StreamedChildren[i]
+		child.ActionName = scrubSensitiveTextWithConfig(child.ActionName, config)
+		child.ErrorMessage = scrubSensitiveTextWithConfig(child.ErrorMessage, config)
+		child.CredentialClassificationError = scrubSensitiveTextWithConfig(child.CredentialClassificationError, config)
+		child.Extractions = scrubSensitiveExtractions(child.Extractions, config)
+		child.UnappliedExtractions = scrubSensitiveExtractions(child.UnappliedExtractions, config)
+	}
 	event.Console = scrubSensitiveConsoleEntries(event.Console, config)
 	event.Network = scrubSensitiveNetworkEntries(event.Network, config)
 	event.DOMSummary = scrubSensitiveDOMSummary(event.DOMSummary, config)
@@ -2645,8 +3125,11 @@ func omitUnredactableReplayActionEvent(event *ReplayActionEvent) {
 		event.ErrorMessage = "replay error detail unavailable"
 	}
 	event.Target, event.Selector, event.Value, event.Body = "", "", "", ""
-	event.Headers, event.Extractions = nil, nil
+	event.Headers, event.Extractions, event.UnappliedExtractions = nil, nil, nil
+	event.StreamedChildren = nil
+	event.CredentialClassificationError = ""
 	event.PageURL, event.PageTitle, event.HTML, event.Screenshot = "", "", "", ""
+	event.ScreenshotOmitted = false
 	event.Console, event.Network, event.DOMSummary, event.Snapshot, event.ClientMetrics = nil, nil, nil, nil, nil
 	event.ProtocolEvidence, event.Diagnosis, event.RepairSuggestions = nil, nil, nil
 	event.SourceStepID, event.SourceAction, event.SourceActionName, event.SourceTransaction, event.SourceProfile, event.ParentActionName = "", "", "", "", "", ""
@@ -2658,6 +3141,9 @@ func omitUnredactableReplayActionEvent(event *ReplayActionEvent) {
 }
 
 func (vu *VUser) replayFinalVariables() map[string]string {
+	if vu.unredactedDebug {
+		return cloneStringMap(vu.Variables)
+	}
 	if vu.runtimeCredentialRedactionErr != nil {
 		return nil
 	}
@@ -2667,6 +3153,9 @@ func (vu *VUser) replayFinalVariables() map[string]string {
 func (vu *VUser) replayPublicationError(err error) string {
 	if err == nil {
 		return ""
+	}
+	if vu.unredactedDebug {
+		return err.Error()
 	}
 	if vu.resultPublicationUnavailable() {
 		return "replay error detail unavailable"
@@ -2707,7 +3196,7 @@ func OmitUnavailableReplayReport(report *ReplayReport) {
 
 func (vu *VUser) guardedReplayProgress(report *ReplayReport, callback func(ReplayProgressEvent)) func(ReplayProgressEvent) {
 	return func(event ReplayProgressEvent) {
-		if vu.runtimeCredentialRedactionErr != nil {
+		if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
 			if !report.RuntimeEvidenceUnavailable {
 				OmitUnavailableReplayReport(report)
 			}

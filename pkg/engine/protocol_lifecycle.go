@@ -44,7 +44,7 @@ func scrubProtocolLifecycleError(err error, redaction *RedactionConfig) error {
 // resolved credentials, so both are passed through the active redaction policy.
 func callProtocolInit(ctx context.Context, p interface {
 	Init(context.Context, map[string]any) error
-}, protoConfig map[string]any, redaction *RedactionConfig) (err error) {
+}, protoConfig map[string]any, redaction *RedactionConfig, unredactedDebug ...bool) (err error) {
 	if p == nil {
 		return fmt.Errorf("protocol init is unavailable")
 	}
@@ -56,7 +56,11 @@ func callProtocolInit(ctx context.Context, p interface {
 	}()
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("protocol init panicked: %s", recoveredPanicLogTextWithConfig(recovered, redaction))
+			if len(unredactedDebug) > 0 && unredactedDebug[0] {
+				err = fmt.Errorf("protocol init panicked: %s", cloneBoundedResultString(fmt.Sprintf("%v", recovered), maxRecoveredPanicLogBytes))
+			} else {
+				err = fmt.Errorf("protocol init panicked: %s", recoveredPanicLogTextWithConfig(recovered, redaction))
+			}
 		}
 	}()
 	if source, ok := protoConfig["browser_document_source_journal"].(protocol.BrowserSourceJournalProvider); ok {
@@ -77,6 +81,17 @@ func callProtocolInit(ctx context.Context, p interface {
 		}
 	}
 	if err := p.Init(ctx, protoConfig); err != nil {
+		if len(unredactedDebug) > 0 && unredactedDebug[0] {
+			message := cloneBoundedResultString(err.Error(), maxResultErrorBytes)
+			switch {
+			case errors.Is(err, context.DeadlineExceeded):
+				return &scrubbedContextError{message: message, cause: context.DeadlineExceeded}
+			case errors.Is(err, context.Canceled):
+				return &scrubbedContextError{message: message, cause: context.Canceled}
+			default:
+				return errors.New(message)
+			}
+		}
 		return scrubProtocolLifecycleError(err, redaction)
 	}
 	return nil

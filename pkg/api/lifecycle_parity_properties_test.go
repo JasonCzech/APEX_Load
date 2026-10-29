@@ -1181,7 +1181,11 @@ func TestLifecycleParityScriptProducersAreInventoried(t *testing.T) {
 // method with one of these names.
 func lifecycleOutsideCreateCalls(t *testing.T, names map[string]bool) []string {
 	t.Helper()
-	root := "../.."
+	return lifecycleOutsideCreateCallsAt(t, "../..", names)
+}
+
+func lifecycleOutsideCreateCallsAt(t *testing.T, root string, names map[string]bool) []string {
+	t.Helper()
 	fset := token.NewFileSet()
 	var calls []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
@@ -1194,6 +1198,15 @@ func lifecycleOutsideCreateCalls(t *testing.T, names map[string]bool) []string {
 			name := entry.Name()
 			if path != root && (strings.HasPrefix(name, ".") || name == "_retired" || name == "node_modules" || name == "vendor" || name == "testdata" || relative == "dashboard") {
 				return filepath.SkipDir
+			}
+			// A nested checkout is a separate repository, not a producer in this
+			// checkout. Its .git may be a directory or a worktree pointer file.
+			if path != root {
+				if _, statErr := os.Stat(filepath.Join(path, ".git")); statErr == nil {
+					return filepath.SkipDir
+				} else if !os.IsNotExist(statErr) {
+					return statErr
+				}
 			}
 			return nil
 		}
@@ -1226,6 +1239,28 @@ func lifecycleOutsideCreateCalls(t *testing.T, names map[string]bool) []string {
 		t.Fatal(err)
 	}
 	return calls
+}
+
+func TestLifecycleOutsideCreateCallsSkipsNestedCheckouts(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"cmd", "nested-worktree", "nested-repo"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, dir, "producer.go"), []byte("package producer\nfunc run() { CreateScript() }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "nested-worktree", ".git"), []byte("gitdir: elsewhere\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "nested-repo", ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	calls := lifecycleOutsideCreateCallsAt(t, root, map[string]bool{"CreateScript": true})
+	if len(calls) != 1 || calls[0] != "cmd/producer.go CreateScript" {
+		t.Fatalf("calls = %v, want only the root checkout producer", calls)
+	}
 }
 
 // lifecycleRouteMentioned reports whether a source mentions a route: the

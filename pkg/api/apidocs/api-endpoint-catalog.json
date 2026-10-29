@@ -4383,7 +4383,7 @@
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "PATCH",
@@ -4403,7 +4403,7 @@
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "PATCH",
@@ -4893,7 +4893,7 @@
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "PATCH",
@@ -4913,7 +4913,7 @@
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "PATCH",

@@ -65,6 +65,11 @@ describe('formatCapturedBody', () => {
     ].join('\n'))
   })
 
+  it('includes the request header omission notice in copied evidence', () => {
+    expect(formatSnapshotRequestSection({ request_headers_omitted: true })).toContain('Some request headers were omitted or shortened by retention limits.')
+    expect(formatSnapshotRequestSection({ request_wire_headers_unavailable: true })).toContain('Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.')
+  })
+
   it('formats request line and headers for the drill-down preview', () => {
     expect(formatSnapshotRequestLineAndHeaders({
       request_method: 'POST',

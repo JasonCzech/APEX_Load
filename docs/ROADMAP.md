@@ -42,6 +42,14 @@ Current semantics and gaps: [protocol diagnostics](PROTOCOL_DIAGNOSTICS.md), [pr
 
 Close AUTH-1–AUTH-3 using the [lifecycle parity matrix](qa/LIFECYCLE_PARITY_MATRIX.md) and [adapter retirement inventory](qa/ADAPTER_RETIREMENT.md). Shared owners, revision-conditioned saves and lifecycle improvements have landed in staged work; remaining callers and field coverage must be demonstrated before removing an adapter. Completed implementation slices do not close the parent requirements.
 
+### Debugger disclosure and editor review backlog
+
+Continue reviewing debugger disclosure and the resizable editor, including debugger-only unredacted evidence and ordinary-output redaction, gRPC and WebSocket header capture and omission reporting, browser evidence capture, variable history, authorization, and responsive editor layouts. As a hardening follow-up, examine the exported gRPC header flattener's handling of invalid UTF-8 in a maximum-length binary metadata name: current production callers normalize names first, but a direct caller can lose the binary suffix during normalization.
+
+Review live replay event selection when WebSocket delivery begins after earlier executions: deltas carry absolute event indices while the dashboard stores a dense list, so following an event can clear the selection or select another execution. Also add a live receipt for compacted extraction evidence so historical variable confidence can be qualified precisely instead of treating live history conservatively, and qualify reconstructed parameter values in the parameter inspector when history is incomplete.
+
+Review future fixes under the repository's independent review and verification-proof protocol, and validate embedded dashboard assets, affected browser workflows in both authentication profiles, and cross-package behavior as appropriate. The earlier full dashboard cycle reported failures that passed targeted reruns after fixes; that cycle does not establish full final-change acceptance.
+
 Current workflow: [script lifecycle](SCRIPT_LIFECYCLE.md) and [scenario fidelity](guides/AUTHORING_SCENARIO_FIDELITY.md). The completed native live-table plans are [historical design records](archive/README.md#completed-live-table-plans); live tables are not an outstanding VTS implementation gate.
 
 ## PT Analysis native Parquet import

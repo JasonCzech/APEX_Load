@@ -101,6 +101,17 @@ The shared ZIP/TAR reader is bounded and in-memory. WSDL ZIP, DevWeb ZIP, and En
 | DevWeb import | Supported | Review, then executable for mapped constructs |
 | HAR/JMeter/Enterprise Script Archive migration | Supported | Disposition-dependent after shared request and archive safety checks |
 
+Browser WebSocket wait and assert actions match a bounded 4 KiB frame prefix.
+Exact matching requires a complete frame; regular-expression matches on a
+truncated frame are limited to expressions whose result is stable as bytes are
+appended. Binary prefixes use base64. When a truncated prefix cuts a UTF-8
+character, frames up to 64 KiB are checked in full and a valid text prefix is
+retained. Larger frames remain base64-classified at that boundary because the
+browser driver does not expose the frame opcode and full validation would be
+unbounded. Playwright does not identify the originating document for a socket
+frame, so a frame first delivered by a previously observed socket after a
+navigation or observation reset can enter the new observation window.
+
 ### OpenAPI Import
 
 The OpenAPI importer converts API design documents into HTTP DSL drafts:

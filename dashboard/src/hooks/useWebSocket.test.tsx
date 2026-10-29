@@ -5,6 +5,8 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useWebSocket } from './useWebSocket'
+import { DevViewProvider } from './DevViewProvider'
+import { writeStoredDevViewMode } from './apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -74,6 +76,8 @@ describe('useWebSocket', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    window.localStorage.removeItem('apexload.devViewMode')
+    window.localStorage.removeItem('apexload.activeProjectId')
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -94,6 +98,8 @@ describe('useWebSocket', () => {
     globalThis.WebSocket = originalWebSocket
     vi.useRealTimers()
     vi.restoreAllMocks()
+    window.localStorage.removeItem('apexload.devViewMode')
+    window.localStorage.removeItem('apexload.activeProjectId')
   })
 
   it('starts in connecting state and opens a socket after the debounce', async () => {
@@ -130,6 +136,35 @@ describe('useWebSocket', () => {
     flushDebounce()
 
     expect(MockWebSocket.instances[0]?.url).toContain('/api/v1/ws?project_id=project-1')
+  })
+
+  it('reconnects with the narrowed preview identity when the mode changes', async () => {
+    window.localStorage.setItem('apexload.activeProjectId', 'project-a')
+    await act(async () => {
+      root.render(<DevViewProvider><Harness projectId="project-a" /></DevViewProvider>)
+    })
+    await openSocket()
+    expect(MockWebSocket.instances[0]?.url).not.toContain('apexload_dev_view')
+    await act(async () => { writeStoredDevViewMode('user') })
+    expect(MockWebSocket.instances[0]?.closed).toBe(true)
+    flushDebounce()
+    const url = new URL(MockWebSocket.instances[1]!.url)
+    expect(url.searchParams.get('project_id')).toBe('project-a')
+    expect(url.searchParams.get('apexload_dev_view')).toBe('user')
+    expect(url.searchParams.get('apexload_dev_project')).toBe('project-a')
+    await act(async () => { writeStoredDevViewMode('admin') })
+    flushDebounce()
+    expect(MockWebSocket.instances[1]?.closed).toBe(true)
+    expect(MockWebSocket.instances[2]?.url).not.toContain('apexload_dev_view')
+  })
+
+  it('does not send preview hints to a recorder bridge', async () => {
+    writeStoredDevViewMode('user')
+    await act(async () => {
+      root.render(<DevViewProvider><Harness bridge={{ origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }} /></DevViewProvider>)
+    })
+    flushDebounce()
+    expect(MockWebSocket.instances[0]?.url).toBe('ws://127.0.0.1:49152/api/v1/ws?bridge_session_id=ws-1')
   })
 
   it('uses the paired bridge websocket session when provided', async () => {

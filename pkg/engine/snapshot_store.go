@@ -4,6 +4,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"maps"
+	"strings"
 )
 
 const (
@@ -43,7 +44,7 @@ func boundedErrorSnapshot(snapshot *protocol.ErrorSnapshot, maxBytes int) (*prot
 	}
 	remaining := maxBytes - snapshotBaseOverhead
 	largeFieldLimit := max(1, maxBytes/2)
-	out := &protocol.ErrorSnapshot{ResponseStatus: snapshot.ResponseStatus}
+	out := &protocol.ErrorSnapshot{ResponseStatus: snapshot.ResponseStatus, ScreenshotOmitted: snapshot.ScreenshotOmitted, RequestWireHeadersUnavailable: snapshot.RequestWireHeadersUnavailable}
 	switch snapshot.ResponseBodyState {
 	case "captured", "partial", "empty", "redacted", "not_captured", "expired":
 		out.ResponseBodyState = snapshot.ResponseBodyState
@@ -53,6 +54,7 @@ func boundedErrorSnapshot(snapshot *protocol.ErrorSnapshot, maxBytes int) (*prot
 	out.PageURL = takeSnapshotString(snapshot.PageURL, &remaining, 8<<10)
 	out.PageTitle = takeSnapshotString(snapshot.PageTitle, &remaining, 2<<10)
 	out.RequestHeaders = takeSnapshotStringMap(snapshot.RequestHeaders, &remaining)
+	out.RequestHeadersOmitted = snapshot.RequestHeadersOmitted || !maps.Equal(out.RequestHeaders, snapshot.RequestHeaders)
 	out.ResponseHeaders = takeSnapshotStringMap(snapshot.ResponseHeaders, &remaining)
 	// Preserve response evidence before request payloads: for failed assertions
 	// it is usually the most useful part of the snapshot. Each large field is
@@ -60,7 +62,14 @@ func boundedErrorSnapshot(snapshot *protocol.ErrorSnapshot, maxBytes int) (*prot
 	out.ResponseBody = takeSnapshotString(snapshot.ResponseBody, &remaining, largeFieldLimit)
 	out.RequestBody = takeSnapshotString(snapshot.RequestBody, &remaining, max(1, maxBytes/4))
 	out.HTML = takeSnapshotString(snapshot.HTML, &remaining, largeFieldLimit)
-	out.ScreenshotBase64 = takeSnapshotString(snapshot.ScreenshotBase64, &remaining, largeFieldLimit)
+	if snapshot.ScreenshotBase64 != "" {
+		if len(snapshot.ScreenshotBase64) <= min(remaining, largeFieldLimit) {
+			out.ScreenshotBase64 = strings.Clone(snapshot.ScreenshotBase64)
+			remaining -= len(out.ScreenshotBase64)
+		} else {
+			out.ScreenshotOmitted = true
+		}
+	}
 	out.ConsoleEntries = takeSnapshotConsoleEntries(snapshot.ConsoleEntries, &remaining)
 	out.NetworkEntries = takeSnapshotNetworkEntries(snapshot.NetworkEntries, &remaining)
 	out.DOMSummary = takeSnapshotDOMSummary(snapshot.DOMSummary, &remaining)

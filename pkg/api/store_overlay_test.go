@@ -4133,6 +4133,15 @@ func (o *sqliteStoreOverlay) HasPendingRunArchiveReplicaHolds(a0 string) (bool, 
 	return o.base().HasPendingRunArchiveReplicaHolds(a0)
 }
 
+func (o *sqliteStoreOverlay) HasUsersContext(a0 context.Context) (bool, error) {
+	if fake, ok := o.fake.(interface {
+		HasUsersContext(context.Context) (bool, error)
+	}); ok {
+		return fake.HasUsersContext(a0)
+	}
+	return o.base().HasUsersContext(a0)
+}
+
 func (o *sqliteStoreOverlay) HideEvaluationJob(a0 string, a1 string, a2 time.Time) (bool, error) {
 	if fake, ok := o.fake.(interface {
 		HideEvaluationJob(string, string, time.Time) (bool, error)

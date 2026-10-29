@@ -11,6 +11,8 @@ import SnapshotTextPreview from './SnapshotTextPreview'
 import { formatReplayHeaders } from './scriptEditorUtils'
 import type { RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugRuntimeStateEvidence } from './DebugRuntimeStateEvidence'
+import { appliedReplayExtractions } from './replayExtractionValues'
+import { ReplayExtractions } from './ReplayExtractions'
 
 export function DebugProfiles({ options, onChange, disabled }: { options: ReplayOptionsState; onChange: (options: ReplayOptionsState) => void; disabled: boolean }) {
   const [profiles, setProfiles] = useState(() => { try { return readProfiles(localStorage.getItem('apexload.debug.profiles.v1')) } catch { return [] } })
@@ -24,7 +26,7 @@ export function DebugProfiles({ options, onChange, disabled }: { options: Replay
   </div>
 }
 
-export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false, snapshot = null, currentReason = 'Current state unavailable. Pause at an engine boundary to inspect values.', mode, onModeChange, completed = false, finalValuesRecorded = false, canInspectFrame, onInspectFrame }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean; snapshot?: ReplayRuntimeSnapshot | null; currentReason?: string; mode?: RuntimeInspectionMode; onModeChange?: (mode: RuntimeInspectionMode) => void; completed?: boolean; finalValuesRecorded?: boolean; canInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean; onInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => void }) {
+export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false, historyIncomplete = false, snapshot = null, currentReason = 'Current state unavailable. Pause at an engine boundary to inspect values.', mode, onModeChange, completed = false, finalValuesRecorded = false, canInspectFrame, onInspectFrame }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean; historyIncomplete?: boolean; snapshot?: ReplayRuntimeSnapshot | null; currentReason?: string; mode?: RuntimeInspectionMode; onModeChange?: (mode: RuntimeInspectionMode) => void; completed?: boolean; finalValuesRecorded?: boolean; canInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean; onInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => void }) {
   const [localMode, setLocalMode] = useState<RuntimeInspectionMode>('current')
   const [explicitCurrent, setExplicitCurrent] = useState(false)
   const requested = mode || localMode
@@ -34,7 +36,7 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
   // The choice is published to the shared mode, so every debugger panel shows the same point in time.
   // Final values are only supplied once a recorded scope is chosen, so the caller says they exist.
   const hasRecordedValues = events.length > 0 || finalValuesRecorded || Object.keys(latest || {}).length > 0
-  const fallbackScope: RuntimeInspectionMode | null = requested === 'current' && completed && !snapshot && !explicitCurrent && hasRecordedValues ? selected != null ? 'selected' : 'retained' : null
+  const fallbackScope: RuntimeInspectionMode | null = requested === 'selected' && selected == null ? 'retained' : requested === 'current' && completed && !snapshot && !explicitCurrent && hasRecordedValues ? selected != null ? 'selected' : 'retained' : null
   const scope: RuntimeInspectionMode = fallbackScope || requested
   useEffect(() => {
     if (!fallbackScope) return
@@ -46,20 +48,37 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
   const [changedOnly, setChangedOnly] = useState(false)
   const [pinned, setPinned] = useState<string[]>([])
   const index = scope === 'selected' ? selected ?? -1 : events.length - 1
-  const values = useMemo(() => evidenceUnavailable || scope === 'current' ? {} : scope === 'retained' ? latest || variablesAt(events, seed, index) : variablesAt(events, seed, index), [scope, latest, events, seed, index, evidenceUnavailable])
+  const reconstructed = useMemo(() => evidenceUnavailable || scope === 'current' ? {} : variablesAt(events, seed, index), [scope, events, seed, index, evidenceUnavailable])
+  const incompleteValuesUnverified = historyIncomplete && !(scope === 'retained' && completed && finalValuesRecorded && latest)
+  const values = scope === 'retained' && !evidenceUnavailable ? latest || reconstructed : reconstructed
   const before = useMemo(() => evidenceUnavailable || scope === 'current' ? {} : variablesAt(events, seed, index - 1), [scope, events, seed, index, evidenceUnavailable])
-  const names = [...new Set([...Object.keys(values), ...pinned])].filter(name => `${name} ${Object.prototype.hasOwnProperty.call(values, name) ? values[name] : ''}`.toLowerCase().includes(search.toLowerCase()) && (!changedOnly || before[name] !== values[name])).sort((a, b) => Number(pinned.includes(b)) - Number(pinned.includes(a)) || a.localeCompare(b))
+  const lastChanged = useMemo(() => {
+    const positions = new Map<string, number>()
+    const current = new Map(Object.entries(seed))
+    for (let i = 0; i <= index && i < events.length; i++) {
+      for (const [name, value] of Object.entries(appliedReplayExtractions(events[i]))) {
+        if (!current.has(name) || current.get(name) !== value) positions.set(name, i)
+        current.set(name, value)
+      }
+    }
+    return positions
+  }, [events, index, seed])
+  const valueForName = (source: Record<string, string>, name: string) => Object.prototype.hasOwnProperty.call(source, name) ? source[name] : undefined
+  const changedAtExecution = (name: string) => !historyIncomplete && valueForName(values, name) === valueForName(reconstructed, name) && valueForName(before, name) !== valueForName(reconstructed, name)
+  const names = [...new Set([...Object.keys(values), ...pinned])].filter(name => `${name} ${valueForName(values, name) ?? ''}`.toLowerCase().includes(search.toLowerCase()) && (!changedOnly || changedAtExecution(name))).sort((a, b) => Number(pinned.includes(b)) - Number(pinned.includes(a)) || a.localeCompare(b))
   if (evidenceUnavailable) return <section aria-label="Variable watches" className="debug-watch-panel"><p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p></section>
   return <section aria-label="Variable watches" className="debug-watch-panel">
     <div className="debug-session-tools"><label>Values at<select value={scope} onChange={e => changeMode(e.target.value as RuntimeInspectionMode)}><option value="current">Current paused state</option><option value="retained">Retained history</option><option value="selected" disabled={selected == null}>Selected execution (after)</option></select></label>{scope !== 'current' && <><label>Search variables<input value={search} onChange={e => setSearch(e.target.value)} /></label><label><input type="checkbox" checked={changedOnly} onChange={e => setChangedOnly(e.target.checked)} />Changed at this execution</label></>}</div>
     {scope === 'current' ? snapshot ? <DebugRuntimeStateEvidence snapshot={snapshot} canInspectFrame={canInspectFrame} onInspectFrame={onInspectFrame} /> : <p role="status">{currentReason}</p> : <>
     <p role="status">Retained history · {scope === 'selected' && selected != null && events[selected] ? `After ${eventLocation(events[selected])}` : completed ? 'Final historical values' : 'Reconstructed from session inputs and retained extractions'} · This is historical evidence, not current engine state. Values omitted from retained evidence cannot be reconstructed.</p>
-    <table><caption className="sr-only">Variable values and provenance</caption><thead><tr><th>Watch</th><th>Name / namespace</th><th>Value</th><th>Last changed</th></tr></thead><tbody>{names.map(name => {
-      let changed = -1
-      for (let i = 0; i <= index; i++) if (events[i]?.extractions && Object.prototype.hasOwnProperty.call(events[i].extractions!, name)) changed = i
+    {historyIncomplete && <p role="status">Execution evidence may be incomplete; variable origins and changes are unavailable.{incompleteValuesUnverified ? ' Reconstructed values are unverified and may be stale.' : ''}</p>}
+    <div className="debug-watch-table-scroll" role="region" aria-label="Variable values and provenance" tabIndex={0}>
+    <table className="debug-watch-table"><caption className="sr-only">Variable values and provenance</caption><colgroup><col className="debug-watch-column-action" /><col className="debug-watch-column-name" /><col className="debug-watch-column-value" /><col className="debug-watch-column-changed" /></colgroup><thead><tr><th>Watch</th><th>Name / namespace</th><th>Value</th><th>Last changed</th></tr></thead><tbody>{names.map(name => {
+      const changed = lastChanged.get(name) ?? -1
       const value = Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined
-      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{value === '' ? '(empty)' : value ?? 'Not available'}</code>{before[name] !== value && <small>Changed</small>}</td><td>{changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : 'Session input'}</td></tr>
-    })}</tbody></table>{!names.length && <p>No variables match this view.</p>}
+      const originKnown = !historyIncomplete && Object.prototype.hasOwnProperty.call(reconstructed, name) && reconstructed[name] === value
+      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{value === '' ? '(empty)' : value ?? 'Not available'}</code>{changedAtExecution(name) && <small>Changed</small>}</td><td>{originKnown && changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : originKnown && Object.prototype.hasOwnProperty.call(seed, name) && seed[name] === value ? 'Session input' : 'Unknown / not retained'}</td></tr>
+    })}</tbody></table></div>{!names.length && <p>No variables match this view.</p>}
     <details><summary>Values as JSON</summary><SnapshotBodyPreview body={JSON.stringify(values, null, 2)} headers={{ 'Content-Type': 'application/json' }} /></details>
     </>}
   </section>
@@ -68,20 +87,21 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
 export function DebugTimeline({ events, onSelect }: { events: BrowserReplayEvent[]; onSelect: (index: number) => void }) {
   const [search, setSearch] = useState(''), [failures, setFailures] = useState(false)
   const rows = events.map((event, index) => ({ event, index })).filter(({ event }) => (!failures || !event.success) && `${event.action_name} ${event.target} ${eventLocation(event)}`.toLowerCase().includes(search.toLowerCase()))
-  return <div className="debug-execution-timeline"><div className="debug-session-tools"><label>Find execution<input value={search} onChange={e => setSearch(e.target.value)} /></label><label><input type="checkbox" checked={failures} onChange={e => setFailures(e.target.checked)} />Failures only</label></div>{rows.map(({ event, index }) => <button type="button" key={event.event_id || index} className="debug-timeline-row" onClick={() => onSelect(index)}><strong>{event.success ? 'Passed' : 'Failed'} · {event.action_name}</strong><span>{eventLocation(event)} · {event.duration_ms.toFixed(1)} ms</span><small>{event.error_message || event.target}</small>{Object.keys(event.extractions || {}).length > 0 && <small>Variables: {Object.keys(event.extractions!).join(', ')}</small>}</button>)}{!rows.length && <p>{events.length ? 'No executions match these filters.' : 'No completed executions captured yet.'}</p>}</div>
+  return <div className="debug-execution-timeline"><div className="debug-session-tools"><label>Find execution<input value={search} onChange={e => setSearch(e.target.value)} /></label><label><input type="checkbox" checked={failures} onChange={e => setFailures(e.target.checked)} />Failures only</label></div>{rows.map(({ event, index }) => <button type="button" key={event.event_id || index} className="debug-timeline-row" onClick={() => onSelect(index)}><strong>{event.success ? 'Passed' : 'Failed'} · {event.action_name}</strong><span>{eventLocation(event)} · {event.duration_ms.toFixed(1)} ms</span><small>{event.error_message || event.target}</small>{Object.keys(appliedReplayExtractions(event)).length > 0 && <small>Variables: {Object.keys(appliedReplayExtractions(event)).join(', ')}</small>}</button>)}{!rows.length && <p>{events.length ? 'No executions match these filters.' : 'No completed executions captured yet.'}</p>}</div>
 }
 
 function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
   const [selected, setSelected] = useState(0)
   const event = report.events[selected]
   if (report.runtime_evidence_unavailable) return <p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p>
-  if (report.protocol === 'browser') return <BrowserReplayDebugger report={report} running={false} />
+  if (report.protocol === 'browser') return <BrowserReplayDebugger report={report} running={false} selectedEventIndex={selected} onSelectEvent={setSelected} />
   return <div className="debug-history-evidence"><label>Historical execution<select value={selected} onChange={e => setSelected(Number(e.target.value))}>{report.events.map((e, index) => <option value={index} key={index}>{eventLocation(e)} · {e.action_name} · {e.success ? 'Passed' : 'Failed'}</option>)}</select></label>{event ? <>
     <p>{event.error_message || `${event.method || event.action_type} ${event.target}`}</p><p>Response status: {event.status_code ?? 'Not captured'}</p>
     <HTTPVersionReplayEvidence evidence={event.protocol_evidence} />
     <HTTPResponseContentEvidence evidence={event.protocol_evidence} bodyState={event.snapshot?.response_body_state || event.response_body_state} />
-    <div className="debug-history-columns"><section><h4>Request</h4><SnapshotTextPreview text={`${event.method || event.action_type} ${event.target}\n${formatReplayHeaders(event.snapshot?.request_headers || event.headers)}`} /><SnapshotBodyPreview body={event.snapshot?.request_body || event.body} emptyMessage="No request body retained" /></section><section><h4>Response</h4><SnapshotTextPreview text={formatReplayHeaders(event.snapshot?.response_headers)} /><SnapshotBodyPreview body={event.snapshot?.response_body} headers={event.snapshot?.response_headers} emptyMessage={`Response body: ${event.snapshot?.response_body_state || event.response_body_state || 'not retained'}`} /></section></div>
-    {event.protocol_evidence && <details><summary>Protocol evidence</summary><SnapshotBodyPreview body={JSON.stringify(event.protocol_evidence, null, 2)} /></details>}<details><summary>Extracted variables</summary><SnapshotBodyPreview body={JSON.stringify(event.extractions || {}, null, 2)} /></details>
+    <div className="debug-history-columns"><section><h4>Request</h4>{event.snapshot?.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}{event.snapshot?.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}<SnapshotTextPreview text={`${event.snapshot?.request_method || event.method || event.action_type} ${event.snapshot?.request_url || event.target}\n${formatReplayHeaders(event.snapshot ? event.snapshot.request_headers : event.headers)}`} /><SnapshotBodyPreview body={event.snapshot ? event.snapshot.request_body : event.body} emptyMessage="No request body retained" /></section><section><h4>Response</h4><SnapshotTextPreview text={formatReplayHeaders(event.snapshot?.response_headers)} /><SnapshotBodyPreview body={event.snapshot?.response_body} headers={event.snapshot?.response_headers} emptyMessage={`Response body: ${event.snapshot?.response_body_state || event.response_body_state || 'not retained'}`} /></section></div>
+    {Boolean(event.protocol_evidence_omitted_count) && <p role="status">{event.protocol_evidence_omitted_count} protocol evidence {event.protocol_evidence_omitted_count === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}
+    {event.protocol_evidence && <details><summary>Protocol evidence</summary><SnapshotBodyPreview body={JSON.stringify(event.protocol_evidence, null, 2)} /></details>}<details><summary>Extracted variables</summary>{event.action_type === 'live_table' ? <SnapshotBodyPreview body={JSON.stringify(event.extractions || {}, null, 2)} /> : <ReplayExtractions event={event} />}</details>
   </> : <p>No retained executions.</p>}</div>
 }
 export function DebugRunHistory({ runs, current, currentRecord }: { runs: DebugRunRecord[]; current: BrowserReplayReport | null; currentRecord?: Omit<DebugRunRecord, 'report'> | null }) {

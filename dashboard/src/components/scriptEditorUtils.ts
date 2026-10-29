@@ -21,6 +21,7 @@ import {
 import type { ImportCorrelationSuggestion } from './scriptEditorImportModel'
 import { browserResourceProtocolShortLabel } from './browserResourceEvidenceModel'
 import { formatDateTime } from '../utils/dateTime'
+import { appliedReplayExtractions } from './replayExtractionValues'
 
 type Action = ScriptActionDefinition
 type DataSourceConfig = ScriptDataSource
@@ -895,7 +896,7 @@ export function mergeReplayVariables(
 ): Record<string, string> {
   const next: Record<string, string> = Object.assign(Object.create(null), seed || {})
   events.forEach(event => {
-    Object.entries(event.extractions || {}).forEach(([key, value]) => {
+    Object.entries(appliedReplayExtractions(event)).forEach(([key, value]) => {
       next[key] = value
     })
   })
@@ -906,10 +907,10 @@ export function buildReplayVariableDiffs(
   seed: Record<string, string> | undefined,
   events: ReplayActionEvent[],
 ): Array<Record<string, { previous?: string; next: string }>> {
-  const current: Record<string, string> = { ...(seed || {}) }
+  const current: Record<string, string> = Object.assign(Object.create(null), seed || {})
   return events.map(event => {
-    const diff: Record<string, { previous?: string; next: string }> = {}
-    Object.entries(event.extractions || {}).forEach(([key, value]) => {
+    const diff: Record<string, { previous?: string; next: string }> = Object.create(null)
+    Object.entries(appliedReplayExtractions(event)).forEach(([key, value]) => {
       const previous = current[key]
       if (previous !== value) {
         diff[key] = { previous, next: value }

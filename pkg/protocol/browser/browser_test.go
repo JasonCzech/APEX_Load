@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,6 +35,38 @@ func TestBrowserExecuteNilActionReturnsFailureResult(t *testing.T) {
 	}
 	if result.ErrorMessage != "browser action is required" {
 		t.Fatalf("ErrorMessage = %q, want browser action is required", result.ErrorMessage)
+	}
+}
+
+func TestBrowserScreenshotWithRuntimeSecretsIsDebuggerOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body>confidential test content</body></html>"))
+	}))
+	defer server.Close()
+	for _, debug := range []bool{false, true} {
+		t.Run(fmt.Sprintf("debug=%t", debug), func(t *testing.T) {
+			b := &Browser{}
+			if err := b.Init(context.Background(), map[string]any{"base_url": server.URL, "browser_headless": true, "browser_capture_screenshots": "per_action", protocol.ReplayUnredactedDebugConfigKey: debug}); err != nil {
+				requireBrowserRuntime(t, "", err)
+			}
+			defer func() { _ = b.Teardown(context.Background()) }()
+			b.SetRuntimeSecretActivity(func() bool { return true })
+			result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
+			if err != nil || !result.Success {
+				t.Fatalf("navigate failed: %v (%s)", err, result.ErrorMessage)
+			}
+			if (result.ScreenshotBase64 != "") != debug {
+				t.Fatalf("debug=%v final screenshot length=%d", debug, len(result.ScreenshotBase64))
+			}
+			screenshot, err := b.captureScreenshot(context.Background(), nil)
+			if err != nil || (screenshot != "") != debug {
+				t.Fatalf("debug=%v direct capture length=%d error=%v", debug, len(screenshot), err)
+			}
+		})
 	}
 }
 

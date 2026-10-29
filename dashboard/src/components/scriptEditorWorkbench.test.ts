@@ -102,6 +102,7 @@ describe('clampDebuggerPaneSize', () => {
     ['rail', 10, 180],
     ['rail', 9999, 560],
     ['vars', 400, 400],
+    ['vars', 1400, 1400],
     ['bottom', 130.6, 140],
   ] as const)('clamps %s %d to %d', (kind, value, expected) => {
     expect(clampDebuggerPaneSize(kind, value)).toBe(expected)

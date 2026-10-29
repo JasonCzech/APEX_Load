@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"regexp"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	gorillawebsocket "github.com/gorilla/websocket"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 )
@@ -41,32 +43,34 @@ func init() {
 }
 
 type WebSocket struct {
-	writeMu            sync.Mutex
-	pendingWrites      atomic.Int64
-	authoredPings      map[string]authoredPing
-	pongRTTs           []float64
-	callbacks          *callbackState
-	callbackInterval   time.Duration
-	baseURL            string
-	allowedTargetHosts []string
-	conn               *gorillawebsocket.Conn
-	dialer             *gorillawebsocket.Dialer
-	defaultHeaders     http.Header
-	readTimeout        time.Duration
-	writeTimeout       time.Duration
-	maxMessageSize     int64
-	origin             string
-	reconnect          bool
-	lastTarget         string
-	lastHeaders        http.Header
-	closedByAction     bool
-	connectionEpoch    uint64
-	mu                 sync.Mutex
+	unredactedDebugSnapshots bool
+	writeMu                  sync.Mutex
+	pendingWrites            atomic.Int64
+	authoredPings            map[string]authoredPing
+	pongRTTs                 []float64
+	callbacks                *callbackState
+	callbackInterval         time.Duration
+	baseURL                  string
+	allowedTargetHosts       []string
+	conn                     *gorillawebsocket.Conn
+	dialer                   *gorillawebsocket.Dialer
+	defaultHeaders           http.Header
+	readTimeout              time.Duration
+	writeTimeout             time.Duration
+	maxMessageSize           int64
+	origin                   string
+	reconnect                bool
+	lastTarget               string
+	lastHeaders              http.Header
+	closedByAction           bool
+	connectionEpoch          uint64
+	mu                       sync.Mutex
 }
 
 func (w *WebSocket) Name() string { return "websocket" }
 
 func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
+	w.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	w.callbackInterval = 500 * time.Millisecond
 	if raw, ok := config["websocket_callback_interval_ms"]; ok {
 		d, e := protocol.BoundedMilliseconds(raw, 500*time.Millisecond, time.Minute)
@@ -145,7 +149,9 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 	if err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
-		result.Snapshot = w.buildSnapshot(action, result)
+		if result.Snapshot == nil {
+			result.Snapshot = w.buildSnapshot(action, result)
+		}
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil //nolint:nilerr // a step error is reported in the result, the protocol Execute contract
 	}
@@ -185,12 +191,6 @@ func (w *WebSocket) HealthCheck(ctx context.Context) error {
 }
 
 func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
-	target, err := w.resolveURL(action.Target)
-	if err != nil {
-		return err
-	}
-	result.DependencyTarget = dependencyTarget(target)
-
 	headers := cloneHeader(w.defaultHeaders)
 	headerListNames := websocketHeaderListNameSet(action.HeaderList)
 	for key, value := range action.Headers {
@@ -210,6 +210,15 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	if w.origin != "" && headers.Get("Origin") == "" {
 		headers.Set("Origin", w.origin)
 	}
+	target, err := w.resolveURL(action.Target)
+	if err != nil {
+		if w.unredactedDebugSnapshots {
+			result.Snapshot = w.buildSnapshot(action, result, true)
+			captureHandshakeHeaders(result.Snapshot, headers, nil, nil)
+		}
+		return err
+	}
+	result.DependencyTarget = dependencyTarget(target)
 	w.mu.Lock()
 	// An explicit connect is a new connection intent. A later explicit close or
 	// connect increments the epoch and prevents this in-flight dial from
@@ -226,12 +235,17 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	}
 
 	dialStart := time.Now()
-	conn, resp, err := w.dialer.DialContext(ctx, target, headers)
+	dialCtx, wireHeaders := w.traceHandshake(ctx)
+	conn, resp, err := w.dialer.DialContext(dialCtx, target, headers)
 	wsDiagnostics(result).HandshakeMs = wsElapsed(dialStart)
 	if resp != nil {
 		result.StatusCode = resp.StatusCode
 	}
 	if err != nil {
+		if w.unredactedDebugSnapshots {
+			result.Snapshot = w.buildSnapshot(action, result, true)
+			captureHandshakeHeaders(result.Snapshot, headers, resp, wireHeaders)
+		}
 		return err
 	}
 	if w.maxMessageSize > 0 {
@@ -242,6 +256,10 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	if w.connectionEpoch != connectionEpoch {
 		w.mu.Unlock()
 		_ = conn.Close()
+		if w.unredactedDebugSnapshots {
+			result.Snapshot = w.buildSnapshot(action, result, true)
+			captureHandshakeHeaders(result.Snapshot, headers, resp, wireHeaders)
+		}
 		return fmt.Errorf("websocket connection state changed while connecting")
 	}
 	if w.conn != nil {
@@ -526,7 +544,13 @@ func (w *WebSocket) writeMessage(conn *gorillawebsocket.Conn, messageType int, b
 func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) (*gorillawebsocket.Conn, error) {
 	w.mu.Lock()
 	if w.closedByAction {
+		target := w.lastTarget
+		headers := cloneHeader(w.lastHeaders)
 		w.mu.Unlock()
+		if w.unredactedDebugSnapshots {
+			result.Snapshot = &protocol.ErrorSnapshot{RequestMethod: "ws_reconnect", RequestURL: target}
+			captureHandshakeHeaders(result.Snapshot, headers, nil, nil)
+		}
 		return nil, fmt.Errorf("websocket connection is not open")
 	}
 	w.stopCallbacksLocked()
@@ -542,11 +566,16 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 		_ = oldConn.Close()
 	}
 	if target == "" {
+		if w.unredactedDebugSnapshots {
+			result.Snapshot = &protocol.ErrorSnapshot{RequestMethod: "ws_reconnect"}
+			captureHandshakeHeaders(result.Snapshot, headers, nil, nil)
+		}
 		return nil, fmt.Errorf("no previous websocket connection target")
 	}
 
 	dialStart := time.Now()
-	conn, resp, err := w.dialer.DialContext(ctx, target, headers)
+	dialCtx, wireHeaders := w.traceHandshake(ctx)
+	conn, resp, err := w.dialer.DialContext(dialCtx, target, headers)
 	d := wsDiagnostics(result)
 	d.ReconnectMs = wsElapsed(dialStart)
 	d.Reconnects++
@@ -554,6 +583,10 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 		result.StatusCode = resp.StatusCode
 	}
 	if err != nil {
+		if w.unredactedDebugSnapshots {
+			result.Snapshot = &protocol.ErrorSnapshot{RequestMethod: "ws_reconnect", RequestURL: target, ResponseStatus: result.StatusCode}
+			captureHandshakeHeaders(result.Snapshot, headers, resp, wireHeaders)
+		}
 		return nil, err
 	}
 	if w.maxMessageSize > 0 {
@@ -564,6 +597,10 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 	if w.closedByAction || w.connectionEpoch != connectionEpoch {
 		w.mu.Unlock()
 		_ = conn.Close()
+		if w.unredactedDebugSnapshots {
+			result.Snapshot = &protocol.ErrorSnapshot{RequestMethod: "ws_reconnect", RequestURL: target, ResponseStatus: result.StatusCode}
+			captureHandshakeHeaders(result.Snapshot, headers, resp, wireHeaders)
+		}
 		return nil, fmt.Errorf("websocket connection was closed while reconnecting")
 	}
 	if w.conn != nil {
@@ -582,6 +619,77 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 	return conn, nil
 }
 
+// handshakeWireHeaders bounds the detached evidence as net/http serializes it.
+// WroteHeaderField observes generated headers, normalization, and duplicates.
+type handshakeWireHeaders struct {
+	mu        sync.Mutex
+	headers   map[string]string
+	remaining int
+	omitted   bool
+}
+
+func (w *WebSocket) traceHandshake(ctx context.Context) (context.Context, *handshakeWireHeaders) {
+	if !w.unredactedDebugSnapshots {
+		return ctx, nil
+	}
+	captured := &handshakeWireHeaders{headers: make(map[string]string), remaining: 256 << 10}
+	trace := &httptrace.ClientTrace{WroteHeaderField: captured.add}
+	return httptrace.WithClientTrace(ctx, trace), captured
+}
+
+func (h *handshakeWireHeaders) add(key string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	current, exists := h.headers[key]
+	if !exists {
+		if len(h.headers) >= 256 || len(key) > 4<<10 || len(key) >= h.remaining {
+			h.omitted = true
+			return
+		}
+		h.remaining -= len(key)
+	}
+	for i, value := range values {
+		if exists || i > 0 {
+			if len(current) >= 16<<10 || h.remaining == 0 {
+				h.omitted = true
+				break
+			}
+			current += "\n"
+			h.remaining--
+		}
+		limit := min((16<<10)-len(current), h.remaining)
+		part := boundedtext.TruncateUTF8(value, limit)
+		current += part
+		h.remaining -= len(part)
+		if part != value {
+			h.omitted = true
+			break
+		}
+	}
+	h.headers[strings.Clone(key)] = current
+}
+
+func captureHandshakeHeaders(snapshot *protocol.ErrorSnapshot, headers http.Header, resp *http.Response, wire *handshakeWireHeaders) {
+	if wire == nil {
+		snapshot.RequestHeaders, snapshot.RequestHeadersOmitted = protocol.FlattenSnapshotHeaders(map[string][]string(headers))
+		snapshot.RequestWireHeadersUnavailable = true
+		return
+	}
+	wire.mu.Lock()
+	defer wire.mu.Unlock()
+	if len(wire.headers) == 0 {
+		snapshot.RequestHeaders, snapshot.RequestHeadersOmitted = protocol.FlattenSnapshotHeaders(map[string][]string(headers))
+	} else {
+		snapshot.RequestHeaders = wire.headers
+		snapshot.RequestHeadersOmitted = wire.omitted
+	}
+	// Without a response the peer may have received only part of the request.
+	snapshot.RequestWireHeadersUnavailable = resp == nil || resp.Request == nil
+}
+
 func (w *WebSocket) discardConn(conn *gorillawebsocket.Conn) {
 	w.mu.Lock()
 	if w.conn == conn {
@@ -592,12 +700,12 @@ func (w *WebSocket) discardConn(conn *gorillawebsocket.Conn) {
 	_ = conn.Close()
 }
 
-func (w *WebSocket) buildSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+func (w *WebSocket) buildSnapshot(action *protocol.Action, result *protocol.Result, skipHeaders ...bool) *protocol.ErrorSnapshot {
 	if action == nil || result == nil {
 		return nil
 	}
 	requestURL := strings.TrimSpace(action.Target)
-	if action.RedactedTarget != "" {
+	if !w.unredactedDebugSnapshots && action.RedactedTarget != "" {
 		requestURL = strings.TrimSpace(action.RedactedTarget)
 	}
 	if requestURL != "" {
@@ -611,12 +719,15 @@ func (w *WebSocket) buildSnapshot(action *protocol.Action, result *protocol.Resu
 		w.mu.Unlock()
 	}
 
-	headers := cloneStringHeaders(action.Headers)
-	if len(action.RedactedHeaders) > 0 {
-		headers = cloneStringHeaders(action.RedactedHeaders)
+	var headers map[string]string
+	if len(skipHeaders) == 0 || !skipHeaders[0] {
+		headers = cloneStringHeaders(action.Headers)
+		if !w.unredactedDebugSnapshots && len(action.RedactedHeaders) > 0 {
+			headers = cloneStringHeaders(action.RedactedHeaders)
+		}
 	}
 	body := string(action.Body)
-	if len(action.RedactedBody) > 0 {
+	if !w.unredactedDebugSnapshots && len(action.RedactedBody) > 0 {
 		body = string(action.RedactedBody)
 	}
 	return &protocol.ErrorSnapshot{

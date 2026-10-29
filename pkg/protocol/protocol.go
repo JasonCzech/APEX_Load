@@ -293,6 +293,34 @@ type RuntimeTextRedactorSetter interface {
 	SetRuntimeTextRedactor(TextRedactor)
 }
 
+// BoundedTextRedactor projects a complete, bounded piece of diagnostic text.
+// A false result means the value cannot be safely disclosed and must be
+// omitted in its entirety. It is an in-memory capability, never wire data.
+type BoundedTextRedactor func(string) (string, bool)
+
+// RuntimeBoundedTextRedactorSetter is an optional capability for protocols
+// that must redact small diagnostic fields without unbounded callback work.
+type RuntimeBoundedTextRedactorSetter interface {
+	SetRuntimeBoundedTextRedactor(BoundedTextRedactor)
+}
+
+// BoundedTextRedactorCommitGuard executes commit only while the captured
+// runtime policy remains current and its publication fence is held. The commit
+// must not invoke the projector or publish a runtime-policy update. It returns
+// false when the policy changed, the commit refused, or the guard failed.
+type BoundedTextRedactorCommitGuard func(commit func() bool) bool
+
+// BoundedTextRedactorSnapshot captures one immutable runtime policy for an
+// entire evidence projection. A missing projector or commit guard means
+// publication must fail closed. Neither function is serializable or retained.
+type BoundedTextRedactorSnapshot func() (BoundedTextRedactor, BoundedTextRedactorCommitGuard)
+
+// RuntimeBoundedTextRedactorSnapshotSetter lets a protocol take a consistent
+// runtime policy snapshot before projecting multiple related fields.
+type RuntimeBoundedTextRedactorSnapshotSetter interface {
+	SetRuntimeBoundedTextRedactorSnapshot(BoundedTextRedactorSnapshot)
+}
+
 // RuntimeSecretActivitySetter is an optional protocol capability for binary
 // diagnostics that cannot be safely passed through TextRedactor. The provider
 // is memory-only and reflects values discovered during the run as well as
@@ -862,42 +890,45 @@ type Result struct {
 	// sensitive (scrub.SensitiveName — "session_token" and the like) IS
 	// registered for redaction by the engine, so do not place a value here
 	// expecting it to pass through run evidence untouched.
-	PropertyDimensions         map[string]string `json:"property_dimensions,omitempty"`
-	Extractions                map[string]string
-	PageURL                    string
-	PageTitle                  string
-	HTML                       string
-	ScreenshotBase64           string
-	ConsoleEntries             []ConsoleEntry
-	NetworkEntries             []NetworkEntry
-	DOMSummary                 *DOMSummary
-	ClientMetrics              *ClientMetrics
-	ServerTelemetry            *ServerTelemetry
-	HTTPVersionPolicy          string         `json:"-"`
-	HTTPVersionNegotiated      string         `json:"-"`
-	HTTPVersionSource          string         `json:"-"`
-	HTTPAltSvcH3Advertised     bool           `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
-	HTTP3FailureCertainty      string         `json:"-"` // not_sent, possibly_sent or rejected_unprocessed for a failed HTTP/3 request
-	HTTPReceipt                map[string]any `json:"-"` // HTTP/3 version receipt fields (routing, connection, timing availability)
-	ProtocolEvidence           map[string]any
-	Snapshot                   *ErrorSnapshot // populated when snapshot_on_error is enabled
-	SourceStepID               string
-	SourceStepIndex            int
-	SourceAction               string
-	SourceActionName           string
-	SourceTransaction          string
-	SourceProfile              string
-	SourcePath                 string
-	SourceUID                  string
-	RequestType                string
-	OperationKind              string
-	MessageDetailRequested     bool   `json:"-"`
-	MessageDetailMode          string `json:"-"`
-	MessageDetailPriority      int    `json:"-"`
-	MessageDetailRetained      bool   `json:"-"`
-	MessageDetailMaxItems      int    `json:"-"`
-	MessageDetailMaxItemBytes  int64  `json:"-"`
-	MessageDetailMaxTotalBytes int64  `json:"-"`
+	PropertyDimensions     map[string]string `json:"property_dimensions,omitempty"`
+	Extractions            map[string]string
+	PageURL                string
+	PageTitle              string
+	HTML                   string
+	ScreenshotBase64       string
+	ScreenshotOmitted      bool `json:"-"`
+	ConsoleEntries         []ConsoleEntry
+	NetworkEntries         []NetworkEntry
+	DOMSummary             *DOMSummary
+	ClientMetrics          *ClientMetrics
+	ServerTelemetry        *ServerTelemetry
+	HTTPVersionPolicy      string         `json:"-"`
+	HTTPVersionNegotiated  string         `json:"-"`
+	HTTPVersionSource      string         `json:"-"`
+	HTTPAltSvcH3Advertised bool           `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
+	HTTP3FailureCertainty  string         `json:"-"` // not_sent, possibly_sent or rejected_unprocessed for a failed HTTP/3 request
+	HTTPReceipt            map[string]any `json:"-"` // HTTP/3 version receipt fields (routing, connection, timing availability)
+	ProtocolEvidence       map[string]any
+	// ProtocolEvidenceOmittedCount records losses at the producer projection boundary.
+	ProtocolEvidenceOmittedCount int            `json:"-"`
+	Snapshot                     *ErrorSnapshot // populated when snapshot_on_error is enabled
+	SourceStepID                 string
+	SourceStepIndex              int
+	SourceAction                 string
+	SourceActionName             string
+	SourceTransaction            string
+	SourceProfile                string
+	SourcePath                   string
+	SourceUID                    string
+	RequestType                  string
+	OperationKind                string
+	MessageDetailRequested       bool   `json:"-"`
+	MessageDetailMode            string `json:"-"`
+	MessageDetailPriority        int    `json:"-"`
+	MessageDetailRetained        bool   `json:"-"`
+	MessageDetailMaxItems        int    `json:"-"`
+	MessageDetailMaxItemBytes    int64  `json:"-"`
+	MessageDetailMaxTotalBytes   int64  `json:"-"`
 }
 
 const (
@@ -907,6 +938,9 @@ const (
 	CorrelationEvidenceCaptureConfigKey = "apexload_internal_capture_correlation_evidence"
 	// ReplayNetworkCaptureConfigKey enables bounded HTTP observations for interactive debugging.
 	ReplayNetworkCaptureConfigKey = "apexload_internal_capture_replay_network"
+	// ReplayUnredactedDebugConfigKey enables raw protocol snapshots for an interactive
+	// debugger. The engine must scrub these before publishing to ordinary sinks.
+	ReplayUnredactedDebugConfigKey = "apexload_internal_unredacted_debug"
 	// MaxCorrelationEvidenceBytes bounds the aggregate private request/response
 	// exchange before it is copied into replay-only correlation evidence.
 	MaxCorrelationEvidenceBytes = 12 << 20
@@ -994,23 +1028,26 @@ func cloneResourceHeaders(headers map[string]string) map[string]string {
 }
 
 type ErrorSnapshot struct {
-	Resources         []ResourceSnapshot `json:"resources,omitempty"`
-	OmittedResources  int                `json:"omitted_resources,omitempty"`
-	ResponseBodyState string             `json:"response_body_state,omitempty"`
-	RequestMethod     string             `json:"request_method"`
-	RequestURL        string             `json:"request_url"`
-	RequestHeaders    map[string]string  `json:"request_headers,omitempty"`
-	RequestBody       string             `json:"request_body,omitempty"`
-	ResponseStatus    int                `json:"response_status"`
-	ResponseHeaders   map[string]string  `json:"response_headers,omitempty"`
-	ResponseBody      string             `json:"response_body,omitempty"`
-	PageURL           string             `json:"page_url,omitempty"`
-	PageTitle         string             `json:"page_title,omitempty"`
-	HTML              string             `json:"html,omitempty"`
-	ScreenshotBase64  string             `json:"screenshot_base64,omitempty"`
-	ConsoleEntries    []ConsoleEntry     `json:"console_entries,omitempty"`
-	NetworkEntries    []NetworkEntry     `json:"network_entries,omitempty"`
-	DOMSummary        *DOMSummary        `json:"dom_summary,omitempty"`
+	Resources                     []ResourceSnapshot `json:"resources,omitempty"`
+	OmittedResources              int                `json:"omitted_resources,omitempty"`
+	ResponseBodyState             string             `json:"response_body_state,omitempty"`
+	RequestMethod                 string             `json:"request_method"`
+	RequestURL                    string             `json:"request_url"`
+	RequestHeaders                map[string]string  `json:"request_headers,omitempty"`
+	RequestHeadersOmitted         bool               `json:"request_headers_omitted,omitempty"`
+	RequestWireHeadersUnavailable bool               `json:"request_wire_headers_unavailable,omitempty"`
+	RequestBody                   string             `json:"request_body,omitempty"`
+	ResponseStatus                int                `json:"response_status"`
+	ResponseHeaders               map[string]string  `json:"response_headers,omitempty"`
+	ResponseBody                  string             `json:"response_body,omitempty"`
+	PageURL                       string             `json:"page_url,omitempty"`
+	PageTitle                     string             `json:"page_title,omitempty"`
+	HTML                          string             `json:"html,omitempty"`
+	ScreenshotBase64              string             `json:"screenshot_base64,omitempty"`
+	ScreenshotOmitted             bool               `json:"screenshot_omitted,omitempty"`
+	ConsoleEntries                []ConsoleEntry     `json:"console_entries,omitempty"`
+	NetworkEntries                []NetworkEntry     `json:"network_entries,omitempty"`
+	DOMSummary                    *DOMSummary        `json:"dom_summary,omitempty"`
 }
 
 func ClassifyPayloadSize(value int64) string {

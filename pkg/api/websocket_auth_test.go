@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,6 +13,478 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type failingWebsocketSettingsStore struct{ block bool }
+
+type cancelAwareDebugSettingsStore struct {
+	failingWebsocketSettingsStore
+	entered chan struct{}
+}
+
+func (s *cancelAwareDebugSettingsStore) GetSettingContext(ctx context.Context, _ string) (string, error) {
+	close(s.entered)
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (*failingWebsocketSettingsStore) GetSetting(string) (string, error) {
+	return "", errors.New("settings unavailable")
+}
+func (*failingWebsocketSettingsStore) SaveSetting(string, string) error { return nil }
+func (s *failingWebsocketSettingsStore) GetSettingContext(ctx context.Context, _ string) (string, error) {
+	if s.block {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	return "", errors.New("settings unavailable")
+}
+
+type legacyWebsocketSettingsStore struct{}
+
+func (*legacyWebsocketSettingsStore) GetSetting(string) (string, error) {
+	panic("unbounded settings read")
+}
+func (*legacyWebsocketSettingsStore) SaveSetting(string, string) error { return nil }
+
+type blockedWebsocketIdentityStore struct {
+	*storage.SQLiteStore
+	called chan struct{}
+}
+
+type delayedWebsocketIdentityStore struct{ *storage.SQLiteStore }
+
+func (s *delayedWebsocketIdentityStore) GetUserBySubjectContext(ctx context.Context, subject string) (*storage.User, error) {
+	timer := time.NewTimer(80 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return s.SQLiteStore.GetUserBySubjectContext(ctx, subject)
+	}
+}
+
+// Embedding only the public Store interface models older store implementations
+// that do not expose the optional contextual authorization methods.
+type legacyWebsocketStore struct{ storage.Store }
+
+func (s *blockedWebsocketIdentityStore) GetUserBySubjectContext(ctx context.Context, _ string) (*storage.User, error) {
+	close(s.called)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestWebSocketAuthorizerRevokesOnLiveAuthProviderChange(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	for _, tc := range []struct {
+		name       string
+		startMode  string
+		preview    bool
+		changeAuth func(*AuthSettings)
+	}{
+		{name: "dev bypass to trusted headers", startMode: authModeDev, changeAuth: func(a *AuthSettings) { a.Mode = authModeTrustedHeaders }},
+		{name: "dev preview to trusted headers", startMode: authModeDev, preview: true, changeAuth: func(a *AuthSettings) { a.Mode = authModeTrustedHeaders }},
+		{name: "trusted header provider changes", startMode: authModeTrustedHeaders, changeAuth: func(a *AuthSettings) { a.RolesHeader = "X-New-Trusted-Roles" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			settings := server.runner.GetSystemSettings()
+			settings.Auth.Mode = tc.startMode
+			if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id=project-a", nil)
+			if tc.preview {
+				request.Header.Set(devViewHeader, devViewModeUser)
+				request.Header.Set(devProjectIDHeader, "project-a")
+			} else if tc.startMode == authModeTrustedHeaders {
+				request = withAuthenticatedContext(request, authResolution{User: &AuthenticatedUser{Subject: "editor", GlobalRoles: map[string]struct{}{RoleEditor: {}}}})
+			}
+			authorize := server.websocketScopedAuthorizer(request)
+			if !authorize("project-a", false) || !authorize("project-a", true) {
+				t.Fatal("fresh connection did not retain its original access")
+			}
+			original := settings.Auth
+			tc.changeAuth(&settings.Auth)
+			if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			if authorize("project-a", true) || authorize("project-a", false) {
+				t.Fatal("old connection survived an active authentication-provider change")
+			}
+			settings.Auth = original
+			if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			if authorize("project-a", true) || authorize("project-a", false) {
+				t.Fatal("revoked connection regained access after authentication settings reverted")
+			}
+		})
+	}
+}
+
+func TestWebSocketUpgradeRejectsProviderChangeAfterMiddlewareAdmission(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	server := NewServer(ServerConfig{})
+	settings := server.runner.GetSystemSettings()
+	settings.Auth.Mode = authModeDev
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	handler := authMiddleware(server.authSettingsForRequest, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		settings.Auth.Mode = authModeTrustedHeaders
+		if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+			t.Fatal(err)
+		}
+		server.handleWebSocket(w, r)
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil))
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status %d, want 403 when the provider changes after admission: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestDebuggerWebSocketChecksDurableSettingsBeforeDelivery(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "socket-settings.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	reader := NewServer(ServerConfig{Store: store})
+	writer := NewServer(ServerConfig{Store: store})
+	authorize := reader.websocketScopedAuthorizer(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil))
+	if !authorize("project-a", true) {
+		t.Fatal("fresh bypass socket rejected before settings change")
+	}
+	settings := writer.runner.GetSystemSettings()
+	settings.Auth.Mode = authModeTrustedHeaders
+	if _, err := writer.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	// An unrelated stale refresh must not make a security-sensitive delivery
+	// use the cached dev settings or wait on that refresh's completion.
+	reader.runner.settingsRefreshMu.Lock()
+	inFlight := make(chan struct{})
+	reader.runner.settingsRefreshInFlight = inFlight
+	reader.runner.settingsRefreshMu.Unlock()
+	defer func() {
+		reader.runner.settingsRefreshMu.Lock()
+		reader.runner.settingsRefreshInFlight = nil
+		close(inFlight)
+		reader.runner.settingsRefreshMu.Unlock()
+	}()
+	if authorize("project-a", true) {
+		t.Fatal("raw event authorized using stale settings after another replica changed provider")
+	}
+}
+
+func TestDebuggerWebSocketDeniesWhenDurableSettingsCannotBeRead(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	for _, tc := range []struct {
+		name  string
+		store settingsPersistence
+	}{
+		{"error", &failingWebsocketSettingsStore{}},
+		{"timeout", &failingWebsocketSettingsStore{block: true}},
+		{"legacy uncancellable", &legacyWebsocketSettingsStore{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			authorize := server.websocketScopedAuthorizer(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil))
+			server.runner.settingsStore = tc.store
+			start := time.Now()
+			if authorize("project-a", true) {
+				t.Fatal("raw event authorized without a successful durable settings read")
+			}
+			if time.Since(start) > 2*time.Second {
+				t.Fatal("settings read did not respect the delivery timeout")
+			}
+			server.runner.settingsStore = nil
+			if !authorize("project-a", true) {
+				t.Fatal("temporary settings-read error permanently revoked the connection")
+			}
+		})
+	}
+}
+
+func TestDebuggerWebSocketBoundsInMemorySettingsLock(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	server := NewServer(ServerConfig{})
+	authorize := server.websocketScopedAuthorizer(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil))
+	server.runner.mu.Lock()
+	start := time.Now()
+	allowed := authorize("project-a", true)
+	server.runner.mu.Unlock()
+	if allowed || time.Since(start) > 2*time.Second {
+		t.Fatalf("blocked in-memory settings lock allowed=%v after %v", allowed, time.Since(start))
+	}
+}
+
+func TestDebuggerWebSocketBoundsIdentityRevalidation(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "blocked-socket-identity.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	now := time.Now().UTC()
+	user := &storage.User{ID: "blocked-editor", Subject: "blocked-editor", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := base.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+	store := &blockedWebsocketIdentityStore{SQLiteStore: base, called: make(chan struct{})}
+	server := NewServer(ServerConfig{Store: store})
+	enableTrustedHeaderAuth(t, server)
+	request := withAuthenticatedContext(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil), authResolution{User: &AuthenticatedUser{ID: user.ID, Subject: user.Subject, GlobalRoles: map[string]struct{}{RoleEditor: {}}}})
+	authorize := server.websocketScopedAuthorizer(request)
+	start := time.Now()
+	if authorize("project-a", true) {
+		t.Fatal("blocked identity lookup authorized raw debugger data")
+	}
+	select {
+	case <-store.called:
+	default:
+		t.Fatal("test did not reach the contextual identity lookup")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("blocked identity lookup exceeded bounded delivery time: %v", elapsed)
+	}
+}
+
+func TestDebuggerWebSocketRejectsSessionThatExpiresDuringIdentityRead(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "expiring-socket-identity.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	now := time.Now().UTC()
+	user := &storage.User{ID: "expiring-editor", Subject: "expiring-editor", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := base.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+	if err := base.SaveUserRoleBinding(&storage.UserRoleBinding{ID: "expiring-editor-role", UserID: user.ID, ScopeType: "global", Role: RoleEditor, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: &delayedWebsocketIdentityStore{SQLiteStore: base}})
+	enableTrustedHeaderAuth(t, server)
+	identity := &AuthenticatedUser{ID: user.ID, Subject: user.Subject, SessionScoped: true, SessionExpiresAt: time.Now().Add(30 * time.Millisecond), GlobalRoles: map[string]struct{}{RoleEditor: {}}}
+	request := withAuthenticatedContext(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil), authResolution{User: identity})
+	if server.websocketScopedAuthorizer(request)("project-a", true) {
+		t.Fatal("raw debugger event was authorized after the session expired during identity lookup")
+	}
+}
+
+func TestDevPreviewWebSocketUpgradeHonorsCancellation(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	server := NewServer(ServerConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil).WithContext(ctx)
+	request.Header.Set(devViewHeader, devViewModeUser)
+	request.Header.Set(devProjectIDHeader, "project-a")
+	response := httptest.NewRecorder()
+	server.handleWebSocket(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("canceled preview upgrade = %d, want 503", response.Code)
+	}
+}
+
+func TestWebSocketUpgradeBoundsViewerRevalidationAndHonorsCancellation(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "blocked-socket-upgrade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	now := time.Now().UTC()
+	user := &storage.User{ID: "blocked-viewer", Subject: "blocked-viewer", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := base.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+	store := &blockedWebsocketIdentityStore{SQLiteStore: base, called: make(chan struct{})}
+	server := NewServer(ServerConfig{Store: store})
+	enableTrustedHeaderAuth(t, server)
+	identity := authResolution{User: &AuthenticatedUser{ID: user.ID, Subject: user.Subject, GlobalRoles: map[string]struct{}{RoleViewer: {}}}}
+	request := withAuthenticatedContext(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil), identity)
+	response := httptest.NewRecorder()
+	start := time.Now()
+	server.handleWebSocket(response, request)
+	if response.Code != http.StatusServiceUnavailable || time.Since(start) > 2*time.Second {
+		t.Fatalf("blocked viewer upgrade = %d after %v", response.Code, time.Since(start))
+	}
+	select {
+	case <-store.called:
+	default:
+		t.Fatal("test did not reach the contextual viewer identity lookup")
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	request = withAuthenticatedContext(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil).WithContext(canceled), identity)
+	response = httptest.NewRecorder()
+	start = time.Now()
+	server.handleWebSocket(response, request)
+	if response.Code != http.StatusServiceUnavailable || time.Since(start) > 250*time.Millisecond {
+		t.Fatalf("canceled viewer upgrade = %d after %v", response.Code, time.Since(start))
+	}
+}
+
+func TestLegacyStoreKeepsOrdinaryWebSocketAndDeniesRawDebuggerEvents(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "legacy-socket.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	now := time.Now().UTC()
+	user := &storage.User{ID: "legacy-editor", Subject: "legacy-editor", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := base.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: &legacyWebsocketStore{Store: base}})
+	enableTrustedHeaderAuth(t, server)
+	go server.hub.Run()
+	defer server.hub.Stop()
+	identity := authResolution{User: &AuthenticatedUser{ID: user.ID, Subject: user.Subject, GlobalRoles: map[string]struct{}{RoleEditor: {}}}}
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server.handleWebSocket(w, withAuthenticatedContext(r, identity))
+	}))
+	defer httpServer.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	waitForHubClientCount(t, server.hub, 1)
+	server.hub.BroadcastJSON(map[string]any{"type": "script_debug_event", "project_id": "project-a", "secret": "private"})
+	server.hub.BroadcastJSON(map[string]any{"type": "metrics", "project_id": "project-a"})
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, data, err := conn.ReadMessage()
+	if err != nil || strings.Contains(string(data), "private") || !strings.Contains(string(data), "metrics") {
+		t.Fatalf("ordinary websocket delivery = %s, %v", data, err)
+	}
+}
+
+func TestRawScriptDebugHTTPUsesFreshDurableAuthSettings(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "debug-http-settings.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	reader := NewServer(ServerConfig{Store: store})
+	writer := NewServer(ServerConfig{Store: store})
+	session := retainedDebugHARSession()
+	session.ProjectID = storage.DefaultProjectID
+	session.FinalReport.FinalVariables = map[string]string{"token": "private-debug-value"}
+	reader.scriptDebug.sessions[session.ID] = session
+
+	settings := writer.runner.GetSystemSettings()
+	settings.Auth.Mode = authModeTrustedHeaders
+	if _, err := writer.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	reader.runner.settingsRefreshMu.Lock()
+	reader.runner.settingsAuthRefreshAt = time.Now()
+	reader.runner.settingsRefreshMu.Unlock()
+	if reader.authSettingsForRequest().Mode != authModeDev {
+		t.Fatal("test did not retain the stale bypass-mode settings cache")
+	}
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/script-debug/sessions/" + session.ID},
+		{http.MethodGet, "/api/v1/script-debug/sessions/" + session.ID + "/export?format=json"},
+		{http.MethodGet, "/api/v1/replay/sessions/" + session.ID},
+		{http.MethodGet, "/api/v1/replay/sessions/" + session.ID + "/export?format=json"},
+		{http.MethodPost, "/api/v1/script-debug/sessions/" + session.ID + "/pause"},
+		{http.MethodPost, "/api/v1/replay/sessions/" + session.ID + "/resume"},
+		{http.MethodPost, "/api/v1/scripts/debug/sessions"},
+		{http.MethodPost, "/api/v1/scripts/replay/sessions"},
+		{http.MethodPost, "/api/v1/scripts/example/debug/sessions"},
+		{http.MethodPost, "/api/v1/scripts/example/replay/sessions"},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			request := httptest.NewRequest(tc.method, tc.path, nil)
+			// A stale dev-preview header must not override a newly active provider.
+			request.Header.Set(devViewHeader, devViewModeUser)
+			request.Header.Set(devProjectIDHeader, storage.DefaultProjectID)
+			response := httptest.NewRecorder()
+			reader.mux.ServeHTTP(response, request)
+			if response.Code != http.StatusUnauthorized || strings.Contains(response.Body.String(), "private-debug-value") {
+				t.Fatalf("status %d, want 401 without debug data: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestRawScriptDebugHTTPFailsClosedOnSettingsError(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	server := NewServer(ServerConfig{})
+	server.runner.settingsStore = &failingWebsocketSettingsStore{}
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/script-debug/sessions/example"},
+		{http.MethodGet, "/api/v1/replay/sessions/example/export"},
+		{http.MethodPost, "/api/v1/script-debug/sessions/example/pause"},
+		{http.MethodPost, "/api/v1/scripts/debug/sessions"},
+		{http.MethodPost, "/api/v1/scripts/example/replay/sessions"},
+	} {
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
+		if response.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s %s: status %d, want 503: %s", tc.method, tc.path, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestRawScriptDebugHTTPSettingsReadStopsOnRequestCancellation(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	server := NewServer(ServerConfig{})
+	store := &cancelAwareDebugSettingsStore{entered: make(chan struct{})}
+	server.runner.settingsStore = store
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/script-debug/sessions/example", nil).WithContext(ctx)
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		server.mux.ServeHTTP(response, request)
+		close(done)
+	}()
+	select {
+	case <-store.entered:
+	case <-time.After(time.Second):
+		t.Fatal("settings read did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+		if response.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503", response.Code)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("settings read did not stop promptly when the request was canceled")
+	}
+}
+
+func TestRawScriptDebugRequestClassification(t *testing.T) {
+	for _, tc := range []struct {
+		method, path string
+		want         bool
+	}{
+		{http.MethodPost, "/api/v1/scripts/debug/sessions", true},
+		{http.MethodPost, "/api/v1/scripts/a/replay/sessions", true},
+		{http.MethodGet, "/api/v1/script-debug/sessions/a/export", true},
+		{http.MethodPatch, "/api/v1/replay/sessions/a/breakpoints", true},
+		{http.MethodPost, "/api/v1/scripts/a/browser-replay/sessions", false},
+		{http.MethodGet, "/api/v1/scripts/a", false},
+		{http.MethodGet, "/api/v1/ws", false},
+	} {
+		if got := isRawScriptDebugRequest(httptest.NewRequest(tc.method, tc.path, nil)); got != tc.want {
+			t.Errorf("%s %s: got %v, want %v", tc.method, tc.path, got, tc.want)
+		}
+	}
+}
 
 func TestWebSocketAuthorizerRechecksRoleAndSessionEpoch(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))

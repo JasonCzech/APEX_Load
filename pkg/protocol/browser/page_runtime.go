@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -31,6 +32,35 @@ const (
 	browserDOMVisibleAggregateLimitByte = 128 << 10
 )
 
+// Screenshot acquisition can fail while a separate action error is already
+// present. Preserve its identity so the debugger can report both outcomes.
+type browserScreenshotCaptureError struct{ cause error }
+
+func (err *browserScreenshotCaptureError) Error() string { return err.cause.Error() }
+func (err *browserScreenshotCaptureError) Unwrap() error { return err.cause }
+
+type browserHTMLCaptureError struct{ cause error }
+
+func (err *browserHTMLCaptureError) Error() string { return err.cause.Error() }
+func (err *browserHTMLCaptureError) Unwrap() error { return err.cause }
+
+// Keep the primary acquisition error stable while allowing callers to inspect
+// independently acquired artifact errors, including a screenshot failure.
+type browserArtifactCaptureErrors struct{ primary, secondary error }
+
+func (err *browserArtifactCaptureErrors) Error() string   { return err.primary.Error() }
+func (err *browserArtifactCaptureErrors) Unwrap() []error { return []error{err.primary, err.secondary} }
+
+func combineBrowserCaptureErrors(primary, secondary error) error {
+	if primary == nil {
+		return secondary
+	}
+	if secondary == nil {
+		return primary
+	}
+	return &browserArtifactCaptureErrors{primary: primary, secondary: secondary}
+}
+
 func (b *Browser) resolveURL(target string) string {
 	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
 		return target
@@ -41,49 +71,74 @@ func (b *Browser) resolveURL(target string) string {
 	return strings.TrimRight(b.baseURL, "/") + "/" + strings.TrimLeft(target, "/")
 }
 
-func (b *Browser) captureRequestedArtifacts(ctx context.Context, action *protocol.Action) (string, string, error) {
+func (b *Browser) captureRequestedArtifacts(ctx context.Context, action *protocol.Action, capturedHTML *string) (string, string, error) {
 	captureEveryAction := b.captureScreenshots == "per_action"
 	if action.Type != "browser_screenshot" && action.Capture == nil && !captureEveryAction {
+		if capturedHTML != nil {
+			return *capturedHTML, "", nil
+		}
 		return "", "", nil
 	}
 
 	var html string
+	if capturedHTML != nil {
+		html = *capturedHTML
+	}
 	var screenshot string
-	var err error
+	var captureErr error
 	if captureEveryAction || action.Type == "browser_screenshot" || (action.Capture != nil && action.Capture.Screenshot) {
+		var err error
 		screenshot, err = b.captureScreenshot(ctx, action)
 		if err != nil {
-			return "", "", err
+			captureErr = &browserScreenshotCaptureError{cause: err}
 		}
 	}
-	if action.Capture != nil && action.Capture.HTML {
+	if capturedHTML == nil && action.Capture != nil && action.Capture.HTML && ctx.Err() == nil {
+		var err error
 		html, err = b.captureHTML(ctx)
 		if err != nil {
-			return "", "", err
+			captureErr = combineBrowserCaptureErrors(captureErr, &browserHTMLCaptureError{cause: err})
 		}
 	}
-	return html, screenshot, nil
+	if err := ctx.Err(); err != nil {
+		captureErr = combineBrowserCaptureErrors(err, captureErr)
+	}
+	return html, screenshot, captureErr
 }
 
 func (b *Browser) capturePageState(ctx context.Context, action *protocol.Action, forceArtifacts bool) (string, string, *protocol.DOMSummary, string, string, error) {
-	pageURL, pageTitle, domSummary, err := b.readDOMSummary(ctx)
-	if err != nil {
-		return "", "", nil, "", "", err
+	return b.capturePageStateWithHTML(ctx, action, forceArtifacts, nil)
+}
+
+func (b *Browser) capturePageStateWithHTML(ctx context.Context, action *protocol.Action, forceArtifacts bool, capturedHTML *string) (string, string, *protocol.DOMSummary, string, string, error) {
+	pageURL, pageTitle, domSummary, domErr := b.readDOMSummary(ctx)
+	if err := ctx.Err(); err != nil {
+		return pageURL, pageTitle, domSummary, "", "", combineBrowserCaptureErrors(err, domErr)
 	}
 
-	html, screenshot, err := b.captureRequestedArtifacts(ctx, action)
-	if err != nil {
-		return pageURL, pageTitle, domSummary, html, screenshot, err
-	}
-	if forceArtifacts {
-		if html == "" {
-			html, _ = b.captureHTML(ctx)
+	html, screenshot, captureErr := b.captureRequestedArtifacts(ctx, action, capturedHTML)
+	if (forceArtifacts || domErr != nil || captureErr != nil) && ctx.Err() == nil {
+		if capturedHTML == nil && html == "" && (action.Capture == nil || !action.Capture.HTML) {
+			var err error
+			html, err = b.captureHTML(ctx)
+			if err != nil {
+				captureErr = combineBrowserCaptureErrors(captureErr, &browserHTMLCaptureError{cause: err})
+			}
 		}
-		if screenshot == "" {
-			screenshot, _ = b.captureScreenshot(ctx, action)
+		var screenshotErr *browserScreenshotCaptureError
+		if screenshot == "" && ctx.Err() == nil && !errors.As(captureErr, &screenshotErr) {
+			var err error
+			screenshot, err = b.captureScreenshot(ctx, action)
+			if err != nil {
+				captureErr = combineBrowserCaptureErrors(captureErr, &browserScreenshotCaptureError{cause: err})
+			}
 		}
 	}
-	return pageURL, pageTitle, domSummary, html, screenshot, nil
+	combinedErr := combineBrowserCaptureErrors(domErr, captureErr)
+	if err := ctx.Err(); err != nil {
+		combinedErr = combineBrowserCaptureErrors(err, combinedErr)
+	}
+	return pageURL, pageTitle, domSummary, html, screenshot, combinedErr
 }
 
 func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result *protocol.Result, target string) error {
@@ -248,7 +303,7 @@ func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if b.hasRuntimeSecretMaterial() {
+	if !b.debugDisclosureEnabled() && b.hasRuntimeSecretMaterial() {
 		return "", nil
 	}
 	opts := playwright.PageScreenshotOptions{}

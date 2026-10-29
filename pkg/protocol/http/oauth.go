@@ -72,6 +72,8 @@ type OAuthTokenRequest struct {
 	Username             string
 	Password             string
 	HTTPClient           *http.Client `json:"-"`
+	// UnredactedDebugErrors is restricted to interactive debugger requests.
+	UnredactedDebugErrors bool `json:"-"`
 }
 
 type OAuthToken struct {
@@ -174,7 +176,13 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 	if token, ok := loadOAuthToken(key); ok {
 		return token, nil
 	}
-	pending := oauthTokenGroup.DoChan(key, func() (any, error) {
+	flightKey := key
+	if req.UnredactedDebugErrors {
+		// An in-flight failure is shared with all waiters. Keep debugger errors
+		// separate from ordinary callers even though successful tokens share cache.
+		flightKey += ":unredacted-debug"
+	}
+	pending := oauthTokenGroup.DoChan(flightKey, func() (any, error) {
 		if token, ok := loadOAuthToken(key); ok {
 			return token, nil
 		}
@@ -550,6 +558,9 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		// own request secrets it may echo back before surfacing it in an error
 		// that gets logged/stored in result.ErrorMessage.
 		desc := redactOAuthErrorDescription(payload.ErrorDescription, req)
+		if req.UnredactedDebugErrors {
+			desc = boundOAuthErrorDescription(payload.ErrorDescription)
+		}
 		if payload.ErrorCode != "" || desc != "" {
 			return OAuthToken{}, fmt.Errorf("OAuth2 token endpoint returned %d: %s %s", resp.StatusCode, payload.ErrorCode, desc)
 		}
@@ -660,6 +671,11 @@ func redactOAuthErrorDescription(desc string, req OAuthTokenRequest) string {
 			desc = strings.ReplaceAll(desc, secret, "[redacted]")
 		}
 	}
+	return boundOAuthErrorDescription(desc)
+}
+
+func boundOAuthErrorDescription(desc string) string {
+	desc = strings.TrimSpace(desc)
 	if len(desc) > maxOAuthErrorDescriptionLen {
 		desc = desc[:maxOAuthErrorDescriptionLen] + "…"
 	}

@@ -31,13 +31,15 @@ var (
 // server.go registration chains. Route discovery records that identifier, so a
 // missing or renamed profile is caught by the generated contract tests.
 var specializedRouteAccessProfiles = map[string]scopedRouteAccessProfile{
-	"recorderViewAuth":                scopedViewerRouteAccess,
-	"recorderCreateAuth":              scopedEditorRouteAccess,
-	"recorderSessionViewAuth":         scopedViewerRouteAccess,
-	"recorderSessionEditAuth":         scopedEditorRouteAccess,
-	"browserReplaySessionViewAuth":    scopedViewerRouteAccess,
-	"browserReplaySessionEditAuth":    scopedEditorRouteAccess,
-	"scriptDebugSessionViewAuth":      scopedViewerRouteAccess,
+	"recorderViewAuth":             scopedViewerRouteAccess,
+	"recorderCreateAuth":           scopedEditorRouteAccess,
+	"recorderSessionViewAuth":      scopedViewerRouteAccess,
+	"recorderSessionEditAuth":      scopedEditorRouteAccess,
+	"browserReplaySessionViewAuth": scopedViewerRouteAccess,
+	"browserReplaySessionEditAuth": scopedEditorRouteAccess,
+	// Debugger sessions include executable values and credentials. A viewer may
+	// inspect project metadata, but cannot read another operator's raw session.
+	"scriptDebugSessionViewAuth":      scopedEditorRouteAccess,
 	"scriptDebugSessionEditAuth":      scopedEditorRouteAccess,
 	"browserRecordingCreateAuth":      scopedEditorRouteAccess,
 	"browserRecordingSessionViewAuth": scopedViewerRouteAccess,

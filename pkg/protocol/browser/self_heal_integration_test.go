@@ -2,13 +2,55 @@ package browser
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
+
+func TestBrowserSelfHealDebuggerShowsRawSelectors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration")
+	}
+	const secret = "selector-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<button id="found-selector-secret">OK</button>`))
+	}))
+	defer server.Close()
+	for _, debug := range []bool{false, true} {
+		t.Run(fmt.Sprintf("debug=%t", debug), func(t *testing.T) {
+			b := &Browser{}
+			if err := b.Init(context.Background(), map[string]any{"base_url": server.URL, "browser_headless": true, protocol.ReplayUnredactedDebugConfigKey: debug}); err != nil {
+				requireBrowserRuntime(t, "", err)
+			}
+			defer func() { _ = b.Teardown(context.Background()) }()
+			b.SetRuntimeTextRedactor(func(value string) string { return strings.ReplaceAll(value, secret, "[REDACTED]") })
+			nav, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
+			if err != nil || !nav.Success {
+				t.Fatalf("navigate: %+v %v", nav, err)
+			}
+			action := &protocol.Action{Name: "click", Type: "browser_click", Selector: "#missing-" + secret, RedactedSelector: "#missing-[REDACTED]", WaitFor: &protocol.WaitCondition{TimeoutMs: 500}, Metadata: map[string]any{selector.MetadataFallbacksKey: []any{map[string]any{"kind": "css", "value": "#found-" + secret, "confidence": 95.0}}}}
+			result, err := b.Execute(context.Background(), action)
+			if err != nil || !result.Success {
+				t.Fatalf("self-heal: %s (%v)", result.ErrorMessage, err)
+			}
+			heal, ok := result.ProtocolEvidence["selector_self_heal"].(map[string]any)
+			if !ok {
+				t.Fatalf("missing self-heal evidence: %+v", result.ProtocolEvidence)
+			}
+			for _, key := range []string{"primary_selector", "healed_selector"} {
+				if strings.Contains(fmt.Sprint(heal[key]), secret) != debug {
+					t.Fatalf("debug=%t %s=%v", debug, key, heal[key])
+				}
+			}
+		})
+	}
+}
 
 // TestSelectorSelfHealFallsThroughRankedCandidates replays a click whose
 // primary selector no longer exists (simulating app drift) and verifies the

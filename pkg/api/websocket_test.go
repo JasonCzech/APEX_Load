@@ -131,7 +131,7 @@ func TestHubBroadcastAllReachesScopedClientsButGuardsScopedPayloads(t *testing.T
 	go hub.Run()
 	defer hub.Stop()
 
-	projectClient := &Client{hub: hub, send: make(chan []byte, 2), projectID: "project-1"}
+	projectClient := &Client{hub: hub, send: make(chan hubBroadcast, 2), projectID: "project-1"}
 	hub.register <- projectClient
 
 	// A content-free broadcast_all ping must reach the project-scoped client despite its filter.
@@ -139,7 +139,7 @@ func TestHubBroadcastAllReachesScopedClientsButGuardsScopedPayloads(t *testing.T
 	select {
 	case msg := <-projectClient.send:
 		var payload map[string]any
-		if err := json.Unmarshal(msg, &payload); err != nil {
+		if err := json.Unmarshal(msg.payload, &payload); err != nil {
 			t.Fatalf("json.Unmarshal returned error: %v", err)
 		}
 		if payload["type"] != "access_review_changed" {
@@ -154,7 +154,7 @@ func TestHubBroadcastAllReachesScopedClientsButGuardsScopedPayloads(t *testing.T
 	hub.BroadcastJSON(map[string]any{"type": "test_started", "project_id": "project-2", "broadcast_all": true})
 	select {
 	case msg := <-projectClient.send:
-		t.Fatalf("broadcast_all leaked a project-scoped message across tenants: %s", string(msg))
+		t.Fatalf("broadcast_all leaked a project-scoped message across tenants: %s", string(msg.payload))
 	case <-time.After(50 * time.Millisecond):
 	}
 }
@@ -165,14 +165,14 @@ func TestHubStatsTracksDroppedBroadcastsAndClientMessages(t *testing.T) {
 	hub.Broadcast([]byte("one"))
 	hub.Broadcast([]byte("two"))
 
-	client := &Client{send: make(chan []byte, 1)}
+	client := &Client{send: make(chan hubBroadcast, 1)}
 	hub.clients[client] = true
-	client.send <- []byte("occupied")
+	client.send <- newHubBroadcast([]byte("occupied"))
 
 	hub.clientsMu.RLock()
 	for client := range hub.clients {
 		select {
-		case client.send <- []byte(`{"test_id":"test-1"}`):
+		case client.send <- newHubBroadcast([]byte(`{"test_id":"test-1"}`)):
 		default:
 			hub.droppedClientMsgs.Add(1)
 		}
@@ -218,13 +218,77 @@ func TestHubBroadcastScopedJSONCarriesRoutingMetadata(t *testing.T) {
 	}
 }
 
+func TestHubClassifiesOnceAndSharesPayloadAcrossRecipients(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	defer hub.Stop()
+	var editorChecks, viewerChecks atomic.Int32
+	editor := &Client{hub: hub, send: make(chan hubBroadcast, 2), debugAuthorized: func(_ context.Context, project string) bool {
+		editorChecks.Add(1)
+		return project == "project-1"
+	}}
+	viewer := &Client{hub: hub, send: make(chan hubBroadcast, 2), debugAuthorized: func(context.Context, string) bool {
+		viewerChecks.Add(1)
+		return false
+	}}
+	hub.register <- editor
+	hub.register <- viewer
+	receive := func(client *Client) hubBroadcast {
+		t.Helper()
+		select {
+		case msg := <-client.send:
+			return msg
+		case <-time.After(time.Second):
+			t.Fatal("message did not reach client")
+			return hubBroadcast{}
+		}
+	}
+
+	// The large report is parsed at broadcast, with its data shared by both
+	// queued messages. Later caller mutations must not change those bytes.
+	input := []byte(`{"type":"script_debug_completed","project_id":" project-1 ","report":"` + strings.Repeat("x", 1<<20) + `"}`)
+	hub.Broadcast(input)
+	for i := range input {
+		input[i] = ' '
+	}
+	editorMessage, viewerMessage := receive(editor), receive(viewer)
+	if !editorMessage.debug || editorMessage.debugProject != "project-1" || !viewerMessage.debug || viewerMessage.debugProject != "project-1" {
+		t.Fatal("debug classification was not carried to both clients")
+	}
+	if len(editorMessage.payload) == 0 || &editorMessage.payload[0] != &viewerMessage.payload[0] || editorMessage.payload[0] != '{' {
+		t.Fatal("recipients did not share a preserved payload")
+	}
+	if !editor.mayDeliverMessage(editorMessage) || viewer.mayDeliverMessage(viewerMessage) {
+		t.Fatal("delivery did not independently check the editor and viewer")
+	}
+	// Delivery must consume classified metadata, not scan the payload again.
+	editorMessage.payload = []byte("not JSON")
+	if !editor.mayDeliverMessage(editorMessage) || editorChecks.Load() != 2 || viewerChecks.Load() != 1 {
+		t.Fatal("delivery reparsed the payload or skipped an authorization check")
+	}
+	hub.BroadcastJSON(map[string]any{"type": "metrics", "project_id": "project-1"})
+	if !editor.mayDeliverMessage(receive(editor)) || !viewer.mayDeliverMessage(receive(viewer)) || editorChecks.Load() != 2 || viewerChecks.Load() != 1 {
+		t.Fatal("ordinary traffic unexpectedly required debugger authorization")
+	}
+}
+
+func TestHubScopedDebugClassificationUsesPayloadProject(t *testing.T) {
+	hub := NewHub()
+	defer hub.Stop()
+	hub.BroadcastScopedJSON("test-1", "routing-project", map[string]any{"type": "script_debug_event", "project_id": " payload-project "})
+	msg := <-hub.broadcast
+	if !msg.debug || msg.projectID != "routing-project" || msg.debugProject != "payload-project" {
+		t.Fatalf("unexpected debugger/routing metadata: %#v", msg)
+	}
+}
+
 func TestHubFiltersBroadcastsByProjectID(t *testing.T) {
 	hub := NewHub()
 	go hub.Run()
 	defer hub.Stop()
 
-	projectClient := &Client{hub: hub, send: make(chan []byte, 1), projectID: "project-1"}
-	globalClient := &Client{hub: hub, send: make(chan []byte, 1)}
+	projectClient := &Client{hub: hub, send: make(chan hubBroadcast, 1), projectID: "project-1"}
+	globalClient := &Client{hub: hub, send: make(chan hubBroadcast, 1)}
 	hub.register <- projectClient
 	hub.register <- globalClient
 
@@ -233,7 +297,7 @@ func TestHubFiltersBroadcastsByProjectID(t *testing.T) {
 	select {
 	case msg := <-projectClient.send:
 		var payload map[string]any
-		if err := json.Unmarshal(msg, &payload); err != nil {
+		if err := json.Unmarshal(msg.payload, &payload); err != nil {
 			t.Fatalf("json.Unmarshal returned error: %v", err)
 		}
 		if payload["project_id"] != "project-1" {
@@ -253,7 +317,7 @@ func TestHubFiltersBroadcastsByProjectID(t *testing.T) {
 
 	select {
 	case msg := <-projectClient.send:
-		t.Fatalf("unexpected cross-project message delivered: %s", string(msg))
+		t.Fatalf("unexpected cross-project message delivered: %s", string(msg.payload))
 	case <-time.After(50 * time.Millisecond):
 	}
 }

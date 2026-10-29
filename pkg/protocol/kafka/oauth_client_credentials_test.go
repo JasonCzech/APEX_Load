@@ -2,10 +2,14 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestExplicitOAuthValidationCannotFallBackToAmbientIdentity(t *testing.T) {
@@ -51,5 +55,66 @@ func TestExplicitOAuthRetainsTLSVerification(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "credential-canary") {
 		t.Fatal("TLS failure leaked credential")
+	}
+}
+
+func TestExplicitOAuthDebugErrorsAreIsolatedAcrossSingleflight(t *testing.T) {
+	const secret = "oauth-client-private"
+	arrived, release := make(chan struct{}, 2), make(chan struct{})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		arrived <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":"invalid_client","error_description":"rejected %s"}`, secret)
+	}))
+	defer server.Close()
+	base := config{OAuthMode: "client_credentials", OAuthTokenURL: server.URL, OAuthClientID: "client", OAuthClientSecret: secret, SASLMechanism: "oauthbearer", SecurityProtocol: "sasl_ssl", AllowedTargetHosts: []string{"127.0.0.1"}}
+	if err := validateExplicitOAuth(base); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	type outcome struct {
+		debug bool
+		err   error
+	}
+	results := make(chan outcome, 2)
+	for _, debug := range []bool{false, true} {
+		c := base
+		c.UnredactedDebugErrors = debug
+		go func() {
+			_, err := explicitOAuthTokenWithClient(ctx, c, server.Client())
+			results <- outcome{debug, err}
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		select {
+		case <-arrived:
+		case <-ctx.Done():
+			close(release)
+			t.Fatal("debug and ordinary requests shared a singleflight")
+		}
+	}
+	close(release)
+	for i := 0; i < 2; i++ {
+		got := <-results
+		if got.err == nil || strings.Contains(got.err.Error(), secret) != got.debug {
+			t.Fatalf("debug=%t err=%v", got.debug, got.err)
+		}
+	}
+}
+
+func TestKafkaInitCarriesInternalDebugCapability(t *testing.T) {
+	for _, debug := range []bool{false, true} {
+		instance := &Kafka{name: "kafka"}
+		if err := instance.Init(context.Background(), map[string]any{"kafka_mock": true, protocol.ReplayUnredactedDebugConfigKey: debug}); err != nil {
+			t.Fatal(err)
+		}
+		if instance.cfg.UnredactedDebugErrors != debug {
+			t.Fatalf("debug capability = %t, want %t", instance.cfg.UnredactedDebugErrors, debug)
+		}
+		if err := instance.Teardown(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

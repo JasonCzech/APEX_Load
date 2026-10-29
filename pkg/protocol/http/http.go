@@ -89,6 +89,7 @@ type HTTP struct {
 	resources                  *resourceFetcher
 	replayHAR                  *protocol.ReplayHARCapture
 	captureReplayNetwork       bool
+	unredactedDebugSnapshots   bool
 	captureCorrelationEvidence bool
 	// page is the virtual user's HTML page context, shared with the
 	// per-version clones; nil unless the script has HTML-mode steps.
@@ -182,6 +183,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.baseURL, _ = config["base_url"].(string)
 	h.captureCorrelationEvidence, _ = config[protocol.CorrelationEvidenceCaptureConfigKey].(bool)
 	h.captureReplayNetwork, _ = config[protocol.ReplayNetworkCaptureConfigKey].(bool)
+	h.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	h.replayHAR = protocol.ReplayHARCaptureFromConfig(config)
 	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
@@ -380,7 +382,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		if err != nil {
 			result.Duration = time.Since(result.StartTime)
 			result.ErrorMessage = fmt.Sprintf("invalid base64 http body: %v", err)
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, nil, "", action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
 			return result, nil
 		}
 		requestBody = decoded
@@ -453,7 +455,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		// and query values. The snapshot already has the governed redacted
 		// target; keep the public diagnostic value-free.
 		result.ErrorMessage = "invalid HTTP request target"
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
+		if h.unredactedDebugSnapshots {
+			result.ErrorMessage = fmt.Sprintf("invalid HTTP request target %q: %v", targetURL, err)
+		}
+		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, nil, "", requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
 	}
 	result.DependencyTarget = classifyHTTPDependencyTarget(targetURL)
@@ -472,7 +477,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.StatusCode = http.StatusBadRequest
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = actionAuthErr.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
+		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
@@ -786,7 +791,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			result.ErrorMessage = h.transportErrorMessage(err)
 			result.HTTP3FailureCertainty = HTTP3FailureCertainty(err)
 			h3Receipt.fail(err)
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -796,7 +801,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -821,7 +826,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			result.ErrorMessage = h.transportErrorMessage(retryErr)
 			result.HTTP3FailureCertainty = HTTP3FailureCertainty(retryErr)
 			h3Receipt.fail(retryErr)
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -831,7 +836,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -971,7 +976,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 		result.Success = false
 		result.ErrorMessage = fixedResponseReadError(bodyReadErr)
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), nil)
+		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), nil)
 		result.Snapshot.ResponseBodyState = "not_captured"
 		h.unavailableResponseContentEvidence(result, false)
 		return result, nil
@@ -994,7 +999,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
 			result.Snapshot.ResponseBodyState = "not_captured"
 			h.unavailableResponseContentEvidence(result, false)
 			return result, nil
@@ -1033,7 +1038,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.Duration = time.Since(result.StartTime)
 		result.Success = false
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
 		result.Snapshot.ResponseBodyState = "not_captured"
 		addResponseContentReceipt(result, "unavailable", contentBasis)
 		h.unavailableResponseContentEvidence(result, false)
@@ -1147,7 +1152,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		}
 	}
 	if !result.Success || action.CaptureMessageDetail {
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 	}
 	if !result.Success || !action.DiscardResponseBodyOnSuccess {
 		result.ResponseBody = string(respBody)
@@ -1163,6 +1168,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	resourceCtx := ctx
 	if action.CaptureResourceDetails {
 		resourceEvidence = newResourceCapture(action.MessageDetailMaxItemBytes)
+		resourceEvidence.unredacted = h.unredactedDebugSnapshots
 		defer resourceEvidence.lease.release()
 		resourceCtx = context.WithValue(ctx, resourceCaptureKey{}, resourceEvidence)
 	}
@@ -1214,13 +1220,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		if result.Snapshot == nil {
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		}
 	}
 
 	if resourceEvidence != nil && (action.CaptureMessageDetail || !result.Success) {
 		if result.Snapshot == nil {
-			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		}
 		resourceEvidence.attach(result.Snapshot)
 	}
@@ -1588,6 +1594,9 @@ func (h *HTTP) transportErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
+	if h != nil && h.unredactedDebugSnapshots {
+		return err.Error()
+	}
 	if h != nil && h.httpVersion == VersionHTTP2 {
 		return ErrHTTP2Required.Error() + ": transport request failed"
 	}
@@ -1696,6 +1705,23 @@ func correlationIDFromHTTPHeader(headers http.Header) string {
 		}
 	}
 	return ""
+}
+
+func (h *HTTP) buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Header, requestHost string, requestBody []byte, redactedTarget string, redactedHeaders map[string]string, redactedBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {
+	snapshot := buildHTTPSnapshot(method, targetURL, requestHeaders, requestBody, redactedTarget, redactedHeaders, redactedBody, responseStatus, responseHeaders, responseBody)
+	if h != nil && h.unredactedDebugSnapshots {
+		snapshot.RequestURL = targetURL
+		snapshot.RequestHeaders = cloneHTTPHeaders(requestHeaders)
+		if requestHost != "" {
+			if snapshot.RequestHeaders == nil {
+				snapshot.RequestHeaders = map[string]string{}
+			}
+			snapshot.RequestHeaders["Host"] = requestHost
+		}
+		snapshot.RequestBody = string(requestBody)
+		snapshot.ResponseHeaders = cloneStringMap(responseHeaders)
+	}
+	return snapshot
 }
 
 func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Header, requestBody []byte, redactedTarget string, redactedHeaders map[string]string, redactedBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {

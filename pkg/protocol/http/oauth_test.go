@@ -541,6 +541,54 @@ func TestFetchOAuth2TokenRedactsSecretsInError(t *testing.T) {
 	}
 }
 
+func TestFetchOAuth2TokenKeepsDebugErrorsSeparateFromConcurrentOrdinaryCalls(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	const secret = "debug-oauth-secret-value"
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_client", "error_description": "secret " + secret})
+	}))
+	defer server.Close()
+	request := OAuthTokenRequest{TokenURL: server.URL, GrantType: OAuthGrantClientCredentials, ClientID: "debug-client", ClientSecret: secret}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	type outcome struct {
+		debug bool
+		err   error
+	}
+	errs := make(chan outcome, 2)
+	go func() { _, err := FetchOAuth2Token(ctx, request); errs <- outcome{false, err} }()
+	debug := request
+	debug.UnredactedDebugErrors = true
+	go func() { _, err := FetchOAuth2Token(ctx, debug); errs <- outcome{true, err} }()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-arrived:
+		case <-ctx.Done():
+			close(release)
+			t.Fatal("debug and ordinary requests shared an in-flight response")
+		}
+	}
+	close(release)
+	for i := 0; i < 2; i++ {
+		got := <-errs
+		if got.err == nil {
+			t.Fatal("expected token request to fail")
+		}
+		if strings.Contains(got.err.Error(), secret) != got.debug || strings.Contains(got.err.Error(), "[redacted]") == got.debug {
+			t.Fatalf("debug=%v error=%q", got.debug, got.err)
+		}
+	}
+}
+
 func TestRedactOAuthErrorDescriptionCapsLength(t *testing.T) {
 	long := strings.Repeat("a", maxOAuthErrorDescriptionLen+50)
 	got := redactOAuthErrorDescription(long, OAuthTokenRequest{})

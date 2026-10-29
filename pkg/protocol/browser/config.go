@@ -24,6 +24,10 @@ const (
 
 func (b *Browser) applyConfig(config map[string]any) error {
 	b.replayHAR = protocol.ReplayHARCaptureFromConfig(config)
+	b.mu.Lock()
+	b.unredactedDebug, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
+	b.wsProjectionRevision++
+	b.mu.Unlock()
 	for _, key := range []string{"browser_capture_document_metrics", "browser_capture_interactions"} {
 		if raw, present := config[key]; present {
 			if _, valid := raw.(bool); !valid {

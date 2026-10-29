@@ -79,6 +79,34 @@ describe('BrowserReplayDebugger', () => {
     expect(evidence?.textContent).toContain('Hello operator')
   })
 
+  it('does not attribute another action screenshot to the selected event', async () => {
+    const historical = { ...report, events: [{ ...report.events[1], screenshot_base64: undefined, snapshot: undefined }, { ...report.events[0] }] }
+    await act(async () => root.render(<BrowserReplayDebugger report={historical} running={false} selectedEventIndex={0} />))
+    expect(container.textContent).toContain('SubmitSearch')
+    expect(container.querySelector('.browser-viewport-stage img')).toBeNull()
+    expect(container.textContent).toContain('No screenshot yet')
+    await act(async () => root.render(<BrowserReplayDebugger report={historical} running={false} selectedEventIndex={1} />))
+    expect(container.querySelector('.browser-viewport-stage img')).not.toBeNull()
+  })
+
+  it('explains when a selected snapshot screenshot was omitted', async () => {
+    const retained = { ...report, events: [{ ...report.events[1], screenshot_base64: undefined, snapshot: { screenshot_omitted: true } }] }
+    await act(async () => root.render(<BrowserReplayDebugger report={retained} running={false} selectedEventIndex={0} />))
+    expect(container.textContent).toContain('A screenshot was omitted because it exceeded the retained evidence limit.')
+    expect(container.querySelector('.browser-viewport-stage img')).toBeNull()
+  })
+  it('shows a selected screenshot capture error', async () => {
+    const retained = { ...report, events: [{ ...report.events[1], screenshot_base64: undefined, protocol_evidence: { screenshot_capture_error: 'image exceeds acquisition limit' } }] }
+    await act(async () => root.render(<BrowserReplayDebugger report={retained} running={false} selectedEventIndex={0} />))
+    expect(container.textContent).toContain('Screenshot capture failed: image exceeds acquisition limit')
+    expect(container.textContent).not.toContain('No screenshot yet')
+  })
+  it('shows a selected HTML capture error', async () => {
+    const retained = { ...report, events: [{ ...report.events[1], protocol_evidence: { html_capture_error: 'document unavailable' } }] }
+    await act(async () => root.render(<BrowserReplayDebugger report={retained} running={false} selectedEventIndex={0} />))
+    expect(container.textContent).toContain('HTML capture failed: document unavailable')
+  })
+
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)

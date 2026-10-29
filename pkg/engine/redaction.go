@@ -849,12 +849,21 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 		// prove the rendered secret is gone, so governed runtime material makes
 		// screenshot retention fail closed.
 		result.ScreenshotBase64 = ""
+		result.ScreenshotOmitted = false
 	}
 	if result.Snapshot == nil {
 		return
 	}
 
 	result.Snapshot.RequestURL = scrubSensitiveTextWithConfig(result.Snapshot.RequestURL, config)
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(result.Snapshot.RequestMethod)), "grpc_") {
+		// Binary metadata is base64-encoded as a whole value. Even a known
+		// secret inside it may have no matching encoded substring because its
+		// position changes the base64 alignment. Opaque values cannot safely be
+		// published by the ordinary result and snapshot sinks.
+		redactGRPCBinaryMetadata(result.Snapshot.RequestHeaders)
+		redactGRPCBinaryMetadata(result.Snapshot.ResponseHeaders)
+	}
 	result.Snapshot.RequestHeaders = scrubSensitiveHeaders(result.Snapshot.RequestHeaders, config)
 	result.Snapshot.RequestBody = scrubSensitiveTextWithConfig(result.Snapshot.RequestBody, config)
 	result.Snapshot.ResponseHeaders = scrubSensitiveHeaders(result.Snapshot.ResponseHeaders, config)
@@ -882,6 +891,15 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.Snapshot.DOMSummary = scrubSensitiveDOMSummary(result.Snapshot.DOMSummary, config)
 	if config.HasRuntimeSecretMaterial() {
 		result.Snapshot.ScreenshotBase64 = ""
+		result.Snapshot.ScreenshotOmitted = false
+	}
+}
+
+func redactGRPCBinaryMetadata(headers map[string]string) {
+	for key := range headers {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(key)), "-bin") {
+			headers[key] = redactedPayloadValue
+		}
 	}
 }
 

@@ -28,7 +28,7 @@ describe('sidebar navigation and session context', () => {
     expect(debugOverrideCount({ ...DEFAULT_REPLAY_OPTIONS, logLevel: 'debug', startPaused: true, variablesText: '{"token":"x"}' })).toBe(3)
   })
 
-  it('never treats a seeded variable as a captured parameter and masks explicit captures', () => {
+  it('never treats a seeded variable as a captured parameter and shows explicit captures', () => {
     const host = document.createElement('div'); document.body.append(host); const root = createRoot(host)
     const script = { name: 'example', config: {}, protocol: 'http', actions: [], parameters: [{ name: 'password', type: 'list', values: ['draft-secret'] }] } as unknown as ScriptDefinition
     const event = { phase: 'action', action_name: 'Login', iteration: 2 } as BrowserReplayEvent
@@ -39,8 +39,6 @@ describe('sidebar navigation and session context', () => {
     expect(host.textContent).not.toContain('seeded-secret')
     expect(host.textContent).not.toContain('draft-secret')
     act(() => root.render(<DebugParameterInspector script={script} name="password" values={{ 'param.password': 'captured-secret' }} event={event} matchesDraft onEdit={edit} />))
-    expect(host.querySelector('output')?.textContent).toBe('••••••••')
-    act(() => Array.from(host.querySelectorAll('button')).find(button => button.textContent === 'Reveal captured value')!.click())
     expect(host.querySelector('output')?.textContent).toBe('captured-secret')
     act(() => host.querySelector('button')!.click()); expect(edit).toHaveBeenCalledWith('password')
     act(() => root.unmount()); host.remove()

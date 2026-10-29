@@ -1,5 +1,6 @@
 import LiveTableSandboxEditor from './LiveTableSandboxEditor'
 import LiveTableStepResult from './LiveTableStepResult'
+import { ReplayExtractions } from './ReplayExtractions'
 import ResponseSelection, { type ResponseSelectionValue } from './ResponseSelection'
 import { resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
 import { replayEventStepKey } from './actionChecksModel'
@@ -360,6 +361,9 @@ export function ScriptReplayDebuggerView({
     debuggerStatusState,
     debuggerTab,
     debuggerVarsWidth,
+    debuggerVarsActualWidth,
+    debuggerVarsMaximumWidth,
+    setDebuggerDetailElement,
     debugRailFilter,
     debugRawAutoScroll,
     debugRawLevel,
@@ -542,7 +546,7 @@ export function ScriptReplayDebuggerView({
                     <p>Applies to the next run. Text bodies are redacted; binary, oversized, or incomplete bodies are omitted. Only observed redirect hops and measured timing phases can be retained. Existing evidence limits still apply.</p>
                   </fieldset>}
                   <label><span>Evidence capture</span><select value={replayOptions.capture || 'diagnostic'} onChange={e => setReplayOptions(prev => ({ ...prev, capture: e.target.value as 'diagnostic' | 'errors' | 'script' }))}><option value="diagnostic">Diagnostic — bounded detailed capture</option><option value="errors">Failures only</option><option value="script">Use saved Runtime Settings (custom)</option></select></label>
-                  <p>HTTP/SOAP diagnostic capture: up to 100 messages, 64 KiB per message, 4 MiB total, subject to server retention and redaction. Browser capture uses per-action screenshots. Other protocols retain their native evidence.</p>
+                  <p>HTTP/SOAP diagnostic capture: up to 100 messages, 64 KiB per message, 4 MiB total, subject to server retention limits. Browser capture uses per-action screenshots. Other protocols retain their native evidence. Debugger sessions and exports can contain unredacted credentials and values.</p>
                   <label>
                     <span>Debugger Group</span>
                     <input
@@ -621,7 +625,7 @@ export function ScriptReplayDebuggerView({
               </div>
               <div className="debug-session-disclosures">
               <details className="debug-effective-settings"><summary>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</summary><dl><dt>Base URL (relative targets)</dt><dd>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</dd><dt>Evidence capture</dt><dd>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</dd><dt>Failure policy</dt><dd>{runRecord?.failurePolicy || (debugContinuesAfterFailure(replayOptions, script) ? 'Continue on error' : 'Stop on error')}</dd><dt>Inputs</dt><dd>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameters; session variables override matching inputs.</dd></dl><ul>{(runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))).map(p => <li key={p.name}>{p.name}: {p.source} · {p.selection} · {p.update || 'default update'}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</li>)}</ul></details>
-              {isBrowserScript && <details className="debug-effective-settings"><summary>Variable watches</summary><DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} finalValuesRecorded={Object.keys(replayReport?.final_variables || {}).length > 0} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} /></details>}
+              {isBrowserScript && <details className="debug-effective-settings"><summary>Variable watches</summary><DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} historyIncomplete={Boolean(replaying || replayReport?.dropped_event_count || replayReport?.truncated_event_evidence_count || browserReplaySession?.dropped_event_count || browserReplaySession?.report?.truncated_event_evidence_count)} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} finalValuesRecorded={Boolean(replayReport?.completed_at && replayReport?.final_variables)} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} /></details>}
               <DebugRunHistory key={scriptId || projectId || 'draft'} runs={runHistory} current={replayReport} currentRecord={runRecord} />
               <DebugBreakpointControls breakpoints={debugBreakpoints} disabled={breakpointsPending} onChange={next => { setBreakpointsPending(true); void onUpdateBreakpoints(next).finally(() => setBreakpointsPending(false)) }} />
               </div>
@@ -728,7 +732,7 @@ export function ScriptReplayDebuggerView({
                 {debuggerWorkbench}
 
                 {(!debugDetailCollapsed || debugDetailHost) && !isBrowserScript && (<EvidenceDestination host={debugDetailHost}>
-                <section className="debugger-center" aria-label="Debug detail">
+                <section ref={setDebuggerDetailElement} className="debugger-center" aria-label="Debug detail">
                   <div
                     className={`debugger-resizer debugger-resizer-col debugger-resizer-vars ${activeDebuggerResize === 'vars' ? 'active' : ''}`}
                     onKeyDownCapture={e => handleDebuggerResizeKeyDown('vars', e)}
@@ -738,9 +742,9 @@ export function ScriptReplayDebuggerView({
                     title="Resize debug panel"
                     aria-label="Resize debug panel"
                     aria-orientation="vertical"
-                    aria-valuemax={DEBUGGER_LAYOUT_LIMITS.vars.max}
+                    aria-valuemax={debuggerVarsMaximumWidth}
                     aria-valuemin={DEBUGGER_LAYOUT_LIMITS.vars.min}
-                    aria-valuenow={debuggerVarsWidth}
+                    aria-valuenow={debuggerVarsActualWidth ?? debuggerVarsWidth}
                   />
                   <div className="debugger-center-tabs">
                     <TabList className="debugger-center-tablist ux-underline-tabs" role="tablist" aria-label="Action evidence views" onKeyDown={handleTabKey}>
@@ -765,7 +769,7 @@ export function ScriptReplayDebuggerView({
                       <div className="debugger-variables-body">
                         {selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} runtimeParameter={runtimeInspectionMode === 'current' ? currentRuntimeParameter(currentRuntimeSnapshot, selectedOutlineParameterName) : undefined} currentMode={runtimeInspectionMode === 'current'} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} onEdit={onEditParameterDefinition} />}
                         <details><summary>Template namespaces and definitions</summary><ParameterDefinitionGuide script={script} /></details>
-                        <DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} finalValuesRecorded={Object.keys(replayReport?.final_variables || {}).length > 0} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} />
+                        <DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} historyIncomplete={Boolean(replaying || replayReport?.dropped_event_count || replayReport?.truncated_event_evidence_count || browserReplaySession?.dropped_event_count || browserReplaySession?.report?.truncated_event_evidence_count)} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} finalValuesRecorded={Boolean(replayReport?.completed_at && replayReport?.final_variables)} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} />
                         {replayVariableTimeline.length > 0 && (
                           <div className="replay-variable-timeline">
                             <h5>Variable Timeline</h5>
@@ -929,6 +933,7 @@ export function ScriptReplayDebuggerView({
                                     )}
                                   </div>
                                 )}
+                                {Boolean(event.protocol_evidence_omitted_count) && <p role="status">{event.protocol_evidence_omitted_count} protocol evidence {event.protocol_evidence_omitted_count === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}
                                 {event.protocol_evidence && (
                                   <details className="replay-code-block">
                                     <summary>Protocol Evidence{formatProtocolEvidenceSummary(event.protocol_evidence) ? ` · ${formatProtocolEvidenceSummary(event.protocol_evidence)}` : ''}</summary>
@@ -1057,15 +1062,7 @@ export function ScriptReplayDebuggerView({
                                 {event.action_type === 'live_table' && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && replayEventStepKey(event)
                                   ? resolveAuthorJsonScopeByKey(script, replayEventStepKey(event)!)?.action
                                   : undefined} />}
-                                {event.extractions && Object.keys(event.extractions).length > 0 && event.action_type !== 'live_table' && (
-                                  <div className="replay-code-block">
-                                    <span className="replay-detail-label">Extractions</span>
-                                    <SnapshotBodyPreview
-                                      body={JSON.stringify(event.extractions, null, 2)}
-                                      headers={{ 'Content-Type': 'application/json' }}
-                                    />
-                                  </div>
-                                )}
+                                <ReplayExtractions event={event} />
                                 {!isBrowserScript && (event.snapshot?.response_body || event.snapshot?.response_headers) && (
                                   <details><summary>Test an extractor against this response</summary><ExtractorTester
                                     event={event}
@@ -1120,6 +1117,8 @@ export function ScriptReplayDebuggerView({
                                           </button>
                                         </div>
                                         <pre>{`${event.snapshot.request_method || 'n/a'} ${event.snapshot.request_url || ''}`.trim()}</pre>
+                                        {event.snapshot.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}
+                                        {event.snapshot.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}
                                         <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.request_headers)} />
                                         <div className="debugger-snapshot-body">
                                           <SnapshotBodyPreview
@@ -1376,12 +1375,12 @@ const PREVIEW_TITLES: Record<PreviewSegment['kind'], string | undefined> = {
   text: undefined,
   value: 'This session\u2019s current value',
   unresolved: 'No value yet; it is sent as written unless an earlier step provides it',
-  secret: 'Project secret; resolved when the step runs and never shown',
+  secret: 'Project secret; resolved when the step runs. Debugger evidence can contain the resolved value.',
   generated: 'Generated when the step runs',
 }
 
 /** A template with the session's current values filled in, each kind marked. */
-function PreviewText({ segments }: { segments: PreviewSegment[] }) {
+export function PreviewText({ segments }: { segments: PreviewSegment[] }) {
   return <>{segments.map((segment, index) => segment.kind === 'text'
     ? <span key={index}>{segment.text}</span>
     : <span key={index} className={`debug-preview-${segment.kind}`} title={PREVIEW_TITLES[segment.kind]}>{segment.text}</span>)}</>

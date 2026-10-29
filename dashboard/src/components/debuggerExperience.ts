@@ -2,6 +2,7 @@ import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugBreakpoint, Sc
 import type { ScriptDefinition } from '../types/scripts'
 import type { DebugTransactionDefinition } from './debugTransactionModel'
 import type { ReplayOptionsState } from './scriptEditorState'
+import { appliedReplayExtractions } from './replayExtractionValues'
 
 export type DebugCapture = 'diagnostic' | 'errors' | 'script'
 export interface DebugRunRecord {
@@ -60,10 +61,14 @@ export function eventIdentity(event: BrowserReplayEvent): string {
 }
 export function variablesAt(events: BrowserReplayEvent[], seed: Record<string, string>, index: number): Record<string, string> {
   const result: Record<string, string> = Object.assign(Object.create(null), seed)
-  for (const event of events.slice(0, index + 1)) Object.assign(result, event.extractions || {})
+  for (const event of events.slice(0, Math.max(0, index + 1))) Object.assign(result, appliedReplayExtractions(event))
   return result
 }
 export function compareRuns(before: BrowserReplayReport, after: BrowserReplayReport) {
+  const equalFields = (a?: Record<string, string>, b?: Record<string, string>) => {
+    if (!a || !b) return a === b
+    return Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.prototype.hasOwnProperty.call(b, key) && a[key] === b[key])
+  }
   // Occurrence number retains repeated executions even if a producer omits loop metadata.
   const indexed = (report: BrowserReplayReport) => {
     const counts = new Map<string, number>()
@@ -77,9 +82,17 @@ export function compareRuns(before: BrowserReplayReport, after: BrowserReplayRep
     else {
       if (a.success !== b.success) fields.push('Outcome')
       if (a.error_message !== b.error_message || JSON.stringify(a.protocol_evidence?.assertion_failure) !== JSON.stringify(b.protocol_evidence?.assertion_failure)) fields.push('Assertion / diagnosis')
-      if (a.target !== b.target || JSON.stringify(a.snapshot?.request_headers || a.headers) !== JSON.stringify(b.snapshot?.request_headers || b.headers) || (a.snapshot?.request_body ?? a.body) !== (b.snapshot?.request_body ?? b.body)) fields.push('Resolved request')
-      if (JSON.stringify(a.extractions) !== JSON.stringify(b.extractions)) fields.push('Variables')
-      if (a.status_code !== b.status_code || a.snapshot?.response_body !== b.snapshot?.response_body || JSON.stringify(a.snapshot?.response_headers) !== JSON.stringify(b.snapshot?.response_headers)) fields.push('Response')
+      const request = (event: BrowserReplayEvent) => ({
+        method: event.snapshot?.request_method || event.method || event.action_type,
+        url: event.snapshot?.request_url || event.target,
+        headers: event.snapshot ? event.snapshot.request_headers : event.headers,
+        body: event.snapshot ? event.snapshot.request_body : event.body,
+      })
+      const aRequest = request(a), bRequest = request(b)
+      if (aRequest.method !== bRequest.method || aRequest.url !== bRequest.url || aRequest.body !== bRequest.body || !equalFields(aRequest.headers, bRequest.headers)) fields.push('Resolved request')
+      const aVariables = appliedReplayExtractions(a), bVariables = appliedReplayExtractions(b)
+      if (Object.keys(aVariables).length !== Object.keys(bVariables).length || Object.keys(aVariables).some(key => !Object.prototype.hasOwnProperty.call(bVariables, key) || aVariables[key] !== bVariables[key])) fields.push('Variables')
+      if (a.status_code !== b.status_code || a.snapshot?.response_body !== b.snapshot?.response_body || !equalFields(a.snapshot?.response_headers, b.snapshot?.response_headers)) fields.push('Response')
     }
     return { key, before: a, after: b, fields }
   })

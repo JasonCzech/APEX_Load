@@ -4866,14 +4866,17 @@ export interface operations {
                 "page_url"?: string;
                 "request_body"?: string;
                 "request_headers"?: Record<string, string>;
+                "request_headers_omitted"?: boolean;
                 "request_method"?: string;
                 "request_url"?: string;
+                "request_wire_headers_unavailable"?: boolean;
                 "resources"?: Array<Record<string, unknown>>;
                 "response_body"?: string;
                 "response_body_state"?: string;
                 "response_headers"?: Record<string, string>;
                 "response_status"?: number;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
               }) | null;
             }>;
             "evidence_tiers"?: Array<{
@@ -69671,6 +69674,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -69761,6 +69765,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -69774,6 +69779,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -69785,14 +69791,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -69803,8 +69812,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -69923,6 +69945,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -69955,11 +69978,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -69971,14 +69996,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -69989,8 +70017,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -70062,6 +70094,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -70081,11 +70114,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -70097,8 +70132,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -70141,14 +70180,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -72532,8 +72574,10 @@ export interface operations {
               "page_url"?: string;
               "request_body"?: string;
               "request_headers"?: Record<string, string>;
+              "request_headers_omitted"?: boolean;
               "request_method": string;
               "request_url": string;
+              "request_wire_headers_unavailable"?: boolean;
               "resources"?: Array<{
                 "cache_hit"?: boolean;
                 "failure_kind"?: string;
@@ -72550,6 +72594,7 @@ export interface operations {
               "response_headers"?: Record<string, string>;
               "response_status": number;
               "screenshot_base64"?: string;
+              "screenshot_omitted"?: boolean;
             }) | null;
             "status": string;
             "status_code"?: number;
@@ -88681,14 +88726,17 @@ export interface operations {
                 "page_url"?: string;
                 "request_body"?: string;
                 "request_headers"?: Record<string, string>;
+                "request_headers_omitted"?: boolean;
                 "request_method": string;
                 "request_url": string;
+                "request_wire_headers_unavailable"?: boolean;
                 "resources"?: Array<Record<string, unknown>>;
                 "response_body"?: string;
                 "response_body_state"?: string;
                 "response_headers"?: Record<string, string>;
                 "response_status": number;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
               }) | null;
             }>;
             "evidence_tiers"?: Array<{
@@ -95553,6 +95601,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -95643,6 +95692,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -95656,6 +95706,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -95667,14 +95718,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -95685,8 +95739,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -95805,6 +95872,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -95837,11 +95905,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -95853,14 +95923,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -95871,8 +95944,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -95971,6 +96048,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -95990,11 +96068,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -96006,8 +96086,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -96050,14 +96134,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -96305,6 +96392,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -96395,6 +96483,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -96408,6 +96497,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -96419,14 +96509,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -96437,8 +96530,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -96557,6 +96663,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -96589,11 +96696,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -96605,14 +96714,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -96623,8 +96735,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -96723,6 +96839,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -96742,11 +96859,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -96758,8 +96877,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -96802,14 +96925,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -120823,6 +120949,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -120913,6 +121040,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -120926,6 +121054,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -120937,14 +121066,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -120955,8 +121087,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -121075,6 +121220,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -121107,11 +121253,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -121123,14 +121271,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -121141,8 +121292,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -121214,6 +121369,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -121233,11 +121389,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -121249,8 +121407,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -121293,14 +121455,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -121635,6 +121800,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -121725,6 +121891,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -121738,6 +121905,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -121749,14 +121917,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -121767,8 +121938,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -121887,6 +122071,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -121919,11 +122104,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -121935,14 +122122,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -121953,8 +122143,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -122053,6 +122247,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -122072,11 +122267,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -122088,8 +122285,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -122132,14 +122333,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -122392,6 +122596,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -122482,6 +122687,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -122495,6 +122701,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -122506,14 +122713,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -122524,8 +122734,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -122644,6 +122867,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -122676,11 +122900,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -122692,14 +122918,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -122710,8 +122939,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -122810,6 +123043,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -122829,11 +123063,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -122845,8 +123081,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -122889,14 +123129,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -165382,6 +165625,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -165472,6 +165716,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -165485,6 +165730,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -165496,14 +165742,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -165514,8 +165763,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -165634,6 +165896,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -165666,11 +165929,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -165682,14 +165947,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -165700,8 +165968,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -165773,6 +166045,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -165792,11 +166065,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -165808,8 +166083,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -165852,14 +166131,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -166194,6 +166476,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -166284,6 +166567,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -166297,6 +166581,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -166308,14 +166593,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -166326,8 +166614,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -166446,6 +166747,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -166478,11 +166780,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -166494,14 +166798,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -166512,8 +166819,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -166612,6 +166923,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -166631,11 +166943,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -166647,8 +166961,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -166691,14 +167009,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -166951,6 +167272,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -167041,6 +167363,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -167054,6 +167377,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -167065,14 +167389,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -167083,8 +167410,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -167203,6 +167543,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -167235,11 +167576,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -167251,14 +167594,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -167269,8 +167615,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -167369,6 +167719,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -167388,11 +167739,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -167404,8 +167757,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -167448,14 +167805,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -173944,6 +174304,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -174034,6 +174395,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -174047,6 +174409,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -174058,14 +174421,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -174076,8 +174442,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -174196,6 +174575,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -174228,11 +174608,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -174244,14 +174626,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -174262,8 +174647,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -174335,6 +174724,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -174354,11 +174744,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -174370,8 +174762,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -174414,14 +174810,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -175495,6 +175894,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -175585,6 +175985,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -175598,6 +175999,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -175609,14 +176011,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -175627,8 +176032,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -175747,6 +176165,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -175779,11 +176198,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -175795,14 +176216,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -175813,8 +176237,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -175886,6 +176314,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -175905,11 +176334,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -175921,8 +176352,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -175965,14 +176400,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -177224,6 +177662,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -177314,6 +177753,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -177327,6 +177767,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -177338,14 +177779,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -177356,8 +177800,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -177476,6 +177933,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -177508,11 +177966,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -177524,14 +177984,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -177542,8 +178005,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -177642,6 +178109,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -177661,11 +178129,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -177677,8 +178147,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -177721,14 +178195,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -178890,6 +179367,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -178980,6 +179458,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -178993,6 +179472,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -179004,14 +179484,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -179022,8 +179505,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -179142,6 +179638,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -179174,11 +179671,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -179190,14 +179689,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -179208,8 +179710,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -179308,6 +179814,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -179327,11 +179834,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -179343,8 +179852,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -179387,14 +179900,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -180557,6 +181073,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -180647,6 +181164,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -180660,6 +181178,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -180671,14 +181190,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -180689,8 +181211,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -180809,6 +181344,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -180841,11 +181377,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -180857,14 +181395,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -180875,8 +181416,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -180975,6 +181520,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -180994,11 +181540,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -181010,8 +181558,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -181054,14 +181606,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -182223,6 +182778,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -182313,6 +182869,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -182326,6 +182883,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -182337,14 +182895,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -182355,8 +182916,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -182475,6 +183049,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -182507,11 +183082,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -182523,14 +183100,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -182541,8 +183121,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -182641,6 +183225,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -182660,11 +183245,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -182676,8 +183263,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -182720,14 +183311,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -183105,6 +183699,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -183195,6 +183790,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -183208,6 +183804,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -183219,14 +183816,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -183237,8 +183837,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -183357,6 +183970,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -183389,11 +184003,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -183405,14 +184021,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -183423,8 +184042,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -183523,6 +184146,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -183542,11 +184166,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -183558,8 +184184,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -183602,14 +184232,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -183871,6 +184504,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -183961,6 +184595,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -183974,6 +184609,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -183985,14 +184621,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -184003,8 +184642,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -184123,6 +184775,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -184155,11 +184808,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -184171,14 +184826,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -184189,8 +184847,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -184289,6 +184951,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -184308,11 +184971,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -184324,8 +184989,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -184368,14 +185037,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -184628,6 +185300,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -184718,6 +185391,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -184731,6 +185405,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -184742,14 +185417,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -184760,8 +185438,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -184880,6 +185571,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -184912,11 +185604,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -184928,14 +185622,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -184946,8 +185643,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -185019,6 +185720,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -185038,11 +185740,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -185054,8 +185758,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -185098,14 +185806,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -185484,6 +186195,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -185574,6 +186286,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -185587,6 +186300,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -185598,14 +186312,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -185616,8 +186333,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -185736,6 +186466,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -185768,11 +186499,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -185784,14 +186517,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -185802,8 +186538,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -185902,6 +186642,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -185921,11 +186662,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -185937,8 +186680,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -185981,14 +186728,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -186236,6 +186986,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -186326,6 +187077,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -186339,6 +187091,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -186350,14 +187103,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -186368,8 +187124,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -186488,6 +187257,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -186520,11 +187290,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -186536,14 +187308,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -186554,8 +187329,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -186654,6 +187433,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -186673,11 +187453,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -186689,8 +187471,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -186733,14 +187519,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -203263,6 +204052,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -203353,6 +204143,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -203366,6 +204157,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -203377,14 +204169,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -203395,8 +204190,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -203515,6 +204323,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -203547,11 +204356,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -203563,14 +204374,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -203581,8 +204395,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -203681,6 +204499,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -203700,11 +204519,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -203716,8 +204537,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -203760,14 +204585,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -204029,6 +204857,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -204119,6 +204948,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -204132,6 +204962,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -204143,14 +204974,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -204161,8 +204995,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -204281,6 +205128,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -204313,11 +205161,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -204329,14 +205179,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -204347,8 +205200,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -204447,6 +205304,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -204466,11 +205324,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -204482,8 +205342,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -204526,14 +205390,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -204795,6 +205662,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -204885,6 +205753,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -204898,6 +205767,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -204909,14 +205779,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -204927,8 +205800,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -205047,6 +205933,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -205079,11 +205966,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -205095,14 +205984,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -205113,8 +206005,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -205213,6 +206109,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -205232,11 +206129,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -205248,8 +206147,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -205292,14 +206195,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -205561,6 +206467,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -205651,6 +206558,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -205664,6 +206572,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -205675,14 +206584,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -205693,8 +206605,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -205813,6 +206738,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -205845,11 +206771,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -205861,14 +206789,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -205879,8 +206810,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -205979,6 +206914,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -205998,11 +206934,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -206014,8 +206952,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -206058,14 +207000,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;
@@ -211267,6 +212212,7 @@ export interface operations {
                   "text"?: string;
                   "timestamp"?: string;
                 }>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -211357,6 +212303,7 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<{
                   "action"?: string;
                   "confidence"?: number;
@@ -211370,6 +212317,7 @@ export interface operations {
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -211381,14 +212329,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -211399,8 +212350,21 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<{
+                  "action_name": string;
+                  "credential_classification_error"?: string;
+                  "error_message"?: string;
+                  "extractions"?: Record<string, string>;
+                  "extractions_omitted_count"?: number;
+                  "success": boolean;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
+                }>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }) | null;
               "current_event_index": number;
@@ -211519,6 +212483,7 @@ export interface operations {
                 }) | null;
                 "completed_at": string;
                 "console_entries"?: Array<Record<string, unknown>>;
+                "credential_classification_error"?: string;
                 "diagnosis"?: ({
                   "action"?: string;
                   "category": string;
@@ -211551,11 +212516,13 @@ export interface operations {
                 "parent_action_name"?: string;
                 "phase": string;
                 "protocol_evidence"?: Record<string, unknown>;
+                "protocol_evidence_omitted_count"?: number;
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
                 "response_body_state"?: string;
                 "screenshot_base64"?: string;
+                "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
                   "console_entries"?: Array<Record<string, unknown>>;
@@ -211567,14 +212534,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null;
                 "source_action"?: string;
                 "source_action_name"?: string;
@@ -211585,8 +212555,12 @@ export interface operations {
                 "started_at": string;
                 "status_code"?: number;
                 "step_path"?: Array<string>;
+                "streamed_children"?: Array<Record<string, unknown>>;
+                "streamed_children_omitted_count"?: number;
                 "success": boolean;
                 "target": string;
+                "unapplied_extractions"?: Record<string, string>;
+                "unapplied_extractions_omitted_count"?: number;
                 "value"?: string;
               }>;
               "group": string;
@@ -211658,6 +212632,7 @@ export interface operations {
                   "client_metrics"?: (Record<string, unknown>) | null;
                   "completed_at": string;
                   "console_entries"?: Array<Record<string, unknown>>;
+                  "credential_classification_error"?: string;
                   "diagnosis"?: (Record<string, unknown>) | null;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "duration_ms": number;
@@ -211677,11 +212652,13 @@ export interface operations {
                   "parent_action_name"?: string;
                   "phase": string;
                   "protocol_evidence"?: Record<string, unknown>;
+                  "protocol_evidence_omitted_count"?: number;
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
                   "response_body_state"?: string;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
                   "source_action"?: string;
@@ -211693,8 +212670,12 @@ export interface operations {
                   "started_at": string;
                   "status_code"?: number;
                   "step_path"?: Array<string>;
+                  "streamed_children"?: Array<Record<string, unknown>>;
+                  "streamed_children_omitted_count"?: number;
                   "success": boolean;
                   "target": string;
+                  "unapplied_extractions"?: Record<string, string>;
+                  "unapplied_extractions_omitted_count"?: number;
                   "value"?: string;
                 }>;
                 "final_variables"?: Record<string, string>;
@@ -211737,14 +212718,17 @@ export interface operations {
                   "page_url"?: string;
                   "request_body"?: string;
                   "request_headers"?: Record<string, string>;
+                  "request_headers_omitted"?: boolean;
                   "request_method": string;
                   "request_url": string;
+                  "request_wire_headers_unavailable"?: boolean;
                   "resources"?: Array<Record<string, unknown>>;
                   "response_body"?: string;
                   "response_body_state"?: string;
                   "response_headers"?: Record<string, string>;
                   "response_status": number;
                   "screenshot_base64"?: string;
+                  "screenshot_omitted"?: boolean;
                 }) | null>;
                 "started_at": string;
                 "stopped"?: boolean;

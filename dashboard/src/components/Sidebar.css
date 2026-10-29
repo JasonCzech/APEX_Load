@@ -865,6 +865,15 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   .sidebar .dev-view-control {
     width: 36px;
   }
+  .sidebar .dev-view-panel {
+    left: calc(100% + 8px);
+    right: auto;
+    bottom: 0;
+    box-sizing: border-box;
+    width: min(220px, calc(100vw - 88px));
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+  }
   .sidebar .dev-view-toggle {
     min-height: 36px;
     padding: 6px;
@@ -921,6 +930,13 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   }
   .collapse-btn {
     display: none;
+  }
+  /* If there is no account avatar, the control is the only keyboard entry to
+     the rail. Once expanded, it also remains available to close the rail. */
+  .sidebar:not(.collapsed) .collapse-btn,
+  .sidebar.collapsed:not(:has(.sidebar-rail-avatar)) .collapse-btn,
+  .sidebar.collapsed .collapse-btn:focus {
+    display: flex;
   }
 }
 

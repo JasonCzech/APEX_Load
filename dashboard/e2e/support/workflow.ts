@@ -176,10 +176,15 @@ export async function login(page: Page, username = 'admin') {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
 }
-/** The collapsed sidebar keeps the account card, with Sign out, behind its avatar; open it. */
+/** Open the account card using the sidebar control or the compact-rail avatar. */
 export async function showAccountCard(page: Page) {
   const expand = page.getByRole('button', { name: 'Expand sidebar', exact: true })
-  if (await expand.isVisible()) await expand.click()
+  if (await expand.isVisible()) {
+    await expand.click()
+    return
+  }
+  const account = page.getByRole('button', { name: /^Open account controls for / })
+  if (await account.isVisible()) await account.click()
 }
 export async function signOut(page: Page) {
   await showAccountCard(page)

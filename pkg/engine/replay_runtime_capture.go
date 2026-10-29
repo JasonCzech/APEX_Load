@@ -11,6 +11,7 @@ import (
 )
 
 type replayRuntimeProjector struct {
+	unredacted             bool
 	configs                []*RedactionConfig
 	policy                 *RedactionConfig
 	work                   int
@@ -44,37 +45,44 @@ func (p *replayRuntimeProjector) inspect(name, value string) bool {
 
 func (vu *VUser) runtimeSnapshotProjector() *replayRuntimeProjector {
 	p := &replayRuntimeProjector{}
-	if vu == nil || vu.resultPublicationUnavailable() {
+	if vu == nil {
 		p.publicationUnavailable = true
 		return p
 	}
-	config := vu.resultPublicationRedactionConfig()
-	p.policy = config
-	if config != nil && (len(config.compiled) > MaxRedactionRules || len(config.Rules) != len(config.compiled)) {
-		p.publicationUnavailable = true
-		return p
-	}
-	if config != nil {
-		for _, pattern := range config.compiled {
-			if pattern.re == nil || len(pattern.re.String()) > MaxRedactionPatternBytes || len(pattern.repl) > MaxRedactionReplacementBytes {
-				p.publicationUnavailable = true
-				return p
-			}
-		}
-	}
-	for depth := 0; config != nil; depth++ {
-		if depth >= maxRuntimeSecretRedactionLayers || config.runtimePublicationUnavailable || len(config.secretReplacers) > maxRuntimeSecretRedactionReplacers || (len(config.runtimeSecretValues) > 0 && len(config.secretReplacers) == 0) {
+	p.unredacted = vu.unredactedDebug
+	if !p.unredacted {
+		if vu.resultPublicationUnavailable() {
 			p.publicationUnavailable = true
 			return p
 		}
-		for _, replacer := range config.secretReplacers {
-			if replacer == nil {
+		config := vu.resultPublicationRedactionConfig()
+		p.policy = config
+		if config != nil && (len(config.compiled) > MaxRedactionRules || len(config.Rules) != len(config.compiled)) {
+			p.publicationUnavailable = true
+			return p
+		}
+		if config != nil {
+			for _, pattern := range config.compiled {
+				if pattern.re == nil || len(pattern.re.String()) > MaxRedactionPatternBytes || len(pattern.repl) > MaxRedactionReplacementBytes {
+					p.publicationUnavailable = true
+					return p
+				}
+			}
+		}
+		for depth := 0; config != nil; depth++ {
+			if depth >= maxRuntimeSecretRedactionLayers || config.runtimePublicationUnavailable || len(config.secretReplacers) > maxRuntimeSecretRedactionReplacers || (len(config.runtimeSecretValues) > 0 && len(config.secretReplacers) == 0) {
 				p.publicationUnavailable = true
 				return p
 			}
+			for _, replacer := range config.secretReplacers {
+				if replacer == nil {
+					p.publicationUnavailable = true
+					return p
+				}
+			}
+			p.configs = append(p.configs, config)
+			config = config.runtimeParent
 		}
-		p.configs = append(p.configs, config)
-		config = config.runtimeParent
 	}
 	if vu.replayRuntime == nil || vu.replayRuntime.workUnavailable {
 		p.workUnavailable = true
@@ -93,7 +101,7 @@ func (vu *VUser) runtimeSnapshotProjector() *replayRuntimeProjector {
 		if !p.inspect(name, value) {
 			return false
 		}
-		if scrub.SensitiveName(name) && value != "" && value != redactedPayloadValue {
+		if !p.unredacted && scrub.SensitiveName(name) && value != "" && value != redactedPayloadValue {
 			known[value] = struct{}{}
 		}
 		return true
@@ -244,6 +252,12 @@ func (p *replayRuntimeProjector) text(value string) (string, bool) {
 	if len(value) > MaxReplayRuntimeSnapshotValueBytes || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
 		return p.omit()
 	}
+	if p.unredacted {
+		if !p.charge(len(value) + 1) {
+			return "", false
+		}
+		return strings.Clone(value), true
+	}
 	value, ok := p.exact(value)
 	if !ok {
 		return "", false
@@ -283,7 +297,7 @@ func (p *replayRuntimeProjector) name(value string) string {
 	return out
 }
 func (p *replayRuntimeProjector) value(name, value, state string) (string, *string) {
-	if scrub.SensitiveName(name) {
+	if !p.unredacted && scrub.SensitiveName(name) {
 		masked := redactedPayloadValue
 		return "redacted", &masked
 	}
@@ -308,7 +322,7 @@ func (p *replayRuntimeProjector) location(location ReplayDebugAction) ReplayDebu
 	}
 	out := *cloneReplayDebugAction(location)
 	// Phase, ordinals, generated event identities and structural paths are typed
-	// execution receipts. Authored labels and target fields receive strict policy.
+	// execution receipts. Authored labels and targets follow the selected disclosure policy.
 	out.ActionName = p.name(out.ActionName)
 	out.Target = p.name(out.Target)
 	out.Selector = p.name(out.Selector)

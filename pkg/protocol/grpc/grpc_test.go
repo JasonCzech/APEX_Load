@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net"
 	"os"
@@ -16,9 +17,14 @@ import (
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	googlegrpc "google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	reflectionv1 "google.golang.org/grpc/reflection/grpc_reflection_v1"
 	reflectionv1alpha "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -522,4 +528,44 @@ func writeGeneratorDescriptorSet(t testing.TB) string {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	return path
+}
+
+func TestGRPCBinaryMetadataSnapshotMatchesActualCall(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := make(chan metadata.MD, 1)
+	server := googlegrpc.NewServer(googlegrpc.UnaryInterceptor(func(ctx context.Context, req any, info *googlegrpc.UnaryServerInfo, handler googlegrpc.UnaryHandler) (any, error) {
+		md, _ := metadata.FromIncomingContext(ctx)
+		seen <- md.Copy()
+		return nil, status.Error(codes.PermissionDenied, "rejected")
+	}))
+	healthpb.RegisterHealthServer(server, health.NewServer())
+	reflection.Register(server)
+	go server.Serve(listener)
+	defer server.Stop()
+	client := &GRPC{}
+	if err := client.Init(context.Background(), map[string]any{"base_url": listener.Addr().String(), "grpc_plain_text": true, "grpc_use_reflection": true, protocol.ReplayUnredactedDebugConfigKey: true}); err != nil {
+		t.Fatal(err)
+	}
+	defer client.Teardown(context.Background())
+	client.metadata.Set("payload-bin", string([]byte{0xff, 0x00, 0xfe}), string([]byte{0x80, 0x01}))
+	result, err := client.Execute(context.Background(), &protocol.Action{Type: "grpc_unary", Target: "grpc.health.v1.Health/Check", Body: []byte(`{}`)})
+	actual := (<-seen).Get("payload-bin")
+	expected := make([]string, 0, len(actual))
+	for _, value := range actual {
+		expected = append(expected, base64.RawStdEncoding.EncodeToString([]byte(value)))
+	}
+	if err != nil || result.Success || result.Snapshot == nil || result.Snapshot.RequestHeaders["payload-bin"] != strings.Join(expected, "\n") || len(actual) != 2 {
+		t.Fatalf("result=%#v actual=%#v err=%v", result, actual, err)
+	}
+}
+
+func TestGRPCPreDispatchSnapshotMarksUnverifiedMetadata(t *testing.T) {
+	client := &GRPC{unredactedDebugSnapshots: true, callTimeout: time.Second, metadata: metadata.Pairs("user-agent", "attempted-agent")}
+	result, err := client.Execute(context.Background(), &protocol.Action{Type: "grpc_unary", Target: "invalid", Headers: map[string]string{"x-test": "attempted"}})
+	if err != nil || result.Success || result.Snapshot == nil || !result.Snapshot.RequestWireHeadersUnavailable || result.Snapshot.RequestHeaders["user-agent"] != "attempted-agent" || result.Snapshot.RequestHeaders["x-test"] != "attempted" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
 }

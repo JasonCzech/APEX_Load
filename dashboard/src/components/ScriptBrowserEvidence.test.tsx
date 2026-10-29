@@ -17,6 +17,42 @@ vi.mock('./BrowserReplayProgress', () => ({
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const event: BrowserReplayEvent = { phase: 'action', action_index: 0, action_name: 'Check greeting', action_type: 'browser_wait', target: '#result', success: false, duration_ms: 12, started_at: '', completed_at: '', protocol_evidence: { assertion_failure: { expected: 'Welcome', actual: 'Hello' } }, extractions: { greeting: 'Hello' } }
 describe('selected browser evidence', () => {
+  it('explains when a screenshot was omitted by the retention limit', async () => {
+    const host = document.createElement('div'); const root = createRoot(host)
+    try {
+      await act(async () => root.render(<ScriptBrowserEvidence event={{ ...event, screenshot_omitted: true }} running={false} />))
+      expect(host.textContent).toContain('A screenshot was omitted because it exceeded the retained evidence limit.')
+      expect(host.querySelector('img')).toBeNull()
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('reports a failed automatic screenshot capture without suggesting capture was disabled', async () => {
+    const host = document.createElement('div'); const root = createRoot(host)
+    try {
+      await act(async () => root.render(<ScriptBrowserEvidence event={{ ...event, protocol_evidence: { screenshot_capture_error: 'image exceeds acquisition limit' } }} running={false} />))
+      expect(host.textContent).toContain('Screenshot capture failed: image exceeds acquisition limit')
+      expect(host.textContent).not.toContain('Enable per-action capture')
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('reports an HTML capture error in the DOM view', async () => {
+    const host = document.createElement('div'); const root = createRoot(host)
+    try {
+      await act(async () => root.render(<ScriptBrowserEvidence event={{ ...event, protocol_evidence: { html_capture_error: 'document unavailable' } }} running={false} />))
+      await act(async () => Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'DOM')!.click())
+      expect(host.textContent).toContain('HTML capture failed: document unavailable')
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('shows browser evidence omission receipts and unapplied extraction diagnostics', async () => {
+    const host = document.createElement('div'); const root = createRoot(host)
+    try {
+      await act(async () => root.render(<ScriptBrowserEvidence event={{ ...event, protocol_evidence_omitted_count: 2, unapplied_extractions: { rejected: 'diagnostic-value' } }} running={false} />))
+      await act(async () => Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Assertions')!.click())
+      expect(host.textContent).toContain('2 protocol evidence items were omitted or shortened')
+      await act(async () => Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Variables')!.click())
+      expect(host.textContent).toContain('Unapplied extractions')
+      expect(host.textContent).toContain('diagnostic-value')
+      expect(host.textContent).toContain('not applied to the session variables')
+    } finally { await act(async () => root.unmount()) }
+  })
   it('shows one action, edits explicitly, and never substitutes another action screenshot', async () => {
     const host = document.createElement('div'); document.body.append(host)
     const root = createRoot(host); const edit = vi.fn()

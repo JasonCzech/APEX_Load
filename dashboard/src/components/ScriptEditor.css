@@ -4028,6 +4028,9 @@ details.replay-code-block > summary,
 .author-rail-resize { position: relative; grid-area: author-rail; justify-self: end; align-self: stretch; width: 7px; margin-right: -3px; cursor: col-resize; z-index: 3; touch-action: none; }
 .author-rail-resize::after { content: ''; position: absolute; top: 0; bottom: 0; right: 3px; width: 1px; background: transparent; transition: background 0.12s; }
 .author-rail-resize:hover::after, .author-rail-resize.resizing::after { background: var(--accent); right: 2px; width: 2px; }
+.author-utility-resize { position: relative; grid-area: author-utility; justify-self: start; align-self: stretch; width: 7px; margin-left: -3px; cursor: col-resize; z-index: 3; touch-action: none; }
+.author-utility-resize::after { content: ''; position: absolute; inset: 0 auto 0 3px; width: 1px; background: transparent; }
+.author-utility-resize:hover::after, .author-utility-resize.resizing::after, .author-utility-resize:focus-visible::after { background: var(--accent); width: 2px; }
 .actions-sidebar.collapsed {
   width: auto;
   min-width: 0;
@@ -6800,7 +6803,7 @@ details.replay-code-block > summary,
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: var(--rail-w, 300px) minmax(380px, 1fr) var(--vars-w, 400px);
+  grid-template-columns: var(--rail-w, 300px) minmax(0, 1fr) min(var(--vars-w, 400px), max(220px, calc(100% - var(--rail-w, 300px) - 100px)));
   grid-template-rows: minmax(0, 1fr) var(--bottom-h, 220px);
   grid-template-areas:
     "rail code center"
@@ -7430,7 +7433,7 @@ button.debugger-problem-row:hover {
 /* Responsive */
 @media (max-width: 1400px) {
   .debugger-shell {
-    grid-template-columns: minmax(220px, var(--rail-w, 300px)) minmax(360px, 1fr) var(--vars-w, 360px);
+    grid-template-columns: minmax(220px, var(--rail-w, 300px)) minmax(0, 1fr) min(var(--vars-w, 360px), max(220px, calc(100% - max(220px, var(--rail-w, 300px)) - 100px)));
     grid-template-rows: minmax(0, 1fr) var(--bottom-h, 220px);
     grid-template-areas:
       "rail code center"
@@ -7560,7 +7563,7 @@ button.debugger-problem-row:hover {
 /* Keep user-resized debugger columns inside the available application width. */
 @media (min-width: 961px) and (max-width: 1600px) {
   .debugger-shell {
-    grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 24%)) minmax(0, 1fr) minmax(240px, min(var(--vars-w, 400px), 34%));
+    grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 24%)) minmax(0, 1fr) min(var(--vars-w, 400px), max(220px, calc(100% - max(180px, min(var(--rail-w, 300px), 24%)) - 100px)));
   }
   .debugger-shell.debugger-detail-collapsed,
   .debugger-shell.debugger-variables-collapsed,
@@ -7634,11 +7637,11 @@ button.debugger-problem-row:hover {
 .debug-dock-collapsed .debugger-bottom > :not(.debugger-bottom-tabs) { display: none; }
 .debugger-bottom-tabs { flex-wrap: wrap; }
 @container (max-width: 1100px) {
-  .actions-content-grid, .actions-content-grid.author-right-sidebar-wide { grid-template-columns: minmax(0, 1fr) minmax(300px, 48%); grid-template-areas: 'author-rail author-rail' 'author-code author-utility'; grid-template-rows: auto minmax(0, 1fr); }
+  .actions-content-grid, .actions-content-grid.author-right-sidebar-wide, .actions-content-grid.author-outline-collapsed, .actions-content-grid.author-outline-collapsed.author-right-sidebar-wide { grid-template-columns: minmax(0, 1fr) min(var(--author-utility-requested, 48%), max(220px, calc(100% - 80px))); grid-template-areas: 'author-rail author-rail' 'author-code author-utility'; grid-template-rows: auto minmax(0, 1fr); }
   .actions-sidebar { max-height: 170px; min-width: 0; }
   .actions-sidebar.collapsed { max-height: 42px; }
   .author-rail-resize { display: none; }
-  .actions-content-grid.author-right-sidebar-collapsed { grid-template-columns: minmax(0, 1fr) 48px; }
+  .actions-content-grid.author-right-sidebar-collapsed, .actions-content-grid.author-outline-collapsed.author-right-sidebar-collapsed { grid-template-columns: minmax(0, 1fr) 48px; }
 }
 @container (max-width: 700px) {
   .actions-content-grid, .actions-content-grid.author-right-sidebar-wide, .actions-content-grid.author-outline-collapsed, .actions-content-grid.author-right-sidebar-collapsed { display: flex; flex-direction: column; overflow-y: auto; }
@@ -7847,7 +7850,7 @@ button.debugger-problem-row:hover {
 .script-health-summary[open] { flex-basis: 100%; }
 .script-health-summary .utility-card { max-width: 800px; }
 .script-pane-switch { display: none; }
-@container (max-width: 1100px) {
+@container (max-width: 700px) {
   .script-pane-switch { display: flex; gap: 6px; padding: 8px 12px; flex-shrink: 0; }
   .imported-metadata-section .source-map-panels { height: 420px; min-height: 360px; max-height: max(360px, 70vh); }
   .script-pane-switch button { flex: 1; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 10px; cursor: pointer; }
@@ -7857,7 +7860,7 @@ button.debugger-problem-row:hover {
   [data-author-pane="outline"] .actions-content-grid > .actions-sidebar,
   [data-author-pane="editor"] .actions-content-grid > .author-code-center,
   [data-author-pane="inspector"] .actions-content-grid > .editor-utility-sidebar { display: flex; flex-direction: column; }
-  .author-rail-resize, .debugger-resizer { display: none; }
+  .author-rail-resize, .author-utility-resize, .debugger-resizer { display: none; }
   .debugger-shell, .debugger-shell.debug-dock-collapsed, .debugger-shell.browser-evidence-workspace, .debugger-shell.browser-evidence-workspace.debug-dock-collapsed { display: flex; flex-direction: column; min-height: 460px; height: auto; overflow: visible; }
   .debugger-shell > .debugger-rail, .debugger-shell > .debugger-code-center, .debugger-shell > .debugger-center { display: none; min-height: 360px; height: 60vh; flex: 0 0 auto; width: 100%; }
   .debugger-shell[data-narrow-pane="outline"] > .debugger-rail,
@@ -7887,11 +7890,18 @@ button.debugger-problem-row:hover {
 .debug-history-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .debug-history-columns > * { min-width: 0; }
 .debug-history-evidence { padding: 8px; }
-.debug-watch-panel { padding: 8px; }
+.debug-watch-panel { min-width: 0; padding: 8px; }
 .debug-watch-panel table { width: 100%; text-align: left; border-collapse: collapse; }
 .debug-watch-panel td, .debug-watch-panel th { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
 .debug-watch-panel td code { white-space: pre-wrap; word-break: break-word; }
 .debug-watch-panel small { display: block; color: var(--text-secondary); }
+.debug-watch-table-scroll { max-width: 100%; overflow-x: auto; }
+.debug-watch-table-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.debug-watch-panel .debug-watch-table { min-width: 680px; table-layout: fixed; }
+.debug-watch-table .debug-watch-column-action { width: 80px; }
+.debug-watch-table .debug-watch-column-name { width: 25%; }
+.debug-watch-table .debug-watch-column-value { width: 35%; }
+.debug-watch-panel .debug-watch-table thead th { overflow-wrap: normal; word-break: normal; }
 .debug-timeline-row { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; gap: 4px; padding: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
 .debug-timeline-row + .debug-timeline-row { margin-top: 6px; }
 .editor-body.workspace-debug .debugger-body { gap: 5px; overflow: auto; }
@@ -7907,6 +7917,25 @@ button.debugger-problem-row:hover {
   .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed > .debugger-bottom { height: 38px; }
   .debug-history-columns { grid-template-columns: minmax(0, 1fr); }
   .debug-selection-status > small { display: none; }
+}
+/* The debugger uses one full-width pane at intermediate sizes. The author
+   workspace keeps its independently resizable two-column layout here. */
+@container (700px < width <= 1100px) {
+  .editor-body.workspace-debug .script-pane-switch { display: flex; gap: 6px; padding: 8px 12px; flex-shrink: 0; }
+  .editor-body.workspace-debug .script-pane-switch button { flex: 1; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 10px; cursor: pointer; }
+  .editor-body.workspace-debug .script-pane-switch button[aria-pressed="true"] { background: var(--bg-hover); border-color: var(--accent); }
+  .editor-body.workspace-debug .debugger-resizer { display: none; }
+  .editor-body.workspace-debug .debugger-shell, .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed { display: flex; flex-direction: column; min-height: 460px; height: auto; overflow: visible; }
+  .editor-body.workspace-debug .debugger-shell > .debugger-rail, .editor-body.workspace-debug .debugger-shell > .debugger-code-center, .editor-body.workspace-debug .debugger-shell > .debugger-center { display: none; min-height: 320px; height: 60vh; flex: 0 0 auto; width: 100%; }
+  .editor-body.workspace-debug .debugger-shell[data-narrow-pane="outline"] > .debugger-rail,
+  .editor-body.workspace-debug .debugger-shell[data-narrow-pane="editor"] > .debugger-code-center,
+  .editor-body.workspace-debug .debugger-shell[data-narrow-pane="inspector"] > .debugger-center,
+  .editor-body.workspace-debug .debugger-shell[data-narrow-pane="inspector"] > .debugger-code-center:has(.debugger-center) { display: flex; }
+  .editor-body.workspace-debug .debugger-shell > .debugger-bottom { flex: 0 0 auto; height: 260px; min-height: 0; }
+  .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed > .debugger-bottom { height: auto; min-height: 42px; }
+}
+@container (max-width: 700px) {
+  .editor-body.workspace-debug .debugger-shell, .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed { overflow: visible; }
 }
 .debug-session-disclosures { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 12px; flex-shrink: 0; }
 .debug-session-disclosures > details[open] { flex-basis: 100%; order: 1; }
@@ -7984,6 +8013,22 @@ button.debugger-problem-row:hover {
   width: 100%;
   table-layout: fixed;
 }
+.debug-runtime-table-scroll { max-width: 100%; overflow-x: auto; }
+.debug-runtime-table-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.debug-runtime-state-evidence table.debug-runtime-bindings-table { min-width: 520px; max-width: none; }
+.debug-runtime-state-evidence table.debug-runtime-parameters-table { min-width: 850px; max-width: none; }
+.debug-runtime-state-evidence table.debug-runtime-rows-table { min-width: 760px; max-width: none; }
+.debug-runtime-state-evidence thead th { overflow-wrap: normal; word-break: normal; }
+.debug-runtime-bindings-table thead th:first-child { width: 30%; }
+.debug-runtime-bindings-table thead th:nth-child(2) { width: 45%; }
+.debug-runtime-parameters-table thead th:nth-child(1) { width: 20%; }
+.debug-runtime-parameters-table thead th:nth-child(2),
+.debug-runtime-parameters-table thead th:nth-child(3) { width: 18%; }
+.debug-runtime-parameters-table thead th:nth-child(4) { width: 22%; }
+.debug-runtime-rows-table thead th:nth-child(1) { width: 20%; }
+.debug-runtime-rows-table thead th:nth-child(2) { width: 24%; }
+.debug-runtime-rows-table thead th:nth-child(3),
+.debug-runtime-rows-table thead th:nth-child(4) { width: 18%; }
 .debug-runtime-state-evidence th,
 .debug-runtime-state-evidence td,
 .debug-runtime-state-evidence li,
@@ -7996,6 +8041,14 @@ button.debugger-problem-row:hover {
   display: block;
 }
 @container debug-runtime-receipts (max-width: 620px) {
+  /* Card rows fit the rail; do not introduce a clipping scrollport around them. */
+  .debug-runtime-table-scroll { overflow: visible; }
+  .debug-runtime-state-evidence table.debug-runtime-bindings-table,
+  .debug-runtime-state-evidence table.debug-runtime-parameters-table,
+  .debug-runtime-state-evidence table.debug-runtime-rows-table {
+    min-width: 0;
+    max-width: 100%;
+  }
   .debug-runtime-state-evidence table,
   .debug-runtime-state-evidence tbody,
   .debug-runtime-state-evidence tr,

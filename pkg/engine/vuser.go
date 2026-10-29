@@ -31,13 +31,17 @@ type VUser struct {
 	browserAuthored              *browserAuthoredIndex
 	currentAuthoredAction        *dsl.Action
 
-	LiveTableClient   livetable.Client
-	LiveTableClientID string
-	LiveTableBindings []LiveTableBinding
-	liveTables        *liveTableRuntime
-	liveTableLane     *liveTableLane
-	nativeServices    *nativeServices
-	replayRuntime     *replayRuntimeState
+	LiveTableClient      livetable.Client
+	LiveTableClientID    string
+	LiveTableBindings    []LiveTableBinding
+	liveTables           *liveTableRuntime
+	liveTableLane        *liveTableLane
+	nativeServices       *nativeServices
+	replayRuntime        *replayRuntimeState
+	unredactedDebug      bool
+	debugRetryEvidence   *ReplayActionEvent
+	debugRetryError      error
+	debugRetryGroupCount int
 
 	webSocketCallbackSteps []dsl.Action
 	inWebSocketCallback    bool
@@ -65,7 +69,7 @@ type VUser struct {
 	// runtimeRedaction publishes immutable redaction snapshots to protocol
 	// callbacks, which may run on a driver/event goroutine while the VUser adds
 	// newly extracted credentials on its execution goroutine.
-	runtimeRedaction atomic.Pointer[RedactionConfig]
+	runtimeRedaction runtimeRedactionPublisher
 	// importedCredentialInspection is the result of the retained-credential
 	// locator walk for this VUser's script, and the marker that the walk already
 	// ran. Standard execution paths run the walk once for the whole run
@@ -194,7 +198,7 @@ type VUser struct {
 	// onAsyncResult lets replay report each conversation response.
 	async           *asyncConversations
 	inAsyncDispatch bool
-	onAsyncResult   func(*protocol.Result)
+	onAsyncResult   func(*protocol.Result, *ReplayActionEvent)
 }
 
 // resolvedActionCredentialComposites pins credential spellings to the exact

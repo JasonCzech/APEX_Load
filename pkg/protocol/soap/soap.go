@@ -25,15 +25,16 @@ func init() {
 }
 
 type SOAP struct {
-	http           *httpproto.HTTP
-	baseURL        string
-	version        string
-	failOnFault    bool
-	defaultCharset string
-	namespaces     map[string]string
-	security       soapSecurityConfig
-	now            func() time.Time
-	nonceGenerator func() ([]byte, error)
+	unredactedDebugSnapshots bool
+	http                     *httpproto.HTTP
+	baseURL                  string
+	version                  string
+	failOnFault              bool
+	defaultCharset           string
+	namespaces               map[string]string
+	security                 soapSecurityConfig
+	now                      func() time.Time
+	nonceGenerator           func() ([]byte, error)
 }
 
 type soapSecurityConfig struct {
@@ -69,6 +70,7 @@ var (
 func (s *SOAP) Name() string { return "soap" }
 
 func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
+	s.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -188,13 +190,20 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 				result.ErrorMessage = fault
 			}
 			if result.Snapshot == nil {
-				result.Snapshot = buildSOAPSnapshot(&prepared, targetURL, result)
+				result.Snapshot = buildSOAPSnapshot(&prepared, targetURL, result, s.unredactedDebugSnapshots)
 			}
 		}
 	} else if s.failOnFault && result.StatusCode >= 500 && result.ErrorMessage == "" {
 		result.ErrorMessage = "soap fault response"
 	}
-	result.ProtocolEvidence = protocol.BuildProtocolEvidence(&prepared, result)
+	evidenceAction := prepared
+	if s.unredactedDebugSnapshots {
+		evidenceAction.RedactedTarget = ""
+		evidenceAction.RedactedHeaders = nil
+		evidenceAction.RedactedParams = nil
+		evidenceAction.RedactedSOAP = nil
+	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(&evidenceAction, result)
 	if discardSuccessfulBody && result.Success {
 		result.ResponseBody = ""
 	}
@@ -350,20 +359,21 @@ func classifySOAPFaultCategory(fault string) string {
 	}
 }
 
-func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protocol.Result) *protocol.ErrorSnapshot {
+func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protocol.Result, unredactedDebug ...bool) *protocol.ErrorSnapshot {
+	raw := len(unredactedDebug) > 0 && unredactedDebug[0]
 	if action == nil || result == nil {
 		return nil
 	}
 	requestURL := targetURL
-	if action.RedactedTarget != "" {
+	if !raw && action.RedactedTarget != "" {
 		requestURL = action.RedactedTarget
 	}
 	headers := cloneHeaders(action.Headers)
-	if len(action.RedactedHeaders) > 0 {
+	if !raw && len(action.RedactedHeaders) > 0 {
 		headers = cloneHeaders(action.RedactedHeaders)
 	}
 	body := string(action.Body)
-	if len(action.RedactedBody) > 0 {
+	if !raw && len(action.RedactedBody) > 0 {
 		body = string(action.RedactedBody)
 	}
 	return &protocol.ErrorSnapshot{

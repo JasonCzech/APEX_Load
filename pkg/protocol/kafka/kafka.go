@@ -109,6 +109,7 @@ type atomicTransactionCommitter interface {
 }
 
 type config struct {
+	UnredactedDebugErrors                                                                                   bool
 	ConsumerTransactions                                                                                    bool
 	Producer                                                                                                producerTuning
 	TLSMinVersion, TLSMaxVersion                                                                            string
@@ -181,8 +182,9 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		return err
 	}
 	k.cfg = config{
-		Producer:      tuning,
-		TLSMinVersion: stringValue(cfg, "kafka_tls_min_version"), TLSMaxVersion: stringValue(cfg, "kafka_tls_max_version"),
+		UnredactedDebugErrors: boolValue(cfg, protocol.ReplayUnredactedDebugConfigKey),
+		Producer:              tuning,
+		TLSMinVersion:         stringValue(cfg, "kafka_tls_min_version"), TLSMaxVersion: stringValue(cfg, "kafka_tls_max_version"),
 		OAuthMode:                 stringValue(cfg, "kafka_oauth_mode"),
 		OAuthTokenURL:             stringValue(cfg, "kafka_oauth_token_url"),
 		OAuthClientID:             stringValue(cfg, "kafka_oauth_client_id"),

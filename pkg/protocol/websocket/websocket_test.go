@@ -707,3 +707,100 @@ func newEchoServer(t testing.TB, subprotocol string) *httptest.Server {
 		}()
 	}))
 }
+
+func TestWebSocketPreDialFailureMarksAttemptedHeaders(t *testing.T) {
+	ws := &WebSocket{unredactedDebugSnapshots: true, defaultHeaders: http.Header{"X-Default": {"default"}}, origin: "https://example.test"}
+	result, err := ws.Execute(context.Background(), &protocol.Action{Type: "ws_connect", Target: "://bad", HeaderList: []protocol.HeaderEntry{{Name: "X-Multi", Value: "one"}, {Name: "X-Multi", Value: "two"}}})
+	if err != nil || result.Success || result.Snapshot == nil || !result.Snapshot.RequestWireHeadersUnavailable || result.Snapshot.RequestHeaders["X-Multi"] != "one\ntwo" || result.Snapshot.RequestHeaders["X-Default"] != "default" || result.Snapshot.RequestHeaders["Origin"] != "https://example.test" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
+func TestWebSocketEpochFencePreservesActualHandshakeEvidence(t *testing.T) {
+	for _, reconnect := range []bool{false, true} {
+		for _, debug := range []bool{false, true} {
+			t.Run(fmt.Sprintf("reconnect=%t/debug=%t", reconnect, debug), func(t *testing.T) {
+				started := make(chan *http.Request, 1)
+				release := make(chan struct{})
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					started <- r.Clone(context.Background())
+					<-release
+					conn, err := (&gorillawebsocket.Upgrader{}).Upgrade(w, r, nil)
+					if err == nil {
+						defer conn.Close()
+						_, _, _ = conn.ReadMessage()
+					}
+				}))
+				defer server.Close()
+				target := strings.Replace(server.URL, "http://", "ws://", 1) + "/socket"
+				ws := &WebSocket{unredactedDebugSnapshots: debug, reconnect: true, lastTarget: target, lastHeaders: http.Header{"X-Secret": {"secret"}, "X-Multi": {"one", "two"}}, defaultHeaders: http.Header{"X-Secret": {"secret"}}, dialer: &gorillawebsocket.Dialer{HandshakeTimeout: time.Second}, writeTimeout: time.Second}
+				action := &protocol.Action{Type: "ws_connect", Target: target, Headers: map[string]string{"X-Secret": "secret"}, RedactedHeaders: map[string]string{"X-Secret": "[REDACTED]"}, HeaderList: []protocol.HeaderEntry{{Name: "X-Multi", Value: "one"}, {Name: "X-Multi", Value: "two"}}}
+				if reconnect {
+					action.Type = "ws_send"
+					action.Target = "/different"
+				}
+				done := make(chan *protocol.Result, 1)
+				go func() { result, _ := ws.Execute(context.Background(), action); done <- result }()
+				var actual *http.Request
+				select {
+				case actual = <-started:
+				case <-time.After(2 * time.Second):
+					t.Fatal("handshake did not start")
+				}
+				if err := ws.Teardown(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				close(release)
+				var result *protocol.Result
+				select {
+				case result = <-done:
+				case <-time.After(2 * time.Second):
+					t.Fatal("handshake did not finish")
+				}
+				if result.Success || result.Snapshot == nil {
+					t.Fatalf("result=%#v", result)
+				}
+				if debug {
+					method := "ws_connect"
+					if reconnect {
+						method = "ws_reconnect"
+					}
+					snapshot := result.Snapshot
+					if snapshot.RequestMethod != method || snapshot.RequestURL != target || snapshot.ResponseStatus != http.StatusSwitchingProtocols || snapshot.RequestWireHeadersUnavailable || snapshot.RequestHeaders["X-Secret"] != "secret" || snapshot.RequestHeaders["X-Multi"] != "one\ntwo" || snapshot.RequestHeaders["Sec-WebSocket-Key"] != actual.Header.Get("Sec-Websocket-Key") {
+						t.Fatalf("snapshot=%#v", snapshot)
+					}
+				} else if result.Snapshot.RequestHeaders["X-Secret"] == "secret" {
+					t.Fatal("ordinary snapshot leaked secret")
+				}
+			})
+		}
+	}
+}
+
+func TestHandshakeWireHeadersReportsInvalidUTF8AtBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		value   string
+		omitted bool
+	}{
+		{"valid-boundary", strings.Repeat("a", 16<<10), false},
+		{"invalid-equal-length", strings.Repeat("a", (16<<10)-3) + string([]byte{0xff}) + "xy", true},
+		{"oversize", strings.Repeat("b", (16<<10)+1), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &handshakeWireHeaders{headers: make(map[string]string), remaining: 256 << 10}
+			h.add("X-Value", []string{tc.value})
+			if h.omitted != tc.omitted || len(h.headers["X-Value"]) > 16<<10 {
+				t.Fatalf("omitted=%t length=%d", h.omitted, len(h.headers["X-Value"]))
+			}
+		})
+	}
+}
+
+func TestHandshakeFallbackReportsUTF8Normalization(t *testing.T) {
+	snapshot := &protocol.ErrorSnapshot{}
+	captureHandshakeHeaders(snapshot, http.Header{"X-Invalid": {"a" + string([]byte{0xff}) + "b"}}, nil, nil)
+	if !snapshot.RequestWireHeadersUnavailable || !snapshot.RequestHeadersOmitted || snapshot.RequestHeaders["X-Invalid"] != "a�b" {
+		t.Fatalf("snapshot=%#v", snapshot)
+	}
+}

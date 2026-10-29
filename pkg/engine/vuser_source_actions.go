@@ -191,18 +191,19 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 		return value
 	}
 	tokenReq := protocolhttp.OAuthTokenRequest{
-		TokenURL:     paramString("token_url"),
-		GrantType:    paramString("grant_type"),
-		ClientID:     paramString("client_id"),
-		ClientSecret: paramString("client_secret"),
-		Scope:        paramString("scope"),
-		Audience:     paramString("audience"),
-		Issuer:       paramString("issuer"),
-		Subject:      paramString("subject"),
-		PrivateKey:   paramString("private_key"),
-		RefreshToken: paramString("refresh_token"),
-		Username:     paramString("username"),
-		Password:     paramString("password"),
+		TokenURL:              paramString("token_url"),
+		GrantType:             paramString("grant_type"),
+		ClientID:              paramString("client_id"),
+		ClientSecret:          paramString("client_secret"),
+		Scope:                 paramString("scope"),
+		Audience:              paramString("audience"),
+		Issuer:                paramString("issuer"),
+		Subject:               paramString("subject"),
+		PrivateKey:            paramString("private_key"),
+		RefreshToken:          paramString("refresh_token"),
+		Username:              paramString("username"),
+		Password:              paramString("password"),
+		UnredactedDebugErrors: vu.unredactedDebug,
 	}
 	var allowedTargetHosts []string
 	if vu.Script != nil && vu.Script.Metadata != nil && vu.Script.Metadata.RuntimePolicy != nil {

@@ -220,6 +220,49 @@ func TestRecordSelfHealRedactsRuntimeSecretSelectors(t *testing.T) {
 	}
 }
 
+func TestSelectorSelfHealDebuggerEvidenceDoesNotChangeLogs(t *testing.T) {
+	const secret = "private-selector"
+	var logBuf bytes.Buffer
+	testlog.SetDefault(t, slog.New(slog.NewTextHandler(&logBuf, nil)))
+	for _, debug := range []bool{false, true} {
+		t.Run(fmt.Sprintf("debug=%t", debug), func(t *testing.T) {
+			b := &Browser{unredactedDebug: debug}
+			b.applyDefaultConfig()
+			b.SetRuntimeTextRedactor(func(value string) string { return strings.ReplaceAll(value, secret, "[REDACTED]") })
+			action := selfHealTestAction()
+			action.Name = "action-" + secret
+			action.Selector = "#primary-" + secret
+			action.RedactedSelector = "#primary-[REDACTED]"
+			candidate := selector.Candidate{Kind: "css", Value: "#healed-" + secret, Confidence: 95}
+			b.storeSelfHealCandidate(selfHealActionIdentity(action, action.Selector), candidate)
+			result := &protocol.Result{}
+			if err := b.runWithSelectorSelfHeal(context.Background(), action, result, action.Selector, func(value string) error {
+				if value == candidate.Value {
+					return nil
+				}
+				return errors.New("selector not found")
+			}); err != nil {
+				t.Fatal(err)
+			}
+			heal := result.ProtocolEvidence["selector_self_heal"].(map[string]any)
+			metrics := result.ProtocolEvidence["selector_self_heal_metrics"].(map[string]any)
+			for _, value := range []string{heal["primary_selector"].(string), heal["healed_selector"].(string), metrics["primary_selector"].(string)} {
+				if strings.Contains(value, secret) != debug {
+					t.Fatalf("debug=%v evidence value = %q", debug, value)
+				}
+			}
+			failed := &protocol.Result{}
+			b.recordSelfHealMetrics(action, failed, action.Selector, false, selectorSelfHealStats{})
+			if strings.Contains(failed.ProtocolEvidence["self_heal_metrics"].(map[string]any)["primary_selector"].(string), secret) != debug {
+				t.Fatal("failure metrics did not respect debugger disclosure")
+			}
+		})
+	}
+	if strings.Contains(logBuf.String(), secret) {
+		t.Fatalf("self-heal log leaked selector or action: %s", logBuf.String())
+	}
+}
+
 func TestNormalizeBrowserSelfHealMode(t *testing.T) {
 	tests := map[string]string{
 		"":            browserSelfHealReplayOnly,

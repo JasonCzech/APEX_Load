@@ -1,5 +1,5 @@
 import TooltipButton from './ux/TooltipButton'
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { resolveApiResourceUrl } from '../hooks/apiClient'
@@ -221,6 +221,10 @@ export default function Sidebar({
   // an overlay above the page instead of pushing the content right.
   const [collapsed, setCollapsed] = useState(true)
   const asideRef = useRef<HTMLElement | null>(null)
+  const focusAccountOnExpand = useRef(false)
+  const focusAvatarOnCollapse = useRef(false)
+  const focusedRailControl = useRef<'avatar' | 'expand' | null>(null)
+  const focusedAccount = useRef(false)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [domainOpen, setDomainOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
@@ -268,6 +272,11 @@ export default function Sidebar({
     projectId: activeProject?.id,
   })
   const identityTitle = formatIdentityTitle(authStatus, identityMeta)
+  // A preview-mode change can precede the refreshed auth response. Do not
+  // expose or focus the previous simulated identity while that response is in flight.
+  const showIdentity = Boolean(authStatus?.authenticated && authStatus.user && identityName &&
+    !(isDevDashboard && authStatus.simulated && authStatus.dev_view_mode !== devViewMode))
+  const previousShowIdentity = useRef(showIdentity)
   const rawLogoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
   const logoutURL = rawLogoutURL ? resolveApiResourceUrl(rawLogoutURL) : ''
   const canPostLogout = authStatus?.authenticated && (authStatus.mode === 'oidc' || authStatus.mode === 'local') && Boolean(authStatus.logout_csrf_token?.trim())
@@ -299,6 +308,41 @@ export default function Sidebar({
     }
   }, [sessionDeadline])
   const sessionExpiryNotice = formatSessionExpiryNotice(authStatus, sessionDeadline, sessionClock)
+  useLayoutEffect(() => {
+    const changed = previousShowIdentity.current !== showIdentity
+    previousShowIdentity.current = showIdentity
+    if (!changed) return
+    const focusWasRemoved = document.activeElement === document.body || document.activeElement === document.documentElement
+    if (!collapsed) {
+      if (!showIdentity && focusedAccount.current && focusWasRemoved) {
+        asideRef.current?.querySelector<HTMLButtonElement>('.collapse-btn')?.focus()
+      }
+      if (!showIdentity) focusedAccount.current = false
+      return
+    }
+    const avatar = asideRef.current?.querySelector<HTMLButtonElement>('.sidebar-rail-avatar')
+    const expand = asideRef.current?.querySelector<HTMLButtonElement>('.collapse-btn')
+    if (showIdentity && window.innerWidth <= 768 && focusedRailControl.current === 'expand' && document.activeElement === expand) {
+      avatar?.focus()
+    } else if (!showIdentity && focusedRailControl.current === 'avatar' && focusWasRemoved) {
+      expand?.focus()
+    }
+  }, [collapsed, showIdentity])
+  useEffect(() => {
+    if (!collapsed && focusAccountOnExpand.current) {
+      focusAccountOnExpand.current = false
+      const card = asideRef.current?.querySelector<HTMLElement>('#sidebar-identity')
+      const action = card?.querySelector<HTMLElement>('.sidebar-identity-action:not(:disabled)')
+      const target = action || card
+      target?.focus()
+    } else if (collapsed && focusAvatarOnCollapse.current) {
+      focusAvatarOnCollapse.current = false
+      const avatar = asideRef.current?.querySelector<HTMLElement>('.sidebar-rail-avatar')
+      const brand = asideRef.current?.querySelector<HTMLElement>('.sidebar-brand')
+      const target = avatar || brand
+      target?.focus()
+    }
+  }, [collapsed])
   const closeWorkspaceMenus = useCallback(() => {
     setWorkspaceOpen(false)
     setDomainOpen(false)
@@ -752,23 +796,37 @@ export default function Sidebar({
 
       <div className="sidebar-footer">
         <div className="sidebar-footer-meta">
-          {collapsed && authStatus?.authenticated && authStatus.user && identityName && (
-            // The collapsed rail hides the identity card, so keep the signed-in
-            // user and any session-expiry warning visible as an avatar.
+          {collapsed && showIdentity && (
+            // The avatar opens the account card even on narrow screens where
+            // the separate sidebar expansion control is not shown.
             <TooltipButton
               type="button"
               className={`sidebar-rail-avatar ${sessionExpiryNotice ? (sessionExpiryNotice === 'Session expired' ? 'session-expired' : 'session-warning') : ''}`}
-              disabled
-              aria-label={[identityName, identityMeta, sessionExpiryNotice].filter(Boolean).join('. ')}
-              title={[identityName, identityMeta, sessionExpiryNotice].filter(Boolean).join(' · ')}
+              aria-label={`Open account controls for ${[identityName, identityMeta, sessionExpiryNotice].filter(Boolean).join('. ')}`}
+              title={`Open account controls · ${[identityName, identityMeta, sessionExpiryNotice].filter(Boolean).join(' · ')}`}
               tooltipPlacement="right"
+              aria-expanded={false}
+              aria-controls="sidebar-identity"
+              onFocus={() => { focusedRailControl.current = 'avatar' }}
+              onBlur={event => {
+                if (event.relatedTarget || event.currentTarget.isConnected) focusedRailControl.current = null
+              }}
+              onClick={() => {
+                focusAccountOnExpand.current = true
+                setCollapsed(false)
+              }}
             >
               <span aria-hidden="true">{identityInitials}</span>
               {sessionExpiryNotice && <span className="sidebar-rail-avatar-alert" aria-hidden="true">!</span>}
             </TooltipButton>
           )}
-          {!collapsed && authStatus?.authenticated && authStatus.user && identityName && (
-            <div className="sidebar-identity" title={identityTitle}>
+          {!collapsed && showIdentity && (
+            <div className="sidebar-identity" id="sidebar-identity" tabIndex={-1} title={identityTitle}
+              onFocusCapture={() => { focusedAccount.current = true }}
+              onBlurCapture={event => {
+                if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget as Node)) return
+                if (event.relatedTarget || event.currentTarget.isConnected) focusedAccount.current = false
+              }}>
               <div className="sidebar-identity-avatar" aria-hidden="true">{identityInitials}</div>
               <div className="sidebar-identity-copy">
                 <span className="sidebar-identity-name">{identityName}</span>
@@ -859,6 +917,7 @@ export default function Sidebar({
             if (!collapsed) {
               closeWorkspaceMenus()
               setDevViewOpen(false)
+              focusAvatarOnCollapse.current = true
             }
             setCollapsed(!collapsed)
           }}
@@ -866,6 +925,10 @@ export default function Sidebar({
           tooltipPlacement="right"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
+          onFocus={() => { if (collapsed) focusedRailControl.current = 'expand' }}
+          onBlur={event => {
+            if (event.relatedTarget || event.currentTarget.isConnected) focusedRailControl.current = null
+          }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             {collapsed ? (

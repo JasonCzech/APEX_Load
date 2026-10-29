@@ -18,11 +18,26 @@ describe('current paused watches and explicit qualified history', () => {
     expect(html).toContain('historical-secret'); expect(html).toContain('Final historical values'); expect(html).toContain('historical evidence, not current engine state')
     expect(html).toContain('Pin stale')
   })
+  it('keeps historical variable columns in a keyboard-scrollable region', () => {
+    const html = renderToStaticMarkup(<DebugVariableWatches {...props} mode="retained" />)
+    expect(html).toContain('class="debug-watch-table-scroll" role="region" aria-label="Variable values and provenance" tabindex="0"')
+    expect(html).toContain('class="debug-watch-column-name"')
+    expect(html).toContain('Name / namespace')
+    expect(html).toContain('historical-secret')
+  })
   it('displays independent redacted-name entries, empty versus omitted, prepared versus observed, and original row/frame receipts', () => {
     const html = renderToStaticMarkup(<DebugRuntimeStateEvidence snapshot={snapshot()} />)
     for (const label of ['Current paused state', 'Before action', 'action 2', 'Bounded snapshot', 'one', 'two', '(empty)', 'Unavailable', 'Redacted', 'Ambiguous name', 'Parameter runtime receipts', 'each occurrence', 'actual-use-receipt', 'prepared', 'cached', 'not evaluated', 'Row selection receipts', '>7<', 'Active runtime frames', 'iteration 2', 'No actual-use receipt']) expect(html).toContain(label)
     expect(html).not.toContain('redacted-do-not-display')
     expect(html).toContain('do not predict the next reference')
+  })
+  it('provides separately scrollable current-state tables for long receipts', () => {
+    const html = renderToStaticMarkup(<DebugRuntimeStateEvidence snapshot={snapshot()} />)
+    for (const name of ['Current variable bindings', 'Parameter runtime receipts', 'Row selection receipts']) {
+      expect(html).toContain(`role="region" aria-label="${name} table" tabindex="0"`)
+    }
+    expect(html).toContain('class="debug-runtime-parameters-table"')
+    expect(html).toContain('actual-use-receipt')
   })
   it('an empty full replacement displays no prior keys, rows or frames', () => {
     const current = { ...snapshot(), variables: [], parameters: [], rows: [], frames: [] }

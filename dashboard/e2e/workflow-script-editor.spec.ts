@@ -6,6 +6,162 @@ import type { ScriptDefinition } from '../src/types/scripts'
 import { idOf, json, login, mutation, expectEditorSaved, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
+test('debugger identifies omitted extraction evidence even when no values survive', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name: 'Incomplete extraction evidence', version: '1.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'Concurrent request', type: 'request', method: 'GET', target: '/' }] },
+  } })))
+  await page.route(`**/api/v1/scripts/${id}/debug/sessions`, async route => {
+    const body = route.request().postDataJSON()
+    const now = new Date().toISOString()
+    const event = { phase: 'action', action_index: 0, action_name: 'Concurrent request', action_type: 'request', target: '/', success: true, duration_ms: 1, started_at: now, completed_at: now, protocol_evidence: { concurrent_group_extractions_omitted: true } }
+    const report = { replay_session_id: body.replay_session_id, group: 'Incomplete extraction evidence', protocol: 'http', started_at: now, completed_at: now, success: true, events: [event] }
+    const sessionIncarnation = randomUUID()
+    const runtimeState = { version: 1, kind: 'full', session_id: body.replay_session_id, session_incarnation: sessionIncarnation, state_revision: '1', state: 'unavailable', reason: 'session_terminal', snapshot: null } satisfies ScriptDebugRuntimeState
+    await route.fulfill({ json: { replay_session_id: body.replay_session_id, debug_session_id: body.replay_session_id, session: { id: body.replay_session_id, session_incarnation: sessionIncarnation, state_revision: '1', runtime_state: runtimeState, status: 'completed', completed_at: now, report, events: [event] } } })
+  })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.locator('.topbar-debug-action-run').click()
+  await expectDebugOutcome(page, 'passed')
+  await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Concurrent request' }).click()
+  const warning = page.getByRole('status').filter({ hasText: 'Some extractions were omitted' })
+  await expect(warning).toBeVisible()
+  await expect(warning).toContainText('displayed values may be incomplete')
+})
+
+test('operator can widen the editor and debugger right panels by drag and keyboard', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  await page.setViewportSize({ width: 2000, height: 1000 })
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name: 'Resizable right panels', version: '1.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }] },
+  } })))
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+
+  const authorHandle = page.getByRole('separator', { name: 'Resize right sidebar' })
+  await expect(authorHandle).toBeVisible()
+  const authorPanel = page.locator('#script-details-panel')
+  const authorStart = await authorHandle.boundingBox()
+  const authorStartWidth = (await authorPanel.boundingBox())?.width ?? 0
+  const authorMax = Number(await authorHandle.getAttribute('aria-valuemax'))
+  expect(authorStart).not.toBeNull()
+  if (!authorStart) throw new Error('Author resize handle has no position')
+  await page.mouse.move(authorStart.x + authorStart.width / 2, authorStart.y + 60)
+  await page.mouse.down()
+  await page.mouse.move(authorStart.x - 550, authorStart.y + 60, { steps: 8 })
+  await page.mouse.up()
+  // The panel can pass 600px before the last pointer update and ResizeObserver
+  // notification have settled. Compare with the complete drag distance first.
+  const authorDragWidth = Math.min(authorMax, authorStartWidth + 550)
+  await expect.poll(async () => (await authorPanel.boundingBox())?.width ?? 0).toBeGreaterThan(authorDragWidth - 8)
+  await expect.poll(async () => Math.abs(Number(await authorHandle.getAttribute('aria-valuenow')) - ((await authorPanel.boundingBox())?.width ?? 0))).toBeLessThan(2)
+  const authorWidth = (await authorPanel.boundingBox())!.width
+  await authorHandle.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(async () => (await authorPanel.boundingBox())?.width ?? 0).toBeLessThan(authorWidth - 10)
+  await expect.poll(async () => Math.abs(Number(await authorHandle.getAttribute('aria-valuenow')) - ((await authorPanel.boundingBox())?.width ?? 0))).toBeLessThan(2)
+
+  // In the intermediate layout the outline moves above the editor. The
+  // inspector must still honor pointer and keyboard resizing in that row.
+  await page.setViewportSize({ width: 1200, height: 1000 })
+  const editorWidth = await page.locator('.script-editor').evaluate(el => el.getBoundingClientRect().width)
+  expect(editorWidth).toBeGreaterThan(700)
+  expect(editorWidth).toBeLessThanOrEqual(1100)
+  await authorHandle.focus()
+  await page.keyboard.press('Home')
+  await expect.poll(async () => (await authorPanel.boundingBox())?.width ?? 0).toBeLessThan(230)
+  const intermediateHandle = await authorHandle.boundingBox()
+  expect(intermediateHandle).not.toBeNull()
+  if (!intermediateHandle) throw new Error('Intermediate author resize handle has no position')
+  await page.mouse.move(intermediateHandle.x + intermediateHandle.width / 2, intermediateHandle.y + 30)
+  await page.mouse.down()
+  await page.mouse.move(intermediateHandle.x - 180, intermediateHandle.y + 30, { steps: 6 })
+  await page.mouse.up()
+  await expect.poll(async () => (await authorPanel.boundingBox())?.width ?? 0).toBeGreaterThan(370)
+  const intermediateWidth = (await authorPanel.boundingBox())!.width
+  expect(Number(await authorHandle.getAttribute('aria-valuemax'))).toBeGreaterThan(intermediateWidth)
+  await authorHandle.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(async () => (await authorPanel.boundingBox())?.width ?? 0).toBeLessThan(intermediateWidth - 10)
+
+  await page.setViewportSize({ width: 900, height: 1000 })
+  expect(await page.locator('.script-editor').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(700)
+  await page.getByRole('button', { name: 'Collapse outline side panel' }).click()
+  // PanelToggle restores focus to its replacement in the next animation frame.
+  await expect(page.getByRole('button', { name: 'Expand outline side panel' })).toBeFocused()
+  await authorHandle.focus()
+  await expect(authorHandle).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect.poll(async () => (await authorPanel.boundingBox())?.width ?? 0).toBeLessThan(230)
+  await page.keyboard.press('ArrowLeft')
+  await expect.poll(async () => (await authorPanel.boundingBox())?.width ?? 0).toBeGreaterThan(235)
+
+  await page.setViewportSize({ width: 1920, height: 1000 })
+
+  await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  await page.getByRole('tab', { name: 'DSL', exact: true }).click()
+  const debugHandle = page.getByRole('separator', { name: 'Resize debug panel' })
+  await expect(debugHandle).toBeVisible()
+  const debugStart = await debugHandle.boundingBox()
+  expect(debugStart).not.toBeNull()
+  if (!debugStart) throw new Error('Debug resize handle has no position')
+  await page.mouse.move(debugStart.x + debugStart.width / 2, debugStart.y + 60)
+  await page.mouse.down()
+  await page.mouse.move(debugStart.x - 550, debugStart.y + 60, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(async () => (await page.getByRole('region', { name: 'Debug detail', exact: true }).boundingBox())?.width ?? 0).toBeGreaterThan(600)
+  // A stored wide preference must not make the splitter lag after the window
+  // becomes narrower: keyboard resizing starts from the actual rendered size.
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await expect(debugHandle).toBeVisible()
+  const debugDetail = page.getByRole('region', { name: 'Debug detail', exact: true })
+  await expect.poll(async () => Math.abs(Number(await debugHandle.getAttribute('aria-valuenow')) - ((await debugDetail.boundingBox())?.width ?? 0))).toBeLessThan(2)
+  const debugWidth = Number(await debugHandle.getAttribute('aria-valuenow'))
+  await debugHandle.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(async () => Number(await debugHandle.getAttribute('aria-valuenow'))).toBeLessThan(debugWidth)
+
+  // At intermediate widths the debugger presents full-width panes rather than
+  // stacking overlapping grid tracks. Each pane and the dock remain reachable.
+  await page.setViewportSize({ width: 900, height: 1000 })
+  const debugPanes = page.getByRole('group', { name: 'Debug panes' })
+  await expect(debugPanes).toBeVisible()
+  const debugShell = page.locator('.debugger-shell')
+  const dock = debugShell.locator(':scope > .debugger-bottom')
+  for (const pane of ['Editor', 'Inspector']) {
+    await debugPanes.getByRole('button', { name: pane, exact: true }).click()
+    const visiblePanel = pane === 'Editor' ? debugShell.locator(':scope > .debugger-code-center') : debugShell.locator(':scope > .debugger-center')
+    await expect(visiblePanel).toBeVisible()
+    const [panelBox, dockBox] = await Promise.all([visiblePanel.boundingBox(), dock.boundingBox()])
+    expect(panelBox).not.toBeNull()
+    expect(dockBox).not.toBeNull()
+    if (!panelBox || !dockBox) throw new Error('Debugger pane or dock has no position')
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(dockBox.y + 1)
+    await dock.scrollIntoViewIfNeeded()
+    await expect(dock).toBeInViewport()
+  }
+  const fractionalWidth = await page.addStyleTag({ content: '.script-editor { width: 700.5px !important; }' })
+  await expect.poll(async () => page.locator('.script-editor').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(700)
+  await expect(debugPanes).toBeVisible()
+  await debugPanes.getByRole('button', { name: 'Inspector', exact: true }).click()
+  await expect(debugShell.locator(':scope > .debugger-center')).toBeVisible()
+  await fractionalWidth.evaluate(el => el.parentNode?.removeChild(el))
+  await page.setViewportSize({ width: 700, height: 600 })
+  await expect(debugPanes).toBeVisible()
+  await debugPanes.getByRole('button', { name: 'Editor', exact: true }).click()
+  await dock.scrollIntoViewIfNeeded()
+  await expect(dock).toBeInViewport()
+  expect(await debugShell.evaluate(el => getComputedStyle(el).overflowY)).toBe('visible')
+})
+
 test('operator edits the failed nested browser assertion and reruns without losing source fields', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   await page.setViewportSize({ width: 1600, height: 1000 })

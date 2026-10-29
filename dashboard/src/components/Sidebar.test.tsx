@@ -275,6 +275,32 @@ describe('Sidebar', () => {
     expect(window.location.reload).toHaveBeenCalledOnce()
   })
 
+  it('restores avatar focus on collapse and focuses the account card when logout is pending', async () => {
+    let rejectLogout: (error: Error) => void = () => {}
+    authApiMock.logout.mockImplementationOnce(() => new Promise((_, reject) => { rejectLogout = reject }))
+    await act(async () => {
+      root.render(<Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" authStatus={{
+        enabled: true, mode: 'local', logout_url: '/api/v1/auth/logout', logout_csrf_token: 'local-csrf-token',
+        authenticated: true, user: { subject: 'local:dev', display_name: 'Local Developer', global_roles: ['viewer'] },
+      }} />)
+    })
+    await act(async () => container.querySelector<HTMLButtonElement>('.sidebar-rail-avatar')!.click())
+    const logout = container.querySelector<HTMLButtonElement>('.sidebar-identity-action-button')!
+    expect(document.activeElement).toBe(logout)
+    await act(async () => logout.click())
+    expect(authApiMock.logout).toHaveBeenCalledWith('local-csrf-token')
+    expect(container.querySelector<HTMLButtonElement>('.sidebar-identity-action-button')!.disabled).toBe(true)
+    await act(async () => container.querySelector<HTMLButtonElement>('.collapse-btn')!.click())
+    const avatar = container.querySelector<HTMLButtonElement>('.sidebar-rail-avatar')!
+    expect(document.activeElement).toBe(avatar)
+    await act(async () => avatar.click())
+    expect(document.activeElement).toBe(container.querySelector('#sidebar-identity'))
+    expect(container.querySelector<HTMLButtonElement>('.sidebar-identity-action-button')!.disabled).toBe(true)
+    await act(async () => { rejectLogout(new Error('Logout failed')); await Promise.resolve() })
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Logout failed')
+    expect(container.querySelector<HTMLButtonElement>('.sidebar-identity-action-button')!.disabled).toBe(false)
+  })
+
   it('shows imminent native oidc session expiry without replacing identity metadata', async () => {
     await act(async () => {
       root.render(
@@ -1330,6 +1356,117 @@ describe('Sidebar', () => {
     expect(container.querySelector('#sidebar-workspace-context')?.getAttribute('aria-hidden')).toBe('true')
   })
 
+  it('does not focus stale simulated identity while switching preview back to admin', async () => {
+    window.localStorage.setItem('apexload.devViewMode', 'user')
+    await act(async () => {
+      root.render(<DevViewProvider><Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" authStatus={{
+        enabled: false, mode: 'dev', authenticated: true, simulated: true, dev_view_mode: 'user',
+        user: { subject: 'dev-user', display_name: 'Dev Editor Preview', global_roles: ['viewer'] },
+      }} /></DevViewProvider>)
+    })
+    await openDevView()
+    expect(container.querySelector('.sidebar-identity-name')?.textContent).toBe('Dev Editor Preview')
+    const admin = Array.from(container.querySelectorAll<HTMLButtonElement>('.dev-view-segmented button')).find(button => button.textContent === 'Admin')!
+    await act(async () => admin.click())
+    expect(window.localStorage.getItem('apexload.devViewMode')).toBe('admin')
+    // Keep the old authStatus prop in place to model a delayed server response.
+    expect(container.querySelector('.sidebar-identity')).toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('.collapse-btn')!.click())
+    expect(container.querySelector('.sidebar-rail-avatar')).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('.sidebar-brand'))
+  })
+
+  it('moves focus between narrow collapsed controls only when the replaced control held focus', async () => {
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 760 })
+    const render = (authenticated: boolean) => root.render(<Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" authStatus={{
+      enabled: true, mode: 'local', authenticated,
+      user: authenticated ? { subject: 'local:user', display_name: 'Local Viewer', global_roles: ['viewer'] } : undefined,
+    }} />)
+    try {
+      await act(async () => render(false))
+      const expand = container.querySelector<HTMLButtonElement>('.collapse-btn')!
+      await act(async () => expand.focus())
+      await act(async () => render(true))
+      const avatar = container.querySelector<HTMLButtonElement>('.sidebar-rail-avatar')!
+      expect(document.activeElement).toBe(avatar)
+      await act(async () => render(false))
+      expect(document.activeElement).toBe(expand)
+
+      const brand = container.querySelector<HTMLButtonElement>('.sidebar-brand')!
+      await act(async () => brand.focus())
+      await act(async () => render(true))
+      expect(document.activeElement).toBe(brand)
+      await act(async () => render(false))
+      expect(document.activeElement).toBe(brand)
+
+      await act(async () => { expand.focus(); expand.blur() })
+      await act(async () => render(true))
+      expect(document.activeElement).not.toBe(container.querySelector('.sidebar-rail-avatar'))
+      await act(async () => render(false))
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 })
+      await act(async () => expand.focus())
+      await act(async () => render(true))
+      expect(document.activeElement).toBe(expand)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalWidth })
+    }
+  })
+
+  it('restores focus when a desktop preview identity disappears, without moving unrelated focus', async () => {
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 })
+    window.localStorage.setItem('apexload.devViewMode', 'user')
+    const switchMode = async (mode: 'admin' | 'user') => act(async () => {
+      window.localStorage.setItem('apexload.devViewMode', mode)
+      window.dispatchEvent(new Event('apexload:dev-view-mode-changed'))
+    })
+    try {
+      await act(async () => root.render(<DevViewProvider><Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" authStatus={{
+        enabled: false, mode: 'dev', authenticated: true, simulated: true, dev_view_mode: 'user', logout_url: '/logout',
+        user: { subject: 'dev-user', display_name: 'Dev Editor Preview', global_roles: ['viewer'] },
+      }} /></DevViewProvider>))
+      await act(async () => container.querySelector<HTMLButtonElement>('.sidebar-rail-avatar')!.focus())
+      await switchMode('admin')
+      expect(document.activeElement).toBe(container.querySelector('.collapse-btn'))
+
+      await switchMode('user')
+      await act(async () => container.querySelector<HTMLButtonElement>('.sidebar-rail-avatar')!.click())
+      expect(document.activeElement).toBe(container.querySelector('.sidebar-identity-action'))
+      await switchMode('admin')
+      expect(document.activeElement).toBe(container.querySelector('.collapse-btn'))
+
+      await switchMode('user')
+      await act(async () => container.querySelector<HTMLElement>('#sidebar-identity')!.focus())
+      await switchMode('admin')
+      expect(document.activeElement).toBe(container.querySelector('.collapse-btn'))
+
+      await switchMode('user')
+      const brand = container.querySelector<HTMLButtonElement>('.sidebar-brand')!
+      await act(async () => brand.focus())
+      await switchMode('admin')
+      expect(document.activeElement).toBe(brand)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalWidth })
+    }
+  })
+
+  it('expands and returns focus to the brand after collapsing without an authenticated avatar', async () => {
+    await act(async () => {
+      root.render(<Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected"
+        authStatus={{ enabled: false, mode: 'dev', authenticated: false }} />)
+    })
+    expect(container.querySelector('.sidebar-rail-avatar')).toBeNull()
+    const expand = container.querySelector<HTMLButtonElement>('.collapse-btn')!
+    expect(expand.getAttribute('aria-label')).toBe('Expand sidebar')
+    await act(async () => { expand.focus(); expand.click() })
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    const collapse = container.querySelector<HTMLButtonElement>('.collapse-btn')!
+    await act(async () => { collapse.focus(); collapse.click() })
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('.sidebar-brand'))
+  })
+
   it('shows hover popups only while the sidebar is collapsed, including the workspace pickers', async () => {
     await act(async () => {
       root.render(
@@ -1393,10 +1530,12 @@ describe('Sidebar', () => {
     expect(avatar?.querySelector('.sidebar-rail-avatar-alert')).not.toBeNull()
     expect(avatar?.getAttribute('aria-label')).toContain('Local Viewer')
     expect(avatar?.getAttribute('aria-label')).toContain('Session expires in 2 min')
-    expect(avatar?.disabled).toBe(true)
-    await expandSidebar()
+    expect(avatar?.disabled).toBe(false)
+    expect(avatar?.getAttribute('aria-label')).toContain('Open account controls')
+    await act(async () => avatar?.click())
     expect(container.querySelector('.sidebar.collapsed')).toBeNull()
     expect(container.querySelector('.sidebar-rail-avatar')).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('#sidebar-identity'))
     expect(container.querySelector('.sidebar-identity-session')?.textContent).toBe('Session expires in 2 min')
   })
 

@@ -21,11 +21,15 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if result == nil {
 		return nil
 	}
+	omitted := 0
 	protocolName := inferEvidenceProtocol(action, result)
 	if protocolName == "" {
 		if len(result.WarningCodes) > 0 {
-			return BoundProtocolEvidence(map[string]any{"warnings": result.WarningCodes})
+			evidence, count := BoundProtocolEvidenceWithOmissions(map[string]any{"warnings": result.WarningCodes})
+			result.ProtocolEvidenceOmittedCount = count
+			return evidence
 		}
+		result.ProtocolEvidenceOmittedCount = 0
 		return nil
 	}
 	evidence := map[string]any{
@@ -62,8 +66,11 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if messages := evidenceMessages(result); len(messages) > 0 {
 		evidence["messages"] = messages
 	}
-	if metadata := evidenceMetadata(action, result); len(metadata) > 0 {
+	if metadata := evidenceMetadata(action, result, &omitted); len(metadata) > 0 {
 		evidence["metadata"] = metadata
+	}
+	if len(result.ResponseBody) > maxEvidencePayloadBytes {
+		omitted++
 	}
 	payload := parseEvidencePayload(result.ResponseBody)
 	if rows := evidenceRows(payload); len(rows) > 0 {
@@ -75,7 +82,9 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if transcript := evidenceTranscript(payload, result.ResponseBody); len(transcript) > 0 {
 		evidence["transcript"] = transcript
 	}
-	return BoundProtocolEvidence(evidence)
+	bounded, projectionOmitted := BoundProtocolEvidenceWithOmissions(evidence)
+	result.ProtocolEvidenceOmittedCount = omitted + projectionOmitted
+	return bounded
 }
 
 func inferEvidenceProtocol(action *Action, result *Result) string {
@@ -208,7 +217,7 @@ func evidenceMessages(result *Result) map[string]any {
 	return messages
 }
 
-func evidenceMetadata(action *Action, result *Result) map[string]any {
+func evidenceMetadata(action *Action, result *Result, omitted *int) map[string]any {
 	metadata := make(map[string]any)
 	if result.CorrelationID != "" {
 		metadata["correlation_id"] = result.CorrelationID
@@ -249,18 +258,24 @@ func evidenceMetadata(action *Action, result *Result) map[string]any {
 			if len(action.RedactedHeaders) > 0 {
 				headers = action.RedactedHeaders
 			}
-			metadata["headers"] = cloneEvidenceStringMap(headers)
+			bounded, count := BoundProtocolEvidenceWithOmissions(map[string]any{"values": headers})
+			*omitted += count
+			metadata["headers"], _ = bounded["values"].(map[string]string)
 		}
 		if len(action.Params) > 0 {
 			params := action.Params
 			if len(action.RedactedParams) > 0 {
 				params = action.RedactedParams
 			}
-			metadata["params"] = cloneEvidenceAnyMap(params)
+			bounded, count := BoundProtocolEvidenceWithOmissions(params)
+			*omitted += count
+			metadata["params"] = bounded
 		}
 	}
 	if len(result.Extractions) > 0 {
-		metadata["extractions"] = cloneEvidenceStringMap(result.Extractions)
+		bounded, count := BoundProtocolEvidenceWithOmissions(map[string]any{"values": result.Extractions})
+		*omitted += count
+		metadata["extractions"], _ = bounded["values"].(map[string]string)
 	}
 	return metadata
 }
@@ -334,25 +349,33 @@ func cloneEvidenceAnyMap(input map[string]any) map[string]any {
 // protocol evidence. Arbitrary adapter/action maps are user-controlled and may
 // otherwise retain very large payload graphs in replay reports and archives.
 func BoundProtocolEvidence(input map[string]any) map[string]any {
+	out, _ := BoundProtocolEvidenceWithOmissions(input)
+	return out
+}
+
+// BoundProtocolEvidenceWithOmissions reports the number of values or
+// collection members truncated or excluded by the ordinary evidence bounds.
+func BoundProtocolEvidenceWithOmissions(input map[string]any) (map[string]any, int) {
 	if len(input) == 0 {
-		return nil
+		return nil, 0
 	}
 	budget := evidenceBudget{bytes: maxEvidenceBytes, entries: maxEvidenceEntries}
 	value, ok := boundEvidenceValue(input, &budget, 0)
 	if !ok {
-		return nil
+		return nil, budget.omitted
 	}
 	out, _ := value.(map[string]any)
-	return out
+	return out, budget.omitted
 }
 
-type evidenceBudget struct {
-	bytes   int
-	entries int
-}
+type evidenceBudget struct{ bytes, entries, omitted int }
 
 func boundEvidenceValue(value any, budget *evidenceBudget, depth int) (any, bool) {
-	if budget == nil || budget.bytes <= 0 || budget.entries <= 0 || depth > maxEvidenceDepth {
+	if budget == nil {
+		return nil, false
+	}
+	if budget.bytes <= 0 || budget.entries <= 0 || depth > maxEvidenceDepth {
+		budget.omitted++
 		return nil, false
 	}
 	switch typed := value.(type) {
@@ -361,8 +384,8 @@ func boundEvidenceValue(value any, budget *evidenceBudget, depth int) (any, bool
 		return typed, true
 	case string:
 		limit := min(maxEvidenceStringBytes, budget.bytes)
-		if limit <= 0 {
-			return nil, false
+		if len(typed) > limit {
+			budget.omitted++
 		}
 		typed = boundedtext.TruncateUTF8(typed, limit)
 		budget.bytes -= len(typed)
@@ -370,55 +393,62 @@ func boundEvidenceValue(value any, budget *evidenceBudget, depth int) (any, bool
 		return typed, true
 	case map[string]string:
 		keys := boundedtext.SmallestStringKeys(typed, maxEvidenceCollection)
+		budget.omitted += len(typed) - len(keys)
 		out := make(map[string]string, len(keys))
-		for _, key := range keys {
+		for i, key := range keys {
 			boundedKey, ok := boundEvidenceValue(key, budget, depth+1)
 			if !ok {
+				budget.omitted += len(keys) - i - 1
 				break
 			}
 			boundedValue, ok := boundEvidenceValue(typed[key], budget, depth+1)
-			if !ok {
-				continue
+			if ok {
+				out[boundedKey.(string)] = boundedValue.(string)
 			}
-			out[boundedKey.(string)] = boundedValue.(string)
 		}
 		return out, len(out) > 0
 	case map[string]any:
 		keys := boundedtext.SmallestStringKeys(typed, maxEvidenceCollection)
+		budget.omitted += len(typed) - len(keys)
 		out := make(map[string]any, len(keys))
-		for _, key := range keys {
+		for i, key := range keys {
 			if budget.entries <= 0 || budget.bytes <= 0 {
+				budget.omitted += len(keys) - i
 				break
 			}
 			boundedKey, ok := boundEvidenceValue(key, budget, depth+1)
 			if !ok {
+				budget.omitted += len(keys) - i - 1
 				break
 			}
 			boundedValue, ok := boundEvidenceValue(typed[key], budget, depth+1)
-			if !ok {
-				continue
+			if ok {
+				out[boundedKey.(string)] = boundedValue
 			}
-			out[boundedKey.(string)] = boundedValue
 		}
 		return out, len(out) > 0
 	case []string:
-		values := make([]any, min(len(typed), maxEvidenceCollection))
-		for index := range values {
-			values[index] = typed[index]
-		}
-		return boundEvidenceValue(values, budget, depth)
-	case []any:
 		limit := min(len(typed), maxEvidenceCollection)
+		budget.omitted += len(typed) - limit
 		out := make([]any, 0, limit)
 		for _, item := range typed[:limit] {
-			bounded, ok := boundEvidenceValue(item, budget, depth+1)
-			if !ok {
-				continue
+			if v, ok := boundEvidenceValue(item, budget, depth+1); ok {
+				out = append(out, v)
 			}
-			out = append(out, bounded)
+		}
+		return out, len(out) > 0
+	case []any:
+		limit := min(len(typed), maxEvidenceCollection)
+		budget.omitted += len(typed) - limit
+		out := make([]any, 0, limit)
+		for _, item := range typed[:limit] {
+			if v, ok := boundEvidenceValue(item, budget, depth+1); ok {
+				out = append(out, v)
+			}
 		}
 		return out, len(out) > 0
 	default:
+		budget.omitted++
 		return nil, false
 	}
 }

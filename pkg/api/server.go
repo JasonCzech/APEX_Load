@@ -98,6 +98,10 @@ type Server struct {
 	authRuntimeMu               sync.RWMutex
 	startupAuthSettings         AuthSettings
 	startupAuthSettingsSet      bool
+	debugHTTPAuthSlotsOnce      sync.Once
+	debugHTTPAuthSlots          chan struct{}
+	debugWSAuthSlotsOnce        sync.Once
+	debugWSAuthSlots            chan struct{}
 	localAuthGenerationMu       sync.RWMutex
 	localAuthGeneration         string
 	settingsService             systemSettingsService
@@ -873,7 +877,7 @@ func (s *Server) captureStartupAuthSettings() {
 func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins, s.authSettingsForRequest)
 	log := loggingMiddleware
-	baseAuth := authMiddleware(s.authSettingsForRequest, s.store, s.cache, withAuthAuditRecorder(s), withLocalAuthGeneration(s.activeLocalAuthGeneration))
+	baseAuth := authMiddleware(s.authSettingsForRequest, s.store, s.cache, withAuthAuditRecorder(s), withLocalAuthGeneration(s.activeLocalAuthGeneration), withDebugAuthSettings(s.debugHTTPAuthSettings))
 	auth := s.projectMutationCoordinatedAuth(baseAuth)
 	standardRouteMiddleware := apiRouteMiddlewareStack{cors: cors, log: log, auth: auth}
 	ciAuth := s.ciAuthMiddleware(baseAuth)
@@ -958,6 +962,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
 		withAuthAuditRecorder(s),
 		withLocalAuthGeneration(s.activeLocalAuthGeneration),
+		withDebugAuthSettings(s.debugHTTPAuthSettings),
 	))
 	scriptDebugSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -968,6 +973,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
 		withAuthAuditRecorder(s),
 		withLocalAuthGeneration(s.activeLocalAuthGeneration),
+		withDebugAuthSettings(s.debugHTTPAuthSettings),
 	))
 	browserRecordingCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -2639,19 +2645,16 @@ func (s *Server) startCacheFanout() {
 			if len(envelope.Payload) == 0 {
 				continue
 			}
-			broadcast := hubBroadcast{
-				payload:      envelope.Payload,
-				testID:       envelope.TestID,
-				projectID:    envelope.ProjectID,
-				broadcastAll: envelope.BroadcastAll && envelope.TestID == "" && envelope.ProjectID == "",
-			}
+			broadcast := newHubBroadcast(envelope.Payload)
 			// Backward compatibility during a rolling HA upgrade: an envelope from
 			// a not-yet-upgraded replica carries no top-level routing fields, so
 			// fall back to the scoping embedded in the message payload (the
 			// pre-envelope wire format) rather than dropping it for every scoped
 			// subscriber.
-			if envelope.TestID == "" && envelope.ProjectID == "" && !envelope.BroadcastAll {
-				broadcast = newHubBroadcast(envelope.Payload)
+			if envelope.TestID != "" || envelope.ProjectID != "" || envelope.BroadcastAll {
+				broadcast.testID = envelope.TestID
+				broadcast.projectID = envelope.ProjectID
+				broadcast.broadcastAll = envelope.BroadcastAll && envelope.TestID == "" && envelope.ProjectID == ""
 			}
 			s.hub.broadcastLocal(broadcast)
 		}

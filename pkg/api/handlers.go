@@ -3,6 +3,7 @@ package api
 import "github.com/jasonczech/apexload/pkg/internal/importreview"
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -2125,7 +2126,50 @@ func writeSystemSettingsResponse(w http.ResponseWriter, status int, settings Sys
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	s.hub.serveWS(w, r, "", projectID, s.websocketAuthorizer(r, projectID))
+	ctx, cancel := context.WithTimeout(r.Context(), defaultCacheWriteTimeout)
+	defer cancel()
+	release, err := s.acquireDebugWSAuth(ctx)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "websocket authorization unavailable")
+		return
+	}
+	bounded := s.websocketSupportsBoundedAuth()
+	var authorize func(context.Context, string, bool, bool) bool
+	if bounded {
+		authorize = s.websocketBoundedScopedAuthorizer(r.WithContext(ctx))
+	} else {
+		// Legacy stores cannot cancel their initial identity snapshot. At most
+		// maxConcurrentDebugWSAuthChecks goroutines may be stuck here; each keeps
+		// its slot until it finishes, even if the request has already timed out.
+		result := make(chan func(context.Context, string, bool, bool) bool, 1)
+		go func() {
+			defer release()
+			result <- s.websocketBoundedScopedAuthorizer(r.WithContext(ctx))
+		}()
+		select {
+		case authorize = <-result:
+		case <-ctx.Done():
+			writeError(w, http.StatusServiceUnavailable, "websocket authorization unavailable")
+			return
+		}
+	}
+	// Refuse the upgrade if the provider or project grant changed since the
+	// middleware admitted it. A live settings change can occur between them.
+	allowed := !bounded || authorize(ctx, projectID, false, true)
+	if bounded {
+		release()
+	}
+	if ctx.Err() != nil {
+		writeError(w, http.StatusServiceUnavailable, "websocket authorization unavailable")
+		return
+	}
+	if !allowed {
+		writeError(w, http.StatusForbidden, "websocket authorization changed")
+		return
+	}
+	s.hub.serveProjectWS(w, r, projectID, func() bool { return authorize(context.Background(), projectID, false, false) }, func(parent context.Context, eventProjectID string) bool {
+		return s.debugWSMayDeliver(parent, eventProjectID, authorize)
+	})
 }
 
 func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {

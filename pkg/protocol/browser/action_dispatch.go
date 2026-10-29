@@ -58,7 +58,7 @@ func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, r
 	case "browser_ws_wait":
 		return b.dispatchWSWait(ctx, action, result)
 	case "browser_ws_assert":
-		return b.dispatchWSAssert(action, result)
+		return b.dispatchWSAssert(ctx, action, result)
 	case "browser_click":
 		selector := b.actionSelector(action)
 		if selector == "" {

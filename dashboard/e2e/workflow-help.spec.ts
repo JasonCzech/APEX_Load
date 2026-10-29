@@ -645,21 +645,22 @@ test('left sidebar index extends towards the visible window bottom or fits its c
   await expect(sidebar.getByRole('link', { name: 'Concepts & navigation' })).toBeVisible()
 
   // At scroll 0:
+  // The sidebar is sized in an animation frame after its container is laid out.
+  // Poll both bounds together so an initially oversized panel does not pass
+  // the lower-bound check before that sizing update has run.
   await expect.poll(async () => {
     const box = await sidebar.boundingBox()
-    return box ? box.y + box.height : 0
-  }).toBeGreaterThanOrEqual(760)
-  let box = (await sidebar.boundingBox())!
-  expect(box.y + box.height).toBeLessThanOrEqual(800)
+    const bottom = box ? box.y + box.height : 0
+    return bottom >= 760 && bottom <= 800
+  }).toBe(true)
 
   // When scrolling down:
   await page.locator('.main-content').evaluate(el => { el.scrollTop = 300 })
   await expect.poll(async () => {
     const b = await sidebar.boundingBox()
-    return b ? b.y + b.height : 0
-  }).toBeGreaterThanOrEqual(760)
-  box = (await sidebar.boundingBox())!
-  expect(box.y + box.height).toBeLessThanOrEqual(800)
+    const bottom = b ? b.y + b.height : 0
+    return bottom >= 760 && bottom <= 800
+  }).toBe(true)
 
   // 2. Short list (Getting Started, 2 articles): fits contents without stretching to the bottom
   await page.goto('/#/docs?guide=getting-started')

@@ -255,9 +255,8 @@ func (m *ScriptDebugManager) Close() {
 				session.terminalAt = &terminalAt
 			}
 			session.rejectCorrelationEvidenceLocked("debugger manager closed")
-			// Drop the remaining replay/debug artifacts as well. Although public
-			// projections are scrubbed, the closed manager must not keep diagnostic
-			// payloads alive while an uncooperative protocol drains.
+			// Drop replay/debug artifacts, which can contain raw credentials and
+			// values, while an uncooperative protocol drains.
 			session.CurrentAction = nil
 			session.CurrentEvent = nil
 			session.Events = nil
@@ -457,6 +456,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 			RunID:           session.RunID,
 			ContinueOnError: &continueOnError,
 			DebugController: scriptDebugController{manager: m, session: session},
+			UnredactedDebug: true,
 			// Native captures are retired; debug HAR exports use retained observations.
 			DiscardHAR: retireReplayHARArtifacts,
 			OnProgress: func(event engine.ReplayProgressEvent) {
@@ -963,6 +963,7 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 	case engine.ReplayProgressEventRun:
 		var retainedEvent *engine.ReplayActionEvent
 		session.mu.Lock()
+		asyncEvent := event.Event != nil && event.Event.Phase == "async"
 		if event.Event != nil {
 			cloned := retainReplaySessionEvent(
 				&session.Events,
@@ -971,8 +972,10 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 				&session.DroppedEventCount,
 				*event.Event,
 			)
-			session.CurrentEventIndex = event.EventIndex
-			session.CurrentEvent = &cloned
+			if !asyncEvent {
+				session.CurrentEventIndex = event.EventIndex
+				session.CurrentEvent = &cloned
+			}
 			retainedEvent = &cloned
 			level := "info"
 			if !cloned.Success {
@@ -981,7 +984,7 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 			raw := formatDebugEventRawForLogLevel(session.LogLevel, cloned)
 			session.appendLogLocked(level, "action", debugActionResultMessage(cloned), raw, &cloned)
 		}
-		shouldPauseAfterStep := session.stepOnce && session.Status == ScriptDebugRunning
+		shouldPauseAfterStep := !asyncEvent && session.stepOnce && session.Status == ScriptDebugRunning
 		if shouldPauseAfterStep {
 			session.stepOnce = false
 			session.Status = ScriptDebugPaused
@@ -1897,7 +1900,8 @@ type scriptDebugController struct {
 
 // ObserveCorrelationEvidence implements
 // engine.ReplayDebugControllerCorrelationObserver. The callback runs before the
-// engine scrubs and clears the ephemeral event evidence. Only action-phase,
+// engine clears the private correlation evidence from the event. Other debugger
+// evidence may contain raw values. Only action-phase,
 // one-event-per-top-level-action observations are currently safe to pair with a
 // stored baseline. Container/loop duplicates and init/teardown evidence are
 // rejected for the whole session instead of producing a misleading diagnosis.
@@ -2053,8 +2057,8 @@ func (s *ScriptDebugSession) rejectCorrelationEvidenceLocked(reason string) {
 }
 
 // enforceCorrelationEvidenceBudgetsLocked clears only private raw evidence;
-// public debugger sessions, scrubbed events, and reports retain their normal
-// lifecycle. Oldest evidence is selected by first-retained time and then ID so
+// debugger sessions, events, and reports may contain raw values and retain their
+// normal lifecycle. Oldest evidence is selected by first-retained time and then ID so
 // eviction is deterministic even though sessions is a map. Callers must hold
 // m.mu (read suffices — sessions is only iterated, and per-session state is
 // mutated under each session mutex) plus correlationBudgetMu so only one

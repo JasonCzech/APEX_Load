@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -53,5 +54,22 @@ func TestBoundProtocolEvidenceDetachesAndBoundsCollections(t *testing.T) {
 	values, ok := boundedList["list"].([]any)
 	if !ok || len(values) > maxEvidenceCollection {
 		t.Fatalf("bounded list = %#v", boundedList["list"])
+	}
+}
+
+func TestBuildProtocolEvidenceReportsProducerOmissions(t *testing.T) {
+	responses := make([]string, 150)
+	for i := range responses {
+		responses[i] = fmt.Sprintf("response-%d", i)
+	}
+	payload, err := json.Marshal(map[string]any{"responses": responses})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := &Result{Success: true, DependencyType: "network_smtp", ResponseBody: string(payload)}
+	evidence := BuildProtocolEvidence(&Action{Type: "smtp_send"}, result)
+	transcript, _ := evidence["transcript"].([]any)
+	if len(transcript) != 128 || result.ProtocolEvidenceOmittedCount != 22 {
+		t.Fatalf("transcript=%d omitted=%d", len(transcript), result.ProtocolEvidenceOmittedCount)
 	}
 }

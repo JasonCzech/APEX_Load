@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,61 @@ type asyncPollProtocol struct {
 	marked   int
 	requests []string
 	rounds   []string
+}
+
+func TestAsyncDebugReportsExtractionAdmissionFailure(t *testing.T) {
+	const secret = "private-async-error"
+	for _, tc := range []struct {
+		name     string
+		success  bool
+		original string
+	}{
+		{name: "successful response", success: true},
+		{name: "failed response", original: "response failed: " + secret},
+		{name: "long failure", original: strings.Repeat("x", maxReplayErrorBytes) + secret},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &captureResultSink{}
+			report := &ReplayReport{}
+			vu := &VUser{
+				unredactedDebug:        true,
+				Script:                 &dsl.Script{},
+				Metrics:                NewMetricsCollector(8),
+				Variables:              map[string]string{},
+				extractedVariableBytes: maxVUserExtractionBytes,
+				RedactionConfig:        WithSecretValueRedaction(nil, []string{secret}),
+				ResultSink:             sink,
+			}
+			var observed *protocol.Result
+			vu.onAsyncResult = func(result *protocol.Result, debug *ReplayActionEvent) {
+				observed = result
+				appendReplayAsyncEvent(vu, report, result, debug)
+			}
+			conversation := &asyncConversation{id: "request", pattern: asyncOnce}
+			conversation.push(asyncItem{result: &protocol.Result{
+				ActionName: "request", Success: tc.success, ErrorMessage: tc.original,
+				Extractions: map[string]string{"id": "rejected"},
+			}})
+			if err := vu.applyAsyncResults(context.Background(), conversation); err != nil {
+				t.Fatal(err)
+			}
+			if observed == nil || observed.Success || observed.Extractions != nil || !strings.Contains(report.Events[0].ErrorMessage, "extraction retention failed") || len(report.Events[0].ErrorMessage) > maxReplayErrorBytes {
+				t.Fatalf("debug result did not preserve bounded admission failure: %#v", observed)
+			}
+			if tc.name == "failed response" && !strings.Contains(report.Events[0].ErrorMessage, secret) {
+				t.Fatalf("debug result lost original failure: %q", observed.ErrorMessage)
+			}
+			if len(report.Events) != 1 || report.Events[0].Success || report.Events[0].UnappliedExtractions["id"] != "rejected" {
+				t.Fatalf("async replay event = %#v", report.Events)
+			}
+			if sink.result == nil || sink.result.Success || strings.Contains(sink.result.ErrorMessage, secret) {
+				t.Fatalf("ordinary result sink leaked or lost failure: %#v", sink.result)
+			}
+			if _, found := vu.Variables["id"]; found {
+				t.Fatal("rejected extraction entered VUser variables")
+			}
+		})
+	}
 }
 
 func (p *asyncPollProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -523,5 +579,62 @@ func TestHTTPAsyncOnceRepeatsAndStopsCleanly(t *testing.T) {
 	}
 	if onRequests != 3 {
 		t.Fatalf("on_request ran %d times, want once per send", onRequests)
+	}
+}
+
+func TestAsyncReplayPublishesDebugExtractions(t *testing.T) {
+	const secret = "async-private-value"
+	const protocolName = "http-async-replay-debug-extractions"
+	protocol.Register(protocolName, func() protocol.Protocol { return &httpprotocol.HTTP{} })
+	for _, success := range []bool{false, true} {
+		for _, debug := range []bool{false, true} {
+			t.Run(fmt.Sprintf("success=%t/debug=%t", success, debug), func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					if !success {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+					fmt.Fprintf(w, `{"token":"%s"}`, secret)
+				}))
+				defer server.Close()
+				script := &dsl.Script{Name: "async debug", Protocol: protocolName, Config: dsl.ScriptConfig{BaseURL: server.URL}, Actions: []dsl.Action{
+					{Name: "start", Type: "http_async_start", Params: map[string]any{"id": "status-" + secret, "pattern": "long_poll", "request": map[string]any{"name": "status", "type": "request", "method": "GET", "target": "/", "extractors": []any{map[string]any{"name": "token", "type": "jsonpath", "source": "body", "expression": "$.token"}}}}},
+					{Name: "ready", Type: "http_sync", Params: map[string]any{"variable": "token", "value": secret, "timeout_ms": 5000}},
+					{Name: "stop", Type: "http_async_stop", Params: map[string]any{"id": "status-" + secret}},
+				}}
+				var progress *ReplayActionEvent
+				report, err := ReplayScript(context.Background(), script, ReplayOptions{UnredactedDebug: debug, IgnoreThinkTime: true, RedactionRules: []RedactionRule{{Pattern: secret}}, DebugController: replayDebugControllerFunc(func(context.Context, ReplayDebugAction) error { return nil }), OnProgress: func(p ReplayProgressEvent) {
+					if p.Type == ReplayProgressEventRun && p.Event != nil && p.Event.Phase == "async" {
+						progress = p.Event
+					}
+				}})
+				if err != nil || progress == nil {
+					t.Fatalf("report=%#v progress=%#v err=%v", report, progress, err)
+				}
+				var retained *ReplayActionEvent
+				for i := range report.Events {
+					if report.Events[i].Phase == "async" {
+						retained = &report.Events[i]
+						break
+					}
+				}
+				if retained == nil {
+					t.Fatalf("no async report event: %#v", report.Events)
+				}
+				for _, event := range []*ReplayActionEvent{retained, progress} {
+					data, err := json.Marshal(event)
+					var decoded ReplayActionEvent
+					if err != nil || json.Unmarshal(data, &decoded) != nil || decoded.Success != success || strings.Contains(string(data), secret) != debug {
+						t.Fatalf("debug=%t event=%s err=%v", debug, data, err)
+					}
+					if strings.Contains(decoded.ActionName, secret) != debug {
+						t.Fatalf("async name disclosure mismatch: %s", data)
+					}
+					if debug && (decoded.Extractions["token"] != secret || len(decoded.UnappliedExtractions) != 0) {
+						t.Fatalf("missing applied async extraction: %s", data)
+					}
+				}
+			})
+		}
 	}
 }

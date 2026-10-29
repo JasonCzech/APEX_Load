@@ -150,6 +150,7 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 	var (
 		err             error
 		evidencePayload map[string]any
+		evidenceOmitted int
 	)
 	switch actionType {
 	case "db_begin", "database_begin", "begin":
@@ -169,7 +170,7 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 		result.ResponseBody = `{"status":"ok"}`
 		evidencePayload = map[string]any{"status": "ok"}
 	case "db_query", "database_query", "query", "select":
-		result.ResponseBody, evidencePayload, err = d.query(actionCtx, action)
+		result.ResponseBody, evidencePayload, evidenceOmitted, err = d.query(actionCtx, action)
 	case "db_exec", "database_exec", "exec", "execute", "insert", "update", "delete", "db_procedure", "stored_procedure":
 		result.ResponseBody, evidencePayload, err = d.exec(actionCtx, action)
 	default:
@@ -217,6 +218,7 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 		evidenceResult.ResponseBody = ""
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, &evidenceResult)
+	result.ProtocolEvidenceOmittedCount = evidenceResult.ProtocolEvidenceOmittedCount + evidenceOmitted
 	return result, nil
 }
 
@@ -272,29 +274,29 @@ func (d *Database) rollback() error {
 	return err
 }
 
-func (d *Database) query(ctx context.Context, action *protocol.Action) (string, map[string]any, error) {
+func (d *Database) query(ctx context.Context, action *protocol.Action) (string, map[string]any, int, error) {
 	query := sqlText(action)
 	if query == "" {
-		return "", nil, errors.New("database query SQL is required")
+		return "", nil, 0, errors.New("database query SQL is required")
 	}
 	if err := d.validateStatement(query); err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
 	if d.readOnly {
 		if err := validateReadOnlySQL(query); err != nil {
-			return "", nil, err
+			return "", nil, 0, err
 		}
 	}
 	standaloneTx, err := d.beginStandaloneReadOnly(ctx)
 	if err != nil {
-		return "", nil, fmt.Errorf("begin driver read-only transaction: %w", err)
+		return "", nil, 0, fmt.Errorf("begin driver read-only transaction: %w", err)
 	}
 	if standaloneTx != nil {
 		defer standaloneTx.Rollback()
 	}
 	binds, err := boundedActionBinds(action)
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
 	var rows *sql.Rows
 	if standaloneTx != nil {
@@ -303,20 +305,20 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 		rows, err = d.queryContext(ctx, query, binds...)
 	}
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
 	if len(columns) > hardDatabaseMaxColumns {
-		return "", nil, fmt.Errorf("database result has %d columns, hard limit is %d", len(columns), hardDatabaseMaxColumns)
+		return "", nil, 0, fmt.Errorf("database result has %d columns, hard limit is %d", len(columns), hardDatabaseMaxColumns)
 	}
 	var retainedBytes int64
 	for _, column := range columns {
 		if len(column) > hardDatabaseColumnNameBytes {
-			return "", nil, fmt.Errorf("database column name exceeds %d bytes", hardDatabaseColumnNameBytes)
+			return "", nil, 0, fmt.Errorf("database column name exceeds %d bytes", hardDatabaseColumnNameBytes)
 		}
 		retainedBytes += int64(len(column))
 	}
@@ -340,16 +342,16 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 			break
 		}
 		if err := rows.Scan(scanTargets...); err != nil {
-			return "", nil, err
+			return "", nil, 0, err
 		}
 		item := make(map[string]any, len(columns))
 		for i, column := range columns {
 			normalized, retained, err := normalizeSQLValueBounded(values[i])
 			if err != nil {
-				return "", nil, fmt.Errorf("database column %q: %w", column, err)
+				return "", nil, 0, fmt.Errorf("database column %q: %w", column, err)
 			}
 			if retainedBytes > hardDatabaseRetainedValueBytes-retained {
-				return "", nil, fmt.Errorf("database result retained values exceed %d bytes", hardDatabaseRetainedValueBytes)
+				return "", nil, 0, fmt.Errorf("database result retained values exceed %d bytes", hardDatabaseRetainedValueBytes)
 			}
 			retainedBytes += retained
 			item[column] = normalized
@@ -357,7 +359,7 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 		outRows = append(outRows, item)
 	}
 	if err := rows.Err(); err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
 	payload := map[string]any{
 		"columns":   columns,
@@ -372,17 +374,18 @@ func (d *Database) query(ctx context.Context, action *protocol.Action) (string, 
 	}
 	body, err := encodeDatabasePayload(payload)
 	if err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
 	if err := rows.Close(); err != nil {
-		return "", nil, err
+		return "", nil, 0, err
 	}
 	if standaloneTx != nil {
 		if err := standaloneTx.Commit(); err != nil {
-			return "", nil, fmt.Errorf("commit driver read-only transaction: %w", err)
+			return "", nil, 0, fmt.Errorf("commit driver read-only transaction: %w", err)
 		}
 	}
-	return body, compactDatabaseQueryEvidence(columns, outRows), nil
+	evidence, omitted := compactDatabaseQueryEvidence(columns, outRows)
+	return body, evidence, omitted, nil
 }
 
 func (d *Database) exec(ctx context.Context, action *protocol.Action) (string, map[string]any, error) {
@@ -676,21 +679,30 @@ func encodeDatabasePayload(value map[string]any) (string, error) {
 	return string(data), nil
 }
 
-func compactDatabaseQueryEvidence(columns []string, rows []map[string]any) map[string]any {
+func compactDatabaseQueryEvidence(columns []string, rows []map[string]any) (map[string]any, int) {
 	evidence := map[string]any{"row_count": len(rows)}
 	columnLimit := min(len(columns), maxDatabaseEvidenceColumns)
+	omitted := len(columns) - columnLimit + max(0, len(rows)-1)
 	evidenceColumns := append([]string(nil), columns[:columnLimit]...)
 	evidence["columns"] = evidenceColumns
 	if len(rows) == 0 || columnLimit == 0 {
-		return evidence
+		return evidence, omitted
 	}
 	first := make(map[string]any, columnLimit)
 	for _, column := range evidenceColumns {
-		first[column] = compactDatabaseEvidenceValue(rows[0][column])
+		value := rows[0][column]
+		if text, ok := value.(string); ok && len(text) > maxDatabaseEvidenceValueBytes {
+			omitted++
+		}
+		first[column] = compactDatabaseEvidenceValue(value)
 	}
 	evidence["first_row"] = first
-	evidence["scalar"] = compactDatabaseEvidenceValue(rows[0][columns[0]])
-	return evidence
+	scalar := rows[0][columns[0]]
+	if text, ok := scalar.(string); ok && len(text) > maxDatabaseEvidenceValueBytes {
+		omitted++
+	}
+	evidence["scalar"] = compactDatabaseEvidenceValue(scalar)
+	return evidence, omitted
 }
 
 func compactDatabaseEvidenceValue(value any) any {

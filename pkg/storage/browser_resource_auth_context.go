@@ -15,6 +15,16 @@ import (
 // They do not introduce an alternative role or credential policy.
 const maxBrowserResourceAuthBindings = 4096
 
+// HasUsersContext supports bounded authentication bootstrap checks without
+// loading user records or waiting indefinitely for a database connection.
+func (s *SQLiteStore) HasUsersContext(ctx context.Context) (bool, error) {
+	var exists any
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users)`).Scan(&exists); err != nil {
+		return false, err
+	}
+	return sqlBool(exists), nil
+}
+
 func (s *SQLiteStore) GetUserBySubjectContext(ctx context.Context, subject string) (*User, error) {
 	user, err := scanUser(s.db.QueryRowContext(ctx, userSelectColumns()+` FROM users WHERE subject = ?`, strings.TrimSpace(subject)))
 	if err != nil {

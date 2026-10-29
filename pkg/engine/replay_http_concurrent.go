@@ -19,8 +19,10 @@ func runReplayConcurrentHTTP(ctx context.Context, vu *VUser, action dsl.Action, 
 	boundary.IterationPath = append([]int(nil), iterationPath...)
 	runtimeLocation := *cloneReplayDebugAction(boundary)
 	defer vu.enterReplayRuntimeEvent(boundary.EventID)()
-	scrubReplayDebugAction(&boundary, vu.RedactionConfig)
-	if vu.runtimeCredentialRedactionErr != nil {
+	if !vu.unredactedDebug {
+		scrubReplayDebugAction(&boundary, vu.RedactionConfig)
+	}
+	if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
 		omitUnredactableReplayDebugAction(&boundary)
 	}
 	if debugger != nil {
@@ -37,7 +39,7 @@ func runReplayConcurrentHTTP(ctx context.Context, vu *VUser, action dsl.Action, 
 		failure = groupErr.Error()
 		report.Success = false
 		if report.Error == "" {
-			report.Error = scrubSensitiveTextWithConfig(failure, vu.RedactionConfig)
+			report.Error = vu.replayPublicationError(groupErr)
 		}
 	}
 	if len(group.children) == 0 {
@@ -67,14 +69,16 @@ func runReplayConcurrentHTTP(ctx context.Context, vu *VUser, action dsl.Action, 
 		}
 		aborted = aborted || abort
 	}
-	aggregate := ReplayActionEvent{EventID: boundary.EventID, Phase: phase, ActionIndex: actionIndex, EventIndex: boundary.EventIndex, ActionName: action.Name, ActionType: action.Type, StartedAt: group.started, CompletedAt: group.completed, DurationMs: float64(group.completed.Sub(group.started).Microseconds()) / 1000, Success: success, ErrorMessage: scrubSensitiveTextWithConfig(failure, vu.RedactionConfig)}
+	aggregate := ReplayActionEvent{EventID: boundary.EventID, Phase: phase, ActionIndex: actionIndex, EventIndex: boundary.EventIndex, ActionName: action.Name, ActionType: action.Type, StartedAt: group.started, CompletedAt: group.completed, DurationMs: float64(group.completed.Sub(group.started).Microseconds()) / 1000, Success: success, ErrorMessage: failure}
 	// BeforeAction precedes observation. The post-join debugger receipt must
 	// use the current publication knowledge, even for an authored group label.
-	boundary.ActionName = scrubSensitiveTextWithConfig(boundary.ActionName, vu.resultPublicationRedactionConfig())
-	scrubReplayDebugAction(&boundary, vu.resultPublicationRedactionConfig())
-	aggregate.ActionName = scrubSensitiveTextWithConfig(aggregate.ActionName, vu.resultPublicationRedactionConfig())
-	scrubReplayActionEvent(&aggregate, vu.resultPublicationRedactionConfig())
-	if vu.resultPublicationUnavailable() {
+	if !vu.unredactedDebug {
+		boundary.ActionName = scrubSensitiveTextWithConfig(boundary.ActionName, vu.resultPublicationRedactionConfig())
+		scrubReplayDebugAction(&boundary, vu.resultPublicationRedactionConfig())
+		aggregate.ActionName = scrubSensitiveTextWithConfig(aggregate.ActionName, vu.resultPublicationRedactionConfig())
+		scrubReplayActionEvent(&aggregate, vu.resultPublicationRedactionConfig())
+	}
+	if !vu.unredactedDebug && vu.resultPublicationUnavailable() {
 		omitUnredactableReplayDebugAction(&boundary)
 		omitUnredactableReplayActionEvent(&aggregate)
 	}
