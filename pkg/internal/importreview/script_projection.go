@@ -2056,7 +2056,8 @@ func ReconcileProjectedJSONWithOptions(
 		if containsMaskedSecret &&
 			(!projectedOK || !reflect.DeepEqual(typed, projectedSlice)) {
 			stableFieldEdit := IsStableRuntimeDataSourceEdit(path, typed, projectedSlice) ||
-				IsStableCredentialPreservingActionCollectionEdit(path, typed, projectedSlice)
+				IsStableCredentialPreservingActionCollectionEdit(path, typed, projectedSlice) ||
+				IsStableJavaVMParameterEdit(path, typed, projectedSlice)
 			if !stableFieldEdit {
 				for i, child := range typed {
 					incomingMap, incomingOK := child.(map[string]any)
@@ -2486,6 +2487,35 @@ func IsStableRuntimeDataSourceEdit(path string, incoming, projected []any) bool 
 			return false
 		}
 		seen[incomingName] = struct{}{}
+	}
+	return true
+}
+
+// IsStableJavaVMParameterEdit reports whether an edited Java VM argument list
+// keeps every masked argument at the index it was projected at. Adding,
+// removing or changing a non-sensitive argument can then be reconciled
+// positionally; moving, deleting or adding a masked argument still fails
+// closed because a sentinel could be restored into a different system property.
+func IsStableJavaVMParameterEdit(path string, incoming, projected []any) bool {
+	if path != "script.config.java_vuser.additional_vm_parameters" {
+		return false
+	}
+	isMasked := func(values []any, index int) bool {
+		if index >= len(values) {
+			return false
+		}
+		text, _ := values[index].(string)
+		return text == MaskedScriptSecret
+	}
+	for index := range projected {
+		if isMasked(projected, index) != isMasked(incoming, index) {
+			return false
+		}
+	}
+	for index := len(projected); index < len(incoming); index++ {
+		if isMasked(incoming, index) {
+			return false
+		}
 	}
 	return true
 }
