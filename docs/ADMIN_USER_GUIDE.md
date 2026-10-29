@@ -415,6 +415,24 @@ Imports create missing logical names only. They never replace an existing
 Project Secret. Literal `[REDACTED]` values are unrecoverable and remain
 deferred for later configuration.
 
+### Imported script proxy and TLS policy
+
+An imported script keeps the credentials from its source. Editors see them
+masked and cannot read them, but every run still sends them. To stop an editor
+from capturing a credential they cannot read, the proxy mode, proxy and TLS
+settings of such a script are locked once it is saved: a save that changes them
+is refused with "script changes the execution context for retained imported
+credentials". Choosing **No Proxy** and tuning timeouts or keep-alive are always
+allowed, because they cannot redirect a credential.
+
+`system_settings.script_imports.allow_retained_credential_transport_edits`
+(Settings > Governance > Script imports) lifts that lock for the proxy mode,
+proxy URL and TLS settings. It defaults to `false` and only a system
+administrator can change it; changes are written to the audit log. Enable it
+only where every editor is already trusted with the imported credentials, such
+as a test environment. It does not unlock request targets, default headers or
+authentication, and a new credential must still be bound as a runtime secret.
+
 ### Distributed execution
 
 The controller resolves only the logical names referenced by the selected

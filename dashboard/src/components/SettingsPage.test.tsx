@@ -1024,7 +1024,36 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
-      script_imports: { allow_source_secret_migration: true },
+      script_imports: { allow_source_secret_migration: true, allow_retained_credential_transport_edits: false },
+    }))
+  })
+
+  it('keeps proxy and TLS edits on imported scripts default-off and saves an explicit system-admin opt-in', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+    await selectGeneralSubnav(generalSection, 'Governance')
+    await selectSettingsSubnav(generalSection, 'Script imports')
+
+    const policyInput = findSettingInput(generalSection, 'Allow proxy and TLS edits on imported scripts')
+    expect(policyInput?.checked).toBe(false)
+    expect(policyInput?.disabled).toBe(false)
+    await act(async () => policyInput?.click())
+
+    const saveButton = findButton('Save pending settings')
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => saveButton?.click())
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      script_imports: { allow_source_secret_migration: false, allow_retained_credential_transport_edits: true },
     }))
   })
 
@@ -2762,7 +2791,7 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(generalSection, 'Script imports')
     const migrationPolicyInput = findSettingInput(generalSection, 'Allow source secret migration')
     expect(migrationPolicyInput?.disabled).toBe(true)
-    expect(generalSection.textContent).toContain('Only a system administrator can change source-secret migration policy.')
+    expect(generalSection.textContent).toContain('Only a system administrator can change script import policy.')
 
     await selectSettingsSubnav(generalSection, 'Service account APIs')
     expect(generalSection.textContent).toContain('Access & API Keys')

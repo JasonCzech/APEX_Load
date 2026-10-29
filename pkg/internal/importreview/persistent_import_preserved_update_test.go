@@ -398,3 +398,90 @@ func TestValidatePreservedImportCredentialEditsIgnoresUnsentStepReviewCodes(t *t
 		}
 	})
 }
+
+// A kept credential is sent over the script's HTTP transport. Choosing No Proxy
+// and tuning timeouts or keep-alive change neither the host the request names
+// nor how the credential is delivered, so they save. Routing the credential
+// through another proxy, or weakening TLS, still pins the request context.
+func TestValidatePreservedImportCredentialEditsAllowsDirectProxyAndHTTPTuning(t *testing.T) {
+	prior := sourceReviewCredentialScript()
+	prior.Config.HTTP.ProxyMode = "custom"
+	prior.Config.HTTP.Proxy.URL = "http://proxy.example.test:8888"
+	keepAlive := true
+	prior.Config.HTTP.KeepAlive = &keepAlive
+	prior.Config.HTTP.RequestTimeoutMs = 60000
+
+	accepted := map[string]func(*dsl.Script){
+		"No Proxy": func(script *dsl.Script) { script.Config.HTTP.ProxyMode = "none" },
+		"No Proxy with the proxy cleared": func(script *dsl.Script) {
+			script.Config.HTTP.ProxyMode = "none"
+			script.Config.HTTP.Proxy.URL = ""
+		},
+		"keep-alive": func(script *dsl.Script) {
+			off := false
+			script.Config.HTTP.KeepAlive = &off
+		},
+		"request timeout": func(script *dsl.Script) { script.Config.HTTP.RequestTimeoutMs = 1234 },
+	}
+	for name, edit := range accepted {
+		t.Run("accepts "+name, func(t *testing.T) {
+			candidate := CloneScriptDefinition(prior)
+			edit(candidate)
+			if err := ValidatePreservedImportCredentialEdits(candidate, prior); err != nil {
+				t.Fatalf("%v, want the edit accepted", err)
+			}
+		})
+	}
+
+	refused := map[string]func(*dsl.Script){
+		"another proxy": func(script *dsl.Script) { script.Config.HTTP.Proxy.URL = "http://other.example.test:8888" },
+		"system proxy":  func(script *dsl.Script) { script.Config.HTTP.ProxyMode = "system" },
+		"TLS verification": func(script *dsl.Script) {
+			script.Config.HTTP.TLS.InsecureSkipVerify = true
+		},
+	}
+	for name, edit := range refused {
+		t.Run("refuses "+name, func(t *testing.T) {
+			candidate := CloneScriptDefinition(prior)
+			edit(candidate)
+			err := ValidatePreservedImportCredentialEdits(candidate, prior)
+			if err == nil || !strings.Contains(err.Error(), "retained imported credentials") {
+				t.Fatalf("%v, want the context refusal", err)
+			}
+		})
+	}
+}
+
+// With the system-admin policy on, proxy and TLS settings of a script that
+// keeps credentials may change; the kept credential's request still cannot.
+func TestValidatePreservedImportCredentialEditsHonorsTransportRoutePolicy(t *testing.T) {
+	prior := sourceReviewCredentialScript()
+	allow := PreservedImportEditOptions{AllowTransportRouteEdits: true}
+
+	for name, edit := range map[string]func(*dsl.Script){
+		"custom proxy": func(script *dsl.Script) {
+			script.Config.HTTP.ProxyMode = "custom"
+			script.Config.HTTP.Proxy.URL = "http://proxy.example.test:8888"
+		},
+		"system proxy": func(script *dsl.Script) { script.Config.HTTP.ProxyMode = "system" },
+		"TLS":          func(script *dsl.Script) { script.Config.HTTP.TLS.InsecureSkipVerify = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := CloneScriptDefinition(prior)
+			edit(candidate)
+			if err := ValidatePreservedImportCredentialEdits(candidate, prior); err == nil {
+				t.Fatal("default policy accepted the transport route edit")
+			}
+			if err := ValidatePreservedImportCredentialEditsWithOptions(candidate, prior, allow); err != nil {
+				t.Fatalf("admin policy refused the edit: %v", err)
+			}
+		})
+	}
+
+	moved := CloneScriptDefinition(prior)
+	moved.Actions[0].Target = "https://other.example.test/orders"
+	if err := ValidatePreservedImportCredentialEditsWithOptions(moved, prior, allow); err == nil ||
+		!strings.Contains(err.Error(), "retained imported credentials") {
+		t.Fatalf("%v, want the kept credential's request still pinned", err)
+	}
+}

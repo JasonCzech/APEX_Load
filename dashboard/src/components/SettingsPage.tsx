@@ -31,7 +31,7 @@ import { useProject } from '../hooks/useProject'
 import type { DeleteEntityResponse } from '../hooks/api/useProjectApi'
 import type { ProjectMutation } from '../hooks/projectContext'
 import { useApi } from '../hooks/useApi'
-import { Application, ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, Release, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { Application, ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardScriptImportSettings, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, Release, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { readStoredString, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -1397,12 +1397,12 @@ export default function SettingsPage({
     setRequestError('')
   }
 
-  const updateScriptImports = (allowSourceSecretMigration: boolean) => {
+  const updateScriptImports = (patch: Partial<DashboardScriptImportSettings>) => {
     setSettings(prev => ({
       ...prev,
       script_imports: {
         ...prev.script_imports,
-        allow_source_secret_migration: allowSourceSecretMigration,
+        ...patch,
       },
     }))
     setSaveMessage('')
@@ -3770,13 +3770,30 @@ export default function SettingsPage({
                             type="checkbox"
                             checked={settings.script_imports.allow_source_secret_migration}
                             disabled={formDisabled}
-                            onChange={event => updateScriptImports(event.target.checked)}
+                            onChange={event => updateScriptImports({ allow_source_secret_migration: event.target.checked })}
                           />
                           <span>{settings.script_imports.allow_source_secret_migration ? 'Allowed' : 'Blocked'}</span>
                         </label>
                       </div>
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">Allow proxy and TLS edits on imported scripts</span>
+                          <span className="setting-desc">
+                            Default off. An imported script keeps its source credentials, which editors cannot read, so its proxy and TLS settings are locked: a proxy an editor controls could capture them. Turn this on only where every editor is trusted with those credentials, such as a test environment. Choosing No Proxy is always allowed, and new credentials must still be bound as runtime secrets.
+                          </span>
+                        </div>
+                        <label className="settings-checkbox-label">
+                          <input aria-label="Allow proxy and TLS edits on imported scripts"
+                            type="checkbox"
+                            checked={settings.script_imports.allow_retained_credential_transport_edits}
+                            disabled={formDisabled}
+                            onChange={event => updateScriptImports({ allow_retained_credential_transport_edits: event.target.checked })}
+                          />
+                          <span>{settings.script_imports.allow_retained_credential_transport_edits ? 'Allowed' : 'Blocked'}</span>
+                        </label>
+                      </div>
                       {!canManageSystem && (
-                        <p className="settings-notice">Only a system administrator can change source-secret migration policy.</p>
+                        <p className="settings-notice">Only a system administrator can change script import policy.</p>
                       )}
                     </div>
                   </div>

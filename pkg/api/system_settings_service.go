@@ -198,7 +198,7 @@ func (s *testRunnerSystemSettingsService) Update(requested SystemSettings, rawBo
 	result := systemSettingsUpdateResult{systemSettingsUpdatePlan: systemSettingsUpdatePlan{
 		Previous:                       current,
 		Candidate:                      candidate,
-		PolicyChanged:                  current.ScriptImports.AllowSourceSecretMigration != candidate.ScriptImports.AllowSourceSecretMigration,
+		PolicyChanged:                  current.ScriptImports != candidate.ScriptImports,
 		NotificationCredentialsChanged: systemSettingsNotificationCredentialsChanged(current.Notifications, candidate.Notifications),
 		PreviousCredentialCount:        previousCredentialCount,
 		CandidateCredentialCount:       candidateCredentialCount,

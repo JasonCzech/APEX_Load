@@ -9,6 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/contentcontract"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -104,7 +105,25 @@ func CloneImportSecurityMetadata(value any) (any, error) {
 	return cloned, nil
 }
 
+// PreservedImportEditOptions carries system-admin policy into the retained
+// credential checks.
+type PreservedImportEditOptions struct {
+	// AllowTransportRouteEdits lets an author change the proxy and TLS
+	// settings of a script that keeps imported credentials. By default those
+	// settings pin the context a retained credential is sent in, because an
+	// editor who cannot read the credential could otherwise route it through a
+	// proxy they control. A new credential must still be a runtime secret.
+	AllowTransportRouteEdits bool
+}
+
 func ValidatePreservedImportCredentialEdits(candidate, prior *dsl.Script) error {
+	return ValidatePreservedImportCredentialEditsWithOptions(candidate, prior, PreservedImportEditOptions{})
+}
+
+func ValidatePreservedImportCredentialEditsWithOptions(
+	candidate, prior *dsl.Script,
+	options PreservedImportEditOptions,
+) error {
 	if candidate == nil || prior == nil {
 		return fmt.Errorf("credential-preserving update requires a durable prior script")
 	}
@@ -147,11 +166,12 @@ func ValidatePreservedImportCredentialEdits(candidate, prior *dsl.Script) error 
 	if HasNewProjectedCredential(rawCandidate, safeCandidate, rawPrior, safePrior) {
 		return fmt.Errorf("script introduces new executable credentials; bind a runtime secret or run the source import again")
 	}
-	if context, changed := RetainedImportCredentialContextChange(
+	if context, changed := retainedImportCredentialContextChange(
 		rawCandidate,
 		safeCandidate,
 		rawPrior,
 		safePrior,
+		options,
 	); changed {
 		return fmt.Errorf(
 			"script changes the execution context for retained imported credentials at %s; bind a runtime secret or run the source import again",
@@ -338,6 +358,22 @@ func RetainedImportCredentialContextChange(
 	prior,
 	projectedPrior any,
 ) (string, bool) {
+	return retainedImportCredentialContextChange(
+		candidate,
+		projectedCandidate,
+		prior,
+		projectedPrior,
+		PreservedImportEditOptions{},
+	)
+}
+
+func retainedImportCredentialContextChange(
+	candidate,
+	projectedCandidate,
+	prior,
+	projectedPrior any,
+	options PreservedImportEditOptions,
+) (string, bool) {
 	candidateMap, candidateOK := projectedCandidate.(map[string]any)
 	priorMap, priorOK := projectedPrior.(map[string]any)
 	if !candidateOK || !priorOK {
@@ -347,6 +383,16 @@ func RetainedImportCredentialContextChange(
 	priorActions, priorOrder := ImportActionContexts(priorMap)
 	candidateTransport := ImportTransportContext(candidateMap)
 	priorTransport := ImportTransportContext(priorMap)
+	if options.AllowTransportRouteEdits {
+		withoutHTTPRoute(candidateTransport, "proxymode", "proxy", "tls")
+		withoutHTTPRoute(priorTransport, "proxymode", "proxy", "tls")
+	} else if directProxyMode(candidateTransport) {
+		// Choosing No Proxy sends a retained credential straight to the host
+		// its request already names, so it narrows the route rather than
+		// redirecting it. Any other proxy change still pins the context.
+		withoutHTTPRoute(candidateTransport, "proxymode", "proxy")
+		withoutHTTPRoute(priorTransport, "proxymode", "proxy")
+	}
 	candidateGlobal := ImportGlobalCredentialContext(
 		candidateMap,
 		candidateTransport,
@@ -473,12 +519,76 @@ func ImportTransportContext(script map[string]any) map[string]any {
 		switch NormalizeScriptFieldName(key) {
 		case "thinktime", "pacing", "errorhandling", "runlogic", "observability", "log", "results":
 			continue
+		case "http":
+			transport[key] = withoutHTTPTuning(value)
 		default:
 			transport[key] = value
 		}
 	}
 	context["config"] = transport
 	return context
+}
+
+// httpTuningFields are HTTP settings that size buffers, timeouts and
+// connection reuse. They change neither where nor how a retained credential
+// is delivered, so editing them must not pin the request context.
+var httpTuningFields = map[string]struct{}{
+	"receivebufferbytes":       {},
+	"maxmetarefresh":           {},
+	"contentcheckerrorlimit":   {},
+	"pagetimeoutms":            {},
+	"challengedelayms":         {},
+	"cachemaxunusediterations": {},
+	"keepalive":                {},
+	"maxconnsperhost":          {},
+	"maxidleconns":             {},
+	"connecttimeoutms":         {},
+	"requesttimeoutms":         {},
+	"tlstimeoutms":             {},
+	"idletimeoutms":            {},
+}
+
+func withoutHTTPTuning(value any) any {
+	http, _ := value.(map[string]any)
+	if http == nil {
+		return value
+	}
+	kept := make(map[string]any, len(http))
+	for key, child := range http {
+		if _, tuning := httpTuningFields[NormalizeScriptFieldName(key)]; tuning {
+			continue
+		}
+		kept[key] = child
+	}
+	return kept
+}
+
+func transportHTTP(transport map[string]any) map[string]any {
+	config, _ := transport["config"].(map[string]any)
+	for key, value := range config {
+		if NormalizeScriptFieldName(key) == "http" {
+			http, _ := value.(map[string]any)
+			return http
+		}
+	}
+	return nil
+}
+
+func directProxyMode(transport map[string]any) bool {
+	mode, _ := transportHTTP(transport)["proxy_mode"].(string)
+	return strings.EqualFold(strings.TrimSpace(mode), "none")
+}
+
+// withoutHTTPRoute drops the named (normalized) HTTP fields from a transport
+// context. The http map is a fresh copy (withoutHTTPTuning), so this never
+// alters the projected script.
+func withoutHTTPRoute(transport map[string]any, fields ...string) {
+	http := transportHTTP(transport)
+	for key := range http {
+		if slices.Contains(fields, NormalizeScriptFieldName(key)) {
+			delete(http, key)
+		}
+	}
 }
 
 func ImportGlobalCredentialContext(
