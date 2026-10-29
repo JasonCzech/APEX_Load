@@ -1016,6 +1016,44 @@ describe('BrunoImport', () => {
     expect(findingPagination.textContent).toContain('Showing findings 101–200 of 10000. Page 2 of 100.')
   })
 
+  it('shows the inspection on the source card while the collection is inspected, with its files in view', async () => {
+    const files = [
+      new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' }),
+      new File(['x: 1'], 'Login.yml', { type: 'application/yaml' }),
+    ]
+    let resolveInspect!: (value: unknown) => void
+    apiMock.inspectBrunoImport.mockImplementationOnce(() => new Promise(resolve => { resolveInspect = resolve }))
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={files} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    // The source card is the one a collection is dropped on, in the browser too.
+    const card = () => container.querySelector<HTMLElement>('.bruno-card.drop-ingest-host')!
+    const status = () => card().querySelector('[data-testid="drop-ingest-overlay"]')?.textContent ?? ''
+    expect(card().querySelector('h3')?.textContent).toBe('1. Source bundle')
+    expect(card().className).not.toContain('is-working')
+    expect(status()).toBe('')
+
+    const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect & review'))!
+    await act(async () => {
+      inspect.click()
+      await Promise.resolve()
+    })
+    expect(card().className).toContain('is-working')
+    expect(status()).toBe('Inspecting 2 files…')
+    expect(container.querySelector('.drop-ingest-live')?.textContent).toBe('Inspecting 2 files…')
+    expect(card().querySelector('.bruno-file-list')?.textContent).toContain('opencollection.yml')
+
+    await act(async () => {
+      resolveInspect(nativeInspectionFixture())
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(card().className).not.toContain('is-working')
+    expect(status()).toBe('')
+  })
+
   it('defaults to native conversion for OpenCollection YAML and saves an acknowledged per-request batch', async () => {
     const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
     const onImported = vi.fn()

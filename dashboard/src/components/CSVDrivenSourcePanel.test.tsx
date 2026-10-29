@@ -177,6 +177,62 @@ describe('CSVDrivenSourcePanel', () => {
     container.remove()
   })
 
+  it('shows the file being read in the drop zone while it is inspected and analyzed, but not while the preview is built', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<CSVDrivenSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+    const zoneStatus = () => container.querySelector('.import-dropzone [data-testid="drop-ingest-overlay"]')?.textContent ?? ''
+    const zoneIsWorking = () => container.querySelector('.import-dropzone')?.className.includes('is-working')
+    const button = (label: string) => Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === label)
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['elapsed,checkout\n0,10\n5,20'], 'schedule.csv', { type: 'text/csv' })] })
+    await act(async () => { fileInput.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(zoneStatus()).toBe('')
+
+    // First look at the file: the button says Inspecting…, and so does the zone.
+    let finishInspection!: () => void
+    apiMock.analyzeCSVDriven.mockReset().mockImplementationOnce(() => new Promise(resolve => { finishInspection = () => resolve(inspection) }))
+    await act(async () => { button('Inspect columns')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(zoneIsWorking()).toBe(true)
+    expect(zoneStatus()).toBe('Inspecting schedule.csv…')
+    await act(async () => { finishInspection() })
+    expect(zoneIsWorking()).toBe(false)
+    expect(zoneStatus()).toBe('')
+
+    const selects = Array.from(container.querySelectorAll('select'))
+    const named = (label: string) => selects.find(select => select.parentElement?.querySelector('span')?.textContent === label) as HTMLSelectElement
+    await act(async () => {
+      setSelect(named('Time column'), 'elapsed')
+      setSelect(named('Time values'), 'relative')
+      Array.from(named('Target columns').options).forEach(option => { option.selected = option.value === 'checkout' })
+      named('Target columns').dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    // Analyzing again uploads the file again.
+    let finishAnalysis!: () => void
+    apiMock.analyzeCSVDriven.mockImplementationOnce(() => new Promise(resolve => { finishAnalysis = () => resolve(analysis) }))
+    await act(async () => { button('Analyze schedule')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(zoneStatus()).toBe('Analyzing schedule.csv…')
+    await act(async () => { finishAnalysis() })
+    expect(zoneStatus()).toBe('')
+
+    // Building the preview works from that analysis and never reads the file, so
+    // the panel is busy but the zone is not.
+    await act(async () => setSelect(container.querySelector('[aria-label="Map checkout"]') as HTMLSelectElement, 'Checkout'))
+    let finishDerive!: () => void
+    apiMock.deriveCSVDriven.mockReset().mockImplementationOnce(() => new Promise(resolve => { finishDerive = () => resolve(derived) }))
+    await act(async () => { button('Build exact schedule preview')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(button('Building…')).toBeTruthy()
+    expect(zoneIsWorking()).toBe(false)
+    expect(zoneStatus()).toBe('')
+    await act(async () => { finishDerive() })
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
   it('infers relative time from sampled values and says why Analyze is unavailable', async () => {
     apiMock.analyzeCSVDriven.mockReset().mockResolvedValueOnce({ ...inspection, sheets: [{ name: 'CSV', columns: ['time', 'orders'], samples: [['0s', '10'], ['60s', '20']] }] })
     const container = document.createElement('div')

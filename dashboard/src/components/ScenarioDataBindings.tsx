@@ -4,6 +4,7 @@ import type { ScenarioDataPoolBinding, SharedDataPool, SharedDataPoolRow, Stored
 import type { DataPoolImportResult } from '../hooks/api/useScriptApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
+import { describeWorking } from './dropIngestFeedback'
 import { DATA_TABLE_CHOICES, aliasForPool, bindingColumns, bindingForNeed, dataBindingMismatches, dataPoolColumnNames, dataTableChoice, isUntouchedDataBinding, scenarioDataNeeds, scenarioDataRequirements, tableChoicePatch, touchedDataBindingErrors, type ScenarioDataNeed } from './scenarioDataBindingModel'
 import { useDslActionCatalog } from './dslActionCatalog'
 import { useProjectLiveTables } from './useProjectLiveTables'
@@ -25,6 +26,8 @@ function PoolPreview({ binding, required, canManage, canEditPool, poolColumns, p
   const [file, setFile] = useState<File | null>(null)
   const [inspection, setInspection] = useState<DataPoolImportResult | null>(null)
   const [busy, setBusy] = useState(false)
+  // What the dropzone says while the CSV is being previewed or imported.
+  const [workingLabel, setWorkingLabel] = useState('')
   const [revision, setRevision] = useState(0)
   const [notice, setNotice] = useState('')
   const mounted = useRef(true)
@@ -41,14 +44,14 @@ function PoolPreview({ binding, required, canManage, canEditPool, poolColumns, p
   }, [api, binding.pool_id, open, revision])
   const importRows = async (dryRun: boolean) => {
     if (!file || busy || !canManage) return
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true); setWorkingLabel(describeWorking(dryRun ? 'Previewing' : 'Importing', file.name)); setError(''); setNotice('')
     try {
       const result = await api.importDataPoolRows(binding.pool_id, file, { mode: 'append', delimiter: 'auto', header: true, dryRun })
       if (!mounted.current) return
       if (dryRun) setInspection(result)
       else { setInspection(null); setFile(null); setRevision(value => value + 1); setNotice(`Imported ${result.imported ?? result.row_count ?? 0} rows.`) }
     } catch (cause) { if (mounted.current) setError(`${getErrorMessage(cause, 'Unable to import rows.')} After a network error, check the pool rows before retrying to avoid duplicate imports.`) }
-    finally { if (mounted.current) setBusy(false) }
+    finally { if (mounted.current) { setBusy(false); setWorkingLabel('') } }
   }
   const columns = [...new Set([...required, ...orderedGridColumns(poolColumns, rows.map(row => row.data))])]
   return <details onToggle={event => setOpen(event.currentTarget.open)}><summary>Preview rows and import CSV</summary>
@@ -65,7 +68,7 @@ function PoolPreview({ binding, required, canManage, canEditPool, poolColumns, p
         onPoolChanged?.()
       }} />}
       <fieldset disabled={busy || !canManage}><legend>Append rows from CSV</legend>{!canManage && <p>Importing rows requires data-pool management permission.</p>}<p>Use a header row with column names. Preview the import before adding rows to the shared pool.</p>
-        <ImportDropzone dropHint="Drop a CSV with a header row" accept=".csv,.tsv" file={file} onFile={next => { setFile(next); setInspection(null); setNotice('') }} onError={setError} disabled={busy} />
+        <ImportDropzone dropHint="Drop a CSV with a header row" accept=".csv,.tsv" file={file} onFile={next => { setFile(next); setInspection(null); setNotice('') }} onError={setError} disabled={busy} workingLabel={workingLabel} />
         {file && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void importRows(true)}>Preview CSV import</button>}
         {inspection && <><p>{inspection.row_count ?? 0} rows · Columns: {inspection.columns.join(', ')}</p>
           {inspection.warnings?.map(warning => <p key={warning}>{warning}</p>)}

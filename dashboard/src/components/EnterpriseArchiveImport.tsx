@@ -21,7 +21,7 @@ import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript }
 import { type JavaClasspathAsset, type ReplayPreflight, type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
 import DropIngestOverlay from './DropIngestOverlay'
-import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
+import { describeAccepted, describeReading, describeWorking, useDropIngestFeedback } from './dropIngestFeedback'
 import { readDroppedImportSources } from './droppedImportSources'
 import ImportCoverageButton from './ImportCoverageButton'
 import { JAVA_SCRIPT_CLASSES_ENTRY, JavaClasspathResolver } from './JavaClasspathResolver'
@@ -567,6 +567,21 @@ function enterpriseArchiveImportStatusIsRunning(status: EnterpriseArchiveImportQ
   return status === 'validating' || status === 'converting'
 }
 
+// What the drop zone says while a batch runs. The queue is the zone's content, so
+// it names the archive being worked on, or how many are. Like the buttons that
+// start a batch, it falls back to the whole queue until the rows report running.
+function enterpriseArchiveWorkingLabel(mode: 'convert' | 'validate' | null, items: readonly EnterpriseArchiveImportQueueItem[]): string | undefined {
+  if (!mode) return undefined
+  const running = items.filter(item => enterpriseArchiveImportStatusIsRunning(item.status))
+  const targets = running.length > 0 ? running : items
+  if (targets.length === 0) return undefined
+  const subject = targets.length === 1
+    ? targets[0].file.name
+    : countLabel(targets.length, items.some(item => item.folderFiles) ? 'source' : 'archive')
+  // Converting is also where drafts are saved; say what its buttons say.
+  return describeWorking(mode === 'validate' ? 'Validating' : 'Converting and saving', subject)
+}
+
 function nextRequestToken(tokens: Map<string, number>, key: string): number {
   const next = (tokens.get(key) || 0) + 1
   tokens.set(key, next)
@@ -1075,10 +1090,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const classpathUploadInFlightRef = useRef<object | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [showSalesforceOptions, setShowSalesforceOptions] = useState(false)
+  const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   // Destructured for stable callback identity — the native drop handler is a
   // useDesktopFileDrop dependency and must not change every render.
-  const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
-  const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
+  const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback({
+    workingLabel: enterpriseArchiveWorkingLabel(workingMode, importItems),
+  })
   // An archive to convert again after the editor saved one of its validated
   // drafts, and the archive whose remaining drafts are being converted again
   // (nothing is saved meanwhile).

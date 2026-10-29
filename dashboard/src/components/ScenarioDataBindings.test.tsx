@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StoredScript, ScenarioDataPoolBinding } from '../types'
 import ScenarioDataBindings from './ScenarioDataBindings'
 
-const { api, sharedAssets } = vi.hoisted(() => ({ api: { getScript: vi.fn(), getDataPool: vi.fn() }, sharedAssets: { props: null as null | Record<string, unknown> } }))
+const { api, sharedAssets } = vi.hoisted(() => ({ api: { getScript: vi.fn(), getDataPool: vi.fn(), importDataPoolRows: vi.fn() }, sharedAssets: { props: null as null | Record<string, unknown> } }))
 vi.mock('../hooks/useApi', () => ({ useApi: () => api }))
 // Shared assets opens over the builder; its own behaviour is SharedAssetsDialog's test.
 vi.mock('./SharedAssetsDialog', () => ({ default: (props: { onClose: () => void }) => { sharedAssets.props = props; return <button type="button" onClick={props.onClose}>Close Shared assets</button> } }))
@@ -29,6 +29,7 @@ describe('ScenarioDataBindings script-level data', () => {
   beforeEach(() => {
     api.getScript.mockReset()
     api.getDataPool.mockReset()
+    api.importDataPoolRows.mockReset()
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container)
   })
   afterEach(async () => { await act(async () => root.unmount()); container.remove() })
@@ -139,6 +140,36 @@ describe('ScenarioDataBindings script-level data', () => {
     expect(need.textContent).toContain('usersNot bound')
     expect(need.textContent).toContain('Used by Other script · columns email · reads a row each iteration')
     expect(need.querySelector('button[aria-label="Bind users"]')).not.toBeNull()
+  })
+  it('shows the CSV being previewed and then imported in the drop zone', async () => {
+    api.getDataPool.mockResolvedValue({ rows: [], total: 0 })
+    await act(async () => root.render(<ScenarioDataBindings projectId="project-1" scripts={[]} bindings={[{ pool_id: 'pool', alias: 'users', access_mode: 'read_only', selection_strategy: 'sequential' }]} pools={[]} onChange={() => {}} canManage />))
+    const preview = [...container.querySelectorAll('summary')].find(element => element.textContent === 'Preview rows and import CSV')!.parentElement as HTMLDetailsElement
+    await act(async () => { preview.open = true; preview.dispatchEvent(new Event('toggle')) })
+    const zoneStatus = () => preview.querySelector('.import-dropzone [data-testid="drop-ingest-overlay"]')?.textContent ?? ''
+    const button = (label: string) => [...preview.querySelectorAll('button')].find(candidate => candidate.textContent === label)!
+
+    const input = preview.querySelector<HTMLInputElement>('input[type="file"]')!
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['email\na@example.test\n'], 'users.csv', { type: 'text/csv' })] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(zoneStatus()).toBe('')
+
+    let finishPreview!: () => void
+    api.importDataPoolRows.mockImplementationOnce(() => new Promise(resolve => { finishPreview = () => resolve({ row_count: 1, columns: ['email'], sample_rows: [{ email: 'a@example.test' }] }) }))
+    await act(async () => { button('Preview CSV import').click() })
+    expect(preview.querySelector('.import-dropzone')?.className).toContain('is-working')
+    expect(zoneStatus()).toBe('Previewing users.csv…')
+    expect(preview.querySelector('.import-dropzone-name')?.textContent).toBe('users.csv')
+    await act(async () => { finishPreview() })
+    expect(zoneStatus()).toBe('')
+
+    // The same file, now actually imported into the shared pool.
+    let finishImport!: () => void
+    api.importDataPoolRows.mockImplementationOnce(() => new Promise(resolve => { finishImport = () => resolve({ imported: 1, row_count: 1, columns: ['email'] }) }))
+    await act(async () => { button('Import rows into shared pool').click() })
+    expect(zoneStatus()).toBe('Importing users.csv…')
+    await act(async () => { finishImport() })
+    expect(zoneStatus()).toBe('')
   })
   it('opens the pool in Shared assets over the builder, and shows its rows as they are when it closes', async () => {
     api.getDataPool.mockResolvedValue({ rows: [{ id: 'r1', data: { email: 'a@example.test' } }], total: 1 })

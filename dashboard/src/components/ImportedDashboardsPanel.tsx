@@ -6,6 +6,7 @@ import { useSystemApi } from '../hooks/api/useSystemApi'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
+import { describeWorking } from './dropIngestFeedback'
 import PrometheusDashboardAdoption from './PrometheusDashboardAdoption'
 import PrometheusPanelCard from './PrometheusPanelCard'
 import { listAllImportedDashboards } from './monitoringCatalogModel'
@@ -37,6 +38,9 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
   const [bindingOptions, setBindingOptions] = useState<Record<string, string[]>>({})
   const [loadingBinding, setLoadingBinding] = useState('')
   const [busy, setBusy] = useState(false)
+  // The export being parsed: a dropped dashboard acts at once and is never held
+  // by the dropzone, so the zone reports it from here rather than from a file.
+  const [parsingFile, setParsingFile] = useState('')
 	const [mutatingDashboardId, setMutatingDashboardId] = useState('')
   const [error, setError] = useState('')
 	const [notice, setNotice] = useState('')
@@ -113,6 +117,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 		setTestedDashboardId('')
 		setTestedResult(null)
 		setBusy(false)
+		setParsingFile('')
 		setMutatingDashboardId('')
 		setError('')
 		setNotice('')
@@ -160,6 +165,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 		const scope = { ...scopeRef.current }
 		refreshGeneration.current += 1
 		setBusy(true)
+		setParsingFile(file.name)
     setError('')
     setNotice('')
     try {
@@ -179,6 +185,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 			if (isCurrentScope(scope)) {
 				operationInFlight.current = false
 				setBusy(false)
+				setParsingFile('')
 			}
     }
 	}, [importGrafanaDashboard, isCurrentScope, projectId])
@@ -405,6 +412,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
               onFile={handleFile}
               dropHint="Drop a Grafana dashboard JSON export here, or click to browse"
               onError={setError}
+              workingLabel={parsingFile ? describeWorking('Parsing', parsingFile) : undefined}
             />
             <div className="setting-row">
               <div className="setting-info"><span className="setting-label">Import live Grafana UID</span><span className="setting-desc">Fetch a dashboard through the configured Grafana service account.</span></div>

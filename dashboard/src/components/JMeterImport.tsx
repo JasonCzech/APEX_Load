@@ -20,7 +20,7 @@ import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import DropIngestOverlay from './DropIngestOverlay'
-import { useDropIngestFeedback } from './dropIngestFeedback'
+import { describeWorking, useDropIngestFeedback } from './dropIngestFeedback'
 import ImportCoverageButton from './ImportCoverageButton'
 import ParameterizationReview from './ParameterizationReview'
 import ScriptImportReview from './ScriptImportReview'
@@ -81,10 +81,14 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const [file, setFile] = useState<File | null>(null)
   useSuggestImportFolderName(file?.name)
   const [dragOver, setDragOver] = useState(false)
-  // Destructured for stable callback identity — the native drop handler is a
-  // useDesktopFileDrop dependency and must not change every render.
-  const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
+  // Destructured for stable callback identity — the native drop handler is a
+  // useDesktopFileDrop dependency and must not change every render. While the
+  // plan is being validated or converted the zone says so, in the verb of the
+  // button that started it.
+  const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback({
+    workingLabel: file && workingMode ? describeWorking(workingMode === 'validate' ? 'Validating' : 'Converting', file.name) : undefined,
+  })
   const [saving, setSaving] = useState(false)
   const saveInFlightRef = useRef<{
     result: ImportResult

@@ -11,6 +11,7 @@ import type {
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
+import { describeWorking } from './dropIngestFeedback'
 import TimezoneSelect from './ux/TimezoneSelect'
 import type { ScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatTrafficProfileAxisTime, inferTimestampMode, trafficProfileTargetAt } from './trafficProfilePreviewModel'
@@ -72,6 +73,9 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
   const requestGeneration = useRef(0)
   useEffect(() => () => { requestGeneration.current++ }, [])
   const [busy, setBusy] = useState(false)
+  // What the dropzone says while the file is read. Only analysis uploads it;
+  // building the schedule works from that analysis, so busy alone is not it.
+  const [fileWorkingLabel, setFileWorkingLabel] = useState('')
   const [error, setError] = useState('')
   const selectedSheet = analysis?.sheets?.[0]
   const analyzed = Boolean(analysis?.series?.length)
@@ -105,6 +109,7 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
     const generation = ++requestGeneration.current
     const submittedFingerprint = inputFingerprint
     setBusy(true)
+    setFileWorkingLabel(describeWorking(selectedSheet ? 'Analyzing' : 'Inspecting', file.name))
     setError('')
     setDerived(null)
     try {
@@ -126,7 +131,10 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
     } catch (cause) {
       if (generation === requestGeneration.current && submittedFingerprint === currentFingerprint.current) setError(getErrorMessage(cause, 'Unable to analyze the CSV schedule.'))
     } finally {
-      if (generation === requestGeneration.current) setBusy(false)
+      if (generation === requestGeneration.current) {
+        setBusy(false)
+        setFileWorkingLabel('')
+      }
     }
   }
 
@@ -244,7 +252,7 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
             ['elapsed', ...(groupNames.length ? groupNames : ['Group 1'])].map(value => '"' + value.replace(/"/g, '""') + '"').join(','),
             ...['0s', '60s', '120s'].map((time, index) => [time, ...(groupNames.length ? groupNames : ['Group 1']).map(() => index === 1 ? '10' : '0')].join(',')),
           ].join('\r\n'))}`}>Download sample for these groups</a>
-          <ImportDropzone accept=".csv" file={file} onFile={next => { setFile(next); resetCandidate(); setTimestampColumn(''); setValueColumns([]); setSeriesColumn(''); setARTColumns([]) }} dropHint="Drop an exact workload schedule CSV" onError={setError} disabled={busy} />
+          <ImportDropzone accept=".csv" file={file} onFile={next => { setFile(next); resetCandidate(); setTimestampColumn(''); setValueColumns([]); setSeriesColumn(''); setARTColumns([]) }} dropHint="Drop an exact workload schedule CSV" onError={setError} disabled={busy} workingLabel={fileWorkingLabel} />
           {file && !selectedSheet && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void analyze()}>{busy ? 'Inspecting…' : 'Inspect columns'}</button>}
           {selectedSheet && <>
             <div className="stepped-ramp-choice" role="radiogroup" aria-label="CSV layout">

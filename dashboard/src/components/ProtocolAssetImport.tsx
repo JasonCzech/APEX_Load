@@ -20,6 +20,7 @@ import SalesforceCorrelationReview from './SalesforceCorrelationReview'
 import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import ImportCoverageButton from './ImportCoverageButton'
 import ImportDropzone from './ImportDropzone'
+import { describeWorking } from './dropIngestFeedback'
 import BrowserReplayProgress from './BrowserReplayProgress'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { type PreparedSecretBindings, type SecretBindingReviewHandle } from './SecretBindingReview'
@@ -938,6 +939,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     || internalReviewBusy
     || replayTask.pending
   const sourceMutationLocked = settingsEditing || persistenceInProgress || saveTask.pending || saveAllPreparing
+  // What each source zone says while the conversion request is in flight. The
+  // optional environment and comparison files travel in the same request as the
+  // main file, so every zone holding one reports it. The verb is the one on the
+  // button that started the request.
+  const sourceWorkingLabel = (source: File | null) => (
+    convertTask.pending && source ? describeWorking(reviewMode === 'validation' ? 'Validating' : 'Inspecting', source.name) : undefined
+  )
   const saveTargetLocked = sourceMutationLocked || internalReviewBusy
   const projectScopeRequired = kind === 'har' && (!projectId || projectId === 'unassigned')
   // A credential action can await several API calls before onSave runs. Freeze
@@ -2228,6 +2236,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               validate={candidate => validateImportFile(kind, candidate)}
               onError={setMessageError}
               disabled={sourceMutationLocked}
+              workingLabel={sourceWorkingLabel(file)}
             />
           </div>
           {kind === 'postman' && (
@@ -2242,6 +2251,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   validate={validatePostmanEnvironmentFile}
                   onError={setMessageError}
                   disabled={sourceMutationLocked}
+                  workingLabel={sourceWorkingLabel(postmanEnvironmentFile)}
                 />
               </div>
               <label className="sample-import-field">
@@ -2339,6 +2349,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   validate={candidate => validateImportFile('har', candidate)}
                   onError={setMessageError}
                   disabled={sourceMutationLocked}
+                  workingLabel={sourceWorkingLabel(secondaryHARFile)}
                 />
                 <small>Optional second recording for correlation diff</small>
               </div>

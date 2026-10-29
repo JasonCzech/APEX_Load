@@ -41,8 +41,11 @@ vi.mock('../hooks/api/useSystemApi', () => ({
 }))
 
 vi.mock('./ImportDropzone', () => ({
-  default: ({ onFile }: { onFile: (file: File) => void }) => (
-    <button type="button" onClick={() => onFile(new File(['{}'], 'infra.json', { type: 'application/json' }))}>Choose fixture</button>
+  default: ({ onFile, workingLabel }: { onFile: (file: File) => void; workingLabel?: string }) => (
+    <>
+      <button type="button" onClick={() => onFile(new File(['{}'], 'infra.json', { type: 'application/json' }))}>Choose fixture</button>
+      <span data-testid="dropzone-working">{workingLabel}</span>
+    </>
   ),
 }))
 
@@ -114,6 +117,67 @@ describe('ImportedDashboardsPanel', () => {
     expect(commitGrafanaDashboardImport).toHaveBeenCalledTimes(1)
     expect((container.querySelector('[aria-label="Dashboard import project"]') as HTMLSelectElement).disabled).toBe(true)
     await act(async () => { resolveCommit({}); await Promise.resolve() })
+  })
+
+  it('tells the dropzone which export is being parsed, and only while it is', async () => {
+    let resolveImport!: (value: ImportedDashboardImportReview) => void
+    importGrafanaDashboard.mockImplementation(() => new Promise(resolve => { resolveImport = resolve }))
+    await act(async () => {
+      root.render(<ImportedDashboardsPanel projects={[projectA]} prometheusConfigured />)
+      await Promise.resolve()
+    })
+    const working = () => container.querySelector('[data-testid="dropzone-working"]')?.textContent
+    expect(working()).toBe('')
+
+    const choose = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Choose fixture')!
+    await act(async () => { choose.click(); await Promise.resolve() })
+    // The dropzone never holds this file (the export is parsed at once), so the
+    // panel names it; the extension is part of the name the operator dropped.
+    expect(working()).toBe('Parsing infra.json…')
+
+    await act(async () => { resolveImport(review()); await Promise.resolve() })
+    // The review replaces the list, and with it the dropzone.
+    expect(container.querySelector('[data-testid="dropzone-working"]')).toBeNull()
+
+    // Back to the list, the dropzone must not come back still claiming to parse.
+    const cancel = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Cancel')!
+    await act(async () => { cancel.click(); await Promise.resolve() })
+    expect(container.querySelector('[data-testid="dropzone-working"]')?.textContent).toBe('')
+  })
+
+  it('stops saying a file is being parsed when the parse fails', async () => {
+    importGrafanaDashboard.mockRejectedValueOnce(new Error('not a Grafana export'))
+    await act(async () => {
+      root.render(<ImportedDashboardsPanel projects={[projectA]} prometheusConfigured />)
+      await Promise.resolve()
+    })
+    const choose = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Choose fixture')!
+    await act(async () => { choose.click(); await Promise.resolve(); await Promise.resolve() })
+
+    expect(container.textContent).toContain('not a Grafana export')
+    expect(container.querySelector('[data-testid="dropzone-working"]')?.textContent).toBe('')
+  })
+
+  it('does not call a live Grafana UID import a file being parsed', async () => {
+    let resolveByUID!: (value: ImportedDashboardImportReview) => void
+    importGrafanaDashboardByUID.mockImplementation(() => new Promise(resolve => { resolveByUID = resolve }))
+    await act(async () => {
+      root.render(<ImportedDashboardsPanel projects={[projectA]} prometheusConfigured />)
+      await Promise.resolve()
+    })
+    const uid = container.querySelector<HTMLInputElement>('[aria-label="Grafana dashboard UID"]')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(uid, 'abc123')
+      uid.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const fetchByUID = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Fetch')!
+    await act(async () => { fetchByUID.click(); await Promise.resolve() })
+
+    expect(importGrafanaDashboardByUID).toHaveBeenCalledTimes(1)
+    // The panel is busy, but no dropped file is being read.
+    expect(container.querySelector('[data-testid="dropzone-working"]')?.textContent).toBe('')
+    await act(async () => { resolveByUID(review()); await Promise.resolve() })
   })
 
 	it('selects a project loaded after mount and ignores stale project-list responses', async () => {

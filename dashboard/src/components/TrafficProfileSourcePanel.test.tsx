@@ -355,6 +355,41 @@ describe('TrafficProfileSourcePanel', () => {
     container.remove()
   })
 
+  it('shows the file being read in the drop zone while it is analyzed, and not for other busy work', async () => {
+    const draft = { name: 'Replay', duration: '1h', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10, initialization: 'at_runtime' }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+    const zoneStatus = () => container.querySelector('.import-dropzone [data-testid="drop-ingest-overlay"]')?.textContent ?? ''
+    const button = (label: string) => Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === label)
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['timestamp,transactions\n'], 'traffic.csv')] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(zoneStatus()).toBe('')
+
+    let finishAnalysis!: () => void
+    apiMock.analyzeTrafficProfile.mockReset().mockImplementationOnce(() => new Promise(resolve => { finishAnalysis = () => resolve(defaultAnalysis) }))
+    await act(async () => { button('Analyze source')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.querySelector('.import-dropzone')?.className).toContain('is-working')
+    expect(zoneStatus()).toBe('Analyzing traffic.csv…')
+    // The file stays in the zone.
+    expect(container.querySelector('.import-dropzone-name')?.textContent).toBe('traffic.csv')
+    await act(async () => { finishAnalysis() })
+    expect(container.querySelector('.import-dropzone')?.className).not.toContain('is-working')
+    expect(zoneStatus()).toBe('')
+
+    // Building the preview does not upload the file, so only the button is busy.
+    apiMock.deriveTrafficProfile.mockReset().mockImplementationOnce(() => new Promise(() => undefined))
+    await act(async () => { button('Build profile preview')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(apiMock.deriveTrafficProfile).toHaveBeenCalled()
+    expect(zoneStatus()).toBe('')
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
   it('supports relative elapsed timestamps and restores the saved timezone', async () => {
     apiMock.analyzeTrafficProfile.mockResolvedValue({
       source: { kind: 'file', file: { filename: 'relative.csv', sheet: 'CSV', timestamp_column: '', timestamp_mode: 'relative', relative_start_time: '12:00', value_columns: [], timezone: 'America/Chicago' } },

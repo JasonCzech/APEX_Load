@@ -9,7 +9,8 @@ interface Props {
 }
 
 // DropIngestOverlay renders the working/confirmed layer over a dropzone so a
-// drag-drop is visibly acknowledged. The host element must carry the
+// drag-drop is visibly acknowledged and, afterwards, so the validation of what
+// was dropped is visibly in progress. The host element must carry the
 // `hostClassName` from useDropIngestFeedback.
 //
 // The live region is rendered unconditionally and only its text changes: a live
@@ -24,7 +25,19 @@ export default function DropIngestOverlay({ phase, label, inline }: Props) {
   return (
     <>
       <span className="drop-ingest-live" aria-live="polite" aria-atomic="true">{phase === 'idle' ? '' : label}</span>
-      {phase !== 'idle' && (
+      {phase === 'working' ? (
+        // Validation can run for many seconds, so unlike the brief cover shown
+        // while a drop is read this must not hide the zone: the file, or the
+        // queue of archives and each row's own status, stays readable beneath a
+        // light that runs along the bottom edge and a chip naming the work.
+        <div className={`drop-ingest-overlay drop-ingest-working ${inline ? 'is-inline' : ''}`} data-testid="drop-ingest-overlay" aria-hidden="true">
+          <span className="drop-ingest-bar" />
+          <span className="drop-ingest-chip">
+            <span className="drop-ingest-spinner" />
+            <span className="drop-ingest-label">{label}</span>
+          </span>
+        </div>
+      ) : phase !== 'idle' && (
         <div className={`drop-ingest-overlay drop-ingest-${phase} ${inline ? 'is-inline' : ''}`} data-testid="drop-ingest-overlay" aria-hidden="true">
           {phase === 'ingesting' ? (
             <span className="drop-ingest-spinner" />

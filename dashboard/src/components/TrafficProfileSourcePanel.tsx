@@ -18,6 +18,7 @@ import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatUpTo } from '../utils/numberFormat'
 import ImportDropzone from './ImportDropzone'
+import { describeWorking } from './dropIngestFeedback'
 import type { ScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatTrafficProfileAxisTime, inferTimestampMode, suggestGroupSeries, suggestTimestampColumn, suggestValueColumns, trafficProfileTargetAt, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 import TimezoneSelect from './ux/TimezoneSelect'
@@ -221,6 +222,10 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   const [groupART, setGroupART] = useState<Record<string, GroupARTSelection>>(() => Object.fromEntries(groupNames.map(name => [name, savedARTSelection(existingProfile, name)])))
   const [derived, setDerived] = useState<TrafficProfileDeriveResponse | null>(null)
   const [busy, setBusy] = useState(false)
+  // What the dropzone says while the file is read. Only a file analysis uploads
+  // it — a query source or building the profile preview does not — so busy
+  // alone is not it.
+  const [fileWorkingLabel, setFileWorkingLabel] = useState('')
   const [error, setError] = useState('')
   const candidateMatchesExisting = useMemo(() => Boolean(
     derived && existingProfile && JSON.stringify(derived.traffic_profile) === JSON.stringify(existingProfile),
@@ -295,6 +300,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
   const analyze = async () => {
     setBusy(true); setError(''); setDerived(null)
+    if (sourceKind === 'file' && file) setFileWorkingLabel(describeWorking('Analyzing', file.name))
     try {
       if (sourceKind === 'file') await analyzeFile()
       else {
@@ -302,7 +308,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
         setAnalysis(result)
         seedMappings((result.series || []).map(item => item.series))
       }
-    } catch (cause) { setError(getErrorMessage(cause, 'Traffic-profile analysis failed.')) } finally { setBusy(false) }
+    } catch (cause) { setError(getErrorMessage(cause, 'Traffic-profile analysis failed.')) } finally { setBusy(false); setFileWorkingLabel('') }
   }
 
   const derive = async () => {
@@ -600,7 +606,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
               setARTColumns(refreshesSavedFile ? savedSource?.file?.art_columns || [] : [])
               setSeriesColumn(refreshesSavedFile ? savedSource?.file?.series_column || '' : '')
               setError('')
-            }} dropHint="Drop a production traffic CSV or XLSX file" onError={setError} disabled={busy} />
+            }} dropHint="Drop a production traffic CSV or XLSX file" onError={setError} disabled={busy} workingLabel={fileWorkingLabel} />
             {analysis?.sheets?.length ? <div className="traffic-profile-fields">
               {analysis.sheets.length > 1 && <label className="scenario-field"><span>Worksheet</span><select className="settings-input" value={sheet} onChange={event => { setSheet(event.target.value); setARTColumns([]); setSeriesColumn(''); applyColumnSuggestions(analysis.sheets?.find(item => item.name === event.target.value), { timestampColumn: '', valueColumns: [], exclude: [], setTimestampColumn, setTimestampMode, setValueColumns }); invalidateFileAnalysis() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>}
               <label className="scenario-field"><span>Timestamp column</span><select className="settings-input" value={timestampColumn} onChange={event => { const next = event.target.value; setTimestampColumn(next); const inferred = selectedSheet ? inferTimestampMode(selectedSheet.samples, selectedSheet.columns, next) : undefined; if (inferred) setTimestampMode(inferred); invalidateFileAnalysis() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
@@ -774,7 +780,7 @@ function GroupFileUploadCard({ groupName, projectId, savedFile, savedART, onRead
       <div><span className="traffic-profile-section-label">Scenario group</span><strong>{groupName}</strong></div>
       {ready ? <span className="status-badge success">Ready</span> : <span className="status-badge">File required</span>}
     </div>
-    <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => { setFile(next); clearSelection(Boolean(!next || !savedFile || next.name !== savedFile.filename)) }} dropHint={`Drop CSV/XLSX for ${groupName}`} onError={setError} disabled={busy} />
+    <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => { setFile(next); clearSelection(Boolean(!next || !savedFile || next.name !== savedFile.filename)) }} dropHint={`Drop CSV/XLSX for ${groupName}`} onError={setError} disabled={busy} workingLabel={busy && file ? describeWorking('Analyzing', file.name) : undefined} />
     {analysis?.sheets?.length ? <div className="traffic-profile-fields">
       {analysis.sheets.length > 1 && <label className="scenario-field"><span>{groupName} worksheet</span><select className="settings-input" aria-label={`${groupName} worksheet`} value={sheet} onChange={event => { setSheet(event.target.value); setARTColumns([]); setSeriesColumn(''); applyColumnSuggestions(analysis.sheets?.find(item => item.name === event.target.value), { timestampColumn: '', valueColumns: [], exclude: [], setTimestampColumn, setTimestampMode, setValueColumns }); invalidateColumns() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>}
       <label className="scenario-field"><span>{groupName} timestamp column</span><select className="settings-input" aria-label={`${groupName} timestamp column`} value={timestampColumn} onChange={event => { const next = event.target.value; setTimestampColumn(next); const inferred = selectedSheet ? inferTimestampMode(selectedSheet.samples, selectedSheet.columns, next) : undefined; if (inferred) setTimestampMode(inferred); invalidateColumns() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>

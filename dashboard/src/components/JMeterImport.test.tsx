@@ -1296,6 +1296,77 @@ describe('JMeterImport', () => {
 
     expect(apiMock.validateJMeterImport).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
   })
+
+  describe('drop zone progress', () => {
+    const zone = () => container.querySelector<HTMLElement>('.lr-dropzone')!
+    const zoneStatus = () => container.querySelector('[data-testid="drop-ingest-overlay"]')?.textContent ?? ''
+    const clickButton = async (label: string) => {
+      const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent?.includes(label))!
+      await act(async () => { button.click() })
+    }
+
+    it('shows the validation in the drop zone while the plan is validated, with the plan still in view', async () => {
+      const review = await apiMock.validateJMeterImport.getMockImplementation()!()
+      let resolveValidate!: (value: unknown) => void
+      apiMock.validateJMeterImport.mockImplementationOnce(() => new Promise(resolve => { resolveValidate = resolve }))
+      await act(async () => root.render(<JMeterImport projectId="project-1" initialFile={new File(['<jmeterTestPlan />'], 'plan.jmx')} />))
+      await flushPromises()
+      expect(zone().className).not.toContain('is-working')
+      expect(zoneStatus()).toBe('')
+
+      await clickButton('Validate Only')
+      expect(zone().className).toContain('is-working')
+      expect(zoneStatus()).toBe('Validating plan.jmx…')
+      expect(zone().querySelector('.lr-filename')?.textContent).toBe('plan.jmx')
+      expect(container.querySelector('.drop-ingest-live')?.textContent).toBe('Validating plan.jmx…')
+
+      await act(async () => { resolveValidate(review); await Promise.resolve() })
+      await flushPromises()
+      expect(container.textContent).toContain('Validation Review')
+      expect(zone().className).not.toContain('is-working')
+      expect(zoneStatus()).toBe('')
+    })
+
+    it('words the work like the button that started it when the plan is converted', async () => {
+      const review = await apiMock.validateJMeterImport.getMockImplementation()!()
+      let resolveImport!: (value: unknown) => void
+      apiMock.importJMeter.mockImplementationOnce(() => new Promise(resolve => { resolveImport = resolve }))
+      await act(async () => root.render(<JMeterImport projectId="project-1" initialFile={new File(['<jmeterTestPlan />'], 'plan.jmx')} />))
+      await flushPromises()
+
+      await clickButton('Inspect & review')
+      expect(zone().className).toContain('is-working')
+      expect(zoneStatus()).toBe('Converting plan.jmx…')
+
+      await act(async () => { resolveImport(review); await Promise.resolve() })
+      await flushPromises()
+      expect(zone().className).not.toContain('is-working')
+    })
+
+    it('stops showing work when the request fails, and when the plan is changed mid-request', async () => {
+      let rejectValidate!: (reason: Error) => void
+      apiMock.validateJMeterImport.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectValidate = reject }))
+      await act(async () => root.render(<JMeterImport projectId="project-1" initialFile={new File(['<jmeterTestPlan />'], 'plan.jmx')} />))
+      await flushPromises()
+
+      await clickButton('Validate Only')
+      expect(zoneStatus()).toBe('Validating plan.jmx…')
+      await act(async () => { rejectValidate(new Error('Validation exploded')); await Promise.resolve() })
+      await flushPromises()
+      expect(container.textContent).toContain('Validation exploded')
+      expect(zone().className).not.toContain('is-working')
+      expect(zoneStatus()).toBe('')
+
+      // Changing the plan abandons the request in flight; the zone must not keep
+      // claiming it is still validating the plan that was removed.
+      apiMock.validateJMeterImport.mockImplementationOnce(() => new Promise(() => undefined))
+      await clickButton('Validate Only')
+      expect(zoneStatus()).toBe('Validating plan.jmx…')
+      await clickButton('Change')
+      expect(zone().className).not.toContain('is-working')
+      expect(zoneStatus()).toBe('')
+    })
+  })
 })
 
 async function flushPromises() {

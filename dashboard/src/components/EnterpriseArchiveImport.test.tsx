@@ -3796,6 +3796,88 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
   })
 
+  describe('drop zone progress', () => {
+    const script = {
+      name: 'Validated Script',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{ name: 'Browse', type: 'request', method: 'GET', target: '/' }],
+    }
+    const zone = () => container.querySelector<HTMLElement>('.lr-dropzone')!
+    const zoneStatus = () => zone().querySelector('[data-testid="drop-ingest-overlay"]')?.textContent ?? ''
+    const queue = (...names: string[]) => addArchiveFiles(container, names.map(name => new File([name], name, { type: 'application/zip' })))
+
+    it('names the archive being validated in the drop zone and leaves the queue readable', async () => {
+      let resolveValidation!: (value: unknown) => void
+      apiMock.validateEnterpriseArchiveImport.mockImplementationOnce(() => new Promise(resolve => { resolveValidation = resolve }))
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await queue('first.zip')
+      expect(zone().className).not.toContain('is-working')
+      expect(zoneStatus()).toBe('')
+
+      await clickImportAction(container, 'Validate Script')
+      expect(zone().className).toContain('is-working')
+      expect(zoneStatus()).toBe('Validating first.zip…')
+      expect(container.querySelector('.drop-ingest-live')?.textContent).toBe('Validating first.zip…')
+      // Not a cover: the queued row and its own status stay in the zone.
+      expect(zone().querySelector('.lr-file-row strong')?.textContent).toBe('first.zip')
+      expect(zone().querySelector('.lr-file-row.validating')).toBeTruthy()
+
+      await act(async () => { resolveValidation(executableEnterpriseResult(script)); await Promise.resolve() })
+      await flushPromises()
+      expect(container.querySelectorAll('.lr-file-row.validated')).toHaveLength(1)
+      expect(zone().className).not.toContain('is-working')
+      expect(zoneStatus()).toBe('')
+    })
+
+    it('counts the archives in a batch and follows it down to the last one', async () => {
+      const resolvers: Array<(value: unknown) => void> = []
+      apiMock.validateEnterpriseArchiveImport.mockImplementation(() => new Promise(resolve => { resolvers.push(resolve) }))
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await queue('first.zip', 'second.zip')
+
+      await clickImportAction(container, 'Validate 2 Scripts')
+      expect(zoneStatus()).toBe('Validating 2 archives…')
+
+      // Archives are validated one after another, so once the first is done the
+      // zone is down to the one still running.
+      await act(async () => { resolvers[0](executableEnterpriseResult(script)); await Promise.resolve() })
+      await flushPromises()
+      expect(container.querySelectorAll('.lr-file-row.validated')).toHaveLength(1)
+      expect(zoneStatus()).toBe('Validating second.zip…')
+
+      await act(async () => { resolvers[1](executableEnterpriseResult({ ...script, name: 'Second Script' })); await Promise.resolve() })
+      await flushPromises()
+      expect(zone().className).not.toContain('is-working')
+      expect(zoneStatus()).toBe('')
+    })
+
+    it('says converting while validated archives are being converted and saved', async () => {
+      const result = executableEnterpriseResult(script)
+      apiMock.validateEnterpriseArchiveImport.mockResolvedValue(result)
+      let resolveConversion!: (value: unknown) => void
+      apiMock.importEnterpriseArchive.mockImplementationOnce(() => new Promise(resolve => { resolveConversion = resolve }))
+      await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+      await flushPromises()
+      await queue('first.zip', 'second.zip')
+      await clickImportAction(container, 'Validate 2 Scripts')
+      expect(zoneStatus()).toBe('')
+
+      await act(async () => {
+        findButton(container, 'Save Ready Scripts and Continue Importing')?.click()
+        await Promise.resolve()
+      })
+      expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+      expect(zone().className).toContain('is-working')
+      expect(zoneStatus()).toBe('Converting and saving 2 archives…')
+
+      await act(async () => { resolveConversion(result); await Promise.resolve() })
+    })
+  })
+
   it('continues validating after a queued row is removed while an earlier collection is pending', async () => {
     const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
     const removedFile = new File(['beta'], 'beta.zip', { type: 'application/zip' })

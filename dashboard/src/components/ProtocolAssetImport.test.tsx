@@ -4544,6 +4544,83 @@ describe('ProtocolAssetImport', () => {
     // Force Generic re-converts the same file with salesforce_native: false.
     expect(apiMock.importHAR).toHaveBeenLastCalledWith(file, expect.objectContaining({ salesforce_native: false }))
   })
+
+  describe('drop zone progress', () => {
+    const zones = () => Array.from(container.querySelectorAll<HTMLElement>('.import-dropzone'))
+    const zoneStatus = (zone: HTMLElement) => zone.querySelector('[data-testid="drop-ingest-overlay"]')?.textContent ?? ''
+    const clickButton = async (label: string) => {
+      const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(candidate => candidate.textContent?.includes(label))!
+      await act(async () => { button.click(); await Promise.resolve() })
+    }
+
+    it('shows the inspection in the drop zone while the source is inspected, with the file still in view', async () => {
+      let resolveImport!: (value: unknown) => void
+      apiMock.importK6.mockImplementationOnce(() => new Promise(resolve => { resolveImport = resolve }))
+      const file = new File(['export default function () {}'], 'load.js', { type: 'application/javascript' })
+      await act(async () => {
+        root.render(<ProtocolAssetImport kind="k6" initialFile={file} projectId="project-1" />)
+      })
+      await flushPromises()
+      expect(zones()).toHaveLength(1)
+      expect(zones()[0].className).not.toContain('is-working')
+      expect(zoneStatus(zones()[0])).toBe('')
+
+      await clickButton('Inspect & review')
+      expect(zones()[0].className).toContain('is-working')
+      expect(zoneStatus(zones()[0])).toBe('Inspecting load.js…')
+      expect(zones()[0].querySelector('.import-dropzone-name')?.textContent).toBe('load.js')
+      expect(container.querySelector('.drop-ingest-live')?.textContent).toBe('Inspecting load.js…')
+
+      await act(async () => {
+        resolveImport({
+          script: { name: 'k6 result', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [] },
+          scripts: [],
+          warnings: [],
+          unsupported_elements: [],
+          review_sections: [],
+          stats: { converted_actions: 0 },
+        })
+        await Promise.resolve()
+      })
+      await flushPromises()
+      expect(zones()[0].className).not.toContain('is-working')
+      expect(zoneStatus(zones()[0])).toBe('')
+    })
+
+    it('says validating for a validation-only run and reports only the zones that hold a file', async () => {
+      let rejectValidate!: (reason: Error) => void
+      apiMock.validatePostmanImport.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectValidate = reject }))
+      const collection = new File(['{}'], 'collection.json', { type: 'application/json' })
+      await act(async () => {
+        root.render(<ProtocolAssetImport kind="postman" initialFile={collection} projectId="project-1" />)
+      })
+      await flushPromises()
+      // The collection and the optional environment each have a zone.
+      expect(zones()).toHaveLength(2)
+
+      await clickButton('Validate Only')
+      expect(zones().map(zoneStatus)).toEqual(['Validating collection.json…', ''])
+      expect(zones().map(zone => zone.className.includes('is-working'))).toEqual([true, false])
+
+      await act(async () => { rejectValidate(new Error('Postman validation failed')); await Promise.resolve() })
+      await flushPromises()
+      expect(container.textContent).toContain('Postman validation failed')
+      expect(zones().map(zoneStatus)).toEqual(['', ''])
+
+      // The environment file travels in the same request, so its zone reports it too.
+      const environmentInput = container.querySelectorAll<HTMLInputElement>('input[type="file"]')[1]
+      await act(async () => {
+        Object.defineProperty(environmentInput, 'files', {
+          configurable: true,
+          value: [new File(['{}'], 'qa.postman_environment.json', { type: 'application/json' })],
+        })
+        environmentInput.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      apiMock.validatePostmanImport.mockImplementationOnce(() => new Promise(() => undefined))
+      await clickButton('Validate Only')
+      expect(zones().map(zoneStatus)).toEqual(['Validating collection.json…', 'Validating qa.postman_environment.json…'])
+    })
+  })
 })
 
 async function flushPromises() {

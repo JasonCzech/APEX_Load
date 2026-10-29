@@ -38,7 +38,7 @@ import { isDesktopSurface } from '../desktop/desktopBridge';
 import { BRUNO_DROP_ARCHIVE_EXTENSIONS, filesFromDroppedEntries, nativeFileReadErrorMessage } from '../desktop/desktopFiles';
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop';
 import DropIngestOverlay from './DropIngestOverlay';
-import { describeAccepted, useDropIngestFeedback } from './dropIngestFeedback';
+import { describeAccepted, describeWorking, useDropIngestFeedback } from './dropIngestFeedback';
 import './BrunoImport.css';
 interface Props {
     initialFiles?: File[] | null;
@@ -608,6 +608,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     // Inputs read from a data pool or generated, by shared-value candidate ID.
     const [inputBindings, setInputBindings] = useState<Record<string, BrunoInputBinding>>({});
     const [loading, setLoading] = useState(false);
+    // Set only while the source is inspected; loading also covers saving.
+    const [inspecting, setInspecting] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const operationBusy = loading || folderLoading || creatingFolder;
@@ -1105,7 +1107,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const desktopDrop = isDesktopSurface();
     const selectFilesRef = useRef(selectFiles);
     selectFilesRef.current = selectFiles;
-    const { phase: sourceDropPhase, label: sourceDropLabel, hostClassName: sourceDropHostClassName, begin: beginSourceDrop, succeed: succeedSourceDrop, fail: failSourceDrop } = useDropIngestFeedback();
+    // The source card also shows the inspection of what it holds, in the words of
+    // the Inspect button (which reads the same busy flag), on every surface.
+    const { phase: sourceDropPhase, label: sourceDropLabel, hostClassName: sourceDropHostClassName, begin: beginSourceDrop, succeed: succeedSourceDrop, fail: failSourceDrop } = useDropIngestFeedback({
+        workingLabel: loading && inspecting && files.length > 0 ? describeWorking('Inspecting', countLabel(files.length, 'file')) : undefined,
+    });
     const sourceDropSequenceRef = useRef(0);
     const handleNativeSourceDrop = useCallback((paths: string[]) => {
         // Only the latest drop applies, and only if nothing else happened to
@@ -1193,6 +1199,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             && sourceGenerationRef.current === sourceRequestGeneration
             && sourceProjectIdRef.current === sourceProjectId;
         setLoading(true);
+        setInspecting(true);
         setError('');
         setNotice('');
         setCommitted(null);
@@ -1257,6 +1264,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             && inspectionRef.current?.import_session_id === sourceImportSessionId;
         sourceOperationRef.current += 1;
         setLoading(true);
+        setInspecting(false);
         setError('');
         try {
             if (requirements.length > 0) {
@@ -1440,8 +1448,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       </div>}
       <div hidden={!!inspection && !setupOpen}>
       {inspection && <p role="note">Changing the source replaces this inspection and resets unsaved review choices. Re-inspection creates a new session.</p>}
-      <section className={desktopDrop ? `bruno-card ${sourceDropHostClassName}` : 'bruno-card'} ref={sourceDropRef} style={desktopDrop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}>
-        {desktopDrop && <DropIngestOverlay phase={sourceDropPhase} label={sourceDropLabel}/>}
+      <section className={`bruno-card ${sourceDropHostClassName}`} ref={sourceDropRef} style={desktopDrop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}>
+        <DropIngestOverlay phase={sourceDropPhase} label={sourceDropLabel}/>
         <div className="bruno-card-heading">
           <div>
             <h3>1. Source bundle</h3>

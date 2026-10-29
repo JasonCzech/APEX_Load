@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export type DropIngestPhase = 'idle' | 'ingesting' | 'accepted'
+// 'ingesting' and 'accepted' are the drop animation, driven by begin/succeed/fail.
+// 'working' is different: the host owns it. It lasts exactly as long as the host
+// reports work on the file the zone holds (see DropIngestOptions.workingLabel).
+export type DropIngestPhase = 'idle' | 'ingesting' | 'working' | 'accepted'
 
 // A browser drop hands over the File object synchronously, so without a floor
 // the spinner would flash for a single frame and read as "nothing happened".
@@ -10,6 +13,15 @@ const ACCEPTED_MS = 1300
 // Safety net: if a drop handler never settles (native bridge dropped the reply,
 // unexpected throw), never leave the zone spinning forever.
 const WATCHDOG_MS = 20000
+
+export interface DropIngestOptions {
+  // While non-empty the zone shows that the host is working on its file — a
+  // validation or inspection request started from the dropped source. The host
+  // supplies the label when the request starts and clears it when it settles;
+  // there is deliberately no timer here, so the zone can never say "working"
+  // after the host's own busy state (and its button spinner) has ended.
+  workingLabel?: string
+}
 
 export interface DropIngestFeedback {
   phase: DropIngestPhase
@@ -34,14 +46,22 @@ export function describeAccepted(count: number): string {
   return count > 1 ? `${count} files added` : 'File added'
 }
 
-// useDropIngestFeedback drives the drop → "working" → "added" animation shared by
+// describeWorking builds the in-progress label for the host's own work on the
+// zone's file, e.g. describeWorking('Validating', 'plan.jmx') → "Validating plan.jmx…".
+export function describeWorking(verb: string, subject: string): string {
+  return `${verb} ${subject}…`
+}
+
+// useDropIngestFeedback drives the drop → "reading" → "added" animation shared by
 // every import dropzone, so a drag-drop is always visibly acknowledged even when
-// the file is accepted instantly. The returned begin/succeed/fail callbacks are
-// referentially stable, so they are safe as effect dependencies (the native
-// drop-target registration depends on its handler's identity).
-export function useDropIngestFeedback(): DropIngestFeedback {
-  const [phase, setPhase] = useState<DropIngestPhase>('idle')
-  const [label, setLabel] = useState('')
+// the file is accepted instantly, and — through options.workingLabel — the
+// "working" state that follows while the host validates what was dropped. The
+// returned begin/succeed/fail callbacks are referentially stable, so they are
+// safe as effect dependencies (the native drop-target registration depends on
+// its handler's identity).
+export function useDropIngestFeedback({ workingLabel = '' }: DropIngestOptions = {}): DropIngestFeedback {
+  const [dropPhase, setPhase] = useState<DropIngestPhase>('idle')
+  const [dropLabel, setLabel] = useState('')
   const startedAtRef = useRef(0)
   const timersRef = useRef<number[]>([])
   const mountedRef = useRef(true)
@@ -97,9 +117,17 @@ export function useDropIngestFeedback(): DropIngestFeedback {
     else schedule(settle, remaining)
   }, [clearTimers, reset, schedule])
 
+  // A drop being read wins over the host's work: it replaces the source, and the
+  // host abandons its work on a source change anyway. Otherwise the host's work
+  // wins, including over the "added" pill that would share its corner.
+  const working = Boolean(workingLabel) && dropPhase !== 'ingesting'
+  const phase: DropIngestPhase = working ? 'working' : dropPhase
+  const label = working ? workingLabel : dropLabel
+
   const hostClassName = [
     'drop-ingest-host',
     phase === 'ingesting' ? 'is-ingesting' : '',
+    phase === 'working' ? 'is-working' : '',
     phase === 'accepted' ? 'is-accepted' : '',
   ].filter(Boolean).join(' ')
 

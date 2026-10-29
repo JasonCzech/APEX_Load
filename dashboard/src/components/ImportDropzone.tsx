@@ -16,6 +16,12 @@ interface Props {
   validate?: (file: File) => string | null
   onError?: (message: string) => void
   disabled?: boolean
+  // Set while the importer works on what the zone was given — validating,
+  // inspecting or parsing it on the server — so the zone itself shows that it is
+  // in progress (e.g. "Inspecting spec.yaml…", from describeWorking). The host
+  // owns it: it sets the label when the work starts and clears it when it ends.
+  // That includes importers that act on a drop at once and never hold the file.
+  workingLabel?: string
 }
 
 // ImportDropzone is the shared drag-drop file picker for the import wizards,
@@ -26,7 +32,7 @@ interface Props {
 // drops (which carry real absolute paths via Wails OnFileDrop), reconstructing a
 // File for the existing upload path. In the browser it uses the standard
 // <input type=file> + HTML5 drag-drop.
-export default function ImportDropzone({ accept, file, onFile, dropHint, validate, onError, disabled = false }: Props) {
+export default function ImportDropzone({ accept, file, onFile, dropHint, validate, onError, disabled = false, workingLabel }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const zoneRef = useRef<HTMLDivElement>(null)
   const disabledRef = useRef(disabled)
@@ -35,7 +41,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   const [browserFallback, setBrowserFallback] = useState(false)
   // Stable callbacks — destructured so the native drop handler keeps its identity
   // (it is a useDesktopFileDrop dependency and would re-register every render).
-  const { phase: ingestPhase, label: ingestLabel, hostClassName, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
+  const { phase: ingestPhase, label: ingestLabel, hostClassName, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback({ workingLabel })
 
   const desktop = isDesktopSurface()
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserFallback
@@ -59,6 +65,11 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
 
   // Native drop (desktop): Wails delivers absolute paths; reconstruct a File.
   const handleNativePaths = useCallback((paths: string[]) => {
+    // A busy or locked zone refuses the drop, as the HTML5 path does, so its work chip stays.
+    if (disabledRef.current) {
+      setDragOver(false)
+      return
+    }
     beginIngest()
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)

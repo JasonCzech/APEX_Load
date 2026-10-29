@@ -133,4 +133,62 @@ describe('ImportDropzone drop feedback', () => {
     expect(container.querySelector('[data-testid="drop-ingest-overlay"]')).toBeNull()
     expect(zone?.className).not.toContain('is-ingesting')
   })
+
+  it('shows the importer\'s work on the selected file and leaves the file in view', () => {
+    const file = new File(['{}'], 'spec.json')
+    act(() => {
+      root.render(<ImportDropzone accept=".json" file={file} onFile={vi.fn()} dropHint="Drop a spec" workingLabel="Inspecting spec.json…" />)
+    })
+
+    const zone = container.querySelector<HTMLElement>('.import-dropzone')!
+    expect(zone.className).toContain('is-working')
+    expect(overlayText()).toBe('Inspecting spec.json…')
+    expect(container.querySelector('.drop-ingest-bar')).toBeTruthy()
+    // Not a cover: the file name and its controls are still in the zone.
+    expect(zone.querySelector('.import-dropzone-name')?.textContent).toBe('spec.json')
+    expect(Array.from(zone.querySelectorAll('button')).map(button => button.textContent)).toEqual(['Change', 'Remove'])
+    // The zone keeps its own accessible name; the live region carries the status.
+    expect(zone.getAttribute('aria-label')).toBe('Selected file spec.json')
+    expect(container.querySelector('.drop-ingest-live')?.textContent).toBe('Inspecting spec.json…')
+
+    act(() => {
+      root.render(<ImportDropzone accept=".json" file={file} onFile={vi.fn()} dropHint="Drop a spec" />)
+    })
+    // The importer finished, so the zone returns to rest at once — no timer.
+    expect(zone.className).not.toContain('is-working')
+    expect(container.querySelector('[data-testid="drop-ingest-overlay"]')).toBeNull()
+    expect(container.querySelector('.drop-ingest-live')?.textContent).toBe('')
+  })
+
+  it('shows the importer\'s work on a source the zone never holds', () => {
+    // A dropped dashboard export is parsed at once, so the zone keeps showing
+    // its empty prompt while the importer works.
+    act(() => {
+      root.render(<ImportDropzone accept=".json" file={null} onFile={vi.fn()} dropHint="Drop a dashboard" workingLabel="Parsing infra.json…" />)
+    })
+
+    const zone = container.querySelector<HTMLElement>('.import-dropzone')!
+    expect(zone.className).toContain('is-working')
+    expect(overlayText()).toBe('Parsing infra.json…')
+    expect(zone.getAttribute('role')).toBe('button')
+    expect(zone.getAttribute('aria-label')).toBe('Drop a dashboard')
+    expect(zone.textContent).toContain('Drop a dashboard')
+  })
+
+  it('hands the zone to a drop being read, then back to the importer\'s work', () => {
+    const file = new File(['{}'], 'spec.json')
+    act(() => {
+      root.render(<ImportDropzone accept=".json" file={file} onFile={vi.fn()} dropHint="Drop a spec" workingLabel="Inspecting spec.json…" />)
+    })
+    const zone = container.querySelector<HTMLElement>('.import-dropzone')!
+
+    act(() => { zone.dispatchEvent(dropEvent([new File(['{}'], 'next.json')])) })
+    expect(zone.className).toContain('is-ingesting')
+    expect(zone.className).not.toContain('is-working')
+    expect(overlayText()).toContain('Reading file…')
+
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(zone.className).toContain('is-working')
+    expect(overlayText()).toBe('Inspecting spec.json…')
+  })
 })
