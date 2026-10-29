@@ -10,7 +10,10 @@ import { type SourceReview, type SourceReviewFile } from '../types/scripts'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }))
+const { requestMock, lineClickHandlers } = vi.hoisted(() => ({
+  requestMock: vi.fn(),
+  lineClickHandlers: new Map<string, ((line: number) => void) | undefined>(),
+}))
 
 vi.mock('../hooks/apiClient', async importOriginal => ({
   ...await importOriginal<typeof import('../hooks/apiClient')>(),
@@ -18,20 +21,24 @@ vi.mock('../hooks/apiClient', async importOriginal => ({
 }))
 
 vi.mock('./LinkedCodePane', () => ({
-  default: ({ value, ariaLabel, activeRange, revealRequestId }: {
+  default: ({ value, ariaLabel, activeRange, revealRequestId, onLineClick }: {
     value: string
     ariaLabel?: string
     activeRange?: { startLine: number; endLine: number } | null
     revealRequestId?: number
-  }) => (
-    <pre
-      aria-label={ariaLabel}
-      data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}
-      data-reveal-request={revealRequestId ?? ''}
-    >
-      {value}
-    </pre>
-  ),
+    onLineClick?: (line: number) => void
+  }) => {
+    lineClickHandlers.set(ariaLabel || '', onLineClick)
+    return (
+      <pre
+        aria-label={ariaLabel}
+        data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}
+        data-reveal-request={revealRequestId ?? ''}
+      >
+        {value}
+      </pre>
+    )
+  },
 }))
 
 const SHA = 'a'.repeat(64)
@@ -78,6 +85,7 @@ describe('SourceMappingReview full source text', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     requestMock.mockReset()
+    lineClickHandlers.clear()
     clearSourceReviewFullTextCache()
   })
 
@@ -110,6 +118,32 @@ describe('SourceMappingReview full source text', () => {
     await act(async () => { root.render(<SourceMappingReview sourceReview={review()} script={script} />) })
     expect(sourcePane(container).textContent).toBe(FULL)
     expect(requestMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-scroll Original source when full text finishes loading after selecting a preview line', async () => {
+    let resolve: (value: unknown) => void = () => {}
+    requestMock.mockReturnValue(new Promise(done => { resolve = done }))
+    const withPreviewMapping: SourceReview = {
+      ...review(),
+      mappings: [
+        {
+          id: 'tx', source_file: 'Action.c', start_line: 3, end_line: 3, function: 'lr_start_transaction',
+          target_path: 'actions[0]', target_name: 'Deep', target_kind: 'action', status: 'converted', support_mode: 'executable',
+        },
+        ...review().mappings!,
+      ],
+    }
+    await act(async () => { root.render(<SourceMappingReview sourceReview={withPreviewMapping} script={script} />) })
+
+    const pane = sourcePane(container)
+    await act(async () => { lineClickHandlers.get('Action.c source')?.(3) })
+    const revealAfterClick = Number(pane.dataset.revealRequest)
+
+    await act(async () => { resolve({ sha256: SHA, size_bytes: FULL.length, lines: 6, content: FULL }) })
+    await flush()
+
+    expect(sourcePane(container).textContent).toBe(FULL)
+    expect(Number(sourcePane(container).dataset.revealRequest)).toBe(revealAfterClick)
   })
 
   it('loads from the project the caller names when the review has no script', async () => {

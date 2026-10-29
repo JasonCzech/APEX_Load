@@ -143,6 +143,7 @@ interface Props {
   contextLines?: number
   revealRequestId?: number
   revealOnMount?: boolean
+  revealMode?: 'auto' | 'request'
   value: string
   language?: string
   semanticMode?: 'apex-dsl'
@@ -157,7 +158,7 @@ interface Props {
 
 export default function LinkedCodePane({
   value: fullValue,
-  contextLines, revealRequestId = 0, revealOnMount = false,
+  contextLines, revealRequestId = 0, revealOnMount = false, revealMode = 'auto',
   language,
   semanticMode,
   gutterStatuses: fullStatuses,
@@ -185,12 +186,34 @@ export default function LinkedCodePane({
   const viewRef = useRef(view)
   viewRef.current = view
   const containerRef = useRef<HTMLDivElement>(null)
+  const pendingRevealRef = useRef<{ view: EditorView; line: number } | null>(null)
   useEffect(() => {
     const element = containerRef.current
     if (!element || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => viewRef.current?.requestMeasure())
+    const flushPendingReveal = () => {
+      const currentView = viewRef.current
+      const pending = pendingRevealRef.current
+      if (!currentView || !pending || pending.view !== currentView || currentView.scrollDOM.clientHeight <= 0) return
+      pendingRevealRef.current = null
+      if (pending.line >= 1 && pending.line <= currentView.state.doc.lines) {
+        currentView.dispatch({
+          effects: [EditorView.scrollIntoView(currentView.state.doc.line(pending.line).from, { y: 'center' })],
+        })
+      }
+    }
+    const observer = new ResizeObserver(() => {
+      viewRef.current?.requestMeasure()
+      flushPendingReveal()
+    })
     observer.observe(element)
-    const visibility = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) viewRef.current?.requestMeasure() })
+    const visibility = typeof IntersectionObserver === 'undefined'
+      ? null
+      : new IntersectionObserver(entries => {
+          if (entries.some(entry => entry.isIntersecting)) {
+            viewRef.current?.requestMeasure()
+            flushPendingReveal()
+          }
+        })
     visibility?.observe(element)
     return () => { observer.disconnect(); visibility?.disconnect() }
   }, [])
@@ -251,17 +274,29 @@ export default function LinkedCodePane({
     const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
     effects.push(setLinkedRange.of(range))
 
-    // With revealOnMount, a new view, range or reveal request scrolls. Without
-    // it, the first range only highlights: the initial mapping is auto-selected
-    // when the review opens, and only later selection changes are user-driven.
-    const revealKey = range ? `${range.startLine}:${range.endLine}${revealOnMount ? `:${revealRequestId}` : ''}` : ''
+    // With revealOnMount, a new view, range (in 'auto' mode) or reveal request
+    // scrolls. In 'request' mode, changing activeRange alone only updates the
+    // linked-line highlight so selecting a line inside a pane keeps that pane's
+    // scroll position steady while the opposite pane reveals its counterpart.
+    const revealKey = range
+      ? revealMode === 'request'
+        ? String(revealRequestId)
+        : `${range.startLine}:${range.endLine}${revealOnMount ? `:${revealRequestId}` : ''}`
+      : ''
     const revealed = revealedRef.current
     revealedRef.current = { view, key: revealKey }
     const reveal = revealOnMount
       ? revealed?.view !== view || revealed.key !== revealKey
       : revealed !== null && revealed.key !== revealKey
     if (range && reveal && range.startLine >= 1 && range.startLine <= view.state.doc.lines) {
-      effects.push(EditorView.scrollIntoView(view.state.doc.line(range.startLine).from, { y: 'center' }))
+      if (view.scrollDOM.clientHeight > 0) {
+        pendingRevealRef.current = null
+        effects.push(EditorView.scrollIntoView(view.state.doc.line(range.startLine).from, { y: 'center' }))
+      } else {
+        pendingRevealRef.current = { view, line: range.startLine }
+      }
+    } else if (!range) {
+      pendingRevealRef.current = null
     }
 
     // 2. Search Query Highlighting
@@ -287,7 +322,7 @@ export default function LinkedCodePane({
     }
 
     view.dispatch({ effects })
-  }, [view, activeStartLine, activeEndLine, searchQuery, value, revealRequestId, revealOnMount])
+  }, [view, activeStartLine, activeEndLine, searchQuery, value, revealRequestId, revealOnMount, revealMode])
 
   return (
     <div ref={containerRef} className="linked-code-pane" role="region" aria-label={ariaLabel}>

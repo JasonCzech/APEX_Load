@@ -167,6 +167,169 @@ for (const width of [1800, 1100, 900, 700]) {
   })
 }
 
+test('Source Mapping scrolls Original source and Destination independently and keeps Original source in place on line selection', async ({ page }) => {
+  test.setTimeout(120_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+
+  // Build an imported script whose Destination JSON has 80 init steps ahead of 60
+  // main actions so mapped targets live at very different vertical offsets than
+  // their Action.c source lines. Include multi-line LoadRunner C calls so clicking
+  // a line inside a call verifies Original source never jumps away from the click.
+  const initActions = Array.from({ length: 80 }, (_, index) => ({
+    name: `Init step ${index + 1}`,
+    type: 'request',
+    method: 'GET',
+    target: `/init/${index + 1}`,
+    headers: { 'X-Init-Index': String(index + 1) },
+  }))
+  const mainActions = Array.from({ length: 60 }, (_, index) => ({
+    name: `Service action ${index + 1}`,
+    type: 'request',
+    method: 'POST',
+    target: `/services/item-${index + 1}`,
+    body: `payload_${index + 1}`,
+  }))
+  const sourceLines: string[] = ['Action()', '{']
+  const mappings: Array<{
+    id: string
+    source_file: string
+    start_line: number
+    end_line: number
+    function: string
+    target_path: string
+    target_name: string
+    status: string
+  }> = []
+  for (let index = 0; index < 60; index += 1) {
+    const startLine = sourceLines.length + 1
+    sourceLines.push(
+      `  web_submit_data("Service_Action_${index + 1}",`,
+      `    "Action=https://example.test/services/item-${index + 1}",`,
+      `    "Method=POST",`,
+      `    ITEMDATA,`,
+      `    "Name=slot", "Value=${index + 1}", ENDITEM,`,
+      `    LAST);`,
+    )
+    const endLine = sourceLines.length
+    mappings.push({
+      id: `svc-${index + 1}`,
+      source_file: 'Action.c',
+      start_line: startLine,
+      end_line: endLine,
+      function: 'web_submit_data',
+      target_path: `actions[${index}]`,
+      target_name: `Service action ${index + 1}`,
+      status: 'converted',
+    })
+  }
+  sourceLines.push('  return 0;', '}')
+
+  const id = idOf(await json(await request.post('/api/v1/scripts', {
+    data: {
+      project_id: workspace.projectId,
+      script: {
+        name: 'Source_mapping_independent_scroll',
+        version: '1.0',
+        protocol: 'http',
+        config: { base_url: 'https://example.test' },
+        init: initActions,
+        actions: mainActions,
+        metadata: {
+          import: {
+            source: 'loadrunner',
+            preserved: {
+              source_review: {
+                source_files: [{ path: 'Action.c', language: 'c', content: sourceLines.join('\n') }],
+                mappings,
+              },
+            },
+          },
+        },
+      },
+    },
+  })))
+
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
+
+  const mapping = page.getByRole('region', { name: 'Source Mapping', exact: true })
+  const panels = mapping.locator('.source-map-panel')
+  const sourceScroller = panels.nth(0).locator('.cm-scroller')
+  const destinationScroller = panels.nth(1).locator('.cm-scroller')
+  await expect(sourceScroller).toBeVisible()
+  await expect(destinationScroller).toBeVisible()
+
+  // Both columns must own bounded, independently scrollable viewports rather than
+  // stretching to multi-thousand-pixel document height inside a shared scroller.
+  const metrics = await mapping.evaluate(element => {
+    const [src, dst] = Array.from(element.querySelectorAll<HTMLElement>('.cm-scroller'))
+    return {
+      srcClientHeight: src.clientHeight,
+      srcScrollHeight: src.scrollHeight,
+      dstClientHeight: dst.clientHeight,
+      dstScrollHeight: dst.scrollHeight,
+    }
+  })
+  expect(metrics.srcClientHeight).toBeGreaterThan(200)
+  expect(metrics.srcClientHeight).toBeLessThan(1000)
+  expect(metrics.srcScrollHeight).toBeGreaterThan(metrics.srcClientHeight + 500)
+  expect(metrics.dstClientHeight).toBeGreaterThan(200)
+  expect(metrics.dstClientHeight).toBeLessThan(1000)
+  expect(metrics.dstScrollHeight).toBeGreaterThan(metrics.dstClientHeight + 1000)
+
+  // Scrolling Original source must not scroll Destination, and vice versa.
+  const dstBeforeSourceWheel = await destinationScroller.evaluate(el => el.scrollTop)
+  const srcBox = (await sourceScroller.boundingBox())!
+  await page.mouse.move(srcBox.x + srcBox.width / 2, srcBox.y + srcBox.height / 2)
+  await page.mouse.wheel(0, 640)
+  await expect.poll(() => sourceScroller.evaluate(el => el.scrollTop)).toBeGreaterThan(400)
+  expect(await destinationScroller.evaluate(el => el.scrollTop)).toBe(dstBeforeSourceWheel)
+
+  const srcBeforeDestinationWheel = await sourceScroller.evaluate(el => el.scrollTop)
+  const dstBox = (await destinationScroller.boundingBox())!
+  await page.mouse.move(dstBox.x + dstBox.width / 2, dstBox.y + dstBox.height / 2)
+  await page.mouse.wheel(0, -300)
+  await expect.poll(() => destinationScroller.evaluate(el => el.scrollTop)).not.toBe(dstBeforeSourceWheel)
+  expect(await sourceScroller.evaluate(el => el.scrollTop)).toBe(srcBeforeDestinationWheel)
+
+  // Select a visible line near the lower third of Original source (inside a multi-line
+  // web_submit_data call, deliberately away from vertical center so any accidental
+  // scrollIntoView centering on Original source would shift scrollTop): Destination
+  // must scroll to display the mapped action while Original source remains steady.
+  const picked = await panels.nth(0).evaluate(panel => {
+    const scroller = panel.querySelector<HTMLElement>('.cm-scroller')!
+    const sRect = scroller.getBoundingClientRect()
+    const candidates = Array.from(panel.querySelectorAll<HTMLElement>('.cm-line')).filter(line => {
+      if (!/"Value=\d+"/.test(line.textContent || '')) return false
+      const r = line.getBoundingClientRect()
+      return r.top >= sRect.top + sRect.height * 0.55 && r.bottom <= sRect.bottom - 16
+    })
+    const chosen = candidates[candidates.length - 1]
+    const match = /"Value=(\d+)"/.exec(chosen?.textContent || '')
+    const rect = chosen?.getBoundingClientRect()
+    return match && rect
+      ? { slotNumber: Number(match[1]), x: rect.left + Math.min(80, rect.width / 2), y: rect.top + rect.height / 2 }
+      : null
+  })
+  expect(picked).not.toBeNull()
+  const { slotNumber, x, y } = picked!
+  const expectedTargetPath = `actions[${slotNumber - 1}]`
+
+  const sourceScrollBeforeClick = await sourceScroller.evaluate(el => el.scrollTop)
+  const destinationScrollBeforeClick = await destinationScroller.evaluate(el => el.scrollTop)
+  await page.mouse.click(x, y)
+
+  await expect(panels.nth(1).locator('.source-map-panel-header strong')).toContainText(expectedTargetPath)
+  await expect.poll(() => destinationScroller.evaluate(el => el.scrollTop)).not.toBe(destinationScrollBeforeClick)
+  await expect(panels.nth(1).locator('.cm-line.apex-linked-line').filter({ hasText: `Service action ${slotNumber}` })).toBeVisible()
+  expect(await sourceScroller.evaluate(el => el.scrollTop)).toBe(sourceScrollBeforeClick)
+  await expect(panels.nth(0).locator('.cm-line.apex-linked-line').filter({ hasText: `"Value=${slotNumber}"` })).toBeVisible()
+})
+
 test('source mapping review decisions survive saving and moved or edited destinations require verified identity', async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request

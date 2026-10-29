@@ -482,6 +482,7 @@
 
 .linked-code-pane .cm-scroller {
   overflow: auto;
+  overscroll-behavior: contain;
   min-height: 0;
   max-height: 100%;
 }
@@ -579,7 +580,7 @@
   .source-map-review .source-map-panel { width: 100%; box-sizing: border-box; }
 }
 /* The shared editor has a bounded center pane; keep the full workspace reachable. */
-.center-document.imported-metadata-section .source-map-review { overflow: auto; }
+.center-document.imported-metadata-section .source-map-review { overflow: auto; min-height: min(480px, 100%); }
 
 .source-map-incomplete > strong { display: block; font-size: 13px; }
 .source-map-incomplete > p { margin: 6px 0; max-width: 110ch; }

@@ -317,7 +317,9 @@ export default function SourceMappingReview({
   const maximizedPane = sourceOnly ? null : storedMaximizedPane
   const [destinationView, setDestinationView] = useState<'current' | 'baseline'>('current')
   const [contextOnly, setContextOnly] = useState(false)
-  const [revealRequestId, setRevealRequestId] = useState(1)
+  const [sourceRevealRequestId, setSourceRevealRequestId] = useState(1)
+  const [destinationRevealRequestId, setDestinationRevealRequestId] = useState(1)
+  const [lastSelectionOrigin, setLastSelectionOrigin] = useState<'source' | 'dsl' | null>(null)
   const [storedNoOriginTarget, setNoOriginTarget] = useState('')
   const noOriginTarget = sourceOnly ? '' : storedNoOriginTarget
   const [showNoOrigin, setShowNoOrigin] = useState(false)
@@ -332,34 +334,87 @@ export default function SourceMappingReview({
   useEffect(() => {
     const panels = codePanelsRef.current
     const review = reviewRootRef.current
-    const importReview = panels?.closest('.script-import-review-preview-aside')
-    if (!panels || !review || !importReview) return
-    // Import review is a scrolling document rather than a fixed-height editor.
-    // Measure the comparison's top so its code can use the rest of the viewport.
+    if (!panels || !review) return
+    const importReview = panels.closest('.script-import-review-preview-aside')
+    if (importReview) {
+      // Import review is a scrolling document rather than a fixed-height editor.
+      // Measure the comparison's top so its code can use the rest of the viewport.
+      let frame = 0
+      const measure = () => {
+        frame = 0
+        const bounds = panels.getBoundingClientRect()
+        if (bounds.width === 0) return
+        const top = `${Math.max(0, Math.round(bounds.top))}px`
+        if (panels.style.getPropertyValue('--source-map-panels-top') !== top) {
+          panels.style.setProperty('--source-map-panels-top', top)
+        }
+      }
+      const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
+      const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+      observer?.observe(review)
+      observer?.observe(importReview.parentElement || importReview)
+      window.addEventListener('resize', schedule)
+      document.addEventListener('scroll', schedule, true)
+      measure()
+      return () => {
+        observer?.disconnect()
+        window.removeEventListener('resize', schedule)
+        document.removeEventListener('scroll', schedule, true)
+        cancelAnimationFrame(frame)
+      }
+    }
+    const editorMetadata = panels.closest('.imported-metadata-section')
+    if (!editorMetadata) return
+    // The Script Editor mounts Source Mapping inside a scrollable center document
+    // (.source-map-review) so banners, filters, and mapping tables stay reachable.
+    // Measure the remaining room inside that pane so .source-map-panels gets a
+    // definite height and both code columns scroll independently.
     let frame = 0
     const measure = () => {
       frame = 0
       const bounds = panels.getBoundingClientRect()
       if (bounds.width === 0) return
-      const top = `${Math.max(0, Math.round(bounds.top))}px`
-      if (panels.style.getPropertyValue('--source-map-panels-top') !== top) {
-        panels.style.setProperty('--source-map-panels-top', top)
+      const origin = review.getBoundingClientRect().top + review.clientTop - review.scrollTop
+      const paddingBottom = parseFloat(window.getComputedStyle(review).paddingBottom) || 0
+      const room = `${Math.max(0, Math.floor(review.clientHeight - (bounds.top - origin) - paddingBottom - 1))}px`
+      if (panels.style.getPropertyValue('--source-map-panels-room') !== room) {
+        panels.style.setProperty('--source-map-panels-room', room)
       }
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
-    observer?.observe(review)
-    observer?.observe(importReview.parentElement || importReview)
+    const observeSiblings = () => {
+      if (!observer) return
+      observer.disconnect()
+      observer.observe(review)
+      for (const child of Array.from(review.children)) {
+        if (!child.contains(panels)) observer.observe(child)
+      }
+      if (tableWrapRef.current) observer.observe(tableWrapRef.current)
+      const comparison = panels.parentElement
+      if (comparison) {
+        for (const child of Array.from(comparison.children)) {
+          if (child !== panels) observer.observe(child)
+        }
+      }
+    }
+    observeSiblings()
+    const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => {
+      observeSiblings()
+      schedule()
+    })
+    mutations?.observe(review, { childList: true })
+    if (panels.parentElement) mutations?.observe(panels.parentElement, { childList: true })
     window.addEventListener('resize', schedule)
-    document.addEventListener('scroll', schedule, true)
     measure()
     return () => {
       observer?.disconnect()
+      mutations?.disconnect()
       window.removeEventListener('resize', schedule)
-      document.removeEventListener('scroll', schedule, true)
       cancelAnimationFrame(frame)
+      panels.style.removeProperty('--source-map-panels-room')
     }
-  }, [files.length, mappings.length])
+  }, [files.length, mappings.length, sourceOnly])
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const lastTableScrollFocusRequestRef = useRef<number | null>(null)
   // A focus request (an issue's source, or a mapping or file the caller names)
@@ -379,7 +434,9 @@ export default function SourceMappingReview({
     setCategoryFilter('')
     setFilter('')
     setNoOriginTarget('')
-    setRevealRequestId(value => value + 1)
+    setLastSelectionOrigin(null)
+    setSourceRevealRequestId(value => value + 1)
+    setDestinationRevealRequestId(value => value + 1)
     setCopied('')
   } else if (!sourceIssueFocus && (focusedMappingId || focusedSourceFile) && appliedFocusRequestId !== focusRequestId) {
     const requestedFile = focusedSourceFile ? findSourceFile(files, focusedSourceFile, sourcePathResolver) : null
@@ -396,7 +453,9 @@ export default function SourceMappingReview({
       setCategoryFilter('')
       setFilter('')
       setNoOriginTarget('')
-      setRevealRequestId(value => value + 1)
+      setLastSelectionOrigin(null)
+      setSourceRevealRequestId(value => value + 1)
+      setDestinationRevealRequestId(value => value + 1)
       setCopied('')
     }
   }
@@ -419,12 +478,18 @@ export default function SourceMappingReview({
   const sourceText = fullText.status === 'ready' ? fullText.content : selectedFile?.content || ''
   const loadedSourceLines = fullText.status === 'ready' ? fullText.lines : sourceTextLineCount(sourceText, selectedFile?.truncated)
   // The selection may only exist in the full text, so reveal it once that
-  // text arrives.
+  // text arrives unless the user already selected a line within the preview.
   const fullTextReadyKey = fullText.status === 'ready' && selectedFile ? `${selectedFile.path}:${selectedFile.full_sha256}` : ''
   const [revealedFullTextKey, setRevealedFullTextKey] = useState('')
   if (fullTextReadyKey && fullTextReadyKey !== revealedFullTextKey) {
     setRevealedFullTextKey(fullTextReadyKey)
-    setRevealRequestId(value => value + 1)
+    const previewLineCount = selectedFile ? sourceTextLineCount(selectedFile.content, selectedFile.truncated) : 0
+    const targetSourceLine = unmappedIssueFocus && selectedFile?.path === unmappedIssueFocus.filePath && unmappedIssueFocus.line
+      ? unmappedIssueFocus.line
+      : selectedMapping?.start_line || 0
+    if (lastSelectionOrigin !== 'source' || targetSourceLine > previewLineCount) {
+      setSourceRevealRequestId(value => value + 1)
+    }
   }
 
   const destinationScript = destinationView === 'baseline' ? identity.state?.snapshot : script
@@ -547,19 +612,29 @@ export default function SourceMappingReview({
     ? virtualRows.map(virtualRow => ({ mapping: filteredMappings[virtualRow.index], virtualItem: virtualRow }))
     : filteredMappings.map(mapping => ({ mapping, virtualItem: null as VirtualItem | null }))
 
-  const selectMapping = useCallback((mapping: SourceReviewMapping | null) => {
+  const selectMapping = useCallback((mapping: SourceReviewMapping | null, origin?: 'source' | 'dsl') => {
     if (!mapping) return
+    const nextFile = mapping.source_file ? findSourceFile(files, mapping.source_file, sourcePathResolver) : null
+    const switchingSourceFile = Boolean(nextFile && nextFile.path !== selectedFile?.path)
     setUnmappedIssueFocus(null)
     setInspectedUnmappedFilePath('')
     setSelectedMappingId(mapping.id)
     setNoOriginTarget('')
-    setRevealRequestId(value => value + 1)
+    setLastSelectionOrigin(origin ?? null)
+    if (origin === 'source') {
+      if (switchingSourceFile) setSourceRevealRequestId(value => value + 1)
+      setDestinationRevealRequestId(value => value + 1)
+    } else if (origin === 'dsl') {
+      setSourceRevealRequestId(value => value + 1)
+    } else {
+      setSourceRevealRequestId(value => value + 1)
+      setDestinationRevealRequestId(value => value + 1)
+    }
     if (mapping.source_file) {
-      const nextFile = findSourceFile(files, mapping.source_file, sourcePathResolver)
       setSelectedFilePath(nextFile?.path || '')
     }
     setCopied('')
-  }, [files, sourcePathResolver])
+  }, [files, selectedFile?.path, sourcePathResolver])
 
   useEffect(() => {
     const hasNewFocusRequest = !!focusedMappingId && lastTableScrollFocusRequestRef.current !== focusRequestId
@@ -596,7 +671,9 @@ export default function SourceMappingReview({
     setSelectedFilePath(filePath)
     setSelectedMappingId(nextMapping?.id || '')
     setNoOriginTarget('')
-    setRevealRequestId(value => value + 1)
+    setLastSelectionOrigin(null)
+    setSourceRevealRequestId(value => value + 1)
+    setDestinationRevealRequestId(value => value + 1)
     setCopied('')
   }
 
@@ -739,11 +816,11 @@ export default function SourceMappingReview({
   }
 
   const handleSourceLineClick = (line: number) => {
-    selectMapping(mappingForSourceLine(mappings, selectedFile?.path, line, sourcePathResolver))
+    selectMapping(mappingForSourceLine(mappings, selectedFile?.path, line, sourcePathResolver), 'source')
   }
   const handleDslLineClick = (line: number) => {
     if (!dslDocument) return
-    selectMapping(mappingForDslLine(dslDocument.ranges, destinationView === 'baseline' ? mappings : effectiveMappings, line))
+    selectMapping(mappingForDslLine(dslDocument.ranges, destinationView === 'baseline' ? mappings : effectiveMappings, line), 'dsl')
   }
 
   const coverageChips: Array<{ key: string; label: string; value: number; tooltip: string }> = [
@@ -894,8 +971,8 @@ export default function SourceMappingReview({
             Export filtered mappings
           </button>
 
-        <label>{sourceOnly ? 'Source scope' : 'Comparison scope'}<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
-        {!sourceOnly && <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>}
+        <label>{sourceOnly ? 'Source scope' : 'Comparison scope'}<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setLastSelectionOrigin(null); setSourceRevealRequestId(value => value + 1); setDestinationRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
+        {!sourceOnly && <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setDestinationRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>}
         <details><summary>Keyboard shortcuts</summary><p>In the mapping list, use ↑/↓ and Home/End to select. Use [ and ] to move between unacknowledged review items while focus is in this workspace.</p></details>
       </div>
       </details>
@@ -903,7 +980,7 @@ export default function SourceMappingReview({
       {!sourceOnly && destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? formatDateTime(identity.state.capturedAt, { seconds: true }) : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
       {identity.error && <p role="alert">{identity.error}</p>}
 
-      {!sourceOnly && showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
+      {!sourceOnly && showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setDestinationRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
       <div className={`source-map-workspace ${isTableCollapsed ? '' : 'with-navigator'}`}>
       <div ref={tableWrapRef} className="source-map-table-wrap" data-table-pagination="off" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">
@@ -1011,7 +1088,8 @@ export default function SourceMappingReview({
                 maxHeight="100%"
                 wrapLines={wrapLines}
                 contextLines={contextOnly ? 4 : undefined}
-                revealRequestId={revealRequestId}
+                revealMode="request"
+                revealRequestId={sourceRevealRequestId}
                 revealOnMount
               />
             </Suspense>
@@ -1047,7 +1125,8 @@ export default function SourceMappingReview({
                 maxHeight="100%"
                 wrapLines={wrapLines}
                 contextLines={contextOnly ? 4 : undefined}
-                revealRequestId={revealRequestId}
+                revealMode="request"
+                revealRequestId={destinationRevealRequestId}
                 revealOnMount
               />
             </Suspense>

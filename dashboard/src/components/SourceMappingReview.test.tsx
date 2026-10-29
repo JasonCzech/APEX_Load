@@ -9,8 +9,9 @@ import { ImportSourceIssueFocusContext } from './ImportSourceIssueFocus'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { CODE_LINE_WRAP_STORAGE_KEY } from './codeLineWrapPreference'
 
-const { downloadTextFileMock } = vi.hoisted(() => ({
+const { downloadTextFileMock, lineClickHandlers } = vi.hoisted(() => ({
   downloadTextFileMock: vi.fn(),
+  lineClickHandlers: new Map<string, ((line: number) => void) | undefined>(),
 }))
 
 vi.mock('../utils/fileUtils', () => ({
@@ -43,6 +44,9 @@ vi.mock('./LinkedCodePane', () => ({
     semanticMode,
     maxHeight,
     wrapLines,
+    revealMode,
+    revealRequestId,
+    onLineClick,
   }: {
     value: string
     ariaLabel?: string
@@ -51,7 +55,11 @@ vi.mock('./LinkedCodePane', () => ({
     semanticMode?: string
     maxHeight?: string
     wrapLines?: boolean
+    revealMode?: string
+    revealRequestId?: number
+    onLineClick?: (line: number) => void
   }) => {
+    lineClickHandlers.set(ariaLabel || '', onLineClick)
     const activeText = activeRange
       ? value.split('\n').slice(activeRange.startLine - 1, activeRange.endLine).join('\n')
       : ''
@@ -61,6 +69,8 @@ vi.mock('./LinkedCodePane', () => ({
         data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}
         data-context-lines={contextLines ?? ''}
         data-max-height={maxHeight || ''}
+        data-reveal-mode={revealMode || ''}
+        data-reveal-request={revealRequestId ?? ''}
         data-semantic-mode={semanticMode || ''}
         data-wrap-lines={wrapLines === false ? 'false' : 'true'}
       >
@@ -182,6 +192,7 @@ describe('SourceMappingReview', () => {
     root = createRoot(container)
     downloadTextFileMock.mockReset()
     downloadTextFileMock.mockResolvedValue('saved')
+    lineClickHandlers.clear()
     window.localStorage.removeItem(CODE_LINE_WRAP_STORAGE_KEY)
   })
 
@@ -232,6 +243,174 @@ describe('SourceMappingReview', () => {
     await act(async () => { root.render(null) })
     expect(disconnect).toHaveBeenCalled()
     expect(cancel).toHaveBeenCalledWith(7)
+  })
+
+  it('measures scroll-invariant room for editor Source Mapping panels and cleans up observers', async () => {
+    const reviewTop = 100
+    let panelsTop = 340
+    let panelsWidth = 900
+    let frame: FrameRequestCallback | undefined
+    const resizeDisconnect = vi.fn()
+    const mutationDisconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = resizeDisconnect
+    })
+    vi.stubGlobal('MutationObserver', class {
+      observe = vi.fn()
+      disconnect = mutationDisconnect
+      takeRecords = () => []
+    })
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { frame = callback; return 11 })
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame')
+    const originalBounds = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('source-map-review')) return new DOMRect(0, reviewTop, 900, 860)
+      if (this.classList.contains('source-map-panels')) return new DOMRect(0, panelsTop, panelsWidth, 420)
+      return originalBounds.call(this)
+    })
+
+    await act(async () => {
+      root.render(
+        <div className="imported-metadata-section">
+          <SourceMappingReview sourceReview={sourceReview} script={script} />
+        </div>,
+      )
+    })
+    await flushPromises()
+
+    const review = container.querySelector<HTMLElement>('.source-map-review')!
+    const panels = container.querySelector<HTMLElement>('.source-map-panels')!
+    Object.defineProperty(review, 'clientHeight', { configurable: true, value: 860 })
+    window.dispatchEvent(new Event('resize'))
+    frame!(0)
+    // 860 - (340 - 100) - 1 = 619px
+    expect(panels.style.getPropertyValue('--source-map-panels-room')).toBe('619px')
+
+    // Scrolling .source-map-review shifts panelsTop up by scrollTop without changing content room.
+    review.scrollTop = 150
+    panelsTop = 190
+    window.dispatchEvent(new Event('resize'))
+    frame!(0)
+    expect(panels.style.getPropertyValue('--source-map-panels-room')).toBe('619px')
+
+    // Hidden tab (width === 0) preserves the last measured value instead of collapsing to 0.
+    panelsWidth = 0
+    panelsTop = 500
+    window.dispatchEvent(new Event('resize'))
+    frame!(0)
+    expect(panels.style.getPropertyValue('--source-map-panels-room')).toBe('619px')
+
+    // Expanding controls above panels by 200px while scrolled reduces room by 200px.
+    panelsWidth = 900
+    panelsTop = 390
+    window.dispatchEvent(new Event('resize'))
+    frame!(0)
+    expect(panels.style.getPropertyValue('--source-map-panels-room')).toBe('419px')
+
+    window.dispatchEvent(new Event('resize'))
+    await act(async () => { root.render(null) })
+    expect(resizeDisconnect).toHaveBeenCalled()
+    expect(mutationDisconnect).toHaveBeenCalled()
+    expect(cancel).toHaveBeenCalledWith(11)
+  })
+
+  it('reveals only the opposite pane when selecting a source or destination line, and both on table selection', async () => {
+    const multiLineReview = {
+      source_files: [
+        {
+          path: 'Action.c',
+          language: 'c',
+          content: 'Action()\n{\n  web_url("Homepage", LAST);\n  web_url("Catalog", LAST);\n}',
+        },
+        sourceReview.source_files[1],
+      ],
+      mappings: [
+        sourceReview.mappings[0],
+        {
+          id: 'catalog',
+          source_file: 'Action.c',
+          start_line: 4,
+          end_line: 4,
+          function: 'web_url',
+          target_path: 'actions[1]',
+          target_name: 'Catalog',
+          target_kind: 'action',
+          status: 'converted',
+          support_mode: 'executable',
+        },
+        {
+          ...sourceReview.mappings[1],
+          target_path: 'actions[2]',
+        },
+      ],
+    }
+    const threeActionScript = {
+      ...script,
+      actions: [
+        script.actions[0],
+        { name: 'Catalog', type: 'request', method: 'GET', target: '/catalog' },
+        script.actions[1],
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={multiLineReview} script={threeActionScript} />)
+    })
+    await flushPromises()
+
+    const sourcePane = () => container.querySelector<HTMLPreElement>('pre[aria-label="Action.c source"]')!
+    const dslPane = () => generatedDslPane(container)
+
+    expect(sourcePane().dataset.revealMode).toBe('request')
+    expect(dslPane().dataset.revealMode).toBe('request')
+    const initialSourceReveal = Number(sourcePane().dataset.revealRequest)
+    const initialDslReveal = Number(dslPane().dataset.revealRequest)
+
+    // 1. Selecting line 4 in Original source highlights line 4 in source without
+    // scrolling source, while revealing the corresponding Catalog action in Destination.
+    await act(async () => { lineClickHandlers.get('Action.c source')?.(4) })
+    await flushPromises()
+    expect(sourcePane().dataset.activeRange).toBe('4-4')
+    expect(Number(sourcePane().dataset.revealRequest)).toBe(initialSourceReveal)
+    expect(dslPane().textContent).toContain('"name": "Catalog"')
+    const dslRevealAfterSourceClick = Number(dslPane().dataset.revealRequest)
+    expect(dslRevealAfterSourceClick).toBe(initialDslReveal + 1)
+
+    // Clicking the already-selected source line again re-reveals Destination without scrolling source.
+    await act(async () => { lineClickHandlers.get('Action.c source')?.(4) })
+    await flushPromises()
+    expect(Number(sourcePane().dataset.revealRequest)).toBe(initialSourceReveal)
+    expect(Number(dslPane().dataset.revealRequest)).toBe(dslRevealAfterSourceClick + 1)
+
+    // 2. Selecting Homepage's line in Destination reveals line 3 in Original source
+    // without scrolling Destination.
+    const homepageStartLine = Number(
+      // Find Homepage's line in the formatted JSON document by matching "Homepage".
+      JSON.stringify(threeActionScript, null, 2)
+        .split('\n')
+        .findIndex(line => line.includes('"Homepage"')) + 1,
+    )
+    expect(homepageStartLine).toBeGreaterThan(1)
+    const dslRevealBeforeDslClick = Number(dslPane().dataset.revealRequest)
+    await act(async () => { lineClickHandlers.get('Generated DSL')?.(homepageStartLine) })
+    await flushPromises()
+    expect(sourcePane().dataset.activeRange).toBe('3-3')
+    expect(Number(sourcePane().dataset.revealRequest)).toBe(initialSourceReveal + 1)
+    expect(Number(dslPane().dataset.revealRequest)).toBe(dslRevealBeforeDslClick)
+
+    // 3. Selecting a row from the mapping table reveals both panes.
+    const showButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Show mappings'))!
+    await act(async () => { showButton.click() })
+    const sourceRevealBeforeRow = Number(sourcePane().dataset.revealRequest)
+    const dslRevealBeforeRow = Number(dslPane().dataset.revealRequest)
+    const catalogRow = container.querySelector<HTMLTableRowElement>('tr[data-mapping-id="catalog"]')!
+    await act(async () => { catalogRow.click() })
+    await flushPromises()
+    expect(Number(sourcePane().dataset.revealRequest)).toBe(sourceRevealBeforeRow + 1)
+    expect(Number(dslPane().dataset.revealRequest)).toBe(dslRevealBeforeRow + 1)
   })
 
   it('updates the generated DSL selection when the source file changes', async () => {

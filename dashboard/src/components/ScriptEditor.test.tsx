@@ -1997,9 +1997,9 @@ describe('ScriptEditor', () => {
     expect(sourceMapReviewRule).toContain('border: 0;')
     expect(sourceMapHeaderRule).toContain('padding: 9px 10px;')
     expect(sourceMapHeaderRule).toContain('border-bottom: 1px solid var(--border);')
-    expect(sourceMapPanelsRule).toContain('flex: 1 1 auto;')
-    expect(sourceMapPanelsRule).toContain('height: auto;')
-    expect(sourceMapPanelsRule).toContain('min-height: 0;')
+    expect(sourceMapPanelsRule).toContain('flex: 0 0 auto;')
+    expect(sourceMapPanelsRule).toContain('height: max(420px, var(--source-map-panels-room, 420px));')
+    expect(sourceMapPanelsRule).toContain('min-height: 360px;')
     expect(sourceMapPanelsRule).toContain('max-height: none;')
   })
 

@@ -131,6 +131,80 @@ describe('LinkedCodePane', () => {
     expect(scrollSpy).toHaveBeenCalledTimes(2)
   })
 
+  it('highlights range changes without scrolling in request revealMode until revealRequestId increments', async () => {
+    const scrollSpy = vi.spyOn(EditorView, 'scrollIntoView')
+    const pane = (range: LineRange, revealRequestId: number) => (
+      <LinkedCodePane
+        value={'a\nb\nc\nd\ne'}
+        activeRange={range}
+        revealMode="request"
+        revealOnMount
+        revealRequestId={revealRequestId}
+      />
+    )
+
+    // Initial mount reveals the starting selection.
+    await act(async () => root.render(pane({ startLine: 2, endLine: 2 }, 1)))
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
+    expect(scrollSpy).toHaveBeenLastCalledWith(2, { y: 'center' })
+
+    // User selects a different line inside this pane: activeRange changes,
+    // revealRequestId stays 1 -> highlight dispatches, scroller stays put.
+    dispatchSpy.mockClear()
+    await act(async () => root.render(pane({ startLine: 4, endLine: 5 }, 1)))
+    expect(dispatchSpy).toHaveBeenCalled()
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
+
+    // External navigation or selecting from the opposite pane increments revealRequestId -> scrolls.
+    await act(async () => root.render(pane({ startLine: 4, endLine: 5 }, 2)))
+    expect(scrollSpy).toHaveBeenCalledTimes(2)
+    expect(scrollSpy).toHaveBeenLastCalledWith(4, { y: 'center' })
+  })
+
+  it('defers scrollIntoView while mounted in a zero-height hidden tab until resized visible', async () => {
+    const scrollSpy = vi.spyOn(EditorView, 'scrollIntoView')
+    let resized: (() => void) | undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resized = callback }
+      observe() {}
+      disconnect() {}
+    })
+    measuredScroll.clientHeight = 0
+    try {
+      await act(async () => {
+        root.render(
+          <LinkedCodePane
+            value={'a\nb\nc\nd'}
+            activeRange={{ startLine: 3, endLine: 3 }}
+            revealMode="request"
+            revealOnMount
+            revealRequestId={1}
+          />,
+        )
+      })
+      expect(scrollSpy).not.toHaveBeenCalled()
+
+      // Still hidden -> resize callback does not waste the pending reveal.
+      await act(async () => resized?.())
+      expect(scrollSpy).not.toHaveBeenCalled()
+
+      // Tab becomes visible -> flushes pending reveal once.
+      measuredScroll.clientHeight = 220
+      measureSpy.mockClear()
+      await act(async () => resized?.())
+      expect(measureSpy).toHaveBeenCalledOnce()
+      expect(scrollSpy).toHaveBeenCalledTimes(1)
+      expect(scrollSpy).toHaveBeenLastCalledWith(3, { y: 'center' })
+
+      // Subsequent resizes do not re-scroll the pane.
+      await act(async () => resized?.())
+      expect(scrollSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      measuredScroll.clientHeight = 100
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('applies the range to the new editor when a mapped context remounts it', async () => {
     const scrollSpy = vi.spyOn(EditorView, 'scrollIntoView')
     const value = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join('\n')
