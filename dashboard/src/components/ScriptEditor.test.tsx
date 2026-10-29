@@ -11834,6 +11834,103 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('env:Fault')
   })
 
+  it('renders full multi-line resolved body and request/response snapshots inside scrollable code boxes while retaining Open full body', async () => {
+    const resolvedPayload = JSON.stringify(
+      Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`resolvedField${index}`, `resolved-val-${index}`])),
+    )
+    const requestPayload = JSON.stringify(
+      Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`requestField${index}`, `req-val-${index}`])),
+    )
+    const responsePayload = JSON.stringify(
+      Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`responseField${index}`, `res-val-${index}`])),
+    )
+    const manyHeaders = {
+      'Content-Type': 'application/json',
+      ...Object.fromEntries(Array.from({ length: 16 }, (_, index) => [`X-Custom-${index}`, `hdr-${index}`])),
+    }
+
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Scrollable Replay-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: true,
+      events: [
+        {
+          phase: 'action',
+          action_index: 0,
+          action_name: 'SubmitOrder',
+          action_type: 'request',
+          method: 'POST',
+          target: '/orders',
+          started_at: '2026-05-14T20:00:00Z',
+          completed_at: '2026-05-14T20:00:01Z',
+          duration_ms: 45,
+          status_code: 200,
+          success: true,
+          headers: manyHeaders,
+          body: resolvedPayload,
+          snapshot: {
+            request_method: 'POST',
+            request_url: 'https://api.example.com/orders',
+            request_headers: manyHeaders,
+            request_body: requestPayload,
+            response_status: 200,
+            response_headers: manyHeaders,
+            response_body: responsePayload,
+          },
+        },
+      ],
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const replayButton = findOpenDebuggerButton(container)
+    expect(replayButton).toBeTruthy()
+    if (!replayButton) return
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const runReplayButton = findDebuggerRunButton(container)
+    expect(runReplayButton).toBeTruthy()
+    if (!runReplayButton) return
+
+    await act(async () => {
+      runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    await returnToDebugger(container)
+
+    // Switch center workbench to Source so Debug detail renders in the right side rail.
+    const sourceTab = Array.from(container.querySelectorAll('[role="tab"]')).find(tab => tab.textContent?.trim() === 'Source')
+    if (sourceTab) {
+      await act(async () => {
+        sourceTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
+
+    const debugDetail = container.querySelector('.debugger-shell > .debugger-center') ?? container.querySelector('.debugger-center')
+    expect(debugDetail).not.toBeNull()
+
+    const codeBoxes = Array.from(debugDetail?.querySelectorAll('pre.snapshot-code') ?? [])
+    expect(codeBoxes.some(box => box.textContent?.includes('resolved-val-23'))).toBe(true)
+    expect(codeBoxes.some(box => box.textContent?.includes('req-val-23'))).toBe(true)
+    expect(codeBoxes.some(box => box.textContent?.includes('res-val-23'))).toBe(true)
+
+    const textBoxes = Array.from(debugDetail?.querySelectorAll('pre.snapshot-text-preview') ?? [])
+    expect(textBoxes.length).toBeGreaterThanOrEqual(3)
+    expect(textBoxes.every(box => box.textContent?.includes('X-Custom-15: hdr-15'))).toBe(true)
+
+    const openFullBodyButtons = Array.from(debugDetail?.querySelectorAll('button') ?? []).filter(button => button.textContent?.includes('Open full body'))
+    expect(openFullBodyButtons.length).toBeGreaterThanOrEqual(3)
+  })
+
   it('renders native protocol replay evidence blocks', async () => {
     const databaseScript: ScriptDefinition = {
       ...initialScript,

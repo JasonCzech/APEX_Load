@@ -31,15 +31,18 @@ describe('SnapshotTextPreview', () => {
     container.remove()
   })
 
-  it('opens long header text in a full dialog', async () => {
+  it('renders long header text inline inside a scrollable preview box and still opens a full dialog', async () => {
     const text = Array.from({ length: 14 }, (_, index) => `X-Debug-${index}: value-${index}`).join('\n')
 
     await act(async () => {
       root.render(<SnapshotTextPreview text={text} />)
     })
 
+    const inlinePre = container.querySelector('pre.snapshot-text-preview')
+    expect(inlinePre).not.toBeNull()
+    expect(inlinePre?.classList.contains('snapshot-code')).toBe(false)
+    expect(inlinePre?.textContent).toContain('X-Debug-13')
     expect(container.textContent).toContain('Open full text')
-    expect(container.textContent).not.toContain('X-Debug-13')
 
     const button = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Open full text'))
     expect(button).toBeTruthy()
@@ -53,7 +56,7 @@ describe('SnapshotTextPreview', () => {
 
     const dialog = document.body.querySelector('.snapshot-full-dialog[role="dialog"]')
     expect(dialog).not.toBeNull()
-    expect(container.textContent).not.toContain('X-Debug-13')
+    expect(inlinePre?.textContent).toContain('X-Debug-13')
     expect(dialog?.textContent).toContain('X-Debug-13')
 
     const copyButton = Array.from(dialog?.querySelectorAll('button') ?? []).find(node => node.textContent?.includes('Copy'))
@@ -119,6 +122,12 @@ describe('SnapshotTextPreview', () => {
   it('honors controlled expansion state', async () => {
     const text = Array.from({ length: 14 }, (_, index) => `X-Debug-${index}: value-${index}`).join('\n')
     const onExpandedChange = vi.fn()
+
+    await act(async () => {
+      root.render(<SnapshotTextPreview text={text} onExpandedChange={onExpandedChange} />)
+    })
+
+    expect(container.textContent).not.toContain('X-Debug-13')
 
     await act(async () => {
       root.render(<SnapshotTextPreview text={text} expanded={false} onExpandedChange={onExpandedChange} />)

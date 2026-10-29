@@ -3499,6 +3499,7 @@
 
 .replay-variables-card,
 .replay-code-block {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-primary);
@@ -3520,6 +3521,7 @@ details.replay-code-block > summary,
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .replay-activity-card {
@@ -3703,13 +3705,23 @@ details.replay-code-block > summary,
 }
 
 .replay-variables-card pre,
-.replay-code-block pre {
+.replay-code-block pre:not(.snapshot-code):not(.snapshot-text-preview) {
+  box-sizing: border-box;
   margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 200px;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 12px;
-  color: var(--text-primary);
 }
 
 .snapshot-body-actions {
@@ -3930,8 +3942,7 @@ details.replay-code-block > summary,
 
 .replay-browser-html {
   grid-column: 1 / -1;
-  max-height: 360px;
-  overflow: auto;
+  --snapshot-text-max-height: 300px;
 }
 
 .replay-variable-diff-list {
@@ -6801,6 +6812,7 @@ details.replay-code-block > summary,
 .debugger-failure-pin { flex-shrink: 0; }
 
 .debugger-shell {
+  --debugger-dock-offset: min(var(--bottom-h, 220px), 30vh);
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
@@ -6810,6 +6822,9 @@ details.replay-code-block > summary,
     "rail code center"
     "bottom bottom bottom";
   gap: 10px;
+}
+.debugger-shell.debug-dock-collapsed {
+  --debugger-dock-offset: 38px;
 }
 .debugger-shell.debugger-detail-collapsed {
   grid-template-columns: var(--rail-w, 300px) minmax(520px, 1fr);
@@ -7015,18 +7030,25 @@ details.replay-code-block > summary,
   outline: none;
 }
 .debugger-center-body {
+  container: debugger-detail / inline-size;
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 12px;
+}
+@container debugger-detail (max-width: 580px) {
+  .replay-event-detail-grid,
+  .replay-browser-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .debugger-detail {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-/* Let the payloads use the space left above the dock. Keep intrinsic heights
-   for longer evidence so the detail pane can still scroll as a whole. */
+/* Let the payloads use the space left above the dock while capping longer
+   payloads inside their own scrollable code boxes. */
 .debugger-request-body,
 .debugger-http-snapshot > .replay-code-block,
 .debugger-http-snapshot .response-selection,
@@ -7034,6 +7056,7 @@ details.replay-code-block > summary,
 .debugger-snapshot-body {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .debugger-request-body > *,
 .debugger-http-snapshot > .replay-code-block > *,
@@ -7050,6 +7073,18 @@ details.replay-code-block > summary,
 .debugger-snapshot-body,
 .debugger-snapshot-body > .snapshot-code {
   flex: 1 0 auto;
+}
+.debugger-http-snapshot > .replay-code-block > pre:not(.snapshot-code):not(.snapshot-text-preview) {
+  max-height: 96px;
+}
+.debugger-http-snapshot .snapshot-text-preview {
+  --snapshot-text-max-height: 180px;
+}
+.debugger-snapshot-body > .snapshot-code {
+  min-height: 120px;
+  max-height: max(260px, calc(100vh - var(--debugger-dock-offset, 220px) - 500px));
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .debugger-detail-head {
   display: flex;
@@ -7172,6 +7207,9 @@ details.replay-code-block > summary,
   display: flex;
   flex-direction: column;
   padding: 6px;
+}
+.debugger-console .debug-raw-output > pre {
+  margin: 0;
 }
 .debugger-console .debug-raw-output.virtualized {
   display: block;
@@ -7954,7 +7992,25 @@ button.debugger-problem-row:hover {
 .author-insert-dialog input, .author-insert-dialog select { min-height: 36px; }
 .author-body-document .cm-editor { min-height: 320px; border: 1px solid var(--border); }
 .author-body-document .cm-scroller { max-height: 60vh; }
-.author-body-document pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.author-body-document pre {
+  box-sizing: border-box;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .multipart-parts { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .multipart-part { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .multipart-part-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }

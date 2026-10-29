@@ -1,6 +1,44 @@
-.snapshot-code {
+.snapshot-code,
+.snapshot-text-preview {
+  box-sizing: border-box;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: var(--snapshot-preview-max-height, 280px);
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 8px;
   background: var(--code-bg);
   color: var(--code-text);
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.snapshot-text-preview {
+  max-height: var(--snapshot-text-max-height, 200px);
+}
+
+.snapshot-body-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.snapshot-body-toggle {
+  padding-inline: 10px;
+}
+
+.snapshot-body-render-note {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .snapshot-code-token-key {
@@ -86,10 +124,14 @@
   padding: 16px;
 }
 
+.snapshot-full-dialog-body .snapshot-code,
+.snapshot-full-dialog-body .snapshot-text-preview,
 .snapshot-full-dialog-body pre {
   margin: 0;
   max-height: none;
   min-height: 360px;
+  overflow: visible;
+  scrollbar-gutter: auto;
   white-space: pre-wrap;
   word-break: break-word;
 }

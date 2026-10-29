@@ -952,8 +952,9 @@ export function ScriptReplayDebuggerView({
                                         replayConsoleEntries?.length ? 'console' : null,
                                         replayNetworkEntries?.length ? 'network' : null,
                                         replayHTML ? 'html' : null,
-                                      ].filter((artifact): artifact is 'dom_summary' | 'console' | 'network' | 'html' => Boolean(artifact))
-                                      const browserArtifactKey = (artifact: 'dom_summary' | 'console' | 'network' | 'html') => `${index}:${artifact}`
+                                        event.snapshot && !hasStructuredReplaySnapshot(event.snapshot) ? 'snapshot' : null,
+                                      ].filter((artifact): artifact is 'dom_summary' | 'console' | 'network' | 'html' | 'snapshot' => Boolean(artifact))
+                                      const browserArtifactKey = (artifact: 'dom_summary' | 'console' | 'network' | 'html' | 'snapshot') => `${index}:${artifact}`
                                       const allBrowserArtifactsExpanded = browserArtifacts.length > 0 && browserArtifacts.every(artifact => expandedReplayBrowserArtifacts[browserArtifactKey(artifact)])
 
                                       return (
@@ -1175,6 +1176,8 @@ export function ScriptReplayDebuggerView({
                                       <SnapshotBodyPreview
                                         body={JSON.stringify(event.snapshot, null, 2)}
                                         headers={{ 'Content-Type': 'application/json' }}
+                                        expanded={hasBrowserReplayArtifacts(event) ? expandedReplayBrowserArtifacts[`${index}:snapshot`] : undefined}
+                                        onExpandedChange={hasBrowserReplayArtifacts(event) ? (expanded) => toggleReplayBrowserArtifact(`${index}:snapshot`, expanded) : undefined}
                                       />
                                     </div>
                                   )

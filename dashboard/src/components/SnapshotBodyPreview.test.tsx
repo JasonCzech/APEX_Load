@@ -35,15 +35,17 @@ describe('SnapshotBodyPreview', () => {
     container.remove()
   })
 
-  it('opens long formatted XML bodies in a full dialog', async () => {
+  it('renders long formatted XML bodies inline inside a scrollable code box and still opens a full dialog', async () => {
     const longXML = Array.from({ length: 18 }, (_, index) => `<line-${index}>value-${index}</line-${index}>`).join('')
 
     await act(async () => {
       root.render(<SnapshotBodyPreview body={`<root>${longXML}</root>`} headers={{ 'Content-Type': 'application/soap+xml' }} />)
     })
 
+    const inlinePre = container.querySelector('pre.snapshot-code')
+    expect(inlinePre).not.toBeNull()
+    expect(inlinePre?.textContent).toContain('line-17')
     expect(container.textContent).toContain('Open full body')
-    expect(container.textContent).not.toContain('line-17')
 
     const button = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Open full body'))
     expect(button).toBeTruthy()
@@ -57,7 +59,7 @@ describe('SnapshotBodyPreview', () => {
 
     const dialog = document.body.querySelector('.snapshot-full-dialog[role="dialog"]')
     expect(dialog).not.toBeNull()
-    expect(container.textContent).not.toContain('line-17')
+    expect(inlinePre?.textContent).toContain('line-17')
     expect(dialog?.textContent).toContain('line-17')
 
     const copyButton = Array.from(dialog?.querySelectorAll('button') ?? []).find(node => node.textContent?.includes('Copy'))
@@ -259,6 +261,12 @@ describe('SnapshotBodyPreview', () => {
     const onExpandedChange = vi.fn()
 
     await act(async () => {
+      root.render(<SnapshotBodyPreview body={`<root>${longXML}</root>`} headers={{ 'Content-Type': 'application/soap+xml' }} onExpandedChange={onExpandedChange} />)
+    })
+
+    expect(container.textContent).not.toContain('line-17')
+
+    await act(async () => {
       root.render(<SnapshotBodyPreview body={`<root>${longXML}</root>`} headers={{ 'Content-Type': 'application/soap+xml' }} expanded={false} onExpandedChange={onExpandedChange} />)
     })
 
@@ -271,5 +279,21 @@ describe('SnapshotBodyPreview', () => {
     })
 
     expect(container.textContent).toContain('line-17')
+  })
+
+  it('disables inline syntax highlighting for oversized bodies while keeping full scrollable plain text', async () => {
+    const largePayload = JSON.stringify({
+      items: Array.from({ length: 4200 }, (_, index) => `entry-${index}`),
+    })
+
+    await act(async () => {
+      root.render(<SnapshotBodyPreview body={largePayload} headers={{ 'Content-Type': 'application/json' }} />)
+    })
+
+    const inlinePre = container.querySelector('pre.snapshot-code')
+    expect(inlinePre).not.toBeNull()
+    expect(inlinePre?.textContent).toContain('entry-4199')
+    expect(container.querySelector('.snapshot-code-token-key')).toBeNull()
+    expect(container.querySelector('.snapshot-body-render-note')?.textContent).toContain('Syntax highlighting is disabled for this large body.')
   })
 })

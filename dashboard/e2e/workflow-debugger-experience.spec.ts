@@ -148,7 +148,7 @@ test('request and response code fills the debug pane and follows dock resizing',
     name: 'Debugger_payload_height', version: '1.0', protocol: 'http', config: { base_url: targetURL },
     actions: [
       { name: 'Short payload', type: 'request', method: 'POST', target: '/layout-short', body: 'debug-customer' },
-      { name: 'Long payload', type: 'request', method: 'GET', target: '/layout-long' },
+      { name: 'Long payload', type: 'request', method: 'POST', target: '/layout-long', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: Array.from({ length: 30 }, (_, index) => `Request line ${index + 1}`), tail: 'last-retained-request-value' }) },
     ],
   } } })))
   // Leave enough height for the evidence metadata and both payloads when the dock is open.
@@ -209,11 +209,45 @@ test('request and response code fills the debug pane and follows dock resizing',
   for (let index = 0; index < shorterViewport.length; index++) expect(collapsed[index].codeHeight - shorterViewport[index].codeHeight).toBeGreaterThan(80)
   await page.screenshot({ path: testInfo.outputPath('debugger-payload-height.png') })
 
-  // Full retained payloads remain reachable through the existing preview control.
+  // Long payloads scroll inline inside bounded code boxes in the right side rail while keeping Open full body.
   await actions.getByRole('treeitem', { name: /^Long payload/ }).click()
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.getByRole('tab', { name: 'DSL', exact: true }).click()
+  const resolvedBodyCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-detail-label').filter({ hasText: /^Resolved Body$/ }) })
+  await expect(resolvedBodyCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
+  await expect(requestCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
+  await expect(responseCard.locator('pre.snapshot-code')).toContainText('last-retained-response-value')
+  const railCardLayout = await Promise.all([resolvedBodyCard, requestCard, responseCard].map(card => card.evaluate((el: HTMLElement) => {
+    const rect = el.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, width: rect.width }
+  })))
+  expect(railCardLayout[1].width).toBeGreaterThan(220)
+  expect(Math.abs(railCardLayout[1].width - railCardLayout[0].width)).toBeLessThanOrEqual(2)
+  expect(Math.abs(railCardLayout[2].width - railCardLayout[0].width)).toBeLessThanOrEqual(2)
+  expect(railCardLayout[2].top).toBeGreaterThanOrEqual(railCardLayout[1].bottom - 2)
+  for (const codeBox of [resolvedBodyCard.locator('pre.snapshot-code'), requestCard.locator('pre.snapshot-code'), responseCard.locator('pre.snapshot-code')]) {
+    await codeBox.scrollIntoViewIfNeeded()
+    const scrollMetrics = await codeBox.evaluate((el: HTMLElement) => {
+      const style = getComputedStyle(el)
+      el.scrollTop = el.scrollHeight
+      return {
+        overflowY: style.overflowY,
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+      }
+    })
+    expect(scrollMetrics.overflowY).toBe('auto')
+    expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight)
+    expect(scrollMetrics.scrollTop).toBeGreaterThan(0)
+  }
+  await requestCard.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('debugger-right-rail-scrollable.png') })
+
+  // Full retained payloads remain reachable through the existing preview control.
   await page.setViewportSize({ width: 900, height: 1000 })
   const paneSwitch = page.getByRole('group', { name: 'Debug panes', exact: true })
-  if (await paneSwitch.isVisible()) await paneSwitch.getByRole('button', { name: 'Editor', exact: true }).click()
+  if (await paneSwitch.isVisible()) await paneSwitch.getByRole('button', { name: 'Inspector', exact: true }).click()
   await responseCard.getByRole('button', { name: 'Open full body', exact: true }).click()
   const fullBody = page.getByRole('dialog', { name: 'Full body', exact: true })
   const lastValue = fullBody.getByText('"last-retained-response-value"', { exact: true })

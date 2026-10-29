@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
 import SnapshotFullDialog from './SnapshotFullDialog'
+import './SnapshotBodyPreview.css'
 
 const MAX_PREVIEW_LINES = 10
 const MAX_PREVIEW_CHARS = 800
@@ -30,12 +31,13 @@ export default function SnapshotTextPreview({
   emptyMessage = 'n/a',
   preClassName,
   expanded,
+  onExpandedChange,
 }: Props) {
   const normalizedText = useMemo(() => text || emptyMessage, [text, emptyMessage])
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
   const [fullDialogOpen, setFullDialogOpen] = useState(false)
-  const isExpanded = expanded === true
+  const isControlledCollapsed = expanded === false || (expanded === undefined && onExpandedChange !== undefined)
 
   useEffect(() => {
     setCopied(false)
@@ -46,7 +48,8 @@ export default function SnapshotTextPreview({
   const canOpenFull = Boolean(text)
   const canCopy = Boolean(text)
   const copySupported = canCopyTextToClipboard()
-  const visibleText = isExpanded ? normalizedText : buildPreviewText(normalizedText)
+  const visibleText = isControlledCollapsed ? buildPreviewText(normalizedText) : normalizedText
+  const combinedPreClassName = preClassName ? `${preClassName} snapshot-text-preview` : 'snapshot-text-preview'
 
   const handleCopy = async () => {
     if (!text || !copySupported) return false
@@ -67,7 +70,7 @@ export default function SnapshotTextPreview({
 
   return (
     <>
-      <pre className={preClassName}>{visibleText}</pre>
+      <pre className={combinedPreClassName}>{visibleText}</pre>
       {(canOpenFull || canCopy) && (
         <div className="snapshot-body-actions">
           {canCopy && (
@@ -101,7 +104,7 @@ export default function SnapshotTextPreview({
         onCopy={() => void handleCopy()}
         onClose={() => setFullDialogOpen(false)}
       >
-        <pre className={preClassName}>{normalizedText}</pre>
+        <pre className={combinedPreClassName}>{normalizedText}</pre>
       </SnapshotFullDialog>
     </>
   )

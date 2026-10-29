@@ -210,6 +210,7 @@ export default function SnapshotBodyPreview({
   expanded,
   autoExpandPaths,
   copyFieldName,
+  onExpandedChange,
 }: Props) {
   const formattedBody = useMemo(() => {
     if (!body) return emptyMessage
@@ -224,7 +225,9 @@ export default function SnapshotBodyPreview({
   const [copiedField, setCopiedField] = useState(false)
   const [copyFieldFailed, setCopyFieldFailed] = useState(false)
   const [fullDialogOpen, setFullDialogOpen] = useState(false)
-  const isExpanded = expanded === true
+  const isExplicitlyExpanded = expanded === true
+  const isControlledCollapsed = expanded === false || (expanded === undefined && onExpandedChange !== undefined)
+  const showFullInline = !isControlledCollapsed
   const largeBody = formattedBody.length > MAX_HIGHLIGHTED_BODY_CHARS
     || formattedBody.split('\n', MAX_HIGHLIGHTED_BODY_LINES + 1).length > MAX_HIGHLIGHTED_BODY_LINES
 
@@ -253,7 +256,7 @@ export default function SnapshotBodyPreview({
   const canOpenFull = Boolean(body)
   const canCopy = Boolean(body)
   const copySupported = canCopyTextToClipboard()
-  const visibleBody = isExpanded ? formattedBody : buildPreviewBody(formattedBody)
+  const visibleBody = showFullInline ? formattedBody : buildPreviewBody(formattedBody)
 
   const handleCopy = async () => {
     if (!body || !copySupported) return false
@@ -292,16 +295,16 @@ export default function SnapshotBodyPreview({
 
   return (
     <>
-      {isExpanded && parsedJson !== undefined && !largeBody ? (
+      {isExplicitlyExpanded && parsedJson !== undefined && !largeBody ? (
         <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ margin: 0, padding: 0 }}>
           <JsonViewer data={parsedJson} autoExpandPaths={autoExpandPaths} />
         </div>
       ) : (
         <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
-          {renderHighlightedCode(visibleBody, isExpanded && largeBody ? 'plain' : bodyFormat)}
+          {renderHighlightedCode(visibleBody, showFullInline && largeBody ? 'plain' : bodyFormat)}
         </pre>
       )}
-      {isExpanded && largeBody && <p className="snapshot-body-render-note">Syntax highlighting is disabled for this large body. Copy or open it to inspect the complete plain text.</p>}
+      {showFullInline && largeBody && <p className="snapshot-body-render-note">Syntax highlighting is disabled for this large body. Copy or open it to inspect the complete plain text.</p>}
       {(canOpenFull || canCopy) && (
         <div className="snapshot-body-actions">
           {copyFieldButton}
