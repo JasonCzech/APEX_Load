@@ -1,9 +1,10 @@
 # Native analytics: imports, identities and panels
 
-Imported Parquet, measurement identities, bounded queries, saved panels and resource limits. Start with [project and native-build enablement](ANALYSIS_WORKFLOWS.md#enable-the-workflows). [RCA](ROOT_CAUSE_ANALYSIS.md) and [baseline comparison](BASELINE_COMPARISON.md) retain their distinct contracts. Qualification is tracked in the analytics acceptance matrix (`docs/qa/ANALYTICS_ACCEPTANCE.md`).
+Imported Parquet, measurement identities, bounded queries, saved panels and resource limits. Start with [project and native-build enablement](#enable-the-workflows). [RCA](ROOT_CAUSE_ANALYSIS.md), [baseline comparison](ROOT_CAUSE_ANALYSIS.md#baseline-comparison) and [monitoring and preparation](MONITORING_AND_PREPARATION.md) retain their distinct contracts. Qualification is tracked in the analytics acceptance matrix (`docs/qa/ANALYTICS_ACCEPTANCE.md`).
 
 ## Contents
 
+- [Enable the workflows](#enable-the-workflows)
 - [Import and compare Parquet](#import-and-compare-parquet)
 - [Decimal precision review](#decimal-precision-review)
 - [Imported measurement identities](#imported-measurement-identities)
@@ -14,6 +15,20 @@ Imported Parquet, measurement identities, bounded queries, saved panels and reso
 - [Live and grouped evidence panels](#live-and-grouped-evidence-panels)
 - [Export displayed charts](#export-displayed-charts)
 - [Shared metric and operation catalog](#shared-metric-and-operation-catalog)
+
+## Enable the workflows
+
+These workflows are explicitly enabled per project; existing runs, clients and archives remain readable without them. Set comma-separated project IDs on every controller replica:
+
+```text
+APEXLOAD_RUN_MONITOR_PROJECTS=project-id
+APEXLOAD_PREPARATION_PROJECTS=project-id
+APEXLOAD_ANALYSIS_PROJECTS=project-id
+```
+
+Native Parquet operations additionally require `CGO_ENABLED=1` and the `analytics_duckdb` build tag (`make controller-analytics`). The pinned driver is `github.com/duckdb/duckdb-go/v2`; published controller images use `Dockerfile.controller` (`standard` and `enterprise` profiles), and desktop packaging includes the tag. The ordinary Go build and `Dockerfile` preserve the CGO-free profile, whose `GET /api/v1/analysis/capabilities` response explicitly reports that native Parquet is unavailable. Generator and collector builds do not import DuckDB. Native build and test lanes cover Linux amd64/arm64, macOS arm64 and Windows amd64; a CI lane definition alone is not evidence that a target release has passed qualification.
+
+DuckDB databases are process-local, disposable caches. SQLite or PostgreSQL owns metadata, revisions and publication state, and the configured archive backend owns original and normalized artifacts. HA replicas never share a writable DuckDB database. Queries use approved operations with extension installation and loading disabled and file access limited to their protected staging directory. When multiple controller replicas share publication or archive source staging, configure an absolute pod-private reader cache directory via `APEXLOAD_ARCHIVE_READER_CACHE_DIR` (canonicalized through symlinks and verified non-overlapping with the filesystem archive root and `APEXLOAD_ARCHIVE_STAGING_DIR`) so process-local reader leases and eviction remain isolated per replica. The generated [API specification](swagger.yaml) is the authoritative route and request contract.
 
 ## Import and compare Parquet
 
@@ -66,48 +81,35 @@ its objects are retained and the dataset stays deletion-pending. Only the
 `_analysis` directory itself is judged: do not mount another filesystem below
 it. A probe that fails judges nothing that sweep and is retried.
 
-**The artifact directory is never created by the judge.** Writers create
-`_analysis` on their first artifact write (an upload chunk, a normalization
-output or a monitor artifact), as they always have; the exit scope (the sweep
-and an upload retry's exit proof), DELETE and cleanup never do. While
-`_analysis` is missing no exit is judged. So on a fresh filesystem backend
-where nothing has been written yet, an upload writer that died before its first
-write stays owned:
+**Physical volume identity (`_analysis/source.v1`).** On a fresh filesystem
+backend, minting a writer intent atomically materializes `<archive root>/_analysis`
+(mode `0700`) and `<archive root>/_analysis/source.v1` (mode `0600`, holding a
+canonical UUID) and binds that volume UUID in `app_settings` before I/O begins.
+Because `source.v1` is written at writer-mint time, a same-host successor can
+immediately judge an upload or normalization writer that crashed before its first
+chunk or output write. The exit-scope sweep, `DELETE`, cleanup and backend checks
+verify `_analysis/source.v1` without creating `_analysis`: once a volume UUID is
+bound in `app_settings`, an unmounted share or replaced disk whose `source.v1`
+is missing or carries a different UUID fails closed (`503`) instead of granting
+exit scope or reporting bytes on the unmounted share as deleted.
 
-- the client's retry of that offset answers 409 "upload cursor was not
-  committed; reload durable cursor", and the controller logs, at most every 10
-  minutes, a warning naming the missing directory and the workaround;
-- while the import is still `uploading`, only a retry of that offset judges the
-  writer; the sweep reaches it only once DELETE has queued the dataset's
-  cleanup;
-- DELETE answers 503 `analysis_dataset_deletion_pending` with
-  `unproven_writers: 1`, `retryable: true` and `Retry-After: 60`.
+**Start the controller only after the archive volume is mounted.** Before any
+volume UUID has been bound on a brand-new installation, starting the controller
+against an unmounted NFS, SMB or EFS mount point would mint `source.v1` on the
+local mount-point directory rather than on the share. Mount the archive volume
+before starting the controller so the initial `source.v1` binding lands on the
+intended filesystem.
 
-Any later write, of any dataset or monitor, creates `_analysis`, and the writer
-is then judged at the client's next retry of that offset or, after DELETE, at
-the next sweep (about a minute). To unblock it without waiting for another
-write, create `<archive root>/_analysis` on the mounted archive volume, mode
-0700, owned by the user the controller runs as.
-
-**Start the controller only after the archive volume is mounted.** A path
-alone does not say which volume it names: after a reboot an NFS, SMB or EFS
-archive share can be unmounted while its mount point exists on the local disk.
-Two existing behaviours, which this release does not change, then act on the
-wrong disk: a writer creates `_analysis` on the local mount point and writes
-its artifacts there, and cleanup treats a missing `_analysis` as nothing left
-to delete, so a dataset whose bytes stay on the share can be reported deleted.
-
-This recovery reaches only a successor in the dead controller's own PID
-namespace: a process restarted in place under systemd, launchd, a service
-manager or the desktop app. The Helm chart (no `shareProcessNamespace`) and
-docker compose restart the controller in a new container, which is a new PID
-namespace, so those deployments get no restart recovery yet. Neither does HA
-takeover by a replica on another host, or macOS after a reboot (macOS records
-no machine identity): that work stays owned. A replaced Kubernetes pod on
-another node can judge its predecessor only when its host name and machine
-ID both match (a baked machine-id with a fixed host name), which the machine
-identity requirement below forbids for distinct hosts; on the same node it
-never can, because it runs in a new PID namespace.
+Automatic process-exit recovery reaches a successor in the dead controller's own
+PID namespace (a process restarted in place under systemd, launchd, a service
+manager or the desktop app) or on the same identified machine after a reboot.
+The Helm chart (no `shareProcessNamespace`) and docker compose restart the
+controller in a new container (a new PID namespace), and HA takeover on another
+host or macOS after a reboot (macOS records no machine identity) cannot prove
+exit automatically: that work stays owned until attested as stopped. A replaced
+Kubernetes pod on another node could judge its predecessor only if its host name
+and machine ID both matched, which the machine identity requirement below forbids
+for distinct hosts.
 
 **Machine identity requirement.** Every host that shares the SQL store must
 have its own machine identity: on Linux a distinct `/etc/machine-id` (only
@@ -133,14 +135,23 @@ by a controller with no process identity, or rewritten by an older
 controller), `remote_commits_unproven` and `legacy_writers`. `retryable` is
 true while some writer may still resolve; `Retry-After` is set only while this
 host may settle one. Repeating DELETE re-reads this status without
-re-queuing cleanup. Restart recovery across containers and HA replicas, and
-an intervention path for legacy writers, unproven remote commits and writers
-whose host is gone, remain open. See the
-writer ownership review (`docs/qa/reviews/roadmap-native-writer-ownership-2026-10-25/README.md`).
+re-queuing cleanup.
+
+**Audited writer-stop attestation.** For legacy writers, unproven remote commits,
+container restarts across PID namespaces or writers whose host has been retired,
+a project or system administrator who has independently verified that the writer
+process has stopped can release ownership on a cancelled, failed or deleting
+import via `POST /api/v1/analysis/imports/{id}/attest-writer-stopped` with
+`{"reason": "..."}` (3–1,024 characters). The controller refuses with `409` if
+a writer on the handling controller is still active or if the import is not yet
+cancelled, failed or deleting, and records an audited
+`analysis.import.attest-writer-stopped` event before allowing physical cleanup
+and `DELETE` to complete. See the writer ownership review
+(`docs/qa/reviews/roadmap-native-writer-ownership-2026-10-25/README.md`).
 
 Rejected measurements fail publication by default; the import's error then names the file, the measure, how many rows were rejected and the first zero-based source row ordinals. Explicitly accepting them retains a complete rejected-row Parquet artifact with file/measure identity and zero-based source row ordinals, plus bounded metadata summaries. Rejected source values are never copied into error reports. The dashboard caps artifact downloads at 64 MiB; larger artifacts remain accessible through the authenticated API.
 
-Every source file must hold each mapped column as a scalar column. A file that lacks one, holds it as a list or repeated field, or holds a group of fields there fails the whole import before any row is read; nothing is accepted, and the import's error names the file and the column, for example `File "b.parquet" does not match the mapping: it has no column "latency".` A mapped column whose values in some file cannot be read as numbers is a rejected measurement with row provenance, as above. Other normalization failures keep the generic message. Two files with the same content are normally refused at commit, naming both; identical content uploaded in differently sized chunks is caught during normalization instead, with the generic message.
+Every source file must hold each mapped column as a scalar column. A file that lacks one, holds it as a list or repeated field, or holds a group of fields there fails the whole import before any row is read; nothing is accepted, and the import's error names the file and the column, for example `File "b.parquet" does not match the mapping: it has no column "latency".` A mapped column whose values in some file cannot be read as numbers is a rejected measurement with row provenance, as above. Other normalization failures keep the generic message. Two files in the same import with identical content are refused at commit (`422`, naming both files): commit resolves whole-file SHA-256 digests across single-chunk and assembled multi-chunk uploads (or compares file size and ordered `(offset, size, sha256)` chunk provenance), and normalization repeats verified source-hash duplicate detection so identical content uploaded with different chunk boundaries still fails closed.
 
 Mappings distinguish gauges, counters, raw transaction observations and summary
 values. Timestamp mappings require an explicit timezone and encoding. Offset
@@ -272,20 +283,7 @@ kinds: `telemetry_policy`, `telemetry_acceptance_policy`, `browser_policy`,
 `journey_policy` and `derived_operation`. Viewers list (by `kind`) and read
 them; editors create, update with the expected `revision`, and delete. At most
 one policy of each kind may set `apply_by_default`. A browser policy's
-`pinned_run` baseline must be a run of the same project. When a run starts, or
-a queued run is promoted, the project's default policy of each kind is pinned
-into the run's admission record and appears as `policy_pins` in its provenance
-and archive manifest; a later edit never changes a pinned run. Pins are
-recorded with `applied: false`, a field kept for compatibility that says
-nothing about enforcement (the pin is written at admission, before any
-consumer judges the run). The consumers that judge a run against its pins say
-so in their own results: telemetry acceptance verdicts (`enforced` under
-`fail_ci`), browser findings, journey accounting and RCA's browser baseline
-(`browser_baseline.policy`) each name the pinned revision they used. A project
-whose defaults cannot be read unambiguously refuses Start (and a queued run's
-promotion) instead of running without its pins. Only project defaults are
-pinned; system-wide telemetry defaults and scenario-level policy selection
-are not yet resolved into the snapshot.
+`pinned_run` baseline must be a run of the same project. When a run starts, or a queued run is promoted, each kind's project default—overridden by any explicit `analysis_policy_selections` (`browser_policy` and `journey_policy` revision pins configured on the scenario, scenario schedule under schema release 85 `scenario-schedule-analysis-policy-selections`, or run request) and any chosen `telemetry_acceptance_policy_id` or `telemetry_budget_policy_id` (`source: "run_selection"` vs. `"project_default"`)—is pinned into the run's admission record and appears as `policy_pins` in its provenance and archive manifest; a later edit never changes a pinned run. Pins are recorded with `applied: false`, a field kept for compatibility that says nothing about enforcement (the pin is written at admission, before any consumer judges the run). The consumers that judge a run against its pins say so in their own results: telemetry acceptance verdicts (`enforced` under `fail_ci`), browser findings, journey accounting and RCA's browser baseline (`browser_baseline.policy`) each name the pinned revision they used. A project whose defaults cannot be read unambiguously, or a chosen policy revision that no longer exists, refuses Start (and a queued run's promotion) rather than falling back silently or running without its pins. System-wide telemetry defaults remain separate from project `policy_pins`.
 
 A `telemetry_policy` revision can also be named explicitly in a
 `telemetry_acceptance` evaluation (`POST /api/v1/analysis/evaluations`), which
@@ -503,7 +501,7 @@ Cancellation deadlines do not release an unresolved process, descriptor or
 publication owner. The watchdog retains uncertainty until actual closure and
 SQL acknowledgement; platform hard containment and the native worker's
 restart qualification (its heavy-work reservation and private staging after a
-controller crash) remain separate gates. Concurrent requests receive explicit busy, resource,
+controller crash) remain open as separate gates. Concurrent requests receive explicit busy, resource,
 cancellation or size-limit errors. SQLite/PostgreSQL schema 33 records exact
 attempt ownership, sealed publication and cleanup. Process-local retry records
 bind the immutable SQL and artifact namespaces and retain ambiguous outcomes;
@@ -570,7 +568,7 @@ Promotion occurs after result redaction. Unlisted values become `other`; absent 
 
 Live summaries expose `properties`; archive reports recompute `by_property` from action observations. JSONL and Parquet retain `property_dimensions`. Existing archive transaction queries accept paired `property_name` and `property_value` exact filters; use the action population when reconciling with live property counts. Old archives without promotion evidence remain unavailable. Property comparisons across script revisions must use the same promotion definitions.
 
-Run pages now offer native project panel creation with line, latest-value and table views, using the retained run time window. Supported run measurements include TPS, response-time means/interval percentiles, errors, VUsers and process resources. Project viewers can reopen saved panels. Missing intervals remain gaps, interval percentiles are never averaged, and unsupported stored query dimensions/filters/aggregations are explicitly unavailable. Archived action/transaction and property filtering is described below. General dimensions and monitor/imported-dataset overlay authoring remain follow-on work.
+Run pages offer native project panel creation with line, latest-value and table views, using the retained run time window. Supported run measurements include TPS, response-time means/interval percentiles, errors, VUsers, process resources, protocol payload/body bytes, messaging counters, Java HTTP representation diagnostics and browser document cohorts. Project viewers can reopen saved panels. Missing intervals remain gaps, interval percentiles are never averaged, and unsupported stored query dimensions/filters/aggregations are explicitly unavailable. Archived action/transaction and property filtering, grouped dimension selections and run-monitor or imported-dataset overlays are described below.
 
 
 ### Saved panel revisions and pinned inputs
@@ -594,10 +592,14 @@ or its project.
   current revision.
 - **Edits and deletes.** Both still need the revision they replace: a stale or
   racing edit or delete is `409`, and an edit of a deleted definition is `404`.
-- **Query version.** New panels state `query_version` (2), the query semantics
-  they were saved under. A missing version is read with the same rules; a
-  version newer than the controller's is refused when a panel is saved and
-  when a query runs.
+- **Query version.** Saved panels declare the `query_version` semantics they
+  were saved under: `2` for standard run, grouped, byte and overlay panels, `3`
+  for `browser_document` multi-tuple cohort panels, `4` for pinned browser
+  comparisons (`BrowserPanelInputs` v1), and `5` for browser comparisons that
+  also pin `browser_policy`/`journey_policy` revisions and the RCA
+  `selection_receipt_sha256` (`BrowserPanelInputs` v2). A missing version is
+  read under `query_version: 2`; a version newer than the controller's is
+  refused when a panel is saved and when a query runs.
 - **Pinned dataset artifacts.** A committed dataset reports `artifact_sha256`,
   a digest of its normalized artifacts, wherever it is read (one dataset or
   import, the import list, a commit of a ready import, an association). A mapping change or a new commit
@@ -609,30 +611,42 @@ or its project.
   compare` and `save-comparison` carry the pin. An unpinned selection reads
   the current artifacts.
 
-`apexctl analysis` covers the same workflows. A command that prints the
-controller's response as it is streams it to standard output instead of
-loading it whole. Commands that read the response first still read it within
-a response limit: `journeys`, `browser-findings`, `interactions`, `har-entry`,
-`policies`, `browser-har list`,
-`browser-documents`, `telemetry-policy`, `telemetry-policy-change`, `telemetry-reevaluate`,
-`panel --revision` and `baseline --fail-on-regression` (8 MiB), and
-`browser-resources` (one 2 MiB page at a time):
+`apexctl analysis` covers the complete native analytics, panel, policy, telemetry
+and browser-intelligence CLI surface. Commands that print the controller's
+response verbatim stream it directly to standard output (or `--out FILE`)
+without loading it whole; commands that inspect or verify the response first
+read within an explicit bound (`journeys`, `browser-findings`, `interactions`,
+`har-entry`, `policies`, `browser-har list`, `browser-documents`,
+`telemetry-policy`, `telemetry-policy-change`, `telemetry-reevaluate`,
+`panel --revision`, `replay-panel` and `baseline --fail-on-regression` within
+8 MiB; `browser-resources` one 2 MiB page at a time):
 
 | Command | Does |
 | --- | --- |
-| `catalog --project P` | The analysis capabilities and catalog (same as `capabilities`). |
-| `panels --project P` | Lists the project's saved panel definitions. |
-| `panel --id ID [--revision N]` | Shows a definition, or exactly its saved revision N. |
-| `save-panel --file def.json` | Creates a definition (the file names `project_id`). |
-| `update-panel --id ID --file patch.json` | Edits a definition; the patch carries the expected `revision`. |
-| `delete-panel --id ID --revision N` | Deletes a definition at revision N. |
-| `run-query --id RUN --file query.json` | Runs a native archive query of one run (and its `comparison_run_id`). |
-| `interactions --run RUN` | A finalized run's interaction patterns and heatmaps. |
-| `har-entry --run RUN --request-id ID` | One retained browser request as a synthetic HAR entry, the native HAR that holds it, or why the synthetic HAR leaves it out (fidelity `omitted`); HAR download permission. A 503 (another browser archive read, or out of time) can be retried. |
-| `policies list\|get\|save\|delete --project P …` | Lists, reads (a past `--revision`), saves (an existing one at the `--revision` it was read at) or deletes analysis policies. |
-
-The `list`, `create`, `upload`, `map`, `commit`, `query`, `compare`,
-`mappings` and `comparisons` commands keep covering imports and comparisons.
+| `catalog --project P` / `capabilities --project P` | Reads project analysis capabilities and `metric_catalog` (`GET /api/v1/analysis/capabilities`). |
+| `list --project P` / `show --id IMPORT` | Lists project imports/datasets or shows one import/dataset (`GET /api/v1/analysis/imports`). |
+| `create --project P --file desc.json` | Creates a Parquet import session (`POST /api/v1/analysis/imports`). |
+| `upload --id IMPORT --file-id FILE --file data.parquet [--chunk-bytes N]` | Uploads resumable verified chunks (`1024` to `4194304` bytes). |
+| `preview --id IMPORT --file-id FILE` | Reads bounded schema and redacted preview (`GET /api/v1/analysis/imports/{id}/files/{fileId}/preview`). |
+| `precision-review --id IMPORT --file review.json` | Reviews mapped DECIMAL rounding risk (`POST /api/v1/analysis/imports/{id}/precision-review`). |
+| `map --id IMPORT --file mapping.json` | Saves mapping (and optional precision digests) (`PUT /api/v1/analysis/imports/{id}/mapping`). |
+| `commit --id IMPORT` / `cancel --id IMPORT` | Starts normalization (`POST .../commit`) or cancels/deletes an import (`DELETE /api/v1/analysis/imports/{id}`). |
+| `associate --id DATASET --file assoc.json` | Associates a dataset with a project run (`PUT /api/v1/analysis/datasets/{id}/association`). |
+| `query --id DATASET --file query.json` | Queries bucketed dataset series (`POST /api/v1/analysis/datasets/{id}/series`). |
+| `compare --project P --file cmp.json` | Runs a two-side lagged correlation/comparison (`POST /api/v1/analysis/compare`). |
+| `mappings --project P` / `save-mapping --project P --file map.json` | Lists or saves reusable Parquet mapping definitions. |
+| `comparisons --project P` / `save-comparison --project P --file cmp.json` | Lists or saves reusable dataset/monitor comparison definitions. |
+| `panels --project P` / `panel --id ID [--revision N]` | Lists saved panel definitions or opens a definition (or exact saved revision `N`). |
+| `save-panel --file def.json` / `update-panel --id ID --file patch.json` / `delete-panel --id ID --revision N` | Creates (`POST`), updates (`PATCH` with expected `revision`) or deletes (`DELETE`) a saved panel definition. |
+| `replay-panel --id ID [--project P] [--revision N]` | Re-executes every panel in a saved dashboard definition (verifying `BrowserPanelInputs` pins when present). |
+| `run-query --id RUN (--file query.json \| --metric M ...)` | Queries archived run series (`POST /api/v1/tests/{id}/archive/native-series`). |
+| `evidence-query --id RUN (--file query.json \| --metric M ...)` | Queries live run interval or merged series (`POST /api/v1/tests/{id}/native-series`). |
+| `byte-query --id RUN --mode live\|archive (--file query.json \| --metric M ...)` | Queries live (`POST /api/v1/tests/{id}/native-series`) or archived (`POST /api/v1/tests/{id}/archive/native-series`) protocol payload/body byte series. |
+| `progress --id RUN --mode live\|archive [--group G] [--source-id S]` | Reads standalone Event Hubs processor progress (`GET /api/v1/tests/{id}/messaging-progress`). |
+| `baseline --id RUN --file req.json [--fail-on-regression]` | Runs a workload-qualified baseline comparison (`POST /api/v1/tests/{id}/baseline-comparisons`). |
+| `policies list\|get\|save\|delete --project P ...` | Lists, reads (including `--revision`), creates/updates or deletes revisioned analysis policies. |
+| `telemetry-policy` / `telemetry-policy-change` / `telemetry-reevaluate` | Reads live or archived telemetry policy receipts, appends runtime budget segments (`POST /api/v1/tests/{id}/telemetry-policy-segments`), or re-evaluates runs under a policy revision (`POST /api/v1/analysis/evaluations`). |
+| `journeys` / `browser-findings` / `browser-documents` / `browser-resources` / `browser-har` / `interactions` / `har-entry` | Reads finalized journey accounting, browser findings, document evidence, paginated retained resources, HAR inventories/downloads, interaction patterns and single-request HAR entries. |
 
 ## Filtered archive panels and comparisons
 
@@ -730,50 +744,38 @@ therefore score in merged live mode; moving statistics over a count panel
 score only where publications cover whole buckets. An archive whose source coverage lists an uncollected
 generator, or whose CSV export is incomplete, leaves every bucket incomplete:
 a ratio or counter derivation reports `incomplete_evidence`, a moving one
-`insufficient_coverage` or `insufficient_valid_buckets`. Evidence queries
-(`POST /api/v1/tests/{id}/native-series`) select the action or transaction
-population only; message and browser document populations are
-archive panels. Responses name the catalog operation even when an alias was
-asked for. A controller that predates derivations ignores the field: during a
-rolling upgrade a saved derivation can be dropped by an older peer that
-re-saves the dashboard, and a derived query answered by one returns raw
-values without a `derivation` echo.
+`insufficient_coverage` or `insufficient_valid_buckets`. Live evidence queries (`POST /api/v1/tests/{id}/native-series`) serve the `action`, `transaction` and `byte` (`sum` and `rate` from `byte_evidence.live_interval_totals.v1`) populations; `message`, `browser_document`, `java_http_action` and per-observation `byte` distributions are archive queries (`POST /api/v1/tests/{id}/archive/native-series`). Responses name the catalog operation even when an alias was asked for. A controller that predates derivations ignores the field: during a rolling upgrade a saved derivation can be dropped by an older peer that re-saves the dashboard, and a derived query answered by one returns raw values without a `derivation` echo.
 
 Each derived bucket carries its value or a `reason`: `zero_denominator`, `incomplete_evidence`, `numerator_not_subset`, `missing_bucket`, `missing_baseline_bucket`, `baseline_not_comparable`, `insufficient_window`, `insufficient_valid_buckets`, `insufficient_coverage`, `no_prior_sample`, `missing_counter_sample`, `counter_reset`, `duplicate_counter_instant`, `invalid_counter_sample`, `counter_epoch_changed_or_unknown`, `evidence_unavailable` and the rest of the typed functions' reasons. A complete window with no events is a measured zero for counts and rates but an unscored zero denominator for a ratio (a merged live bucket is complete only when some source published into it, and a count bucket only when publications cover its whole window); a bucket past run completion, with legacy population or missing property evidence, is incomplete. A baseline derivation compares only a comparable baseline run (the same comparison fingerprint and complete evidence); otherwise every bucket is `baseline_not_comparable`. Responses name the applied `derivation` and the derived unit (`ratio`, `percent` or the series' canonical unit); a query without a derivation renders exactly as before.
 
 The archive `message` population reads received messages from messaging v2 evidence (`message_count`, optionally filtered by `source`). A message ratio divides the messages its counter counted by the messages that counter observed, and a bucket is complete only when every selected dimension carried complete v2 evidence and the counter observed every eligible message; a bucket described only by v1 summaries stays missing. Duplicate ratios are lower bounds within each consumer's local sequence window. Imported counters use one epoch per dataset revision and identity; a bucket in which a reading falls below the previous one (inside it or across from an earlier bucket) is a `counter_reset`, and one instant with two different readings is a `duplicate_counter_instant`; the bucket after a missing one is a `missing_counter_sample`. Moving statistics over an imported series derive the bucketed series itself (a counter's rate, a histogram or summary percentile), and imported metric names are the dataset's own, never matched against the native catalog. Moving derivations on live per-source intervals, whose windows are not aligned, are refused.
 
-Saved dashboards validate through the catalog: catalog metrics and aggregations, the retained grouping and filter dimensions, and an alias table that keeps saved names meaning what they did (`tps` is `observation_rate`, `transaction_duration` is `response_time`, and live display cards such as `active_vusers`, `throughput`, `regional_activity`, `resource_cpu` and `resource_memory` keep rendering but are not catalog measurements and take no derivation; `stddev` remains a display aggregation). The catalog also declares `message_count` (population `message`; it takes moving statistics, and saved message panels may filter by `source`) and the byte metrics of population `byte` ([HTTP body bytes](#http-body-bytes)). Browser document metrics `document_fcp`, `document_lcp`, `document_cls` (unit `score`) and `document_inp` (population `browser_document`, aggregations `p50`, `p75`, `p90`, `p95` and `p99`; each bucket's `count` is its final documents) read one measurement tuple's final document distribution; their filters (`engine`, `device_profile`, `frame_scope`, `lifecycle_phase`, `group`, `region`, `cohort`) apply to these metrics only, and a selection spanning more than one tuple is refused. See [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md#comparison-and-native-analysis).
+Saved dashboards validate through the catalog: catalog metrics and aggregations, the retained grouping and filter dimensions, and an alias table that keeps saved names meaning what they did (`tps` is `observation_rate`, `transaction_duration` is `response_time`, and live display cards such as `active_vusers`, `throughput`, `regional_activity`, `resource_cpu` and `resource_memory` keep rendering but are not catalog measurements and take no derivation; `stddev` remains a display aggregation). The catalog also declares `message_count` (population `message`; it takes moving statistics, and saved message panels may filter by `source`), the protocol payload and body byte metrics of population `byte` ([HTTP body bytes](#http-body-bytes)), and the Java HTTP codec/representation metrics of population `java_http_action` ([Java HTTP representation diagnostics](#java-http-representation-diagnostics)). Browser document metrics `document_fcp`, `document_lcp`, `document_cls` (unit `score`) and `document_inp` (population `browser_document`, aggregations `p50`, `p75`, `p90`, `p95` and `p99`; each bucket's `count` is its final documents) read one measurement tuple's final document distribution under `query_version: 2`, or up to 20 separate cohort series under `query_version: 3`–`5` (`browser_tuple_mode: "separate"`); their filters (`engine`, `device_profile`, `frame_scope`, `lifecycle_phase`, `group`, `region`, `cohort`) apply to these metrics only. See [Browser intelligence workflows](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md#document-and-navigation-evidence).
 
 ### HTTP body bytes
 
-Archive panels of population `byte` read HTTP requests' body bytes from the archive's raw observations:
-- `bytes_sent` and `bytes_received` per bucket (`sum`) or per request (`avg`, `min`, `max`, `p50`, `p90`, `p95`, `p99`, nearest rank);
-- their rates, `bytes_sent_rate` and `bytes_received_rate` (`rate`, bytes/s: a bucket's sum over its duration).
+Panels and queries of population `byte` (`pkg/analysis/byte_catalog.go`) measure protocol payload and body bytes across HTTP, gRPC and WebSocket in both archive and live modes (`apexctl analysis byte-query --mode archive|live`):
+- `bytes_sent` and `bytes_received` (`bytes`): per-bucket `sum`, or—from archived raw observations—per-observation `avg`, `min`, `max`, `p50`, `p90`, `p95` and `p99` (nearest rank);
+- `bytes_sent_rate` and `bytes_received_rate` (`bytes/s`): `rate` over complete elapsed windows.
 
-The HTTP adapter measures message body bytes as they crossed the wire, after transfer decoding and before content decoding, so a compressed body counts compressed:
-- **Sent** is the body of the request the action dispatched, counted once, and again for a digest-auth replay that completed (a failed replay is not counted). It is nothing when the request was served from the cache, or failed before its headers were written (a refused dial). A request that failed after its headers were written counts its whole body. A redirect's re-sent body and the earlier attempts of an engine retry are not counted.
-- **Received** is the response body plus the bodies of the embedded resources and meta-refresh follow-ups the action fetched. It is nothing for a response served from the cache, whether fresh or after a 304.
+Each supported protocol stamps an explicit `byte_evidence` contract on every measured observation so readers distinguish a measured zero from an unmeasured protocol or step:
+- **HTTP (`http_body.v1`, `filters.protocol: "http"`):** HTTP message body bytes as they crossed the wire, after transfer decoding and before content decoding (compressed bodies count compressed). **Sent** counts the dispatched request body once (and again for a completed digest-auth replay, excluding failed replays, cache hits, dials refused before headers were written, redirect re-sends and earlier engine-retry attempts; a request that failed after headers were written counts its whole body). **Received** counts the response body plus embedded resources and meta-refresh follow-ups fetched by the action (nothing for fresh or `304` cache hits). HTTP headers, framing, TLS and connection setup are excluded; `ServerTelemetry` payload sizes retain their separate diagnostic basis.
+- **gRPC (`grpc_uncompressed_payload.v1`, `filters.protocol: "grpc"`):** uncompressed gRPC protobuf payload bytes observed by the gRPC stats handler across unary, client-stream, server-stream and bidirectional RPCs (`ServerTelemetry.GRPC` request/response payload bytes projected into archived byte columns). HTTP/2 framing, HPACK headers and TLS record overhead are excluded.
+- **WebSocket (`ws_application_payload.v1`, `filters.protocol: "websocket"`):** WebSocket application message payload bytes sent or received on data frames (`ws_send`, `ws_receive` and callback data messages). WebSocket frame headers, masking keys, control frames (`ws_ping`, `ws_close`) and synthetic connection/dispatch steps are excluded.
 
-Headers, framing, TLS and connection setup are not counted. Earlier versions counted a cached response's stored body as received, and a refused request's body as sent. The byte counts that live metrics, reports and transaction SLA byte rules read now follow these rules; server telemetry's request and response payload sizes keep their earlier basis (a response read from the wire counts compressed, one served from the cache its decoded stored body, and a request its prepared body even when it was not sent).
+**Provenance, exclusions and protocol separation.**
+- **Steps that dispatch no payload transfer (`byte_evidence: "none"`):** checks, handshakes, pings, closes and actions refused before sending are excluded from the population and counted under `no_request`.
+- **Earlier versions and mixed evidence:** observations archived without a matching `byte_evidence` stamp (or intervals stamped `unmeasured` because an execution lacked byte evidence or mixed incompatible contracts) leave their bucket unscored (`byte_evidence_unavailable`), never a measured zero. SOAP and `java_http` count as their own protocols outside population `byte` (`java_http` representation metrics use `java_http_action` below).
+- **Filtering and grouping:** byte queries may filter by `protocol` (`http`, `grpc`, `websocket`) and exact `action`, group by `action` (up to `max_series`, max 20), and—in archive mode—compare against `comparison_run_id`. When an archive holds multiple measured protocols without a `filters.protocol` selector, mixed-protocol buckets are refused or kept separate by action/protocol provenance rather than summing incompatible wire layers silently.
 
-The catalog advertises these metrics as the `archive_selection//byte/exact` query profile (`apexctl analysis run-query`, or **Archived HTTP body bytes** when authoring a panel). A query may filter on one exact action and name a comparison run; it takes no grouping, property or derivation.
+**Archive vs. live byte buckets.**
+- **Archived raw observations (`POST /api/v1/tests/{id}/archive/native-series`):** each observation is bucketed by its start timestamp (up to 100,000 selected observations and 1,000 action identities per protocol). `sum` and `rate` require a complete bucket—every selected observation evidenced, `required` source coverage with all sources collected on distributed runs, and the bucket ended by run completion—otherwise the bucket is unscored (`incomplete_bucket`). Negative counts (`invalid_byte_count`) and sums exceeding $2^{53} - 1$ (`exact_sum_limit`) are unscored. A bucket with no observations has no value; a request or frame that transferred zero payload bytes is a measured zero.
+- **Live interval byte totals (`POST /api/v1/tests/{id}/native-series`, `byte_evidence.live_interval_totals.v1`):** live queries support `sum` and `rate` over complete retained publication intervals (`live_bucket_mode: "source"`, requiring native evidence `v1`–`v3`) or merged completion-cohort buckets (`live_bucket_mode: "merged"`). Live interval totals never synthesize per-request percentiles (`avg`, `min`, `max`, `p50`–`p99`) or transport-overhead estimates; incomplete or mixed-contract intervals report `incomplete_bucket` or `byte_evidence_unavailable`.
 
-**Byte evidence.** A request counts only when the adapter that ran it recorded `byte_evidence: http_body.v1`, which the archive writer of the same binary keeps: the generator that ran it, or the controller of a local run.
-- **Earlier versions.** An HTTP request archived without byte evidence is unavailable: its bucket is unscored for every aggregation (`byte_evidence_unavailable`), and the exclusion is counted.
-- **Steps that dispatch no request.** A check or an action refused before sending is marked `none` and is not in the population; such steps are counted as excluded (`no_request`).
-- **Other protocols.** Their actions are outside the population. SOAP and Java HTTP wrap the HTTP adapter and keep its label, but count as their own protocols. gRPC results count their messages' JSON representation (the payload bytes are in its diagnostics), and WebSocket counts do not qualify yet.
-- **Rolling upgrade.** An earlier controller that merges generator archives, or writes a safe export, drops the evidence (the bytes become unavailable). An earlier replica refuses population `byte`. Upgrade the controllers too.
+### Java HTTP representation diagnostics
 
-**Buckets.** Each request counts in the bucket where it started, so a long download's bytes all fall in its first bucket. Rates are bytes per bucket second of requests that started there, not throughput as it arrived.
-- **Totals.** A sum or a rate needs a complete bucket:
-  - every request in it measured;
-  - every source's requests collected;
-  - the bucket ended by the run's execution completion.
+Archived `java_http` actions expose a dedicated `java_http_action` catalog population (`pkg/analysis/java_http_catalog.go`, version `java_http.diagnostics.v1`) kept separate from generic latency and `byte` throughput adapters so serialized representation sizes are never misread as wire payload throughput:
+- **Byte and timing distributions (`avg`, `min`, `max`, `p50`, `p90`, `p95`, `p99`):** `java_http_input_bytes`, `java_http_decoded_request_bytes`, `java_http_prepared_body_bytes`, `java_http_retained_response_bytes`, `java_http_response_base64_bytes`, `java_shallow_object_bytes`, `java_reachable_graph_bytes` (`bytes`), plus `java_http_base64_decode_ms`, `java_http_base64_encode_ms`, `java_http_enclosing_ms`, `java_serialization_ms` and `java_deserialization_ms` (`ms`).
+- **Paired representation ratios (`ratio_of_sums` over same-sample pairs):** `java_http_decoded_per_encoded`, `java_http_prepared_per_decoded`, `serialized_representation_vs_http_body`, `java_http_base64_per_retained` and `java_http_base64_work_share` (`ratio`).
 
-  Otherwise the bucket is unscored (`incomplete_bucket`). A local run has no source coverage and counts as collected. A distributed run needs `required` source coverage with every source collected: a best-effort or incomplete collection leaves totals unproven, while distributions describe the collected requests.
-- **Hard stop.** Requests that a hard stop cuts off are not archived, so a bucket's totals omit them.
-- **Unscored buckets.** An invalid count is unscored (`invalid_byte_count`), as is a sum beyond 2^53 − 1 (`exact_sum_limit`).
-- **Zero.** A bucket with no request has no value; a request that sent no body is a measured zero.
-
-Interval byte totals never stand in for these values: no per-request distribution, rate or transport estimate is derived from them. Live byte queries remain unavailable.
+All `java_http_action` metrics require `java_http_diagnostics.v1` over complete selected observations of the same action population (`MissingRule: unscored`) and support two-run baseline comparison.

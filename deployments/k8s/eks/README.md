@@ -8,7 +8,7 @@ secrets (IRSA — no static keys), a KEDA-autoscaled generator fleet, and
 DNS-based fleet discovery.
 
 Controller-loss fencing is mandatory. Follow the maintenance-window rollout
-gate and acceptance drill in [Generator restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls)
+gate and acceptance drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision)
 when upgrading from a tokenless release.
 
 The matching infrastructure lives in `deployments/aws/terraform` (see [AWS Terraform](#aws-terraform)).
@@ -66,7 +66,7 @@ missing EKS access entry directly.
 
 | File | Purpose |
 |---|---|
-| `restart-controls.yaml` | Included by default: namespaced Role for pod restart, workload scaling, and ResourceQuota reads. Generator pods receive no Kubernetes API token or restart RBAC; IRSA may separately inject an AWS STS-audience token. |
+| `restart-controls.yaml` | Included by default: namespaced Role (`Role/apexload-restart-controls`) for pod restart, workload scaling, `keda.sh/scaledobjects` and `autoscaling/horizontalpodautoscalers` `list`, and ResourceQuota reads. Generator pods receive no Kubernetes API token or restart RBAC; IRSA may separately inject an AWS STS-audience token. |
 | `node-read.optional.yaml` | Cluster-scoped node read for node-pool discovery and pod-fit checks. Opt-in; the capacity probe degrades gracefully without it. |
 | `../eks-ha` | Multi-replica controller with a single execution owner. Uses `efs-sc` for the ReadWriteMany import-assets volume. |
 | `../eks-prometheus` | kube-prometheus-stack ServiceMonitor wiring. |
@@ -200,14 +200,30 @@ An EKS environment is ready for cutover only when all gates below pass:
 
 ## AWS Terraform
 
-Provisions the AWS side of an APEX Load deployment: an EKS cluster with separate
-controller and generator node groups, RDS PostgreSQL, ElastiCache Redis, an S3
-archive bucket, ECR repositories, two KMS keys, and the IRSA roles the workloads
-authenticate with.
+Provisions the AWS data platform and the selected APEX Load compute roles. Set
+`controller_compute` and `generator_compute` independently to `eks`,
+`ecs_fargate`, or `external`:
 
-This is the AWS twin of `deployments/azure/terraform`. The Kubernetes manifests
-live in `deployments/k8s/eks` and are rendered from these outputs by
-`scripts/render-eks-manifests.sh`.
+- **EKS runtime (`eks`)**: provisions an EKS cluster with separate controller
+  and generator node groups plus split controller/generator IRSA roles, rendered
+  into `deployments/k8s/eks` by `scripts/render-eks-manifests.sh`. EKS is
+  omitted altogether when neither role selects `eks`.
+- **ECS Fargate runtime (`ecs_fargate`, `ecs.tf`)**: provisions an ECS Fargate
+  cluster (Container Insights enabled), KMS-encrypted CloudWatch log groups, an
+  HTTPS ALB-fronted Fargate controller service (`controller_compute = "ecs_fargate"`,
+  3600s WebSocket idle timeout), and/or a warm Fargate load generator service
+  plus burst task definition (`generator_compute = "ecs_fargate"`). Generators
+  connect either directly inside the VPC or via reverse gateway tunnel
+  (`ecs_generator_connectivity_mode`, automatic reverse tunnel when the
+  controller also runs on ECS Fargate), and Terraform emits the sensitive
+  `ecs_registration_manifest` output for one-step target registration.
+- **Shared AWS data platform**: RDS PostgreSQL, ElastiCache Redis, an S3 archive
+  bucket, ECR repositories, and two separate KMS keys (credential wrapping vs.
+  storage encryption).
+
+This is the AWS twin of `deployments/azure/terraform`. When `eks` is selected,
+the Kubernetes manifests live in `deployments/k8s/eks` and are rendered from
+these outputs by `scripts/render-eks-manifests.sh`.
 
 ### Usage
 

@@ -14,8 +14,10 @@ as `changeme.azurecr.io`, `apexload.example.com`, and
 `https://change-me.vault.azure.net`.
 
 Audited Kubernetes restart controls are enabled by default. The chart grants
-the controller ServiceAccount only namespace-scoped pod read/delete, workload
-read/patch, and ResourceQuota read permissions. Generator pods do not receive
+the controller ServiceAccount (`Role/apexload-restart-controls`) only
+namespace-scoped pod read/delete, workload read/patch, ResourceQuota read, and
+`keda.sh/scaledobjects` plus `autoscaling/horizontalpodautoscalers` `list`
+permissions. Generator pods do not receive
 the default Kubernetes API token or restart RBAC; an audience-specific Azure
 Workload Identity token may still be injected for cloud API access. Set
 `restartControls.enabled=false` to omit that RBAC and keep the restart token
@@ -140,7 +142,7 @@ its values schema caps renewal at 10 seconds so every allowed TTL retains at
 least three renewal opportunities. The first upgrade from a tokenless release
 requires a no-active-tests maintenance window because mixed controller/generator
 versions intentionally reject new work. Follow the rollout gate and connectivity
-drill in [Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls).
+drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision).
 The controller pod template checksums the shared ConfigMap, so changing the TTL
 or renewal value triggers a controller rollout instead of leaving stale process
 environment behind.
@@ -235,3 +237,13 @@ out of band.
 | `http3.*`, `tracing.*`, `javaVuser.*` | Optional HTTP/3 + QUIC tuning, OpenTelemetry OTLP trace export, and loopback Java Vuser sidecar configuration. |
 | `ingress.*`, `networkPolicy.*`, `networkPolicy.egress.*`, `pdb.*` | Public TLS Ingress, ingress NetworkPolicies, optional egress profiles (`dns`, `targets`, `controllerExtraRules`, `generatorExtraRules`), and PodDisruptionBudget toggles. |
 | `serviceMonitor.*`, `keda.*`, `certManager.*` | ServiceMonitor scrape settings, KEDA autoscaling (in-cluster Prometheus or Azure Monitor), and cert-manager mTLS certificate issuance. |
+
+### Operational and Security Values Reference
+
+| Value | Default | Operational / security behavior |
+|---|---|---|
+| `dataPlatform.keyVaultAllowedSecrets` | `""` | Exact comma-separated script-safe Key Vault secret names. Empty fail-closes Key Vault `{{secret.*}}` interpolation even when workload identity has vault read access. |
+| `dataPlatform.azureMessagingAllowedNamespaces` | `""` | Exact comma-separated Event Hubs / Service Bus namespace FQDNs allowed to receive workload-identity bearer tokens (`auth_type: aad`). Empty disables AAD messaging auth. |
+| `networkPolicy.egress.enabled` | `false` | Restricts controller and generator egress to `dns`, `targets` (TCP 80/443 and UDP 443 by default), control-plane gRPC, and explicit `controllerExtraRules` / `generatorExtraRules` (must list PostgreSQL, Redis, telemetry, and any non-443 Kubernetes API endpoint before enabling). |
+| `http3.enabled`, `http3.preflight`, `http3.quic.*` | `false`, `report`, `0`/`false` | Enables HTTP/3 (`auto+h3` and exact `3`), controls pre-run QUIC handshake preflight (`off`, `report`, or `block`), and tunes `APEXLOAD_QUIC_*` window/packet limits (`0` keeps built-in defaults). |
+| `tracing.enabled`, `tracing.endpoint`, `tracing.headersSecretName` | `false`, `""`, `""` | Enables opt-in OTLP trace export across controller and generators; collector auth headers are projected from `tracing.headersSecretName` (`tracing.headersSecretKey`, default `OTEL_EXPORTER_OTLP_HEADERS`) and never stored in values or the ConfigMap. |

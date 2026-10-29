@@ -1,7 +1,0 @@
-# Partition precedence review
-
-Round 1: inspected native preview and normalization readers, typed mapping validation and the fixture's independent known values. Physical columns and explicit metric constants are already authoritative with implicit Hive inference disabled. Added a regression covering both preview entry points, both mapping versions, constant/name-column metrics, v2 source/dimensions, invented directory schema and immutable source hashes.
-
-Round 2: the intentionally Hive-enabled control fails both versions, while the complete draft native analytics suite passes. Reviewed the fixture against false confidence: the control changes production preview only and is never installed; a control failure is not described as a product regression. No additional findings. Applied source, generated inventory, documentation checks, evidence hashes and final staged review remain required before commit.
-
-Round 3 applied/staged review: complete installed native analytics and documentation QA suites passed, as did generated inventory and documentation links. Reviewed exact physical timestamp/value/name expectations, v1/v2 identity behavior, independent source hashes, contained/native preview coverage and the intentionally Hive-enabled control. This slice adds only tests, the generated inventory and owning documentation; no production or embedded Help content changes. Source/308 asset hashes match the applied cohort. No remaining actionable findings.

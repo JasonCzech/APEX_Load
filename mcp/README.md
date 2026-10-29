@@ -15,8 +15,9 @@ The server exposes structured tools for the documented API surface:
 - `project_*`, `application_*`, `release_*`, `folder_*`: project, application, release, SLA governance, and folder organization.
 - `script_*`, `object_repository_*`, `correlation_ruleset_*`, `github_*`: library CRUD, validation, replay, imports, authoring sessions, runtime reports, support matrices, object repositories, correlation rulesets, and GitHub Enterprise sync.
 - `scenario_*`, `schedule_*`, `timeslot_*`, `execution_plan_*`, `data_pool_*`: scenario assembly, load model validation, schedules, capacity reservations (timeslots), multi-stage execution plans, and shared CSV data pools.
-- `run_*`, `archive_*`: run lifecycle, live metrics, archive reports, root-cause analysis, comparison baselines, and retention.
-- `run_archive_browser_*`, `run_archive_journeys`, `analysis_policy_*`: browser findings, interaction patterns, one request's HAR entry, journey accounting, and revisioned browser and journey policies.
+- `run_*`, `archive_*`: run lifecycle, live metrics, archive reports, v1/AI root-cause summaries (`run_archive_root_cause`, `run_archive_ai_root_cause`), comparison baselines, and retention.
+- `run_rca_*`: RCA v2 analysis queueing and status (`run_rca_analyze`, `run_rca_status`, `run_rca_assessment`), bounded `apexload.rca_bundle.v2` evidence retrieval (`run_rca_bundle`), deterministic narration verification (`run_rca_check_narration`), and immutable agent/analyst critiques (`run_rca_critiques`, `run_rca_critique_add`).
+- `run_archive_browser_*`, `run_archive_journeys`, `analysis_policy_*`, `system_browser_benchmarks`: browser intelligence findings and `browser_score.v1` scores (`run_archive_browser_findings`), interaction patterns and heatmaps (`run_archive_browser_interactions`), journey accounting (`run_archive_journeys`), per-request synthetic or native HAR drill-down (`run_archive_browser_har_entry`), benchmark evidence (`system_browser_benchmarks`), and revisioned analysis policies (`analysis_policy_list`, `analysis_policy_get`, `analysis_policy_create`, `analysis_policy_update`, `analysis_policy_delete`).
 - `dynatrace_*`, `elastic_*`, `prometheus_*`, `monitor_*`, `monitoring_*`: governed Dynatrace, Elasticsearch/OpenSearch, and Prometheus connections, inspections, monitor sources, scenario monitor bindings, monitoring collectors, and run telemetry.
 - `browser_replay_session_*`, `recorder_*`, `ai_*`, `integrations_*`, `report_*`, `results_*`: browser replay sessions, recording sessions, AI assistance, integrations, report profiles, and external imports.
 - `script_import_file`, `script_validate_import_file`: upload an Enterprise Script Archive, JMeter, DevWeb, HAR, recorder, OpenAPI, or WSDL file from the bridge machine, or validate an Enterprise Script Archive or JMeter file without saving.
@@ -37,6 +38,26 @@ to `script_update` or `scenario_update` when saving the edited projection.
 Projects requiring conditional saves reject missing tags with HTTP 428; a stale
 tag returns HTTP 412. Read and reconcile the current document before explicitly
 trying again. The bridge does not replace the tag or retry automatically.
+
+### RCA v2 Narration and Critique Workflow
+
+When summarizing or critiquing a run's v2 root-cause analysis:
+
+1. Read `run_rca_assessment` (or queue an analysis with `run_rca_analyze` when root-cause analyses are enabled for the project and poll `run_rca_status` until completed).
+2. Fetch `run_rca_bundle` (`GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle`, capped at 256 KiB under schema `apexload.rca_bundle.v2`). Ground every claim in the bundle's exact reference IDs, timestamps, and numbers.
+3. Validate draft prose with `run_rca_check_narration` (`payload: {"narrative": "..."}`), which fails closed on reference IDs absent from the bundle or numeric/timestamp claims that diverge beyond displayed rounding.
+4. Persist verified commentary via `run_rca_critique_add` (`payload: {"narrative": "...", "author_kind": "agent", "model": "..."}` with `confirm: true`), or list existing critiques via `run_rca_critiques`. Critiques must pass the narration check and are stored separately without mutating the deterministic assessment.
+
+### Browser Intelligence and Analysis Policy Tools
+
+- **Run archive browser intelligence**:
+  - `run_archive_browser_findings`: returns `browser_findings.v2` findings and the qualified `browser_score.v1` score under the run's pinned `browser_policy` (or `pending`, `failed`, or `not_evaluated`).
+  - `run_archive_browser_interactions`: returns finalized interaction patterns, heatmaps, analysis version, coverage, and limitations.
+  - `run_archive_journeys`: accounts finalized journeys against the run's pinned `journey_policy` (or an explicit `query.policy` and `query.revision`).
+  - `run_archive_browser_har_entry`: retrieves one retained browser request (`query: {"request_id": "..."}`) as a synthetic HAR 1.2 entry, native HAR entry, or explicit omission receipt (`omitted_reason`); requires editor HAR-download permission and may return retryable `503` while another browser archive read is active.
+- **Revisioned analysis policies (`analysis_policy_*`)**:
+  - `analysis_policy_list` paginates one policy `kind` (`browser_policy`, `journey_policy`, `telemetry_policy`, `telemetry_acceptance_policy`, or `derived_operation`) via `query.limit` (default 50, max 100) and `query.offset`.
+  - `analysis_policy_get` reads the latest revision or an explicit `query.revision`; `analysis_policy_create` creates a policy; `analysis_policy_update` saves a new revision against the observed revision (returning `409` on concurrent edits); and `analysis_policy_delete` deletes at `query.revision` (`confirm: true` and `reason` required) while preserving immutable pins on historical runs.
 
 ## Installation
 

@@ -1,7 +1,0 @@
-# Controlled endpoint review
-
-Round 1 found a weak negative WebSocket assertion: a nonblocking check before the endpoint drained could miss a late duplicate. Added idempotent client close, listener close and a bounded handler join before final no-extra-delivery assertions; successful pressure, deadline failure and reconnect all use it. gRPC concurrent assertions now also require valid diagnostics and exact final OK status. These changes strengthen fixtures without changing product behavior. Final applied validation and staged review remain pending.
-
-Round 2: the applied complete gRPC and WebSocket package suites and race suites each passed 61 top-level tests and 77 subtests across two packages. Initial documentation validation ran before runtime metadata was packaged and correctly reported its missing review links. Fixed the packaging order and retained docs-initial.log. Rechecked literal payload oracles, test-only retry policy, concurrent status/population isolation, deadline and cleanup ownership, handler-drain negative assertions and limited evidence claims. No additional source findings. Final packaged-link/checksum and staged-scope checks follow before commit.
-
-Round 3: documentation QA passes, local links/help contracts pass for 291 active Markdown files, and the final source/evidence hashes and staged scope are verified. The repeat review found no remaining findings. Only the two protocol test files, matrix/spec progress and this evidence bundle belong to this commit; runtime and UI sources are unchanged.

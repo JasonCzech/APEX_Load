@@ -1,10 +1,10 @@
-# Import Fidelity and Repairs (JMeter and LoadRunner)
+# Import Fidelity and Repairs
 
-Status: Current. Behavior reference for imported JMeter plans and LoadRunner archives: fidelity semantics, source-plan execution, and protected guided repair.
+Status: Current. Behavior reference for APEX Load script and query importers — JMeter plans, LoadRunner archives, Salesforce/Aura and HAR captures, Bruno collections, MuleSoft/Agentforce augmentations, contract/protocol converters, and protected guided repair.
 
-Source note: consolidated 2026-09-24 from the former `JMETER_IMPORT_FIDELITY.md`, `JMETER_SOURCE_PLAN_REPAIRS.md` and `LOADRUNNER_IMPORT_REPAIR.md`. Messaging plugin imports are covered separately in [JMeter messaging fidelity](PROTOCOL_SUPPORT.md#jmeter-messaging-fidelity).
+Source note: consolidated 2026-09-24 from the former `JMETER_IMPORT_FIDELITY.md`, `JMETER_SOURCE_PLAN_REPAIRS.md` and `LOADRUNNER_IMPORT_REPAIR.md`, and expanded to cover all active converters in `pkg/convert/`. Messaging plugin imports are also covered in [JMeter messaging fidelity](PROTOCOL_SUPPORT.md#jmeter-messaging-fidelity).
 
-Contents: [JMeter import fidelity](#jmeter-import-fidelity) · [JMeter source-plan execution and batch repairs](#jmeter-source-plan-execution-and-reviewed-batch-repairs) · [LoadRunner import fidelity and guided repair](#loadrunner-import-fidelity-and-guided-repair)
+Contents: [JMeter import fidelity](#jmeter-import-fidelity) · [JMeter source-plan execution and batch repairs](#jmeter-source-plan-execution-and-reviewed-batch-repairs) · [LoadRunner import fidelity and guided repair](#loadrunner-import-fidelity-and-guided-repair) · [Shared HTTP Import Safety Contract](#shared-http-import-safety-contract) · [Bruno Native HTTP Import](#bruno-native-http-import) · [MuleSoft and Agentforce Import Augmentation](#mulesoft-and-agentforce-import-augmentation) · [Additional Format Converters and Dashboard Query Adoption](#additional-format-converters-and-dashboard-query-adoption)
 
 ---
 
@@ -482,3 +482,46 @@ DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. APEX L
 ## Optional imported proxy settings
 
 An encrypted proxy-password finding offers three Preview → Apply choices: **Import proxy with replacement credentials**, **Import proxy without credentials**, or **Ignore imported proxy settings**. The first keeps the existing requirement for a project-secret replacement. The second removes proxy username/password fields and URL userinfo while retaining routing; it requires a proxy that supports unauthenticated access. The third sets proxy mode to `none` and removes the imported proxy URL, PAC URL, credentials and bypass list. The review records the exclusion as “Ignored during import” and retains protected source evidence. Requirements are rebuilt from the resulting draft, so an excluded proxy credential is no longer required unless another executable field still references it. The same choices are available for saved imported scripts. An explicitly inactive, unambiguous source proxy already excludes dormant credentials automatically; conflicting selectors still require an explicit decision.
+
+---
+
+## Bruno Native HTTP Import
+
+Bruno Runner is retired from APEX Load builds; Bruno collections, archives, and `.bru` request files convert directly into native APEX Load `http` DSL scripts (`pkg/convert/bruno`).
+
+**API surface:** `POST /api/v1/scripts/import/bruno/inspect`, `POST /api/v1/scripts/import/bruno/commit`, `GET /api/v1/scripts/import/bruno/support-matrix`, `GET /api/v1/scripts/{id}/bruno-imports/revisions`, and `POST /api/v1/scripts/{id}/bruno-imports/rollback`.
+
+- **Ingest and file filtering.** Upload a collection archive/bundle in the browser or drop a collection folder, archive, or `.bru` request file onto the Source bundle card in the desktop app. Operating-system and version-control metadata, paths excluded by Bruno's own ignore list, and gitignored artifacts Bruno does not load (such as logs) are skipped automatically; a gitignored `.env`, environment file, or request file is still inspected just as Bruno opens it. The target script folder defaults to the collection's declared name.
+- **Re-import lifecycle and header sanitization.** Re-importing a collection updates the scripts created by an earlier import as new revisions by default (with per-request **Create a copy** or **Skip** overrides) and retains revision rollback history. Headers that Go's HTTP transport cannot send as authored can be trimmed or removed during review, and collections whose own assertions expect HTTP error statuses (negative-test suites) are explicitly flagged in review.
+- **Readable secret naming.** Only operator-supplied credentials (authorization headers, API keys, auth tokens, passwords) enter credential review, using a readable project-secret name derived from the variable or field (`{{partnerPassword}}` becomes `PARTNER_PASSWORD`). Collisions within the import or against an existing unrelated project secret receive a numeric suffix (`_2`) so an import never silently binds to a pre-existing secret's value; re-imports preserve the secret names the saved scripts already bound (including older hashed names). Cookies and session, anti-forgery, and trace headers stay as imported under **Kept as imported**.
+- **Generated values, runtime inputs, and Bruno environments.** Under **Data & parameters**, **Generated values** lists once-recorded trace IDs, message IDs, and timestamps; checked entries regenerate on every iteration, while session, conversation, or transaction IDs and unclassified GUIDs wait for explicit opt-in. Unset collection variables (**Required runtime inputs**) can bind to a constant value across VUsers, a scenario data-pool column (`{{data.alias.column}}`), or a per-iteration generator (UUID, timestamp, or random digits), defaulting on re-import to how the updated scripts previously supplied them. When `environments/*.yml` or `.bru` files are present, **Fill inputs from** populates non-secret inputs defined by the chosen Bruno environment; secret, disabled, and `.env` values are never pre-filled.
+
+---
+
+## MuleSoft and Agentforce Import Augmentation
+
+Every converted script draft passes through the shared post-conversion augmentation layer (`pkg/api/import_augment.go`) so domain-specific API gateway and conversational-agent diagnostics apply consistently regardless of input format:
+
+- **MuleSoft / Anypoint analyzer (`pkg/convert/mulesoft`).** Inspects converted `http` drafts (across RAML, OpenAPI, Postman, HAR, and sample imports) for Anypoint-hosted domains, inferred API-gateway policies (such as Client ID Enforcement `client_id` / `client_secret` headers or query parameters on verified MuleSoft destinations), authentication requirements (OAuth2, JWT, Basic), execution blockers, and recommended next actions.
+- **Salesforce Agentforce analyzer and opt-in transform (`pkg/convert/agentforce`, `?agentforce_transform=true`).** Detects Salesforce Agentforce Agent API conversation lifecycles (`token`, `session_start`, `send_message`, `receive_stream`, `end_session`) across HAR, Salesforce HAR, Postman, OpenAPI, and sample imports. When `?agentforce_transform=true` is passed (or `agentforce_transform: true` under `conversion_policy: "unified_v1"`), `agentforce.Transform` idempotently rewrites the detected draft for live replay and records an auditable `Change` diff in review:
+  1. Prepends an `http_oauth2_token` (`client_credentials`) `init` action saving `{{var.agent_access_token}}` when no token action is present.
+  2. Rewrites conversation `Authorization` headers to `Bearer {{var.agent_access_token}}` instead of stale captured bearer tokens.
+  3. Extracts `{{var.agent_session_id}}` from the session-start response and substitutes it across subsequent message, stream, and session-end paths.
+  4. Configures Server-Sent Events (`sse_concat` / `sse_event`) extraction on streaming Agent API turns and ensures session teardown runs in `teardown`.
+
+---
+
+## Additional Format Converters and Dashboard Query Adoption
+
+Beyond JMeter, LoadRunner Enterprise Script Archives, Bruno, DevWeb, and Salesforce/Aura HAR captures, `pkg/convert/` and the monitoring import layer provide governed converters for the remaining supported launchers:
+
+| Converter / workflow | Primary API endpoints | Fidelity and review contract |
+| --- | --- | --- |
+| **k6 script** (`pkg/convert/k6`) | `POST /api/v1/scripts/import/k6`, `GET /api/v1/scripts/import/k6/support-matrix` | Static conversion of the constrained HTTP subset (`http.get/post/put/patch/del/batch`, `check()`, `sleep()`, and `options` VUs/stages/thresholds hints) under the [Shared HTTP Import Safety Contract](#shared-http-import-safety-contract). Arbitrary JavaScript runtime modules and dynamic code emit durable review gates rather than executing JS. |
+| **RAML / Anypoint** (`pkg/convert/raml`) | `POST /api/v1/scripts/import/raml`, `GET /api/v1/scripts/import/raml/support-matrix` | Converts RAML 0.8 and 1.0 specifications (`baseUri`, URI/query parameters, traits, security schemes, example bodies) into executable `http` drafts with automatic MuleSoft/Anypoint gateway policy detection. |
+| **Akamai CloudTest** (`pkg/convert/cloudtest`) | `POST /api/v1/scripts/import/cloudtest`, `GET /api/v1/scripts/import/cloudtest/support-matrix` | Converts CloudTest XML Clip exports into reviewable `http` drafts and Composition exports into multi-group scenario workload hints; unproven custom scripts and unmapped seed properties remain gated until reviewed. |
+| **Salesforce HAR** (`pkg/convert/salesforce`, `pkg/convert/har`) | `POST /api/v1/scripts/import/salesforce`, `POST /api/v1/scripts/import/har` | Auto-detected during HAR import or invoked directly; applies Aura envelope assertions (`aura_actions_success`), Lightning/Visualforce hand-off correlation, recording-profile rules, and optional `?agentforce_transform=true` (see [Aura capture outcomes and HTTP replay](#aura-capture-outcomes-and-http-replay)). |
+| **Azure Event Hubs Capture** (`pkg/convert/eventhubscapture`) | `POST /api/v1/scripts/import/eventhubs-capture`, `GET /api/v1/scripts/import/eventhubs-capture/support-matrix` | Reads Avro Event Hubs Capture files within bounded archive/record quotas and emits native `eventhubs` (`eventhubs_produce`) or `kafka` (`config.kafka.profile: "eventhubs"`) replay drafts preserving application properties and payload encoding. |
+| **Broker Config** (`pkg/convert/brokerconfig`) | `POST /api/v1/scripts/import/broker-config`, `GET /api/v1/scripts/import/broker-config/support-matrix` | Converts JNDI `.properties`, IBM MQ `MQSC` definitions, Solace CLI/SEMP exports, and Kafka client `.properties` into `jms-solace`, `jms-servicebus`, `jms-ibmmq`, or `kafka` starter drafts with credentials routed to project-secret bindings. |
+| **cURL / raw HTTP sample** (`pkg/convert/sample`) | `POST /api/v1/scripts/import/sample` | Converts single or multi-command `curl` snippets, raw HTTP/1.x/2/3 request wire captures, or pasted HAR JSON under the [Shared HTTP Import Safety Contract](#shared-http-import-safety-contract), including explicit HTTP/1.1, HTTP/2 prior-knowledge, and HTTP/3 (`--http3`, `--http3-only`) transport review gates. |
+| **Grafana dashboard query adoption** (`pkg/prometheus`) | `POST /api/v1/monitoring/dashboards/import/grafana`, `POST /api/v1/monitoring/dashboards/import/grafana/preview`, `POST /api/v1/monitoring/dashboards/import/grafana/commit`, `GET /api/v1/monitoring/dashboards/import/grafana/support-matrix`, `POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard` | Resolves Grafana dashboard JSON panels, committed template variables, and `$__rate_interval` / `$__interval` macros into bounded, reviewable `prometheus-query` target-monitoring drafts without copying Grafana data-source credentials or inventing SLA acceptance thresholds. |

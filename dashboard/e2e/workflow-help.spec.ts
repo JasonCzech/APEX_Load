@@ -584,7 +584,7 @@ test('separate browser panel Help preserves cohort and comparison limits', async
   const heading = article.getByRole('heading', { name: 'Separate browser cohorts in saved panels', exact: true })
   await heading.scrollIntoViewIfNeeded()
   await expect(heading).toBeVisible()
-  await expect(article).toContainText('immutable comparison-to-panel input pinning remains separate work')
+  await expect(article).toContainText('selection_receipt_sha256')
   expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('browser-tuple-panel-help.png'), animations: 'disabled' })
 })

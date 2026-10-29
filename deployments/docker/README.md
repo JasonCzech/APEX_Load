@@ -1,9 +1,12 @@
 # Local Docker Monitoring
 
-This compose stack runs the APEX Load controller and a local Prometheus server.
-The controller exposes the dashboard/API on `8080` and a dedicated metrics
-listener on `9091`; Prometheus scrapes `controller:9091` inside the compose
-network.
+This Compose stack (`compose.yaml`) runs:
+
+- `controller` (`apexload-controller:local`): exposes the dashboard/API on `127.0.0.1:8080` and a dedicated metrics listener on `127.0.0.1:9091`, discovering the local load generator via `APEXLOAD_GENERATORS=dns://generator:9090`.
+- `generator` (`apexload-generator:local`, ID `apexload-generator-local`): listens on internal gRPC port `9090` (`APEXLOAD_GENERATOR_MAX_VUSERS=1000`) and persists fencing state and terminal evidence in the `generator-data` volume.
+- `bruno-artifacts-init`: one-shot initializer setting `65532:65532` (`0700`) ownership on the `bruno-artifacts` volume before the controller starts.
+- `prometheus` (`prom/prometheus:v3.12.0` on `127.0.0.1:9090`): scrapes `controller:9091` inside the Compose network.
+- `java-vuser-runner` (opt-in `--profile java-vuser`): credential-minimized loopback sidecar sharing the generator's network namespace (`network_mode: service:generator`, `127.0.0.1:8098`).
 
 ## Start
 
@@ -74,6 +77,24 @@ Keep the same value while the `controller-data` volume exists. The local
 controller/generator channel is plaintext, so secret-bearing distributed runs
 fail closed; use the production Helm/on-prem/AKS TLS wiring when validating
 distributed Project Secrets.
+
+## Opt-in Java Vuser Runner Profile
+
+Starting the `--profile java-vuser` service attaches `java-vuser-runner` to the
+`generator` network namespace on `127.0.0.1:8098` and mounts precompiled
+classes/JARs read-only from `${APEXLOAD_JAVA_VUSER_ASSETS_DIR:-./runners/java_vuser/assets}`.
+Profile selection alone intentionally leaves Java execution disabled; pass both
+`APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true` and a shared loopback bearer token:
+
+```bash
+export APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true
+export APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN="$(openssl rand -hex 32)"
+docker compose --profile java-vuser up --build -d
+```
+
+Because the stock non-privileged container lacks writable cgroup v2 delegation,
+it advertises legacy `full_lifecycle` execution only (see
+[Java Vuser execution](../../docs/PROTOCOL_SUPPORT.md#java-vuser-execution)).
 
 ## Opt-in PostgreSQL and Redis
 

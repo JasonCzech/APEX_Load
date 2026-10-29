@@ -13,14 +13,14 @@
       "name": "metrics",
       "summary": "Mapped DSL/ES|QL metrics, units, weighted statistics and terminal windows in the expanded elastic pack",
       "outcome": "fixture_tested",
-      "evidence": ["pkg/elastic/elastic_test.go#TestWeightedMetricBucketsPreserveLeadingBoundaries", "pkg/elastic/elastic_test.go#TestTerminalMetricWindowsPreserveQueryIdentityAndBounds", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestWeightedMetricBucketsPreserveLeadingBoundaries", "pkg/elastic/elastic_test.go#TestTerminalMetricWindowsPreserveQueryIdentityAndBounds", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "Provider-only TLS trials cover Elasticsearch 8.14.3 and 9.1.0; qualify the complete controller/collector-to-archive workflow and hosted/serverless deployment modes separately"
     },
     {
       "name": "diagnostics",
       "summary": "Scrubbed projected logs, errors, transactions and spans with concrete-index document identity",
       "outcome": "fixture_tested",
-      "evidence": ["pkg/elastic/elastic_test.go#TestRecordProjectionScrubTimeAndTraceIdentity", "pkg/storage/elastic_monitoring_test.go#TestElasticCanonicalEvidenceIdentityCursorAndTerminalDrain", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestRecordProjectionScrubTimeAndTraceIdentity", "pkg/storage/elastic_monitoring_test.go#TestElasticCanonicalEvidenceIdentityCursorAndTerminalDrain", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "Qualify deployed application/APM mappings and the complete retained-evidence workflow; provider document pagination alone does not qualify durable retention"
     },
     {
@@ -41,14 +41,14 @@
       "name": "esql",
       "summary": "Constrained synchronous and capability-probed asynchronous ES|QL with mapped output and owned cleanup",
       "outcome": "fixture_tested",
-      "evidence": ["pkg/elastic/elastic_test.go#TestESQLMappedWindowAndAsyncOwnership", "pkg/elastic/elastic_test.go#TestESQLRowLimitIsTruncatedAndOpenSearchRejectsESQL", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestESQLMappedWindowAndAsyncOwnership", "pkg/elastic/elastic_test.go#TestESQLRowLimitIsTruncatedAndOpenSearchRejectsESQL", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "Provider-only synchronous/async trials passed on 8.14.3 and 9.1.0; qualify deployed permissions, serverless capabilities and durable controller/collector cleanup"
     },
     {
       "name": "pagination",
       "summary": "Bounded PIT/search-after reads preserve equal timestamps, index-scoped identity and immutable query windows",
       "outcome": "fixture_tested",
-      "evidence": ["pkg/elastic/elastic_test.go#TestExhaustivePaginationAboveTenThousandAndPrivateContinuation", "pkg/elastic/elastic_test.go#TestPITExpiryRestartsSameWindowAndDeduplicates", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestExhaustivePaginationAboveTenThousandAndPrivateContinuation", "pkg/elastic/elastic_test.go#TestPITExpiryRestartsSameWindowAndDeduplicates", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "Provider-only 10,005-record TLS trials passed; qualify multi-node outage, data-stream rollover and default durable retention quotas in a deployed run"
     },
     {

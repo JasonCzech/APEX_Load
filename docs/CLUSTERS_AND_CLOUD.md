@@ -7,8 +7,9 @@ Operational guidance for external Kubernetes clusters, restart controls, and Azu
 
 System administrators can register the Kubernetes and AKS control planes APEX
 Load drives, and set the CPU/memory budget and node placement for each fleet
-pool's generator pods — all from the dashboard, under **Fleet → Cluster
-Connections** and **Fleet → Host Resource Allocation**.
+pool's generator pods — all from the dashboard, under **Settings → Kubernetes
+clusters** (`#/settings?setting=clusters`) and **Settings → Load generator
+allocation** (`#/settings?setting=allocation`).
 
 Everything here is `manage_system` / `system_admin` only. Even the redacted read
 shape carries API server endpoints and Azure directory identifiers, so there is
@@ -121,8 +122,10 @@ grants the namespaced permissions:
 | Resource | Verbs | Used for |
 |---|---|---|
 | `pods` | get, list, delete | Generator inventory and restarts |
-| `deployments`, `statefulsets` | get, patch | Scaling and allocation patches |
+| `apps/deployments`, `apps/statefulsets` | get, patch | Scaling and allocation patches |
 | `resourcequotas` | get, list | Quota preflight |
+| `keda.sh/scaledobjects` | list | KEDA autoscaler ceiling and ownership discovery |
+| `autoscaling/horizontalpodautoscalers` | list | HPA autoscaler ceiling and ownership discovery |
 
 `deployments/k8s/aks/node-read.optional.yaml` is **opt-in** and grants
 cluster-scoped `nodes get, list`. Without it everything still works:
@@ -146,7 +149,7 @@ in each target cluster.
 
 ### Load generator allocation
 
-Settings › **Load generator allocation** sets, per pool: CPU and memory requests and limits, a node pool, a zone, additional
+**Settings → Load generator allocation** (`#/settings?setting=allocation`) sets, per pool: CPU and memory requests and limits, a node pool, a zone, additional
 node selectors, and tolerations.
 
 The change is applied as a strategic-merge patch on the generator StatefulSet's
@@ -249,7 +252,7 @@ reports the key per pool so the editor echoes back the right one.
 ### Domain deployment targets
 
 A superuser can constrain each domain to exactly one deployment provider —
-`kubernetes`, `azure_aks`, or `aws_eks` — under **Settings → Domains**. The
+`kubernetes`, `azure_aks`, or `aws_eks` — under **Settings → Domains & placement defaults** (`#/settings?setting=domains`). The
 target is both a **default** and a **hard constraint**:
 
 - A new fleet pool scoped to the domain inherits the domain's default cluster
@@ -345,13 +348,15 @@ not place new VUsers onto a terminating pod.
 
 The local, on-prem, AKS, and EKS Kustomize bases include their profile's
 `restart-controls.yaml`. The Helm chart renders the same permissions when
-`restartControls.enabled=true`, which is the default. The Role is scoped to the
+`restartControls.enabled=true`, which is the default. The Role (`Role/apexload-restart-controls`) is scoped to the
 controller namespace and grants only:
 
    - pods: `get`, `list`, `delete`
-   - deployments: `get`, `patch`
-   - statefulsets: `get`, `patch`
+   - apps/deployments: `get`, `patch`
+   - apps/statefulsets: `get`, `patch`
    - resourcequotas: `get`, `list`
+   - keda.sh/scaledobjects: `list`
+   - autoscaling/horizontalpodautoscalers: `list`
 
 Only the controller pod receives the default Kubernetes API token and restart
 RBAC. Generator pods explicitly disable that automatic token mount. AKS

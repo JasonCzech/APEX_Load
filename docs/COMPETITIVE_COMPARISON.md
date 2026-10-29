@@ -94,15 +94,19 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 
 | Capability | APEX Load status | k6 | NeoLoad | Evidence | Remaining gap |
 | --- | --- | --- | --- | --- | --- |
-| HTTP/HTTPS protocol load | Supported | Strong | Strong | `pkg/protocol/http`, `pkg/engine` | Publish repeatable density benchmarks. |
+| HTTP/HTTPS protocol load (HTTP/1.1, HTTP/2, preview HTTP/3) | Supported (`APEXLOAD_HTTP3=true` for HTTP/3) | Strong | Strong | `pkg/protocol/http`, `pkg/engine`, `docs/guides/HTTP3_AND_QUIC.md` | Publish repeatable density benchmarks. |
 | REST / OpenAPI | Supported | Supported | Supported | `/api/v1/scripts/import/openapi` | Dashboard guided create flow. |
 | SOAP / WSDL | Supported | Via HTTP scripting | Supported | `pkg/protocol/soap`, `pkg/convert/wsdl` | Complex XSD generation is scaffolded. |
 | Java-over-HTTP | Supported | Not primary | Enterprise coverage | `pkg/protocol/java_http` | Enterprise fixtures on demand. |
+| Java Vuser (governed JVM runner) | Supported (opt-in local/sidecar runner, Shared JVMs, LR thread mode, AppCDS) | N/A | Enterprise Java | `pkg/javarunner`, `pkg/javasidecar`, `docs/PROTOCOL_SUPPORT.md#java-vuser-execution` | Persistent lifecycle requires Windows Job Object or delegated Linux cgroup v2 subtree. |
 | Bruno collections | Native HTTP import supported | N/A | Varies | `pkg/convert/bruno` | Runner retired; canonical source execution unavailable. |
-| JMS / broker | Partial (Solace and Azure Service Bus real adapters opt-in) | Extensions | Enterprise | `pkg/protocol/jms` | IBM MQ real adapter remains review-only; Service Bus requires `-tags jms_servicebus_real`. |
+| JMS / broker | Partial (Solace and Azure Service Bus real adapters opt-in) | Extensions | Enterprise | `pkg/protocol/jms` | IBM MQ adapter (`jms-ibmmq`) is registered in mock-only mode; Service Bus requires `-tags jms_servicebus_real`. |
 | Kafka / event streaming | Supported (mock default; real adapter opt-in) | Extensions | Enterprise | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | Mock broker + AsyncAPI import; live execution via `-tags kafka_real`. |
+| Azure Event Hubs (native AMQP) | Supported (mock default; real adapter opt-in) | Extensions | Varies | `pkg/protocol/eventhubs`, `docs/EVENT_HUBS_HOWTO.md` | Live AMQP execution via `-tags eventhubs_real`; live Azure failover/recovery qualification remains open. |
+| Database (SQL) & Network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP) | Supported | Extensions | Enterprise | `pkg/protocol/database`, `pkg/protocol/network` | Oracle 2-Tier thick client and MAPI/Tuxedo remain external-runner or review-only. |
 | WebSocket | Supported | Supported | Supported | `pkg/protocol/websocket` | More subscription-protocol fixtures. |
 | gRPC | Supported | Supported | Varies | `pkg/protocol/grpc` | Service-specific proto fixtures. |
+| Mobile device observer (Appium) | Supported (device observer) | N/A | Mobile integration | `pkg/protocol/appium`, `docs/PROTOCOL_SUPPORT.md#mobile-device-observer-appium` | Single real device or simulator UX observer paired with HTTP/API load; not high-density mobile UI load. |
 | Browser UX canaries | Partial | k6 browser (Playwright-based) | RealBrowser (packaged) | `/api/v1/system/browser-benchmarks`, `docs/ROADMAP.md#browser-and-mobile` | Attach benchmark artifacts before raising density claims. |
 | High-density browser load | Non-goal until evidence | Resource intensive | Packaged sizing guidance | — | Do not claim without hardware-specific benchmark evidence. |
 | SAP GUI / Citrix / Oracle Forms | Gap / non-goal | Not core | Packaged | — | Complete demand assessment first. |
@@ -173,7 +177,7 @@ also documents HTTP/2; APEX must not claim CloudTest lacks it.
 | HTTP media streaming | HLS/HDS/CMAF and multi-CDN marketing claims | Streaming-response pacing exists; bounded HLS/DASH playback metrics remain | **Partial** |
 | CLI and transaction thresholds | SCommand repository/run/monitor/report workflows | Run/wait/status, JSON/JUnit, global and exact archived transaction rules, and library export/import exist; run-bound monitor, preparation and analysis verbs are implemented | **Partial** |
 | Report output | Word/HTML and widget image/CSV export | HTML/PDF/DOCX/CSV/JSON/JSONL/Parquet exist; report charts export accessible CSV/SVG, while remaining operational charts still need the shared export wrapper | **Partial** |
-| Native mobile automation | TouchTest remains in current terminology | Browser device emulation and observer canaries only | **Non-goal by product fit** |
+| Native mobile automation | TouchTest remains in current terminology | Appium device observer (`protocol: "appium"`, one real device or simulator paired with HTTP load) plus browser mobile emulation; high-density mobile UI load remains out of scope | **Partial / observer-scoped** |
 
 #### CloudTest outcome-parity implementation rules
 
@@ -236,7 +240,7 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 | Goal-oriented mode | First-class | First-class | **=** |
 | Live VUser scaling / pause-resume / duration adjust | Smooth, API-driven, transaction-integrity-preserving | Possible mid-run but heavier | **▲** |
 | Distributed execution | Real gRPC multi-generator fleet | Controller + LGs (mature) | **=** |
-| Region / load-zone distribution | Flat fleet targeting; no named geo distribution | Named hosts/locations, cloud LGs | **▼** |
+| Region / load-zone distribution | Named self-hosted load zones and weighted geo/pool workload distribution (`/api/v1/fleet/load-zones`, `/api/v1/fleet/pools`, `assignment`, `by_region` metrics); no managed SaaS cloud LGs | Named hosts/locations, managed cloud LGs | **▼** (managed SaaS LGs and per-zone benchmark envelopes) |
 
 **Analysis and Reporting**
 
@@ -255,15 +259,15 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 | AuthN/SSO | OIDC + trusted-header | LDAP/SAML/SSO | **=** |
 | RBAC + service accounts + audit | Implemented | Domains/projects/roles | **=** |
 | Scheduling | Cron + approvals + blackout windows | Timeslot/calendar reservation | **=** |
-| Notifications | Slack/Teams/Dynatrace webhooks; no email | Email + integrations | **=** |
-| Secrets / PKI | Template refs + redaction; no Vault, no mTLS | CyberArk/Vault, client certs | **▼** |
+| Notifications | Slack/Teams/Dynatrace/generic JSON webhooks with bounded retries; no email | Email + integrations | **=** |
+| Secrets / PKI | Project secret providers (`env`, encrypted store with master-key/Azure Key Vault/AWS KMS wrapping, Azure Key Vault, AWS Secrets Manager) + controller↔generator gRPC mTLS & HTTP client certs; no native CyberArk/HashiCorp Vault adapter | CyberArk/Vault, client certs | **▼** (CyberArk / HashiCorp Vault native adapters) |
 | CI/CD ecosystem | GitHub Actions, signed canonical action, JUnit/JSON; no maintained cross-platform marketplace plugins | Maintained Jenkins/ADO plugins, Git sync | **▼** |
 
 **Architecture and Scale**
 
 | Capability | APEX | LRE 26.x | Verdict |
 | --- | --- | --- | --- |
-| Engine efficiency | Goroutine-per-VUser, K8s-native HPA | Process/thread VUsers on LG VMs | **▲** |
+| Engine efficiency | Goroutine-per-VUser, KEDA autoscaling + StatefulSet generator fleet | Process/thread VUsers on LG VMs | **▲** |
 | Single pane of glass | Author → run → analyze → admin in one web app | Three tools: web portal + VuGen + Analysis | **▲** |
 | Proven scale | No benchmark artifacts for 10k/50k targets | Decade-hardened, reference-scaled | **▼** |
 | Persistence | SQLite default; Postgres via pgx (unproven at scale) | Enterprise DB-backed | **▼** |
@@ -273,7 +277,7 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 These overstatements existed in earlier docs and are now corrected:
 
 1. **AI/LLM generation** — the default provider is `deterministic-local` (`pkg/api/ai_assistance.go`). No OpenAI/Azure/Anthropic client is wired. Describe as governed deterministic assisted-authoring with external LLM policy-gated.
-2. **Storage stack** — SQLite is the runtime default. Postgres is wired but unproven at scale. Redis is optional. No Azure Blob.
+2. **Storage stack** — SQLite is the runtime default; PostgreSQL (via `pgx`) is an optional enterprise backend (unbenchmarked at high scale), Redis/Valkey is optional for HA live state, and run archives write to the local filesystem by default with optional S3, Azure Blob, and GCS backends.
 3. **Browser parity** — browser VUsers are diagnostic canaries for *load execution* (not RealBrowser-class high-density browser load). The *recorder/replay* is now a first-class **DOM-aware** embedded recorder (Playwright-Go + CDP) with selector self-heal — the "proxy-only, no DOM capture" caveat no longer applies.
 4. **Scale targets** — 10k VUsers/pod and 50k total are design targets with no published benchmark artifacts.
 5. **OpenTelemetry** — controller/generator binaries provide opt-in OTLP traces for API requests, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC; W3C context continues into HTTP requests to the system under test. OTel metrics/log export and desktop OTLP export are not implemented.
@@ -287,8 +291,8 @@ These overstatements existed in earlier docs and are now corrected:
 | P1 | Offline analysis depth — multi-run trend polish and report profile hardening | M |
 | P1 | Benchmark evidence — publish one reproducible density benchmark | S–M |
 | P2 | RealBrowser-class high-density browser **load** (DOM-aware record/replay already shipped; at-scale browser VUsers remain canary-scoped) | L |
-| P2 | Region/load-zone distribution with per-region response metrics | M |
-| P3 | Enterprise hardening — Vault/mTLS, test-level quota enforcement | M each |
+| P2 | Publish per-load-zone benchmark envelopes (named load zones, weighted geo/pool distribution, and `by_region` metrics are shipped) | S–M |
+| P3 | Enterprise hardening — CyberArk/HashiCorp Vault secret adapters (Azure Key Vault, AWS Secrets Manager, and gRPC mTLS are shipped) and hard quota enforcement | M each |
 
 ---
 
@@ -409,7 +413,7 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 | Named load zones with benchmark envelopes | High | Named self-hosted zones delivered; benchmark envelopes pending |
 | Browser/SPA recording fidelity | Medium | DOM-aware embedded recorder (Playwright-Go + CDP) + replay self-heal delivered; high-density browser *load* execution remains canary-scoped (separate effort) |
 | PDF/Word report export | Medium | Executive/engineer PDF and DOCX export emitted from the common archive report profiles; richer custom report tooling remains |
-| Vault / mTLS | Medium | Template refs + redaction exist; Vault/mTLS not started |
+| CyberArk / HashiCorp Vault adapters | Low | Azure Key Vault, AWS Secrets Manager, KMS/Key Vault envelope wrapping, and controller↔generator gRPC mTLS are delivered; native CyberArk/HashiCorp Vault adapters remain open |
 | OpenTelemetry signal expansion | Low | Opt-in OTLP traces cover control-plane and sampled action paths; metrics/log export and desktop OTLP export remain |
 | SAML | Medium | OIDC + trusted-header is the recommended path; SAML out of scope |
 | Hosted/managed control plane | Non-goal | Self-hosted first |
@@ -438,7 +442,7 @@ APEX Load is a self-hosted, Kubernetes-native performance testing platform for H
 
 | Area | Status |
 | --- | --- |
-| HTTP/API, SOAP, WebSocket, gRPC, Java-over-HTTP | Supported |
+| HTTP/API (HTTP/1.1, HTTP/2, preview HTTP/3), SOAP, WebSocket, gRPC, Java-over-HTTP, governed Java Vuser (dedicated/sidecar/Shared JVMs), Database, Network, Kafka/Event Hubs, Appium device observer | Supported (real broker adapters and Java runner are opt-in) |
 | JMeter, Enterprise Script Archive HTTP, HAR, OpenAPI, WSDL, DevWeb import-review workflows | Supported for documented scopes |
 | CI/CD gating with JSON and JUnit XML | Supported |
 | Live metrics, archive reports, comparison, release trends, Prometheus/Dynatrace hooks | Supported for current scope |
@@ -531,8 +535,11 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
   Azure DevOps).
 - **The headline asymmetry:** LRE's REST API **cannot create or modify test/script definitions** (VuGen/
   UI only) and **cannot stream live metrics** (poll-only; KPIs locked in proprietary `.lrr`/`.lra`
-  result archives). APEX's REST API **lacks a forward-booking reservation resource** and a managed
-  fleet/host-pool admin surface. Those two gaps define most of the build-out below.
+  result archives). APEX's REST API now ships **load-bearing forward-booking timeslot reservations**
+  (`/api/v1/capacity/timeslots`), **managed fleet/pool provisioning** (`/api/v1/fleet/*`), **ordered
+  execution plans** (`/api/v1/execution-plans`), and **outbound notification webhooks**, leaving
+  ALM/Quality Center requirements traceability and third-party CI marketplace plugins as the primary
+  deliberate API-layer non-goals.
 
 
 ### Chart A — API ergonomics & protocol design
@@ -551,7 +558,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Live metrics over API | Not REST-exposed; online stats behind the run dashboard | `GET /api/v1/tests/{id}/metrics` snapshot + WebSocket streams | **▲** |
 | Async / streaming | Polling only (no webhooks/SSE/WebSocket) | Polling + WebSocket (`/api/v1/ws`, `/api/v1/tests/{id}/stream`); async jobs poll (GitHub sync-jobs) | **▲** |
 | Inbound webhooks | None documented | GitHub receiver with HMAC-SHA256 (`POST /api/v1/integrations/github/webhook`) | **▲** |
-| Outbound completion webhooks | None | None (Dynatrace is dry-run only) — shared gap | **=** |
+| Outbound completion webhooks | None | Slack, Microsoft Teams, Dynatrace Events API v2, and generic JSON webhooks on run lifecycle, SLA, run-validity, and RCA completion events with bounded retries (`pkg/api/notifications.go`) | **▲** |
 | Idempotency | Convention only (`RunComment` marker) | `Idempotency-Key` header, actor-scoped, 409 on conflict (coordination store) | **▲** |
 | Rate limiting | Not documented | Per-service-account `X-RateLimit-*` headers (env-configurable) | **▲** |
 | Pagination / filtering | `?query={...}` server filter; no cursor/limit/offset | Offset (`limit`/`offset`) on some lists, not yet standardized; no cursor | **=** |
@@ -571,7 +578,7 @@ Status vocabulary (shared with the competitive matrix): **Supported** · **Parti
 | Trend / regression analysis | Analysis tool (offline); limited REST | `GET /api/v1/releases/{id}/trend` (+ export), pinned-baseline comparison, SLA governance | **▲** |
 | Scheduling / run calendar | Timeslot calendar (reservation-centric) | Cron schedules, occurrences, approvals, governance windows, `/api/v1/run-calendar` | **=** |
 | Test-set / ordered execution | Test Sets / Test Instances (ordered collections) | **Execution plans** (`/api/v1/execution-plans`): ordered scenario entries with per-entry data-pool/timeslot/runtime overrides + failure policy; **dependency-gated sequential execution** (run N+1 awaits run N's terminal state) with persisted, queryable plan-run progress | **✓** (parity) |
-| Imports / interop | LR-native; one-way archive import | 11 formats (LR archive, JMeter, k6, HAR, OpenAPI, RAML, AsyncAPI, Postman, WSDL, Salesforce, Oracle EBS) | **▲** |
+| Imports / interop | LR-native; one-way archive import | 18 import formats/launchers (LR Enterprise Script Archive, JMeter, Bruno, k6, DevWeb, HAR, Salesforce HAR, Recorder/Playwright export, OpenAPI, Postman, WSDL, AsyncAPI, RAML, Akamai CloudTest, Event Hubs Capture, Broker Config, cURL/raw HTTP sample, and Oracle E-Business/Siebel review, plus YAML format chooser and Grafana dashboard query adoption) | **▲** |
 | Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Managed pools, persistent generator metadata/labels/cordon, provisioning requests (`/api/v1/fleet/pools\|generators\|provision-requests`), a **real in-cluster Kubernetes provisioner** that scales the generator StatefulSet, pool-aware inventory + pool-scoped run assignment (cloud backends future) | **✓** (parity) |
 | Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a full collector loop** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health) with **collector-token heartbeat/metric ingestion** (`…/{id}/heartbeat`, `…/{id}/metrics`) routed to live monitoring + a **dependency-free agent runtime** (`cmd/apexload-collector-agent`) | **✓** (parity) |
 | Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`, `/api/v1/projects/{id}/entitlements/usage`): edition, enabled bundles, per-limit used-vs-cap (concurrent tests + active VUsers, global and per project), per-bundle historical consumption, and a per-project breakdown (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
@@ -659,7 +666,6 @@ isn't spent regressing toward LRE's model.
 ### Shared gaps / parity
 
 - Neither offers cursor pagination (LRE has none; APEX has offset on some lists, not standardized).
-- Neither emits outbound test-completion webhooks.
 - Neither publishes rate-limit SLOs (APEX at least emits `X-RateLimit-*`).
 - Both are JSON-over-HTTP at the wire level.
 
@@ -690,7 +696,7 @@ same change so this scorecard never drifts from the endpoint.
   `pkg/api/handlers.go`, `pkg/api/capacity.go`, `pkg/api/parity_status.go`, `docs/swagger.yaml`,
   `docs/API_USER_GUIDE.md`, `mcp/apexload_mcp/`.
 - **LoadRunner Enterprise 26.x:** OpenText LoadRunner Enterprise REST API Reference
-  (admhelp.microfocus.com / OpenText documentation portal); LWSSO/run/results wire behavior corroborated
+  (OpenText LoadRunner Enterprise 26.x documentation portal); LWSSO/run/results wire behavior corroborated
   against an internal LRE orchestration adapter.
 - **Companion:** [COMPETITIVE_COMPARISON.md](#loadrunner) (non-API dimensions).
 
@@ -732,12 +738,14 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 
 | Bundle | Protocol | APEX Load status | Runner class |
 | --- | --- | --- | --- |
-| **Web / API** | HTTP/HTTPS, WebSocket, gRPC | Supported | Go generator (Linux) |
+| **Web / API** | HTTP/HTTPS (HTTP/1.1, HTTP/2, preview HTTP/3 via `APEXLOAD_HTTP3=true`), WebSocket, gRPC | Supported | Go generator (Linux) |
 | **Web / API** | SOAP/WSDL | Supported | Go generator (Linux) |
 | **Web / API** | Java-over-HTTP | Supported (bounded codec) | Go generator (Linux) |
 | **Web / API** | Bruno collections | Supported as native HTTP conversion; compatibility runner retired | Native HTTP engine |
-| **Web / API** | JMS (Solace, IBM MQ, Azure Service Bus) | Partial (Service Bus real adapter opt-in via `-tags jms_servicebus_real`; transactions/no-op ack parity documented) | Go generator (Linux) |
+| **Web / API** | JMS (Solace, IBM MQ, Azure Service Bus) | Partial (Solace and Service Bus real adapters opt-in via `-tags jms_solace_real` / `-tags jms_servicebus_real`; IBM MQ `jms-ibmmq` is mock-only) | Go generator (Linux) |
 | **Web / API** | Kafka (event streaming) | Supported (mock default; real adapter opt-in via `-tags kafka_real`) | Go generator (Linux) |
+| **Web / API** | Azure Event Hubs (native AMQP `eventhubs`) | Supported (mock default; real adapter opt-in via `-tags eventhubs_real`) | Go generator (Linux) |
+| **Web / API** | Mobile device observer (`appium`) & Browser UX canaries (`browser`) | Supported (low-density device/browser observers paired with protocol load) | Go generator + Appium / Playwright |
 | **Database (DB1)** | SQL / ODBC-style (database/sql) | Supported | Go generator (Linux) |
 | **Database (DB1)** | Oracle-2 Tier | External-runner required | Governed Oracle client runner |
 | **Network (NET1)** | DNS, FTP (control), SMTP, POP3, IMAP, LDAP, Winsock (TCP/UDP) | Supported | Go generator (Linux) |
@@ -746,7 +754,8 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 | **Oracle E-Business (OEB1)** | Oracle NCA | External-runner / review artifact | Client runner TBD |
 | **Oracle E-Business (OEB1)** | DevWeb and JMeter import paths | Supported | Go generator (Linux) |
 | **Oracle E-Business (OEB1)** | Gatling script migration | Review-only classification; result-summary ingestion is supported separately | Import review |
-| **Templates (TPL1)** | C/C#/VB.NET/Java Template VUsers | Review artifact; worker SDK planned | Sandboxed external worker |
+| **Templates (TPL1)** | Java Vuser (`java_vuser`) | Supported (opt-in local/sidecar JVM runner, Shared JVMs, LoadRunner thread mode, AppCDS) | Governed Java Vuser JVM runner (`java_vuser_jvm_runner`) |
+| **Templates (TPL1)** | C/C#/VB.NET Template VUsers | Review artifact; worker SDK planned | Sandboxed external worker |
 | **SAP (SAP1)** | SAP-Web / Fiori (via HTTP/browser canary) | Supported for HTTP load plus browser-canary evidence | Go generator (Linux) |
 | **SAP (SAP1)** | SAP GUI desktop | Foundation entitlement + runner architecture planned | Windows SAP GUI runner pool |
 
@@ -759,7 +768,7 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 4. Import and review come before execution — classify assets, preserve source metadata, show gaps before attempting native execution.
 5. Separate entitlement from capability — the UI/API distinguishes whether a project is entitled, whether the runtime exists, and whether required runner pools are available.
 
-**Implementation checkpoint (2026-05-19):**
+**Implementation checkpoint (2026-10-29):**
 
 | Workstream | Status |
 | --- | --- |
@@ -767,5 +776,5 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 | DB1 — Database (native SQL path; Oracle-2 Tier external-runner) | Implemented |
 | NET1 — Network (standards-based native; MAPI/Tuxedo review-only) | Implemented |
 | OEB1 — Oracle E-Business (HTTP-backed + NCA review governance) | Implemented |
-| TPL1 — Template VUser worker SDK | Planned |
+| TPL1 — Template VUser execution | Java Vuser (`java_vuser`) runtime implemented; C/C#/VB.NET template worker SDK planned |
 | SAP1 — SAP GUI foundation entitlement and runner architecture | Foundation entitlement planned |

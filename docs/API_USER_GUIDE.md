@@ -435,7 +435,7 @@ or as a test-level runtime override:
 
 In the dashboard this is the **Source IPs (IP spoofing)** field (one IP per line) in the Script Editor's runtime settings, and the **Source IPs** field on the **Web/HTTP** tab of the scenario runtime-settings group editor.
 
-- **HTTP/HTTPS only.** Binding applies to the HTTP protocol (HTTP/1.1 and HTTP/2); other protocols ignore the pool.
+- **HTTP-family protocols (`http`, `soap`, and `java_http`).** Binding applies across HTTP/1.1, HTTP/2, HTTP/3 (per-VUser QUIC UDP sockets bind the assigned source IP), `soap`, and `java_http`; non-HTTP protocols ignore the pool.
 - **Generators must own the addresses.** Each generator host must already have these IPs configured on its network interfaces, or the connection fails at dial time (`bind: cannot assign requested address`). In distributed runs every generator uses the full pool — IPs are not partitioned per host.
 - **Validated on create.** Each entry must parse as an IPv4/IPv6 address; an invalid value is rejected when the scenario or run is validated, rather than failing silently at runtime. The runtime override merges field-by-field, so supplying `source_ips` does not clear other `web_runtime` settings (e.g. `network_simulation`).
 - The LoadRunner `lr_enable_ip_spoofing` / `lr_disable_ip_spoofing` calls are accepted for import compatibility but are no-ops — binding is governed entirely by the `source_ips` pool.

@@ -19,10 +19,15 @@ describe('Help catalogue and content contracts', () => {
       expect(articleForSection(article.path, section, source)?.id).toBe(article.id)
       expect(resolveHelpLink(`#${section}`, article, source)).toBe(helpArticleHash(article, section))
     }
-    for (const id of ['browser-document-evidence', 'browser-interaction-evidence', 'browser-har-ownership', 'retained-resource-inspection']) {
+    for (const [id, link, section] of [
+      ['browser-document-evidence', '#document-and-navigation-evidence', 'document-and-navigation-evidence'],
+      ['browser-interaction-evidence', '#interaction-and-layout-evidence', 'interaction-and-layout-evidence'],
+      ['browser-har-ownership', '../BROWSER_EVIDENCE_ARCHITECTURE.md', undefined],
+      ['retained-resource-inspection', '#retained-browser-resource-inspection', 'retained-browser-resource-inspection'],
+    ] as const) {
       const target = helpArticles.find(value => value.id === id)!
       expect(await loadHelpSource(target)).not.toBe('')
-      expect(resolveHelpLink(target.path.split('/').pop()!, article, source)).toBe(helpArticleHash(target))
+      expect(resolveHelpLink(link, article, source)).toBe(helpArticleHash(target, section))
     }
     const capture = helpArticles.find(value => value.id === 'browser-interaction-evidence')!
     const captureSource = await loadHelpSource(capture)
@@ -31,7 +36,7 @@ describe('Help catalogue and content contracts', () => {
   })
   it('bundles retained resource inspection with searchable bounded-page guidance and honest coverage', async () => {
     const article = helpArticles.find(value => value.id === 'retained-resource-inspection')!
-    expect(article.path).toBe('docs/guides/RETAINED_RESOURCE_INSPECTION.md')
+    expect(article.path).toBe('docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md')
     const source = await loadHelpSource(article)
     const results = searchHelp([{ article, source }], 'opaque continuation')
     expect(results).toHaveLength(1)
@@ -42,7 +47,8 @@ describe('Help catalogue and content contracts', () => {
     expect(source).toContain('not a complete browser network census')
     expect(source).toContain('logical allocation bound, not a process-RSS attestation')
     const document = helpArticles.find(value => value.id === 'browser-document-evidence')!
-    expect(resolveHelpLink('BROWSER_DOCUMENT_EVIDENCE.md', article, source)).toBe(helpArticleHash(document))
+    expect(resolveHelpLink('#document-and-navigation-evidence', article, source)).toBe(helpArticleHash(document, 'document-and-navigation-evidence'))
+    expect(resolveHelpLink('BROWSER_DOCUMENT_EVIDENCE.md', article, source)).toBe(helpArticleHash(document, 'document-and-navigation-evidence'))
     const documentSource = await loadHelpSource(document)
     expect(documentSource).toContain('No-interaction INP is unavailable.')
   })
@@ -161,12 +167,33 @@ describe('Help catalogue and content contracts', () => {
       expect(resolveHelpLink(path, article, source)).toBe(helpArticleHash(target))
     }
   })
-  it('bundles qualified workload-shape guardrail ownership without claiming the remaining AUTH work', async () => {
+  it('bundles qualified workload-shape guardrail ownership and conditional scenario authoring contracts', async () => {
     const article = helpArticles.find(item => item.id === 'authoring-scenario-fidelity')!
     const source = await loadHelpSource(article)
     expect(source).toContain('Existing SLA, error, transaction and monitor guardrails survive unless the selected shape or template explicitly replaces that field.')
     expect(source).toContain('An explicitly empty rule array clears those rules.')
-    expect(source).toContain('Scenario revision/CAS, request replay retirement and shared authoring-owner changes remain open')
+    expect(source).toContain('ScenarioValidationContext')
+    expect(source).toContain('If-Match')
+    expect(source).toContain('remain open')
+  })
+  it('groups shared data articles and bundles newly catalogued operator and installation guides', async () => {
+    for (const id of ['live-data-tables', 'project-live-tables', 'native-script-data-services', 'distributed-rendezvous']) {
+      expect(helpArticles.find(item => item.id === id)?.group).toBe('Shared data & coordination')
+    }
+    for (const [id, query] of [
+      ['ai-workflows', 'deterministic-local'],
+      ['recording-profiles', 'unified_v1'],
+      ['event-hubs', 'eventhubs_processor_checkpoints_v1'],
+      ['protocol-diagnostics', 'grpc_diagnostics_v1'],
+      ['prometheus-monitoring', 'prometheus-query'],
+      ['object-activity', 'object_archived'],
+      ['install-appservice', 'APEXLOAD_LAUNCHER_BINARY'],
+    ] as const) {
+      const article = helpArticles.find(item => item.id === id)!
+      expect(article, id).toBeDefined()
+      const source = await loadHelpSource(article)
+      expect(searchHelp([{ article, source }], query)).toHaveLength(1)
+    }
   })
   it('links every core help document reference to a catalogue article or app route', async () => {
     for (const article of helpArticles.filter(a => a.path.includes('/HELP_'))) {
@@ -246,17 +273,17 @@ describe('Help catalogue and content contracts', () => {
     expect(resolveHelpLink('dsl.schema.json', first, source)).toContain('article=dsl')
   })
   it.each([
-    ['browser-document-evidence', 'provisional history', 'Browser document evidence'],
-    ['telemetry-policy-receipts', 'semantic SHA-256', 'Telemetry budget policy receipts'],
-    ['authoring-scenario-fidelity', 'sub-millisecond thresholds', 'Scenario and queued-run authoring fidelity'],
-  ])('bundles searchable evidence guidance with a shareable destination: %s', async (id, query, title) => {
+    ['browser-document-evidence', 'provisional history', 'Browser document evidence', 'guides/BROWSER_INTELLIGENCE_WORKFLOWS.md#document-and-navigation-evidence', 'document-and-navigation-evidence'],
+    ['telemetry-policy-receipts', 'semantic SHA-256', 'Telemetry budget policy receipts', 'guides/TELEMETRY_POLICY_RECEIPTS.md', undefined],
+    ['authoring-scenario-fidelity', 'sub-millisecond thresholds', 'Scenario and queued-run authoring fidelity', 'guides/AUTHORING_SCENARIO_FIDELITY.md', undefined],
+  ])('bundles searchable evidence guidance with a shareable destination: %s', async (id, query, title, href, section) => {
     const article = helpArticles.find(candidate => candidate.id === id)!
     expect(article).toMatchObject({ area: 'user-guide', title })
     const source = await loadHelpSource(article)
     const results = searchHelp([{ article, source }], query)
     expect(results).toHaveLength(1)
     expect(results[0].article).toBe(article)
-    expect(resolveHelpLink(article.path.split('/').slice(1).join('/'), first, '')).toBe(helpArticleHash(article))
+    expect(resolveHelpLink(href, first, '')).toBe(helpArticleHash(article, section))
     if (results[0].section) expect(articleForSection(article.path, results[0].section, source)?.id).toBe(id)
     expect(source).toContain('remain open')
   })

@@ -1,0 +1,151 @@
+# Browser Evidence and Native HAR Ownership Architecture
+
+Status: Engineering reference — generator-wide browser evidence admission, native HAR working-file ownership, crash reclamation, Windows NTFS handle/ACL isolation, controller-pulled gRPC archive transfer and `run_evidence_receipts` fencing, and low-level CDP document/interaction wire mechanics. User and operator workflows live in [Browser intelligence workflows](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md).
+
+## Contents
+
+- [Generator evidence budgets and memory watchdog](#generator-evidence-budgets-and-memory-watchdog)
+- [Working and completed HAR files](#working-and-completed-har-files)
+  - [Outstanding request limit](#outstanding-request-limit)
+- [Interrupted retirement](#interrupted-retirement)
+- [Crash reclamation](#crash-reclamation)
+- [Windows](#windows)
+- [Run archive transfer and receipts](#run-archive-transfer-and-receipts)
+- [Synthetic HAR](#synthetic-har)
+- [Downloads and exports](#downloads-and-exports)
+- [Bounds and platform compatibility](#bounds-and-platform-compatibility)
+- [CDP wire joins, touch dispatch, and child-frame 2D transform math](#cdp-wire-joins-touch-dispatch-and-child-frame-2d-transform-math)
+
+---
+
+## Generator evidence budgets and memory watchdog
+
+Playwright buffers native HAR recordings in memory until the browser context closes, so file-size checks alone cannot protect generator pods from OOM kills. `pkg/protocol/browser` enforces generator-wide admission and runtime supervision (`evidence_budget.go`):
+
+- **Up-front HAR writer reservation**: Before opening a HAR-capturing context, each active native HAR writer reserves its full **100 MiB** per-HAR allowance against a **1 GiB** generator-wide aggregate active-writer ceiling (`maxRetainedRuntimeHARBytes`) and requires at least **512 MiB** of free scratch disk headroom (`harScratchHeadroomBytes`) above the HAR directory's filesystem floor. Refusals increment `har_writers_refused`, `har_scratch_refusals`, or `har_scratch_unavailable` without failing non-HAR execution.
+- **Process-tree memory admission and watchdog (`APEXLOAD_BROWSER_MEMORY_LIMIT_MB`)**: Every browser context is admitted against measured memory across the Go generator, Playwright Node driver, and browser child trees (`128 MiB` marginal footprint floor per live context, sampled with a 1-second TTL and 10-second stale ceiling) capped at **90%** (`browserMemoryLimitFraction = 0.9`) of `APEXLOAD_BROWSER_MEMORY_LIMIT_MB` (or the container/host memory limit when unset). Contexts exceeding the admission budget fail immediately as `browser_memory_admission` (`contexts_refused_by_memory`). While HAR writers are active, a background watchdog polls memory and closes overflowing contexts (`browser_memory`, `memory_watchdog_closures`) as `resource_limit` results so journey accounting censors rather than blames the system under test.
+- **Exported counters (`BrowserEvidenceStats`)**: Tracks `har_writers_admitted`, `har_writers_refused`, `har_scratch_refusals`, `har_scratch_unavailable`, `har_finalization_exhausted`, `har_overflow_closures`, `memory_watchdog_closures`, `contexts_refused_by_memory`, `contexts_admitted_unmeasured`, `memory_sample_failures`, and `network_tasks_dropped`.
+
+---
+
+## Working and completed HAR files
+
+Browser HAR capture policies (`off`, `always`, `on_error`, `on_sla_breach`, and `manual`) stage working files inside an existing `browser_har_dir` (a symlink at `browser_har_dir` is rejected):
+
+- **Private generation staging**: Before admitting a native context, capture setup creates an unpredictable generation directory under `.apexload-har-work/` with mode `0700`; raw `working.har`, `manifest.json`, `writer-entered.json`, `owner.lock`, and scrubbed output files are pre-created with mode `0600` (on Windows, an explicit non-inherited DACL granting only the process user and `SYSTEM`; see [Windows](#windows)) before the Playwright SDK opens or truncates `working.har`.
+- **Descriptor-pinned locks**: Both the permanent namespace lock and each generation's `owner.lock` are held by open file descriptors whose device/inode identities are verified before cleanup; diagnostic in-memory maps hold zero deletion authority.
+- **Joined native close (`CloseHAROwned`)**: Only a fresh owned SDK close entry that physically joins its entire close body produces a durable writer-joined receipt. The pinned local Playwright-Go subset (`third_party/playwright-go/APEX_PATCHES.md`) provides `CloseHAROwned` because ordinary `BrowserContext.Close` can return `nil` while an asynchronous close is still flushing `working.har`. Repeat callers join the first owner's result without deadlocking the synchronous SDK dispatcher. Initialization errors, mid-run overflow closures, document-finalizer cancellation, CDP detachment, and normal teardown all converge on this single close-once owner.
+- **2-second caller wait vs. 30-second capture finalization budget**:
+  - The two-second caller wait is separate from finalization: caller teardown waits up to **2 seconds** (shortened by caller context deadline) across document finalization and context close, and expiration does not forcibly terminate a callback or release a writer. If physical work is still running when the caller wait expires, ownership, lease, and resource charges stay retained until the native callback actually returns.
+  - Independently, the first teardown join starts a non-renewable **30-second capture finalization deadline** (mid-session overflow closures do not consume this teardown budget). Close, flush, PII/secret scrubbing, and hard-link publication to `apexload_browser_<generation>_scrubbed.har` must finish within those 30 seconds; expiration emits `har_finalization_budget_exhausted`, increments `har_finalization_exhausted` once, withholds publication (unlinking only the owner's exact link if created after deadline), and waits for physical writer join before retiring raw staging.
+
+### Outstanding request limit
+
+An active native HAR capture allows at most **1,024 outstanding issued requests** concurrently (tracked synchronously in native request/completion callbacks independently of the 512-entry request-identity map and 100,000-entry total HAR limit). Exceeding 1,024 in-flight requests triggers the close-once owner, records `har_in_flight` (`har_overflow_closures`), and closes the context with unfinished document observations censored. Completed sequential requests release their slot immediately and do not accumulate toward the concurrent limit.
+
+---
+
+## Interrupted retirement
+
+Before renaming or unlinking any raw generation or completed artifact, a private versioned `retirements.json` ledger (serialized under the namespace descriptor lease and `fsync`ed before destructive steps) records the target's exact filesystem identity:
+
+- On Unix: `(device, inode, owner_uid)`.
+- On Windows: `(volume_serial_number, 128-bit FILE_ID_INFO, owner_sid)`.
+
+Raw payloads transition through `.retired-<generation>` directories and completed artifacts use `.har-retired-<generation>` tombstones. Cleanup plans revalidate the ledger's inode and record set before each step, acquire `owner.lock` whenever present (an absent lock file is usable only when paired with a pre-existing durable writer-joined ledger record), and clear ledger entries only after verifying and syncing payload disappearance. Malformed, replaced, or full ledgers, mismatched file identities, and unproven legacy `*.har.tmp` files are preserved fail-safe rather than unlinked.
+
+---
+
+## Crash reclamation
+
+If a generator process is killed (`SIGKILL`, OOM, power loss) before writing a writer-joined receipt, `manifest.json` (version `2`/`3`) records the generator's `pkg/internal/procidentity` record and `writer-entered.json`—written and `fsync`ed before handing `working.har` to the Playwright Node driver—records the driver's process identity:
+
+- **Linux**: Kernel boot ID, `/proc/self/ns/pid` (paired with `/proc/self/ns/time` when time namespaces exist), `(/etc/machine-id, hostname)` pair (cloned VMs sharing a HAR volume must regenerate `/etc/machine-id` or use distinct non-`localhost` hostnames), PID, and `/proc/<pid>/stat` start time. Zombies (`Z`) and dead (`X`/`x`) tasks count as exited because the kernel has already closed their file descriptors; missing `/proc/<pid>` entries require `kill(pid, 0) == ESRCH` to guard against `hidepid`/`ProtectProc`.
+- **macOS**: Boot session UUID and `sysctl` kernel process table `(pid, start_time)` within the current boot (because macOS exposes no non-IOKit persistent machine UUID, cross-boot records are never auto-reclaimed on macOS).
+- **Windows**: `(MachineGuid, physical DNS hostname)`, kernel `BootId`, namespace `"windows"`, PID, and process creation time (`OpenProcess` + exit status check); disabled inside Windows containers (`ContainerType` registry key).
+- **Unix local-filesystem inherited lease (`version: 3`)**: When `.apexload-har-work/` resides on a verified local filesystem (`pkg/internal/localfs` — rejecting NFS, SMB, EFS, and FUSE) and the Playwright Node driver inherits the open `owner.lock` file description across `exec` (`setHARLeaseInheritable`), the kernel holds the exclusive `flock` lease until both the Go generator and the entire Node driver tree exit. A replacement container in a fresh PID namespace on the same `(machine, boot)` can therefore reclaim predecessor v3 generations once `owner.lock` is free, while same-PID-namespace checks still enforce `procidentity.Gone`.
+
+Every browser context creation sweeps its configured `browser_har_dir`, and generator startup sweeps the default temporary HAR root once.
+
+---
+
+## Windows
+
+Native HAR ownership on Windows (`pkg/internal/winfs`) enforces equivalent isolation on **local fixed NTFS volumes** (UNC shares, network/removable drives, device paths, ReFS, FAT, alternate data streams `:`, and reparse points/symlinks/junctions are rejected up front):
+
+- **Protected DACL at creation**: `.apexload-har-work` is created handle-relative to `browser_har_dir` with security descriptor `D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;<user SID>)`, preventing any window where inherited parent ACLs apply. Every opened handle verifies owner SID (process token user or default owner—do not alternate elevated and non-elevated generators on the same HAR directory), exact 2-ACE allow-only DACL, non-reparse attribute, and single hard-link count.
+- **Handle-based 128-bit identity and POSIX delete semantics**: Identities read `FILE_ID_INFO` (`inode` = low 64 bits, `file_id_high` = high 64 bits) and volume serial number directly from open handles rather than lazy `os.Lstat` path lookups. Retirement closes `owner.lock` and generation handles before renaming to the tombstone directory, performs handle-relative POSIX delete-on-close operations, flushes directory metadata via `FlushFileBuffers`, and retries transient antivirus/indexer sharing or `ERROR_ACCESS_DENIED` / `ERROR_DIR_NOT_EMPTY` conflicts every 25 ms for up to 2 seconds before preserving the generation in `retirements.json` for a later sweep.
+
+---
+
+## Run archive transfer and receipts
+
+1. **Generator archive staging**: When a session closes, its scrubbed HAR (`<= 100 MiB`) is copied under the namespace lease into the run archive (`browser_har_<generation>.har`, up to **128 HARs** and **1 GiB** per run) within the fixed **25% optional-evidence allowance** (`min(0.25 * run_archive_byte_limit, 0.25 * free_disk_above_floor)`, shared with `browser_interactions.jsonl`) and declared in `browser_har_artifacts` (`kind: "har_native"`, `fidelity: "native"`, `source_generation`, `evidence_generation`, `sequence`, `sha256`, `bytes`). Pre-artifact capture losses record bounded per-owner omission counters (`native_capture_failed`, `native_finalization_budget`, `native_owner_unretired`, `native_publication_limit`, `native_status_unavailable`, saturating at `131,072` with `native_omission_count_limit`).
+2. **Controller-pulled gRPC transfer and `_collection` cache**: Generators act as gRPC servers in both connectivity modes, so the controller pulls HARs during archive collection/finalization. Required source files are collected first; optional HARs and `browser_interactions.jsonl` are then cached best-effort in `_collection` and recorded in `optional_receipt.json` (keeping the SQL `ReceiptSHA256` anchor for `receipt.json` deterministic across HA replicas with differing local disk space), falling back to live generator pull if uncached (`source_unavailable` if unreachable).
+3. **`run_evidence_receipts` execution-lease fencing and `AcknowledgeEvidence`**: Before writing the finalized run archive manifest, the controller verifies byte size and SHA-256, copies into the archive within the merge optional-evidence allowance, and records an idempotent receipt in `run_evidence_receipts` (schema v51) fenced by the controller's active **execution lease generation** (locking the execution lease row on PostgreSQL so a deposed HA controller cannot overwrite or forget a newer generation's receipts; late uploads after archive publication or deletion are tombstoned). Receipts commit in the same database transaction that publishes the archive. Afterward, the controller calls `AcknowledgeEvidence` (by artifact name and SHA-256, retrying failed acknowledgements after 15 minutes on subsequent commits); generators delete their local archive copy only upon matching SHA-256 acknowledgement.
+
+---
+
+## Synthetic HAR
+
+For browser contexts without a native HAR (or runs on older/unqualified platforms), `pkg/harsynth` (`apexload.synthetic_har` v1) derives a deterministic HAR 1.2 stream on demand from retained archive transaction network entries without storing duplicate artifacts:
+
+- Excludes entries matching any native HAR's `evidence_generation` (counted as `native_har`; legacy native HARs without `evidence_generation` increment `_apexload.native_har_coverage_unknown`).
+- Applies safe-transaction sanitization followed by the native HAR credential/PII scrubber, always omitting bodies (`body_policy: "omitted"`).
+- Never fabricates timings or byte counts: unmeasured optional phases (`blocked`, `dns`, `connect`, `ssl`) and unknown header/body sizes emit `-1`, while required non-negative HAR 1.2 fields (`send`, `wait`, `receive`, `content.size`) emit `0` and list their names in `_apexload.unavailable_fields`. Caps output at `100,000` entries and `100 MiB` (`completeness: "partial"` or `"truncated"`).
+
+---
+
+## Downloads and exports
+
+All user-facing REST endpoints, RBAC boundaries (viewer listing vs. editor-only HAR download and `?include=har` archive export), browser replay durable HAR receipts (`X-APEXLoad-Replay-Durability`), Script Debugger synthetic HAR exports, and `apexctl analysis browser-har` CLI workflows are documented in [Browser intelligence workflows — HAR downloads and exports](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md#har-downloads-and-exports). For browser replay sessions started with `record_har: true`, the HAR download serves native capture only and never falls back to synthetic evidence; Cache eviction does not free a durable replay ID while its retention receipt remains active, and a download cancellation or caller timeout does not release a writer before physical close finishes.
+
+---
+
+## Bounds and platform compatibility
+
+| Control | Enforced limit |
+| --- | --- |
+| Pending capture owners in one generator process | `64` |
+| Namespace owners in one generator process | `128` |
+| Existing private generation directories at admission | `< 128` |
+| Existing staging bytes at admission | `2 GiB` |
+| Generator-wide active HAR writer reservation (`maxRetainedRuntimeHARBytes`) | `1 GiB` (`100 MiB` per writer, `512 MiB` scratch headroom floor) |
+| Browser context memory ceiling | `90%` of `APEXLOAD_BROWSER_MEMORY_LIMIT_MB` / host limit (`128 MiB` marginal context floor) |
+| Per-HAR capture bounds | `100 MiB`, `100,000` entries, `1,024` concurrent in-flight requests |
+| Caller teardown wait / capture finalization budget | `2 s` caller wait / `30 s` total capture finalization deadline |
+| Retirement ledger (`retirements.json`) | `128` records; `64 KiB` (plus up to `128` auxiliary entries ≤ `64 KiB`) |
+| Ownership `manifest.json` and `writer-entered.json` | `4 KiB` each; at most `6` files per generation |
+| Staging / working-plan / retention directory scans | `1,024` entries |
+| Completed per-run HAR retention | `128` artifacts; `1 GiB` (within `25%` optional-evidence archive allowance) |
+
+`browser.NativeHARSupported()` returns `true` on Linux, macOS, and Windows (local fixed NTFS). On unsupported platforms, generators omit `browser_native_har_v1`, load sessions emit `browser_har_unavailable_har_platform_unsupported` without touching staging directories, and `record_har: true` replay requests return HTTP `422`. Because v2/v3 crash-reclamation manifests add `writer-entered.json` and `processes`, do not share a `browser_har_dir` concurrently between pre-reclamation and current binaries.
+
+---
+
+## CDP wire joins, touch dispatch, and child-frame 2D transform math
+
+### Request-to-document association and protocol normalization (`v3` / `v4`)
+
+- **Chromium `cdp_loader_join`**: Attaches a per-page CDP session (`Network` + `Page` + `Runtime` domains) and correlates Playwright requests by `(page, method, url, ordinal, start_time)` to extract `fromDiskCache`, `fromPrefetchCache`, `fromServiceWorker`, `initiator`, and `Response.protocol`, binding the request to the document token emitted by the bootstrap script in the execution context created after the loader's commit (without comparing clocks across OS processes).
+- **WebKit `page_resource_timing_join`**: Joins non-navigation frame requests when the frame's active document exposes a unique `PerformanceResourceTiming` entry for the URL, reading `startTime` as the document-relative offset and `nextHopProtocol` for `v4` protocol normalization (`NormalizeBrowserResourceProtocol` → `h1`, `h2`, or `h3`, never inferred for cache hits or empty/unknown strings).
+
+### Trusted DOM dispatch listener, CDP mobile touch, and 2D affine hop projection
+
+`pkg/protocol/browser/interaction_dispatch.go` installs a passive capture-phase listener (`pointerdown`, `pointerup`, `pointermove`, `keydown`, `beforeinput`, `input`, `change`) in every frame context that ignores untrusted (`!e.isTrusted`) script-synthesized events:
+
+- **Chromium `HasTouch` CDP dispatch**: On Chromium mobile profiles with `HasTouch`, `browser_tap`, `browser_long_press`, and `browser_swipe` emit trusted renderer touch sequences through CDP `Input.dispatchTouchEvent`, yielding `pointer_type: "touch"` coordinates and `dispatch` timestamps (`performance.timeOrigin` + `e.timeStamp`).
+- **Child-frame 2D affine projection (`BrowserInteractionFrameHop.ApplyToPoint`)**: When a trusted pointer event fires inside a child frame (`window !== window.top`), `frameChain()` walks up to `MaxBrowserInteractionFrameDepth = 8` `window.frameElement` hops toward `window.top`. At each same-origin hop, it reads `getBoundingClientRect()` (`bx, by, bw, bh`), `offsetWidth`/`offsetHeight` (`ow, oh`), `clientLeft`/`clientTop` (`cl, ct`), computed `paddingLeft`/`paddingTop` (`pl, pt`), parent scroll/visual-viewport state, and multiplies every ancestor CSS `matrix(a, b, c, d, tx, ty)` on `frameElement` and its `parentElement` chain (flagging `non_2d: true` if any ancestor sets `perspective !== 'none'`, `matrix3d(...)`, or a near-singular determinant `|a*d - b*c| < 1e-6`). In Go (`pkg/protocol/browser_interaction_v2.go`), each valid invertible 2D hop maps child viewport point `(p.X, p.Y)` into its immediate parent viewport `(X', Y')`:
+
+  ```text
+  px   = client_left + padding_left + p.X
+  py   = client_top  + padding_top  + p.Y
+  w    = offset_width  > 0 ? offset_width  : bounding_width
+  h    = offset_height > 0 ? offset_height : bounding_height
+  minX = min(0, a*w) + min(0, c*h)
+  minY = min(0, b*w) + min(0, d*h)
+  X'   = bounding_x - minX + a*px + c*py
+  Y'   = bounding_y - minY + b*px + d*py
+  ```
+
+  Applying `ApplyToPoint` across all hops yields the main-frame CSS-pixel coordinate (`mapped_via_transform`) for `browser_interaction_patterns.v4` 64×64 viewport heatmaps.

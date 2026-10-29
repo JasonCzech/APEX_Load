@@ -35,7 +35,7 @@ func benchmarkAnalysisInput(rows int) AnalysisInput {
 }
 
 // BenchmarkRCAAnalyze baselines the Phase 3a analysis (acceptance and
-// validity); docs/ANALYSIS_WORKFLOWS.md records the results.
+// validity); docs/NATIVE_ANALYTICS.md records the results.
 func BenchmarkRCAAnalyze(b *testing.B) {
 	for _, rows := range []int{10000, 1000000} {
 		b.Run(fmt.Sprintf("rows=%d", rows), func(b *testing.B) {
@@ -54,7 +54,7 @@ func BenchmarkRCAAnalyze(b *testing.B) {
 
 // BenchmarkRCADetect baselines onset detection at a large run's shape: 128
 // transactions' three series over six hours of 10-second buckets at one
-// steady level, a quarter of them stepping halfway; docs/ANALYSIS_WORKFLOWS.md
+// steady level, a quarter of them stepping halfway; docs/NATIVE_ANALYTICS.md
 // records the results.
 func BenchmarkRCADetect(b *testing.B) {
 	for _, series := range []int{48, 384} {

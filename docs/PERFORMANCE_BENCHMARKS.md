@@ -61,10 +61,10 @@ as proof that the complete transaction harness meets the target.
 
 ## Local performance evidence harness
 
-Java Vuser measurements use a separate evidence schema and opt-in commands. See
-[Java Vuser pooling implementation status](JAVA_VUSER_POOLING_IMPLEMENTATION.md)
+Java Vuser measurements use a separate evidence schema and opt-in subcommands under `cmd/apexbench java`. See
+[Java shared JVM and pilot runtime](JAVA_SHARED_AND_PILOT_RUNTIME.md)
 for fixture builds, dedicated Linux collection, operator AppCDS, comparison
-rules, and the unimplemented pooled/AKS execution and qualification stages.
+rules, and pooled pilot runtime qualification.
 
 APEX Load has an opt-in, reproducible local benchmark harness for each design
 target listed in `AGENTS.md`. The harness emits a versioned JSON artifact and a
@@ -177,6 +177,19 @@ go run ./cmd/apexbench \
 The JSON artifact is canonical. Markdown is a deterministic rendering of that
 validated JSON, not an independently editable evidence source.
 
+### Java Vuser benchmark subcommands (`apexbench java`)
+
+`cmd/apexbench` exposes a dedicated `java` subcommand family (`go run ./cmd/apexbench java <subcommand> [flags]`). Every subcommand other than `target` accepts `-output <path>` (writes validated JSON instead of stdout) and `-overwrite` (replaces an explicit output file):
+
+| Subcommand | Key flags | Purpose |
+| --- | --- | --- |
+| `fixture` | `-workload light\|middleware-heavy`, `-endpoint http://127.0.0.1:18099`, repeatable `-classpath <jar>` | Emits a deterministic persistent `java_vuser` JSON DSL fixture script (`{"script": ...}`). |
+| `target` | `-addr 127.0.0.1:18099` | Runs the loopback HTTP fixture target server (must bind a loopback IP and run outside the benchmark cgroup). |
+| `inspect` | repeatable `-artifact <path>` | Runs `javarunner.InspectApplicationNative` over application source/class/JAR/ZIP artifacts (never JDK internals) to detect native/JNI or shared-JVM blockers. |
+| `baseline` | `-script`, `-cgroup`, `-workload`, `-profile` (default `dedicated-default`), `-runtime-sha256`, `-environment`, `-resources`, `-target`, `-runner-pid`, `-vusers` (default `25`), `-repetitions` (`1..5`, default `5`), `-soak` (`0` or `1h..2h`), `-warmup` (default `40s`), `-duration` (default `1m`) | Collects dedicated one-JVM-per-VUser cgroup-v2 baseline evidence (`perfevidence.RunJavaDedicated`). |
+| `pilot` | All `baseline` flags (default `-profile pooled-pilot`) plus `-pilot-manifest <path>` and `-preparation-timeout` (default `2m`) | Collects shared/pooled JVM pilot evidence (`perfevidence.RunJavaPooled`) using an operator-approved runner manifest. |
+| `compare` | `-baseline <dedicated.json>`, `-candidate <pooled.json>` | Compares validated dedicated baseline JSON against pooled candidate JSON (`perfevidence.CompareJavaEvidence`) and exits non-zero if acceptance gates fail. |
+
 ### Publication checklist
 
 Before attaching a component report to release evidence:
@@ -269,8 +282,8 @@ WebKit exposes neither `Browser.NewBrowserCDPSession` nor `SystemInfo.getProcess
 so WebKit profiles explicitly record `rss_attribution: "unavailable"`, leave
 `per_vuser_rss_bytes`, `fixed_overhead_bytes`, and `peak_rss_bytes` null, and keep
 `rss_per_vuser_target_bytes` omitted (`0`). Acceptance requests remain pending
-review or failed, never passed automatically. See the [units review](qa/reviews/roadmap-browser-benchmark-units-2026-10-20/README.md)
-and [per-VUser attribution review](qa/reviews/roadmap-browser-vuser-attribution-2026-10-26/README.md)
+review or failed, never passed automatically. See the [units review](archive/qa-reviews/BROWSER_SLICES_2026-10.md#roadmap-browser-benchmark-units-2026-10-20)
+and [per-VUser attribution review](archive/qa-reviews/BROWSER_SLICES_2026-10.md#roadmap-browser-vuser-attribution-2026-10-26)
 for local contract tests; reference-host qualification remains pending (`BE-C2`).
 
 ##### Desktop Chromium 1080p

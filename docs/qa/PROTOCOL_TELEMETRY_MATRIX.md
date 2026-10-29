@@ -1,10 +1,10 @@
 # Non-Messaging protocol telemetry matrix
 
 This is the measurement inventory for PROTO-A/PROTO-B in the
-[implementation spec](../ROADMAP_IMPLEMENTATION_SPEC.md#proto-b--controlled-endpoint-qualification),
+[implementation spec](../archive/plans/ROADMAP_IMPLEMENTATION_SPEC_2026-10-28.md#proto-b--controlled-endpoint-qualification),
 under the [diagnostics](../PROTOCOL_DIAGNOSTICS.md) and
 [support](../PROTOCOL_SUPPORT.md) contracts. It records the exact local cohorts
-verified by the [Java admission and protocol review](reviews/roadmap-java-encoding-admission-2026-10-19/README.md), the [Java representation review](reviews/roadmap-java-representations-2026-10-20/README.md), the [controlled-endpoint review](reviews/roadmap-controlled-endpoints-2026-10-20/README.md) and the [HTTP byte evidence review](reviews/roadmap-native-byte-evidence-2026-10-22/README.md).
+verified by the [Java admission and protocol review](../archive/qa-reviews/TELEMETRY_AND_PROTOCOL_SLICES_2026-10.md#roadmap-java-encoding-admission-2026-10-19), the [Java representation review](../archive/qa-reviews/TELEMETRY_AND_PROTOCOL_SLICES_2026-10.md#roadmap-java-representations-2026-10-20), the [controlled-endpoint review](../archive/qa-reviews/TELEMETRY_AND_PROTOCOL_SLICES_2026-10.md#roadmap-controlled-endpoints-2026-10-20) and the [HTTP byte evidence review](../archive/qa-reviews/ANALYTICS_SLICES_2026-10.md#roadmap-native-byte-evidence-2026-10-22).
 It does not close the protocol roadmap row. Messaging and CloudTest outcome
 parity remain excluded.
 
@@ -71,7 +71,7 @@ execution throughput. Existing field meanings and old archives remain readable.
 
 ## Controlled gRPC and WebSocket endpoints
 
-The [controlled-endpoint review](reviews/roadmap-controlled-endpoints-2026-10-20/README.md)
+The [controlled-endpoint review](../archive/qa-reviews/TELEMETRY_AND_PROTOCOL_SLICES_2026-10.md#roadmap-controlled-endpoints-2026-10-20)
 retains commands, runtime/library pins, source hashes, original draft failures and
 passing applied tests. These are loopback functional cohorts, not reference-host
 or production-overhead qualification.
@@ -85,7 +85,7 @@ or production-overhead qualification.
 
 ## HTTP body bytes
 
-The [HTTP byte evidence review](reviews/roadmap-native-byte-evidence-2026-10-22/README.md) defines `http_body.v1` and carries it to the archive's native query. These are loopback functional fixtures. They are not transport-byte, reference-host or deployed qualification.
+The [HTTP byte evidence review](../archive/qa-reviews/ANALYTICS_SLICES_2026-10.md#roadmap-native-byte-evidence-2026-10-22) defines `http_body.v1` and carries it to the archive's native query. These are loopback functional fixtures. They are not transport-byte, reference-host or deployed qualification.
 
 | Measurement | Independent fixture | Qualified scope and limits |
 | --- | --- | --- |

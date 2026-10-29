@@ -34,6 +34,13 @@
     ]
   },
   {
+    "id": "ai-workflows",
+    "area": "user-guide",
+    "title": "AI-assisted authoring",
+    "path": "docs/AI_ASSISTED_WORKFLOWS.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "dsl-operator-guide",
     "area": "user-guide",
     "title": "DSL scripting for LoadRunner & JMeter operators",
@@ -55,6 +62,7 @@
     "area": "user-guide",
     "title": "Run live tables",
     "path": "docs/LIVE_DATA_TABLES_RUNTIME.md",
+    "group": "Shared data & coordination",
     "owner": "APEX Load maintainers"
   },
   {
@@ -62,6 +70,7 @@
     "area": "user-guide",
     "title": "Project live tables",
     "path": "docs/PROJECT_LIVE_TABLES.md",
+    "group": "Shared data & coordination",
     "owner": "APEX Load maintainers"
   },
   {
@@ -69,6 +78,7 @@
     "area": "user-guide",
     "title": "Native script data services",
     "path": "docs/NATIVE_SCRIPT_DATA_SERVICES.md",
+    "group": "Shared data & coordination",
     "owner": "APEX Load maintainers"
   },
   {
@@ -76,6 +86,7 @@
     "area": "user-guide",
     "title": "Distributed rendezvous",
     "path": "docs/DISTRIBUTED_RENDEZVOUS.md",
+    "group": "Shared data & coordination",
     "owner": "APEX Load maintainers"
   },
   {
@@ -151,34 +162,51 @@
     ]
   },
   {
-    "id": "browser-document-evidence",
-    "area": "user-guide",
-    "title": "Browser document evidence",
-    "path": "docs/guides/BROWSER_DOCUMENT_EVIDENCE.md",
-    "owner": "APEX Load maintainers",
-    "group": "Analysis and evidence"
-  },
-  {
     "id": "browser-intelligence",
     "area": "user-guide",
     "title": "Browser intelligence workflows",
     "path": "docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md",
     "owner": "APEX Load maintainers",
-    "group": "Analysis and evidence"
+    "group": "Analysis and evidence",
+    "sections": [
+      "Guide map",
+      "The Browser area of a run report",
+      "HAR downloads and exports",
+      "Editing browser and journey policies",
+      "Saved panels",
+      "Browser findings and qualified scores",
+      "Journey accounting",
+      "Patterns and heatmaps",
+      "Reports, CLI, MCP, and QA promotion"
+    ]
+  },
+  {
+    "id": "browser-document-evidence",
+    "area": "user-guide",
+    "title": "Browser document evidence",
+    "path": "docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md",
+    "owner": "APEX Load maintainers",
+    "group": "Analysis and evidence",
+    "sections": [
+      "Document and navigation evidence"
+    ]
   },
   {
     "id": "browser-interaction-evidence",
     "area": "user-guide",
     "title": "Browser interaction evidence",
-    "path": "docs/guides/BROWSER_INTERACTION_EVIDENCE.md",
+    "path": "docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md",
     "owner": "APEX Load maintainers",
-    "group": "Analysis and evidence"
+    "group": "Analysis and evidence",
+    "sections": [
+      "Interaction and layout evidence"
+    ]
   },
   {
     "id": "browser-har-ownership",
     "area": "user-guide",
     "title": "Native HAR working-file ownership",
-    "path": "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md",
+    "path": "docs/BROWSER_EVIDENCE_ARCHITECTURE.md",
     "owner": "APEX Load maintainers",
     "group": "Analysis and evidence"
   },
@@ -645,6 +673,14 @@
     "owner": "APEX Load maintainers"
   },
   {
+    "id": "install-appservice",
+    "title": "Azure App Service",
+    "path": "deployments/azure/appservice/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "install-terraform",
     "title": "Azure infrastructure",
     "path": "deployments/k8s/aks/README.md",
@@ -744,9 +780,12 @@
     "id": "retained-resource-inspection",
     "area": "user-guide",
     "title": "Retained resource inspection",
-    "path": "docs/guides/RETAINED_RESOURCE_INSPECTION.md",
+    "path": "docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md",
     "owner": "APEX Load maintainers",
-    "group": "Analysis and evidence"
+    "group": "Analysis and evidence",
+    "sections": [
+      "Retained browser resource inspection"
+    ]
   },
   {
     "id": "http3-quic",
@@ -765,6 +804,14 @@
       "Browser VUsers",
       "Troubleshooting"
     ]
+  },
+  {
+    "id": "prometheus-monitoring",
+    "area": "user-guide",
+    "title": "Prometheus target monitoring",
+    "path": "docs/PROMETHEUS_MONITORING.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
   },
   {
     "id": "dynatrace-monitoring",
@@ -787,6 +834,38 @@
     "area": "user-guide",
     "title": "Import fidelity and repairs",
     "path": "docs/IMPORT_FIDELITY_AND_REPAIRS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "recording-profiles",
+    "area": "user-guide",
+    "title": "Recording profiles",
+    "path": "docs/RECORDING_PROFILES.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "event-hubs",
+    "area": "user-guide",
+    "title": "Event Hubs & Kafka runtime",
+    "path": "docs/EVENT_HUBS_HOWTO.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "protocol-diagnostics",
+    "area": "user-guide",
+    "title": "Protocol diagnostics",
+    "path": "docs/PROTOCOL_DIAGNOSTICS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "object-activity",
+    "area": "user-guide",
+    "title": "Object activity & archiving",
+    "path": "docs/OBJECT_ACTIVITY.md",
     "group": "Reference",
     "owner": "APEX Load maintainers"
   },

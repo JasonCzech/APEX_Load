@@ -8,13 +8,27 @@ other scripts in this directory carry usage in their own headers.
 | --- | --- |
 | `jmeter-reference/` | Pinned JMeter/Kafka/Event Hubs reference harness ([details](#jmeter-messaging-reference-baseline)) |
 | `synthetic-mixed-protocol-test/` | Runnable 45-minute mixed-protocol synthetic test ([details](#synthetic-mixed-protocol-45-minute-test)) |
-| `check-docs.py` | Documentation link/structure checks |
-| `render-aks-manifests.sh`, `render-eks-manifests.sh` | Render AKS/EKS Kustomize manifests from Terraform outputs (see `deployments/README.md`) |
-| `run-optin-suites.sh` | Opt-in test suites (see `docs/qa/TEST_PROGRAM.md`) |
-| `multiproject/` | Multi-project concurrency suite: a black-box Go test plus a disposable production-posture Docker stack (2 HA controllers, 3 mTLS generators, PostgreSQL, Redis, S3); also runs against an existing deployment such as AKS (see its README) |
-| `ha-failover-harness.sh` | Local-process HA failover harness (2 controllers, 2 generators, throwaway Postgres): leader kill/suspend, double failover, stop, stage shapes, mixed fleet; records load continuity at the target (see `docs/HA_RUN_CONTINUITY_PLAN.md` §9, §12) |
-| `java-shared-jvm-bench/` | Docker benchmark of dedicated against shared Java VUser JVMs on a Linux runner with the middleware-heavy LR-style evidence fixture: latency, throughput, memory and a paced scale run (usage in `run.sh`) |
-| `coverage-baseline.sh`, `coverage-ratchet.py`, `diff-coverage.py` | Coverage baseline, ratchet and diff-coverage tooling |
+| `check-docs.py` | CI documentation checks: relative Markdown links and `#heading` anchors, `docs/INDEX.md` coverage (`docs/*.md`, `docs/guides/*.md`, `deployments/**/README.md`), `AGENTS.md` `cmd/` + `pkg/` inventory, `docs/architecture.html` doc references, QA/archive artifact hygiene, `/api/v1/...` route catalog parity, and stale-phrase bans |
+| `check-import-policy-locality.sh` | Verifies protected-import policy locality against `import-policy-locality.allowlist` |
+| `render-aks-manifests.sh`, `render-eks-manifests.sh`, `render-onprem-manifests.sh` | Render AKS, EKS, and on-prem Kustomize manifests from Terraform/operator inputs (see `../deployments/README.md`) |
+| `run-e2e.sh` | Builds embedded dashboard assets, boots isolated controller instances, and runs Playwright E2E suites across `dev-admin` and `local-auth` profiles |
+| `run-dashboard-workflows.sh` | Runs dashboard workflow verification (`typecheck`, `lint`, `lint:a11y`, unit tests, build, bundle budget, and Playwright workflows) |
+| `run-recording-e2e.sh`, `run-recording-e2e.mjs` | End-to-end browser recording and replay verification harness |
+| `run-optin-suites.sh` | Executes opt-in integration and broker test suites (see `../docs/qa/TEST_PROGRAM.md`) |
+| `run-local-broker-integration.py` | Local Docker Compose broker integration matrix (Kafka, Solace, Event Hubs emulator) |
+| `run-import-fixture-matrix.py` | Multi-format script importer parity and fixture verification runner |
+| `run-performance-evidence.sh` | Stamped `apexbench` release/smoke component performance-evidence runner (see `../docs/PERFORMANCE_BENCHMARKS.md`) |
+| `multiproject/` | Multi-project concurrency suite: black-box Go test plus disposable production-posture Docker stack (2 HA controllers, 3 mTLS generators, PostgreSQL, Redis, S3) |
+| `ha-failover-harness.sh` | Local-process HA failover harness (2 controllers, 2 generators, throwaway PostgreSQL): leader kill/suspend, double failover, stop, stage shapes, mixed fleet (see `../docs/ENTERPRISE_PLATFORM_RUNBOOK.md`) |
+| `fault_harness/`, `fault_s3_probe/` | Disposable fault-injection trials and S3 archive fault probes with `cmd/apexfault-target` |
+| `java-shared-jvm-bench/` | Docker benchmark comparing dedicated vs shared Java Vuser JVMs on Linux (`run.sh`; see `../docs/JAVA_SHARED_AND_PILOT_RUNTIME.md`) |
+| `build-desktop-local.sh`, `package-desktop.sh`, `sign-windows-binary.sh` | Wails desktop local builder, release packager, and Authenticode signing helper (see `../desktop/README.md` and `../docs/ACCESS_SURFACES.md`) |
+| `package-recording-agent.sh` | Cross-platform Recording Agent archive packager (`make package-recording-agent`) |
+| `qa-generate-dashboard.py`, `qa-generate-evidence-summary.py`, `qa-baseline-counts.sh` | QA program status dashboard and evidence summary generators (`../docs/qa/`) |
+| `coverage-baseline.sh`, `coverage-ratchet.py`, `diff-coverage.py` | Go test coverage baseline, ratchet, and diff-coverage tooling |
+| `seed-evaluator-demo.sh` | Seeds a local controller with evaluator trust-pack demo projects, scripts, and baseline runs |
+| `start-local-windows.ps1`, `load-env.ps1` | Windows 11 local controller + Vite startup utility with optional WinINET recorder proxy management |
+| `ci/`, `deploy/`, `release/` | Modular CI gate helpers, deployment lease/rollout scripts, and release supply-chain verification scripts |
 
 ## JMeter messaging reference baseline
 
@@ -102,8 +116,10 @@ The dummy server exposes:
 
 ### 2) Start the controller (local/dev mode)
 
+From the repository root (`$REPO_ROOT`):
+
 ```bash
-cd /Users/jasonczech/Documents/GitHub/Project_Stormrunner
+cd "$REPO_ROOT"
 go run ./cmd/controller
 ```
 

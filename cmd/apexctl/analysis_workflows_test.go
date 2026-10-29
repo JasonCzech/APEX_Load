@@ -528,7 +528,7 @@ func TestAnalysisByteQueryCLIAndStreamingUploadAndExport(t *testing.T) {
 		lastPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/tests/run-1/native-evidence" || r.URL.Path == "/api/v1/tests/run-1/archive/native-series"):
+		case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/tests/run-1/native-series" || r.URL.Path == "/api/v1/tests/run-1/archive/native-series"):
 			_ = json.NewDecoder(r.Body).Decode(&lastQuery)
 			_, _ = w.Write([]byte(`{"metric":"` + lastQuery.Metric + `","ok":true}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/analysis/imports/imp-1":
@@ -551,12 +551,25 @@ func TestAnalysisByteQueryCLIAndStreamingUploadAndExport(t *testing.T) {
 	}))
 	defer s.Close()
 
+	// Live evidence-query hits /api/v1/tests/<id>/native-series.
+	queryFile := filepath.Join(t.TempDir(), "evidence-query.json")
+	if err := os.WriteFile(queryFile, []byte(`{"metric":"response_time_ms","aggregation":"p95","population":"request","evidence_mode":"live"}`), 0o600); err != nil {
+		t.Fatalf("write evidence query file: %v", err)
+	}
+	var evidenceOut bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"evidence-query", "--id", "run-1", "--file", queryFile, "--api", s.URL}, &evidenceOut); err != nil {
+		t.Fatalf("evidence-query failed: %v", err)
+	}
+	if lastPath != "/api/v1/tests/run-1/native-series" || lastQuery.Metric != "response_time_ms" || lastQuery.Aggregation != "p95" {
+		t.Fatalf("unexpected evidence-query request: path=%s query=%+v", lastPath, lastQuery)
+	}
+
 	// Live byte-query for gRPC sum and WebSocket rate.
 	var out bytes.Buffer
 	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"byte-query", "--id", "run-1", "--mode", "live", "--metric", "bytes_sent", "--protocol", "grpc", "--api", s.URL}, &out); err != nil {
 		t.Fatalf("live grpc byte-query failed: %v", err)
 	}
-	if lastPath != "/api/v1/tests/run-1/native-evidence" || lastQuery.Population != "byte" || lastQuery.EvidenceMode != "live" || lastQuery.Aggregation != "sum" || lastQuery.Filters["protocol"] != "grpc" {
+	if lastPath != "/api/v1/tests/run-1/native-series" || lastQuery.Population != "byte" || lastQuery.EvidenceMode != "live" || lastQuery.Aggregation != "sum" || lastQuery.Filters["protocol"] != "grpc" {
 		t.Fatalf("unexpected live byte query: path=%s query=%+v", lastPath, lastQuery)
 	}
 

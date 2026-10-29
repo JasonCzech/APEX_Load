@@ -92,13 +92,26 @@ const mib = (value) => value * 1024 * 1024
 // Scripts route 230.59 KiB and Test execution route 420.41 KiB. The JS
 // per-asset limits move to 850 KiB raw and 230 KiB gzip (5.2% and 5.4%
 // headroom). Aggregates, CSS and every route/startup guard stay as they were.
+//
+// 2026-10-29 Help Center documentation consolidation & coverage recalibration.
+// Bundling the newly added deferred Help Center articles (AI-assisted
+// workflows, recording profiles, Azure Event Hubs, protocol diagnostics,
+// Prometheus target monitoring, object activity, and Azure App Service
+// deployment — ~81 KiB raw / ~32 KiB gzip of lazily loaded .md?raw chunks)
+// brings the aggregate JS inventory to 9.00 MiB (9212.80 KiB) raw /
+// 2.60 MiB (2663.82 KiB) gzip. Initial shell (203.36 KiB gzip), Scripts
+// route (230.85 KiB gzip), and Test execution route (423.32 KiB gzip) stay
+// off those deferred Help chunks and within their existing route guards.
+// Move only the aggregate JS inventory limits to 9.3 MiB raw and 2.7 MiB gzip
+// (~3.3% and ~3.8% headroom); per-asset, CSS, and every route/startup guard
+// stay unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(850),
     maxAssetGzipBytes: kib(230),
-    maxTotalBytes: mib(9),
-    maxTotalGzipBytes: mib(2.6),
+    maxTotalBytes: mib(9.3),
+    maxTotalGzipBytes: mib(2.7),
   }),
   '.css': Object.freeze({
     label: 'CSS',

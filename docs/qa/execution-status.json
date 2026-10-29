@@ -1,59 +1,93 @@
 {
   "schema_version": 1,
-  "as_of": "2026-10-18",
+  "as_of": "2026-10-29",
   "stale_after_days": 30,
   "lanes": [
     {
       "name": "Full Go suite",
       "status": "not run",
-      "detail": "Full suite not run for this change: the user restricted remaining validation to targeted checks after disk pressure. No full-suite pass claimed."
+      "detail": "Repo-wide go test ./... has not been re-recorded at current HEAD after the Oct 28–29 merges; latest committed full-suite receipt passed 168 packages with zero failures on 2026-10-21. Oct 28 roadmap waves recorded integrated and fault-gate receipts below.",
+      "last_success": {
+        "at": "2026-10-21",
+        "evidence": "../archive/qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md#roadmap-independent-review-2026-10-21--validation-and-final-review"
+      }
     },
     {
       "name": "Go race lane",
       "status": "not run",
-      "detail": "Full suite not run for this change: the user restricted remaining validation to targeted checks after disk pressure. No full-suite pass claimed."
+      "detail": "Repo-wide go test -race ./... not re-recorded locally at current HEAD; latest committed race-enabled qualification passed 21/21 3-repetition distributed fault runs (TestRECCIntegratedLocalFaultQualification3Rep) on 2026-10-28 and API/storage/RCA race gates on 2026-10-21.",
+      "last_success": {
+        "at": "2026-10-28",
+        "evidence": "reviews/roadmap-rec-c-local-faults-2026-10-28/README.md"
+      }
+    },
+    {
+      "name": "Non-Messaging integrated release gate (INT-1)",
+      "status": "passed",
+      "detail": "TestRoadmapIntegratedNonMessagingReleaseScenario chained Contract v2 authoring receipts/key rotation, multi-cohort HTTP/browser/gRPC/WebSocket/Java HTTP telemetry, coverage v4 + 10-consumer scrubbed parity, admitted byte queries, native analytics provenance/writer attestation, and stateless-HTTP evacuation reconciliation.",
+      "last_success": {
+        "at": "2026-10-28",
+        "evidence": "reviews/roadmap-int-1-2026-10-28/README.md"
+      }
+    },
+    {
+      "name": "Native analytics DuckDB & reference fault trials (macOS)",
+      "status": "passed",
+      "detail": "Native darwin/arm64 DuckDB engine, SQLite + PostgreSQL 16 analysis writer-ownership suites, CGO-free binary dependency check, and TestNativeAnalyticsReferenceFaultTrials passed under 512 MiB / 128 MiB memory limits. Linux/Windows native packaged install lanes and 4 vCPU/16 GiB 1 GiB host qualification remain open.",
+      "last_success": {
+        "at": "2026-10-28",
+        "evidence": "reviews/roadmap-na-d1-local-macos-2026-10-28/README.md"
+      }
     },
     {
       "name": "Dashboard unit and static checks",
       "status": "passed",
-      "detail": "The whole unit suite passed 7,906 tests before the final response-normalization compatibility correction; 73 affected tests passed afterward. TypeScript/build, ESLint and bundle budgets passed; accessibility lint had zero blocking errors and two pre-existing warnings.",
+      "detail": "Typecheck, ESLint, 8,044 unit tests across 722 files, production build, and bundle budgets passed in the committed isolation validation; post-PR #300 chunk-strategy and bundle:check budgets were re-verified in PR #303 (853616bd0).",
       "last_success": {
-        "at": "2026-10-18",
-        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
+        "at": "2026-10-20",
+        "evidence": "../archive/qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md#roadmap-e2e-isolation-2026-10-20--validation"
       }
     },
     {
       "name": "Full dashboard browser suites",
-      "status": "not run",
-      "detail": "Neither complete auth-profile suite was run for this change after the user limited remaining validation to targeted checks. Affected workflows have separate entries below."
+      "status": "passed",
+      "detail": "Per-file isolated whole-profile runs passed 331/337 selected dev-admin tests (6 skipped, 0 failed across 89 files) and 270/271 selected local-auth tests (1 skipped, 0 failed across 67 files). Later Oct 28–29 UI commits ran targeted Playwright workflows rather than a fresh whole-profile sweep.",
+      "last_success": {
+        "at": "2026-10-20",
+        "evidence": "../archive/qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md#roadmap-e2e-isolation-2026-10-20--validation"
+      }
     },
     {
       "name": "Targeted dashboard browser: dev-admin",
       "status": "passed",
-      "detail": "43 passed across ten affected workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. These workflows ran before final main integration; the frontend runtime is unchanged. Full suite not run.",
+      "detail": "20/21 focused JMeter/LoadRunner import isolation tests (1 skip) and frozen-source dev-admin workflow checks passed; earlier 43-test peer-verification sweep remains archived under #peer-live-verification-2026-10-18--validation-scope.",
       "last_success": {
-        "at": "2026-10-18",
-        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
+        "at": "2026-10-20",
+        "evidence": "../archive/qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md#roadmap-e2e-isolation-2026-10-20--validation"
       }
     },
     {
       "name": "Targeted dashboard browser: local-auth",
       "status": "passed",
-      "detail": "42 passed across nine applicable workflow files on pinned Chromium; one private LoadRunner acceptance fixture skipped. These workflows ran before final main integration; the frontend runtime is unchanged. Full suite not run.",
+      "detail": "270/271 local-auth workflow tests (1 skip) including previously contended LoadRunner/JMeter protected-session workflows passed with per-file isolated import roots.",
       "last_success": {
-        "at": "2026-10-18",
-        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#validation-scope"
+        "at": "2026-10-20",
+        "evidence": "../archive/qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md#roadmap-e2e-isolation-2026-10-20--validation"
       }
     },
     {
       "name": "Full PostgreSQL storage/API",
       "status": "not run",
-      "detail": "No complete suite result: the full tagged PostgreSQL storage run was stopped when the user restricted remaining validation to targeted checks after disk pressure. Partial results are not a full pass; the full API lane was not run."
+      "detail": "Targeted PostgreSQL 16 analysis storage and writer-ownership suites passed on 2026-10-28 (19.9s); a complete repo-wide APEXLOAD_STORE=postgres storage + API pass has not yet been recorded (tracked under M4 week 1).",
+      "last_success": {
+        "at": "2026-10-28",
+        "evidence": "reviews/roadmap-na-d1-local-macos-2026-10-28/README.md"
+      }
     },
     {
       "name": "Kafka local broker",
       "status": "passed",
-      "detail": "Pinned local broker run passed 240 test results including TestKafkaFranzProduceConsumeIntegration, with no skips; fixture teardown passed. Basic interoperability only; separate transaction/seek and cloud lanes remain unqualified. See the peer live-verification report.",
+      "detail": "Pinned local broker run passed 240 test results including TestKafkaFranzProduceConsumeIntegration, with no skips; fixture teardown passed. Basic interoperability only; separate transaction/seek and cloud lanes remain unqualified. See the archived peer live-verification report.",
       "last_success": {
         "at": "2026-10-18T03:54:49.898675+00:00",
         "evidence": "reviews/peer-live-verification-2026-10-18/broker-receipt.json"
@@ -62,7 +96,7 @@
     {
       "name": "Solace local broker",
       "status": "passed",
-      "detail": "Pinned local broker run passed 318 JMS/Solace test results including TestSolaceAMQPIntegrationPublish, with no skips; fixture teardown passed. Basic interoperability only; separate broker/provider lanes remain unqualified. See the peer live-verification report.",
+      "detail": "Pinned local broker run passed 318 JMS/Solace test results including TestSolaceAMQPIntegrationPublish, with no skips; fixture teardown passed. Basic interoperability only; separate broker/provider lanes remain unqualified. See the archived peer live-verification report.",
       "last_success": {
         "at": "2026-10-18T03:54:49.898675+00:00",
         "evidence": "reviews/peer-live-verification-2026-10-18/broker-receipt.json"
@@ -71,16 +105,16 @@
     {
       "name": "HA failover soak",
       "status": "passed",
-      "detail": "25 deterministic controller handoffs passed again on the final integrated API binary using local SQLite transactional simulation. This does not qualify production AKS or PostgreSQL HA.",
+      "detail": "21/21 3-repetition integrated local fault runs across 7 controller/worker failover, partition, second-leader, and archive-interruption scenarios reconciled 100% under -race (building on the 25-handoff SQLite soak on 2026-10-18). Multi-node cloud AKS/PostgreSQL HA disruption (REC-D / M6) remains open.",
       "last_success": {
-        "at": "2026-10-18",
-        "evidence": "reviews/peer-live-verification-2026-10-18/README.md#final-main-integration"
+        "at": "2026-10-28",
+        "evidence": "reviews/roadmap-rec-c-local-faults-2026-10-28/README.md"
       }
     },
     {
       "name": "Telemetry reference workload",
       "status": "passed",
-      "detail": "Final integrated code passed the unchanged 60-second, 2,000/s reference and 2,000 ms sample-age gate: P99 1,468.3 ms, max 1,522.9 ms; 123,117 served, 123,115 archived, 123,107 live successes plus 8 errors. The difference of 2 is within the existing 20-request in-flight stop allowance, not proof of zero loss. All 93 archive-analysis reads passed.",
+      "detail": "60-second, 2,000/s in-process reference and 2,000 ms sample-age gate passed (P99 1,468.3 ms, max 1,522.9 ms; 123,117 served, 123,115 archived, 93/93 archive-analysis reads passed). TEL-C separate-host 4 vCPU/16 GiB hardware, live collector traffic, and overload qualification remain open.",
       "last_success": {
         "at": "2026-10-18T05:27:05.876556Z",
         "evidence": "reviews/peer-live-verification-2026-10-18/telemetry-reference.json"
@@ -89,7 +123,7 @@
     {
       "name": "Pinned browser recording E2E",
       "status": "not run",
-      "detail": "The pinned browser-recording E2E lane was not run in this sweep; targeted import workflows do not qualify recording."
+      "detail": "The pinned browser-recording E2E lane (scripts/run-recording-e2e.sh) has no committed full-sweep receipt in this ledger; targeted import workflows do not qualify recording."
     },
     {
       "name": "Azure Service Bus live broker",

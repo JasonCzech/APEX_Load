@@ -29,7 +29,7 @@ The current controller can run in either local or distributed mode without chang
 
 - **Goroutine-based VUsers**: 1 VUser = 1 goroutine, parked on an 8 KB stack between actions, for extreme concurrency
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
-- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), Java Vuser sidecar bridge (governed and disabled unless runner config enables it), WebSocket, gRPC, JMS (Solace, IBM MQ; real Solace AMQP adapter via `-tags jms_solace_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
+- **Protocol plugins**: HTTP/1.1, HTTP/2, HTTP/3, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), Java Vuser sidecar bridge (governed and disabled unless runner config enables it), WebSocket, gRPC, JMS (Solace, IBM MQ, Azure Service Bus; real adapters opt-in via `-tags jms_solace_real` / `-tags jms_servicebus_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), Azure Event Hubs (native `eventhubs`, real AMQP adapter via `-tags eventhubs_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics), and Appium (mobile device observer) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
 - **Vendor-neutral telemetry**: Prometheus scrape metrics, W3C `traceparent` propagation, Dynatrace event webhooks, and opt-in OTLP traces for controller HTTP requests, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC. Metrics and logs are not exported through OpenTelemetry.
 - **Streaming percentiles**: a mergeable duration sketch keeps every percentile within 0.5% of the value at its rank without storing all samples
@@ -39,19 +39,20 @@ The current controller can run in either local or distributed mode without chang
 | Component | Purpose |
 |-----------|---------|
 | `cmd/controller` | HTTP API server + embedded React dashboard |
-| `cmd/apexctl` | CLI for direct script execution (no controller needed) |
+| `cmd/apexctl` | CLI for local or controller-backed execution, imports, diagnostics, and CI gates |
 | `cmd/apexload-record-agent` | Production local browser recording bridge for remote dashboards |
-| `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
+| `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod or cloud async worker) |
 | `cmd/apexload-collector-agent` | Monitoring collector agent (controller heartbeat plus host-metric packs) |
-| `cmd/apexload-java-vuser-runner` | Java Vuser runner bridge |
+| `cmd/apexload-java-vuser-runner` | Java Vuser runner bridge (`java_vuser` external-runner container) |
 | `cmd/apexbench` | Component benchmark and performance-evidence harness |
-| `cmd/dslschema`, `cmd/swaggergen`, `cmd/openapits`, `cmd/webcoverage` | Generators (invoked via `make generate` / `go generate`): DSL schema/reference, `docs/swagger.yaml` + endpoint catalog, dashboard TypeScript API contract, LoadRunner import coverage docs |
+| `cmd/dslschema`, `cmd/swaggergen`, `cmd/openapits`, `cmd/datamodeldoc`, `cmd/webcoverage`, `cmd/storeoverlay` | Code generators (invoked via `make generate` / `go generate ./...`): DSL schema/reference, `docs/swagger.yaml` + endpoint catalog, dashboard TypeScript API contract, `docs/DATA_MODEL.md`, `docs/LOADRUNNER_COVERAGE.md`, and `pkg/api/store_overlay_test.go` |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
-| `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, Kafka, database, network, browser implementations |
-| `pkg/dsl` | Script parser and runtime structures |
-| `pkg/api` | REST handlers, WebSocket hub, test runner |
-| `pkg/convert` | Multi-format import hub (LR/enterprise archives, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports) |
+| `pkg/protocol` | Protocol interface + builtin HTTP (1.1/2/3), SOAP, Java-over-HTTP, Java Vuser, WebSocket, gRPC, JMS, Kafka, Event Hubs, database, network, browser, and Appium implementations |
+| `pkg/dsl` | Script parser, action catalog, and runtime structures |
+| `pkg/api` | REST handlers, WebSocket hub, test runner, middleware |
+| `pkg/convert` | Multi-format import hub (LR/enterprise archives, native Bruno HTTP collections, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports) |
 | `dashboard` | React 18 + TypeScript + Recharts SPA (compiles to `pkg/api/static/`) |
+| `desktop` | Wails v2 native client shell embedding a loopback controller + dashboard |
 | `pkg/config` | Configuration types and validation |
 | `pkg/storage` | SQLite (default) / PostgreSQL persistence layer |
 
@@ -72,7 +73,7 @@ The current controller can run in either local or distributed mode without chang
 
 ## Requirements
 
-- Go `1.26+`
+- Go `1.26.10+`
 - Node.js `22.23.3` (pinned by `.nvmrc`, CI, the production builder, and dashboard `engines`)
 - Windows local utility: Windows PowerShell `5.1+` or PowerShell `7+`
 
@@ -88,18 +89,13 @@ For end users, the normal zero-install path is the hosted browser dashboard serv
 
 ### Docker Compose with Prometheus
 
-For a local containerized controller plus Prometheus:
+For a local containerized controller, generator, and Prometheus stack:
 
 ```bash
 make docker-local-up
 ```
 
-This also starts the generator, Bruno runner, and Java Vuser runner containers
-defined in `compose.yaml`. Open the dashboard at `http://127.0.0.1:8080` and Prometheus at
-`http://127.0.0.1:9090`. Prometheus scrapes the controller's dedicated metrics
-listener at `http://127.0.0.1:9091/metrics`. See
-`deployments/docker/README.md` for target checks, PromQL examples, and the
-host-controller variant.
+This starts the `controller`, `generator`, and `prometheus` services from `compose.yaml` (plus the one-shot `bruno-artifacts-init` permissions init container for native Bruno HTTP import storage). The optional `java-vuser-runner` sidecar is gated behind the `java-vuser` Compose profile (`docker compose --profile java-vuser up -d`). Bruno Runner is retired under `_retired/bruno-runner/` and excluded from builds, while native Bruno HTTP collection import remains built in. Open the dashboard at `http://127.0.0.1:8080` and Prometheus at `http://127.0.0.1:9090`. Prometheus scrapes the controller's dedicated metrics listener at `http://127.0.0.1:9091/metrics`. See [deployments/docker/README.md](deployments/docker/README.md) for target checks, PromQL examples, and the host-controller variant.
 
 ### 1. Start the controller API and dashboard
 
@@ -210,54 +206,109 @@ absolute, and traversal paths remain invalid.
 
 ## Environment Variables
 
-Controller runtime configuration:
+Controller and generator runtime configuration grouped by domain:
 
-- `APEXLOAD_ADDR`: HTTP bind address. When unset, local/dev defaults to `127.0.0.1:8080`; `APEXLOAD_ENV=production|prod` defaults to `:8080`; explicit values are honored exactly.
-- `APEXLOAD_STORE`: metadata store backend: `sqlite` or `postgres` (default `sqlite`)
-- `APEXLOAD_DB`: SQLite DB path (default `apexload.db`)
-- `APEXLOAD_DATABASE_URL`: PostgreSQL connection URL when `APEXLOAD_STORE=postgres`
-- `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, `APEXLOAD_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
-- `APEXLOAD_CONTROLLER_HA`: set `true` (or `1`/`yes`/`on`/`enabled`) before running more than one controller replica; it installs the durable execution-leader lease so only the lease holder runs tests and followers answer `503` on execution routes. When it is unset every replica behaves as its own leader and independently runs the scheduler sweep, queued-run promotion/reconciliation, provisioning recovery, archive finalization recovery, and retention mutations. Replicas must also share PostgreSQL, Redis/Valkey, and the archive backend. See [HA Controller Behavior](docs/ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior)
-- `APEXLOAD_EVACUATION_ROLLBACK_RECOVERY`: set `true` (or `1`/`yes`/`y`/`on`) to let a successor controller return a run to its prior generators when the controller was lost after preparing or staging a generator evacuation but before the source generator was stopped. It also makes evacuations record the replacement capacity (version 4 journal). It is off by default; enable it only after every controller replica runs a release that reads version 4 journals, because an older replica keeps such runs `STOPPING`. It applies only where run adoption is available (HA with a continuity key wrapper) and to runs with the `continue` failover policy. A rollback that cannot be completed keeps the run `STOPPING` until a later controller term fences its generators or a system administrator attests that they stopped (`POST /api/v1/tests/{id}/interrupted-stop/resolve`). The run also stays `STOPPING` after a failover if the evacuation's own controller rolled it back but could not return its capacity, or if a later re-arm (such as a VUser scale) found the journal it left behind; such a journal is marked abandoned. Without the setting, or once the source was stopped, the run stays `STOPPING` until every possible generator is fenced, as before.
-- `APEXLOAD_EVACUATION_ROLLFORWARD_RECOVERY`: set `true` (or `1`/`yes`/`y`/`on`) together with `APEXLOAD_EVACUATION_ROLLBACK_RECOVERY` to let a successor controller finish a generator evacuation when the controller was lost after the source generator was stopped and the replacement may already have been started. Evacuations then record the replacement's staged duration and pause state and, just before starting it, the exact duration it is shortened to (version 5 journal). The successor adopts the surviving and replacement generators, shortens the replacement to that recorded duration, commits its capacity, and only then resumes the run on the new topology. It is off by default and has no effect without the rollback setting and run adoption; enable it only after every controller replica runs a release that reads version 5 journals, because an older replica keeps such runs `STOPPING`. If the replacement never started, or any step cannot be confirmed, the run stays `STOPPING` until a later controller term fences its generators or a system administrator attests that they stopped (`POST /api/v1/tests/{id}/interrupted-stop/resolve`). A generator that finishes its share naturally after the evacuation journal froze the run's prior lineage cannot be told apart from one a controller stopped, so it also holds the run `STOPPING` until a later term fences it or an administrator attests; this applies to the rollback setting too.
-- `APEXLOAD_EVACUATION_REPLACEMENT_RESTART`: set `true` (or `1`/`yes`/`y`/`on`) together with `APEXLOAD_EVACUATION_ROLLBACK_RECOVERY` and `APEXLOAD_EVACUATION_ROLLFORWARD_RECOVERY` to let a successor controller restart the share of load an interrupted generator evacuation moved, when the source generator was stopped but the replacement never started it or no longer runs it. The successor first proves that neither can run it (the replacement must answer its epoch claim without a live assignment; an unreachable replacement is no proof), then starts the share again with fresh VUsers on another generator with spare capacity, under its own term and never past the share's recorded duration. It applies only to stateless HTTP workloads that a generator-loss reshard could move (no iterations, rendezvous or cursor-stateful data). It is off by default and has no effect without both other settings and run adoption; enable it only after every controller replica runs a release that reads version 6 journals, because an older replica keeps such runs `STOPPING`. Without spare capacity, or when any proof is missing, the run stays `STOPPING` until a later controller term fences its generators or a system administrator attests that they stopped (`POST /api/v1/tests/{id}/interrupted-stop/resolve`). A restarted share is noted in the run's controller-failover report.
-- `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION`: how long terminal scenario and execution-plan schedule occurrences are retained (default `2160h`, or 90 days); set `0` to disable pruning. `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION_INTERVAL` controls the leader-only prune cadence (default `6h`). Each pass removes at most 1,000 rows from each occurrence table.
-- `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend. `dns://host:port` entries enable dynamic discovery of a Kubernetes headless service
-- `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`: re-resolve interval for `dns://` generator entries (default `15s`)
-- `APEXLOAD_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
-- `APEXLOAD_GENERATOR_LISTEN_ADDR`: generator gRPC bind address (default `:9090`, fallback alias `APEXLOAD_GENERATOR_ADDR`); each local generator process needs a distinct address
-- `APEXLOAD_GENERATOR_MAX_VUSERS`: maximum VUsers a single generator process accepts (default `10000`)
-- `APEXLOAD_GENERATOR_HEARTBEAT_INTERVAL`: generator heartbeat interval (default `5s`)
-- `APEXLOAD_LOG_LEVEL`: structured controller/generator log level: `debug`, `info`, `warn`, or `error` (default `info`; legacy `LOG_LEVEL` is accepted when the prefixed variable is unset)
-- `APEXLOAD_GRPC_TLS_CERT`/`APEXLOAD_GRPC_TLS_KEY`/`APEXLOAD_GRPC_TLS_CA`: TLS/mTLS for the controller↔generator gRPC channel (symmetric contract: cert/key = this process's identity, CA = trust for the peer; setting the CA on the generator requires verified client certs). `APEXLOAD_GRPC_TLS_SERVER_NAME` overrides certificate verification when targets are pod IPs from `dns://` discovery
-- `APEXLOAD_GRPC_AUTH_TOKEN`: shared bearer token required on every generator RPC — application-layer auth that holds even when the CNI does not enforce NetworkPolicies. When distributed targets are configured in `production`/`prod`, controller and generator startup fail closed unless the channel uses mTLS or verified TLS plus this token; token-only client authentication requires at least 32 bytes (generate 32 random bytes, commonly encoded as 64 hex characters).
-- `APEXLOAD_METRICS_ADDR`: when set (e.g. `:9091`), serves `GET /metrics` on a dedicated listener instead of the API port, so network policy can scope Prometheus access separately from API access
-- `APEXLOAD_METRICS_TOKEN`: optional bearer token required for `GET /metrics` on either the API port or the dedicated metrics listener
-- `APEXLOAD_PPROF_ADDR`: optional unauthenticated Go pprof bind address for controller/generator runtime debugging. In production it must be an explicit loopback address (for example `127.0.0.1:6060`); use port forwarding for remote access
-- `APEXLOAD_ENABLE_TLS_COMPAT`: set `true` to force TLS compatibility defaults even in `APEXLOAD_ENV=production|prod`. When enabled, missing `GODEBUG` tokens are appended as `x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0` to improve compatibility with legacy or enterprise TLS intermediaries.
-- `APEXLOAD_DISABLE_TLS_COMPAT`: set `true` to disable automatic TLS compatibility defaults in all environments.
-- `APEXLOAD_DISABLE_DEV_TLS_COMPAT`: legacy alias for disabling dev-mode TLS compatibility defaults; `APEXLOAD_DISABLE_TLS_COMPAT` is preferred for new setups.
-- `APEXLOAD_PROMETHEUS_URL`: Prometheus base URL used by dashboard graph overlays; independent from the controller `/metrics` scrape endpoint
-- `APEXLOAD_OTEL_ENABLED`: explicit opt-in for controller/generator OpenTelemetry tracing (default `false`). Enabling it also requires `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`; see [OpenTelemetry tracing](docs/OBSERVABILITY_INTEGRATIONS.md)
-- `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`: OTLP transport, `http/protobuf` (default) or `grpc`; standard OTLP headers, TLS, timeout, compression, service/resource, and sampler variables are honored
-- `APEXLOAD_OTEL_ACTION_SAMPLE_RATIO`: independent sampled fraction for high-volume engine action spans (default `0.01`, range `0..1`)
-- `APEXLOAD_BROWSER_EXECUTABLE`: path to a system Chromium/Chrome for browser-protocol runs (set to `/usr/bin/google-chrome` in the generator image, where Playwright's managed glibc Chromium cannot run on musl)
-- `APEXLOAD_BROWSER_SANDBOX`: set `true` to drop `--no-sandbox` and use Chromium's own sandbox where the environment supports it (unprivileged user namespaces); default keeps `--no-sandbox` because hardened pod securityContexts cannot start the sandbox
-- `APEXLOAD_BROWSER_VERSION_SKEW`: set `fail` to fail a browser session whose browser major version differs from the one the bundled Playwright driver was tested with (its `browsers.json`); by default the session runs and reports the mismatch in its first step's evidence and in the run report's Browser Metrics section
-- `APEXLOAD_AZURE_KEY_VAULT_URL`: Azure Key Vault for `{{secret.*}}` resolution; `APEXLOAD_AZURE_KEY_VAULT_AUTH` selects `token` (static `APEXLOAD_AZURE_KEY_VAULT_TOKEN`), `azure_identity` (workload/managed identity via DefaultAzureCredential), or `auto` (default); `APEXLOAD_AZURE_KEY_VAULT_SCOPE` overrides the token audience for sovereign clouds
-- `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED`: set `true` on the controller only to use Azure Key Vault as the governed writable Project Secrets provider; the controller identity needs `Key Vault Secrets Officer`
-- `APEXLOAD_AZURE_KEY_VAULT_API_VERSION`: optional Key Vault data-plane API version for managed Project Secrets (default `7.4`)
-- `APEXLOAD_WRAPPING_MASTER_KEY`: stable 32-byte (or base64-encoded 32-byte) protocol-neutral wrapping key for encrypted database-backed Project Secrets and protected source artifacts. Bruno import needs an envelope key to retain its source; when neither this nor `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID` is set, a non-production controller generates a local key beside its import assets (`.bruno-artifact-key`, owner-only) so import works unconfigured. That key is Bruno-scoped — it never enables encrypted database-backed Project Secrets or the shared protected-import flow — and sources retained under it cannot be read after switching to an operator-managed key. `APEXLOAD_ENV=production` (or `APEXLOAD_REQUIRE_AUTH`) requires an operator-managed key instead
-- `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`: optional versioned Azure Key Vault cryptographic key used instead of the local wrapping master key
-- `APEXLOAD_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
-- `APEXLOAD_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `<UserCacheDir>/apexload/archives`, falling back to the OS temp directory)
-- `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
-- `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
+### Core Controller, Bind & Storage
 
-See [Project Secrets](docs/ADMIN_USER_GUIDE.md#application-and-project-secrets) for provider setup, import
-migration governance, and secure distributed delivery requirements.
+| Variable | Default / Scope | Purpose |
+|----------|-----------------|---------|
+| `APEXLOAD_ENV` | unset (dev) | Set `production` or `prod` to enforce production bind, fail-closed gRPC security, non-bypass authentication, and operator-managed wrapping keys. |
+| `APEXLOAD_ADDR` | `127.0.0.1:8080` (dev), `:8080` (`production`/`prod`) | Controller HTTP bind address; explicit values are honored verbatim. |
+| `APEXLOAD_STORE` | `sqlite` | Metadata store backend: `sqlite` or `postgres`. |
+| `APEXLOAD_DB` | `apexload.db` | SQLite database file path when `APEXLOAD_STORE=sqlite`. |
+| `APEXLOAD_DATABASE_URL` | — | PostgreSQL connection URL when `APEXLOAD_STORE=postgres`. |
+| `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, `APEXLOAD_DATABASE_CONN_MAX_LIFETIME` | driver defaults | PostgreSQL connection-pool tuning. |
+| `APEXLOAD_LOG_LEVEL` | `info` | Structured JSON `slog` level (`debug`, `info`, `warn`, `error`; falls back to `LOG_LEVEL`). |
+| `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION` / `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION_INTERVAL` | `2160h` (90d) / `6h` | Terminal schedule-occurrence retention window (`0` disables pruning) and leader-only sweep cadence (max 1,000 rows/table/pass). |
 
-Note: If you run with `APEXLOAD_ENV=production|prod` or enable `APEXLOAD_REQUIRE_AUTH`, the persisted authentication mode (Settings → Authentication, stored as `auth.mode`) must not be `dev`, `disabled`, or the fixed-credential `local` test-login mode. The controller refuses to start in that combination by design; use `oidc` or `trusted_headers`.
+### HA Cache / Redis, Active EndpointSlice & Evacuation
+
+| Variable | Default / Scope | Purpose |
+|----------|-----------------|---------|
+| `APEXLOAD_CONTROLLER_HA` | `false` | Enables durable PostgreSQL execution-leader election so only the lease holder runs tests, sweeps schedules, and reconciles runs while followers return `503` on execution routes. Requires `APEXLOAD_STORE=postgres`, shared Redis/Valkey, and a shared archive backend. See [HA Controller Behavior](docs/ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior). |
+| `APEXLOAD_CACHE_BACKEND` | `memory` | Live-run state and WebSocket fan-out backend: `memory`, `redis`, or `valkey` (`redis`/`valkey` required for multi-replica HA and cloud PaaS controllers). |
+| `APEXLOAD_REDIS_URL` | — | Redis/Valkey connection URL (`redis://` or `rediss://`) required when `APEXLOAD_CACHE_BACKEND=redis` or `valkey`. |
+| `APEXLOAD_REDIS_TLS` | `false` (or inferred from `rediss://`) | Forces TLS on the Redis/Valkey transport even when the URL uses `redis://`. |
+| `APEXLOAD_ACTIVE_ENDPOINT_SLICE` | — | Kubernetes `EndpointSlice` name updated by the active HA controller lease holder (`requires APEXLOAD_CONTROLLER_HA=true`). |
+| `APEXLOAD_ACTIVE_ENDPOINT_SERVICE` | defaults to `APEXLOAD_ACTIVE_ENDPOINT_SLICE` | Kubernetes `Service` label owner bound to the published active-leader `EndpointSlice`. |
+| `APEXLOAD_ACTIVE_ENDPOINT_CA_FILE` / `APEXLOAD_ACTIVE_ENDPOINT_TOKEN_FILE` | in-cluster SA paths | Optional CA bundle and projected service-account token file overrides for `EndpointSlice` publication. |
+| `APEXLOAD_EVACUATION_ROLLBACK_RECOVERY` | `false` | Enables version-4 evacuation journals so an HA successor can roll an interrupted pre-source-stop generator evacuation back to its prior generators for `continue`-policy runs. Enable only once all controller replicas support v4 journals. Participants reporting `RUN_TERMINAL_CAUSE_DURATION_ELAPSED` with `CompletedDuration >= expected` are trusted as natural completions and allow recovery to finish; `UNSPECIFIED`, short (`CompletedDuration < expected`), early-ended, or controller-stopped outcomes hold the run `STOPPING` until fenced or attested via `POST /api/v1/tests/{id}/interrupted-stop/resolve`. |
+| `APEXLOAD_EVACUATION_ROLLFORWARD_RECOVERY` | `false` | Together with `APEXLOAD_EVACUATION_ROLLBACK_RECOVERY`, enables version-5 journals so an HA successor can adopt surviving and replacement generators, apply the recorded target duration, commit replacement capacity, and finish post-source-stop evacuations. As with rollback, natural completions (`RUN_TERMINAL_CAUSE_DURATION_ELAPSED` with `CompletedDuration >= expected`) are trusted and finish recovery, whereas `UNSPECIFIED`, short, early-ended, or controller-stopped outcomes hold `STOPPING`. |
+| `APEXLOAD_EVACUATION_REPLACEMENT_RESTART` | `false` | Together with rollback and roll-forward recovery, enables version-6 journals so an HA successor can prove neither source nor replacement runs an interrupted stateless HTTP share and restart that share on spare generator capacity within its recorded remaining duration. |
+
+### Distributed Fleet, gRPC Security, Reverse Gateway & Generator Supervision
+
+| Variable | Default / Scope | Purpose |
+|----------|-----------------|---------|
+| `APEXLOAD_GENERATORS` | — | Comma-separated generator gRPC targets (`host:port|region=<name>` or `dns://host:port` for dynamic headless-service discovery). |
+| `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL` | `15s` | Re-resolution cadence for `dns://` generator targets. |
+| `APEXLOAD_GENERATOR_TIMEOUT` | `10s` | Controller-to-generator RPC timeout. |
+| `APEXLOAD_GENERATOR_LISTEN_ADDR` | `:9090` | Generator gRPC bind address (fallback alias `APEXLOAD_GENERATOR_ADDR`). |
+| `APEXLOAD_GENERATOR_HEALTH_ADDR` | — | Optional dedicated generator health gRPC/HTTP listener address so Kubernetes probes stay isolated from mTLS control traffic. |
+| `APEXLOAD_GENERATOR_MAX_VUSERS` | `10000` | Maximum concurrent VUsers accepted by one generator process. |
+| `APEXLOAD_GENERATOR_HEARTBEAT_INTERVAL` | `5s` | Generator heartbeat interval. |
+| `APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL` / `APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL` | `60s` (`30s..60s`) / `10s` (`1s..TTL/3`) | Lease TTL and renewal cadence for generator-side run supervision fencing. |
+| `APEXLOAD_GRPC_TLS_CERT`, `APEXLOAD_GRPC_TLS_KEY`, `APEXLOAD_GRPC_TLS_CA`, `APEXLOAD_GRPC_TLS_SERVER_NAME` | — | Symmetric TLS/mTLS configuration for controller↔generator gRPC (setting `APEXLOAD_GRPC_TLS_CA` on the generator enforces verified client certs; `SERVER_NAME` overrides SAN verification for pod-IP `dns://` targets). |
+| `APEXLOAD_GRPC_AUTH_TOKEN` | — | Shared bearer token required on generator RPCs. In `APEXLOAD_ENV=production|prod`, controller and generator startup **fail closed** unless gRPC uses mTLS, verified TLS + this token (>= 32 bytes when not using mTLS), or an authenticated WSS reverse tunnel; plaintext + token is rejected. |
+| `APEXLOAD_GENERATOR_CONNECTIVITY_MODE` | `direct` | Generator connectivity mode: `direct` (inbound gRPC listener), `reverse` (outbound WSS tunnel to controller gateway, used by cloud PaaS workers), or `both`. |
+| `APEXLOAD_GENERATOR_GATEWAY_TOKEN` | — | Token authenticating outbound reverse-generator WSS registrations with the controller gateway. |
+| `APEXLOAD_GRPC_REVERSE_TUNNEL_SECURE` | `false` | Marks a `reverse`-only generator's inner gRPC stream as protected by the authenticated WSS reverse tunnel (`valid only with APEXLOAD_GENERATOR_CONNECTIVITY_MODE=reverse`). |
+
+### Auth, CORS & Script Environment
+
+| Variable | Default / Scope | Purpose |
+|----------|-----------------|---------|
+| `APEXLOAD_REQUIRE_AUTH` | `false` (implied in `production`/`prod`) | Forces hardened authentication posture outside `APEXLOAD_ENV=production|prod` (refuses `dev`, `disabled`, and `local` bypass/test modes at startup). |
+| `APEXLOAD_AUTH_MODE` | *not an env var* | Intentionally **not** read from the environment: authentication mode (`dev`, `local`, `oidc`, `trusted_headers`) is persisted system state managed in **Access** (`#/access`, under **Authentication**) or `PUT /api/v1/system/settings`. |
+| `APEXLOAD_AUTH_SESSION_SECRET` | default `auth.session_secret_env_var` | HMAC/signing secret environment variable read for browser/OIDC auth sessions and CI token signing. |
+| `APEXLOAD_TRUSTED_PROXY_SECRET` | conventional `auth.trusted_proxy_secret_env_var` | Shared secret verified on inbound proxy headers when `auth.mode` is `trusted_headers` and `trusted_proxy_secret_env_var` names this variable. |
+| `APEXLOAD_ALLOWED_ORIGINS` | same-origin only | Referenced in dashboard cross-origin guidance; note that `cmd/controller` enforces strict same-origin HTTP/WebSocket checks by default while `api.ServerConfig.AllowedOrigins` is wired programmatically (for example by the Wails desktop shell). Host custom browser UIs behind the same origin/reverse proxy. |
+| `APEXLOAD_SCRIPT_ENV_ALLOWLIST` | empty (deny host env) | Comma-separated allowlist (exact names or `PREFIX*`, e.g. `TARGET_*,TEST_*`) permitting `{{env.KEY}}` script templates to read host/pod environment variables; `APEXLOAD_*` and cloud/credential variables remain blocked regardless. |
+
+### Secrets & Envelope Key Wrapping (Azure Key Vault & AWS Secrets Manager / KMS)
+
+| Variable | Default / Scope | Purpose |
+|----------|-----------------|---------|
+| `APEXLOAD_WRAPPING_MASTER_KEY` | — | 32-byte (raw or base64) envelope master key for encrypted DB-backed Project Secrets and protected import artifacts. Required in `production`/`prod` (or `APEXLOAD_REQUIRE_AUTH`) unless a cloud KMS/Key Vault wrapping key is configured. |
+| `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID` | — | Versioned Azure Key Vault cryptographic key URI for envelope key wrapping (mutually exclusive with `APEXLOAD_WRAPPING_KMS_KEY_ID`). |
+| `APEXLOAD_WRAPPING_KMS_KEY_ID` | — | Full AWS KMS key ARN for authenticated envelope key wrapping on EKS/AWS deployments (mutually exclusive with `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`). |
+| `APEXLOAD_AZURE_KEY_VAULT_URL`, `APEXLOAD_AZURE_KEY_VAULT_AUTH`, `APEXLOAD_AZURE_KEY_VAULT_TOKEN`, `APEXLOAD_AZURE_KEY_VAULT_SCOPE`, `APEXLOAD_AZURE_KEY_VAULT_API_VERSION` | `auto` auth, API `7.4` | Azure Key Vault secret resolution (`token`, `azure_identity`, or `auto`) for `{{secret.*}}`. |
+| `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED` | `false` (controller only) | Enables writable Azure Key Vault Project Secrets management on the controller (`Key Vault Secrets Officer`). |
+| `APEXLOAD_AWS_SECRETS_MANAGER_REGION` | — | AWS region for AWS Secrets Manager `{{secret.*}}` reads and controller secret writes. |
+| `APEXLOAD_AWS_SECRETS_MANAGER_ENDPOINT` | regional AWS endpoint | Optional custom HTTPS endpoint override for AWS Secrets Manager (VPC endpoints / sovereign partitions). |
+| `APEXLOAD_AWS_SECRETS_MANAGER_WRITE_ENABLED` | `false` (controller only) | Enables writable AWS Secrets Manager Project Secrets management on the controller (requires `APEXLOAD_AWS_SECRETS_MANAGER_REGION`). |
+
+### Telemetry, Browser Runtime, TLS Compatibility & Diagnostics
+
+| Variable | Default / Scope | Purpose |
+|----------|-----------------|---------|
+| `APEXLOAD_METRICS_ADDR` / `APEXLOAD_METRICS_TOKEN` | API port / unset | Optional dedicated listener (e.g. `:9091`) and optional bearer token for `GET /metrics`. |
+| `APEXLOAD_PPROF_ADDR` | disabled | Optional Go `pprof` bind address (must be explicit loopback such as `127.0.0.1:6060` in production). |
+| `APEXLOAD_PROMETHEUS_URL` / `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL` | — | Prometheus query URL for dashboard overlays and optional remote-write retention endpoint. |
+| `APEXLOAD_OTEL_ENABLED` | `false` | Opt-in OpenTelemetry tracing for controller and generator (requires `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`); see [docs/OBSERVABILITY_INTEGRATIONS.md](docs/OBSERVABILITY_INTEGRATIONS.md). |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | `http/protobuf` | OTLP trace transport (`http/protobuf` or `grpc`). |
+| `APEXLOAD_OTEL_ACTION_SAMPLE_RATIO` | `0.01` (`0..1`) | Sampling ratio for high-volume VUser engine action spans. |
+| `APEXLOAD_BROWSER_EXECUTABLE` | Playwright bundle | Path to system Chrome/Chromium binary (set to `/usr/bin/google-chrome` in Alpine musl images). |
+| `APEXLOAD_BROWSER_SANDBOX` | `false` (`--no-sandbox`) | Set `true` to enable Chromium's OS sandbox where unprivileged user namespaces are available. |
+| `APEXLOAD_BROWSER_VERSION_SKEW` | warn in evidence | Set `fail` to abort browser sessions whose Chromium major version differs from bundled Playwright `browsers.json`. |
+| `APEXLOAD_ENABLE_TLS_COMPAT` / `APEXLOAD_DISABLE_TLS_COMPAT` (`APEXLOAD_DISABLE_DEV_TLS_COMPAT`) | dev-only enabled | Controls automatic `GODEBUG` TLS compatibility defaults (`x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0`). |
+
+### Archives, Import Assets, Analytics & RCA Budgets
+
+| Variable | Default / Scope | Purpose |
+|----------|-----------------|---------|
+| `APEXLOAD_ARCHIVE_BACKEND` | `filesystem` | Run archive storage backend: `filesystem`, `s3`, `azure_blob`, or `gcs`. |
+| `APEXLOAD_ARCHIVE_DIR` | `<UserCacheDir>/apexload/archives` | Local archive directory and staging root for remote object archives. |
+| `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT` | — | Object-storage target coordinates for `s3`, `azure_blob`, and `gcs` archive backends. |
+| `APEXLOAD_ARCHIVE_S3_FORCE_PATH_STYLE` | `true` (unless `"false"`) | Controls S3 path-style addressing for S3/MinIO-compatible endpoints; set `false` for virtual-hosted-style buckets where required. |
+| `APEXLOAD_ARCHIVE_COLLECTION_MAX_BYTES` | `32 GiB` | Per-archive byte budget for retained archive collection materialization on the controller. |
+| `APEXLOAD_ARCHIVE_COLLECTION_CACHE_MAX_BYTES` | `128 GiB` (cap `1 PiB`) | Total local disk cache budget across materialized archive collections. |
+| `APEXLOAD_IMPORT_ASSET_DIR` | local cache (dev) | Durable directory for protected/imported source assets when `APEXLOAD_ARCHIVE_BACKEND=filesystem` (required in production unless an object archive backend is configured). |
+| `APEXLOAD_RCA_V2_PROJECTS` | — | Comma-separated project IDs (or `*`) opting projects into Root Cause Analysis v2 typed run-graph and hypothesis evaluation. |
+
+See [Project Secrets](docs/ADMIN_USER_GUIDE.md#application-and-project-secrets) for provider setup, import migration governance, and secure distributed delivery requirements.
+
+Note: If you run with `APEXLOAD_ENV=production|prod` or enable `APEXLOAD_REQUIRE_AUTH`, the persisted authentication mode (**Access** `#/access` → **Authentication**, stored as `auth.mode`) must not be `dev`, `disabled`, or the fixed-credential `local` test-login mode. The controller refuses to start in that combination by design; use `oidc` or `trusted_headers`.
 
 ## Build and Test
 
@@ -268,16 +319,26 @@ Use Make targets from repo root:
 ```bash
 make build       # builds generator, controller, apexctl, apexload-record-agent, and apexload-collector-agent into ./bin
 make package-recording-agent  # builds cross-platform Recording Agent release archives
-make test        # runs Go tests with race detector
+make test        # runs third_party/playwright-go fork tests + Go tests with race detector (-timeout=20m)
 make test-cover  # race + coverage report (coverage.out / coverage.html)
 make lint        # runs golangci-lint (if installed)
-make generate    # regenerates committed DSL schema/reference and OpenAPI/Swagger artifacts
+make generate    # runs all 6 Go code generators (dslschema, swaggergen, openapits, datamodeldoc, webcoverage, storeoverlay)
 make desktop     # builds the Wails desktop app (also: make clients, make desktop-preflight)
 make java-vuser-runner  # builds the Java Vuser runner jar and bridge binary
 make performance-smoke  # runs the apexbench smoke profile (JSON to stdout)
-make docker-local-up                 # runs controller + Prometheus (plus generator and runners) locally
+make docker-local-up                 # runs controller, generator, and Prometheus locally (--profile java-vuser adds java-vuser-runner)
 make docker-local-prometheus-check   # validates the local Prometheus config
 ```
+
+### Container Build Profiles
+
+Three root Dockerfiles serve distinct runtime profiles:
+
+| Dockerfile | Base / Toolchain | CGO & Build Tags | Chromium / Browser Runtime | Target Use |
+|------------|------------------|------------------|----------------------------|------------|
+| `Dockerfile` | Alpine `3.24` (`golang:1.26.10-alpine`) | `CGO_ENABLED=0`; `GO_BUILD_TAGS=standard\|enterprise` | Alpine musl `chromium` (`APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome`) | Default protocol load generator image (`make docker-generator`) and `compose.yaml` local services |
+| `Dockerfile.controller` | Debian 13 (`debian:trixie-slim`, built on `golang:1.26.10-bookworm`) | `CGO_ENABLED=1` with `-tags analytics_duckdb` (plus enterprise messaging tags when `GO_BUILD_TAGS=enterprise`) | Playwright-pinned glibc Chromium in `/ms-playwright` | Production controller image (`make docker-controller`) with native DuckDB analytics and browser Verify/replay |
+| `Dockerfile.browser-generator` | Debian 13 (`debian:trixie-slim`, built on `golang:1.26.10-bookworm`) | `CGO_ENABLED=0`; `BINARY=generator` (`GO_BUILD_TAGS=standard`) | Playwright-pinned glibc Chromium in `/ms-playwright` | Dedicated browser-observer generator pools sharing the exact Playwright Chromium major version with recording and Verify |
 
 ### Frontend checks
 
@@ -330,14 +391,14 @@ go run ./cmd/apexctl run \
 - `--format` (`text`, `json`) — Human or machine-readable result output
 - `--api-key` / `APEXLOAD_API_KEY` — Service-account API key for secured controller-backed commands
 - `--bearer-token` / `APEXLOAD_BEARER_TOKEN` — Alternate bearer-token auth when an API key is not used
-- `--api` — Execute through the controller API instead of locally
+- `--api` / `APEXLOAD_API` — Execute through the controller API instead of locally (subcommands targeting the controller default `--api` from `APEXLOAD_API`)
 - `--env, -env` — Runtime environment substitution for `{{env.KEY}}` placeholders
 - `--base-url` — Override the script base URL at run time
 - `--p95-latency-ms`, `--max-error-pct`, `--max-avg-server-processing-ms`, `--max-avg-transfer-ms`, `--max-error-count` — CI/CD guardrails that make `apexctl` exit non-zero when breached
 
-Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API run wait timeout; default duration + 30m), `--transaction-rule` / `--transaction-rules-file` (exact per-transaction SLA rules; require `--api`), `--telemetry-policy` (judge the run by one of the project's telemetry acceptance policies instead of its default) and `--telemetry-budget-policy` (set the run's live telemetry budgets from one of the project's telemetry budget policies instead of the system threshold settings); both require `--api`, and the controller must confirm each before the run starts.
+Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API run wait timeout; default duration + 30m), `--transaction-rule` / `--transaction-rules-file` (exact per-transaction SLA rules; require `--api`), `--telemetry-policy` (judge the run by one of the project's telemetry acceptance policies instead of its default), `--telemetry-budget-policy` (set the run's live telemetry budgets from one of the project's telemetry budget policies instead of the system threshold settings), `--browser-policy ID@REV` (pin a project browser policy `<id>@<revision>` or `project_default`), and `--journey-policy ID@REV` (pin a project journey policy `<id>@<revision>` or `project_default`); policy flags require `--api`, and the controller confirms telemetry policy bindings before the run starts.
 
-**Subcommands** (`apexctl help` prints the full list):
+**Subcommands** (21 commands plus `help`; `apexctl help` prints full usage):
 
 | Command | Purpose |
 |---------|---------|
@@ -350,9 +411,18 @@ Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API r
 | `record` | Record a browser script with the embedded recorder |
 | `record-agent` | Start the localhost browser recording bridge for a remote dashboard |
 | `github` | Inspect and run GitHub Enterprise sync/check workflows |
-| `import` | Import Bruno collections or Grafana dashboards |
+| `import` | Import native Bruno HTTP collections or Grafana dashboards |
 | `library` | Export or import portable project library bundles |
-| `version` | Print version information |
+| `prepare` | Prepare, inspect, renew, cancel, or start a prepared run |
+| `schedule` | Manage scenario schedules and occurrence resolutions |
+| `monitor` | Configure run-bound monitoring sources and scenario bindings |
+| `analysis` | Import/query datasets, query live or archived native series, save analysis definitions, and assess baseline regressions |
+| `rca` | Run, poll, inspect, export, or evaluate root-cause analyses |
+| `qa` | Record and read feature acceptance evidence (`record-acceptance`, `acceptance`) |
+| `prometheus` | Manage Prometheus target-system monitoring connections, discovery, and previews |
+| `dynatrace` | Manage Dynatrace SaaS connections, discovery, and query previews |
+| `elastic` | Manage Elastic/OpenSearch connections, discovery, and previews |
+| `version` | Print version, commit, and build-time information |
 
 **JSON pipeline example:**
 ```bash
@@ -456,28 +526,21 @@ Scripts are JSON with these sections:
 See [docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md) and
 [docs/dsl.schema.json](docs/dsl.schema.json) for generated DSL syntax.
 
-## Repository Layout
+## Project Structure
+
+See [AGENTS.md](AGENTS.md) for the canonical, machine-checked `cmd/` and `pkg/` package inventory. At the repository root:
 
 ```
-cmd/                 # controller, apexctl, generator, apexbench, apexload-collector-agent,
-                     # apexload-java-vuser-runner, apexload-record-agent, dslschema,
-                     # openapits, swaggergen, webcoverage
-pkg/                 # Go packages: engine, protocol, dsl, api, controller, distributed,
-                     # storage, recorder, convert, config, and more (see AGENTS.md for the full inventory)
-
-dashboard/           # React 18 + TypeScript frontend
-  src/
-    components/     # React components (Sidebar, ScriptsPage, TestHub, etc.)
-    hooks/         # Custom hooks (useApi, useWebSocket)
-    types.ts       # TypeScript interfaces
-    main.tsx       # Vite entry point
-  vite.config.ts
-  package.json
-
-desktop/             # Wails native client shell (embeds controller API + dashboard)
+cmd/                 # Runtime binaries, agents, and Go code generators (see AGENTS.md)
+pkg/                 # Core engine, protocols, DSL, API, storage, RCA, and governance packages (see AGENTS.md)
+api/proto/           # gRPC protobuf definitions (controller ↔ generator; see api/proto/README.md)
+dashboard/           # React 18 + TypeScript + Recharts SPA (see dashboard/README.md)
+desktop/             # Wails v2 native client shell embedding controller API + dashboard (see desktop/README.md)
 mcp/                 # Python MCP server exposing the REST API as agent tools
-deployments/         # Kustomize manifests, Helm chart, Docker Compose, Azure/AWS Terraform, CI templates
-examples/            # Sample scripts and HAR files
+deployments/         # Kustomize overlays (local/onprem/aks/eks), Helm chart, Docker Compose, Azure & AWS Terraform
+examples/            # Sample JSON DSL scripts, CSV prompt feeds, raw .http fixtures, and monitoring configs (see examples/README.md)
+scripts/             # CI verification, E2E harnesses, manifest renderers, and packaging scripts (see scripts/README.md)
+.github/workflows/   # Authoritative CI/CD and release workflows
 ```
 
 ## Development Workflow
@@ -485,18 +548,17 @@ examples/            # Sample scripts and HAR files
 ### Common Tasks
 
 **Add a new API endpoint:**
-1. Define handler in `pkg/api/handlers.go`
-2. Register route in `pkg/api/server.go`
+1. Define handler in `pkg/api/handlers_*.go`
+2. Register route and access requirements in the matching `pkg/api/route_registry_*.go` / `pkg/api/route_catalog.go`
 3. Add REST tests in the matching `pkg/api/handlers_*_test.go` file for the endpoint's domain
-4. Register access requirements in `pkg/api/route_catalog.go` when the route is under `/api/v1`
-5. Regenerate API docs with `go generate ./pkg/api`
-6. Run `go test ./pkg/api`
+4. Regenerate OpenAPI, endpoint catalog, and TypeScript contracts with `go generate ./pkg/api`
+5. Run `go test ./pkg/api`
 
 **Add a new protocol:**
 1. Create `pkg/protocol/myproto/myproto.go`
-2. Implement `protocol.Protocol` interface
-3. Register in `pkg/protocol/registry.go`
-4. Test with sample scripts
+2. Implement `protocol.Protocol` and call `protocol.Register` in the package `init()`
+3. Add a blank import in `pkg/protocol/builtin/builtin.go` so standard binaries compile it in
+4. Test with unit tests and sample scripts
 
 **Update frontend:**
 1. Edit files in `dashboard/src/`
@@ -571,4 +633,4 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 
 ## License
 
-[License information here]
+Proprietary / internal repository — no open-source license file is published in this repository.

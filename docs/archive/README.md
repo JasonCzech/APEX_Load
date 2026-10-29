@@ -10,7 +10,17 @@ Material here is preserved for audit and design history. It is not current produ
 | --- | --- |
 | [qa-reviews/AUDITS_2026-09.md](qa-reviews/AUDITS_2026-09.md) | Historical. One file with a section per completed September 2026 UX/QA audit (UX consistency, post-test reporting, end-to-end UX, the 2026-09-12 access, Command Center, landing dashboard, Import From Source, New Test, Results and Repository, Scenario Builder and Script/Scenario Library audits, Dashboard UX reviews, settings and execution-results reviews, Bruno/import-consistency/LoadRunner import reviews). Consolidated 2026-09-24 from 14 markdown files. Current browser coverage: [qa/E2E_SUITES.md](../qa/E2E_SUITES.md) |
 | `qa-reviews/<audit-folder>/` | Evidence only (screenshots, logs, JSON, DOM inventories) referenced from `AUDITS_2026-09.md`. Untracked since 2026-10-20 and kept only on local disk: `ux-consistency-2026-09-08`, `post-test-reporting-2026-09-08`, `end-to-end-ux-2026-09-09`, `access-audit-2026-09-12`, `command-center-audit-2026-09-12`, `dashboard-audit-2026-09-12`, `import-source-audit-2026-09-12`, `new-test-audit-2026-09-12`, `results-repository-audit-2026-09-12`, `scenario-builder-evaluation-2026-09-12`, `script-scenario-audit-2026-09-12`, `import-consistency-2026-09-19`, `user-settings-2026-09-09` |
-| [APEX_Load_DSL_Reference_Guide_v2.1.docx](APEX_Load_DSL_Reference_Guide_v2.1.docx) | Retired 2026-09-24. Hand-maintained snapshot (pinned to commit f757e96) that contradicted the code on loop caps, `pop` exhaustion, unknown action types and `fn.*()` calls. Use the generated [DSL_ACTION_REFERENCE.md](../DSL_ACTION_REFERENCE.md) and [HELP_DSL_OPERATOR_GUIDE.md](../HELP_DSL_OPERATOR_GUIDE.md) instead |
+| `APEX_Load_DSL_Reference_Guide_v2.1.docx` | Retired 2026-09-24 and removed from active git tree (recoverable via `git show 3b9494318:docs/archive/APEX_Load_DSL_Reference_Guide_v2.1.docx`). Hand-maintained snapshot (pinned to commit f757e96) that contradicted the code on loop caps, `pop` exhaustion, unknown action types and `fn.*()` calls. Use the generated [DSL_ACTION_REFERENCE.md](../DSL_ACTION_REFERENCE.md) and [HELP_DSL_OPERATOR_GUIDE.md](../HELP_DSL_OPERATOR_GUIDE.md) instead |
+
+## Consolidated current documentation (2026-10-29)
+
+Fifteen overlapping or single-slice guides were folded into canonical subsystem documents (recover pre-merge originals with `git show 3b9494318:docs/<path>`):
+
+- `JAVA_SHARED_JVMS.md`, `JAVA_PILOT_OPERATIONS.md`, `JAVA_POOLED_RUNTIME_CONTRACTS.md`, and `JAVA_VUSER_POOLING_IMPLEMENTATION.md` → [JAVA_SHARED_AND_PILOT_RUNTIME.md](../JAVA_SHARED_AND_PILOT_RUNTIME.md).
+- `JAVA_BROKER_SERVICE.md`, `JAVA_DEDICATED_EXECUTION_CONTRACTS.md`, and `JAVA_BOUNDARY_ATTESTOR_CONTRACT.md` → [JAVA_DEDICATED_BROKER_EXPERIMENTAL.md](../JAVA_DEDICATED_BROKER_EXPERIMENTAL.md).
+- `guides/BROWSER_DOCUMENT_EVIDENCE.md`, `guides/RETAINED_RESOURCE_INSPECTION.md`, `guides/BROWSER_INTERACTION_EVIDENCE.md`, and user HAR sections of `guides/BROWSER_HAR_WORKING_OWNERSHIP.md` → [guides/BROWSER_INTELLIGENCE_WORKFLOWS.md](../guides/BROWSER_INTELLIGENCE_WORKFLOWS.md); native HAR working-file/transfer internals → [BROWSER_EVIDENCE_ARCHITECTURE.md](../BROWSER_EVIDENCE_ARCHITECTURE.md).
+- `ANALYSIS_WORKFLOWS.md` → [NATIVE_ANALYTICS.md#enable-the-workflows](../NATIVE_ANALYTICS.md#enable-the-workflows); `BASELINE_COMPARISON.md` → [ROOT_CAUSE_ANALYSIS.md#baseline-comparison](../ROOT_CAUSE_ANALYSIS.md#baseline-comparison).
+- `HA_RUN_CONTINUITY_PLAN.md` → [ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior](../ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior); `NODE_STORAGE_RECOVERY.md` → [ARCHIVE_SOURCE_RETENTION.md#node-storage-recovery](../ARCHIVE_SOURCE_RETENTION.md#node-storage-recovery).
 
 ## Consolidated current documentation (2026-09-24)
 
@@ -91,17 +101,26 @@ Nineteen completed scoped review narratives were merged without dropping their f
 | Historical record | Contents |
 | --- | --- |
 | [Messaging reviews](qa-reviews/MESSAGING_2026-10.md) | Eight provider and processor slices |
-| [Analytics reviews](qa-reviews/ANALYTICS_2026-10.md) | Four contract, partition and panel slices |
-| [Authoring reviews](qa-reviews/AUTHORING_2026-10.md) | Goals persistence and revision safety |
-| [Browser reviews](qa-reviews/BROWSER_2026-10.md) | Availability, document evidence and HAR compatibility |
-| [Integration reviews](qa-reviews/INTEGRATION_2026-10.md) | Publication and composed qualification |
-| [Roadmap snapshot](ROADMAP_2026-10-19.md) | Complete pre-cleanup delivery narrative and design history; the [current roadmap](../ROADMAP.md) carries remaining gates |
+| [Analytics reviews](qa-reviews/ANALYTICS_2026-10.md) | Four early-October contract, partition and panel slices |
+| [Analytics & RCA slice reviews](qa-reviews/ANALYTICS_SLICES_2026-10.md) | Twenty-two October native analytics, DuckDB, joint projection, byte catalog and writer-ownership slices |
+| [Authoring reviews](qa-reviews/AUTHORING_2026-10.md) | Early-October goals persistence and revision safety |
+| [Authoring, scenario & import slice reviews](qa-reviews/AUTHORING_AND_IMPORT_SLICES_2026-10.md) | Twenty-eight Sep–Oct authoring fidelity, scenario revision/admission, lifecycle matrix and importer slices |
+| [Browser reviews](qa-reviews/BROWSER_2026-10.md) | Early-October availability, document evidence and HAR compatibility |
+| [Browser, HAR & replay slice reviews](qa-reviews/BROWSER_SLICES_2026-10.md) | Eighty-three October browser evidence, native HAR ownership, replay recovery, TruClient and intelligence slices |
+| [Telemetry, protocol & messaging slice reviews](qa-reviews/TELEMETRY_AND_PROTOCOL_SLICES_2026-10.md) | Twenty-five Sep–Oct telemetry policy/segment, render-population, Java HTTP and controlled-endpoint slices |
+| [Recovery, evacuation & platform slice reviews](qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md) | Twelve Sep–Oct evacuation rollback/rollforward, same-leader intervention, desktop and collector/capacity slices |
+| [Integration reviews](qa-reviews/INTEGRATION_2026-10.md) | Early-October publication and composed qualification |
+| [Wave, integration & codebase reviews](qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md) | Twenty-two October Wave 0–5, full-codebase, monthly and E2E isolation reviews |
+| [Roadmap snapshot (2026-10-19)](ROADMAP_2026-10-19.md) | Complete pre-cleanup delivery narrative and design history; the [current roadmap](../ROADMAP.md) carries remaining gates |
+| [Roadmap implementation spec (2026-10-28)](plans/ROADMAP_IMPLEMENTATION_SPEC_2026-10-28.md) | Completed October 19–28 non-Messaging implementation specification archived after `INT-1` |
+| [HTTP authoring unification plan (2026-10-26)](plans/HTTP_AUTHORING_UNIFICATION_PLAN_2026-10-26.md) | Completed `U1`–`U6` HTTP authoring unification plan; current contracts live in [SCRIPT_LIFECYCLE.md](../SCRIPT_LIFECYCLE.md) |
+| [Observability implementation specs](plans/PROMETHEUS_MONITORING_SPEC_2026-10.md) | Completed [Prometheus](plans/PROMETHEUS_MONITORING_SPEC_2026-10.md), [Dynatrace](plans/DYNATRACE_SPEC_2026-10.md) and [Elastic](plans/ELASTIC_SPEC_2026-10.md) design/implementation plans; active guides remain at [PROMETHEUS_MONITORING.md](../PROMETHEUS_MONITORING.md), [DYNATRACE.md](../DYNATRACE.md) and [ELASTIC.md](../ELASTIC.md) |
 
 ## Java validation history
 
 | Historical record | Current references |
 | --- | --- |
-| [September Java verification](JAVA_VALIDATION_2026-09.md) | Dated integration checks, foundation verification and local Linux evidence; current [scope and release gates](../JAVA_VUSER_POOLING_IMPLEMENTATION.md), [pilot operation](../JAVA_PILOT_OPERATIONS.md), [pooled contracts](../JAVA_POOLED_RUNTIME_CONTRACTS.md) and [dedicated contracts](../JAVA_DEDICATED_EXECUTION_CONTRACTS.md) |
+| [September Java verification](JAVA_VALIDATION_2026-09.md) | Dated integration checks, foundation verification and local Linux evidence; current [scope and release gates](../JAVA_SHARED_AND_PILOT_RUNTIME.md), [pilot operation](../JAVA_SHARED_AND_PILOT_RUNTIME.md), [pooled contracts](../JAVA_SHARED_AND_PILOT_RUNTIME.md) and [dedicated contracts](../JAVA_DEDICATED_BROKER_EXPERIMENTAL.md) |
 
 The October 19 analytics/Java pass moved technical sections intact. Review-derived Java constraints remain in the current pooled contract reference; only dated validation summaries were archived. Evidence artifacts remain at their original paths. Imported measurement identities are now part of [native analytics](../NATIVE_ANALYTICS.md#imported-measurement-identities).
 

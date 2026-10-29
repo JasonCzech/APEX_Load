@@ -19,7 +19,7 @@ Project administrators configure **Settings → Prometheus test monitoring** (`#
 
 Live timelines, five-minute maximum delayed-data reconciliation, canonical archives, analysis and terminal criteria use the common durable provider pipeline. Missing required evidence remains Inconclusive and cannot pass CI. Existing APEX platform graphs, `/metrics`, imported dashboard behavior and the legacy collector `prometheus` pack remain separate. Explicit dashboard adoption resolves a reviewed disabled source draft without copying credentials or thresholds.
 
-See [setup and operation](PROMETHEUS_MONITORING.md) and [specification/qualification matrix](PROMETHEUS_MONITORING_SPEC.md). Real backend qualification follows fixture verification; no server version or Azure identity mode is certified solely by fixtures.
+See [setup and operation](PROMETHEUS_MONITORING.md) and the archived specification (`docs/archive/plans/PROMETHEUS_MONITORING_SPEC_2026-10.md`). Real backend qualification follows fixture verification; no server version or Azure identity mode is certified solely by fixtures.
 
 ## Governed provider registry
 
@@ -28,8 +28,8 @@ Dynatrace, Elasticsearch and Prometheus query sources share the durable provider
 | Provider | Source pack | Scheduling | Observation | Default / minimum interval | Collector key |
 | --- | --- | --- | --- | --- | --- |
 | Dynatrace | `dynatrace` | Cursor: resumable queries under scan budgets | Interval buckets | 60 s / 60 s | Required |
-| Prometheus query | `prometheus-query` | Polled at a fixed interval | Snapshot evaluations | 30 s / 15 s | Not used |
-| Elasticsearch query | `elastic-query` | Windowed, re-reading a five-minute overlap | Interval buckets | 60 s / 30 s | Not used (controller only) |
+| Prometheus query | `prometheus-query` | Polled at a fixed interval | Snapshot evaluations | 30 s / 15 s | Required when `auth_type` is `basic`, `bearer`, or `azure` (`service_principal`), or when `mtls: true` (unsealed only for `auth_type: none` or ambient Azure identity without mTLS) |
+| Elasticsearch query | `elastic-query` | Windowed, re-reading a five-minute overlap | Interval buckets | 60 s / 30 s | Not used (controller only; native `elastic` collector sources require a collector key) |
 
 Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution. The registry marks Dynatrace and Elasticsearch query as trace-lookup providers: Dynatrace sources look up exemplar trace IDs, while Elasticsearch lookups run in the legacy ELK capture. An `elastic-query` search reserves room for a trace lookup but does not yet send exemplar trace IDs. Collectors must advertise the provider's capability (`elastic-query.v1`, `dynatrace.v1` or `prometheus-query.v1`); a job whose collector lacks it records that provider's `collector_*_contract_unavailable` coverage reason.
 
@@ -105,7 +105,16 @@ Automatic publishing is off by default. A project administrator can enable it on
 
 ## Prometheus scrape endpoint
 
-APEX Load exposes controller metrics at `GET /metrics`. When `APEXLOAD_METRICS_ADDR` is set, `/metrics` is served only on that dedicated listener. When `APEXLOAD_METRICS_TOKEN` is set, scrapes must include `Authorization: Bearer <token>`.
+APEX Load exposes platform Prometheus metrics from the controller at `GET /metrics`:
+
+| Binary | Environment variable | Default | Listener behavior |
+| --- | --- | --- | --- |
+| `controller` | `APEXLOAD_ADDR` | `127.0.0.1:8080` (`:8080` in `production`/`prod`) | Serves `GET /metrics` alongside the REST API **only** when `APEXLOAD_METRICS_ADDR` is unset. |
+| `controller` | `APEXLOAD_METRICS_ADDR` | unset | Dedicated scrape listener (for example `:9091` in production Kubernetes overlays); disables `/metrics` on `APEXLOAD_ADDR` so NetworkPolicy and `ServiceMonitor` rules can isolate scrape traffic. |
+| `controller` | `APEXLOAD_METRICS_TOKEN` | unset | Requires `Authorization: Bearer <token>` on `GET /metrics` scrapes. |
+| `controller` | `APEXLOAD_PROMETHEUS_URL` | unset | Configures the controller's Prometheus query client for dashboard graph overlays (separate from `/metrics`). |
+| `controller`, `generator` | `APEXLOAD_PPROF_ADDR` | unset | Optional Go `net/http/pprof` listener (must bind a loopback IP in production). |
+| `generator` | `APEXLOAD_GENERATOR_LISTEN_ADDR` / `APEXLOAD_GENERATOR_HEALTH_ADDR` | `:9090` / `:9092` | Generators do **not** expose an HTTP `/metrics` endpoint; they stream execution and capacity telemetry over gRPC to the controller (exported under `apexload_generator_*`, `apexload_scaling_*`, `apexload_capacity_*` and `apexload_telemetry_*` on the controller's `/metrics` endpoint) and serve unauthenticated gRPC readiness probes on `APEXLOAD_GENERATOR_HEALTH_ADDR`. |
 
 The workstation collector agent has separate source-specific packs. `linux-hosts` reads Linux `/proc` host metrics, `go-runtime` reads the agent process, and `prometheus` scrapes an explicitly configured `-prometheus-url` (or `APEXLOAD_COLLECTOR_PROMETHEUS_URL`). The collector must be registered with each selected pack in its allow-list. The initial Prometheus pack accepts text exposition 0.0.4 with up to 512 finite, unlabeled numeric samples from a 1 MiB response. It preserves declared metric kinds and explicit millisecond timestamps; undeclared kinds remain unknown. Labeled and non-finite samples are counted as skipped and degrade the heartbeat. Duplicate samples and unsupported formats fail the scrape. Scrapes have a 10-second deadline and do not follow redirects; the URL cannot contain credentials, query parameters, or a fragment. An unavailable source degrades the heartbeat and is not reported under another pack name. The collector metrics API also returns a bounded `metric_points` projection with collector identity, source timestamps, and current freshness. `metric_points_coverage` counts returned, omitted, invalid, and source-skipped samples. Collector heartbeat snapshots are separate from test evidence. When a legacy scrape source is explicitly selected through run-monitor bindings, accepted typed point batches can be retained in the run archive; use `prometheus-query` for the project-governed labelled PromQL workflow.
 
@@ -619,7 +628,12 @@ Two tables, related on `run_id` (relationship is created with the dataset, cross
 
 Power BI push datasets cannot delete individual rows, so re-publishing a run **appends** a second copy of its rows (a new `publish_id`). APEX Load blocks accidental duplicates — a publish is refused with a conflict when a previous attempt already pushed rows for the run into the same dataset (whether it completed or failed partway), unless the user confirms **force**. A `partial` publish leaves transaction rows without a matching runs row; because the table relationship joins on `run_id`, those orphaned rows would double-count in transaction-level visuals after a re-publish — which is why **reports must filter both tables to the latest `publish_id` per run**, not just the `runs` table.
 
-The Power BI push API has no idempotency key, so APEX Load does not retry ambiguous row mutations. A timeout, throttle response, or server error stops the publish as `partial`; only an explicit authentication rejection is retried after refreshing the token. This prevents a client retry from duplicating rows within one `publish_id`. The service can still apply a chunk before returning an ambiguous error, so an operator-forced re-publish may append rows under a new `publish_id`; the latest-publish filter above remains required.
+The Power BI push API has no idempotency key, so retry behavior is scoped by operation safety (up to three attempts per request):
+- **Row insertion (`pushRows`):** retries explicit `401` authentication rejections (after refreshing the cached OAuth token) and `429` throttle rejections (honoring `Retry-After`), and stops immediately as `partial` on transport timeouts or `5xx` server errors so an ambiguous response cannot duplicate a chunk under the same `publish_id`.
+- **Dataset creation (`ensureDataset`):** retries explicit `401` responses only; after any transport, `429` or `5xx` failure it reconciles by listing workspace datasets before returning an error rather than issuing a second non-idempotent create.
+- **Read and delete calls (`listDatasets`, `listTables`, `deleteDataset`):** retry `401`, `429` (honoring `Retry-After`), transport errors and `5xx` responses.
+
+Because the upstream service can still commit a chunk before returning an ambiguous transport or `5xx` failure, an operator-forced re-publish appends a fresh copy under a new `publish_id`; the latest-publish filter below remains required.
 
 Sample DAX filter measure:
 
@@ -635,7 +649,7 @@ Apply `Is Latest Publish = 1` as a report/page filter (equivalent measure on `tr
 ### Limits and operations
 
 - Push API limits: 10,000 rows per POST (APEX Load chunks automatically), 1M rows/hour, 5M rows per table. Manual per-run publishes stay far below these.
-- 429/5xx responses are retried with `Retry-After` honored; a failure mid-publish is recorded as `partial` and surfaced on the run report — recover by force re-publishing.
+- `pushRows` honors `Retry-After` on `429` responses and stops as `partial` on timeouts or `5xx` responses (surfaced on the run report — recover by force re-publishing).
 - The run row is pushed **last**, so a run never appears in trend visuals until all of its transaction rows landed.
 - **Schema drift**: if the dataset predates a schema change (or its tables were altered), publishing fails with a drift error. Drift detection is dataset-scoped — it compares against the newest publish into that dataset across all tests. Settings → Power BI → **Recreate dataset** deletes and recreates it with the current schema — this erases all previously pushed rows in Power BI (APEX Load's publish history is retained). The recreated dataset has a new ID, so previously published runs can be re-published into it without `force`.
 - The published `verdict` honors the analyst's verdict override saved via report annotations. The override is stored once per run, whichever report audience it was set from, so it matches every rendered report.
@@ -654,45 +668,15 @@ Apply `Is Latest Publish = 1` as a report/page filter (equivalent measure on `tr
 
 ## External monitoring integrations
 
-Status: Current
+Provider setup, permissions, query bounds and legacy compatibility contracts live in the dedicated provider guides below; shared storage/signing, the governed provider registry, qualification status and cross-provider notifications remain in this document. The generated [OpenAPI specification](swagger.yaml) defines connection, discovery, source, binding and evidence routes.
 
-Source note: provider setup and compatibility details now live in [Dynatrace](DYNATRACE.md) and [Elastic](ELASTIC.md); the shared pipeline, notification overview and qualification table remain here. Originally consolidated 2026-09-24 from the former `DYNATRACE_SAAS_MONITORING.md`, `DYNATRACE_WEBHOOKS.md` and `ELK_MONITORING.md`. Prometheus, OpenTelemetry and Power BI have their own references: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [Power BI](OBSERVABILITY_INTEGRATIONS.md#power-bi-publishing-workflow).
-
-| Integration | Direction | Scope |
+| Integration | Direction & scope | Dedicated guide |
 | --- | --- | --- |
-| Dynatrace SaaS monitoring | APEX Load polls Dynatrace during a test | Project-scoped connection, opt-in per test |
-| Dynatrace lifecycle webhooks | APEX Load pushes events to Dynatrace | Notification webhook (Settings) |
-| Elastic (ELK) monitoring | APEX Load polls Elasticsearch during a test | Project-scoped connection, opt-in per test |
-
-### Dynatrace SaaS in-flight monitoring
-
-Native Dynatrace monitoring uses revisioned project connections, approved reusable sources and immutable scenario/per-test bindings. Classic Environment metrics, entities, problems and events are supported alongside optional independently authenticated Grail numeric/log/event/span and sampled trace queries and Smartscape discovery. Select direct controller or assigned-collector execution. Verification, discovery and previews are bounded asynchronous operations; disabled drafts remain saveable with a name.
-
-Typed observations preserve source bucket times, dimensions, descriptor units and resolution. Live overlays, canonical archive exports, comparisons and terminal rules use those observations. Delayed collection continues for at most five minutes after load stops. Required incomplete evidence makes performance acceptance Inconclusive and cannot pass CI. Grail scan defaults are 1 GB/query and 10 GB/source-run including a 2 GB final-collection reserve; limits and missing cost metadata are reflected in coverage.
-
-Follow [Dynatrace setup, permissions and troubleshooting](DYNATRACE.md) and [the native monitoring contract](DYNATRACE_SPEC.md). The generated [OpenAPI specification](swagger.yaml) defines connection/operation/source/binding/evidence interfaces. Qualification is fixture-first; real SaaS tenant, licensed Grail and Smartscape compatibility remains unqualified until exact environments are tested.
-
-Existing `dynatrace_capture` selection and archived scalar/evidence readers remain compatibility surfaces. Projects outside the run-monitoring gate keep legacy per-test capture; in gated projects, future legacy selections resolve to reviewed, verified native sources without automatic opt-in. Historical scalar reductions remain historical aggregates rather than fabricated bucket timelines. Outbound lifecycle notifications in the provider guide remain separate from read-side monitoring.
-
-### Dynatrace lifecycle webhooks
-
-See [Dynatrace lifecycle webhooks](DYNATRACE.md#dynatrace-lifecycle-webhooks) for the maintained contract and evidence.
-
-#### Setup
-
-See [Setup](DYNATRACE.md#setup).
-
-#### Delivery Behavior
-
-See [Delivery Behavior](DYNATRACE.md#delivery-behavior).
-
-#### Events
-
-See [Events](DYNATRACE.md#events).
-
-#### Root-cause events
-
-See [Root-cause events](DYNATRACE.md#root-cause-events).
+| Prometheus target-system monitoring (`prometheus-query`) | Direct controller or collector PromQL / Azure Managed Prometheus polling (15–3,600 s), target/alert diagnostics and Kubernetes presets | [PROMETHEUS_MONITORING.md](PROMETHEUS_MONITORING.md) |
+| Dynatrace SaaS in-flight monitoring (`dynatrace`) | Direct controller or collector polling (60–3,600 s) across Classic Environment metrics/entities/problems/events, optional Grail DQL (1 GB/query, 10 GB/source-run) and Smartscape topology, plus `dynatrace_capture` compatibility | [DYNATRACE.md](DYNATRACE.md) |
+| Dynatrace lifecycle & RCA webhooks | Outbound test-lifecycle, load-phase and root-cause event delivery to Dynatrace (`apexload.idempotency_key`) | [Dynatrace lifecycle webhooks](DYNATRACE.md#dynatrace-lifecycle-webhooks) |
+| Elasticsearch & OpenSearch monitoring (`elastic`, `elastic-query`, legacy ELK) | Native `elastic` (`_search` / ES\|QL, direct or collector), bucketed `elastic-query` (`elasticsearch` and `opensearch` profiles) and cumulative legacy ELK capture | [ELASTIC.md](ELASTIC.md), [Bucketed capture](ELASTIC.md#bucketed-elasticsearch-capture), [Optional Elastic (ELK) in-flight monitoring](ELASTIC.md#optional-elastic-elk-in-flight-monitoring) |
+| Platform telemetry & BI publishing | Controller `/metrics` scrape, opt-in OTLP traces, Confluence Cloud pages and Power BI push datasets | [Prometheus scrape](#prometheus-scrape-endpoint), [OpenTelemetry](#opentelemetry-tracing), [Confluence](#confluence-cloud-result-publishing), [Power BI](#power-bi-publishing-workflow) |
 
 ### Load-phase events and Grafana annotations
 
@@ -726,23 +710,3 @@ systems can tell a load step from an incident:
   controller that recorded them, so after an HA adoption the archive holds only
   the transitions the adopting controller saw; delivered notifications are not
   affected.
-
-### Optional Elastic (ELK) in-flight monitoring
-
-See [Optional Elastic (ELK) in-flight monitoring](ELASTIC.md#optional-elastic-elk-in-flight-monitoring) for the maintained contract and evidence.
-
-#### Compatibility and privileges
-
-See [Compatibility and privileges](ELASTIC.md#compatibility-and-privileges).
-
-#### Setup
-
-See [Setup](ELASTIC.md#setup).
-
-#### Field-mapping checklist
-
-See [Field-mapping checklist](ELASTIC.md#field-mapping-checklist).
-
-#### Runtime and privacy behavior
-
-See [Runtime and privacy behavior](ELASTIC.md#runtime-and-privacy-behavior).

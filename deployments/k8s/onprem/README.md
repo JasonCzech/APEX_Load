@@ -16,7 +16,7 @@ when upgrading from a tokenless release.
 | Pod Security Admission `restricted` enforced on the namespace | `namespace.yaml` |
 | Dedicated ServiceAccounts; controller-only namespaced API token | `serviceaccounts.yaml`, `restart-controls.yaml` |
 | Scoped ingress NetworkPolicies + opt-in egress templates | `network-policy.yaml`, `egress-policies.example.yaml` |
-| Default audited pod/workload restart controls | `restart-controls.yaml`, [Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls) |
+| Default audited pod/workload restart controls | `restart-controls.yaml` (`Role/apexload-restart-controls`: namespaced pod read/delete, workload read/patch, `keda.sh/scaledobjects` and `autoscaling/horizontalpodautoscalers` `list`, and ResourceQuota read), [Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls) |
 | ephemeral-storage limits + bounded emptyDirs (no DiskPressure evictions) | deployment/statefulset |
 | PDBs for controller and generators | `pdb.yaml` |
 | Fail-closed production posture (`APEXLOAD_ENV=production`) | deployment/statefulset env |

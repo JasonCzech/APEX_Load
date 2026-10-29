@@ -1,641 +1,349 @@
 # Browser intelligence workflows
 
-Status: implemented. This guide covers where a run's browser intelligence is read, how its policies are edited, and what reports, the CLI and MCP tools carry. The results themselves are described in [browser findings](#browser-findings-and-qualified-scores), [interaction evidence](BROWSER_INTERACTION_EVIDENCE.md) and [journey accounting](#journey-accounting).
+Status: Guide — consolidated operator and user reference for browser document and navigation evidence, retained resource inspection, interaction diagnostics, HAR downloads and exports, saved cohort panels, browser/journey policies, baseline verdicts, and qualified scores. Low-level generator HAR staging, crash reclamation, Windows file-ID ownership, gRPC evidence-receipt fencing, and CDP frame-transform internals live in `` `docs/BROWSER_EVIDENCE_ARCHITECTURE.md` ``.
 
 ## Guide map
 
-Use this guide to interpret archived evidence and operate policies, evaluations, reports and exports. Capture and retention have separate contracts:
-
-| Task | Reference |
+| Task | Section |
 | --- | --- |
-| Capture page timings and document populations | [Browser document evidence](BROWSER_DOCUMENT_EVIDENCE.md) |
-| Capture gestures, provenance and layout revisions | [Browser interaction evidence](BROWSER_INTERACTION_EVIDENCE.md) |
-| Inspect retained requests and exact filters | [Retained resource inspection](RETAINED_RESOURCE_INSPECTION.md) |
-| Understand native/synthetic HAR ownership and export bounds | [HAR working-file ownership](BROWSER_HAR_WORKING_OWNERSHIP.md) |
-| Interpret findings and scores | [Findings contract](#browser-findings-and-qualified-scores) |
-| Interpret journey outcomes and weighted risk | [Journey accounting](#journey-accounting) |
-| Interpret gestures and heatmap coverage | [Patterns and heatmaps](#patterns-and-heatmaps) |
+| Read live provisional intelligence and archived report panels | [The Browser area of a run report](#the-browser-area-of-a-run-report) |
+| Capture page timings, Web Vitals, resource v4, and authored page bindings | [Document and navigation evidence](#document-and-navigation-evidence) |
+| Filter, page, and inspect archived network observations and waterfalls | [Retained browser resource inspection](#retained-browser-resource-inspection) |
+| Capture gestures, child-frame 2D transforms, touch points, and wait clocks | [Interaction and layout evidence](#interaction-and-layout-evidence) |
+| List and download native, synthetic, and replay HAR artifacts | [HAR downloads and exports](#har-downloads-and-exports) |
+| Manage project policies and pin revisions on runs or recurring schedules | [Editing browser and journey policies](#editing-browser-and-journey-policies) |
+| Plot single-tuple or separate-cohort panels and freeze comparison inputs | [Saved panels](#saved-panels) |
+| Interpret `browser_findings.v2` verdicts, baselines, and `browser_score.v1` | [Browser findings and qualified scores](#browser-findings-and-qualified-scores) |
+| Measure weighted test-journey risk and step-failure indexes | [Journey accounting](#journey-accounting) |
+| Interpret `browser_interaction_patterns.v4` rules and 64×64 viewport heatmaps | [Patterns and heatmaps](#patterns-and-heatmaps) |
+| Export engineer reports, run `apexctl` / MCP commands, and promote QA records | [Reports, CLI, MCP, and QA promotion](#reports-cli-mcp-and-qa-promotion) |
+
+---
 
 ## The Browser area of a run report
 
-A run with browser groups, browser document evidence or a pinned browser policy (a project default is pinned at Start) has a **Browser** area in its run report (`#/report/{id}?section=browser`). It reads the finalized archive. On an HA controller, a panel says the archive is not available yet until it is published, and offers to check again. The area holds:
+A run with browser groups, browser document evidence, or a pinned browser policy (a project default is pinned at Start) exposes a **Browser** area in its run report (`#/report/{id}?section=browser`). It reads the finalized archive. On an HA controller, if the archive has not yet been published to shared storage, the panel reports that the archive is not available yet and offers to check again. The area presents:
 
-- **Device, engine and group comparison.** For each engine, device profile and scenario group, it shows each document metric's p75 over final qualified main-frame navigation documents, with how many documents it counts.
-  - The p75 is computed as the controller computes it: the upper bound of the bucket holding it, capped by the observed maximum.
-  - Documents record no page, so the scenario group stands in for one.
-  - One engine, device and group that ran under more than one runtime cohort (for example, different network shaping) gets one row per cohort.
-  - Child-frame and back-forward cache tuples are counted and left out.
-- **Browser findings and the qualified score** under the run's pinned browser policy. For a run that pinned a browser policy, the area offers editors an on-demand evaluation under it; anyone who can view a run may also request an evaluation, under the pinned policy or a named revision, through the API or `apexctl`. An evaluation under a named revision is read from that evaluation and never replaces the run's findings shown here.
-- **Browser baseline.** The baseline comparison of the run's latest root-cause analysis (anomalies, qualification and exclusions). Without an analysis, the area links to root-cause analysis.
-- **Interaction patterns and heatmaps.**
+- **Device, engine and group comparison.** For each engine, device profile, and scenario group, it shows each document metric's p75 over final qualified main-frame navigation documents together with the eligible document count.
+  - The p75 is the upper bound of the histogram bucket holding the 75th percentile, capped by the observed maximum.
+  - When no authored page receipt is bound, the scenario group stands in for page grouping.
+  - An engine, device profile, and group that ran under multiple runtime cohorts (for example, distinct network-shaping profiles) renders one row per 16-hex cohort digest.
+  - Child-frame and back/forward-cache restore tuples are counted separately and excluded from main-frame navigation scoring.
+- **Browser findings and the qualified score** ([Findings contract](#browser-findings-and-qualified-scores): `browser_findings.v2` and `browser_score.v1`) evaluated against the run's pinned browser policy. Editors can trigger an on-demand evaluation under the pinned policy directly from the panel; any authorized viewer can also evaluate the run against a named policy revision via the REST API or `apexctl` without overwriting the run's pinned findings.
+- **Browser baseline.** Displays the browser baseline anomalies, qualification checks, and exclusions from the run's latest [root-cause analysis](../ROOT_CAUSE_ANALYSIS.md#baseline-comparison), or links to launch an analysis when none exists yet.
+- **Interaction patterns and heatmaps** (`browser_interaction_patterns.v4`; gesture capture is configured per [Browser interaction evidence](#interaction-and-layout-evidence)).
 - **Journey risk.**
-- **The retained resource inspector.**
+- **HAR downloads and the retained resource inspector.**
 
-The live execution page shows the same comparison over the documents published so far, together with **Provisional live browser intelligence** (findings, interaction patterns, and journey risk) evaluated on a 30-second cadence from bounded incremental document, interaction, and journey evidence (`provisional: true`, baseline status `not_evaluated_live`, and `live_truncated: true` if in-memory live caps are exceeded). Provisional live snapshots are persisted through `LiveStateStore` so HA followers serve identical provisional responses while the run is active or finalizing, and are atomically replaced once the finalized archive is attached.
+During execution, the live run page displays the same cohort comparison over documents published so far alongside **Provisional live browser intelligence** (findings, interaction patterns, and journey risk) evaluated on a 30-second cadence from bounded incremental document, interaction, and journey evidence (`provisional: true`, baseline status `not_evaluated_live`, and `live_truncated: true` if in-memory live caps are exceeded). Provisional live snapshots are persisted through `LiveStateStore` so HA controller replicas serve identical provisional state while the run is active or finalizing, and are atomically superseded once the finalized archive attaches.
 
-### Drill-down: finding → document → resources → HAR entry
+### Supported authored navigation page receipts
 
-1. A finding lists its worst documents. Selecting one opens the retained resource inspector filtered to that document's requests (the `document_id` filter).
-2. Each request's details offer **Show this request's HAR entry** to users who may download HARs (editors and project administrators). It reads `GET /api/v1/tests/{id}/archive/browser/har-entry?request_id=…`:
-   - **Synthetic entry.** The request is returned as a synthetic HAR 1.2 entry, scrubbed and bounded exactly as the downloadable synthetic HAR is, with its `_apexload.request_id`.
-   - **Native HAR.** A request whose browser context recorded a native HAR is not in the synthetic HAR. The response names that native HAR instead, and the inspector offers to download it. Native HARs recorded before they named their browser context cannot be matched to a request; when the archive has any, the response counts them, since the request may be in one.
-   - **Left out.** A request the synthetic HAR leaves out (for example a URL with no host) says why, as a downloaded synthetic HAR does.
-   - **Unknown request.** A request identity the archive does not hold answers 404.
-   - **Busy.** The read scans the archive and shares the resource inspector's one scan at a time and its time limit: while another scan runs, or when it runs out of time, it answers 503 and can be retried.
-
-## Editing browser and journey policies
-
-**Settings → Workspaces → Browser & journey policies** lists a project's browser and journey policies. Editors, project administrators and system administrators can create, edit and delete them; viewers can read them.
-
-- **Browser policy fields:** the scored metrics with their good and poor bounds and weights, the engines and device profiles it applies to, the effect floors (which only raise the defaults), and the baseline comparison mode.
-- **Journey policy fields:** journeys with a transaction or action start and success boundary, a weight, and whether the step-risk index is reported.
-- **Revisions:** every save names the revision it was read at. A policy someone changed in the meantime is refused, and the editor offers to load the current revision.
-- **Past revisions:** any past revision can be shown read-only.
-- **Defaults and pins:** a policy marked as the project default is pinned when runs start. Runs keep the revision they pinned, and findings keep the revision they were evaluated under, so editing a policy never rewrites a finished run's results.
-
-## Saved panels
-
-Project analytics panels can plot **Archived browser documents**: a document metric (`document_lcp`, `document_fcp`, `document_inp`, `document_cls`) at p50 to p99 over elapsed time.
-- **One tuple per panel (or separate cohorts):** a single-tuple panel reads one measurement tuple, named by engine, device profile, group, region, runtime cohort, frame scope and lifecycle; a separate-cohort panel (`browser_tuple_mode: "separate"`) plots up to 20 complete tuples independently.
-- **Frozen archive, policy, and baseline selection pins (`query_version: 5`, `BrowserPanelInputs` `version: 2`):** saving a comparison to a panel from **Baseline comparison → Save to panel** evaluates and pins the current and baseline archive manifest SHA-256 digests, sorted tuple IDs, immutable `browser_policy` and `journey_policy` revision pins (`kind`, `id`, `revision`, `sha256`), and the matched root-cause analysis `selection_receipt_sha256` (`browser_selection` receipt digest). Reopening via `POST /api/v1/tests/{id}/archive/native-series` or `apexctl analysis replay-panel` verifies that pinned policy revisions have not been tombstoned and that the selection receipt and archive digests match, while keeping `query_version: 4` (`version: 1`) saved panels readable.
-
-## Reports
-
-The engineer report profile adds three sections, in HTML, PDF, CSV and (through HTML) DOCX:
-- **Browser Findings:** the score and up to 20 findings, active ones first.
-- **Interaction Patterns and Heatmaps:** coverage, up to 20 patterns and 12 heatmaps.
-- **Journey Risk:** the weighted failure index and each journey's attempts.
-
-Each section reads its result when the report is exported. A section whose result could not be read (no evaluation, an archive not finalized, no pinned journey policy) says why instead. The browser baseline comparison is part of the root-cause section, with the analysis it comes from, for projects that present root-cause v2 (`APEXLOAD_RCA_V2_PRESENT_PROJECTS`); the v1 root-cause section has no baseline. The Browser area shows the baseline for every project.
-
-## CLI and MCP tools
-
-| Task | `apexctl` | MCP tool |
-| --- | --- | --- |
-| Findings and score | `analysis browser-findings --run ID [--evaluate …]` | `run_archive_browser_findings` |
-| Interaction patterns and heatmaps | `analysis interactions --run ID` | `run_archive_browser_interactions` |
-| Journey accounting | `analysis journeys --run ID [--policy ID [--revision N]]` | `run_archive_journeys` |
-| One request's HAR entry | `analysis har-entry --run ID --request-id ID` | `run_archive_browser_har_entry` |
-| Policies | `analysis policies list\|get\|save\|delete --project ID …` | `analysis_policy_list`, `_get`, `_create`, `_update`, `_delete` |
-| Replay saved panel | `analysis replay-panel --id ID [--revision N]` | — |
-| Pin policies on run / CI / schedule | `run --api URL [--browser-policy ID@REV] [--journey-policy ID@REV]`, `ci run [--browser-policy ID@REV] [--journey-policy ID@REV]`, `schedule preview\|create\|update --scenario ID [--browser-policy ID@REV\|project_default] [--journey-policy ID@REV\|project_default]` | — |
-
-`apexctl analysis policies save` with `--id` needs the `--revision` the policy was read at, as the editor does.
-
-## Acceptance
-
-Automated acceptance suites verify each of these behaviors, including a golden page run in Chromium and WebKit against measured ground truth.
-
-## Browser findings and qualified scores
-
-Browser findings judge a run's archived document metrics against a
-versioned `browser_policy`, server side. They produce two things:
-
-- versioned finding records (`browser_findings.v2`);
-- a weighted score (`browser_score.v1`).
-
-Only qualified final observations count. The dashboard's legacy summary
-estimate (`legacy-summary-availability-v2`) stays for runs that have no
-server result.
-
-### Policy
-
-A `browser_policy` (Analysis policies, `POST /api/v1/analysis/policies`)
-contains:
-
-- **Metrics:** up to four of `fcp`, `lcp`, `cls` and `inp`. Each has a
-  `good` and a `poor` threshold (`0 <= good < poor`) and a non-negative
-  `weight`. A metric with a positive weight is **required** for an overall
-  score.
-- **Applicability:** optional engine (`chromium`, `webkit`) and device
-  profile lists. A cohort outside them is suppressed, never scored.
-- **Effect floors and baseline mode:** these are used by RCA's browser
-  baseline anomalies (`browser_baseline.v1`) and populated into each finding's
-  `baseline` verdict under `browser_findings.v2`. The floors can only raise its
-  minimums. Mode `none` turns the comparison off (`status: not_selected`,
-  `reason: policy_baseline_off`), `pinned_run` compares only when the
-  analysis's baseline is that run, and `latest_compatible` uses the analysis's
-  selected baseline run. When a completed RCA analysis matches the run's
-  archive digest and the evaluated policy's `PolicySHA256`, each application
-  outcome finding records `regressed`, `within_baseline`,
-  `insufficient_evidence`, `unqualified` (with its reason), or `not_selected`
-  (never healthy when a baseline is missing), with deterministic worst-status
-  precedence across multi-load-level runs and immutable links to the RCA
-  analysis ID, baseline run ID, baseline archive digest, `browser_selection`
-  receipt digest, and pinned browser/journey policies; `collection_health`
-  findings record `not_applicable`.
-
-A policy marked `apply_by_default` is pinned to every run started in the
-project, by revision and digest.
-
-### When evaluation runs
-
-Evaluation is a `browser_intelligence` evaluation job.
-
-- **Automatically:** when a run's archive is finalized (if the run pinned a
-  browser policy and requested document evidence), and again when a completed
-  root-cause analysis commits for that run so findings reflect the evaluated
-  baseline status without double-firing webhook notifications for unchanged
-  active finding keys. An evaluation of the same inputs is never queued twice.
-- **On demand:**
-  - `POST /api/v1/analysis/evaluations` with
-    `{"kind":"browser_intelligence","request":{"run":"<id>"}}`. Add
-    `"policy":{"id":…,"revision":…}` for another revision.
-  - The Evaluate button on the run report's Browser findings panel.
-  - `apexctl analysis browser-findings --run ID --evaluate --project P [--wait]`.
-
-The job's input fingerprint covers the rule set, the score version, the
-policy revision's digest and the archive manifest's digest.
-
-A run's own result is always an evaluation under its pinned policy. An
-evaluation under a named revision is an ordinary evaluation job: read it from
-the evaluation API (`apexctl … --policy …` prints the job, and with `--wait`
-its result). It never
-replaces the run's result and never sends webhooks. Evaluations are indexed
-by their run (schema v53 `feature_evaluation_jobs.subject_id`), so a run's
-result is found however many evaluations the project has.
-
-### What is judged
-
-Only main-frame navigations are judged. Child frames and back/forward-cache
-restores are listed in the result's notes, never scored.
-
-Each cohort (engine and device profile) is judged per policy metric. The
-observed value is the nearest-rank p75 of the qualified final
-observations' values.
-
-Provisional, censored, unqualified and unavailable observations are
-reported in the finding's `quality`, never in its value.
-
-| Rule | Category | Produces |
-| --- | --- | --- |
-| `threshold` | application outcome | `active` with severity `needs_improvement` (p75 above good, or within good when its evaluated baseline status is `regressed`) or `poor` (above poor); `suppressed` outside applicability; `unscored` when the metric was not observed or has no qualified final observation. Within good and not regressed against the baseline, there is no finding. |
-| `collection.incomplete` | collection health | `active` when the run's document evidence lost observations. |
-| `collection.absent` | collection health | `active` when document evidence was requested and none was retained. |
-
-Every finding records:
-
-- the rule set, rule ID and version, and the category;
-- the metric, algorithm and unit, the cohort and the run window;
-- applicability, the statistic and observed value, and the thresholds;
-- quality counts and baseline criteria;
-- evidence: up to five of the worst qualified documents, each with the
-  archive query of its retained resources;
-- its state, with a reason when it is not active.
-
-A record's `id` covers the evaluation's input fingerprint, so an identical
-rerun reproduces it. Its `key` (run, rule, metric, cohort, window)
-identifies the finding across evaluations.
-
-### Score
-
-Each policy metric's component is computed as follows:
-
-- The p75 of the qualified final observations of every applicable cohort.
-- Scored 100 at or below good and 0 at or above poor, linear between.
-- Its contribution is `weight × score / Σ required weights`.
-
-The overall score is the sum of the contributions:
-
-- **Bands:** `good` from 90, `needs_improvement` from 50, `poor` below.
-- **No score** when a required metric is missing (`missing_required_metric`,
-  listing the metrics), or when no document evidence was retained
-  (`no_document_evidence`).
-
-When there is no overall score, the observed components and their
-coverage are shown instead. The remaining metrics are never renormalized.
-
-### Reading results
-
-- **API:** `GET /api/v1/tests/{id}/archive/browser-findings` returns the
-  run's latest ready result under its pinned policy (`status: ready`),
-  `pending`, `failed` (the newest evaluation failed or expired, claimed
-  repeatedly without finishing, and none is ready, with `failure`), or
-  `not_evaluated`. Queuing the automatic evaluation is best effort: if it
-  cannot be queued when the archive is attached (the evaluation quota, a
-  changed pin, an archive that cannot be read), the controller logs it and the
-  run stays `not_evaluated` until someone evaluates it.
-- **Dashboard:** the Browser findings panel in the run report's
-  [Browser area](#the-browser-area-of-a-run-report) shows the score, its components and contributions,
-  the findings by state, and the notes. It checks a pending evaluation again
-  until it settles.
-- **Webhooks:** subscribe to `browser_finding` and `browser_finding_resolved`.
-  When an evaluation under the run's pinned policy is stored as ready:
-  - one `browser_finding` event lists the findings active now but not in the
-    run's previous ready pinned evaluation;
-  - one `browser_finding_resolved` event lists those active before and not
-    now;
-  - an identical rerun sends nothing, and a completion that stored nothing
-    (cancelled, overtaken) sends nothing;
-  - each event lists at most 20 finding keys.
-
-## Journey accounting
-
-Journey accounting reads a finished run's archived samples and counts how its
-declared journeys turned out. The result is weighted test-journey risk under
-a versioned policy. It is never revenue or conversion impact, which would
-need an authorized external model.
-
-### Declare journeys
-
-Journeys live in a project `journey_policy` (Analysis policies,
-`POST /api/v1/analysis/policies`). Each journey has:
-
-- an `id` (lowercase slug) and a `name`;
-- an explicit `start` and `success` boundary, each naming one authored
-  `transaction` or one `action`. A transaction boundary matches a
-  transaction sample of that name; an action boundary matches an action
-  sample;
-- a `weight` from 0 to 1000.
-
-`step_risk_enabled: true` adds the separate step-risk index. A policy marked
-`apply_by_default` is pinned to every run started in the project, with its
-revision and digest. Revisions are immutable, so a later edit never
-rewrites an earlier run's accounting.
-
-### How attempts are classified
-
-Every archived sample carries its VUser, its 1-based iteration and a random
-VUser lifetime. A VUser ID is reused by later VUsers (open-workload
-arrivals, scale-up); a lifetime never is, so each lifetime is its own
-context. Each iteration is read in time order. Samples are archived as they
-are recorded, so a transaction's row follows its own steps. Ordering by time
-puts it back around them, using each transaction's wall-clock span
-(`elapsed_ms`) when its duration excludes think time inside it:
-
-- A start boundary opens an attempt when it begins.
-- Action samples that begin while an attempt is open are its steps.
-- The success boundary decides the attempt when it ends.
-
-| Outcome | Meaning |
-| --- | --- |
-| completed | The success boundary succeeded. Failed steps before it are still counted as step failures. |
-| failed | The success boundary failed, or the iteration ended after one of the attempt's steps failed. One failed journey counts once, however many steps failed. |
-| aborted | The iteration ended, or the journey started again, without the outcome and without a failed step. |
-| censored | The outcome is unknown, because the run (or a generator's share of it) ended while the attempt was open, or a stop or the generator's own resource limit cut it. |
-| skipped | An iteration of a group that ran the journey somewhere never started it. A possibly cut iteration does not count. |
-
-Eligible attempts are the completed, failed and aborted ones. Censored and
-skipped attempts never enter the index.
-
-#### Stops and interrupted samples
-
-The engine marks a failure `interrupted` when it was recorded after the VUser
-was told to stop, or when the load generator itself refused it. That covers
-four cases:
-
-- The action in flight was cancelled by a hard stop (or by Run's own context
-  when there is no hard-stop context).
-- A stop or goal boundary abandoned the iteration and left a failed
-  transaction behind.
-- A transaction the VUser still had open when a goal boundary ended it.
-- A resource-limit failure (the error class `resource_limit`, for example a
-  browser context closed at its HAR or memory limit): the generator, not the
-  system under test, ended the action.
-
-Work a stop cut off is left out of the results altogether, as LoadRunner
-does: a request the stop cancelled, a transaction a hard stop cut off, and a
-transaction still open when the run's stop or end, a ramp-down or a
-scale-down ended the VUser. The attempt it was part of has no settling row,
-so it is censored.
-
-Neither cancellation nor a generator limit can establish a failure of the
-system under test. An interrupted failure therefore censors every attempt it
-cut and is not counted as a step failure. An attempt that still reaches its
-outcome keeps it, and a boundary that fails after one of its attempt's steps
-was interrupted is censored rather than counted as failed.
-
-The last iteration of each VUser lifetime is the one a stop may have cut,
-for instance during think time between transactions, where no sample shows
-it. The engine therefore marks the rows it records because an iteration
-ended on its own (`ends_iteration`): the iteration transaction, and the
-transactions a VUser left open when it ended on its own (its iterations
-done, or a genuine failure that ends it). An attempt still open in a
-lifetime's last iteration is settled (failed or aborted) only when that
-iteration has such a row that is not interrupted; otherwise it is censored.
-A transaction still open when the next iteration starts is carried into it.
-
-So scripts that record an iteration transaction (automatic transactions per
-iteration, or none and no explicit transactions) settle every last
-iteration that ended on its own. Scripts without one (explicit
-transactions, or automatic transactions per action) settle a last
-iteration only when the VUser ended on its own with transactions still
-open; a last iteration that ended on its own with none open, or a
-fail-fast failure outside any open transaction, is censored. In an open
-workload every arrival runs a single iteration, so for such scripts every
-arrival's unsettled attempt is censored. Censoring excludes an attempt from
-the index rather than guessing its outcome. Whether a VUser ended on its own
-(its iterations or data done, a genuine failure with continue on error off)
-or was ended (a stop, ramp-down, scale-down or goal limit) is recorded by
-the engine where its loop ends. A fail-fast failure while a shared
-execution goal is spent is taken for the goal limit's, since a parallel
-branch or WebSocket callback refused a goal slot fails the same way.
-
-Rows without a lifetime (written before lifetimes existed) fall back to the
-VUser ID: their last iteration is always censored, and a replacement
-generator that continues an evacuated VUser restarts its iterations, so
-the earlier share's last iteration is censored too. A group's once-only
-init/teardown VUser records lifecycle rows without a lifetime; they are not
-counted as rows without identity.
-
-### Indexes
-
-- **Weighted failure index:** `sum(weight × failed) / sum(weight × eligible)`.
-  It is unscored (`no_weighted_eligible_attempts`) when the denominator is
-  zero.
-- **Step-risk index** (only with `step_risk_enabled`):
-  `sum(weight × step_failures) / sum(weight × steps)`, counting the steps of
-  eligible attempts. It is unscored (`no_weighted_steps`) when there are no
-  weighted steps.
-
-Accounting is bounded:
-
-- 200,000 tracked VUsers;
-- 10,000 buffered samples per open iteration;
-- 1,000,000 buffered samples in total.
-
-The report is also incomplete when the archive scan stops at its budget
-(2,000,000 rows or 512 MiB), when a distributed run's generator sources were
-not all collected, or when rows from a source without VUser identity (an
-older generator) sit beside rows with it. An incomplete report lists its
-`incomplete_reasons`, and both indexes are withheld
-(`accounting_incomplete`). A run that recorded identity but ran no iteration
-is `unavailable` with `no_iterations` (as is an archive with no samples at
-all).
-
-### Read the result
-
-- **API:** `GET /api/v1/tests/{id}/archive/journeys` (viewer access). It
-  applies the run's pinned `journey_policy` revision. To use another, pass
-  `?policy=ID`, which takes its latest revision, or add `&revision=N`.
-  - A run that pinned none is `unavailable` with `no_journey_policy`.
-  - An archive written before VUser iteration identity existed is
-    `unavailable` with `archive_lacks_vuser_iteration_identity`.
-  - A pin whose digest no longer matches the stored revision is refused
-    (409), as is a run whose archive is not finalized.
-- **CLI:** `apexctl analysis journeys --run ID [--policy ID [--revision N]]`.
-- **Dashboard:** the run report's Performance tab has a Journey risk panel.
-  It shows the per-journey counts, the indexes, up to five example attempts
-  per journey (group, VUser, iteration, first failed step) and the report's
-  notes. You can apply another policy revision from the panel.
-
-Each journey's report lists its counts, eligible attempts, steps and step
-failures, failure rate and example attempts. The report also names the
-policy revision (`pinned` or `requested`) and its digest, and counts the
-rows outside iterations (init, teardown, or no identity).
-
-## Patterns and heatmaps
-
-`GET /api/v1/tests/{id}/archive/browser-interactions` reads a finalized run's
-interaction evidence (historical-only `browser_interaction_patterns.v2`,
-`browser_interaction_patterns.v3` when raw v2/v3 is present, or
-`browser_interaction_patterns.v4` when raw v4 interaction evidence is present;
-append `?format=csv` for a spreadsheet-safe CSV export of coverage, patterns,
-heatmaps, keyboard targets, limitations, and notes). Viewer access is
-enough. The run report shows the result in its [Browser area](#the-browser-area-of-a-run-report), under **Interaction patterns**. A run without interaction evidence answers
-`not_captured`; a run that captured some but kept none in its archive (a
-failed transfer, a refused or torn sidecar) answers `unavailable` with what
-was lost. The response states its thresholds and coverage: interactions
-(`interactions` and `streamed_interactions`), pattern-sample retention
-(`pattern_retained` and `pattern_truncated` when the 100,000-row pattern sample
-is exceeded while streaming coverage and heatmaps continue across all records),
-records, dropped (by capture bounds, or lost before the archive) and
-incomplete evidence (the archive's own account, which includes sources that
-never arrived), counts by provenance, gestures mapped (`mapped`, plus
-`mapped_via_transform` when same-origin child-frame gestures are mapped via an
-invertible 2D frame-chain transform in v4),
-and gestures left out by reason. A run without an archive answers `404` (on
-an HA controller, also until the finalized archive is published, so the run
-report offers to check again), an archive not yet finalized `409`, and
-unreadable evidence or an archive that cannot be read `500`. Nothing is
-replayed or injected.
-
-V3 and V4 pattern eligibility requires a valid authored step, engine invocation and
-joined native dispatch timestamp whose source/document/lifecycle tuple is present
-in the verified document archive. A separate 100,000-tuple bound limits this
-join index; excess tuples remain `document_lifecycle_unavailable`, with
-`document_joins_truncated` disclosed. Metric revisions do not consume extra
-join entries. Its coverage counts eligible gestures and
-exclusions separately (`pattern_eligible`, `pattern_excluded`), including
-legacy identity, missing execution and unavailable dispatch. These counts
-cover the streamed input; the existing 100,000-row retained pattern bound
-still applies. Historical rows remain downloadable and may contribute only
-to separately labelled historical maps in a mixed archive.
-
-V3 and V4 group patterns by source generation, document and lifecycle and sort by
-native dispatch. Repetition requires the same structural step, compatible
-scroll/layout/viewport geometry and the 2-second native-event window;
-duplicate display names cannot merge. Intended retries share the engine's
-logical invocation and increasing attempt numbers (even when an intermediate
-attempt was dropped), rather than being
-inferred from proximity. Retry attempts stay out of repetition even when an
-earlier attempt is missing. Pattern windows use the observed dispatch clock,
-so post-action waits do not move them. Pattern and report output retain the
-authored step and script identity. In V4, every missed declared page-response
-outcome (`sync`, `dialog`, `download`, `assertion`, or `navigation`) is
-evaluated with its own deadline and emits a distinct `dead_interaction` or
-`unexpected_navigation` pattern ID; canceled
-or otherwise unevaluated waits cannot become dead interactions.
-
-Historical-only v2 analysis keeps the following rules per document, in capture order:
-
-| Pattern | Rule |
-| --- | --- |
-| `scripted_repetition` | At least 3 clicks, taps or checks (a double click is one gesture; hovers, drags, swipes and long presses do not count) within 2 s, on one route and layout, when any of them is scripted or of unknown provenance. Gestures with dispatched points repeat within 32 CSS px of the first; gestures without points (touch gestures are dispatched synthetically) repeat when they share an action name and gesture kind, and their target's role and label when one is recorded. The 2 s window is measured on capture time, taken after each gesture's wait and page reads (E3 records no dispatch time), so gestures dispatched closer together than their waits may not count. |
-| `repeated_gesture` | The same, when every gesture was recorded with consent. It is the only pattern that can suggest human frustration. |
-| `retry` | A failed gesture followed at once by further attempts of the same step (its action name and gesture kind: each engine retry is a new execution with its own action ID), up to the first that succeeded. Retries never count as repetition. Distinct steps that share an action name and kind are one step here. |
-| `dead_interaction` | A gesture whose authored outcome (its post-action `sync`) asserts that the page responded (`element_visible`, `load` or `domcontentloaded`) observed as `missed` within its deadline. A missed `dom_stable`, `network_idle` or pause says nothing about whether the page responded, and an unchanged page alone is never one. Authored assertion, dialog and download outcomes are not used. |
-| `unexpected_navigation` | A gesture that navigated away while its declared `element_visible` outcome was `missed`: the element the step waited for never appeared. Navigating is otherwise normal (a recorded step waits for the next page's element, met), and a `dom_stable` or pause outcome says nothing about which page the gesture should leave. A gesture that navigated away is never a dead interaction. |
-
-Each pattern lists its route, layout, action, count, window and up to 16
-interaction IDs.
-
-Heatmaps place each pointer gesture's first dispatched point on an abstract
-64×64 grid of its viewport. Version 2 keeps separate maps for each sanitized
-route, layout revision, viewport size, device pixel ratio and orientation,
-engine, device profile and exact recorded scroll offset on both axes. Signed
-zero offsets are equivalent; fractional offsets are not rounded together.
-The coordinate space remains `viewport_css_px`. Layout, viewport and scroll
-are read **after** the gesture and its wait, so these maps do not establish
-dispatch-time geometry. V3 adds a separate `native_dispatch` map population
-using the event-time geometry in raw v2; historical maps are labelled
-`post_action`. Those populations never merge even when all other keys match.
-Raw v2 without observed dispatch is excluded from maps as
-`dispatch_unavailable`. Native touch emulation and untransformed child
-frames remain unavailable; this does not qualify actual devices.
-
-Engine and profile come from the gesture's source generation in the run's
-verified document evidence, read in full. An empty profile on a known context
-means an unprofiled browser, not an unknown context. Missing or conflicting
-context evidence excludes the gesture from maps with `engine_profile_unknown`
-and an explanatory limitation; it never combines unknown engines or profiles.
-Unreadable document evidence (`document_evidence_unreadable`) and contexts
-past the first 65,536 (`document_evidence_truncated`) have the same exclusion.
-Keyboard and form gestures fill a per-map table of target roles and hashed
-labels, never positions.
-
-Some gestures are counted, by reason, instead of mapped:
-
-- those with an unavailable reason (`child_frame_unobserved`,
-  `document_changed`, `synthetic_dispatch`, `page_state_unavailable`);
-- child-frame gestures without an observed transform, even if capture omitted
-  an unavailable reason;
-- those without a layout revision (`layout_unknown`) or a consistent engine/profile cohort;
-- those without points or without a viewport;
-- those outside the viewport (they make no map);
-- those requiring a new map beyond the 64-map limit (`heatmaps_truncated`).
-
-Each gesture contributes once to mapped or excluded coverage. Existing maps
-still accept compatible gestures after the map limit. Raw version-1 interaction
-archives remain unchanged and readable; newly computed analysis reports version
-2. Previously exported version-1 analyses keep their original interpretation.
-Pattern detection is unchanged in version 2, including its capture-time window
-and action-name identity limitations described above.
-
-At most 200 patterns are kept, and patterns are found among the first 100,000
-interactions (`interactions_truncated` beyond that). Screenshot overlays are
-not produced. Incomplete journeys are E5's journey accounting
-(`/archive/journeys`), not a pattern here.
-
-## Promoting browser intelligence support
-
-Passing `BI-*` acceptance records require reviewed, currently accepted `BE-4`
-evidence for the exact claimed measurement cohort. A pending request or a test
-suite that ran earlier does not authorize promotion. This gate changes support
-claims; it does not rewrite historical findings or promote preview results.
-
-Supply a version-1 `qualification` object with the measured `runtime_sha256`,
-`capability_sha256`, `metric` and `measurement_algorithm`. The acceptance record
-must also identify the engine in `provider`, a nonempty profile (use `desktop`
-for desktop), platform, full commit SHA and tested binary SHA-256. A BI record
-adds its versioned `analysis_algorithm` and one to eight `dependencies`, each
-with the accepted BE record's `record_id` and returned `record_sha256`.
-Both records must name the same binary and measurement scope. Artifact hashes
-remain required, and the accepted BE record's digest binds its artifact hashes,
-reviewer identity, sequence and cohort. The server returns `record_sha256` so
-callers do not need to reproduce its canonical serialization.
-
-The dependency check and promotion insert share a database transaction and
-writer fence. A missing, pending, failed, revoked, superseded or mismatched BE
-record returns a conflict without inserting a promotion. A later withdrawal
-also makes current BI support unavailable; the original accepted record and
-its pins stay readable. Old records without qualification remain historical
-records and cannot qualify a new BI promotion.
-
-The returned `cohort_sha256` identifies one metric/measurement/analysis scope,
-including its runtime and capability digests. Different metrics or estimators
-remain separate acceptance subjects. A broader withdrawal without qualification
-covers every matching cohort. Query the exact cohort in release automation:
-
-```bash
-apexctl qa record-acceptance --requirement BI-1 --feature browser-findings \
-  --provider chromium --profile desktop --platform linux-amd64 \
-  --commit FULL_COMMIT_SHA --binary ./controller --suite browser-intelligence \
-  --result passed --artifact reviewed-evidence.json --qualification cohort.json
-apexctl qa acceptance --requirement BI-1 --feature browser-findings \
-  --provider chromium --profile desktop --platform linux-amd64 \
-  --commit FULL_COMMIT_SHA --binary ./controller --cohort COHORT_SHA256 \
-  --require-supported
-```
-
-`cohort.json` holds the qualification object only and is limited to 16 KiB.
-The server validates its fields and dependency pins. Evidence bytes are not
-uploaded by these commands; the existing operator review remains responsible
-for the evidence behind their hashes. A passing local/emulated cohort cannot
-qualify another host, actual device, engine or binary.
-
-### Per-metric baseline effect floors
-
-Browser policies can set separate LCP, FCP and INP minimum changes in
-`effect_floors.timing_by_metric_ms`. Each optional value must be between 50 and
-600,000 milliseconds. The policy editor offers the same three fields; leaving
-one empty uses the overall timing floors. These values affect baseline anomaly
-qualification independently of whether the metric contributes to the weighted
-threshold score. CLS continues to use its separate `effect_floors.cls` field.
-
-For each timing metric, the effective floor is the largest of its configured
-metric floor, the overall absolute floor (at least 50 ms), and the overall
-relative floor (at least 10% of the baseline mean). A per-metric value cannot
-lower either overall floor. Runs keep the floors from their pinned immutable
-policy revision even when the policy is edited later. This does not change the
-`browser_baseline.v1` estimator or implement compatible-run selection.
+When a run negotiates `browser_document_proof_v3` alongside `browser_original_source_v1`, the Browser report exposes **Authored browser pages** (`browser_authored_page` v3), grouping observations by proven structural navigation step (`page_id`) across direct navigations, reloads, popups, history traversals, same-document routes (`route_seq`), and redirect chains. Final document measurements are not rewritten when binding authored page receipts; when native proof is absent or ambiguous, no page ID is guessed and an explicit unavailable reason is recorded.
 
 ### Original authored source identity
 
-New managed browser runs and stored-script replays bind authored steps before
-controller runtime overrides. Each version-2 `authored_step` identifies the
-original script SHA-256, its structural path/type digest, the exact step path
-and a derived step ID. Replay events expose that definition identity, and run
-archives retain the source descriptors in `provenance.browser_authored_sources`.
-The step identity does not prove that a gesture dispatched; use the separately
-retained native dispatch and invocation evidence for that claim.
+Managed browser runs and stored-script replays record pre-override script identity (`browser_original_source_v1`: pre-interpolation script SHA-256 and structural step digests) in run provenance so reports and comparisons can verify whether two runs executed the same authored browser steps. Legacy archives or runs without provenance report `original-source identity unavailable`. Source equality alone never certifies runtime equivalence—cohort digests, engine/device profiles, network shaping, and target state are still verified independently.
 
-Version 1 continues to identify the exact engine input. It is not relabeled as
-original-source proof. A restored compiled run preserves its stored source
-binding; rebuilding legacy runtime inputs from the current script library leaves
-original-source identity unavailable. The runtime validates the structural
-binding before using a descriptor. Public DSL and replay option JSON cannot
-supply source authority.
+### Reading native waterfall and cache evidence
 
-Prepared generator assignments carry source descriptors only after fresh
-`browser_original_source_v1` capability negotiation and require an exact
-staging acknowledgement. Older or stale peers and immediate assignments retain
-legacy identity. Source equality alone does not establish matching browser
-runtime, policy, load, document, page or measurement cohorts. Authored page
-identity and compatible-baseline selection remain separate requirements.
+Selecting a document or opening the resource inspector displays per-request phase waterfalls strictly from native request-to-document joins and document-relative start offsets. A missing join leaves the waterfall unavailable rather than synthesizing offsets from parent action timestamps or URL matching. Cache and wire provenance stay separate as well: a cached response must not claim a negotiated network protocol (`h1`, `h2`, or `h3`), and WebKit rows without exposed cache provenance report `not_exposed`.
 
+### Drill-down: finding → document → resources → HAR entry
 
-## Choose policy revisions for a run or recurring schedule
+1. Each finding lists up to five worst qualified documents. Selecting a document opens the [retained resource inspector](#retained-browser-resource-inspection) pre-filtered by `document_id`.
+2. Expanding a request row offers **Show this request's HAR entry** to callers permitted to download HARs (editors and project administrators), calling `GET /api/v1/tests/{id}/archive/browser/har-entry` with `?request_id=…`:
+   - **Synthetic entry.** Returns a scrubbed, bounded synthetic HAR 1.2 entry carrying `_apexload.request_id`.
+   - **Native HAR.** Requests belonging to a browser context that recorded a native HAR are excluded from the synthetic HAR; the response identifies the owning native HAR artifact and offers a direct download. Legacy native HARs lacking `evidence_generation` are counted in the response because overlap is indeterminate.
+   - **Omitted.** Requests excluded by synthetic HAR rules (for example, hostless URLs) report their omission reason.
+   - **Not found / busy.** Unknown `request_id` values return `404`. Because the lookup shares the resource inspector's single-scan admission and deadline per request, concurrent or timed-out scans return `503` for retry.
 
-In New run (both **Run setup** and **Schedules**), expand **Browser and journey policies** to choose an exact browser or journey policy revision. The latest revision is offered initially; an older revision remains selectable by its revision number. Leaving a kind on **Project default at start** preserves default resolution. Policy lists load when the section opens.
+---
 
-Run drafts, held runs, delayed starts, revised queued copies and recurring scenario schedules (`scenario_schedules.analysis_policy_selections_json`, schema v85) retain the selection. In a revised copy or a saved recurring schedule edit, explicitly choosing the project default (`analysis_policy_selections: {}`) clears the inherited or previously saved selection; omitting `analysis_policy_selections` on a partial schedule update (such as pausing or enabling) preserves the saved selection. Switching projects clears the prior project's selection. Saved schedules display their pinned revision tokens (`browser policy rN`, `journey policy rN`) in the scenario schedule table and project schedule catalog.
+## Document and navigation evidence
 
-Creation and schedule preview/save check the selected revision and project. Admission and recurring schedule materialization resolve the same immutable revision again and compute its digest on the server. A later edit does not change the chosen revision. A policy deletion visible when admission or recurring schedule materialization resolves the selection refuses the start (recording `reason_code: "analysis_policy_unavailable"` on the failed schedule occurrence); it cannot silently replace the selection with a default. Already admitted runs retain their historical policy pins and findings. Policy resolution and the admission write use the existing run-identity and execution-ownership fences.
+Enable document lifecycle capture explicitly on a browser script—in the dashboard under **Runtime Settings › Browser › Capture page timings and Web Vitals** (or **Page timings and Web Vitals** on a scenario group, where group/scenario browser settings replace the script's browser block), or in DSL JSON:
 
-The archive's `provenance.policy_pins` identifies an explicit selection with `source: run_selection`. A default uses `source: project_default`. The selected revision and current tombstone are read in one database snapshot. A concurrent deletion after that read follows the same admission boundary as existing default policies. Historical policy reads remain available after deletion for authorized inspection.
+```json
+{
+  "config": {
+    "browser": {
+      "capture_document_metrics": true
+    }
+  }
+}
+```
 
+Document capture is off by default and negotiates generator capability `browser_document_evidence_v2` during traffic-free staging (preparation attaches no target-page observers and sends no target requests; unsupported generators are rejected before commit). Leaving `capture_document_metrics` disabled retains standard passive network resource capture. Browser concurrency and density limits remain governed by [protocol support](../PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation).
 
-## Observed post-action wait clocks
+### Resource evidence v4, document association, and clocks
 
-Raw browser interaction evidence version 3 retains a supported Sync wait's actual host-side start, effective deadline, observed return and monotonic elapsed duration. These clocks are separate from native gesture dispatch and later diagnostic capture. After-action delay or cancellation during capture cannot rewrite a result already observed at the wait boundary. A parent context may shorten the effective deadline; cancellation, invalid or missing clocks, and a success first observed after its deadline do not establish a satisfied authored deadline.
+Native request evidence uses version `4` (`BrowserResourceEvidenceVersion = 4`), while readers remain backward-compatible with versions `2` and `3`:
 
-The controller negotiates `browser_interaction_evidence_v3` with a fresh generator heartbeat and an exact traffic-free staging acknowledgement. Older generators keep their negotiated version-2 evidence. Historical version-1/version-2 records never receive invented clocks. The raw evidence version is separate from interaction analysis version 3; repeat and retry windows continue to use native dispatch time, with unchanged population exclusions.
+- **Lineage and clocks (`v2`+)**: Separates opaque request, frame, document/navigation, redirect, initiating-action, and observation-action identities. Concurrent same-URL frame requests remain distinct. Native request epoch start is independent of document-relative offsets and parent action capture timestamps; native `-1` timing sentinels stay unavailable while genuinely observed `0` values stay `0`.
+- **Document association and provenance (`v3`+)**: With `capture_document_metrics: true`, Chromium opens a dedicated per-page CDP session to join each request (`cdp_loader_join`) by page, method, URL, ordinal, and Playwright start time, recording disk/memory/prefetch cache hits, `fromServiceWorker`, and initiator type/origin, and linking the request to the document token reported after the loader's commit without cross-process clock comparisons (note that enabling CDP `Runtime` duplicates inspector traffic on console-heavy pages, and a popup's initial document committed before binding installation completes stays unassociated). On WebKit, non-navigation requests join the unique frame document holding a single matching Resource Timing entry (`page_resource_timing_join`), keeping cache and initiator provenance `not_exposed`. Ambiguous or unobserved joins record an explicit unavailable reason (`cdp_unobserved`, `ambiguous_cdp_join`, `document_not_observed`, `ambiguous_document_commit`, `resource_timing_unobserved`, `ambiguous_resource_timing`, `request_start_unavailable`).
+- **Negotiated protocol (`v4`)**: Normalizes the engine-reported wire protocol (CDP `Response.protocol` or Resource Timing `nextHopProtocol`) to `h1`, `h2`, or `h3`, or records an explicit unavailable reason (cached responses, local schemes, empty/draft strings, or unobserved responses never invent a protocol).
 
-This receipt covers the runtime's declared post-action Sync waits. It does not claim composition of assertion, dialog, download, navigation and state outcomes, authored page identity, actual-device qualification or an independent target clock. Retained raw evidence preserves clock and outcome together through archive serialization. Browser and mobile-emulation cohorts retain their existing native-versus-synthetic dispatch limitations.
+In-flight trackers, metadata tables, and sidecar buffers enforce fixed bounds. Overflow increments `dropped_observations` (for source-dropped document observations) or separate request-identity drop counters and marks coverage `incomplete` even if a peer omits the incomplete flag.
 
+### Authored navigation page receipts (`browser_document_proof_v3`)
 
-## Separate browser cohorts in saved panels
+When generators negotiate `browser_document_proof_v3` alongside `browser_original_source_v1` during traffic-free staging, archived document evidence populates an **Authored browser pages** view (`browser_authored_page` version `3`, backward-compatible with `v1` and `v2`):
 
-For a completed run, open **Performance** in its report. In Create project analytics panel, choose Archived browser documents and enable **Show separate browser cohorts**. Set a maximum of 1–20 series and retain exact engine, profile, frame, lifecycle, group, region or cohort filters when needed. A selection exceeding the limit fails explicitly. Each tuple has at most 1,000 time buckets; the combined result has at most 20,000 buckets.
+- **Original step identity**: Managed browser runs and stored-script replays bind each structural DSL step (`authored_step` v2: pre-override script SHA-256, structural path/type digest, step path, and domain-separated step ID) in `provenance.browser_authored_sources`. Repeated executions of the same navigation step share an authored `page_id` while keeping distinct runtime `document_id` and `lifecycle_id` tokens; duplicate action display names never merge distinct steps.
+- **Supported associations (`v1`–`v3`)**: Version 1 binds Chromium navigation/reload/new-window responses proven via `cdp_loader_join`. Version 2 adds cross-engine `native_navigation_commit` bindings on Chromium and WebKit when the native navigation request and `navigation_sequence` remain invariant across bounded document/lifecycle observation. Version 3 adds `history_traversal`, `same_document_route` (with monotonic `route_seq`), `opened_by_action`, and `redirect_chain`, recording explicit unavailable reasons (`history_traversal_unobserved`, `same_document_route_unobserved`, `popup_commit_unobserved`, `redirect_chain_unobserved`) whenever native proof is absent.
+- **Bounds**: Archives retain up to 1,024 distinct document/lifecycle bindings (never readmitting conflicting identities); the dashboard displays up to 256 bindings and CSV exports all retained bindings.
 
-These panels save query version 3 with `browser_tuple_mode: separate`. Their versioned result keeps each complete measurement tuple separate, with its own runtime cohort digest, final-document counts, missing buckets and CSV export. Progress snapshots and excluded/censored measurements never enter the percentiles. The legacy bucket array is empty, so an older consumer cannot mistake the result for a pooled distribution. Queries saved before this option retain their single-tuple behavior.
+### Document lifecycle population
 
-A comparison pairs exact tuple identities and reports missing current/baseline tuples or unavailable workload/coverage compatibility. It does not produce an overall pooled verdict or establish a baseline anomaly. Derived multi-tuple calculations remain unavailable; select one exact tuple to use the existing derivations. Saved comparison panels still resolve their input runs through the existing project authorization; immutable comparison-to-panel input pinning remains separate work.
+Document metrics pin `web-vitals` `5.1.0` by asset digest and aggregate qualified final observations per compatible measurement tuple (metric, algorithm + SHA-256, unit, lifecycle phase, frame scope, browser engine, device profile, 16-hex runtime cohort, group, and region) in bounded mergeable histograms:
 
+- **Metrics and finality**: FCP, TTFB, session-window CLS (`score`), LCP, and ranked document INP track availability independently of legacy browser action latency (`metric_basis: legacy_action_summary`). LCP finalizes at first trusted input or page `hidden` (draining pending library callbacks even when unchanged). **No-interaction INP is unavailable.** Cancellation, crash, or buffer overflow censors unfinished observations. BFCache restores emit a separate `bfcache_restore` lifecycle in the same document. Soft (same-document) navigations are not scored as navigations; archive summaries and comparisons explicitly declare `browser_soft_navigation: "unsupported"`.
+- **Cohort qualification and WebKit process metrics**: Unapplied or unknown emulation/runtime settings (for example, network routing disabling HTTP cache, or an unapplied new-context flag) exclude measurements from qualified final distributions. WebKit process CPU/RSS is reported as `unsupported` even when `APEXLOAD_BROWSER_PROCESS_METRICS` is set—the driver tree never stands in for browser process RSS.
+- **Live vs. archive provisional semantics**: Live publications retain **first-seen provisional history** (a provisional observation may later finalize, so live provisional counts overlap terminal counts and are never summed with them). Archive summaries retain only the **latest measurement revision**, where provisional counts represent measurements still pending at run end. Captured document metrics feed findings, baselines, and cohort panels in [Browser intelligence workflows](#the-browser-area-of-a-run-report). Real browser-initiated BFCache/hidden-resume and soft-navigation qualification remain open.
 
-## Supported authored navigation page receipts
+Inspect live or archived document tuples (`browser_documents.jsonl` and `.parquet` sidecars, plus up to 256 concrete archived observations in the UI) from the CLI:
 
-Archived document evidence includes a separate **Authored browser pages** view when the runtime retained page-binding receipts. A receipt joins the original structural navigation step to the response actually returned by that command and the observed native document/lifecycle. Repeated executions of that step share an authored page ID while retaining distinct runtime document IDs; duplicate display names do not merge structural steps. Final document measurements are not rewritten when the navigation command later returns.
+```bash
+apexctl analysis browser-documents --id RUN_ID --mode live
+apexctl analysis browser-documents --id RUN_ID --mode archive
+```
 
-Version 1 supports explicit Chromium navigation/reload/new-window responses whose existing CDP loader join proves the document. Version 2 supports Chromium and WebKit when the exact native navigation request and sequence remain unchanged around a bounded document/lifecycle identity observation. Canceled reads, stale requests or source generations cannot acquire a binding. Redirects rely on the returned native request rather than URL equality. History/BFCache, same-document/SPA and click-created popup cases without that proof remain unavailable; no page ID is guessed for them or for historical records. Binding a page does not establish equivalent runtime state, journey success, baseline compatibility or actual-device qualification.
+---
 
-The report retains at most 1,024 distinct document/lifecycle bindings, reports malformed/source-mismatched/conflicting and dropped receipts, and never readmits a conflicting identity within that retained set. Counts describe retained receipts, not every page issued. The dashboard displays at most 256 bindings; CSV exports all retained bindings. Original source/structure digests, structural step, native request, source generation and document/lifecycle remain inspectable.
+## Retained browser resource inspection
 
+In a completed run report's **Browser** area (or the **Browser evidence** disclosure), select **Inspect retained archive resources** to page directly through archived network observations (`GET /api/v1/tests/{id}/archive/browser-resources`) without contacting the system under test. Viewing document summaries or report previews alone does not start an archive scan. Closing the inspector or switching run, project, or archive cancels in-flight reads and resets draft controls.
 
-## Reading native waterfall and cache evidence
+### Filter and page
 
-The retained resource inspector draws request phases only when a native document join and document-relative start are available. A missing join leaves the waterfall unavailable; URLs and action timestamps cannot fill it in. Request phases are not cross-host clock synchronization or server-processing measurements.
+The initial page loads up to 50 observations (page sizes `25`, `50`, or `100`; `1`–`100` via CLI). **Next resource page** follows the source's opaque continuation token (`next_cursor`). Filter, sort, and page-size edits stay in draft until **Apply resource filters** submits them, starting at page 1 and discarding any prior continuation; **First page / retry** reruns the currently applied query without applying draft edits.
 
-Each response has its own cache availability. Chromium can expose an observed cache hit; a cached response must not claim a negotiated network protocol. WebKit may expose neither a cache decision nor a document join, even when an independent fixture can count requests. The inspector preserves these unavailable states. At narrow widths, scroll the retained resource table horizontally to reach the inspection column.
+- **Exact filters**: Filter by capturing action name, scenario group, region, resource type, native request state, failure classification, browser engine, and device profile. Expand **Exact identity and cohort filters** for `source_generation`, `request_id`, `redirect_id`, `document_id`, `initiating_action_id`, `observation_action_id`, and exact `origin`.
+- **Sorting and counts**: Sort by capture order, legacy duration (`duration_ms`), native request epoch start, or native encoded response-body bytes (`response_encoded_body`), with missing values placed last in both directions and ties broken by stable capture locator. Counts reflect retained entry observations. A zero filter match differs from an unavailable projection; unavailable counts remain unavailable.
 
-Controlled local fixtures reconcile the rendered native waterfall with server receive/finish observations and native HAR timing. They use absolute navigation URLs without a script base URL so the controller's separate HTTP latency probe is not configured. These fixtures qualify only their recorded host/engine/emulation cohorts, not actual devices, remote clock synchronization or reference-host performance.
+### Interpret a row
 
+Each row's **Inspect retained resource** disclosure shows its capture locator (transaction, resource ordinal, and network-entry branch) and retained native evidence:
 
-## Frozen browser comparison inputs
+- Observed `0` duration, `0` bytes, status `0`, and `fromServiceWorker: false` preserve their observed values, whereas missing phases, byte kinds, cache/initiator provenance, or negotiated protocol (`h1`/`h2`/`h3`) remain explicitly unavailable.
+- Native phase intervals can overlap; their sum does not equal server processing time, and UTC timestamps alone do not certify cross-host clock synchronization.
+- Request/response bodies, raw headers, and debug payloads are excluded from this projection. A retained observation count is not a complete browser network census or a capture-coverage denominator, and the inspector issues no SLA or health verdict.
 
-On a completed run's **Performance** report, enable **Show separate browser cohorts** and **Freeze archive inputs for this panel** in the project panel editor. Optionally select a comparison run. Save evaluates the authorized archives and retains the exact current/baseline run IDs, verified publication digests, complete tuple identities and query digest. Query version 4 is explicit; existing panels keep their prior semantics.
+### Native waterfall and cache evidence
 
-A frozen panel opened from another run continues reading its saved inputs. Changed, deleted, expired or inaccessible publications remain unavailable; they never silently switch to that other run or the latest archive. Preview and explicitly save new inputs to select a replacement. The frozen-input details and CSV expose publication/query provenance. Baseline-only cohorts retain their measured buckets and CSV rows; absent current values and counts stay missing instead of becoming zero. These pins preserve the archive's recorded policy and cohort evidence; they do not establish baseline anomaly eligibility or a transaction spanning independent archive publications.
+The inspector renders per-request timing waterfalls only when both a native document join and a document-relative request start offset are present (see the [browser document evidence guide](#document-and-navigation-evidence) for CDP loader and Resource Timing join prerequisites); action timestamps and URL matching never synthesize missing waterfalls. Chromium responses observed from browser cache do not claim a negotiated network protocol, and WebKit rows without exposed cache decisions or Resource Timing joins preserve those unavailable states honestly. On narrow viewports, focus the table's horizontal scroll region to scroll across columns with the keyboard.
 
-Editors may save at most 20 frozen panels together, within the shared analysis admission and deadline. Each input retains its existing limits; the combined current/baseline panel also enforces the selected tuple limit (at most 20) and 20,000 time-bucket rows, including baseline-only cohorts. An oversized union is rejected explicitly. Viewers may inspect authorized saved panels and CSV; native HAR downloads retain their separate authorization. Metadata-only renaming preserves historical pins even when an input has expired. Changing a saved query requires evaluation of its actual inputs.
+### Source integrity and continuation
+
+**Manifest and artifact integrity verified** confirms the opened archive artifacts match manifest SHA-256 proofs (older archives without producer proofs display a **Legacy scan fingerprint**). Each continuation cursor binds the run, project, source revision, filter query, sort, and page size, and expires after **15 minutes**. The controller bounds source size, row count, response bytes, query deadline, and decoder memory—the decoder's retained-memory accounting is a logical allocation bound, not a process-RSS attestation—and returns explicit errors rather than silently truncating analytical scans.
+
+### Retained resource CLI
+
+```bash
+apexctl analysis browser-resources --id RUN_ID --project PROJECT_ID --limit 50
+apexctl analysis browser-resources --id RUN_ID --project PROJECT_ID --action-name Checkout --sort-by response_encoded_body --sort-dir desc
+```
+
+Pass `--cursor <next_cursor>` with identical query flags to fetch subsequent pages. Unknown, repeated, or empty filter flags fail locally before controller I/O.
+
+---
+
+## Interaction and layout evidence
+
+Set `config.browser.capture_interactions: true` on a browser script to record observed browser gestures without adding target network traffic or capturing user input values. Pair it with `config.browser.capture_document_metrics: true` so interaction analysis can join gestures to verified document lifecycles and engine/device cohorts; archived gestures are then scored for repetitions, retries, missed outcomes, and 64×64 viewport heatmaps as described in the [browser intelligence guide](#patterns-and-heatmaps).
+
+### Raw v4 identity, native dispatch, child-frame 2D transforms, and CDP touch
+
+Engine-managed runs negotiate `browser_interaction_evidence_v4` during traffic-free staging (retaining backward-compatible decoding for raw `v1`–`v3` records inside the `browser_interactions_v1` archive sidecar):
+
+- **Authored step and retry identity**: Retains pre-interpolation script SHA-256, structural step path, domain-separated step ID, `authored_page_id` / `route_seq` when bound, and engine-owned logical invocation plus attempt numbers so intentional retries are distinguished from repeated steps even if an intermediate attempt dropped.
+- **Trusted native dispatch (`geometry_provenance: dispatch`)**: Captures the first relevant trusted DOM input event's `e.timeStamp`, `performance.timeOrigin`, UTC projection, joined `document_id`/`lifecycle_id`, viewport, scroll offsets, sanitized route, and layout skeleton **before** page event handlers mutate layout (`captured_at` records the later post-action read). Unobserved events never fall back to capture timestamps; they record an explicit `dispatch_unavailable_reason`.
+- **Same-origin child-frame 2D transforms**: Gestures inside child frames inspect up to 8 ancestor `frameElement` hops (`frame_chain`), recording bounding/offset boxes, client borders, padding, scroll/visual-viewport state, and accumulated 2D CSS affine matrices. When every hop is same-origin and carries an invertible 2D matrix, analysis projects child-frame coordinates into the top-level main-frame viewport (`mapped_via_transform`). Cross-origin boundaries, 3D/perspective/singular matrices, or deeper nesting record `cross_origin_ancestry`, `non_axis_aligned_or_3d_transform`, or `frame_depth_exceeded`.
+- **Chromium mobile CDP touch points**: On Chromium mobile profiles (`HasTouch`), `browser_tap`, `browser_long_press`, and `browser_swipe` dispatch through CDP `Input.dispatchTouchEvent` so the renderer receives trusted touch points (`pointer_type: touch`) with observed coordinates and `dispatch` timing. WebKit touch sessions use synthetic runtime dispatch and remain marked `synthetic_dispatch`.
+- **Privacy-preserving targets, routes, and layout skeletons**: Pointer gestures (`browser_click`, `browser_dblclick`, `browser_tap`, `browser_long_press`, `browser_swipe`, `browser_hover`, `browser_drag_and_drop`, `browser_check`) record trusted CSS-pixel coordinates. Keyboard and form gestures (`browser_press_key`, `browser_fill`, `browser_select`, `browser_set_files`, plus `browser_check`) record only a bounded ARIA/HTML `role` and `label_sha256` (lowercased label with digits replaced by `#`, whitespace collapsed, ≤ 64 chars from at most 128 UTF-16 units / 64 label DOM nodes)—**never** typed or selected input values. Routes keep only `location.pathname` with runtime secrets redacted and numeric/UUID/hex/digit-heavy segments collapsed to `:id` (≤ 512 bytes). `layout_revision` hashes a breadth-first skeleton of up to 1,024 elements (tag, safe role, and bounding box quantized to 32 CSS pixels).
+- **Multi-outcome clocks (`outcomes`)**: Raw `v4` binds every declared outcome on the gesture (`sync`, `dialog`, `download`, inline `assertion`, and `navigation`, up to 16 per gesture) to its own monotonic host wait clock (`start`, `deadline`, `observed_at`, `budget_ms`) or evaluation timestamp, distinguishing `met` and `missed` from `not_reached` (canceled/page closed before evaluation) and `unsupported`.
+
+### Capture and archive bounds
+
+Each document retains at most 1,024 interactions and 64 KiB across the session's 1,024 most recent documents; sessions flush up to 4,096 interactions per batch (split into ≤ 512 KiB chunks) at iteration boundaries and teardown. Run archives store at most **64 MiB** in `browser_interactions.jsonl`, sharing the run's 25% optional-evidence byte and disk-headroom allowance with native HAR copies (`browser_interactions_incomplete` and `browser_interactions_dropped` disclose any truncated or untransferred sources).
+
+---
+
+## HAR downloads and exports
+
+Browser HAR capture policies (`off`, `always`, `on_error`, `on_sla_breach`, and `manual`) are opt-in. Generators on qualified platforms (`macOS`, `Linux`, and `Windows` on local fixed NTFS volumes) advertise `browser_native_har_v1`; runs requesting HAR capture fail closed before target traffic if no peer supports `browser_native_har_v1`. Each run retains up to **128 native HARs** and **1 GiB** total, with each HAR bounded to **100 MiB**, **100,000 entries**, and **1,024 concurrent in-flight requests** under the generator memory watchdog (`APEXLOAD_BROWSER_MEMORY_LIMIT_MB`). HAR omissions never fail a load run; omitted counts appear under `browser_har_omitted` and set `browser_har_incomplete`. See [HAR working-file ownership](../BROWSER_EVIDENCE_ARCHITECTURE.md) for private `.apexload-har-work/` staging, crash reclamation, and `run_evidence_receipts` transfer fencing.
+
+### Synthetic HAR
+
+When native HAR capture is `off` (or for contexts not covered by a native HAR), APEX Load derives a deterministic **Synthetic HAR 1.2** (`browser_har_synthetic.har`, algorithm `apexload.synthetic_har` v1) on demand from retained archive transaction network entries:
+
+- **Disjoint context coverage**: Contexts already covered by a native HAR carrying `evidence_generation` are omitted from the synthetic HAR (counted as `native_har`) so requests are not duplicated across native and synthetic downloads. If legacy native HARs lack `evidence_generation`, `_apexload.native_har_coverage_unknown` discloses the potential overlap.
+- **Zero fabrication and scrubbing**: Entries pass both safe-transaction sanitization and the native HAR credential/PII scrubber, and request/response bodies are always omitted (`body_policy: "omitted"`). Unmeasured optional HAR phases (`blocked`, `dns`, `connect`, `ssl`) use `-1`; required non-negative HAR 1.2 fields (`send`, `wait`, `receive`, `content.size`) use `0` when unmeasured and list every unmeasured field in `_apexload.unavailable_fields`. The top-level `_apexload` metadata records `fidelity: "synthetic"`, `capture_mode`, `completeness` (`partial` or `truncated` at 100,000 entries / 100 MiB), and omission tallies.
+
+### Downloads and exports
+
+Only finalized archive HARs and on-demand synthetic HARs are served; raw working or retired generator files are never exposed. Any project **viewer** can list a run's HAR inventory, whereas downloading native HARs, synthetic HARs, single HAR entries, or HAR-inclusive archive bundles requires **editor** (or project/system administrator) access:
+
+- **List run HARs**: `GET /api/v1/tests/{id}/archive/browser/har` lists native HARs (name, `source_id`, `evidence_generation`, SHA-256, byte size), synthetic HAR availability, omission counts by reason, and caller download permission.
+- **Download one HAR**: `GET /api/v1/tests/{id}/archive/browser/har/{artifact}` verifies manifest SHA-256 and byte size for native HARs (`409` on mismatch) or streams `browser_har_synthetic.har`, setting `X-APEXLoad-HAR-Fidelity` and `X-APEXLoad-HAR-Completeness`.
+- **Safe archive export with HARs**: Default safe archive exports and library bundles omit native HARs (`safe_export`). Editors can append `?include=har` to `GET /api/v1/tests/{id}/archive` (`GET /api/v1/tests/{id}/archive?include=har`; viewers receive `403`) to retain verified native HARs in the exported archive bundle.
+- **Browser replay and Script Debugger HARs**: Starting a browser replay session (`POST /api/v1/scripts/browser-replay/sessions` or `POST /api/v1/scripts/{id}/browser-replay/sessions`) with `record_har: true` forces native HAR capture under the same 100 MiB / 100,000-entry / 1,024-in-flight limits (`422` on platforms without `NativeHARSupported`). Once finished, editors download the HAR via `GET /api/v1/browser-replay/sessions/{session_id}/har` or the full session evidence bundle (`report.json`, `replay.har`, `har.json`) via `GET /api/v1/browser-replay/sessions/{session_id}/evidence` (`409` with `Retry-After` while closing; max 4 concurrent downloads per controller; durable receipts retained up to 2 hours within 250 global / 8 GiB and 100 per-project / 2 GiB quotas, reported via `X-APEXLoad-Replay-Durability`). Script Debugger sessions retire native working HARs at close and export scrubbed synthetic HAR 1.2 files via `GET /api/v1/script-debug/sessions/{session_id}/export` with `?format=har`.
+
+From the CLI (downloads never overwrite an existing file, clean up partial files on error, accept `--out -` for stdout, and use an independent 10-minute transfer deadline):
+
+```bash
+apexctl analysis browser-har list --id RUN_ID
+apexctl analysis browser-har download --id RUN_ID --artifact browser_har_synthetic.har --out run.har
+apexctl analysis browser-har download --replay SESSION_ID --evidence --out replay-evidence.zip
+```
+
+---
+
+## Editing browser and journey policies
+
+Open **Settings → Workspaces → Browser & journey policies** (`POST /api/v1/analysis/policies`, `PUT /api/v1/analysis/policies/{id}`) to manage project policies. Editors and administrators can create, update, and delete policies; viewers have read-only access to current and historical revisions:
+
+- **Browser policy fields (`browser_policy`)**: Up to four scored metrics (`fcp`, `lcp`, `cls`, `inp`) with `0 <= good < poor` thresholds and non-negative weights (positive-weight metrics are required for an overall score), optional `chromium`/`webkit` engine and device-profile applicability lists, baseline mode (`none`, `pinned_run`, or `latest_compatible`), and baseline effect floors.
+- **Journey policy fields (`journey_policy`)**: Named journeys (`id`, `name`) with explicit `start` and `success` transaction or action boundaries, `weight` (`0`–`1000`), and optional `step_risk_enabled: true`.
+- **Immutable revisions and optimistic concurrency**: Every update specifies the revision it was read at (`--revision` in `apexctl analysis policies save`); stale writes fail closed without overwriting concurrent edits, and past revisions remain inspectable read-only.
+
+### Per-metric baseline effect floors
+
+Optional per-metric timing floors live in `effect_floors.timing_by_metric_ms` (`50`–`600,000` ms for LCP, FCP, and INP) alongside `effect_floors.cls`. Each timing metric uses the largest of its configured per-metric floor, the overall absolute floor (`>= 50` ms), and the overall relative floor (`>= 10%` of baseline mean), so per-metric settings can only raise sensitivity thresholds above the baseline floor. Evaluations and RCA baseline verdicts always read the run's pinned immutable policy revision (`PolicySHA256`), never mutable live project defaults.
+
+### Choose policy revisions for a run or recurring schedule
+
+Policies marked `apply_by_default` (`source: project_default`) are automatically pinned by revision and SHA-256 when a run starts. To pin a specific revision on an individual run, queued/held draft, CI execution, or recurring schedule—where recurring scenario schedules (`scenario_schedules.analysis_policy_selections_json`, schema v85) retain the selection across future occurrences:
+
+- In **New run** (**Run setup** or **Schedules**), expand **Browser and journey policies** to pick an exact browser or journey policy revision (`source: run_selection`), or leave **Project default at start** selected.
+- Partial schedule updates (such as pause/enable) preserve saved selections when `analysis_policy_selections` is omitted, whereas passing `analysis_policy_selections: {}` resets back to project default. If a pinned policy has been deleted before run admission or schedule materialization, start fails closed with `reason_code: "analysis_policy_unavailable"` rather than silently substituting another policy.
+
+---
+
+## Saved panels
+
+Project analytics dashboards (`NativeAnalyticsPanel`) author and plot **Archived browser documents** (`population: "browser_document"`) directly from a completed run's **Performance** tab (`POST /api/v1/tests/{id}/archive/native-series`; live `POST /api/v1/tests/{id}/native-series` refuses `browser_document`), selecting `document_lcp`, `document_fcp`, `document_inp`, or `document_cls` (`score`) at `p50`, `p75`, `p90`, `p95`, or `p99`, filtered by `engine`, `device_profile`, `frame_scope`, `lifecycle_phase`, `group`, `region`, and 16-hex `cohort`.
+
+### Separate browser cohorts in saved panels
+
+Standard panels (`query_version: 3`) read either one exact tuple (refusing multi-tuple selections with the first differing field) or, with **Show separate browser cohorts** enabled (`browser_tuple_mode: separate`), plot `1`–`20` complete measurement tuples as distinct series (up to 1,000 time buckets per tuple and 20,000 combined bucket rows; legacy pooled bucket arrays stay empty so multi-tuple results are never misread as a pooled distribution).
+
+### Frozen browser comparison inputs
+
+- **Archive input pinning (`query_version: 4`)**: Query version 4 is explicit—enabling **Freeze archive inputs for this panel** in the panel editor evaluates the current (and optional comparison) archives at save time and stores `query_version: 4` with `BrowserPanelInputs` `version: 1` (pinning run IDs, verified archive `manifest_sha256` digests, sorted `tuple_ids`, and `query_sha256`).
+- **Comparison-to-panel policy and receipt pinning (`query_version: 5`)**: Saving a comparison from **Baseline comparison → Save to panel** writes `query_version: 5` with `BrowserPanelInputs` `version: 2`, adding immutable `policy_pins` (`browser_policy` and `journey_policy` ID, revision, and SHA-256) plus the matched RCA `selection_receipt_sha256` (`browser_selection` receipt digest).
+- **Replay and authorization boundaries**: Reopening a frozen panel from any run—or via `apexctl analysis replay-panel --id ID [--revision N]`—reads its pinned publications and verifies archive digests, non-tombstoned policy revisions, and selection receipts, failing explicitly rather than silently switching runs if an archive expired or changed. Viewers can open saved panels, while native HAR downloads retain their separate authorization (editor or project/system administrator). Editors may save up to 20 frozen panels per definition.
+
+---
+
+## Browser findings and qualified scores
+
+Server-side `browser_intelligence` evaluations judge archived main-frame navigation documents against a pinned `browser_policy`, producing:
+
+- versioned finding records (`browser_findings.v2`); and
+- a weighted run score (`browser_score.v1`).
+
+Runs without a server evaluation retain the dashboard's legacy summary fallback (`legacy-summary-availability-v2`).
+
+### When evaluation runs and baseline status (`latest_compatible` / `pinned_run` / `none`)
+
+Evaluations run automatically when an archive with document evidence and a pinned `browser_policy` finalizes, and re-evaluate automatically when a completed root-cause analysis commits for that run so `browser_findings.v2` findings incorporate the RCA `browser_baseline.v1` baseline verdict (without re-firing webhooks for unchanged active finding keys). On-demand evaluations can be triggered via `POST /api/v1/analysis/evaluations` (`{"kind":"browser_intelligence","request":{"run":"<id>"}}`), the run report's **Evaluate** button, or `apexctl analysis browser-findings --run ID --evaluate --project P [--wait]`.
+
+Baseline modes in `browser_policy`:
+
+- `latest_compatible`: Uses the compatible baseline run automatically selected (and receipted via `browser_selection`) by root-cause analysis.
+- `pinned_run`: Compares only when the RCA analysis evaluated that exact pinned baseline run ID.
+- `none`: Disables baseline comparison (`status: not_selected`, `reason: policy_baseline_off`).
+
+When a completed RCA matches the run's archive digest and evaluated `PolicySHA256`, each application-outcome finding records `regressed`, `within_baseline`, `insufficient_evidence`, `unqualified` (with reason), or `not_selected` (never healthy when a baseline is absent), applying deterministic worst-status precedence across multi-load-level runs and linking the RCA analysis ID, baseline run ID, baseline archive digest, `browser_selection` receipt SHA-256, and pinned policies (`collection_health` findings record `not_applicable`).
+
+### What is judged
+
+Only qualified final main-frame navigation observations enter nearest-rank p75 cohort evaluation (child frames and `bfcache_restore` lifecycles appear in notes; provisional, censored, unqualified, and unavailable counts appear in `quality`):
+
+| Rule | Category | Produces |
+| --- | --- | --- |
+| `threshold` | `application_outcome` | `active` with `needs_improvement` (p75 above `good`, or within `good` when baseline status is `regressed`) or `poor` (p75 above `poor`); `suppressed` outside engine/profile applicability; `unscored` when unobserved or lacking qualified final documents. Within `good` and not `regressed`, no finding is emitted. |
+| `collection.incomplete` | `collection_health` | `active` when document evidence lost observations or sources. |
+| `collection.absent` | `collection_health` | `active` when document evidence was requested and none was retained. |
+
+### Score
+
+Each policy metric's component is computed over the p75 of qualified final observations across all applicable cohorts:
+
+- Scored `100` at or below `good`, `0` at or above `poor`, and linearly interpolated between `good` and `poor`.
+- Component contribution is `weight × score / Σ required weights`.
+- Overall score bands: `good` (`>= 90`), `needs_improvement` (`50`–`89.99`), `poor` (`< 50`).
+- Overall score is withheld when any positive-weight metric is missing (`missing_required_metric`) or no document evidence was retained (`no_document_evidence`). When there is no overall score, observed components and coverage are still shown; the remaining metrics are never renormalized.
+
+### Reading results
+
+Read findings via `GET /api/v1/tests/{id}/archive/browser-findings` (`ready`, `pending`, `failed`, or `not_evaluated`), the run report's [Browser area](#the-browser-area-of-a-run-report), or webhooks (`browser_finding` and `browser_finding_resolved`, each listing up to 20 newly active or newly resolved finding keys on pinned-policy transitions).
+
+---
+
+## Journey accounting
+
+Journey accounting evaluates archived action and transaction samples against a `journey_policy` (`GET /api/v1/tests/{id}/archive/journeys`, with optional `?policy=ID&revision=N` override). The result is weighted test-journey risk under a versioned policy. It is never revenue or conversion impact, which would require an authorized external business model.
+
+### Attempt classification and stop censoring
+
+Samples are grouped by unique VUser lifetime token (preventing open-workload arrival or scale-up VUser ID reuse from merging distinct VUsers) and ordered within each 1-based iteration using transaction wall-clock spans (`elapsed_ms`). A `start` boundary opens an attempt, intervening action samples count as steps, and the `success` boundary settles it:
+
+| Outcome | Meaning |
+| --- | --- |
+| `completed` | The `success` boundary succeeded (prior failed steps inside the attempt still count toward step-risk failures). |
+| `failed` | The `success` boundary failed, or the iteration settled on its own after an attempt step failed (counted once per attempt). |
+| `aborted` | The iteration ended on its own, or the journey restarted, without reaching `success` and without a failed step. |
+| `censored` | Cut off by run stop, ramp-down/scale-down, execution-goal exhaustion, missing unsettled final-iteration marker (`ends_iteration`), or generator `resource_limit` closure (such as HAR/memory watchdog limits); excluded from risk denominators rather than blamed on the target system. |
+| `skipped` | A settled iteration in a group that executed the journey elsewhere never opened an attempt. |
+
+### Indexes and bounds
+
+- **Weighted failure index**: `sum(weight × failed) / sum(weight × eligible)` over `eligible = completed + failed + aborted` (`no_weighted_eligible_attempts` when denominator is zero).
+- **Step-risk index** (when `step_risk_enabled: true`): `sum(weight × step_failures) / sum(weight × steps)` over steps of eligible attempts (`no_weighted_steps` when zero).
+- **Accounting bounds**: 200,000 tracked VUsers, 10,000 buffered samples per open iteration, 1,000,000 total buffered samples, and a 2,000,000-row / 512 MiB archive scan budget. Exceeding a bound or missing distributed generator sources marks `accounting_incomplete` and withholds both indexes.
+
+---
+
+## Patterns and heatmaps
+
+`GET /api/v1/tests/{id}/archive/browser-interactions` (add `?format=csv` for spreadsheet-safe CSV export) analyzes archived gestures and emits `browser_interaction_patterns.v4` when raw `v4` records are present (`browser_interaction_patterns.v3` for raw `v2`/`v3`, or historical `browser_interaction_patterns.v2` for legacy raw `v1` archives):
+
+- **Pattern eligibility and dispatch-clock grouping (`v3`/`v4`)**: Marks an observation `pattern_eligible` only when it carries a valid `authored_step`, engine-owned logical invocation and attempt binding, and native `dispatch` timestamp whose `(source_generation, document_id, lifecycle_id)` joins the verified document archive (up to 100,000 indexed document tuples; excess tuples report `document_joins_truncated`). Patterns sort by observed native dispatch time rather than post-wait capture time, retain up to 200 patterns from the first 100,000 interactions (`pattern_retained` / `pattern_truncated`), and stream coverage and heatmaps across the full sidecar:
+  - `scripted_repetition` / `repeated_gesture`: At least 3 clicks, taps, or checks within a 2-second dispatch window on the same structural step (within 32 CSS px when coordinates exist) and compatible viewport/scroll/layout geometry (`repeated_gesture` only when every gesture carries explicit recorder `interaction_consent`; `scripted_repetition` otherwise).
+  - `retry`: Engine-tracked retry attempts sharing the same logical invocation with increasing attempt numbers; retries never merge into repetition patterns even if an intermediate attempt dropped.
+  - `dead_interaction` / `unexpected_navigation`: In `v4`, every missed declared page-response outcome (`sync` for `element_visible`/`load`/`domcontentloaded`, `dialog`, `download`, `assertion`, or `navigation`) evaluated against its own monotonic deadline emits a distinct pattern ID (`unexpected_navigation` when the page navigated away while missing an expected `element_visible` / route outcome; `dead_interaction` otherwise). Canceled or unevaluated outcomes never emit false dead interactions.
+- **64×64 viewport heatmaps**: Maps each pointer gesture's first dispatched CSS-pixel coordinate by normalized fractional offsets across dispatch-time geometry onto up to 64 distinct 64×64 grids keyed by sanitized route, `layout_revision`, viewport dimensions, DPR/orientation, verified browser engine and device profile, exact `(scroll_x, scroll_y)`, and geometry population (`native_dispatch` maps never merge with historical maps from `post_action` capture). In `v4`, same-origin child-frame pointer gestures projected via invertible 2D frame chains populate main-frame maps and increment `mapped_via_transform`. Keyboard/form gestures populate per-map role + `label_sha256` tables without coordinates. Gestures excluded by missing context/layout/dispatch, unverified engine/profile (`engine_profile_unknown`), or the 64-map cap (`heatmaps_truncated`) are tallied by exact exclusion reason.
+
+### Observed post-action wait clocks
+
+Raw `v3` (`browser_interaction_evidence_v3`) introduced observed monotonic host post-action wait clocks, and raw `v4` (`browser_interaction_evidence_v4`) expanded them into per-outcome clocks across `sync`, `dialog`, `download`, `assertion`, and `navigation` outcomes. Analysis versions stay distinct from raw wire versions (`browser_interaction_patterns.v3` / `v4` vs. legacy `v2`), and Historical version-1/version-2 records never receive invented clocks—missing wait clocks remain unscored rather than synthesized from wall-clock action durations.
+
+---
+
+## Reports, CLI, MCP, and QA promotion
+
+### Engineer reports
+
+The engineer report profile exports **Browser Findings** (score and up to 20 findings), **Interaction Patterns and Heatmaps** (coverage, up to 20 patterns, and 12 heatmaps), and **Journey Risk** across HTML, PDF, CSV, and DOCX, plus browser baseline sections on projects presenting RCA v2 (`APEXLOAD_RCA_V2_PRESENT_PROJECTS`) and `baseline_browser_document` rows on saved baseline comparisons. Legacy action summaries remain explicitly tagged `metric_basis: legacy_action_summary`.
+
+### CLI and MCP reference
+
+| Task | `apexctl` subcommand | MCP tool |
+| --- | --- | --- |
+| Live or archived document tuples | `analysis browser-documents --id ID --mode live\|archive` | — |
+| Paginated retained resources | `analysis browser-resources --id ID --project P [--limit N] [--cursor C] …` | — |
+| Native, synthetic, and replay HARs | `analysis browser-har list --id ID` / `analysis browser-har download --id ID --artifact NAME --out FILE` / `analysis browser-har download --replay SESSION_ID [--evidence] --out FILE` | — |
+| Single request HAR entry | `analysis har-entry --run ID --request-id ID` | `run_archive_browser_har_entry` |
+| Findings and qualified score | `analysis browser-findings --run ID [--evaluate --project P [--wait]]` | `run_archive_browser_findings` |
+| Interaction patterns and heatmaps | `analysis interactions --run ID` | `run_archive_browser_interactions` |
+| Journey accounting | `analysis journeys --run ID [--policy ID [--revision N]]` | `run_archive_journeys` |
+| Browser and journey policies | `analysis policies list\|get\|save\|delete --project P …` | `analysis_policy_list`, `_get`, `_create`, `_update`, `_delete` |
+| Replay saved analytics panel | `analysis replay-panel --id ID [--revision N]` | — |
+| Pin policy revisions on run / CI / schedule | `run [--browser-policy ID@REV] [--journey-policy ID@REV]`, `ci run …`, `schedule preview\|create\|update --scenario ID [--browser-policy ID@REV\|project_default] …` | — |
+
+### Promoting browser intelligence support
+
+Release automation records and verifies cohort-scoped `BI-*` support claims (`apexctl qa record-acceptance` and `apexctl qa acceptance --require-supported`) under an atomic database writer fence transactionally pinned to accepted `BE-4` browser-evidence records sharing the exact commit SHA, binary SHA-256, `runtime_sha256`, `capability_sha256`, `cohort_sha256`, and `record_sha256` across engine, profile, platform, and metric estimator (`cohort.json`, ≤ 16 KiB). Local Chromium and WebKit acceptance suites validate golden-page Web Vitals, synthetic hidden/BFCache transitions, child-frame 2D transforms, CDP mobile touch dispatch, and HAR ownership, while real browser-initiated BFCache/hidden-resume qualification, physical mobile-device certification, and reference-hardware browser-density benchmarks remain open.

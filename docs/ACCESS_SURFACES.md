@@ -12,7 +12,7 @@ Hosted deployments opt into a wide HTTP bind explicitly through `APEXLOAD_ADDR` 
 
 The Wails desktop app is optional. It runs an embedded local controller on loopback, uses local SQLite/keyring-backed storage, and supports local authoring and local execution. Closing the window, quitting or reloading (View › Reload) while a page holds unsaved work (an editor change, an import review) asks first, with the same prompt as leaving that page. File › Open Script… opens script and import files from disk, as opening them from Finder or Explorer does.
 
-On Windows the app takes the same file and folder drops from Explorer as on macOS; a link or text dropped outside a text field is ignored rather than opened in place of the dashboard. File › Open Script… there also offers Bruno archives (`.bruno.tar`, `.bruno.tar.gz`), which a macOS Open dialog cannot match by name. Signing out of Windows or shutting it down does not pass through the unsaved-work prompt (the Wails runtime gives the app no hook for it), so save open work first.
+On Windows the app takes the same file and folder drops from Explorer as on macOS; a link or text dropped outside a text field is ignored rather than opened in place of the dashboard. File › Open Script… there also offers native Bruno HTTP collection archives (`.bruno.tar`, `.bruno.tar.gz`), which a macOS Open dialog cannot match by name (Bruno Runner itself is retired; see [RETIRED_INTEGRATIONS.md](RETIRED_INTEGRATIONS.md)). Signing out of Windows or shutting it down does not pass through the unsaved-work prompt (the Wails runtime gives the app no hook for it), so save open work first.
 
 Remote K8s connectivity is handled through Remote Workspaces. The desktop SPA stays same-origin against its embedded controller; it does not switch the whole application origin to the hosted controller. The local controller uses configured Remote Workspace credentials to push and pull scripts, scenarios, results, and dependencies, and to proxy remote run creation and controls.
 
@@ -99,7 +99,17 @@ Configure these repository secrets/variables to produce trusted downloads:
 
 ## 3. CLI
 
-`apexctl` remains the CI/headless surface. It can run scripts locally or target a controller API, and this access-surface work does not change its contract.
+`apexctl` (`cmd/apexctl`) is the headless developer, operator, and CI/CD surface. It executes scripts directly in-process or targets a hosted/local controller via `--api` (or `APEXLOAD_API`) authenticated with `--api-key` / `APEXLOAD_API_KEY` or `--bearer-token` / `APEXLOAD_BEARER_TOKEN`.
+
+Top-level subcommands span the full lifecycle:
+
+- **Execution & CI gates**: `run`, `ci`, `prepare`, `schedule`, `status`, `wait`
+- **Authoring, recording & portability**: `script` (`validate`, `explain`), `record`, `record-agent`, `import` (native Bruno HTTP collections and Grafana dashboards), `library` (`export`, `import`), `github`
+- **Archives, analytics, RCA & QA**: `archive` (`verify`, `evidence`), `analysis` (dataset imports, live/archive native-series queries, baseline regression assessments; see [NATIVE_ANALYTICS.md](NATIVE_ANALYTICS.md)), `rca` (`analyze`, `status`, `show`, `bundle`, `eval`; see [ROOT_CAUSE_ANALYSIS.md](ROOT_CAUSE_ANALYSIS.md)), `qa`
+- **Target monitoring**: `monitor`, `prometheus`, `dynatrace`, `elastic` (AppDynamics monitoring is retired; see [RETIRED_INTEGRATIONS.md](RETIRED_INTEGRATIONS.md))
+- **Metadata**: `version`, `help`
+
+See the root [README CLI Usage](../README.md#cli-usage) section for flag details.
 
 ## Binding Defaults
 

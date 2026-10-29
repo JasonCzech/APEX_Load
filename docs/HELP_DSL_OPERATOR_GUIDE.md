@@ -156,14 +156,29 @@ Assertions express success: exact status (`status_code`), content (`body_contain
 
 ## Choose data and variable lifetimes
 
-| Template | Where the value comes from | Typical use |
+This section is the canonical reference for DSL template namespaces, built-in generators, environment allowlisting, and unresolved-placeholder failure rules.
+
+| Template | Where the value comes from | Unresolved or security boundary |
 | --- | --- | --- |
-| `{{data.products.sku}}` | The bound row of a named data source | Product or account input. |
-| `{{var.product_id}}` | A value captured earlier for this VUser; can fall back to a named parameter | Correlated server ID. |
-| `{{param.request_id}}` | A declared named parameter | A value with controlled refresh timing. |
-| `{{env.KEY}}` | Runtime environment values | Environment-specific input. |
-| `{{secret.NAME}}` | A project secret | Managed credentials. |
-| `{{fn.uuid()}}`, `{{fn.random(1,20)}}` | Built-in generated values | Unique IDs or varied numbers. |
+| `{{run.id}}` | The managed test run ID or active debug/replay session ID | Fails execution closed outside a managed run or debug session (`{{run.*}}` is never sent literally). |
+| `{{data.products.sku}}` | The bound row of a named `data_sources` entry or scenario data pool | Resolves the current VUser row (`source.column`). |
+| `{{var.product_id}}` | A value extracted earlier for this VUser; falls back to a declared named parameter | In HTTP-family requests (`http`, `soap`, `java_http` outside JSON helpers and raw base64 `java_http` bodies), an unresolved `{{var.*}}` remains literal text and records `unresolved_variable_sent`; non-HTTP protocols fail closed. |
+| `{{param.request_id}}` | A declared top-level `parameters` entry (`once`, `each_iteration`, `each_occurrence`) | Unresolved `{{param.*}}` fails action execution closed. |
+| `{{secret.NAME}}` | A project secret (or application secret override in managed runs), redacted as `[REDACTED]` | Fails execution closed when missing or unconfigured unless the operator explicitly sets `APEXLOAD_ALLOW_UNRESOLVED_SECRETS=true`. |
+| `{{file.NAME}}` | Payload bytes of a `file` data source, redacted in logs as `[FILE:NAME]` | Fails execution closed when unavailable unless the operator sets `APEXLOAD_ALLOW_UNRESOLVED_FILES=true`. |
+| `{{env.KEY}}` | Operator process environment variable (same gate applies to CEL `env.KEY`) | **Default-deny** unless `KEY` is listed in the operator's comma-separated `APEXLOAD_SCRIPT_ENV_ALLOWLIST` (there is no `-env` CLI flag). Prefixes `APEXLOAD_SECRET_`, `AWS_`, `AZURE_`, `GOOGLE_`, `GCP_`, `OCI_`, `KUBERNETES_` and names containing `SECRET`, `TOKEN`, `PASSWORD`, `PASSWD`, `API_KEY`, `PRIVATE_KEY`, or `CREDENTIAL` are unconditionally blocked even if allowlisted; use `{{secret.NAME}}` for credentials. |
+| `{{fn.*}}`, `{{fake.*}}` | Built-in per-resolution generators (see table below) | Evaluated fresh on each occurrence; unknown function names remain literal text. |
+
+### Built-in generator tokens
+
+| Token | Output |
+| --- | --- |
+| `{{fn.uuid()}}` (or `{{fn.uuid}}`, `{{fn.uuid.v4}}`, `{{fake.uuid}}`) | Random UUID v4 string on every resolution. |
+| `{{fn.timestamp.unix()}}` / `{{fn.timestamp.unix_ms()}}` | Current UTC Unix timestamp in seconds or milliseconds (parentheses optional). |
+| `{{fn.timestamp.iso8601()}}` / `{{fn.timestamp.rfc3339()}}` | Current UTC RFC 3339 / ISO-8601 timestamp (parentheses optional). |
+| `{{fn.random(min,max)}}` | Uniform random integer between `min` and `max` inclusive. |
+| `{{fn.random_string(n)}}` | Random alphanumeric string of length `n` (default `8`, bounded to `1024`). |
+| `{{fake.email()}}` (or `{{fake.email}}`) | Synthetic test email address (`user_<random>@example.test`). |
 
 Template expansion happens in supported string fields at runtime. Keep the namespace and spelling exact. JSON `body` is itself a string: quotes inside it must be escaped, as in `"body": "{\"sku\":\"SKU-100\"}"`. Check the rendered payload when data contains quotes, newlines, or URL-special characters; text substitution is not a universal JSON or URL encoder.
 
@@ -188,7 +203,7 @@ For row data, choose the required allocation:
 | `unique` | Row selected by VUser within the assigned data partition | Wraps when users outnumber available rows; uniqueness requires enough rows. |
 | `pop` | Consume the next available row | Exhaustion records a failed data-source result and stops the VUser before another submission. |
 
-Repeated selection is acceptable for product browsing but can invalidate tests that require exclusive accounts. Size the data for the workload, review named parameters' refresh and exhaustion settings, and verify allocation across your generator fleet. Shared pools are snapshotted for a run; consuming run data does not delete rows from the repository.
+Repeated selection is acceptable for product browsing but can invalidate tests that require exclusive accounts. Size the data for the workload, review named parameters' refresh and exhaustion settings, and verify allocation across your generator fleet. Default snapshot bindings isolate a run from the repository so consuming run data does not delete stored rows; when VUsers must coordinate queues or mutate shared columns during a run, use [Live data tables runtime](LIVE_DATA_TABLES_RUNTIME.md) (`snapshot` or `live` access, `ephemeral` or `durable` state, and `discard`, `write_back`, or `save_as_new` outputs).
 
 Use [Parameters, data & secrets](#/docs?guide=user-guide&article=data) for data-pool bindings and secret setup. A file on your laptop is not automatically available on remote generators. Prefer governed shared assets or inline data for portable examples.
 

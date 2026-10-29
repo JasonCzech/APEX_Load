@@ -86,7 +86,7 @@ var domains = []domain{
 	},
 	{
 		title:   "APM & observability connections",
-		summary: "Per-project connections to Dynatrace, AppDynamics, Elastic and Prometheus, and the Grafana and native dashboards a project has imported or defined. Inspections and operations are durable records of the calls made through a connection.",
+		summary: "Per-project connections to Dynatrace, Elastic and Prometheus, and the Grafana and native dashboards a project has imported or defined. AppDynamics monitoring is retired; the appdynamics_* tables preserve historical retained records only. Inspections and operations are durable records of the calls made through a connection.",
 		tables: []string{"dynatrace_connections", "dynatrace_operations", "appdynamics_connections", "appdynamics_inspections",
 			"appdynamics_quota_pools", "appdynamics_quota_leases", "elk_connections", "elastic_inspections",
 			"prometheus_connections", "grafana_dashboards", "grafana_dashboard_snapshots", "dashboard_definitions",

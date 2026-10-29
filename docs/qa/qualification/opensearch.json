@@ -13,14 +13,14 @@
       "name": "metrics",
       "summary": "Mapped Query DSL metrics, units, weighted statistics and terminal windows in the expanded elastic pack",
       "outcome": "fixture_tested",
-      "evidence": ["pkg/elastic/elastic_test.go#TestWeightedMetricBucketsPreserveLeadingBoundaries", "pkg/elastic/elastic_test.go#TestExactCountEstablishesZeroAndPercentilesAreApproximate", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestWeightedMetricBucketsPreserveLeadingBoundaries", "pkg/elastic/elastic_test.go#TestExactCountEstablishesZeroAndPercentilesAreApproximate", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "Provider-only TLS trials cover OpenSearch 2.19.0 and 3.3.0; qualify the complete controller/collector-to-archive workflow and managed deployments separately"
     },
     {
       "name": "diagnostics",
       "summary": "Scrubbed projected logs, errors, transactions and spans with concrete-index document identity",
       "outcome": "fixture_tested",
-      "evidence": ["pkg/elastic/elastic_test.go#TestRecordProjectionScrubTimeAndTraceIdentity", "pkg/storage/elastic_monitoring_test.go#TestElasticCanonicalEvidenceIdentityCursorAndTerminalDrain", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestRecordProjectionScrubTimeAndTraceIdentity", "pkg/storage/elastic_monitoring_test.go#TestElasticCanonicalEvidenceIdentityCursorAndTerminalDrain", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "Qualify actual Data Prepper/OTel field mappings and the complete retained-evidence workflow; provider pagination alone does not qualify durable retention"
     },
     {
@@ -41,14 +41,14 @@
       "name": "esql",
       "summary": "OpenSearch explicitly rejects Elastic ES|QL and does not translate it to PPL",
       "outcome": "unsupported",
-      "evidence": ["pkg/elastic/elastic_test.go#TestESQLRowLimitIsTruncatedAndOpenSearchRejectsESQL", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestESQLRowLimitIsTruncatedAndOpenSearchRejectsESQL", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "ES|QL is an Elasticsearch-only capability; OpenSearch PPL/SQL adapters are outside this release"
     },
     {
       "name": "pagination",
       "summary": "Product-specific PIT/search-after reads with configured sortable-ID fallback or native index/shard ties",
       "outcome": "fixture_tested",
-      "evidence": ["pkg/elastic/elastic_test.go#TestOpenSearchSeparateEndpointsAndStableTies", "pkg/elastic/elastic_test.go#TestOpenSearchNativeTieIncludesConcreteIndex", "docs/ELASTIC_QUALIFICATION.md"],
+      "evidence": ["pkg/elastic/elastic_test.go#TestOpenSearchSeparateEndpointsAndStableTies", "pkg/elastic/elastic_test.go#TestOpenSearchNativeTieIncludesConcreteIndex", "docs/qa/ELASTIC_QUALIFICATION.md"],
       "remaining": "Provider-only 10,005-record TLS trials passed on the 2.19.0 fallback and 3.3.0 native paths; qualify multi-node outages and deployed durable quotas"
     },
     {

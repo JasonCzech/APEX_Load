@@ -16,17 +16,20 @@ SQLite, filesystem archives, and in-memory cache remain supported for local deve
 
 ### Readiness Gate
 
-Use `GET /api/v1/system/readiness` before adding a controller pod to service. A production-ready response should include:
+Use `GET /api/v1/system/readiness` before adding a controller pod to service. The endpoint runs all ten probes concurrently under a shared response deadline:
 
 | Check | Expected production state |
 | --- | --- |
-| `metadata_store` | `ready`, `store_type=postgres`, migration version present, lease capability enabled |
-| `archive_writer` | `ready`, object backend configured, staging directory writable |
-| `cache_backend` | `ready`, `cache_backend=redis`, Redis URL configured, fanout channel visible |
-| `generator_rpc` | `ready` or `degraded` only when a known generator is temporarily unreachable |
-| `telemetry_fanout` | `ready`, websocket hub initialized |
-| `auth_mode` | `ready`, trusted-header or OIDC mode for production |
-| `scheduler_state` | `ready` or `degraded` with explicit schedule errors |
+| `kubernetes_api` | `ready` when Kubernetes restart/pod-watch integration is disabled, or when enabled with valid namespace and pod-list RBAC (`degraded` on advisory RBAC or API timeout) |
+| `metadata_store` | `ready`, `store_type=postgres`, migration version present, `lease_capability=true` |
+| `archive_writer` | `ready`, object backend configured, local staging directory writable |
+| `cache_backend` | `ready`, `cache_backend=redis`, Redis/Valkey URL configured, fanout channel visible |
+| `generator_rpc` | `ready`, or `degraded` only when a subset of configured load generators is temporarily unreachable |
+| `telemetry_fanout` | `ready`, WebSocket hub initialized and positive `metrics_interval_seconds` |
+| `auth_mode` | `ready` (`trusted_headers` or `oidc` in production; `dev` bypass or `local` test login reports `degraded`) |
+| `platform_integrations` | `ready`, reporting `grpc_transport`, `secret_resolver`, `object_archive`, `prometheus_scaling_source`, `azure_identity`, `aws_identity`, `wrapping_key` (`conflict=false`), and `dashboard_static_assets` (`status=ready`, `index_html=true`, `asset_count > 0`; missing static assets or conflicting KMS/Key Vault wrapping keys report `degraded`) |
+| `github_enterprise` | `ready` when disabled or when enabled with configured authentication and token encryption (`not_ready` if enabled without auth or token encryption; `degraded` if Checks lack a GitHub App or a configured webhook secret env var is empty) |
+| `scheduler_state` | `ready`, or `degraded` when enabled schedules carry previous execution errors |
 
 `cache_backend=redis` returning `not_ready` means the controller should stay out of service. Redis is not durable state, but losing it in HA mode breaks shared live state, fanout, API-key throttling, and idempotency protection.
 
@@ -153,8 +156,13 @@ promotion/reconciliation, provisioning recovery, usage-accounting cadence,
 archive finalization recovery, and retention mutations. Scenario occurrence and
 plan-run uniqueness/CAS fences remain in place as a second layer. Observational
 work such as read serving and generator inventory probes may run per replica.
-In Kubernetes, execution/CI mutations use the selectorless active Service; its
-EndpointSlice update is fenced by the same durable owner and generation.
+In Kubernetes, execution/CI mutations and reverse-connect load generators use the
+selectorless active Service; its EndpointSlice publisher is fenced by the same
+durable owner and generation when `APEXLOAD_ACTIVE_ENDPOINT_SLICE` is set
+(requires `APEXLOAD_CONTROLLER_HA=true` alongside `APEXLOAD_POD_NAMESPACE`,
+`APEXLOAD_POD_NAME`, and `APEXLOAD_POD_IP`). Optional active-endpoint overrides
+are `APEXLOAD_ACTIVE_ENDPOINT_SERVICE` (defaults to the `APEXLOAD_ACTIVE_ENDPOINT_SLICE`
+name), `APEXLOAD_ACTIVE_ENDPOINT_TOKEN_FILE`, and `APEXLOAD_ACTIVE_ENDPOINT_CA_FILE`.
 
 This implementation does not by itself certify an AKS deployment. Keep one
 controller by default. Before enabling multiple production replicas, pass a real
@@ -190,16 +198,23 @@ restore the old goroutines or protocol sessions from a volume.
 
 Inspect `/api/v1/system/execution-readiness` for recovery/admission state and the
 run's continuity history for adopted generations and observation gaps. Missing
-observations remain gaps, not zero load. Verify terminal archive completeness;
-partial or missing generator evidence cannot become a complete result merely
-because execution reached a terminal status.
+observations remain gaps, not zero load. Autonomous generator-driven phases
+(`ramp_up`, `target_duration`, `ramp_down`, pre/post resource baselines, and
+duration completion) continue through the orphan gap, whereas controller-driven
+shapes (stage schedules, traffic profiles, goal-oriented TPS, and sustained-P99
+auto-stop) hold their last target during the gap and jump to the current schedule
+position upon adoption (or finalize `COMPLETE` if the run duration elapsed during
+the gap). Verify terminal archive completeness; partial or missing generator
+evidence cannot become a complete result merely because execution reached a
+terminal status.
 
-The [HA design and evidence record](HA_RUN_CONTINUITY_PLAN.md) preserves decisions,
-protocol details and measured controller-failover results. Follow the
-[node storage recovery procedure](NODE_STORAGE_RECOVERY.md) for state restoration.
-Combined controller/generator loss and production node-loss qualification remain
-open in the [node-failure readiness ledger](NODE_FAILURE_READINESS_PLAN.md);
-controller-only adoption and same-host trials do not close those gates.
+The archived HA design record (`docs/archive/plans/HA_RUN_CONTINUITY_2026-10-19.md`)
+preserves historical decisions, protocol details, and measured controller-failover
+results. Follow the [node storage recovery procedure](ARCHIVE_SOURCE_RETENTION.md#node-storage-recovery)
+for worker and volume state restoration. Combined controller/generator loss and
+production multi-node qualification remain tracked in the
+[node-failure readiness ledger](NODE_FAILURE_READINESS_PLAN.md); controller-only
+adoption and same-host trials do not close external cloud node-loss gates.
 
 ### Resolving an unproven generator evacuation
 
@@ -210,6 +225,14 @@ cleanup makes one initial round and at most five retry rounds. Each participant
 RPC retains its existing bounded timeout and retry count. Exhaustion records
 `automatic evacuation stop retries exhausted` durably before the worker retires.
 A failed diagnostic write remains retryable without sending more stop rounds.
+
+Three opt-in controller flags extend successor reconciliation across earlier
+evacuation journal phases (verified in local in-process and fault-harness tests;
+not yet qualified on a multi-node cloud cluster):
+
+- `APEXLOAD_EVACUATION_ROLLBACK_RECOVERY=true`: enables version 4 evacuation journals so a successor controller rolls back an interrupted `prepared` or `staged` evacuation to its prior topology and releases pending replacement capacity.
+- `APEXLOAD_EVACUATION_ROLLFORWARD_RECOVERY=true` (with rollback recovery enabled): enables version 5 journals recording the replacement's staged duration and a `replacement_committing` mark before `CommitWork`, allowing a successor to adopt surviving shards plus a committed replacement, commit replacement capacity, and then clear the journal (holding the run `STOPPING` if commit proof is absent).
+- `APEXLOAD_EVACUATION_REPLACEMENT_RESTART=true` (with rollback and roll-forward enabled): enables version 6 journals so that when a source was fenced for an eligible stateless-HTTP workload whose replacement never committed (or was not adopted) and the old replacement's acknowledged epoch claim proves it runs nothing of the run, the successor restarts the moved share on another eligible load generator bounded by its journaled duration.
 
 The run remains `STOPPING`; its possible participants and capacity stay held.
 The run error preserves the original cause, unresolved stop errors and the
@@ -252,7 +275,7 @@ instead of erasing its journal or inventing another acknowledgement.
 | Controller restarts during distributed run | Default `fail` policy stops stale work and fails unresolved runs without replaying the start. An armed `continue` run can be adopted within its grace; failed adoption must reconcile stopped work. Retained terminal artifacts remain eligible for archive recovery |
 | Scheduler restarts | Evaluate persisted `next_run_at` values and materialize due schedules once |
 | Archive writer restarts mid-run | Preserve partial files for diagnosis; final manifest is written only after successful finalize |
-| Dashboard static assets missing | API remains available; readiness reports dashboard/static asset state once that check is added |
+| Dashboard static assets missing | API remains available; `platform_integrations.dashboard_static_assets` reports `degraded` on `GET /api/v1/system/readiness` |
 
 ### Production Readiness Surface
 

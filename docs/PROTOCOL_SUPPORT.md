@@ -12,6 +12,8 @@ This document is the W1 evidence record for modern Web/API execution parity.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/v1/scripts/web-api/support-matrix` | Code-owned Web/API support, benchmark envelope, diagnostics, and sample-project matrix. |
+| `GET /api/v1/protocols/native-support-matrix` | Code-owned native protocol execution matrix covering WebSocket, gRPC, JMS Solace / Azure Service Bus / IBM MQ, and Apache Kafka. |
+| `GET /api/v1/protocol-bundles/support-matrix` | Code-owned protocol-bundle entitlements, runner classes, and support matrix across Web/API, Database (`database`), Network (`network`), Oracle E-Business, Templates (`java_vuser`), and SAP GUI foundation. |
 | `GET /api/v1/runtime-settings/support-matrix` | Unified runtime setting parity matrix, presets, report exports, and streaming/media execution decision across Web/API/browser protocols. |
 | `POST /api/v1/scripts/import/sample` | Imports raw HTTP, cURL, and REST samples through the shared HTTP request finalizer. |
 | `POST /api/v1/scripts/import/har` | Imports HAR requests while preserving ordered header occurrences and governed source review. |
@@ -51,7 +53,7 @@ Compressed responses (gzip, deflate, Brotli, Zstandard) decode through a process
 
 Supported HAR request observations become leaf policies according to the import's `http_version_mode` (HAR import, sample import, both recorders and browser-to-HTTP conversion): `upgrade`, the default, maps captured final HTTP/3 (`h3`, `HTTP/3`) to `auto+h3` and keeps HTTP/2 and HTTP/1.1 exact; `exact` maps captured HTTP/3 to `3`; `inherit` gives no request a leaf policy and reports dropped HTTP/3 as `h3_not_preserved`. Mapped HTTP/3 is reported per origin as `captured_h3`, and the observation stays in `http_version_capture`, apart from the policy. An origin that only advertised HTTP/3 keeps its captured versions; moving it to `auto+h3` is an explicit choice in import review's Transport panel, which sets one HTTP version for every request to an origin (nested requests included) after a preview and records the choice on each request. A draft HTTP/3 token (`h3-29`) is kept as the observation, replays on the inherited policy, and waits for review before promotion (`http3_draft_token`). A missing or unknown observation and HTTP/1.0 are capture-quality warnings: the request keeps the script's inherited policy and is not gated. Malformed values and contradictory recorder provenance retain durable review gates. Recorder exports identify client-to-proxy and proxy-to-origin observations separately; differing or unavailable legs require review, and legacy fabricated HTTP/1.1 values do not establish an observation. Browser captures (the browser recorder and browser VUser run HARs) name their source in the entry's provenance; import treats it as description only, and provenance that contradicts the entry's version is gated. HTTP/1.0 remains unsupported for native replay, and an HTTP/3 policy runs only where HTTP/3 execution is enabled. Original source artifacts remain available under their existing disclosure policy.
 
-HTTP/3 observations: native replay records `alt_svc_h3_advertised` when a wire response advertises final HTTP/3 in `Alt-Svc`, without changing routing. HAR imports and both recorders raise one `origin_advertises_h3` info finding per HTTPS origin that advertised HTTP/3, saying whether any captured request used it; captured requests that used it follow `http_version_mode`. cURL's `--http1.1` maps to exact HTTP/1.1 and `--http2-prior-knowledge` on `http://` to exact HTTP/2 (h2c); `--http2` and `--http2-prior-knowledge` on HTTPS map to automatic negotiation, because curl still negotiates TLS requests through ALPN; `--http3-only` on HTTPS maps to exact HTTP/3 (`3`), and is gated on `http://` (`http3_requires_https`), through a proxy (`http3_with_proxy`) or with a `--tls-max` below 1.3 (`http3_requires_tls13`); `--http3` keeps the gate `curl_http3_race_not_modeled`, because replay does not model curl's HTTP/3-versus-TCP race, and records `auto+h3` as an approximate rewrite the author can accept (it has no effect on `http://`, as in curl); `--http2` on `http://` (curl's `Upgrade: h2c`), `--http1.0` and `-0` keep execution gates. A raw HTTP request line that names HTTP/3 stays an observation with the `raw_http_version_review_required` gate, because HTTP/3 has no text request line. DevWeb `rts.yml` settings that enable HTTP/3 replay raise a `devweb_http3_enabled` disclosure and are not mapped. See [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) for the delivery plan.
+HTTP/3 observations: native replay records `alt_svc_h3_advertised` when a wire response advertises final HTTP/3 in `Alt-Svc`, without changing routing. HAR imports and both recorders raise one `origin_advertises_h3` info finding per HTTPS origin that advertised HTTP/3, saying whether any captured request used it; captured requests that used it follow `http_version_mode`. cURL's `--http1.1` maps to exact HTTP/1.1 and `--http2-prior-knowledge` on `http://` to exact HTTP/2 (h2c); `--http2` and `--http2-prior-knowledge` on HTTPS map to automatic negotiation, because curl still negotiates TLS requests through ALPN; `--http3-only` on HTTPS maps to exact HTTP/3 (`3`), and is gated on `http://` (`http3_requires_https`), through a proxy (`http3_with_proxy`) or with a `--tls-max` below 1.3 (`http3_requires_tls13`); `--http3` keeps the gate `curl_http3_race_not_modeled`, because replay does not model curl's HTTP/3-versus-TCP race, and records `auto+h3` as an approximate rewrite the author can accept (it has no effect on `http://`, as in curl); `--http2` on `http://` (curl's `Upgrade: h2c`), `--http1.0` and `-0` keep execution gates. A raw HTTP request line that names HTTP/3 stays an observation with the `raw_http_version_review_required` gate, because HTTP/3 has no text request line. DevWeb `rts.yml` settings that enable HTTP/3 replay raise a `devweb_http3_enabled` disclosure and are not mapped. See the [HTTP/3 and QUIC guide](guides/HTTP3_AND_QUIC.md) for operator configuration and `docs/HTTP3_IMPLEMENTATION.md` for the engineering architecture record.
 
 HTTP/3 in results and authoring: archive events of native HTTP actions record the negotiated wire version, the fallback kind and the attempt count. Reports (HTML, PDF, CSV and the Run Report) count actions per version (plus no-response and cache), routing reason, fallback and QUIC error class, publish the fallback and QUIC-failure ratios with their denominators, split network phases by version, and raise a Protocol Mix finding when a ratio exceeds `config.results.protocol_mix` (defaults 5% and 5% at 20 samples). The live run carries the same run-to-date mix, distributed generators included, and Power BI dataset schema version 2 adds it. Runtime Settings and scenario groups expose the five `config.http.quic` fields with field-level bounds and a disabled state where a proxy, integrated authentication or shaping keeps requests on TCP; HTTP/3 conflicts are reported at the version fields; the capability note reads `http_runtime` from `GET /api/v1/scripts/authoring/capabilities`; and replay evidence offers to switch a request that saw an HTTP/3 advertisement to `auto+h3`. `apexctl script validate` notes a script's HTTP/3 requirement, and `apexctl run` and `wait` print the version mix. See the [HTTP/3 and QUIC guide](guides/HTTP3_AND_QUIC.md).
 
@@ -92,6 +94,7 @@ The shared ZIP/TAR reader is bounded and in-memory. WSDL ZIP, DevWeb ZIP, and En
 | --- | --- | --- |
 | HTTP/Web request execution | Supported | Executable |
 | OpenAPI-assisted REST authoring | Supported | Disposition-dependent: exact supported operations execute; incomplete behavior remains a blocked draft |
+| Postman collection import (`postman-authoring`) | Supported | Disposition-dependent: static requests execute; residual pre-request/test scripts and unsupported auth remain blocked drafts |
 | SOAP/WSDL-assisted execution | Supported | Disposition-dependent: document/literal operations can execute; RPC/encoded ambiguity remains blocked |
 | Java-over-HTTP | Supported | Executable |
 | WebSocket | Supported | Executable |
@@ -199,16 +202,16 @@ qualification remains open.
 
 ### Sample Projects
 
-W1 adds a first-party Web/API sample pack:
+W1 adds a first-party Web/API sample pack (the first six entries are published by `GET /api/v1/scripts/web-api/support-matrix` under `sample_projects`):
 
-| Sample | Path |
+| Sample (`id`) | Path |
 | --- | --- |
-| E-commerce HTTP checkout | `examples/web-api/ecommerce-http.json` |
-| SOAP account service | `examples/web-api/soap-account-service.json` |
-| gRPC inventory | `examples/web-api/grpc-inventory.json` |
-| WebSocket order feed | `examples/web-api/websocket-order-feed.json` |
-| JMS order flow | `examples/web-api/jms-order-flow.json` |
-| Mixed HTTP plus browser canary scenario | `examples/web-api/mixed-http-browser-canary.json` |
+| E-commerce HTTP checkout (`ecommerce-http`) | `examples/web-api/ecommerce-http.json` |
+| SOAP account service (`soap-account-service`) | `examples/web-api/soap-account-service.json` |
+| gRPC inventory (`grpc-inventory`) | `examples/web-api/grpc-inventory.json` |
+| WebSocket order feed (`websocket-order-feed`) | `examples/web-api/websocket-order-feed.json` |
+| JMS order flow (`jms-order-flow`) | `examples/web-api/jms-order-flow.json` |
+| Mixed HTTP plus browser canary scenario (`mixed-http-browser-canary`) | `examples/web-api/mixed-http-browser-canary.json` |
 | Browser canary plus protocol load release-gate template | `examples/web-api/browser-canary-plus-protocol-load.json` |
 | Archive smoke fixture contract | `examples/web-api/archive-smoke-fixtures.json` |
 
@@ -226,6 +229,29 @@ The sample pack is intentionally small and reviewable. It exists to let evaluato
 | W1.6 DevWeb construct support matrix | Complete | `GET /api/v1/scripts/import/devweb/support-matrix`, `pkg/convert/devweb/support.go` |
 | W1.7 Protocol-specific diagnostics | Complete for code-owned support publication using existing live/archive signals | Support endpoint diagnostics plus protocol archive implementations |
 | W1.8 Web/API sample projects | Complete | `examples/web-api/*.json` |
+
+### Native Database Execution (`database`)
+
+Protocol `database` (`pkg/protocol/database`, cataloged in `GET /api/v1/protocol-bundles/support-matrix` under bundle `database`) executes SQL workloads directly from Go VUser goroutines via `database/sql`:
+
+- **Drivers and target governance**: `config.database.driver` accepts `postgres` (bundled `pgx/v5/stdlib`), `sqlite` / `sqlite3` (bundled `modernc.org/sqlite`, restricted to in-memory `:memory:` or `file:...mode=memory` DSNs so scripts cannot open arbitrary generator filesystem paths), plus `mysql`, `odbc`, and `oracle` driver names when linked. Outbound DSN hosts are validated against `netpolicy` target-host rules (`protocol.ValidateTargetDSN`), including DSNs resolved from `{{secret.*}}` templates. Oracle 2-Tier thick-client archives remain classified as `external_runner_required`.
+- **DSL actions** (7 canonical types; see the [DSL action reference](DSL_ACTION_REFERENCE.md)):
+  - `db_query` (aliases `database_query`, `query`, `select`) — executes a SQL query from `target`, `body`, or CLI-local `body_file`, binds positional `params.args`, and serializes bounded rows for JSONPath/regex extractors and assertions.
+  - `db_exec` (aliases `database_exec`, `exec`, `execute`, `insert`, `update`, `delete`) — executes DML/DDL without reading rows.
+  - `db_procedure` (alias `stored_procedure`) — invokes a stored procedure with positional `params.args`.
+  - `db_begin`, `db_commit`, `db_rollback` — manage an explicit per-VUser `sql.Tx` transaction (`config.database.rollback_on_teardown` rolls back uncommitted work on VUser teardown; `config.database.read_only` rejects mutating statements).
+  - `db_health` (aliases `database_health`, `ping`) — verifies database connectivity with `PingContext`.
+- **Hard runtime bounds**: DSNs are capped at `16 KiB`, SQL text at `1 MiB`, positional bind parameters at `1,024` (`1 MiB` per value, `8 MiB` total), result sets at `100` rows by default (`params.max_rows` / `config.database.max_rows` hard-capped at `1,000` rows and `256` columns), and serialized responses at `8 MiB`.
+
+### Native Network Protocols (`network`)
+
+Protocol `network` (`pkg/protocol/network`, cataloged in `GET /api/v1/protocol-bundles/support-matrix` under bundle `network`) executes standards-based DNS, raw socket, file-transfer, mail, and directory operations directly in Go (proprietary MAPI and Tuxedo archives remain `review_only`):
+
+- **DSL actions** (12 canonical types; see the [DSL action reference](DSL_ACTION_REFERENCE.md)):
+  - **Connectivity and DNS**: `network_health` (verifies endpoint reachability) and `dns_query` (alias `dns_lookup`; resolves `A`, `AAAA`, `CNAME`, `MX`, `NS`, or `TXT` records for `target`).
+  - **Raw sockets / Winsock**: `tcp_request` (aliases `tcp_send`, `winsock_tcp`) and `udp_request` (aliases `udp_send`, `winsock_udp`) send templated `body` bytes to `target` (`host:port`) and read up to `params.read_bytes` (`0`–`1,048,576` bytes).
+  - **FTP control, mail, and LDAP**: `ftp_command`, `ftp_login`, `ftp_noop`, `smtp_send`, `pop3_command`, `imap_command`, `ldap_bind`, and `ldap_search` (`target` base DN, `value` filter, bounded `params.max_entries`).
+- **Timeouts, TLS, and target policy**: Both `config.network.timeout_ms` and per-action `params.timeout_ms` default to `30s` and are hard-capped at `1h` (`MaxConfiguredTimeout`). Optional TLS (`config.network.tls`) and `netpolicy` target-host checks apply before dialing.
 
 
 ## Browser execution and mobile emulation
@@ -433,6 +459,30 @@ Protocol `browser`; a mobile example sets `config.browser` to
 - Java-over-HTTP reuses the HTTP transport with the `java_serialized_object_base64`
   codec; sample imports are limited to raw HTTP and cURL bodies that already
   contain base64-encoded serialized Java bytes.
+
+### Browser Engines, Scoring Eligibility, and DSL Action Catalog
+
+- **Supported engines (`config.browser.engine`)**: `"chromium"` (default), `"chrome"` (launches an installed Google Chrome channel under the `chromium` engine family), `"webkit"`, and `"firefox"`. `"chromium"` and `"firefox"` support `config.browser.quic` values `"auto"` (default) and `"off"`; `"webkit"` supports `"auto"` only.
+- **Browser intelligence scoring eligibility**: Scored browser intelligence policies (`browser_policy` / `browser_score.v1`; see [browser intelligence workflows](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md)) admit only `"chromium"` and `"webkit"` in `applicability.engines` (`"chrome"` normalizes to `"chromium"`, while `"firefox"` is ineligible). Core Web Vitals (`lcp`, `cls`, `inp`), CDP loader-bound resource/protocol attribution, and browser-process CPU/RSS metrics require the `"chromium"` engine family, so CWV-scored policies require `chromium`.
+- **Complete `browser` DSL action catalog** (25 action types; element steps accept inline `target`/`selector` or repository-bound `object_ref` — see the [DSL action reference](DSL_ACTION_REFERENCE.md)):
+  - **Navigation, windows, frames, and dialogs**: `browser_navigate`, `browser_back`, `browser_forward`, `browser_reload`, `browser_open_window`, `browser_switch_frame`, `browser_switch_window`, `browser_close_window`, `browser_handle_dialog`.
+  - **DOM interaction and file transfers**: `browser_click`, `browser_dblclick`, `browser_hover`, `browser_check`, `browser_fill` (`fill` or per-character `type` mode), `browser_select`, `browser_press_key`, `browser_scroll`, `browser_drag_and_drop`, `browser_set_files`, `browser_download`.
+  - **Mobile touch and context**: `browser_tap`, `browser_long_press`, `browser_swipe`, `browser_set_geolocation`.
+  - **Synchronization, WebSocket observation, and diagnostics**: `browser_wait`, `browser_wait_response`, `browser_ws_wait`, `browser_ws_assert`, `browser_screenshot`, `browser_evaluate_js`.
+
+### Mobile Device Observer (Appium)
+
+Protocol `appium` (`pkg/protocol/appium`) drives one real mobile device or simulator/emulator per VUser through an Appium server's W3C WebDriver HTTP API to observe native iOS/Android UX latency while HTTP/API groups generate backend load:
+
+- **Session configuration (`config.appium`)**: Requires `server_url` (`http://` or `https://`, validated against `netpolicy` target-host rules) and `capabilities.platformName` (`"iOS"` or `"Android"`, alongside app/device capabilities). `session_timeout_ms` defaults to `3` minutes and `element_timeout_ms` defaults to `15` seconds; both are capped at `10` minutes (`600,000` ms). Each VUser opens one WebDriver session at `init` and closes it at `teardown`.
+- **DSL actions** (7 canonical types; see the [DSL action reference](DSL_ACTION_REFERENCE.md)):
+  - `appium_tap` — waits for `target` and taps it.
+  - `appium_type` — waits for `target`, optionally clears it (`params.clear: true`), and enters templated `value`.
+  - `appium_wait` — waits until `target` is visible (and optionally contains `params.text`), recording the matched element text as the step response.
+  - `appium_activate_app` and `appium_terminate_app` — foreground/launch or close `params.bundle_id` (iOS bundle ID or Android package).
+  - `appium_execute` — invokes an Appium mobile command (`params.script`, such as `mobile: swipe` or `mobile: scroll`, with object `params.args`).
+  - `appium_screenshot` — captures a device screenshot into step evidence.
+- **Locator strategies (`params.using`)**: Defaults to `accessibility id`; also accepts `id`, `name`, `xpath`, `class name`, `-ios predicate string`, `-ios class chain`, and `-android uiautomator`.
 
 ### Evidence And Benchmarks
 
@@ -745,6 +795,10 @@ VuGen compiles a Java Vuser's `.java` files before replay and puts the script di
 
 With `dedicated_class_loader`, the system classpath contains only the harness. The harness creates a child `URLClassLoader` for the effective script-plus-shared classpath, uses it for class loading and the complete requested lifecycle, and sets and restores the thread context class loader (including the startup worker). Local and sidecar execution create one JVM, `Actions` instance, and loader for each VUser session, retain them across `init`, repeated `action` calls, and `end`, and close them during teardown. Java fields, static state inside that isolated loader, and `lr.save_*` parameters therefore survive between lifecycle calls for the same VUser. This is class-loading isolation inside the runner; it is not a security sandbox.
 
+#### Operator AppCDS warmup
+
+Operators can cut HotSpot Java 17+ startup and class-loading overhead by pointing `APEXLOAD_JAVA_VUSER_CDS_MANIFEST` at an immutable, operator-owned regular-file JSON manifest (`schema: "apexload.java-vuser-cds/v1"`, maximum `64 KiB`; `pkg/javarunner/cds.go`). Before launching a JVM, the runner verifies that the resolved runtime is HotSpot Java 17 or newer, that `additional_vm_parameters` passes no `-Xshare:*` flag, that `archive_path` resolves to an absolute read-only regular file (no write permission bits set), and that every SHA-256 digest in the manifest (`java_sha256`, `release_sha256`, `harness_sha256`, `archive_sha256`, and ordered `classpath_sha256`) matches the exact files on disk. Any mismatch fails closed with `operator_cds_manifest_invalid`; AppCDS paths can never be supplied or overridden from script DSL or wire APIs.
+
 ### End of a duration run
 
 When a run's duration ends, Java VUsers with separate `init`, `action` and
@@ -870,13 +924,14 @@ The relevant environment variables are:
 - `APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME`
 - `APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA` (lowers the Java floor from 17 to 8; requires the Java 8-targeted harness jar)
 - `APEXLOAD_JAVA_VUSER_HARNESS_JAR`
+- `APEXLOAD_JAVA_VUSER_CDS_MANIFEST` (path to an operator-owned `apexload.java-vuser-cds/v1` JSON manifest binding SHA-256 digests for HotSpot Java 17+ AppCDS archive warmup)
 - `APEXLOAD_JAVA_VUSER_COMPILER_JDK_HOME` (JDK that compiles imported source when the script's runtime has no javac)
 - `APEXLOAD_JAVA_VUSER_CLASSPATH`
 - `APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED` (honors user-uploaded classpath JARs; fail-closed when unset)
 - `APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR` (same-host import asset root a local sidecar reads uploaded JAR bytes from)
 - `APEXLOAD_JAVA_VUSER_WORK_DIR`
 - `APEXLOAD_JAVA_VUSER_MAX_PROCESSES`
-- `APEXLOAD_JAVA_VUSER_SHARED_JVM` (runner sidecar, Linux only: enables shared JVMs, where many VUsers of one group share a JVM; see [Java VUser pooling](JAVA_VUSER_POOLING_IMPLEMENTATION.md#shared-jvms-runner-qualified))
+- `APEXLOAD_JAVA_VUSER_SHARED_JVM` (runner sidecar, Linux only: enables shared JVMs, where many VUsers of one group share a JVM; see `docs/JAVA_SHARED_AND_PILOT_RUNTIME.md` for shared-JVM architecture and pilot operations, and `docs/JAVA_DEDICATED_BROKER_EXPERIMENTAL.md` for experimental dedicated mTLS broker execution)
 - `APEXLOAD_JAVA_VUSER_THREAD_MODE` (runner sidecar, with shared JVMs: also admits LoadRunner thread mode, `jvm_sharing: threads`)
 - `APEXLOAD_JAVA_VUSER_SHARED_JVM_VUSERS_PER_JVM` (default 250, 2–1,024), `APEXLOAD_JAVA_VUSER_SHARED_JVM_HEAP_MB` (default 1,024)
 - `APEXLOAD_JAVA_VUSER_JVM_MEMORY_BUDGET_MB` (runner-wide JVM memory budget shared by shared and dedicated JVMs) and `APEXLOAD_JAVA_VUSER_DEDICATED_JVM_MEMORY_MB` (default 256)

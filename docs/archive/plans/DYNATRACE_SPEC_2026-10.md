@@ -1,0 +1,56 @@
+# Dynatrace SaaS native monitoring contract
+
+Status: Historical (completed specification archived 2026-10-29)
+
+## Architecture and scope
+
+Native Dynatrace sources reuse the durable run-monitoring pipeline introduced for AppDynamics: revisioned project connections/sources, scenario and per-test bindings, immutable preparation snapshots, direct owner-fenced execution or signed assigned-collector jobs, idempotent durable batches, canonical metric/diagnostic heads, archive dependency and terminal acceptance. `pkg/dynatrace` owns transport, authentication, discovery, metric/diagnostic/Grail queries and normalization. AppDynamics and existing collector packs retain their contracts.
+
+Support is SaaS only. Classic APIs provide metric descriptors/buckets, selected entities/relationships, problems and events. Optional independently authenticated Grail provides numeric queries, safe log/event/span and sampled trace summaries and Smartscape discovery. This is read-only collection. OneAgent installation, tenant configuration changes, Managed/on-premises APIs, unrestricted trace downloads and standalone engine-only `apexctl run` capture are excluded. Existing lifecycle event publication is separate and compatible.
+
+## Connections, operations and source selection
+
+The existing project `monitoring/dynatrace-connections` resource retains its IDs and flat endpoint/auth/default-capture fields. Add numeric revision and verified revision, direct/collector execution location, selected capability profile, independent capability health, request quotas and scan allowances. Updates/deletes require revision checks; stale mutations return `409`. Public reads omit credential values, reference names, sealing material and internal trust state. Blank credentials are preserved only for unchanged remote identity. Disabled drafts remain name-only. Enabling admits the connection for legacy per-test capture; native sources require the selected capabilities to be verified for the current revision.
+
+`POST .../{connection_id}/operations` accepts `kind` of `verify`, `discover` or `preview`. Discovery options contain kind (`metrics`, `entities`, `entity_types`, `smartscape`), selector, search, cursor, limit (100/page, 1,000/operation) and optional topology mode. Administrators can preview a supplied source selection. Editors can submit `kind: "preview"` with an approved saved `source_id`, without selection/options overrides; the server derives and freezes its selection and source revision. Reading these results requires current matching source/connection revisions. Creation returns `202` and an operation ID; status/results are read through `GET .../operations/{operation_id}`. Operations expire and run from the saved execution location without creating synthetic tests. Results contain bounded identities/capabilities/preview observations, explicit truncation and next cursor. The legacy saved `/test` route remains a compatibility surface.
+
+A `dynatrace` monitor source references a connection and owns Classic metric selections (name, metric selector, independent per-metric entity selector, aggregation, optional expected unit/semantics), a diagnostic/topology entity selector, problems/events with optional provider selectors, optional Classic/Smartscape topology, up to five Grail definitions, settling delay and correlation origins. The diagnostic/topology selector does not scope metric or Grail queries. Grail definitions name the read-only DQL, numeric/log/span/event/trace result kind, safe projections, metric value/unit/statistic/bucket settings and optional approved entity/run fields. Executor location is derived from the saved connection. Runtime query offsets/cursors/tokens are private and never author-editable.
+
+Per-test binding precedence is unchanged: omission inherits scenario sources; empty disables; nonempty replaces. Snapshot preparation fingerprints include source/connection/secret versions, collection location and acceptance rules. Outside the project run-monitoring gate, legacy `dynatrace_capture` keeps its original runtime. Inside the gate it becomes an immutable native selection for future runs and requires a verified connection revision; active/archived old captures retain their original behavior and readers. Reject ambiguous overlapping legacy and explicit native selections. No migration may enable monitoring automatically.
+
+Project administrators manage credentials/connections/sources/query definitions. Editors attach approved sources and set terminal rules; viewers read safe results. Collector tokens access only assigned grants/inspection/submission routes. CLI and MCP expose the same connection/operation and generic source/binding/series/evidence workflows. Routing/type source generates OpenAPI, endpoint catalogs and dashboard contracts.
+
+## Durable data, execution and limits
+
+Metric observations preserve provider/backend/catalog identity, descriptor unit, entity dimensions, bucket start/end/resolution, source statistic, eligibility, provisional/settled state and source/receive time. No universal `count == 0` missing rule applies. Preserve finite zero and explicit null/missing buckets. Validate unit/rate transforms; reject whole-window folds, time shifts and fabricated missing values. Weighted request averages require valid upstream observation weights; validated gauges may use duration-weighted time averages. Bucket percentiles cannot be aggregated into whole-run percentiles. Partial boundary buckets remain visible but are excluded by default from acceptance. Declared unbucketed Grail aggregates retain query-window semantics and require the exact completed evaluation window; preview choices omit their window-specific resolution.
+
+Batches persist content-addressed artifacts before atomically committing receipt, progress and canonical head updates under the current owner/grant fence. Identical retries acknowledge once; conflicting payloads reject. Canonical identity includes job, provider/backend/catalog identity, entity dimensions, bucket start/resolution/statistic. Late revisions replace heads while receipts remain immutable. Mutable diagnostics use provider record identity and retain latest observed state. Only complete committed query chunks advance the watermark. Classic and Smartscape IDs remain separate namespaces with any explicit mapping preserved.
+
+Both executors share endpoint/account/credential request quotas and bounded workers so slow upstream calls cannot block unrelated packs or load controls. Grail asynchronous state is resumable/expiring; lost or cancelled queries cannot silently re-execute without charging a new reservation. Scan cost is enforced independently of response/record limits, and unreported cost retains its reservation. Budget exhaustion, throttling, permission denial, unsupported capability and successful no-data queries produce distinct coverage.
+
+Optional W3C evidence correlation uses existing `traceparent` propagation and explicit Grail `trace.id` projections. Match against at most 64 durable run-observed trace identities under the current owner fence. Keep this private proof separate from author selections, opaque run-header identifiers and complete-trace claims; matched evidence remains sampled context.
+
+| APEX default / bound | Value |
+|---|---|
+| Native polling / overlap / settling | 60 seconds / five minutes / 120 seconds |
+| Post-load reconciliation | Fixed maximum 300 seconds |
+| HTTP deadline / complete poll | 10 / 30 seconds |
+| Decompressed upstream response | 4 MiB |
+| Environment / Platform request quota | 60/minute each; upstream limits also apply |
+| Grail query/source-run/final reserve scan defaults | 1 GB / 10 GB / 2 GB, decimal bytes |
+| Explicit administrator scan override ceilings | 100 GB/query; 1 TB/source-run |
+| Selections / Grail definitions / expanded series | 20 / 5 / 200 per source |
+| Sources / expanded series per run | Existing maximum 32 / 1,000 |
+| Durable batch | Existing maximum 1 MiB, 512 measurements, 100 diagnostics |
+
+Existing diagnostic/archive storage quotas apply as additional bounds and every limit produces explicit coverage/truncation. Safe diagnostic projections retain identity, timestamp, severity/status, summary, selected entity/trace/span IDs, correlation strength and approved SaaS deep links. Arbitrary captured fields, request bodies, SQL and raw unrestricted traces are excluded. HTTPS hostname verification, DNS-at-dial validation, exact SaaS origin binding, redirect rejection and collector local approval remain mandatory.
+
+## Lifecycle, acceptance and verification
+
+Lifecycle is `collecting → reconciling → stopped | incomplete`. Persist load terminal status/end immediately, then collect delayed observations overlapping the original load window until settled stable successful passes or the persisted deadline. Restart/HA owner changes preserve progress, scan spending/reservations and the deadline. Never hold mutation locks while waiting for archive dependencies. At closure atomically freeze rules/coverage, export canonical evidence and seal archive integrity. Monitoring outages produce partial evidence; artifact corruption follows the existing integrity-failure path.
+
+Terminal criteria select exact source/series identity, unit, source statistic/resolution and evaluation operation, comparison, threshold, elapsed window and fail/warning severity. Defaults are the full load window, fully contained settled buckets, at least one eligible bucket and 95% coverage. Results are pass/fail/warning/not_evaluated. Conclusive failure fails acceptance; missing fail-severity or required evidence produces Inconclusive. CI remains `monitoring_pending` until finalization; `monitoring_incomplete` cannot pass. No rule participates in runtime early-stop control.
+
+Fixtures must cover authentication/cache/concurrent refresh, disclosure/isolation and identity changes; DNS/TLS/redirect enforcement; selector escaping/descriptors/units/zero/null/dimensions/resolution/late revisions; saturated pagination and closed problems; Grail query validation/projections/escaping/async resume/cancellation/unknown scan cost/reserve exhaustion; duplicate/conflicting receipts/cursors/restart/fencing/archive integrity; required readiness, pause/abort/failure/drain deadlines; exact-series weighted semantics/coverage/rule/CI outcomes; both auth-profile dashboard workflows; CLI/MCP parity and legacy archive/selector migration regressions. Run affected Go tests/race checks, SQLite/PostgreSQL integration, full Go/MCP suites, generated freshness/docs checks and full dashboard `test:cycle`.
+
+Release qualification is fixture-first. Real SaaS Classic, licensed Grail and Smartscape tenant testing is still outstanding; [the setup guide](../../DYNATRACE.md#qualification) records **None yet** for real compatibility claims. Publish exact tested release/API capability matrices when qualified.

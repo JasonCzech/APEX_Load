@@ -1,8 +1,12 @@
 # Prometheus target-system monitoring
 
-APEX Load collects target-system metrics from an approved Prometheus HTTP API while a managed test runs. Project connections and `prometheus-query` sources use the same durable monitoring, evidence, reconciliation and acceptance pipeline as AppDynamics. Prometheus must already scrape the system under test; APEX does not install exporters, alter scrape configuration, or write to the TSDB.
+APEX Load collects target-system metrics from an approved Prometheus HTTP API while a managed test runs. Project connections and `prometheus-query` sources use the shared governed monitoring, evidence, reconciliation and acceptance pipeline ([governed provider registry](OBSERVABILITY_INTEGRATIONS.md#governed-provider-registry)). Prometheus must already scrape the system under test; APEX does not install exporters, alter scrape configuration, or write to the TSDB.
 
 This workflow is separate from **APEX platform graphs**, the controller `/metrics` export, and the existing collector `prometheus` text-scrape pack. Existing sources and imported Grafana dashboards continue to work. They do not automatically become new query sources or acceptance criteria.
+
+### Package boundaries and ownership
+
+`pkg/prometheus` owns read-only Prometheus `/api/v1` and Azure Managed Prometheus query transport, dial-time DNS/TLS/CIDR enforcement, PromQL parsing, typed whole-token `{{param.*}}` and `{{window.duration}}` validation, independent capability negotiation, bounded discovery, freshness-companion checks and normalization over `pkg/analysis`. It never imports `pkg/api`, `pkg/storage` or `pkg/engine`. `pkg/analysis` owns typed evaluation-grid and exact-window semantics, coverage and terminal criteria. `pkg/api` and `pkg/storage` own project and system-administrator authorization, secret resolution, revisioned connections and operations, immutable run snapshots, execution-owner fencing, content-addressed receipts and canonical heads. `pkg/collectoragent` executes the same `pkg/prometheus` normalization under local `--adapter-targets` origin/identity approval, X25519-sealed credential grants and durable spool replay.
 
 ## Set up a connection
 
@@ -148,7 +152,7 @@ Connection update JSON includes its current `revision`. Delete requires `--revis
 
 MCP tools are `prometheus_connection_list/create/get/update/delete/test`, `prometheus_discover`, `prometheus_preview`, `prometheus_operation_get`, and `prometheus_dashboard_adopt`. Existing generic source, binding, monitor-series, monitor-evidence and archive tools provide the rest of the workflow. `prometheus_metrics` remains the APEX platform export surface.
 
-The generated [OpenAPI specification](swagger.yaml), [endpoint catalog](api-endpoint-catalog.json), and [implementation specification](PROMETHEUS_MONITORING_SPEC.md) are authoritative references.
+The generated [OpenAPI specification](swagger.yaml), [endpoint catalog](api-endpoint-catalog.json), and the archived implementation specification (`docs/archive/plans/PROMETHEUS_MONITORING_SPEC_2026-10.md`) are authoritative references.
 
 ## Limits, troubleshooting and qualification
 
@@ -158,4 +162,4 @@ Narrow labels and expressions when cardinality, memory or query budgets are exce
 
 Direct private access requires approved trust policy and durable shared artifacts for HA. Collector mode additionally requires persisted signing configuration shared across controller replicas, enrolled encryption keys and local destination approval. Direct-only capture does not need an unused collector signing key. Credentials resolve in memory or are sealed into short-lived assigned collector grants.
 
-The SDK query/API contract has real disposable-server evidence for Prometheus **2.55.1** and **3.13.0** on Linux/arm64, alongside fixture tests. Production private-network deployments and Azure workspaces remain qualification prerequisites. The exact image digests, observed capabilities and explicit limits are maintained in [the specification](PROMETHEUS_MONITORING_SPEC.md#compatibility-and-release-evidence).
+The SDK query/API contract has real disposable-server evidence for Prometheus **2.55.1** and **3.13.0** on Linux/arm64, alongside fixture tests. Production private-network deployments and Azure workspaces remain qualification prerequisites. The exact image digests, observed capabilities and explicit limits are recorded in `pkg/prometheus/testdata/compatibility-matrix.json` and `docs/archive/plans/PROMETHEUS_MONITORING_SPEC_2026-10.md`.

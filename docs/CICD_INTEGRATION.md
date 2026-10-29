@@ -94,7 +94,7 @@ accepted only for explicit non-production development.
 
 | System | File | Notes |
 | --- | --- | --- |
-| GitHub Actions | `.github/actions/apexload-run/action.yml` | Canonical versioned composite action; emits JSON/JUnit paths for a caller-selected artifact action. |
+| GitHub Actions | `.github/actions/apexload-run/action.yml` | Canonical versioned composite action; emits JSON/JUnit paths for a caller-selected artifact action. Full input/output tables and signed-binary verification rules live in `.github/actions/apexload-run/README.md`. |
 
 GitHub Actions is the sole supported CI/CD path. Obsolete Jenkins, Azure
 Pipelines, and copy-to-activate workflow templates have been removed so the
@@ -274,13 +274,9 @@ Required app settings beyond the standard controller env vars:
 | `APEXLOAD_GRPC_AUTH_TOKEN` | Key Vault reference (same value as the AKS secret) |
 | `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` (prebuilt zip; Oryx must not re-run npm/go) |
 
-WebSockets must be enabled on the App Service plan (dashboard uses `WS /api/v1/ws` and per-test streams). Always On must be enabled so the 30-second schedule poller keeps running. Pin to one instance unless the Redis HA path (`APEXLOAD_REDIS_URL`) is wired up.
+WebSockets must be enabled on the App Service plan (dashboard uses `WS /api/v1/ws` and per-test streams). Always On must be enabled so the 30-second schedule poller keeps running. Pin to one instance unless the Redis HA path (`APEXLOAD_REDIS_URL`) is wired up. Full launcher behavior, ELF verification, PEM materialization, and `/home` CIFS constraints are documented in `deployments/azure/appservice/README.md`.
 
-The GitHub action never builds from the consumer checkout. It uses an explicitly
-trusted `apexctl-path`, or downloads the exact action-pinned release, verifies
-the signed checksum manifest, and verifies the binary and release-manifest
-checksums. GHES and air-gapped installations can provide `release-base-url` and
-`release-public-key` for an internal mirror.
+The GitHub action never builds from the consumer checkout; see `.github/actions/apexload-run/README.md` for `apexctl-path`, `release-base-url`, and `release-public-key` binary-trust verification.
 
 ## Publishing the JUnit report
 
@@ -429,12 +425,7 @@ jobs:
           include-hidden-files: true
 ```
 
-The action downloads a released `apexctl`; the consumer repository does not
-need the APEX source tree or a Go toolchain. An operator must commit the release
-public key with the action revision or supply `release-public-key`. Missing
-signature trust fails closed. GHES callers mirror the action dependencies and
-release assets, select the artifact action supported by their server release,
-and use a self-hosted runner when the controller is private.
+See `.github/actions/apexload-run/README.md` for all action inputs, outputs, and air-gapped GHES signature-verification rules.
 
 The controller trust policy binds issuer, audience, repository identity,
 workflow ref, ref/environment, project, target hosts, protocols, VUsers, and

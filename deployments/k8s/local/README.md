@@ -71,7 +71,7 @@ make docker-generator
 If you prefer to be explicit:
 
 ```bash
-docker build --build-arg BINARY=controller -t apexload-controller:0.1.0 -f Dockerfile .
+docker build --build-arg BINARY=controller -t apexload-controller:0.1.0 -f Dockerfile.controller .
 docker build --build-arg BINARY=generator -t apexload-generator:0.1.0 -f Dockerfile .
 ```
 

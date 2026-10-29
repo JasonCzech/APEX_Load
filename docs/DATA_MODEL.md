@@ -1130,7 +1130,7 @@ erDiagram
 
 ## APM & observability connections
 
-Per-project connections to Dynatrace, AppDynamics, Elastic and Prometheus, and the Grafana and native dashboards a project has imported or defined. Inspections and operations are durable records of the calls made through a connection.
+Per-project connections to Dynatrace, Elastic and Prometheus, and the Grafana and native dashboards a project has imported or defined. AppDynamics monitoring is retired; the appdynamics_* tables preserve historical retained records only. Inspections and operations are durable records of the calls made through a connection.
 
 ```mermaid
 erDiagram

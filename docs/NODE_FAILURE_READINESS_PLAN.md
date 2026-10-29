@@ -7,10 +7,10 @@ Evidence: local KEDA and node-failure report at
 `artifacts/scalability/2026-09-27/REPORT.md` and machine-readable `summary.json`
 in the same ignored directory.
 These local evidence files are ignored artifacts, not distributed repository fixtures.
-This plan extends [HA Run Continuity](HA_RUN_CONTINUITY_PLAN.md) to worker loss;
+This plan extends [HA controller behavior](ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior) to worker loss;
 it does not equate successful controller-only adoption with combined controller/generator recovery.
 
-Current operating procedures live in the [enterprise runbook](ENTERPRISE_PLATFORM_RUNBOOK.md#operating-run-continuity) and [node storage recovery guide](NODE_STORAGE_RECOVERY.md). This plan retains the implementation sequence and fault evidence; it does not supersede those procedures.
+Current operating procedures live in the [enterprise runbook](ENTERPRISE_PLATFORM_RUNBOOK.md#operating-run-continuity) and [node storage recovery guide](ARCHIVE_SOURCE_RETENTION.md#node-storage-recovery). This plan retains the implementation sequence and fault evidence; it does not supersede those procedures.
 
 ## Implementation ledger
 
@@ -26,7 +26,7 @@ recovery and production node-loss readiness remain unfinished.
 | 3 | PostgreSQL provenance and comparisons use pgx microsecond precision; SQLite remains exact; real PostgreSQL reload regression | One fresh 40-VUser S3 archive passed incarnation/integrity checks before and after leader generation 6 → 7; repeated recorded-archive/fault replay remains |
 | 4 | Fleet-scoped, expiring leader demand across all KEDA variants; peak queued and due one-time scheduled demand; ordinal-floor protection; executable PromQL and cloud HA render tests; start-boundary placement and launch-window conflicts retain structured non-overridable HTTP 409 details, with hard legacy per-generator bounds, failed-probe zero capacity and complete-placement checks before staging; recovery-spare starts now return a non-overridable configuration conflict when peak pod reservations are disabled, and queued runs fail explicitly if the setting is disabled before promotion | Spare-capacity admission (Kubernetes-observed pod UID/node inventory, an explicitly unreserved bounded single-worker preview with workload-UID/ordinal-bound KEDA/HPA limits, coalesced observations and scoped read RBAC are implemented; opt-in atomic admission, quota accounting and whole-pod scaling demand are implemented; deployed worker-fault qualification remains), broader placement/discovery admission, repeated deployed scale/failover qualification (three consecutive 320-VUser accelerated cycles and queued-demand leader handoff passed after termination-drain and takeover-state fixes; the local HTTP trigger now targets 90% of hard capacity to avoid the three-pod/320-VUser HPA tolerance edge; three reviewed accelerated cycles and three queued three-to-four tolerance-edge trials passed; three production-timing explicit-dispatch cycles and their S3 archive checks now passed; three reviewed accelerated automatic-dispatch cycles, three maximum-capacity refusals and three missing-metric downscale-protection trials now passed; active-load dependency/node fault repetitions remain) |
 | 5 | Generators now support idle, full-budget, non-executing standby claims with separately fenced ownership transfer/activation; controller-only adoption transfers frozen live pod-capacity claims to the new execution generation; generators confirm the exact reservation before an atomic, lease-fenced ledger transfer; preexisting idle standby claims join the same first-epoch batch and transfer without becoming executable participants; the storage transaction rejects an unconfirmed standby omitted by a stale snapshot; completed/retired capacity remains held for ordinary release; evacuation can activate an exact same-run committed standby through an atomic ledger comparison, with bounded RPCs and budget-preserving rollback; adoption-enabled evacuation now persists a fail-closed interruption guard before staging, with exact-guard completion and an explicit interrupted-run reason | Durable, fenced combined-loss recovery remains; reserved spare admission/quota accounting implemented and three consecutive Docker worker-fault trials passed on `9f16bee8`; two deployed normal evacuation trials on `f51780f4` recorded v2 guard then v1 completion, cross-worker replacement traffic and verified archives; a deployed interruption/takeover trial on `1b1ffdc5` failed closed with 90 seconds of flat independent target traffic; the corrected post-commit interruption trial passed 50-VUser successor adoption, independent traffic, capacity transfer, and 9/9 S3 archive verification; opt-in successor rollback (prepared/staged), roll-forward (replacement commit intent) and missing-replacement restart (stateless HTTP) are implemented and locally tested only; deployed qualification of those phases remains open |
-| 6 | [State inventory and fenced storage recovery runbook](NODE_STORAGE_RECOVERY.md) published | Multi-host CSI, permanent worker/zone trials and measured RTO/RPO |
+| 6 | [State inventory and fenced storage recovery runbook](ARCHIVE_SOURCE_RETENTION.md#node-storage-recovery) published | Multi-host CSI, permanent worker/zone trials and measured RTO/RPO |
 | 7 | Terminal projections label samples historical; active API/WS observations carry a five-second deadline bounded by the oldest contributor; Command Center and advanced details expire samples locally; observed distributed archive collection failures have durable, incarnation-bound single-run API/WS records and an explicit Results notice; [opt-in confirmed-source TTL retention](ARCHIVE_SOURCE_RETENTION.md) protects publication with a cross-process file fence, and producer retries preserve current durable manifest metadata; partial manifests preserve known collected/missing generator sources and exported report completeness, with an inspectable Results warning; fail-closed evacuation records collection failures and retains sources across in-process terminal-write retries | Atomic terminal availability markers are implemented for lifecycle status writes; durable expected-source intent is implemented; bounded collection retry and cache-only partial-result finalization are implemented; already-uploaded pending archives can recover their catalog after local staging loss; single-run recovery-state API and Results notices are implemented; optional shared staging and private reader-cache deployment support are implemented; aggregate transfer-spool admission with crash-reservation accounting and per-run controller raw-capture limits are implemented; generator and controller namespace backlog admission is implemented; three controller and three generator logical-backlog pressure trials passed on Docker Desktop; same-host PostgreSQL/S3 cross-process shared-staging replay passed three times; deployed multi-node RWX/CSI and physical storage qualification remain |
 | 8 | Go, race, deployment render, PostgreSQL/S3 regression checks, and the repeatable 3-repetition integrated local fault qualification harness (`TestRECCIntegratedLocalFaultQualification3Rep`: 7 fault scenarios × 3 repetitions = 21 runs reconciled against the authenticated independent fault target with zero duplicate-generation overlap, zero stale adoptions, zero post-terminal active reservations, and zero false-complete archives; [record](qa/reviews/roadmap-rec-c-local-faults-2026-10-28/README.md)) passed | Multi-node cloud cluster soak and live cloud node-drain qualification remain an open external gate |
 
@@ -494,7 +494,7 @@ cleanup. Interrupted adoption fails explicitly and preserves prior failover hist
 This is a prerequisite for the package-5 recovery journal, not resumable combined-loss
 recovery. Its source validation is recorded in the review ledger.
 
-The [same-leader intervention slice](qa/reviews/roadmap-same-leader-intervention-2026-10-19/README.md) adds a durable bounded-retry/intervention state for a canceled current-owner evacuation with a journal. Stop uncertainty retains STOPPING and its resources; only explicit durable proof permits terminal cleanup. Local regression evidence does not close the deployed combined-loss gate. The [operator procedure](ENTERPRISE_PLATFORM_RUNBOOK.md#resolving-an-unproven-generator-evacuation) is available in application Help.
+The [same-leader intervention slice](archive/qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md#roadmap-same-leader-intervention-2026-10-19) adds a durable bounded-retry/intervention state for a canceled current-owner evacuation with a journal. Stop uncertainty retains STOPPING and its resources; only explicit durable proof permits terminal cleanup. Local regression evidence does not close the deployed combined-loss gate. The [operator procedure](ENTERPRISE_PLATFORM_RUNBOOK.md#resolving-an-unproven-generator-evacuation) is available in application Help.
 
 The source-pod scale-down found during the interrupted evacuation trial is
 addressed for KEDA-owned fleets by an incarnation-bound archive replica hold.
@@ -583,7 +583,7 @@ Two opt-in successor paths now cover earlier journal phases, qualified with
 fake and in-process generators only. With
 `APEXLOAD_EVACUATION_ROLLBACK_RECOVERY`, a version 4 journal lets a successor
 return a `prepared` or `staged` evacuation to its prior topology and release
-the replacement capacity ([record](qa/reviews/roadmap-evacuation-rollback-2026-10-22/README.md)).
+the replacement capacity ([record](archive/qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md#roadmap-evacuation-rollback-2026-10-22)).
 With `APEXLOAD_EVACUATION_ROLLFORWARD_RECOVERY` as well, a version 5 journal
 records the replacement's staged duration and a `replacement_committing` mark
 with the exact duration shortening before `CommitWork`. A successor then
@@ -592,12 +592,12 @@ commits the replacement capacity and only then replaces the journal; a
 replacement that never committed is drained by the epoch claim, or reports a
 completed run, which does not prove a commit; that, or any participant
 reporting a completion the prior lineage never recorded, holds the run
-`STOPPING` ([record](qa/reviews/roadmap-evacuation-rollforward-2026-10-24/README.md)).
+`STOPPING` ([record](archive/qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md#roadmap-evacuation-rollforward-2026-10-24)).
 Current generators now report why a run ended, and both paths trust a
 participant whose duration ran out, at no less than the journaled commit
 target or the run's durable duration; a controller stop, an early end, a
 shorter duration or a generator that reports no cause still holds the run
-([record](qa/reviews/roadmap-generator-terminal-cause-2026-10-24/README.md)).
+([record](archive/qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md#roadmap-generator-terminal-cause-2026-10-24)).
 Version 3 and 4 `source_fenced` journals stay fail-closed until a newer term
 fences the run or an administrator attests.
 With `APEXLOAD_EVACUATION_REPLACEMENT_RESTART` as well, a successor restarts a
@@ -609,7 +609,7 @@ generator through the generator-loss reshard under the successor's term,
 bounded by its journaled duration. Version 6 journals keep every step
 resumable or fail-closed across a further leader change; an unreachable old
 replacement, an ineligible workload or no spare capacity still holds the run
-`STOPPING` ([record](qa/reviews/roadmap-evacuation-replacement-restart-2026-10-24/README.md)).
+`STOPPING` ([record](archive/qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md#roadmap-evacuation-replacement-restart-2026-10-24)).
 A participant that finished while its generator still finalized the archive
 is now flagged as finalizing in the adoption answer, and the successor waits
 boundedly for the published outcome instead of holding the run; live tables a
@@ -617,7 +617,7 @@ lost lease term of the same process left in memory are released, and the new
 term finalizes them durably when it ends the run. Capability mismatch, missing
 spare capacity, a stop during a roll-forward, a pause across a second leader
 change and older-controller refusal of version 4 to 6 journals (simulated by
-lowering the journal version checks) are exercised locally ([record](qa/reviews/roadmap-evacuation-completion-2026-10-25/README.md)).
+lowering the journal version checks) are exercised locally ([record](archive/qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md#roadmap-evacuation-completion-2026-10-25)).
 None of these paths is qualified on a deployed cluster.
 
 A committed-replacement worker-loss trial exposed a terminal recovery blocker.

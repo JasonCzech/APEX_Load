@@ -1,6 +1,6 @@
 # Run monitoring and traffic-free preparation
 
-Collector trust, source binding, preparation capacity and messaging management contracts. Start with [project enablement](ANALYSIS_WORKFLOWS.md#enable-the-workflows). Provider-specific setup remains in the [observability guides](OBSERVABILITY_INTEGRATIONS.md).
+Collector trust, source binding, preparation capacity and messaging management contracts. Start with [project enablement](NATIVE_ANALYTICS.md#enable-the-workflows). Provider-specific setup remains in the [observability guides](OBSERVABILITY_INTEGRATIONS.md).
 
 ## Contents
 
@@ -63,7 +63,7 @@ the immutable script/asset revision, reserves or provisions capacity using the
 existing target backends, stages assignments and checks collector availability.
 It waits before runtime preflight, protocol initialization, reflection, init
 actions and monitoring-source polling. Runtimes that cannot honor this boundary
-are rejected explicitly (currently Java Vuser, Bruno, and shakeout preparation).
+are rejected explicitly (currently Java Vuser and shakeout preparation).
 
 Readiness defaults to 30 minutes from the ready transition; API/CLI callers can choose 5 minutes to 4 hours. Renewal rechecks the execution revision, reservation, ownership and collector readiness. Provisioning itself also has the requested TTL deadline.
 
@@ -121,9 +121,43 @@ attribute semantics return explicit partial-success rejection counts. Payloads
 are capped at 1 MiB and 512 buffered points per stream; full buffers return 429.
 No automatic exporter/probe traffic is introduced by preparation.
 
-Build and configure the [restricted Java helper](../runners/monitor-java/README.md)
+Build and configure the restricted Java helper (`runners/monitor-java/README.md`)
 for the `jmx` and PostgreSQL `jdbc` packs. Broader database drivers and attribute
 packs require explicit implementations and acceptance; they are not advertised.
+
+### Collector agent CLI, environment and pack reference
+
+`apexload-collector-agent` (`cmd/apexload-collector-agent`) accepts the following flags and environment variables (`apexload-collector-agent version` or `--version` prints build metadata and exits):
+
+| CLI flag | Environment variable | Default | Purpose |
+| --- | --- | --- | --- |
+| `-controller` | `APEXLOAD_CONTROLLER_URL` | `http://127.0.0.1:8080` | Controller base URL (non-loopback HTTP requires `-insecure` / `APEXLOAD_COLLECTOR_ALLOW_INSECURE=true`). |
+| `-collector-id` | `APEXLOAD_COLLECTOR_ID` | — | Collector ID issued during project collector registration. |
+| `-token` | `APEXLOAD_COLLECTOR_TOKEN` | — | Collector authentication token (prefer `APEXLOAD_COLLECTOR_TOKEN` over `-token` on shared hosts). |
+| `-interval` | — | `15s` | Controller heartbeat and job-sync interval. |
+| `-packs` | `APEXLOAD_COLLECTOR_PACKS` | `linux-hosts` (Linux) / `go-runtime` (other OS) | Comma-separated allowlist of metric/management packs enabled on this collector. |
+| `-prometheus-url` | `APEXLOAD_COLLECTOR_PROMETHEUS_URL` | — | Approved Prometheus text-exposition endpoint for the local `prometheus` scrape pack. |
+| `-monitor-public-key` | `APEXLOAD_MONITOR_PUBLIC_KEY` | — | Base64 Ed25519 controller public key (`APEXLOAD_MONITOR_SIGNING_SEED`); enables signed run jobs and traffic-free availability heartbeats. |
+| `-adapter-targets` | `APEXLOAD_COLLECTOR_ADAPTER_TARGETS` | — | Local JSON file of operator-approved SSH, JMX, JDBC, OTLP, CloudWatch, Azure Monitor, Dynatrace, Elastic, Prometheus-query and Kafka/Service Bus/Solace management destinations. |
+| `-credential-key-file` | `APEXLOAD_COLLECTOR_CREDENTIAL_KEY_FILE` | — | Protected owner-only file (mode `0600`, max 64 KiB) containing the base64 32-byte X25519 private key matching `collector_public_key`. |
+| `-otlp-listen` | — | — | Explicit loopback IP:port (for example `127.0.0.1:4318`) for the passive OTLP/HTTP JSON `/v1/metrics` receiver. |
+| `-otlp-token-file` | — | — | Protected owner-only file (mode `0600`, max 64 KiB, at least 32 bytes) containing the OTLP bearer token. |
+| `-spool-directory` | `APEXLOAD_COLLECTOR_SPOOL_DIRECTORY` | `collector-state` | Persistent private directory for unacknowledged batches, OTLP journal recovery, Solace session quarantine and single-process lock enforcement. |
+| `-insecure` | `APEXLOAD_COLLECTOR_ALLOW_INSECURE` | `false` | Permits a non-loopback plain-`http://` controller URL on an isolated trusted network. |
+
+Supported `-packs` / `APEXLOAD_COLLECTOR_PACKS` identifiers:
+
+| Pack | Scope & approval | Credential model |
+| --- | --- | --- |
+| `linux-hosts`, `go-runtime` | Local host (`/proc`) and collector Go runtime telemetry (empty destination). | None (local process reads). |
+| `prometheus` | Single Prometheus text-exposition endpoint matching `-prometheus-url`. | Unauthenticated local/approved scrape URL. |
+| `prometheus-query` | Governed PromQL / Azure Managed Prometheus target-system queries (`adapter-targets`). | Unsealed only for `auth_type: none` without mTLS; X25519-sealed for `basic`, `bearer`, `azure` or `mtls: true`. |
+| `dynatrace`, `elastic` | Governed Dynatrace (Classic/Grail) and Elasticsearch/OpenSearch run monitoring (`adapter-targets`). | X25519-sealed API token / Basic or ApiKey secret (`credential-key-file`). |
+| `ssh-linux` | Fixed `/proc` (`loadavg`, `meminfo`, `uptime`) over pinned OpenSSH `host_key` (`adapter-targets`). | X25519-sealed SSH `private_key` or `username`/`password`. |
+| `otel-metrics` | Passive loopback OTLP/HTTP JSON `/v1/metrics` (`otlp://<stream>` in `adapter-targets`). | Local bearer token (`-otlp-token-file`) + `X-APEX-Monitor-Stream`. |
+| `jmx`, `jdbc` | Restricted Java helper (`jvm-basic-v1`, PostgreSQL `connection-health-v1` in `adapter-targets`). | X25519-sealed `username`/`password` via `ApexMonitor` helper. |
+| `cloudwatch`, `azure-monitor` | Preview 60s+ bounded cloud metric queries (`cloudwatch://`, `azure-monitor://` in `adapter-targets`). | Collector's ambient AWS IAM role (STS-verified) or Azure managed/workload identity. |
+| `kafka-offsets`, `servicebus-runtime`, `solace-semp` | Exact messaging management snapshots (`management://` in `adapter-targets`, ≥10s Kafka / ≥30s Service Bus & Solace). | X25519-sealed purpose-specific management secret pinned to `management_identity`. |
 
 ## Preparation capacity policies
 
@@ -218,7 +252,7 @@ Run archives keep the historical point artifact and optionally add `monitor_mana
 
 Poll expiry is not proof that provider calls stopped. A source with unresolved physical ownership remains unavailable to a new collector instance. The **Management collection ownership** controls show its exact owner/generation. Administrators may attest a verified process stop, with a durable audit trail, to release that exact fence. `apexctl monitor collection --project PROJECT_ID --id SOURCE_ID` reads the state; `monitor release-collection` accepts an explicit JSON attestation using `--file`. A stale owner/generation cannot release a newer collector. Collector-confirmed completion remains a distinct workflow.
 
-[Review and verification status](qa/reviews/feature-completion-management-2026-10-03/README.md) records foundation acceptance separately from subsequent real provider qualification.
+Review and verification status (`docs/archive/qa-reviews/TELEMETRY_AND_PROTOCOL_SLICES_2026-10.md#feature-completion-management-2026-10-03`) records foundation acceptance separately from subsequent real provider qualification.
 
 Terminal management poll journals remain available for seven days for retry and audit. The leader maintenance sweep scans at most 512 terminal journals and locks at most 50 projects per sweep. A durable cursor advances across protected records so repeated maintenance cannot scan the full retained history. Receipt-referenced polls, unresolved physical ownership, and the active configuration fairness cursor remain retained; run deletion makes obsolete journals eligible after the retry window.
 

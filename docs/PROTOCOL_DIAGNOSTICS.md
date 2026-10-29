@@ -5,7 +5,7 @@ to transaction records and live summaries. Generators advertise
 `grpc_diagnostics_v1` when the gRPC runtime is registered. Older peers and
 archives can omit this field; omission means unavailable.
 
-The [non-Messaging protocol telemetry matrix](qa/PROTOCOL_TELEMETRY_MATRIX.md)
+The non-messaging protocol telemetry matrix (`docs/qa/PROTOCOL_TELEMETRY_MATRIX.md`)
 records local Java HTTP, gRPC and WebSocket fixtures, propagation checks and
 remaining qualification limits. Explicit unsupported Java HTTP body encodings
 are rejected before target traffic, including nil and empty bodies.
@@ -97,7 +97,7 @@ The `kafka_real` adapter advertises `kafka_real_seek_v1` and `kafka_consumer_tra
 
 Set `config.kafka.consumer_transactions: true` with a consumer group, transactional ID, and `isolation_level: read_committed` in a real build. Begin before consuming, transform/produce, then commit the transaction. One input topic is supported per VUser. Ordinary `kafka_commit` and seek are unavailable in this mode. franz-go's group transaction session commits the produced records and consumed offsets together; ownership loss aborts the transaction and reconciles offsets. Confirmed ownership aborts are recoverable on the next transaction; ambiguous broker outcomes require recreating the VUser. Construction and capability discovery remain traffic-free. Mock producer transaction behavior is unchanged and does not claim consumer-offset coordination.
 
-The deterministic adapter and recovery tests are verified locally. Broker-backed seek, transactional visibility, committed offsets, restart and rebalance acceptance require an approved disposable Kafka environment and remain pending; these are not published production acceptance results. The implementation uses the pinned [franz-go transaction session](https://github.com/twmb/franz-go/blob/v1.21.5/docs/transactions.md).
+Deterministic adapter tests, single-broker local Docker Compose interoperability (`scripts/run-local-broker-integration.py`, documented in `docs/qa/LOCAL_BROKER_CHECKS.md`), and single-broker Apache Kafka 3.9.2 (KRaft, TLS/SASL PLAIN) qualification fixtures for owned-partition seek (`scripts/test-kafka-owned-seek.sh`) and fresh-source read-committed LSO/commit/abort/fencing transactions (`scripts/test-kafka-transactions.sh`; see [Event Hubs and Kafka guide](EVENT_HUBS_HOWTO.md#kafka-read-committed-seek-and-fresh-source-transactions)) have executed and passed locally using the pinned `franz-go` v1.21.5 group transaction session. Multi-broker restart/failover, mid-transaction rebalance/revocation recovery, additional broker versions or authentication profiles, and Event Hubs Kafka-endpoint tier qualification remain separate open acceptance gates.
 
 ## Client-call rates and codec work
 
@@ -117,7 +117,7 @@ in mode `embedded_opaque_bytes`. Load generators advertise
 measures opaque byte representations and base64 work. It does not construct Java
 objects or measure JVM serialization, deserialization, shallow object size or
 reachable graphs. The operator-approved object measurement helper remains open
-work in the [implementation spec](ROADMAP_IMPLEMENTATION_SPEC.md#proto-a--finish-truthful-measurements-and-propagation).
+work in the implementation spec (`docs/archive/plans/ROADMAP_IMPLEMENTATION_SPEC_2026-10-28.md`).
 
 | Measurement | Meaning and availability |
 | --- | --- |
@@ -181,6 +181,6 @@ ratios are reported on any change. These findings do not add Java acceptance met
 change the saved regression verdict. Live diagnostics, dedicated archived
 reports and baseline detail views retain each measurement's own denominator.
 
-The [measurement matrix](qa/PROTOCOL_TELEMETRY_MATRIX.md) records which paths have
+The measurement matrix (`docs/qa/PROTOCOL_TELEMETRY_MATRIX.md`) records which paths have
 local evidence. It does not qualify every JVM, a separate-host performance lane
 or the still-unimplemented object-footprint helper.

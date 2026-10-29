@@ -4,17 +4,16 @@
 
 ```
 apexload/
-├── cmd/                     # Executable entry points (controller, generator, apexctl, apexbench,
-│                            #   apexload-collector-agent, apexload-java-vuser-runner,
-│                            #   apexload-record-agent, dslschema, openapits, swaggergen, webcoverage)
-├── pkg/                     # Reusable Go packages (engine, protocol, dsl, api, config, controller,
-│                            #   distributed, storage, recorder, convert, and more)
-├── api/proto/            # Protocol Buffer definitions (gRPC)
-├── dashboard/            # React 18 + TypeScript SPA
-├── desktop/             # Wails native client shell (embeds controller API + dashboard)
-├── mcp/                 # Python MCP server exposing the REST API as agent tools
-├── deployments/          # Kustomize manifests, Helm chart, Docker Compose, Azure/AWS Terraform, CI templates
-└── examples/            # Sample scripts, HAR files
+├── cmd/                     # Runtime binaries, agents, and all 6 Go code generators (see AGENTS.md)
+├── pkg/                     # Reusable Go packages (engine, protocol, dsl, api, storage, rca, etc.)
+├── api/proto/               # Protocol Buffer definitions for controller ↔ generator gRPC (see api/proto/README.md)
+├── dashboard/               # React 18 + TypeScript SPA (see dashboard/README.md)
+├── desktop/                 # Wails v2 native client shell embedding controller API + dashboard (see desktop/README.md)
+├── mcp/                     # Python MCP server exposing the REST API as agent tools
+├── deployments/             # Kustomize overlays, Helm chart, Docker Compose, Azure & AWS Terraform
+├── examples/                # Sample JSON DSL scripts, CSV prompt feeds, raw .http fixtures, monitoring samples (see examples/README.md)
+├── scripts/                 # CI checks, E2E harnesses, manifest renderers, and packaging scripts (see scripts/README.md)
+└── .github/workflows/       # Authoritative CI/CD and release workflows
 ```
 
 See [AGENTS.md](AGENTS.md) for the complete `cmd/` and `pkg/` inventory.
@@ -68,7 +67,6 @@ type Protocol interface {
 - **SOAP**: Reuses the HTTP transport with SOAP-specific defaults, namespaces, and fault-handling semantics
 - **Java over HTTP** (`java_http`): Reuses the HTTP transport with the bounded `java_serialized_object_base64` codec for opaque serialized payloads
 - **Java Vuser** (`java_vuser`): External-runner sidecar bridge for JVM Vuser scripts; governed and disabled unless runner config enables it
-- **Bruno** (`bruno`): Version-pinned compatibility runner for imported Bruno collections; policy-gated and disabled until configured
 - **WebSocket**: Connect, send/receive, configurable timeouts and max message size
 - **gRPC**: Reflection-based dynamic protobuf marshaling, TLS, metadata, streaming
 - **JMS (Solace)** (`jms-solace`): Message queue protocol
@@ -82,7 +80,7 @@ type Protocol interface {
 - **appium**: Device observer; drives one real device or simulator through an Appium server's W3C WebDriver API (tap, type, wait, app launch, mobile commands, screenshots)
 
 The controller, generator, and `apexctl` binaries bundle all of the above through
-`pkg/protocol/builtin`.
+`pkg/protocol/builtin`. Bruno Runner is retired under `_retired/bruno-runner` and excluded from builds; native Bruno HTTP collection import remains built into `pkg/convert`.
 
 **Adding a New Protocol:**
 1. Create `pkg/protocol/myproto/` package
@@ -96,18 +94,21 @@ The controller, generator, and `apexctl` binaries bundle all of the above throug
 
 **Script Sections:**
 - **config**: Global settings (`base_url`, think time, pacing, and protocol-specific blocks such as `http`, `browser`, `grpc`)
-- **data_sources**: CSV and DAT files for row-based data-driven testing
+- **data_sources**: `"csv"`, `"dat"`, and `"file"` sources for row-based or payload-backed data-driven testing
 - **parameters**: named generated values and file/list-backed bindings for VuGen-style parameterization
 - **init**: Setup actions (login, session init)
 - **actions**: Main test flow (define named transactions)
 - **teardown**: Cleanup (logout, resource release)
 
 **Template Variables:**
-- `{{env.VARIABLE}}` — environment variables
+- `{{run.id}}` — managed test run ID
+- `{{env.VARIABLE}}` — allowlisted environment variables (`APEXLOAD_SCRIPT_ENV_ALLOWLIST`) or CLI `--env` overrides
 - `{{data.source_name.column}}` — data source columns
 - `{{param.name}}` — named script parameters
-- `{{var.name}}` — runtime variables
-- `{{fn.uuid()}}`, `{{fn.random(1,100)}}`, `{{fn.timestamp.iso8601}}`, `{{fn.random_string(10)}}` — functions
+- `{{var.name}}` — runtime extracted variables
+- `{{secret.name}}` — project secret bindings
+- `{{file.name}}` — `"file"` data-source contents
+- `{{fn.*}}` / `{{fake.*}}` (e.g. `{{fn.uuid()}}`, `{{fn.random(1,100)}}`, `{{fn.timestamp.iso8601()}}`, `{{fn.random_string(10)}}`, `{{fake.email()}}`) — built-in functions
 
 **Example Script:**
 ```json
@@ -237,13 +238,7 @@ hand-maintained endpoint catalogs here; they drift from `pkg/api/server.go` and
 - Operator workflow guide: [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)
 - Runtime docs endpoints: `GET /api/v1/docs/swagger.yaml` and `GET /api/v1/docs/endpoint-catalog`
 
-The OpenAPI file and endpoint catalog are generated by `cmd/swaggergen` through
-`go generate ./pkg/api`; never hand-edit them. The DSL schema
-([docs/dsl.schema.json](docs/dsl.schema.json)) and action reference
-([docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md)) are generated from
-`pkg/dsl/catalog*.go` by `go generate ./pkg/dsl`; that catalog also drives
-validation and dashboard editor metadata. Script lifecycle overview:
-[docs/SCRIPT_LIFECYCLE.md](docs/SCRIPT_LIFECYCLE.md).
+The OpenAPI file and endpoint catalog are generated by `cmd/swaggergen` and the dashboard TypeScript contract (`dashboard/src/types/generated/openapi.ts`) by `cmd/openapits` through `go generate ./pkg/api` (which also runs `cmd/storeoverlay` for `pkg/api/store_overlay_test.go`); never hand-edit them. The DSL schema ([docs/dsl.schema.json](docs/dsl.schema.json)) and action reference ([docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md)) are generated from `pkg/dsl/catalog*.go` by `cmd/dslschema` (`go generate ./pkg/dsl`); `cmd/datamodeldoc` generates [docs/DATA_MODEL.md](docs/DATA_MODEL.md) (`go generate ./pkg/storage`), and `cmd/webcoverage` generates [docs/LOADRUNNER_COVERAGE.md](docs/LOADRUNNER_COVERAGE.md) (`go generate ./pkg/convert/enterprisearchive`). Running `make generate` (`go generate ./...`) invokes all six generators. Script lifecycle overview: [docs/SCRIPT_LIFECYCLE.md](docs/SCRIPT_LIFECYCLE.md).
 
 After route or DSL catalog changes, run:
 
@@ -328,24 +323,28 @@ npm run dev
 
 **Go Tests:**
 ```bash
-# Run all tests with race detector (as CI does)
-make test   # go test -race -count=1 ./...
+# Run all tests as CI does: third_party/playwright-go fork tests + repo-wide race suite
+make test   # (cd third_party/playwright-go && go test -race -count=1 ./...) && go test -race -count=1 -timeout=20m ./...
 
 # Run specific package
 go test ./pkg/engine
 
 # Run with coverage
-go test -cover ./...
+go test -timeout=20m -cover ./...
 
 # Full coverage report
 make test-cover
 ```
 
-**Frontend Tests:**
+**Frontend Tests & Verification:**
 ```bash
 cd dashboard
+npm run typecheck
+npm run lint
 npm run test
 ```
+
+See [dashboard/README.md](dashboard/README.md) for the complete npm script matrix (`dev`, `build`, `lint:a11y`, `test:workflows`, `test:cycle`, `contracts:check`, `bundle:check`, and the `dev-admin` / `local-auth` Playwright auth profiles).
 
 ### 4. Building for Production
 
@@ -356,7 +355,7 @@ make build
 # ./bin/apexload-record-agent, and ./bin/apexload-collector-agent
 ```
 
-Other useful targets: `make generate` (regenerate DSL schema and OpenAPI artifacts), `make desktop` / `make clients` (Wails desktop app), `make java-vuser-runner`, `make performance-smoke`, and the `k8s-*` deployment targets (see [deployments/README.md](deployments/README.md)).
+Other useful targets: `make generate` (runs all 6 Go code generators: `dslschema`, `swaggergen`, `openapits`, `datamodeldoc`, `webcoverage`, `storeoverlay`), `make desktop` / `make clients` (Wails desktop app; see [desktop/README.md](desktop/README.md)), `make java-vuser-runner`, `make performance-smoke`, and the `k8s-*` deployment targets (see [deployments/README.md](deployments/README.md)).
 
 **Package the production Recording Agent:**
 ```bash
@@ -386,8 +385,8 @@ npm run build
 - **Component names**: PascalCase; default export per file
 - **Hooks**: Prefix with `use` (e.g., `useWebSocket`, `useApi`)
 - **Props interfaces**: `ComponentNameProps` interface in same file
-- **Typing**: Avoid `any`; use TypeScript interfaces from `types.ts`
-- **CSS modules** or inline `style` props; class names with kebab-case
+- **Typing**: Avoid `any`; use TypeScript interfaces from `types.ts` and generated contracts (`src/types/generated/openapi.ts`)
+- **Standard `.css` stylesheets**: plain `.css` files live next to components alongside global design tokens in `dashboard/src/index.css` using kebab-case class names (CSS Modules, Tailwind, and DaisyUI are not used)
 
 ## Performance Considerations
 
@@ -433,21 +432,9 @@ func TestPacing(t *testing.T) {
 }
 ```
 
-## Common Issues & Solutions
+## Troubleshooting
 
-### Dashboard not updating after backend changes?
-- If serving from controller: rebuild dashboard (`cd dashboard && npm run build`), restart controller
-- If using dev server: changes hot-reload; just refresh browser
-
-### Metrics not appearing in dashboard?
-- Check WebSocket connection: `WS /api/v1/ws` should be connected
-- Verify controller logs for errors: `grep -i error` on controller output
-- Check browser console for JavaScript errors
-
-### Memory usage too high during test?
-- Reduce VUsers (each is a goroutine)
-- Check for goroutine leaks: use `pprof` profiling
-- Verify protocol implementation isn't buffering large responses
+For controller startup errors, SQLite lock diagnosis, dashboard asset embedding, WebSocket stream health, and distributed generator issues, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Useful Commands
 
@@ -514,74 +501,18 @@ Useful URLs: dashboard `http://localhost:8080`, health
 
 Files: `apexload.db` (SQLite, auto-created), `coverage.html` (after `make test-cover`),
 `pkg/api/static/` (dashboard build output embedded by the controller; `npm run build`
-empties it first), `examples/` (sample scripts and data).
+empties it first), `examples/` (sample scripts, CSV feeds, raw `.http` fixtures, and monitoring configs; see [examples/README.md](examples/README.md)).
 
-### Template variables and script snippets
+### DSL Authoring & Troubleshooting References
 
-```
-{{env.NAME}}                 environment variable
-{{data.source.column}}       data source column
-{{param.name}}               named script parameter
-{{var.name}}                 extracted variable
-{{fn.uuid()}} / {{fn.uuid}}  UUID
-{{fn.random(1,100)}}         random number 1-100
-{{fn.random_string(10)}}     random string
-{{fn.timestamp.unix}}        Unix seconds (also .unix_ms, .iso8601)
-```
-
-Parameters: `type` is `file`, `list`, `random_number`, `date_time`, `timestamp`,
-`counter`, `uuid`, or `random_string`; `update` is `once`, `each_iteration`, or
-`each_occurrence`; `file`/`list` also take `selection` (`sequential`, `random`,
-`unique`) and `on_exhaustion` (`wrap`, `empty`, `error`).
-
-```json
-{ "parameters": [{ "name": "order_id", "type": "random_number", "update": "each_occurrence", "min": 1000, "max": 9999 }] }
-```
-
-Think time: `{"think_time": {"type": "fixed", "mean_ms": 1000}}`,
-`{"type": "random", "min_ms": 500, "max_ms": 3000}`, or
-`{"type": "gaussian", "mean_ms": 2000, "std_ms": 500, "min_ms": 500, "max_ms": 5000}`.
-
-Minimal HTTP script (`protocol` belongs on the top-level `script` object, and HTTP
-actions use the method as `type`):
-
-```json
-{
-  "script": {
-    "name": "Products_API", "version": "1.0.0", "protocol": "http",
-    "config": { "base_url": "https://api.example.com" },
-    "actions": [{ "name": "get_profile", "type": "GET", "target": "/profile",
-                  "assertions": [{ "type": "status_code", "expected": 200 }] }]
-  }
-}
-```
-
-For `init`, `teardown`, `data_sources`, and `goal_config`, see the README
-[DSL Script Structure](README.md#dsl-script-structure) and `examples/simple-http.json`.
-Browser/mobile DSL keys and actions are in
-[docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md#browser-dsl-quick-reference);
-real broker adapters are opt-in behind build tags
-([docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)).
-
-### Common errors
-
-| Symptom | Fix |
-|---------|-----|
-| `listen tcp :8080: bind: address already in use` | Change port (`APEXLOAD_ADDR=:9000`) or find the holder with `lsof -i :8080` |
-| `database is locked` | Close other processes using the DB (`pkill -f cmd/controller`) |
-| `Invalid script: protocol required` | Add `protocol` to the top-level `script` object, not `config` |
-| `Cannot GET /api/v1/scripts` | Controller not started or wrong port |
-| Dashboard won't load / metrics frozen | Hard refresh; check port 8080 and the WebSocket in DevTools → Network → WS |
-| Test won't start / no transactions | Validate the script, confirm the target is reachable, check the script has actions and enough duration |
-
-"No tests currently running" just means the dashboard is fine and nothing is active.
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions. Performance
-tips: lower VUsers or check target capacity/timeouts to reduce errors, lengthen the
-duration for steadier metrics, and shorten `--ramp-up` for faster (less stable) ramps.
+- **DSL authoring, parameters, think time, and correlation**: [docs/HELP_DSL_OPERATOR_GUIDE.md](docs/HELP_DSL_OPERATOR_GUIDE.md) and [README DSL Script Structure](README.md#dsl-script-structure)
+- **Generated per-action DSL catalog & JSON Schema**: [docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md) and [docs/dsl.schema.json](docs/dsl.schema.json)
+- **Protocol & opt-in broker build-tag matrix**: [docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)
+- **Troubleshooting common startup, script, UI, and runtime errors**: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ## References
 
-- **AGENTS.md**: High-level architecture and tech stack
-- **CLAUDE.md**: Compatibility pointer to AGENTS.md
-- **pkg/dsl/parser.go**: DSL parsing logic
-- **pkg/api/server.go**: Route setup and middleware
+- **[AGENTS.md](AGENTS.md)**: High-level architecture, machine-checked package inventory, and commit/testing policy
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Control-plane, distributed generator, and storage architecture
+- **`pkg/dsl/parser.go`**: DSL parsing logic
+- **`pkg/api/server.go`**: HTTP server setup, route registries, and middleware

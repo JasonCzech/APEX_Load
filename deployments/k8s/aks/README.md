@@ -344,19 +344,22 @@ The checked-in overlay is a template: it needs a cluster-specific workspace quer
 ## Azure Terraform
 
 Provisions the Azure data platform and the selected APEX Load compute roles. Set
-`controller_compute` and `generator_compute` independently to `aks`,
-`container_apps`, or `external`; AKS is omitted when neither role selects it.
+`controller_compute` (`aks`, `container_apps`, or `external`) and
+`generator_compute` (`aks`, `container_apps`, `container_instances`, or
+`external`) independently; AKS is omitted when neither role selects it.
 
 | Resource | Purpose | Maps to |
 |---|---|---|
 | AKS cluster | Optional controller and/or generator Kubernetes runtime. | `deployments/k8s/aks` |
 | Azure Container Apps + Jobs | Optional PaaS controller, warm generators, and burst generators. | `containerapps.tf` |
+| Azure Container Instances (template) | Optional burst-only load generator container-group template (`generator_compute = "container_instances"`): direct private-IP dialing when `network_mode=private`, or reverse-connect over HTTPS `controller_public_url`; emits `container_instances_registration_manifest`. | `aci.tf` |
 | `loadgen` node pool | Dedicated autoscaling pool for generators (taint/label `apexload.io/...=generators`). | `generator-statefulset.yaml` nodeSelector |
-| ACR | Container images. Kubelet identity gets `AcrPull` — no pull secrets. | `kustomization.yaml` images |
+| ACR | Container images. Kubelet and managed identities get `AcrPull` — no pull secrets. | `kustomization.yaml` images |
 | PostgreSQL Flexible Server 16 | Enterprise persistence (`APEXLOAD_STORE=postgres`). Required for App Service topology (SQLite is unsafe on the CIFS `/home` share). | Secret `APEXLOAD_DATABASE_URL` / App Service app setting |
 | Azure Managed Redis | Default live-run state + WebSocket fanout cache. Legacy Azure Cache remains an explicit migration bridge. | Secret `APEXLOAD_REDIS_URL` / controller environment |
 | Storage account + `apexload-archives` container | Run-evidence archives (`APEXLOAD_ARCHIVE_BACKEND=azure_blob`). Account keys disabled — workload identity / managed identity only. | ConfigMap `AZURE_STORAGE_ACCOUNT`, `APEXLOAD_ARCHIVE_CONTAINER` |
 | Key Vault (RBAC) | `{{secret.*}}` script secrets and gRPC TLS PEM blobs (App Service topology). | ConfigMap `APEXLOAD_AZURE_KEY_VAULT_URL`; App Service Key Vault references |
+| Azure Event Hubs (opt-in) | Optional namespace + event hub (`eventhubs_enabled = true`) with split `apexload-send` (producer) and `apexload-listen` (observer probe) SAS rules stored in Key Vault plus AAD `Azure Event Hubs Data Sender` / `Receiver` workload-identity role assignments. | `eventhubs.tf` |
 | User-assigned identities + federated credentials | Split workload identities for `apexload-controller` and `apexload-generator`. Controller gets Blob + Key Vault secret-management access; generators retain read-only Key Vault access. | `serviceaccounts.yaml` client-id annotations; App Service system-assigned identity needs controller-equivalent roles |
 | Private networking | Production default private endpoints/private DNS for PostgreSQL, Redis, Blob, and Key Vault. | `network_mode=private` |
 
@@ -457,7 +460,7 @@ The App Service's system-assigned managed identity must have
 `Key Vault Secrets Officer` on the Key Vault—the same roles as the AKS
 controller workload identity. Generator connectivity requires VNet integration
 and static `APEXLOAD_GENERATORS` targets (see
-`deployments/azure/appservice/` and `docs/CICD_INTEGRATION.md`).
+`deployments/azure/appservice/README.md` and [CI/CD integration](../../../docs/CICD_INTEGRATION.md#deployment-pipelines)).
 
 ### Notes
 

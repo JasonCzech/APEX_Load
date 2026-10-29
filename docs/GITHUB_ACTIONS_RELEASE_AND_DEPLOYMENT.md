@@ -7,6 +7,25 @@ current schema-v2 release manifest (with schema-v1 verification retained for
 legacy releases), and deploy only the assets and image digests named
 by that manifest.
 
+## Active workflow inventory
+
+All twelve checked-in workflows under `.github/workflows` have distinct scopes and trust boundaries:
+
+| Workflow | Trigger | Runner profile | Purpose |
+| --- | --- | --- | --- |
+| `ci.yml` (`CI`) | `pull_request`, `push` (`main`), `merge_group`, `workflow_dispatch`, `workflow_call` | `ubuntu-24.04` on GitHub.com; `apexload-ci-unprivileged` on GHES (`fork-static` on `ubuntu-24.04` for GitHub.com fork PRs only) | Authoritative merge gate: Go/race tests, PostgreSQL integration, content-concurrency gate, dashboard typecheck/lint/Vitest/Playwright (`dev-admin` + `local-auth`), deployment artifact validation, docs checks, and container/SBOM/Trivy gates. |
+| `recording-e2e.yml` (`Recording and replay E2E`) | `pull_request` (recorder/replay/engine/dashboard paths), `push` (`main`), `merge_group`, `workflow_dispatch` | `ubuntu-24.04` on GitHub.com; `apexload-ci-unprivileged` on GHES | Isolated live Chromium browser-recording → authoring → replay verification across `dev-admin` and `local-auth`. |
+| `desktop.yml` (`Build Client Packages`) | `pull_request` (Go/desktop/dashboard/record-agent paths), `push` (`main`), `workflow_dispatch` | GitHub-hosted `matrix.os` (Linux/macOS/Windows) + `macos-latest` | Unsigned CI verification builds for Wails desktop packages and standalone recording-agent bundles (signed release artifacts come only from `release.yml`). |
+| `monitoring-adapters.yml` (`Restricted monitoring adapters`) | `pull_request` (`pkg/collectoragent/**`, `runners/monitor-java/**`), `workflow_dispatch` | `ubuntu-latest` (Temurin JDK 17) | Packages `bin/apexload-monitor-helper.jar` and verifies authenticated TLS JMX collection for restricted Java monitoring packs. |
+| `flake-hunt.yml` (`Flake hunt`) | Daily `schedule` (`0 4 * * *`), `workflow_dispatch` | `ubuntu-latest` | Non-blocking repeated `-race -count=N` Go suite runs to surface non-deterministic tests outside the PR merge path. |
+| `security.yml` (`Scheduled Security`) | Weekly `schedule` (`0 7 * * 1`), `workflow_dispatch` (restricted to `refs/heads/main`) | `SECURITY_RUNNER_LABELS` (default `["ubuntu-24.04"]`) | Scheduled `govulncheck` Go reachability scan and full-graph `npm audit --audit-level=high` dashboard dependency audit on `main`. |
+| `protocol-integration.yml` (`Protected Protocol Integration`) | Weekly `schedule` (`0 5 * * 0`), `repository_dispatch` (`protocol-integration`, `refs/heads/main`) | `PROTOCOL_RUNNER_LABELS` (default `["ubuntu-24.04"]`) | Live broker/service protocol integration suites on `main`. |
+| `release.yml` (`Release`) | `repository_dispatch` (`apexload-release`) | `RELEASE_*_RUNNER_LABELS` (defaults to `ubuntu-24.04`, macOS, Windows) | Verifies signed annotated semantic tag, runs reusable `CI`, builds `apexctl`, signed desktop clients, App Service zip, Helm chart, and all six container image lanes (`amd64`/`arm64`), emits SBOMs and OpenSSL/Cosign signatures, and publishes immutable Release + moving `v1` tag. |
+| `publish-onprem.yml` (`Publish On-Premises Release`) | `repository_dispatch` (`publish-onprem-release` with `environment: "onprem-registry"`) | `[self-hosted, onprem, trusted]` | Mirrors all six signed release-manifest image digests into an internal on-premises registry, re-scans and Cosign-signs internal digests, and atomically promotes semantic release tags. |
+| `deploy-aks.yml` (`Deploy AKS Release`) | `repository_dispatch` (`deploy-aks-release`) | `AKS_RUNNER_LABELS` (default `["ubuntu-24.04"]`) | Verifies release + Cosign signatures, acquires controller maintenance lease, deploys digest-pinned Helm chart to `aks-staging` or `aks-production`, runs live smoke checks, and rolls back on failure. |
+| `deploy-appservice.yml` (`Deploy App Service Release`) | `repository_dispatch` (`deploy-appservice-release`) | `APPSERVICE_RUNNER_LABELS` (default `["ubuntu-24.04"]`) | Verifies signed App Service zip, acquires controller maintenance lease, deploys/validates staging slot, swaps to production only for `production` dispatches, and swaps back on post-swap failure. |
+| `infra-azure.yml` (`Azure Infrastructure`) | `repository_dispatch` (`azure-infra-plan`, `azure-infra-apply`) | `AZURE_INFRA_RUNNER_LABELS` (default `["ubuntu-24.04"]`) | Separate Terraform plan (`azure-infra-plan`) and HMAC/encrypted-artifact apply (`azure-infra-apply`) workflows for `azure-infra-staging` and `azure-infra-production`. |
+
 ## Protected environments
 
 Create these environments before enabling the workflows:
@@ -159,7 +178,9 @@ then:
    the canonical action.
 2. Packages Linux controller-side tools, the App Service zip, Helm chart, and
    signed desktop clients.
-3. Builds standard and enterprise controller/generator images once for amd64
+3. Builds all six promoted component/profile image lanes (`controller:standard`,
+   `controller:enterprise`, `generator:standard`, `generator:enterprise`,
+   `java-vuser-runner:standard`, and `browser-generator:standard`) once for amd64
    and arm64, generates SPDX SBOMs, blocks fixable HIGH/CRITICAL findings, signs
    their exact multi-platform digests, and verifies portable SBOM attestations.
    The gate, the same in CI and on-prem publishing, blocks every
@@ -190,10 +211,11 @@ No workflow publishes `latest`.
 Privileged release, deployment, infrastructure, and manual live-protocol
 workflows use `repository_dispatch`, so GitHub loads their workflow definitions
 from protected `main`. Release dispatches submit only
-`client_payload.release` and, where applicable,
-`client_payload.environment`, using the reviewed event types
-`apexload-release`, `deploy-aks-release`, `deploy-appservice-release`, or
-`publish-onprem-release`. The release and application-deployment verifier first
+`client_payload.release` (`apexload-release`) or both `client_payload.release`
+and `client_payload.environment` (`deploy-aks-release` and
+`deploy-appservice-release` accept `staging` or `production`;
+`publish-onprem-release` fails closed unless `client_payload.environment` equals
+`onprem-registry`). The release and application-deployment verifier first
 checks out only `refs/heads/main`, fetches the requested tag, verifies its
 trusted GPG signature and `main` ancestry, and compares the exact annotated tag
 object and commit with the GitHub API. Candidate code is not checked out or
@@ -241,8 +263,10 @@ jq -n \
   '{event_type:"deploy-appservice-release",client_payload:{release:$release,environment:$environment}}' |
   gh api --method POST "repos/$repository/dispatches" --input -
 
-jq -n --arg release "$release" \
-  '{event_type:"publish-onprem-release",client_payload:{release:$release}}' |
+jq -n \
+  --arg release "$release" \
+  --arg environment "onprem-registry" \
+  '{event_type:"publish-onprem-release",client_payload:{release:$release,environment:$environment}}' |
   gh api --method POST "repos/$repository/dispatches" --input -
 ```
 
@@ -329,8 +353,11 @@ when the two values differ or when the exact reviewed Skopeo version is absent.
 The workflow treats `ONPREM_REGISTRY_HOST` and
 `ONPREM_REGISTRY_NAMESPACE` as different values. It mirrors release-manifest
 digests to non-release candidate tags, scans and signs the exact internal
-digests, waits for all four component/profile lanes, then exposes semantic
-release tags. A release tag is never visible before all candidates verify.
+digests, waits for all six component/profile lanes (`controller:standard`,
+`controller:enterprise`, `generator:standard`, `generator:enterprise`,
+`java-vuser-runner:standard`, and `browser-generator:standard`), then exposes
+semantic release tags. A release tag is never visible before all candidates
+verify.
 
 ## App Service
 
@@ -416,26 +443,26 @@ APEX Load implements a GitHub.com path and a GHES capability profile instead of
 assuming GitHub.com services are present. A GHES line is not considered
 qualified until its staging drill is recorded. The table below is reviewed
 against GitHub's [release and minimum-runner table](https://docs.github.com/en/enterprise-server@3.21/admin/all-releases)
-as of 2026-09-24.
+as of 2026-10-29.
 
 | GHES line | GitHub support closes | Minimum runner | APEX qualification |
 | --- | --- | --- | --- |
 | 3.21 | 2027-06-11 | 2.331.0 | Target; drill pending |
 | 3.20 | 2027-03-17 | 2.330.0 | Target; drill pending |
 | 3.19 | 2026-12-09 | 2.328.0 | Target; drill pending |
-| 3.18 | 2026-10-14 | 2.324.0 | Target; drill pending |
 
 Do not advertise any row as compatible while its status is `Target; drill
 pending`. Remove a line from the target matrix after its closing date unless a
 documented exception is approved; unsupported legacy releases are out of scope.
-3.17 closed 2026-08-25 and was removed on 2026-09-24 (no exception recorded);
-3.18 closes 2026-10-14 and is the next row due for removal.
+Previous lines whose GitHub support window closed without an approved exception
+have been retired from the target matrix; 3.19 closes 2026-12-09 and is the
+next row due for removal.
 
 ### Capability matrix
 
 | Capability | GitHub.com | GHES profile |
 | --- | --- | --- |
-| Actions runners | Authoritative CI uses the hard-coded GitHub-hosted `ubuntu-24.04` image. | Authoritative CI uses only dedicated ephemeral runners carrying the hard-coded `apexload-ci-unprivileged` label. Trusted release/deployment runners use separate groups and labels. |
+| Actions runners | Authoritative CI (`ci.yml`) and `recording-e2e.yml` use the hard-coded GitHub-hosted `ubuntu-24.04` image (`monitoring-adapters.yml` and `flake-hunt.yml` use `ubuntu-latest`; `desktop.yml` uses hosted Linux/macOS/Windows matrix runners). | Authoritative CI and `recording-e2e.yml` use only dedicated ephemeral runners carrying the hard-coded `apexload-ci-unprivileged` label. Auxiliary workflows (`monitoring-adapters.yml`, `flake-hunt.yml`, `desktop.yml`) target GitHub.com-hosted labels unless adapted internally; trusted release/deployment runners use separate groups and labels. |
 | Repository/server API | `GITHUB_SERVER_URL` and `GITHUB_API_URL` | Derive both from runtime variables; never hard-code `github.com` or `api.github.com`. |
 | Controller OIDC issuer | GitHub.com Actions issuer | Trust the configured `https://HOSTNAME/_services/token` issuer and exact audience. Validate individual repository, ref, workflow, environment, runner, expiry, and run claims. |
 | Controller auth fallback | Scoped API key only when explicitly selected | Expiring `ci_runner` API key when the GHES release/installation cannot provide usable OIDC. The controller verifies the exact workflow run through its GitHub App; policies requiring job environment or runner claims remain OIDC-only. |
@@ -533,7 +560,9 @@ choose an uploader for consumer repositories.
 - Pin the base runner image by digest and verify required `skopeo`, Azure CLI,
   Helm, kubectl, OpenSSL, jq, and CA bundle versions during runner bootstrap.
 - The base image also needs GitHub CLI, GNU coreutils/find, Bash 5, Python 3,
-  Node 22, Docker, Buildx 0.34.1, Cosign, Go 1.26.10, JDK 21, npm, Terraform 1.15.8,
+  Node 22, Docker, Buildx 0.34.1, Cosign, Go 1.26.10, JDK 21 (authoritative CI
+  and Java Vuser lanes; `monitoring-adapters.yml` uses Temurin JDK 17 on
+  `ubuntu-latest` for `apexload-monitor-helper.jar`), npm, Terraform 1.15.8,
   and the platform tools used by its lane. Trivy/Syft, Azure CLI, native Wails
   dependencies, and browser dependencies are required only by their matching
   scan/deploy/client/dashboard lanes. Fail runner-image validation if an exact

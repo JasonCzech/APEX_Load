@@ -502,7 +502,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			}
 			method = http.MethodPost
 			if action == "evidence-query" || (action == "byte-query" && *mode == "live") {
-				path = "/api/v1/tests/" + url.PathEscape(*id) + "/native-evidence"
+				path = "/api/v1/tests/" + url.PathEscape(*id) + "/native-series"
 			} else {
 				path = "/api/v1/tests/" + url.PathEscape(*id) + "/archive/native-series"
 			}

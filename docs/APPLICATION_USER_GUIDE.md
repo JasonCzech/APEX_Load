@@ -27,7 +27,8 @@ under it. A few concepts recur throughout the product:
 | **Generator** | A worker that actually drives the VUsers. A run is distributed across the generator fleet. |
 | **Transaction** | A named, timed unit of work inside a script. Response-time percentiles and SLA verdicts are reported per transaction. |
 
-APEX Load can drive HTTP/1.1 and HTTP/2, SOAP/WSDL, WebSocket, gRPC, messaging (JMS,
+APEX Load can drive HTTP/1.1, HTTP/2, and HTTP/3 (QUIC), SOAP/WSDL, Java-over-HTTP
+(`java_http`), governed Java Vuser (`java_vuser`), WebSocket, gRPC, messaging (JMS,
 Kafka, Azure Event Hubs), databases, network protocols, and browser replay — so one
 platform covers API, integration, and end-to-end load. A device observer measures one
 real phone or tablet, through Appium, while that load runs.
@@ -336,19 +337,19 @@ HTTP responses outside 200–399 fail by default even without assertions (see th
 
 ### Transactions
 
-There is no `transaction` action type, and you do not need one. Each action's **`name`
-is its transaction label** in reporting, so naming actions well *is* naming your
-transactions. To change the grouping, set `config.run_logic.auto_transactions`:
+You can mark explicit multi-step business spans (using `transaction_start` /
+`transaction_end` or imported `source_transaction` markers) or let the engine wrap steps
+automatically via `config.run_logic.auto_transactions`:
 
-- `none` (default) — report on the action names as authored.
-- `per_action` — wrap every action in its own transaction.
-- `per_iteration` — treat one pass through `actions` as a single transaction.
+- `none` (default) — emit no automatic wrappers when the script defines explicit transaction markers; when a script has **no** explicit transaction markers, `none` behaves like `per_iteration` and emits **one transaction per iteration** (not per action).
+- `per_action` — wrap every action in its own transaction using that action's `name` as the reported transaction label.
+- `per_iteration` — wrap one pass through `actions` as a single iteration transaction (in addition to any explicit markers).
 
 Imported LoadRunner scripts keep their original transaction markers as
 `source_transaction` actions, which start, end, or annotate named transactions.
 Review the converted boundaries and reported measurements before comparing them
-with the source run. For a new script, choose automatic transaction wrapping to
-match the measurement scope you need.
+with the source run. For a new script without explicit markers, set `auto_transactions`
+to `"per_action"` when you want per-request transaction percentiles and SLA verdicts.
 
 Transactions you mark while recording, and spans you wrap in a transaction in the
 editor, use the same marker pair: the call's first argument names the transaction
@@ -406,36 +407,14 @@ deliberately — a retry that hides a real 500 turns a failed run into a slow on
 ## Parameterizing And Data
 
 Instead of hard-coding values, use template namespaces so a script behaves like a
-real, varied user population. Templates are expanded in string fields at runtime.
+real, varied user population. Templates expand in supported string fields at runtime:
 
-| Namespace | Resolves to |
-| --- | --- |
-| `{{var.name}}` | A variable captured earlier in the script by an extractor, falling back to a named parameter. |
-| `{{param.name}}` | A named parameter from the script's `parameters` section only. |
-| `{{data.source.column}}` | A value from a bound data pool or data source, addressed as `source.column`. |
-| `{{env.KEY}}` | A runtime environment value, including `-env key=value` overrides passed at launch. |
-| `{{secret.NAME}}` | An application secret, falling back to the project secret of the same name. Values are never shown in the UI and are always redacted from run output. |
-| `{{file.name}}` | The content of a file data source. |
-| `{{fn.*}}` / `{{fake.*}}` | A generated value (see below). |
+- **Runtime & data state**: `{{run.id}}` (active run or debug session ID), `{{var.name}}` (extractor output, falling back to a named parameter), `{{param.name}}` (declared `parameters` entry only), `{{data.source.column}}` (current data-source or data-pool row), and `{{file.name}}` (file data-source bytes).
+- **Secrets & operator environment**: `{{secret.NAME}}` resolves application or project secrets (always redacted from UI and run output). `{{env.KEY}}` is **default-deny**: it resolves only operator environment keys explicitly listed in `APEXLOAD_SCRIPT_ENV_ALLOWLIST` (there is no `-env` CLI flag, and cloud/credential names such as `AWS_*`, `AZURE_*`, `*SECRET*`, and `*TOKEN*` are unconditionally blocked).
+- **Built-in generators (`{{fn.*}}` / `{{fake.*}}`)**: `fn.uuid()`, `fn.timestamp.unix()`, `fn.timestamp.unix_ms()`, `fn.timestamp.iso8601()` (`fn.timestamp.rfc3339()`), `fn.random(min,max)`, `fn.random_string(n)`, and `fake.email()`. Put richer synthetic data (names, addresses, order numbers) in a CSV data pool; unknown `fn.*` / `fake.*` tokens stay unexpanded.
+- **Fail-closed safety**: Unresolved `{{run.*}}`, `{{param.*}}`, `{{secret.*}}`, and `{{file.*}}` placeholders fail execution rather than transmitting raw templates (unless an operator explicitly sets `APEXLOAD_ALLOW_UNRESOLVED_SECRETS` or `APEXLOAD_ALLOW_UNRESOLVED_FILES`).
 
-### Generated Values
-
-The builtin function set is small and deliberate:
-
-| Function | Produces |
-| --- | --- |
-| `{{fn.uuid()}}` (also `fn.uuid`, `fn.uuid.v4`, `fake.uuid`) | A random UUID |
-| `{{fake.email}}` | A random address at `example.test` |
-| `{{fn.timestamp.unix}}` | Seconds since the epoch |
-| `{{fn.timestamp.unix_ms}}` | Milliseconds since the epoch |
-| `{{fn.timestamp.iso8601}}` (also `fn.timestamp.rfc3339`) | An RFC 3339 timestamp |
-| `{{fn.random(min,max)}}` | A random integer in `[min, max]` |
-| `{{fn.random_string(n)}}` | A random string of length `n` |
-
-That is the whole set. If you need richer synthetic data — names, addresses, plausible
-order numbers — generate it into a CSV data pool rather than expecting a `fake.*`
-function to exist for it. Anything outside this list resolves to nothing and will show
-up as an unexpanded template in your request.
+For the complete namespace table, generator signatures, and per-protocol unresolved-variable rules, see the [DSL operator guide](HELP_DSL_OPERATOR_GUIDE.md#choose-data-and-variable-lifetimes).
 
 ### Data Sources And Data Pools
 
@@ -827,7 +806,7 @@ without the scenario**, and you create the scenario from them once they are reso
 | --- | --- | --- |
 | OpenAPI / Swagger | Contracts & collections | Executable API draft |
 | Postman collection | Contracts & collections | Executable API draft |
-| Bruno collection | Contracts & collections | Converts supported HTTP requests into native scripts; review unsupported behavior before replay. In the desktop app, a collection folder, archive or request file can also be dropped on the Source bundle card. Re-importing a collection updates the scripts it created earlier as a new version (choose Create a copy or Skip per request), and a header HTTP cannot send can be trimmed or removed at review. Only operator-supplied credentials (authorization, API keys, auth tokens, passwords) go through credential review, each under a readable project secret name taken from the variable or field (`{{partnerPassword}}` becomes `PARTNER_PASSWORD`). A second credential wanting the same name is numbered (`_2`), and so is a name the project already uses for another secret, so an import never sends that secret's value; on a re-import, each credential keeps the name its saved scripts already use, including an older hashed name the project configured; cookies and session, anti-forgery and trace headers stay as imported and are listed under Kept as imported. Operating-system and version-control files, files Bruno's own ignore list excludes, and gitignored files Bruno does not load itself (such as logs) are skipped; a gitignored `.env`, environment or request is still imported, as Bruno would open it. The new script folder defaults to the collection's declared name, and the review says when the requests' own tests expect an error response, as a negative-test collection does. Under **Data & parameters**, **Generated values** lists the trace and message IDs and time stamps the collection recorded once; checked values are generated again each iteration, and a session, conversation or transaction ID, or a GUID in another field, waits for you to check it. Each input the collection leaves unset (**Required runtime inputs**) takes one value for every user, a column of a data pool (each virtual user reads its own row as `{{data.alias.column}}`; bind the alias to the pool in the scenario's Data step), or a value generated each iteration (a UUID, the current time or random digits). Re-importing the collection starts each input from how the scripts it updates supplied it. When the folder includes Bruno environments (`environments/*.yml` or `.bru`), **Fill inputs from** sets the inputs an environment defines to its values; secret, disabled and `.env` values are never offered |
+| Bruno collection | Contracts & collections | Converts supported HTTP requests, folder hierarchies, and Bruno environment inputs into native HTTP DSL scripts with re-import version updates and readable secret bindings (Bruno Runner is retired). See [Import fidelity and repairs](IMPORT_FIDELITY_AND_REPAIRS.md#bruno-native-http-import) |
 | WSDL / SOAP | Contracts & collections | Executable SOAP draft |
 | AsyncAPI / Kafka | Contracts & collections | Messaging draft |
 | RAML / Anypoint | Contracts & collections | API draft |
@@ -1646,34 +1625,15 @@ Each has its own reference document: [Prometheus metrics](OBSERVABILITY_INTEGRAT
 
 ## Troubleshooting And FAQ
 
-**My script or run has disappeared.**
-Almost always a scope mismatch. Check the domain, project, and application/release in
-the sidebar scope selector. Scripts and results are project-scoped, so a script created
-under one project is invisible from another.
+For operational symptoms — sign-in or 401/403 errors, missing scripts or runs across scopes, recording-agent pairing, non-executable imports (`external_runner_required`), capacity refusals, `SHAKEOUT_REVIEW` pauses, missing telemetry, archive availability, and pending root-cause analyses — start with [Troubleshooting](HELP_CENTER.md#troubleshoot-a-run).
 
 **A template appears literally in my request, like `{{fn.timestamp()}}`.**
-The namespace or function does not exist. Check it against the namespace and function
-tables above — the builtin set is small, and anything outside it resolves to nothing.
-`fn.timestamp()` in particular is not a function; use `fn.timestamp.iso8601`,
-`fn.timestamp.unix`, or `fn.timestamp.unix_ms`.
+The namespace or function does not exist. Check it against the [DSL operator guide](HELP_DSL_OPERATOR_GUIDE.md#choose-data-and-variable-lifetimes) — `fn.timestamp()` is not a built-in token; use `fn.timestamp.iso8601()`, `fn.timestamp.unix()`, or `fn.timestamp.unix_ms()`.
 
 **`{{var.something}}` is empty after the first action.**
 The extractor did not match. Set `on_miss: "fail"` on the extractor so the action fails
 loudly instead of quietly carrying an empty value into every later request, then replay
 and inspect the response body.
-
-**My run says `external_runner_required` and will not launch.**
-Check the import disposition and [Capabilities & limitations](HELP_CENTER.md#check-current-capabilities). Java VUser requires its configured governed sidecar. SAP GUI has no registered runtime in standard binaries, and Oracle Forms/NCA requires an approved bridge; enabling a pool setting alone cannot supply either missing execution path.
-
-**The shakeout failed and my run is parked.**
-The run is in `SHAKEOUT_REVIEW`. Open it, read the canary evidence, and fix the script —
-that is the shakeout doing its job. If you are certain the failure is environmental, you
-can override and continue.
-
-**The launch was refused for capacity.**
-The scenario needs more generator capacity than is currently available. Run the
-capacity preview, lower the VUser count if that still meets your objective, or ask an administrator
-about the generator fleet and reservations under **Capacity planning**.
 
 **A PDF export was refused.**
 PDF is declared per report profile. Switch to a profile that offers it, or export HTML.
@@ -1716,8 +1676,7 @@ eye.
 
 - Set your **scope** (domain, project, release) before you start looking for anything.
 - **Validate and replay** a script for one user before running it for thousands.
-- Give every action a **meaningful name** — that name is your transaction label, and
-  you cannot rename it after the fact in an archived report.
+- Give every action a **meaningful name** — action names identify steps in diagnostics and become transaction labels when `auto_transactions` is `"per_action"`, and you cannot rename them after the fact in an archived report.
 - Add at least one **assertion** per action. HTTP 4xx/5xx already fail by default; assertions also verify the expected business response.
 - Use **think time and pacing** deliberately. A script with neither is a load generator
   pointed at your own infrastructure, not a model of user behavior.

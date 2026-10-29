@@ -1,6 +1,6 @@
 # Java implementation validation history — September 2026
 
-Status: Historical. Dated local verification and evidence retained from the implementation guide during the 2026-10-19 consolidation. Results apply only to their recorded scope; they do not qualify later sources, production pooling, AKS or untested platforms. Current contracts and open gates are linked from [Java implementation scope](../JAVA_VUSER_POOLING_IMPLEMENTATION.md).
+Status: Historical. Dated local verification and evidence retained from the implementation guide during the 2026-10-19 consolidation. Results apply only to their recorded scope; they do not qualify later sources, production pooling, AKS or untested platforms. Current contracts and open gates are linked from [Java implementation scope](../JAVA_SHARED_AND_PILOT_RUNTIME.md).
 
 ## Contents
 

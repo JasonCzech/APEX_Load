@@ -60,24 +60,32 @@ assertions are `GREEN`; M1 closure now depends on confirming the U01 full-arc sm
 M2 is underway with one explicit-update golden harness and a backend-registry-derived inventory.
 All 15 converter surfaces now have separate valid-output and invalid/diagnostic goldens, and every
 successful result must also pass canonical DSL validation. The Oracle E-Business launcher is
-classified `review_only` because it reuses the enterprise-archive converter. The inventory is at
+classified `review_only` because it reuses the enterprise-archive converter. Per-file isolated
+import-asset and protected-session roots now back whole-profile browser runs ([isolation review](../archive/qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md#roadmap-e2e-isolation-2026-10-20)),
+and Contract v2 authoring receipts, `ScenarioValidationContext` composite digests, unified HTTP
+import persisted-copy parity, and zero open cells in [LIFECYCLE_PARITY_MATRIX.md](LIFECYCLE_PARITY_MATRIX.md)
+and [ADAPTER_RETIREMENT.md](ADAPTER_RETIREMENT.md) have landed. The golden inventory is at
 [evidence/M2/converter-golden-inventory.json](evidence/M2/converter-golden-inventory.json); M2 is not
-closeable until the offline LoadRunner corpus and protected-lifecycle reports also exist.
+closeable until the offline LoadRunner corpus and protected-lifecycle reports are committed under `evidence/M2/`.
 
 M3 is underway with a generated status-only lifecycle matrix covering every canonical run status
 against Start, Pause, Resume, Stop, and Abort. The handlers now consume the same pure policy that
-generates [evidence/M3/run-control-matrix.json](evidence/M3/run-control-matrix.json). Runtime
-adjustments and conditional gates such as leadership, in-flight persistence, finalization, and
-backend acknowledgements remain open matrix work. DEF-26 also remains open: terminal payloads are
-compacted, but durable history is still loaded into an unbounded process-lifetime map.
+generates [evidence/M3/run-control-matrix.json](evidence/M3/run-control-matrix.json). The non-Messaging
+end-to-end integration gate ([roadmap-int-1-2026-10-28](reviews/roadmap-int-1-2026-10-28/README.md))
+and 21/21 `-race` 3-repetition local fault qualification ([roadmap-rec-c-local-faults-2026-10-28](reviews/roadmap-rec-c-local-faults-2026-10-28/README.md))
+verify archive/target request reconciliation, source-window coverage v4, and 10-consumer scrubbed
+telemetry parity. Conditional runtime-adjustment matrix rows, the 24-hour single-node soak
+(`evidence/M3/soak-24h/`), and DEF-26 (compacted terminal payloads still retain durable history rows
+in an in-memory map) remain open.
 
 M4 is underway with an ordered, fingerprinted `schema_migrations` ledger shared by SQLite and
-PostgreSQL. Store construction records convergence only after the full idempotent schema, backfill,
+PostgreSQL (at migration v86, `durable-telemetry-render-population`, as of 2026-10-28). Store construction records convergence only after the full idempotent schema, backfill,
 index, foreign-key, and optional Timescale sequence succeeds; reopening is idempotent, changed
 release identities fail closed, and a database newer than the binary is rejected. Configured stores
-expose a read-only `SchemaStatusProvider`, and backend readiness now reports `apexload.schema.v2`
-instead of the unrelated archive-manifest version. The dialect inventory, SQLite→PostgreSQL mover,
-real PostgreSQL reconciliation, and restore drill remain open.
+expose a read-only `SchemaStatusProvider`, backend readiness reports `apexload.schema.v2`, and
+PostgreSQL 16 analysis writer-ownership and reference fault checks passed in
+[roadmap-na-d1-local-macos-2026-10-28](reviews/roadmap-na-d1-local-macos-2026-10-28/README.md). The full-suite PostgreSQL dialect inventory, SQLite→PostgreSQL mover,
+and scripted restore drill remain open.
 
 ## Headline metrics
 

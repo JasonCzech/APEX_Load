@@ -10,8 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class RetiredArchiveTests(unittest.TestCase):
     def test_manifests_match_retained_source_bytes(self):
         manifests = [ROOT / "_retired/appdynamics/manifest.json",
-                     ROOT / "_retired/bruno-runner/manifest.json",
-                     ROOT / "_retired/main-integration-manifest.json"]
+                     ROOT / "_retired/bruno-runner/manifest.json"]
         for manifest in manifests:
             records = json.loads(manifest.read_text())["files"]
             self.assertTrue(records, manifest)

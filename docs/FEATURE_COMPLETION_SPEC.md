@@ -2,7 +2,7 @@
 
 Status: Roadmap — approved implementation program, authorized and evaluated 2026-10-02 against published commit `2314ab698c805f5b75ac8b984143a6389deef03b`.
 
-The evaluation below is the **2026-10-02 baseline**, not a current gap inventory. Requirements remain here; dated implementation contracts, delivery narratives and their qualification limits are preserved in the [delivery snapshot](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md). Retained deviation lists and the linked delivery records must be read together; moving a record does not close its gates. Use [ROADMAP.md](ROADMAP.md) for remaining priorities. The proposed [remaining-roadmap implementation specification](ROADMAP_IMPLEMENTATION_SPEC.md) reconciles those priorities against the October 19 current-main implementation, excluding Messaging and CloudTest outcome parity.
+The evaluation below is the **2026-10-02 baseline**, not a current gap inventory. Requirements remain here; dated implementation contracts, delivery narratives and their qualification limits are preserved in the [delivery snapshot](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md) and later wave records linked from [ROADMAP.md](ROADMAP.md). Use [ROADMAP.md](ROADMAP.md) and the acceptance inventories under `docs/qa/` for current priorities and open external gates. The [remaining-roadmap implementation specification](archive/plans/ROADMAP_IMPLEMENTATION_SPEC_2026-10-28.md) records the October 28 non-Messaging wave dependencies and gates, excluding Messaging and CloudTest outcome parity.
 
 ## 1. Objective and completion contract
 
@@ -81,7 +81,7 @@ Checkpoint only after the successful extraction/assertion boundary. Conditional 
 
 Soft Pause prevents new event delivery/application work while allowing an already-started action, assertions and its fenced checkpoint to finish before pause acknowledgement. Once paused, bounded ownership reads and renewals continue while queued events remain bounded and pending. Existing SDK control-plane keepalives and run-bound infrastructure monitors retain their separate lifecycles; pause confirmation proves the application receive/delivery/tail/checkpoint boundary. Start, stop, drain, expiry, failed extraction, identity expiry, controller takeover and storage failure must preserve fencing and cleanup.
 
-Delivery status, 2026-10-03: EH-1 process-wide processor/worker admission and traffic-free preparation are implemented. The EH-2 evidence slice adds bounded standalone progress, exact decimal-string positions and nullable delivered/checkpoint sequence backlog, opt-in tail polls (10 seconds to 5 minutes; default 10 seconds), cumulative generation counters/checkpoint distributions with latest-revision merge, and retained live/history/archive/report/API/CLI reads. Source-monotonic ownership/cursor ages qualify only within 30 seconds of per-row capture; transit and cross-host clock alignment remain unqualified. Nullable SQLite/PostgreSQL history columns also preserve existing messaging summaries without inventing older measurements. Strict processor pause now requires actual receive/tail/checkpoint quiescence and explicit generator proof, with lazy SDK receiver admission and fenced fail-closed compensation. Processor recovery and the protected EH-3 Azure matrix below remain open; local/default/tagged verification does not close provider acceptance. Current operator guidance is in the [Event Hubs workflow](EVENT_HUBS_HOWTO.md#processor-progress-and-checkpoint-evidence).
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#eh-2-progress-lag-and-recovery) and [Event Hubs workflow](EVENT_HUBS_HOWTO.md#processor-progress-and-checkpoint-evidence).
 
 ### EH-3: Acceptance
 
@@ -169,9 +169,7 @@ Native recording uses the pinned Playwright full timing mode with content omitte
 
 Use private per-run/worker-generation staging with safe regular files and local ACLs, not a globally reusable temp namespace. Retain the existing 100 MiB/100,000-entry per-HAR and 128-artifact/1 GiB limits as default ceilings, additionally enforcing aggregate run quotas. Admit bounded recording against scratch reserve and driver/browser/generator RSS. Count issued requests and in-flight work, not only completed entries: starting defaults are 256 concurrently in-flight requests, 2,048 in-memory metadata rows and the existing 256-task collection queue, with explicit byte caps. Retain overflow/drop counters before discarding evidence. Native recording and sanitization share a reserved output/RSS budget and a 30-second finalization deadline; watchdogs observe buffering even before a file grows. Record truncation/resource-limit reasons. Quota exhaustion that can stop only recording marks evidence incomplete. Recorder overflow that requires closing a context is an explicit affected-VUser resource failure and censors unfinished document/journey observations; it must not appear as successful unaffected workload. Required-evidence policy may additionally fail the run explicitly; optional evidence failure cannot silently become an application pass. Publication waits for accepted artifact receipts to drain or records incomplete capture. Crash cleanup, late writers, project/run deletion and remote storage retention are fenced and durable.
 
-The native HAR working-file follow-up provides private generation staging, exact descriptor leases, joined native close via a pinned licensed SDK subset, protected scrubbed publication and identity-bound terminal-retirement recovery. Retained browser resource pages provide bounded authorized JSONL/Parquet inspection, exact filters/cursors and dashboard/CLI readers. Review corrected native document finality, close/retirement races and late read ownership. [The composed review](archive/qa-reviews/INTEGRATION_2026-10.md#feature-completion-composed-review-2026-10-05) records completed scoped source/test qualification, including the default full Go suite and both dashboard authentication profiles. General crash cleanup, aggregate active-writer/RSS quotas, managed generator transfer, native/synthetic archive exports and full provider/platform/overhead acceptance remain open; these changes do not close BE-1–BE-4.
-
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#be-3-native-and-synthetic-har-delivery).
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#be-3-native-and-synthetic-har-delivery) and [browser acceptance inventory](qa/BROWSER_ACCEPTANCE.md).
 
 ### BE-4: Browser acceptance
 
@@ -179,21 +177,7 @@ Use controlled Chromium and WebKit pages covering cache/service workers, redirec
 
 Publish benchmark artifacts for supported engine/profile/platform combinations: host/browser/driver versions, launch time, CPU/RSS, action/metric overhead, capture overhead, throttled timing separation, cleanup and stability. The current five-browser-VUser published ceiling remains until measured evidence authorizes an increase. Synthetic shaping is calibrated approximation, not a real-device equivalence claim.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#be-4-browser-acceptance).
-
-Frames, never-finishing requests, never-ending chunked bodies, killed native recordings, failed subresources, cache disabling and revalidation, and runtime-secret route redaction ran in Chromium only and now run in both engines.
-
-The opt-in `TestBrowserBenchmark` (gate `APEXLOAD_BROWSER_BENCHMARKS`) measures each engine with a desktop and a mobile profile it accepts. It records host, driver and browser versions; cold launch and session start; navigation time, capture overhead and throttled separation; largest observed descendant-process RSS snapshot and CPU (with every other pooled browser closed first); teardown time and leftover processes; and failures, including sessions that fail to start. The [memory measurement contract](PERFORMANCE_BENCHMARKS.md#memory-units-and-measured-population) defines byte units, missing/partial snapshots and shared-process attribution; this sampled maximum is not an independently measured per-VUser peak. Each engine is a subtest, so a host without WebKit still produces Chromium's results. It writes `browser-benchmark.json` and, given the measured commit, F4 acceptance requests (`BE-4`, `browser-benchmark`) that pass the endpoint's validation: `pending` for a reviewer to judge against the published targets, or `failed` when unstable, never `passed` by itself. `scripts/run-optin-suites.sh --all` runs the browser package with both engines required and the acceptance benchmark as the "browser acceptance" suite, keeping the results at a printed path and naming the commit only for an unchanged tree. A local run (darwin-arm64, Chromium 149, WebKit 26.5) had no failures and no leftover processes; throttled navigations were 194–207 ms slower for 200 ms of latency.
-
-Deviations:
-- No benchmark results are published or recorded; an operator records them per engine, profile and platform, and the five-browser-VUser ceiling stands. The benchmark's profile names (`chromium-desktop-1080p`) are not the browser benchmark evidence's profile IDs (`desktop_chromium_1080p`), and navigation time is absolute, not an overhead against a baseline.
-- Metadata floods, flush-time quota exhaustion, recorder limits, old-archive fallback, and secret-bearing headers and bodies are tested without a browser (a secret in the URL path is tested in both engines).
-- Viewer/editor separation and project denial run in the local-auth profile only: the default profile has no second principal.
-- The end-to-end walk starts from an archived run, not a live sample, and downloads a synthetic HAR (D7); the dashboard's waterfall rendering is not reconciled against a fixture, only the recorded phases.
-- No test crashes a browser, renderer or page under a live generator (context close and a killed recording owner are covered), and the huge-body case is a never-ending stream with stubbed memory, not a large finite body.
-- HTTP cache provenance is not asserted per response; cache disabling and revalidation are.
-- WebKit has no desktop device profile, so its desktop benchmark sets a 1920x1080 viewport.
-- Cold launch is timed against a closed browser pool, not a cold host.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#be-4-browser-acceptance), [memory measurement contract](PERFORMANCE_BENCHMARKS.md#memory-units-and-measured-population), and [browser acceptance inventory](qa/BROWSER_ACCEPTANCE.md).
 
 ## 7. Browser intelligence completion
 
@@ -203,25 +187,13 @@ Introduce versioned browser finding records with rule/model version, exact measu
 
 Threshold scoring uses documented nonnegative weights and only qualified metrics. A required missing metric prevents an overall qualified score; show observed component contributions and coverage instead. Preserve the legacy scoring version for historical reports. Avoid a healthy badge when collection is absent.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-1-explainable-findings-and-applicability).
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-1-explainable-findings-and-applicability) and [browser intelligence acceptance inventory](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md).
 
 ### BI-2: Baseline anomalies
 
 Match browser metric/algorithm version, actual engine/browser version, platform/profile/viewport, applied shaping, cache/new-user policy, stable authored script/action/route/document-kind identity and compatible load window. Concrete document/navigation IDs are only evidence lineage/deduplication identities; they are never cross-run matching keys. Mark pauses, source loss, shaping changes and insufficient/unrepresentative windows. Use the existing minimum 30 valid comparable buckets and absolute z-score ≥3 as an advisory three-sigma heuristic, not a calibrated p-value. Require a practical effect floor: timing changes at least max(50 ms, 10% of baseline mean), CLS changes at least 0.02, and other metrics a positive catalog-defined/configured floor. Zero variance and insufficient baselines remain unscored. Group repeated observations from one browser/document before qualification so publication repeats cannot manufacture independent samples. Publish direction, expected range, sample/bucket count, baseline provenance and excluded reasons. Statistical findings remain advisory; explicit application SLAs own CI/stop outcomes.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-2-baseline-anomalies).
-
-A scored result also gives the expected range: the baseline mean ± the larger of 3σ and the effect floor, so a value inside it is within range.
-
-Buckets outside steady load (ramp, pause, settle) are counted as excluded. The RCA panel lists the results under **Browser baseline**; they stay advisory and never feed hypotheses or CI.
-
-Deviations:
-- Authored action and route identity are not part of the cohort key, because document observations do not record them; the scenario group stands in, and only while the baseline ran the same script and configuration.
-- Of the excluded reasons, only `outside_steady_load` is counted per bucket; source loss is a per-run caveat, and there is no check for an unrepresentative or short window.
-- No catalog-defined effect floors exist yet, so metrics other than timings and CLS are unscored (`no_effect_floor`); the metrics RCA reads all have floors.
-- Browser findings (E1) still report their baseline criteria as `not_evaluated`, and do not cite these results.
-- The run's side is the median of its bucket p75 values, not an independent per-document test.
-- The pinned `browser_policy` sets the effect floors (raising the defaults only) and the baseline mode, but the analysis names its baseline run: `latest_compatible` uses that run rather than selecting one, and `pinned_run` compares only when it is the pinned run.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-2-baseline-anomalies) and [browser intelligence acceptance inventory](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md).
 
 ### BI-3: Interaction patterns, heatmaps and journey impact
 
@@ -231,21 +203,7 @@ Heatmaps aggregate observed coordinates into at most a 64×64 grid for the same 
 
 Define one journey attempt by an explicit start and terminal outcome, with nonnegative versioned journey weights. Report completed/failed/aborted/skipped/censored attempts separately from step failures. The default weighted failure index is `sum(weight_j * failed_eligible_journey_attempts_j) / sum(weight_j * eligible_journey_attempts_j)`; one failed journey counts once regardless of its step count. Zero denominator is unscored. A separate step-risk index requires explicit configuration. Missing steps and censored sessions remain incomplete. Revenue/conversion impact requires an explicit authorized external model and its provenance; it is never inferred from synthetic latency. Default results are weighted test-journey risk, not lost revenue.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-3-interaction-patterns-heatmaps-and-journey-impact).
-
-Heatmaps place each pointer gesture's first point on an abstract 64×64 viewport grid. There is one map per sanitized route, layout revision, viewport, device pixel ratio and orientation, engine and profile (joined from the run's document evidence by source generation, else `unknown`). A run that captured interactions but kept none in its archive answers `unavailable`, and coverage counts the archive's own losses. Keyboard targets go to a per-map role and hashed-label table. Child-frame, navigated, synthetic, page-state-unavailable, viewport-less and out-of-viewport gestures are counted, not mapped. The run report shows the patterns and grids under **Browser evidence**.
-
-Deviations:
-- No screenshot overlays.
-- No child-frame maps, because E3 records no child-frame points.
-- Incomplete journeys stay with E5's journey accounting.
-- Patterns are found among the first 100,000 interactions.
-- No CLI command.
-- Engine and device profile come from document evidence only: without it (none kept for a context, unreadable, or a context past the first 65,536) they are `unknown` and disclosed with the reason (`engine_profile_unknown`, plus `document_evidence_unreadable` or `document_evidence_truncated`), and gestures of different engines with one layout can share a map.
-- Cells are viewport positions at dispatch; gestures at different scroll offsets share a map, which states its scroll range, and the layout revision is the one read after the gesture.
-- Steps are told apart by action name and gesture kind (capture records no stable step key), so distinct steps that share a name are one step for retries and for repeats without dispatched points.
-- Dead interactions come only from post-action `sync` waits; authored assertion, dialog and download outcomes are not used.
-- The repeat window is measured on capture time, taken after each gesture's wait and page reads, because E3 records no dispatch time.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-3-interaction-patterns-heatmaps-and-journey-impact) and [browser intelligence acceptance inventory](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md).
 
 ### BI-4: User workflows and acceptance
 
@@ -253,34 +211,7 @@ Provide device/engine/page comparison, finding list and evidence drill-down, bas
 
 Golden browser fixtures reproduce known layout shifts, interactions and regressions, missing/unsupported metrics, repeated publications, synthetic repeated taps, layout mismatch and failed journey steps. Assert measured ground truth and scoring/exclusion rules; test no additional target traffic. Verify both engines' support differences and both auth profiles' configuration, finding→resource navigation, comparison and exports. Baseline intelligence cannot release before BE document-metric qualification passes.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-4-user-workflows-and-acceptance).
-
-  Diagnostics' browser evidence points to it. The live execution page shows the comparison over the documents published so far.
-- **Drill-down:** finding → document → resources → HAR entry. A finding's worst document opens the inspector filtered to that document. A request opens its HAR entry through `GET /api/v1/tests/{id}/archive/browser/har-entry?request_id=` (HAR download permission): a synthetic HAR 1.2 entry scrubbed and bounded as the downloadable synthetic HAR is, or, for a context that recorded a native HAR, that HAR's name.
-- **Policy editor:** **Settings → Workspaces → Browser & journey policies** lists, creates, edits and deletes a project's browser and journey policies. It presents the revision it read; a save refused because the policy's revision moved offers the current revision (other refusals, such as a second default, show their reason); and any past revision can be shown read-only. The list, in the editor and `apexctl`, reads every page. Viewers read them. Run pins and finding revisions are unchanged by edits.
-- **Saved panels:** the project panel editor offers the **Archived browser documents** population (`document_*` metrics at p50–p99), which reads one measurement tuple.
-- **Reports:** the engineer profile adds Browser Findings, Interaction Patterns and Heatmaps, and Journey Risk sections (HTML, PDF, CSV and DOCX through HTML). Their results are read at export, and a section without a result says why. The browser baseline is reported in the root-cause section, with its analysis, for projects that present root-cause v2 (`APEXLOAD_RCA_V2_PRESENT_PROJECTS`); the v1 root-cause section has no baseline, while the Browser area shows it for every project.
-- **CLI and MCP:** `apexctl analysis interactions`, `har-entry` and `policies list|get|save|delete` (a save of an existing policy needs the revision it was read at), and MCP tools for findings, interactions, journeys, the HAR entry and the policies.
-
-Deviations:
-- Pages are compared by scenario group, because documents record no page or route.
-- The comparison shows p75 and its document count only.
-- Findings, the browser baseline, interaction patterns and journeys read the finalized archive, so the live page shows only the comparison.
-- A run pins its project's default policy of each kind at Start; the plan's choice of a different policy revision for one run is not offered, in the dashboard or the API.
-- A saved panel reads one tuple, so the comparison table offers no "save as panel"; panels are authored in the panel editor.
-- When one engine, device profile and group ran under several runtime cohorts, a saved panel must name the cohort by its digest, which no dashboard view shows (the comparison numbers cohorts "1 of N"), so such a group cannot be made a panel from the dashboard.
-- The report sections are in the engineer profile only.
-- The drill-down workflow test runs a real HTTP run (its archive and policy pin are real, and the real HAR-entry API is probed only for a 404), but its document summary, findings result, resource page and the HAR entry it shows are transport fixtures; no live browser run proves the drill-down end to end.
-- The journey-policy editor has component tests only; no end-to-end test drives it (the journey workflow creates its policy through the API).
-
-Deviations:
-- Baseline regressions are accepted by unit tests over seeded series; no two real runs are compared.
-- The golden drives the browser runtime directly, not the engine, so it writes the iteration-end row the engine would record.
-- INP is not part of the golden.
-- Layout-mismatch and exclusion rules are accepted by unit tests only; the golden page exercises neither.
-- The plan's rule that baseline intelligence is not released before BE qualification passes is a release step: nothing in the product or CI enforces it.
-- The blank document a browser context starts with records an unavailable FCP. It carries no value, and findings count it as an unavailable final observation.
-- No acceptance record is published; an operator posts the requests.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#bi-4-user-workflows-and-acceptance) and [browser intelligence acceptance inventory](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md).
 
 ## 8. Telemetry reporting completion
 
@@ -308,33 +239,7 @@ Add a separate telemetry acceptance policy with `advisory` default and explicit 
 
 Live cards, saved baseline comparisons and HTML/PDF/DOCX/CSV/JSON/JUnit exports show policy revisions, exact/observed-lower-bound loss, clock quality, coverage, denominators, stage distributions and exclusions. CLI supports policy selection and verdict retrieval through the existing run/wait/comparison commands. Incidents/webhooks reuse durable deduplication with policy/run/source evidence links; no secret content in messages.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#tel-3-comparison-reports-and-explicit-verdicts).
-
-The manifest now records `telemetry_loss` at finalize. A distributed run finalized without its source ledger has every loss counter unavailable (`ledger_lost`).
-
-Where the verdict appears:
-- **CI:** `ciRunResponse.telemetry_verdict`, beside the application outcome. Only `fail_ci` changes the outcome, and only for an otherwise passed run: `telemetry_failed` (exit 1), or `telemetry_inconclusive` (exit 2) when the caller gave no mapping. `telemetry_inconclusive` (`apexctl --telemetry-inconclusive=pass|fail`, action input `telemetry-inconclusive`) has no default. The controller refuses a CI run without it when the acceptance policy that will judge the run is `fail_ci`: the run's chosen policy (`telemetry_acceptance_policy_id`, `apexctl --telemetry-policy`, where the project's CI policy sets `allow_telemetry_policy_selection`), otherwise the project's default. Advisory and provisional verdicts never change the outcome.
-- **CI evidence:** a separate `telemetry_acceptance` JUnit test case (an advisory non-pass is skipped), a separate section in the GitHub check, job summary rows, and the `telemetry-verdict` output.
-- **Live:** while the run executes, the Telemetry card shows a provisional verdict (none for a finished run or for health rebuilt from stored history).
-- **Run report:** a **Telemetry Acceptance** section in every report profile (HTML, PDF, CSV and, through HTML, DOCX). The report JSON adds `telemetry_acceptance`. The section shows:
-  - policy revisions;
-  - criteria with their observed values, bounds and denominators;
-  - exact or lower-bound loss;
-  - coverage by source and classified time;
-  - clock quality;
-  - stage distributions with their exclusions;
-  - what the verdict does not count.
-- **Saved comparisons:** each run's verdict and dropped results, side by side.
-- **Webhooks:** a `telemetry_acceptance` event for a failed or inconclusive finalized run, sent once per run and outcome: a durable claim (deleted with the run) keeps a later attach of the archive (an adjunct refresh such as a new note, a recovered publication, another leader) from announcing the same outcome again, while a verdict a refresh found changed is announced. It names the run, the policy revision, the deciding criteria that did not pass (never advisory ones) and the sources with unknown time. A run in mode `unknown` is not announced.
-
-Deviations:
-- No incident record is created; the webhook is the notification, and it carries no evidence links (such as a report URL). A dispatch lost after its claim is not retried.
-- A run that pinned a policy before definitions were frozen is inconclusive in mode `unknown`, which no gate enforces.
-- Only `apexctl ci run` carries the verdict; `apexctl run`, `wait`, `status` and the comparison commands do not show it, and no CLI selects a non-default acceptance policy.
-- The JUnit case is apexctl's CI JUnit; there is no server-side JUnit export.
-- Saved comparisons show each run's verdict and dropped results only, not its coverage, clock quality, denominators, stage distributions or exclusions (those are in the run report).
-- The live verdict leaves breached time inconclusive until finalize.
-- A local run's live coverage is recorded only at finalize.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#tel-3-comparison-reports-and-explicit-verdicts) and [telemetry acceptance inventory](qa/TELEMETRY_ACCEPTANCE.md).
 
 ### TEL-4: Acceptance and measured latency
 
@@ -342,63 +247,15 @@ Complete the final published malformed-counter API regressions and refreshed API
 
 The under-two-second pipeline figure remains a design target. Certify a declared reference workload, not universal density: on a 4 vCPU/16 GiB controller with two declared generator hosts and a foreground dashboard, exercise 2,000 accepted observations/s, one-second publications, collector traffic and concurrent admitted analytics. Proposed release targets are P99 qualified capture→visible-render age ≤2,000 ms and zero unreported accepted-record loss. Record stage P50/P95/P99, CPU/RSS, queue/byte volumes, clock uncertainty and coverage. A slow browser/unsupported clock is classified separately; overloaded/fault trials must surface degraded/incomplete status and recover without control-plane failure. Density/host upgrades need new evidence.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#tel-4-acceptance-and-measured-latency).
-
-The opt-in `TestTelemetryReferenceWorkload` runs the reference workload in one process:
-- two declared generators (real generator services over in-memory gRPC), each running half of 2,000 accepted observations a second for 60 s against a local target, publishing every second;
-- a foreground dashboard: headless Chromium on the run's live page, reporting its render evidence;
-- archive analyses of an earlier run, read every second.
-
-It records each stage's P50/P95/P99, coverage, CPU, and peak RSS sampled for the process, its child processes (the browser and its driver) and both together. Loss is accounted per path against the target's own count of served requests: the archive's samples, and separately the run's live totals (successes and recorded errors) plus its dropped-results counter, must account for every served request but those aborted in flight at the stop (at most one per VUser). Lost publications and dropped subscriber batches are counted in publications, and a dropped batch is also a lost sequence: each lost publication may account for at most the largest window one generator's group published, and a shortfall within that is reported loss of unknown size, classified `live_publications_lost`. A path holding more results than were served (duplicates) also fails. A run also fails without browser-render evidence (the suite requires the browser). An unqualified clock is classified `clock_unqualified` and fails the run, since no sample age can be judged; a slow browser is classified `slow_browser` without failing it. With a commit it writes one TEL-4 F4 request, `pending` without failures and `failed` otherwise, including a run that stopped before it was measured.
-
-A local run (darwin-arm64, 10 CPUs) **failed the target**:
-- **Loss:** 123,146 requests served and 123,146 archived (1,887 a second over the run's whole window, start lead and drain included; the harness now takes the rate from the first archived sample to the last), with zero unreported archive loss (the live path was not yet accounted); every loss counter was exact at 0, except the WebSocket drops, which are controller-wide.
-- **Stage P50/P95/P99:**
-  - generator processing: 502 / 503 / 506 ms;
-  - transport: 8 / 17 / 5,181 ms;
-  - controller fan-out: 10 / 16 / 990 ms;
-  - sample age: 525 / 1,512 / 5,199 ms, above the 2,000 ms target;
-  - browser render: 141 / 239 / 307 ms.
-- **Sample-age and browser-render maxima:** 5.5 s together. This leaves out delivery from the controller's publication to the browser's receipt, so it does not bound capture to visible render.
-- **Analyses:** 94 concurrent analyses, none failed.
-- **Coverage:** 61 of 65 s observed; under the default budgets, 13 s degraded, 46 s breached and none healthy.
-
-After the review's per-path loss accounting, 20-second local runs showed the archive path exact (for example 43,059 served and 43,059 archived) while the run's live totals were short by 1,900 to 5,900, with no recorded errors and every live loss counter exact at 0. A whole live window could go missing, and the final window was counted again by each terminal publication. The reference workload therefore failed on the live path. This was a defect in the live run totals that the harness exposed, and it was fixed after Wave 5. Before the fix, the run totals summed published samples, which are throttled fleet-wide and hold only each generator's latest window. A distributed run now counts each generator's window where its batch is accepted:
-- **Collections are numbered.** A generator numbers its metric collections within its process (`collection_sequence`). A batch that re-sends the last window repeats the number and is not counted again; that covers stopping, paused and terminal batches and a subscription replay.
-- **A stop drain is a new window.** It is counted. On a generator running several groups it replaces every group's published window, so a group that ended earlier is not carried into the terminal batch again.
-- **During a stop requested on the controller, the controller keeps reading each generator's metrics.** That covers an operator, a threshold or goal rule, a CI abort and a shutdown. The run is set STOPPING before the generators stop, so a window collected before then can still arrive ahead of the terminal batch. The controller counts that window without publishing it, then reads the terminal batch with the final drain.
-  - Before, it stopped reading at that window. For a graceful stop both were lost, and the run ended only when the stop grace period forced it.
-  - A forced abort (Abort, or a CI abort) ends once every generator confirms. A window that arrives after that is not counted.
-- **Older generators** send no collection number. Their re-sends are matched by the collection's publication time. A batch with neither is counted unless it is terminal; a terminal one is taken to re-send.
-- **Counting rules.** A window is counted by the same rules as a published sample, and a parity test holds the two together.
-
-Limits:
-- **A controller that takes over a run** starts the totals from the stored history, not from a copy it kept. If the stored history cannot be read, it starts from the history it holds.
-  - Stored history keeps no run totals, so the start is the sum of the stored windows, which is bounded and approximate as before the fix.
-  - Stored windows keep no groups either. A run with one group starts its group's totals from the same sum; with several groups, the group totals restart at zero.
-  - Each generator's last window, replayed when the stream reconnects, may be counted a second time.
-- **An older generator** is matched by publication time only. Two of its collections published in the same millisecond count once. With several groups, its stop drain carries forward the last window of any group with nothing left to drain, and that window is counted again.
-
-Four 20-second runs of the reference workload afterwards, each completing on its own, showed the live totals equal to the archived samples: 43,036 of 43,037 served (one in flight at the stop) and 43,056 of 43,056; after the review fixes, 43,122 of 43,122; and with the stop fix, 43,052 of 43,052. The 20-second test passed each time. The declared 60-second target was not rerun.
-
-Deviations:
-- The transport and sample-age P99s come from one or two publications per run, and they persist without the concurrent analyses; a generator's final publication is suspected and is not yet explained.
-- Generator processing sits at the generator's half-second aggregation window, so the default budgets read the run as breached.
-- The workload runs in one process: transport is in-memory gRPC, and CPU and the process's RSS cover the controller, both generators and the target together. It is not the 4 vCPU / 16 GiB reference controller.
-- Collector traffic, an overload trial and native (DuckDB) analytics are not exercised, and queue and byte volumes are not recorded.
-- No test changes the cadence or policy within a run (each run has one policy segment).
-- Exports are covered by the archive's export redaction, not by a telemetry-specific sanitization test.
-- No acceptance record is published.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#tel-4-acceptance-and-measured-latency) and [telemetry acceptance inventory](qa/TELEMETRY_ACCEPTANCE.md).
 
 ## 9. Native analytics completion
 
-Implementation coordination: reuse the in-progress RCA engine in `claude/rca-correlation-start` for analysis, detection, graph construction and workload/baseline qualification, together with its immutable evidence revisions and fenced durable jobs. Native ingestion and query work supply adapters to that engine rather than a second analytical core or job lifecycle. Adopt the authoritative engine changes before wiring those adapters. Cross-run series identity must preserve unit, kind, population/version, derivation, provider provenance and observation-grid semantics; matching an identity does not establish qualified coverage or permission to compare measurements. Existing archived engine revisions remain readable, and new identity semantics require an explicit engine revision.
-
-The [portable series-identity prerequisite](qa/reviews/feature-completion-native-rca-identity-2026-10-05/README.md) is implemented and independently reviewed, with package normal/race checks. Its bounded structured encoding preserves existing comparison semantics and declared observation grids. It does not wire runtime adapters, adopt an engine revision or establish native scale/platform acceptance.
+Implementation coordination: reuse the RCA engine for analysis, detection, graph construction and workload/baseline qualification, together with its immutable evidence revisions and fenced durable jobs. Native ingestion and query work supply adapters to that engine rather than a second analytical core or job lifecycle. Adopt the authoritative engine changes before wiring those adapters. Cross-run series identity must preserve unit, kind, population/version, derivation, provider provenance and observation-grid semantics; matching an identity does not establish qualified coverage or permission to compare measurements. Existing archived engine revisions remain readable, and new identity semantics require an explicit engine revision.
 
 The current RCA `detect.v1` defaults use robust CUSUM with ten baseline buckets. Browser advice specified in BI-2 requires thirty qualified buckets, its three-sigma rule and practical effect floors. Engine adoption must retain explicit versioned detector/policy semantics and satisfy those browser requirements; existing onset findings cannot be relabeled as that advisory qualification. Extend the authoritative engine contracts rather than adding a competing detector.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#9-native-analytics-completion).
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#9-native-analytics-completion) and [analytics acceptance inventory](qa/ANALYTICS_ACCEPTANCE.md).
 
 ### NA-1: Metric and query catalog
 
@@ -438,18 +295,7 @@ Extend existing versioned panel/comparison/mapping stores; avoid a parallel dash
 
 Complete equivalent `apexctl analysis` catalog/query/compare/import/mapping operations without whole-file memory loading. Permit reusable definitions and cross-scenario selections only within authorized project ownership. Cancellation/deletion revokes worker publication, releases cache leases and reclaims originals/normalized data according to retention, including late outputs and project deletion. Hash-bound cache identity includes project, artifact revision, query semantics and capability/catalog version.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#na-4-durable-definitions-and-complete-workflows).
-
-Deviations:
-- No analytical result cache exists, so there is no cache identity to key. Every query recomputes from the archive and its artifacts.
-- Archive queries align by elapsed time from each run's start; there is no UTC alignment option.
-- Coverage thresholds are not a saved query setting.
-- Pins are opt-in, and the dashboard does not set them yet.
-- A saved revision records its query version, not the policy or catalog versions it was saved under.
-- The analytics query has no source list and no baseline setting beyond the existing comparison run.
-- The panel editor's options are not driven by capability responses with precise unavailable reasons, and there is no bucket drill-down or report export of a panel.
-- Cancellation and retention of imports are unchanged.
-- No CSV/SVG changes beyond the existing chart exports.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#na-4-durable-definitions-and-complete-workflows) and [analytics acceptance inventory](qa/ANALYTICS_ACCEPTANCE.md).
 
 ### NA-5: Resource isolation and native packaging
 
@@ -467,16 +313,7 @@ Golden fixtures cover long/wide/nested mappings, decimals, timezones/DST, nulls,
 
 Use a reproducible 1 GiB compressed, multi-file partition fixture on 4 vCPU/16 GiB RAM with at least 32 GiB scratch plus admission-verified output/spill reserve. Record hashes, rows, import/query durations, scan/pruned object/byte counts, peak combined RSS, spill, cancellation and simultaneous live telemetry lag. Test selective projection/partition pruning, repeated cached query, cold replica, worker crash, disk exhaustion and contention. Proposed bounded interactive-query P95 target is five seconds for the documented selected-window workload; imports have the existing 15-minute per-job deadline unless explicitly configured. Fail on controller failure, unexplained data loss, breached headroom or sustained reference telemetry-SLA violation. No result from this fixture closes the waived 10 GB benchmark.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#na-6-analytical-acceptance).
-
-Deviations:
-- Measurements are doubles: a DECIMAL beyond about 15 significant digits is rounded to the nearest double (12345678901234567.89 becomes 1.2345678901234568e16), not refused.
-- A file whose schema drifted (a mapped column missing) fails the import closed, with the fixed stored message; the message names neither the file nor the column.
-- Conflicting files keep every observation (two values at one instant average), and identical content chunked differently is not refused at commit; normalization still fails closed on it.
-- Partition values are not read: sources are read with `hive_partitioning=false`, so a partition value that disagrees with a column (the plan's partition conflict) is neither resolved nor tested.
-- The selected-window time is about 2.5 s at 64 MiB and at 1 GiB: it is dominated by starting a worker per query, not by scanning.
-- The benchmark does not measure spill bytes, live telemetry lag under a concurrent run, a cold replica, a worker crash, disk exhaustion or contention, and it neither checks nor records scratch capacity.
-- The platform lanes are CI evidence that this repository cannot produce locally. They run the native checks only: NA-5's install and uninstall checks and pinned artifact hashes are not produced. No acceptance record is published, and the 10 GB waiver stands.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#na-6-analytical-acceptance) and [analytics acceptance inventory](qa/ANALYTICS_ACCEPTANCE.md).
 
 ## 10. Authoring cleanup completion
 
@@ -488,15 +325,9 @@ The script owner tracks project/folder/source session, canonical/baseline docume
 
 Expose server-minted strong opaque content revisions/ETags from existing script/scenario reads and writes, covering all executable/approval-relevant fields, bindings and authored metadata but excluding transient read/disclosure projections. Every writer advances the persisted revision atomically. New dashboard saves send one exact `If-Match` token; existing durable guarded methods compare it inside the same mutation CAS. A valid stale token returns `412 Precondition Failed`; malformed, weak, multi-token or wildcard input returns 400. Resolve project/resource ownership before evaluating a token so foreign resources remain 404. Secret reconciliation uses the matching canonical revision and current secret-reference authorization, never a stale masked projection. Conflicts retain the local draft and offer reload/diff/reapply, never automatic overwrite. User-authored script version is not a concurrency token. Older callers retain a documented compatibility window with no false stale-edit-protection claim; support an explicit strict project policy after migration, returning 428 for a missing precondition. New clients never use wildcard bypass. Add two-editor, concurrent secret-binding and legacy-unconditioned-write audit fixtures. Ordinary script/scenario creation and queued revise-copy add bounded project/actor/purpose-scoped idempotency. The same key and protected request fingerprint return the original canonical object/revision; changed input returns 409. Reuse existing import/approval receipts where present. Receipt creation and object mutation commit atomically; concurrent retries cannot duplicate groups/bindings or approval sessions. Guarantee retries for 24 hours, retain expiry/deletion tombstones under project retention and refuse automatic retry after expiry. A deleted original is not recreated by a receipt. Lost-response, two-request and browser-reload tests prove this behavior. Reuse existing endpoints, approval sessions and durable CAS rather than introducing a universal authoring execution endpoint.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#auth-1-two-shared-owners-and-revision-safety).
-
-The scenario revision foundation supplies migration 38, database-issued authored-content nonces and coherent internal snapshots with conditioned storage operations. Affected SQLite/PostgreSQL and API normal/race checks plus generated-contract freshness pass in the [foundation record](qa/reviews/feature-completion-scenario-revision-2026-10-05/README.md). Explicit HTTP conditions and strict scenario policy configuration remain refused while the public authoring vertical is unavailable. Private publication/source dependency admission is delivered by the composed follow-up in the [delivery record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#auth-2-complete-lifecycle-parity-matrix); public ETags/projections and editor recovery remain open.
-
-The private source-admission follow-up binds exact script incarnation, authored nonce/content, current publication presence and raw-byte claims inside the same SQLite/PostgreSQL transaction. Authoring fidelity preserves complete settings/bindings, historical portable defaults, ordered group/source identities and queued-copy provenance across the implemented entry points. [The composed review](archive/qa-reviews/INTEGRATION_2026-10.md#feature-completion-composed-review-2026-10-05) records focused and composed implementation qualification; outstanding work includes public scenario ETags/projections, editor recovery, ordinary-create idempotency, exhaustive lifecycle parity and adapter retirement. Public scenario precondition support remains explicitly unavailable; AUTH-1–AUTH-3 remain open.
-
 The scenario owner contains root settings, ordered stable-identity groups, scripts, complete binding arrays, assignments, runtime overrides, goals/scoped transaction SLA, offsets/stages/traffic profile/observer roles and checkpoint metadata. Preserve absent/inherit, explicit false/zero/clear and legacy unknown. Effective values shown in UI do not become authored overrides. Rename/reorder/remove/add cannot misassign source group identity. Wizard/modal/new-run/queued-copy/preview projections share payload, timeline and estimate semantics. Execution revision remains a new queued copy; cleanup cannot mutate a running execution.
 
-The [import-publication prerequisite](qa/reviews/feature-completion-import-publication-2026-10-05/README.md) now supplies a durable publication fence, exact raw-byte hash plus row presence, bounded reads and claims CAS reused by blank-ID repair. Real SQLite/PostgreSQL and affected API normal/race checks pass. The composed private admission slice now binds captured source identities and current publication facts within the same transaction; public scenario precondition support remains unavailable until its complete vertical is qualified.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#auth-1-two-shared-owners-and-revision-safety) and [lifecycle parity matrix](qa/LIFECYCLE_PARITY_MATRIX.md).
 
 ### AUTH-2: Complete lifecycle parity matrix
 
@@ -525,7 +356,7 @@ Deviations:
 - The single-script import commits (`openapi/commit`, `postman/save`, `asyncapi/commit`) validate the finalized copy with the DSL validator (`400`) and `bruno/commit` with its native check (`422`); neither is held to the persisted-copy check.
 - The import saves' persisted-copy validation is exercised directly, not through each save's HTTP request (which needs a live import session); each handler is held to it by a source check. A credential-bearing Java Vuser import is stored only through the authoring-session approval of its import, so the stored routes are not driven for it; that approval stores the copy `preparePersistentImportedLibraryScript` prepares, and the stored routes judge it with the same stored validator the import-save check runs.
 - One fixture each for gRPC (unary) and Kafka (produce); no governed-runtime fixture.
-- The AUTH-2 Playwright proofs show that each entry point opens, saves and reopens what it should; they are not mapped to every AUTH-2 property (ownership, provenance, secret references, policy gates, pending edits, dirty navigation, delayed responses, exact payloads). The recording proof mocks the recorder service, and only a starter template is covered under Template/component/clone (no component, clone or protected-credential migration). Superseded by the [AUTH-C property matrix](qa/reviews/roadmap-lifecycle-property-matrix-2026-10-21/README.md), which maps every row to each property in the generated [lifecycle parity matrix](qa/LIFECYCLE_PARITY_MATRIX.md#auth-2-properties) and records any cell left open.
+- The AUTH-2 Playwright proofs show that each entry point opens, saves and reopens what it should; they are not mapped to every AUTH-2 property (ownership, provenance, secret references, policy gates, pending edits, dirty navigation, delayed responses, exact payloads). The recording proof mocks the recorder service, and only a starter template is covered under Template/component/clone (no component, clone or protected-credential migration). Superseded by the [AUTH-C property matrix](archive/qa-reviews/AUTHORING_AND_IMPORT_SLICES_2026-10.md#roadmap-lifecycle-property-matrix-2026-10-21), which maps every row to each property in the generated [lifecycle parity matrix](qa/LIFECYCLE_PARITY_MATRIX.md#auth-2-properties) and records any cell left open.
 - Script-producing launchers outside `/api/v1/scripts/import/` (browser recorder and recorder conversions, library import) are not inventoried. Superseded by the AUTH-C [script producer inventory](qa/LIFECYCLE_PARITY_MATRIX.md#script-producers).
 
 
@@ -544,28 +375,7 @@ Deviations:
 
 No broad deletion precedes caller inventory, fixtures and passing parity. Library filters/selection and project refresh remain page concerns; mutable session orchestration moves to its shared owner. Cleanup ends when one canonical owner resolves each mutation/validation/payload and every supported route/old deep link has a tested destination.
 
-Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#auth-3-adapter-retirement-inventory).
-
-  In every leave prompt, Save changes now goes ahead without saving when the work was saved, or its editor closed, while the prompt was open. In the script editor, Save changes also waits for a save that is still running. If edits were made after that save started, the prompt stays open and says so. After a create, Save is off until the page opens the saved script, so a second create cannot happen. Edits made while the save ran open with the saved script as a draft to review; edits made after it finished are not kept.
-
-  The Save button follows one rule, `scriptSaveAvailability`, beside the session. The ratchet fails if `ScriptEditor` keeps its own baseline, initial-save flag, guard, dirty comparison or save rule again.
-
-  Leaving for a converted archive review changed in three ways:
-  - **The return button now belongs to the editor.** Leaving an edited converted draft for its archive review asks first; before, the edits were discarded without a prompt.
-  - **The review's own guard is kept.** The review stays open behind the editor, so going back never prompts for it.
-  - **Saving a converted draft goes back to the review.** The review records the draft as saved and moves on to the next draft. A validation review becomes a conversion review once a draft is saved, as with the review's own saves, so its own save cannot save that draft again. Its remaining drafts are converted again first; the options cannot be changed until that is done. The editor cannot be opened from the review while a validate, convert or save batch runs, while a Java dependency uploads, or while an earlier save of the archive is unconfirmed; its buttons stay, disabled, and say why. Before, the saved script opened and the review closed, dropping its other unsaved drafts without a prompt.
-    - A request to set up the script's secrets is kept: the secrets dialog opens in the script library, as for any new script. When several saved scripts asked for it, their dialogs open one after another.
-    - If the draft was edited while the save was in flight, the saved script opens instead, as before. The review still records the save, but it closes, and its other unsaved drafts are dropped without a prompt.
-
-Deviations:
-- TestHub keeps a form as its editing view (its groups, name and other scalar fields), now holding only canonical values; it does not hold a `ScenarioDraft` itself.
-- The wizard's model chart keeps its own chart builder (series metadata, TPS stages, draft placeholders); it shares stage semantics but draws neither baselines nor start offsets.
-- A queued run's summary carries no traffic profile, so its preview draws profile-mapped groups from their ramps.
-- `NewTestPage`'s group edit draft remains a run-only projection.
-- The Scripts page keeps the routing state in `useScriptsAuthoringState`: the open sub-view and the return target it reopens. An archive import's pending sibling drafts live in the importer, which stays mounted behind the editor. The script session decides only whether the editor may leave.
-- Inside the scenario editor's "Create prerequisite script", saving a converted draft returns the script to the scenario group and closes the embedded Scripts page, as any save from the script editor there does. The archive review closes with it, and its other unsaved drafts are dropped without a prompt.
-- A converted Java Vuser draft is queued for approval, not saved to the library. Save changes on the way back queues it and returns to the review. The review still lists the draft as unsaved, and no notice says it was queued.
-- Validation is not bound to capability, policy or approval revisions, which have no client-visible revision yet.
+Dated delivery evidence: [implementation record](archive/plans/FEATURE_COMPLETION_DELIVERY_2026-10-19.md#auth-3-adapter-retirement-inventory) and [adapter retirement inventory](qa/ADAPTER_RETIREMENT.md).
 
 ## 11. Proposed public contracts and persistence
 
@@ -654,4 +464,4 @@ Completion is recorded per requirement ID and provider/platform, with no unresol
 | Native analytics | `pkg/analysis/{points,parquet_mapping,correlation,buckets}.go`, `pkg/analysis/duckdb`, `pkg/storage/{native_evidence,analysis_definitions,dashboard_definitions}.go`, native/analysis API handlers and desktop packaging |
 | Authoring | Shared script hooks/shell/surface/editor, scenario reducer/payload/form/run/preview models, script/scenario handlers and durable guarded stores |
 
-Repository baseline sources: [roadmap](ROADMAP.md), [analysis workflows](ANALYSIS_WORKFLOWS.md), [protocol support](PROTOCOL_SUPPORT.md), [Event Hubs guide](EVENT_HUBS_HOWTO.md), [import fidelity](IMPORT_FIDELITY_AND_REPAIRS.md), [latest implementation/review record](qa/reviews/evidence-expansion-2026-10-02/REVIEW.md) and [canonical CloudTest ledger](../pkg/api/cloudtest_parity_catalog.json). Those sources describe existing behavior; requirements above describe planned completion. Update stale statements as each accepted release lands, keeping implementation availability separate from qualification.
+Repository baseline sources: [roadmap](ROADMAP.md), [native analytics](NATIVE_ANALYTICS.md), [protocol support](PROTOCOL_SUPPORT.md), [Event Hubs guide](EVENT_HUBS_HOWTO.md), [import fidelity](IMPORT_FIDELITY_AND_REPAIRS.md), [latest implementation/review record](archive/qa-reviews/RECOVERY_AND_PLATFORM_SLICES_2026-10.md#evidence-expansion-2026-10-02) and [canonical CloudTest ledger](../pkg/api/cloudtest_parity_catalog.json). Those sources describe existing behavior; requirements above describe planned completion. Update stale statements as each accepted release lands, keeping implementation availability separate from qualification.

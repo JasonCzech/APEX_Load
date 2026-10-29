@@ -16,7 +16,6 @@ import (
 var protocolDocAliases = map[string][]string{
 	"appium":         {"appium", "Appium"},
 	"browser":        {"browser"},
-	"bruno":          {"bruno"},
 	"database":       {"database"},
 	"eventhubs":      {"eventhubs", "Event Hubs"},
 	"grpc":           {"grpc", "gRPC"},
@@ -37,12 +36,19 @@ var protocolDocAliases = map[string][]string{
 
 // protocolSurfaceDocs are the documents that enumerate the runtime protocol
 // surface; a contributor scoping a cross-protocol change reads one of them.
-var protocolSurfaceDocs = []string{"AGENTS.md", "ARCHITECTURE.md", "DEVELOPMENT.md"}
+var protocolSurfaceDocs = []string{"AGENTS.md", "ARCHITECTURE.md", "DEVELOPMENT.md", "docs/PROTOCOL_SUPPORT.md"}
 
 func TestProtocolDocAliasesCoverRegistry(t *testing.T) {
+	registeredSet := make(map[string]struct{})
 	for _, name := range protocol.List() {
+		registeredSet[name] = struct{}{}
 		if _, ok := protocolDocAliases[name]; !ok {
 			t.Errorf("protocol %q is registered in builtin but has no documentation alias; add it to protocolDocAliases and to %v", name, protocolSurfaceDocs)
+		}
+	}
+	for name := range protocolDocAliases {
+		if _, ok := registeredSet[name]; !ok {
+			t.Errorf("protocol %q is listed in protocolDocAliases but is not registered in builtin; remove retired or unregistered entries", name)
 		}
 	}
 }

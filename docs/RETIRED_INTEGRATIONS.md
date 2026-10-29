@@ -16,4 +16,4 @@ Helm upgrades from a runner-enabled release must explicitly set `bruno.enabled=f
 
 ## Restoration
 
-The archive manifests identify the original working-tree inputs and their checksums, including files that had uncommitted changes. Restoration requires a reviewed implementation change that reintegrates API/runtime/UI hooks, regenerates contracts and passes current security, compatibility and browser checks. Archived code is not an optional supported build profile.
+Each archive's `manifest.json` records the original repository paths, baseline commit (`0a480cee9d80efd68c984e2cbc1627e25443b2fd`), and SHA-256 checksums of the retained feature-owned source files; shared integration hooks from retirement time remain inspectable in git history. Restoration requires a reviewed implementation change that reintegrates API/runtime/UI hooks, regenerates contracts and passes current security, compatibility and browser checks. Archived code is not an optional supported build profile.

@@ -94,13 +94,13 @@ Import recognition, authoring, runtime execution and production adapter availabi
 | Kafka | Default in-memory mock; real network adapter requires kafka_real build | Messaging support and deployment build |
 | Azure Event Hubs | Default in-memory mock; real AMQP adapter requires eventhubs_real build | Producer/observer-probe semantics and deployment build |
 | JMS Azure Service Bus | Real adapter requires jms_servicebus_real build | Messaging support and credentials |
-| Java VUser | Governed external sidecar runner, disabled unless configured | Java VUser runtime and policy |
+| Java Vuser | Governed external sidecar runner, disabled unless configured | Java Vuser runtime and policy |
 | Bruno HTTP import | Converts supported requests into native APEX scripts | Review conversion findings before replay; canonical runner retired |
 | SAP GUI | Authorable/importable; no registered execution runtime in standard binaries | Preserve import evidence and plan an alternative execution path |
 | Oracle Forms/NCA | Import evidence requires an approved external bridge; ordinary settings do not supply that bridge | Import disposition and administrator-supported alternatives |
 | Assisted authoring | Deterministic local provider; external LLM providers are not wired by default | Review, validation, replay evidence and approval gates |
 | OpenTelemetry | Opt-in traces from standalone controller/generators; no native metrics/log exporter | Prometheus for metrics; deployment tracing configuration |
-| Shared data pools | Runs use read-only snapshots; durable consume/read-write execution is not implemented | Row status, snapshot selection and rerun behavior |
+| Shared data pools and live tables | Runs support static read-only snapshots plus run- and project-scoped live tables and queues (`snapshot` and `live` access modes, `ephemeral` and `durable` durability, and `discard`, `write_back`, or `save_as_new` outputs) | [Live data tables runtime](LIVE_DATA_TABLES_RUNTIME.md), access mode, durability, and end-of-run output handling |
 | Sequential execution plans | Next entry starts after the previous entry reaches a terminal state; halt/skip policy applies | Failure policy, governance and recovery evidence |
 | Capacity claims | 10,000 HTTP VUsers per pod is a design target, not a published achieved benchmark | Measure your script, protocol, generator and environment |
 
@@ -123,7 +123,7 @@ Use the [import fidelity reference](IMPORT_FIDELITY_AND_REPAIRS.md) to distingui
 - [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support)
 - [Browser & mobile support](PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation)
 - [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md)
-- [Java VUser runtime](PROTOCOL_SUPPORT.md#java-vuser-execution)
+- [Java Vuser runtime](PROTOCOL_SUPPORT.md#java-vuser-execution)
 - [Runtime settings support](RUNTIME_SETTINGS_PARITY.md)
 - [OpenTelemetry traces](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing)
 - [API support-matrix operations](#/swagger?search=support-matrix)
@@ -253,7 +253,7 @@ Confirm the recording agent is running on the operator workstation, that the dis
 
 ### An import cannot execute
 
-Read the import disposition before launching. Review-only, unsupported and external-runner-required outcomes are different from executable output. Java VUser needs a configured governed runtime. Bruno Runner is retired; convert supported Bruno HTTP sources into native scripts. SAP GUI has no registered runtime in standard binaries, and Oracle NCA needs a bridge that is not supplied by enabling an ordinary pool setting. See [Capabilities & limitations](HELP_CENTER.md#check-current-capabilities) and [Import existing scripts](APPLICATION_USER_GUIDE.md#importing-existing-scripts).
+Read the import disposition before launching. Review-only, unsupported and external-runner-required outcomes are different from executable output. Java Vuser needs a configured governed runtime. Bruno Runner is retired; convert supported Bruno HTTP sources into native scripts. SAP GUI has no registered runtime in standard binaries, and Oracle NCA needs a bridge that is not supplied by enabling an ordinary pool setting. See [Capabilities & limitations](HELP_CENTER.md#check-current-capabilities) and [Import existing scripts](APPLICATION_USER_GUIDE.md#importing-existing-scripts).
 
 ### Launch refused or waiting for capacity
 

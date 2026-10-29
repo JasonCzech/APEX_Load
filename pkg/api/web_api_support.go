@@ -155,7 +155,7 @@ func webAPIExecutionSupportMatrix() []webAPIExecutionSupportEntry {
 			ExecutionStatus:     "executable",
 			Importance:          "high",
 			RuntimeCoverage:     []string{"publish", "consume", "request/reply", "ack/commit/rollback", "dead-letter diagnostics"},
-			RemainingGaps:       []string{"IBM MQ adapter remains cataloged but not registered in this build"},
+			RemainingGaps:       []string{"IBM MQ adapter (jms-ibmmq) is registered in mock-only mode (no vendor IBM MQ wire client bundled)"},
 			RecommendedWorkflow: "Use JMS template with mock mode for local validation, then attach broker settings for controlled runs.",
 		},
 		{

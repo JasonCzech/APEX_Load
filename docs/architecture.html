@@ -516,6 +516,13 @@
         <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Python</div>
       </div>
 
+      <div class="node" id="desktop" data-layer="client" style="left:274px;top:189px;min-width:170px">
+        <div class="node-icon">&#128421;</div>
+        <div class="node-title">Desktop Workspace</div>
+        <div class="node-sub">Wails v2 &middot; Loopback API</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Native App</div>
+      </div>
+
       <!-- API / CONTROL PLANE LAYER -->
       <div class="node" id="restapi" data-layer="api" style="left:40px;top:378px;min-width:200px">
         <div class="node-icon">&#9881;</div>
@@ -550,7 +557,7 @@
         <div class="node-icon">&#9889;</div>
         <div class="node-title">VUser Engine</div>
         <div class="node-sub">1 goroutine = 1 VUser</div>
-        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">~2-4 KB stack</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">8 KB parked stack</div>
       </div>
 
       <div class="node" id="metrics" data-layer="engine" style="left:223px;top:570px;min-width:175px">
@@ -593,10 +600,10 @@
         <div class="node-sub">Workstation recording bridge</div>
       </div>
 
-      <div class="node" id="devtools" data-layer="engine" style="left:604px;top:719px;min-width:175px;max-width:200px">
+      <div class="node" id="devtools" data-layer="engine" style="left:604px;top:719px;min-width:175px;max-width:215px">
         <div class="node-icon">&#128295;</div>
-        <div class="node-title">Dev Tooling</div>
-        <div class="node-sub">apexbench, dslschema, swaggergen, openapits, webcoverage</div>
+        <div class="node-title">Dev Tooling &amp; Codegen</div>
+        <div class="node-sub">apexbench, apexfault-target, dslschema, swaggergen, openapits, datamodeldoc, webcoverage, storeoverlay</div>
       </div>
 
       <!-- STORAGE LAYER -->
@@ -643,10 +650,10 @@
       </div>
 
       <!-- PROTOCOL LAYER -->
-      <div class="node" id="proto-http" data-layer="protocol" style="left:40px;top:1285px;min-width:90px;max-width:120px">
+      <div class="node" id="proto-http" data-layer="protocol" style="left:40px;top:1285px;min-width:90px;max-width:125px">
         <div class="node-icon">&#127760;</div>
         <div class="node-title">HTTP</div>
-        <div class="node-sub">HTTP/1.1 + HTTP/2</div>
+        <div class="node-sub">HTTP/1.1 + HTTP/2 + HTTP/3</div>
       </div>
 
       <div class="node" id="proto-javahttp" data-layer="protocol" style="left:178px;top:1285px;min-width:90px;max-width:120px">
@@ -703,16 +710,22 @@
         <div class="node-sub">Azure AMQP</div>
       </div>
 
+      <div class="node" id="proto-appium" data-layer="protocol" style="left:450px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128241;</div>
+        <div class="node-title">Appium</div>
+        <div class="node-sub">Mobile observer</div>
+      </div>
+
       <div class="node" id="proto-javavuser" data-layer="protocol" style="left:585px;top:1415px;min-width:90px;max-width:120px">
         <div class="node-icon">&#9749;</div>
         <div class="node-title">Java Vuser</div>
         <div class="node-sub">JVM sidecar runner</div>
       </div>
 
-      <div class="node" id="proto-net" data-layer="protocol" style="left:723px;top:1415px;min-width:90px;max-width:120px">
+      <div class="node" id="proto-net" data-layer="protocol" style="left:723px;top:1415px;min-width:90px;max-width:135px">
         <div class="node-icon">&#128268;</div>
         <div class="node-title">Network</div>
-        <div class="node-sub">TCP/UDP raw</div>
+        <div class="node-sub">DNS/TCP/UDP/FTP/Mail/LDAP</div>
       </div>
 
       <!-- CONVERTER LAYER -->
@@ -843,10 +856,19 @@ const COMPONENTS = {
     layer: 'client',
     body: `<p>Bidirectional WebSocket connection for live test monitoring. Supports two modes:</p>
     <p><code>/api/v1/tests/{id}/stream</code> &mdash; stream metrics for a single test.<br/>
-    <code>/api/v1/ws</code> &mdash; global stream for all test events (creation, start, complete, fail).</p>
-    <p>Message types: <code>metrics_update</code>, <code>test_created</code>, <code>test_started</code>, <code>test_complete</code>, <code>test_failed</code>, <code>test_stopping</code>. Auto-reconnects with exponential backoff.</p>`,
+    <code>/api/v1/ws</code> &mdash; project/global stream for live run, fleet, and governance events.</p>
+    <p>Message types: <code>metrics_update</code>, <code>latency_update</code>, <code>telemetry_diagnostic</code>, <code>threshold_alert</code>, <code>fleet_event</code>, <code>transaction_sample</code>, <code>browser_intelligence_provisional</code>, <code>live_tables_changed</code>, <code>open_workload_shedding</code>, <code>monitoring_collector_heartbeat</code>, <code>access_review_changed</code>, <code>domain_feature_policy_changed</code>, <code>goal_target_changed</code>, <code>traffic_profile_target_changed</code>, and test lifecycle events (<code>test_created</code>, <code>test_started</code>, <code>test_paused</code>, <code>test_resumed</code>, <code>test_stopping</code>, <code>test_complete</code>, <code>test_failed</code>). Auto-reconnects with jittered exponential backoff and history backfill.</p>`,
     connections: ['WebSocket Hub &mdash; JSON message stream', 'Dashboard &mdash; useWebSocket hook consumer'],
     files: ['dashboard/src/hooks/useWebSocket.ts', 'pkg/api/websocket.go']
+  },
+  desktop: {
+    title: 'Desktop Workspace',
+    subtitle: 'Wails v2 native client (desktop/)',
+    layer: 'client',
+    body: `<p>Optional installed macOS/Windows/Linux desktop workspace embedding an in-process loopback controller and the compiled dashboard (<code>pkg/api/static</code>).</p>
+    <p>Protects the loopback API with a per-launch capability token (<code>X-APEXLoad-Desktop-Token</code>), stores local metadata in SQLite and credentials in the OS keyring, supports native file associations (<code>.har</code>, <code>apexload://</code>), and connects to Remote Workspaces for sync, promotion governance, and remote execution. See <code>docs/ACCESS_SURFACES.md</code>.</p>`,
+    connections: ['REST API Server &mdash; embedded loopback or Remote Workspace', 'WebSocket Hub &mdash; capability-authenticated live stream'],
+    files: ['desktop/main.go', 'desktop/app.go', 'desktop/files.go', 'docs/ACCESS_SURFACES.md']
   },
   agentic: {
     title: 'Assisted Authoring',
@@ -878,8 +900,8 @@ const COMPONENTS = {
     &bull; <code>/api/v1/system/health</code> (liveness) and <code>/api/v1/system/readiness</code> (production traffic gate: store, archive, cache, generator RPC, auth, scheduler)<br/>
     &bull; <code>/api/v1/system/inventory</code> &mdash; controller/generator/data-platform config (no secrets)</p>
     <p>Also serves the embedded dashboard SPA from <code>pkg/api/static/</code>.</p>`,
-    connections: ['Test Runner &mdash; delegates test lifecycle', 'WebSocket Hub &mdash; broadcasts events', 'SQLite/PostgreSQL &mdash; persistence', 'Scheduler &mdash; schedule management', 'MCP Server / apexctl / Dashboard &mdash; clients'],
-    files: ['pkg/api/handlers.go', 'pkg/api/server.go', 'pkg/api/route_catalog.go', 'pkg/api/auth_oidc.go', 'pkg/api/audit.go']
+    connections: ['Test Runner &mdash; delegates test lifecycle', 'WebSocket Hub &mdash; broadcasts events', 'SQLite/PostgreSQL &mdash; persistence', 'Scheduler &mdash; schedule management', 'MCP Server / apexctl / Dashboard / Desktop &mdash; clients'],
+    files: ['cmd/controller/main.go', 'pkg/api/handlers.go', 'pkg/api/server.go', 'pkg/api/route_catalog.go', 'pkg/api/auth_oidc.go', 'pkg/api/audit.go']
   },
   wshub: {
     title: 'WebSocket Hub',
@@ -921,11 +943,11 @@ const COMPONENTS = {
     title: 'VUser Engine',
     subtitle: 'Goroutine-based Load Generator',
     layer: 'engine',
-    body: `<p>The core execution engine. Each virtual user (VUser) runs as a single goroutine with a ~2-4 KB stack, targeting 10,000 concurrent HTTP users per pod on 4 vCPU / 8 GB (a design target; browser VUsers are diagnostic canaries, not high-density).</p>
+    body: `<p>The core execution engine. Each virtual user (VUser) runs as a single goroutine whose frames shrink to an <strong>8 KB parked stack</strong> between actions or in pacing (<code>vuser_parked_stack_test.go</code>), targeting 10,000 concurrent HTTP users per pod on 4 vCPU / 8 GB (a design target; browser VUsers are diagnostic canaries, not high-density).</p>
     <p>Execution phases: Init (protocol setup + init actions) &rarr; Ramp-up (gradual VUser activation via pacing config) &rarr; Steady-state (actions loop until duration expires) &rarr; Teardown (cleanup actions, graceful shutdown).</p>
     <p>Key optimizations: <code>sync.Pool</code> for request/response buffer reuse (reduces GC pressure), pacing algorithms (constant, random, percentile-based), rendezvous points for synchronized load spikes.</p>`,
-    connections: ['Metrics Collector &mdash; buffered channel results', 'Protocol Plugins &mdash; Execute() per action (registry: pkg/protocol/registry.go)', 'DSL Parser &mdash; script interpretation', 'Test Runner &mdash; lifecycle control'],
-    files: ['pkg/engine/engine.go', 'pkg/engine/vuser.go', 'pkg/engine/pacing.go', 'pkg/engine/group.go', 'pkg/engine/rendezvous.go']
+    connections: ['Metrics Collector &mdash; buffered channel results', 'Protocol Plugins &mdash; Execute() per action (compiled via pkg/protocol/builtin/builtin.go)', 'DSL Parser &mdash; script interpretation', 'Test Runner &mdash; lifecycle control'],
+    files: ['pkg/engine/engine.go', 'pkg/engine/vuser.go', 'pkg/engine/vuser_parked_stack_test.go', 'pkg/engine/pacing.go', 'pkg/engine/group.go', 'pkg/engine/rendezvous.go']
   },
   metrics: {
     title: 'Metrics Collector',
@@ -972,18 +994,18 @@ const COMPONENTS = {
   },
   'proto-http': {
     title: 'HTTP Protocol',
-    subtitle: 'HTTP/1.1 + HTTP/2',
+    subtitle: 'HTTP/1.1 + HTTP/2 + HTTP/3',
     layer: 'protocol',
-    body: `<p>Primary protocol implementation supporting HTTP/1.1 and HTTP/2 with automatic protocol negotiation. Features:</p>
+    body: `<p>Primary protocol implementation registered as <code>http</code>, <code>http/1.1</code>, <code>http/2</code>, and <code>http/3</code> (including exact HTTP/3 QUIC and <code>auto+h3</code> Alt-Svc upgrades behind <code>APEXLOAD_HTTP3</code>; see <code>docs/guides/HTTP3_AND_QUIC.md</code>). Features:</p>
     <p>&bull; Connection pooling with configurable limits<br/>
-    &bull; TLS with custom CA cert support<br/>
+    &bull; TLS with custom CA cert support and QUIC UDP drop diagnostics (<code>pkg/hostnet</code>)<br/>
     &bull; Correlation extraction (regex, JSONPath, XPath, header, cookie, boundary)<br/>
     &bull; Response assertions (status, body, header, duration)<br/>
     &bull; Multipart form uploads, chunked encoding<br/>
     &bull; Request/response body redaction for sensitive data<br/>
     &bull; Automatic cookie jar management</p>`,
-    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; HTTP requests'],
-    files: ['pkg/protocol/http/']
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; HTTP/1.1, HTTP/2, HTTP/3 requests'],
+    files: ['pkg/protocol/http/', 'docs/guides/HTTP3_AND_QUIC.md']
   },
   'proto-ws': {
     title: 'WebSocket Protocol',
@@ -1005,10 +1027,10 @@ const COMPONENTS = {
     title: 'Browser Protocol',
     subtitle: 'Playwright-driven browser',
     layer: 'protocol',
-    body: `<p>Real browser protocol driven through Playwright (<code>playwright-go</code>) for browser-based replay. Captures Web Vitals (LCP, CLS, INP, TTFB), network/HAR evidence, and device-emulation metrics; supports mobile device profiles, touch actions, and request policy controls.</p>
-    <p>Browser VUsers are diagnostic canaries, not high-density load generators.</p>`,
+    body: `<p>Real browser protocol driven through Playwright (<code>playwright-go</code>) for browser-based replay. Captures Web Vitals (LCP, CLS, INP, TTFB), retained document/interaction/network/HAR evidence, and device-emulation metrics; supports mobile device profiles, touch actions, and request policy controls.</p>
+    <p>Browser VUsers are diagnostic canaries, not high-density load generators. See <code>docs/BROWSER_EVIDENCE_ARCHITECTURE.md</code> and <code>docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md</code>.</p>`,
     connections: ['VUser Engine &mdash; Execute() calls', 'Playwright browser &mdash; automation session'],
-    files: ['pkg/protocol/browser/']
+    files: ['pkg/protocol/browser/', 'docs/BROWSER_EVIDENCE_ARCHITECTURE.md', 'docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md']
   },
   'proto-soap': {
     title: 'SOAP Protocol',
@@ -1039,11 +1061,19 @@ const COMPONENTS = {
   },
   'proto-net': {
     title: 'Network Protocol',
-    subtitle: 'Raw TCP/UDP',
+    subtitle: 'DNS, TCP, UDP, FTP, SMTP, POP3, IMAP, LDAP',
     layer: 'protocol',
-    body: `<p>Low-level network protocol for raw TCP and UDP request/send actions (including Winsock-style LoadRunner aliases), custom payloads, and network-level latency measurement without application protocol overhead.</p>`,
-    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; TCP/UDP sockets'],
-    files: ['pkg/protocol/network/']
+    body: `<p>Multi-transport network protocol (<code>network</code>) covering all 8 bundled sub-protocols: <strong>DNS</strong>, <strong>TCP</strong>, <strong>UDP</strong> (including Winsock-style LoadRunner aliases), <strong>FTP</strong>, <strong>SMTP</strong>, <strong>POP3</strong>, <strong>IMAP</strong>, and <strong>LDAP</strong>.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; DNS/TCP/UDP/FTP/Mail/LDAP endpoints'],
+    files: ['pkg/protocol/network/', 'docs/PROTOCOL_SUPPORT.md']
+  },
+  'proto-appium': {
+    title: 'Appium Protocol',
+    subtitle: 'Mobile device observer (appium)',
+    layer: 'protocol',
+    body: `<p>Mobile device-observer protocol (<code>appium</code>) that drives one real iOS/Android device or simulator through an Appium server's WebDriver API (a device cloud hub or local macOS/Linux Appium host) while HTTP groups supply the primary load.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Appium WebDriver Server &mdash; mobile device/simulator session'],
+    files: ['pkg/protocol/appium/', 'docs/PROTOCOL_SUPPORT.md']
   },
   'conv-lr': {
     title: 'Enterprise Script Archive Importer',
@@ -1104,29 +1134,30 @@ const COMPONENTS = {
     subtitle: 'JSON DSL Core',
     layer: 'convert',
     body: `<p>Parses and validates JSON DSL script definitions into typed Go structs. The DSL is the lingua franca of the platform &mdash; all converters output it, and the engine consumes it.</p>
-    <p>Template variable resolution: <code>{{env.KEY}}</code>, <code>{{data.source.col}}</code>, <code>{{var.name}}</code>, <code>{{fn.uuid()}}</code>.</p>
-    <p>Sections: <code>config</code> (protocol settings), <code>data_sources</code> (CSV/JSON feeds), <code>parameters</code> (runtime params), <code>init</code> (setup actions), <code>actions</code> (main loop), <code>teardown</code> (cleanup).</p>
+    <p>Template variable namespaces: <code>{{run.id}}</code>, <code>{{env.KEY}}</code>, <code>{{data.source.col}}</code>, <code>{{var.name}}</code>, <code>{{param.name}}</code>, <code>{{secret.name}}</code>, <code>{{file.name}}</code>, plus built-in functions under <code>{{fn.*}}</code> and <code>{{fake.*}}</code>.</p>
+    <p>Sections: <code>config</code> (protocol settings), <code>data_sources</code> (<code>"csv"</code>, <code>"dat"</code>, and <code>"file"</code> feeds), <code>parameters</code> (runtime params), <code>init</code> (setup actions), <code>actions</code> (main loop), <code>teardown</code> (cleanup).</p>
     <p>Validation covers: required fields, protocol compatibility, action type validity, correlation reference integrity, data source binding checks.</p>`,
     connections: ['All Converters &mdash; output target', 'VUser Engine &mdash; script interpretation', 'REST API &mdash; /scripts/validate endpoint'],
-    files: ['pkg/dsl/types.go', 'pkg/dsl/parser.go', 'pkg/dsl/validate.go', 'pkg/dsl/parameters.go']
+    files: ['pkg/dsl/types.go', 'pkg/dsl/parser.go', 'pkg/dsl/validate.go', 'pkg/dsl/parameters.go', 'pkg/engine/vuser_resolve.go']
   },
   generator: {
     title: 'Generator',
     subtitle: 'Remote worker (cmd/generator)',
     layer: 'engine',
-    body: `<p>Remote worker binary deployed as StatefulSet pods. Executes assigned groups with the same engine as local mode and streams <code>MetricsBatch</code> snapshots and archive artifacts to the controller over gRPC.</p>
-    <p>Enabled by setting <code>APEXLOAD_GENERATORS</code> on the controller. Targets are static <code>host:port</code> or <code>dns://host:port</code> (re-resolved every <code>APEXLOAD_GENERATOR_DISCOVERY_INTERVAL</code>, default 15s) so KEDA/HPA-scaled pods join and leave automatically. The channel supports TLS/mTLS and shared-token auth (<code>APEXLOAD_GRPC_TLS_*</code>, <code>APEXLOAD_GRPC_AUTH_TOKEN</code>); unconfigured it is plaintext and unauthenticated.</p>
+    body: `<p>Remote worker binary deployed as StatefulSet pods or cloud PaaS workers. Executes assigned groups with the same engine as local mode and streams <code>MetricsBatch</code> snapshots and archive artifacts to the controller over gRPC.</p>
+    <p>Enabled by setting <code>APEXLOAD_GENERATORS</code> on the controller (or outbound reverse tunnels). Targets are static <code>host:port</code> or <code>dns://host:port</code> (re-resolved every <code>APEXLOAD_GENERATOR_DISCOVERY_INTERVAL</code>, default 15s) so KEDA/HPA-scaled pods join and leave automatically. In <code>APEXLOAD_ENV=production|prod</code>, both controller and generator <strong>fail closed and refuse startup</strong> (<code>TransportSecurity.MustRefuseInsecure</code>) unless controller&harr;generator gRPC uses mTLS, verified TLS + <code>APEXLOAD_GRPC_AUTH_TOKEN</code> (&ge; 32 bytes when not using mTLS), or an authenticated WSS reverse tunnel; bearer token auth over plaintext is explicitly rejected.</p>
     <p>Stop, abort, pause, resume, duration and per-group VUser scale are routed to the owning generator. Deployed via <code>deployments/k8s/</code> (local, on-prem, AKS, EKS, HA overlays), Helm, and Terraform for Azure and AWS.</p>`,
     connections: ['Test Runner &mdash; gRPC distribution and control', 'VUser Engine &mdash; executes assigned groups', 'Archive Store &mdash; staged artifacts'],
     files: ['cmd/generator/main.go', 'pkg/distributed/generatorrpc/', 'deployments/k8s/', 'deployments/helm/apexload/']
   },
   javarunner: {
     title: 'Java Vuser Runner',
-    subtitle: 'JVM sidecar bridge',
+    subtitle: 'JVM sidecar &amp; experimental dedicated-host binaries',
     layer: 'engine',
-    body: `<p>External-runner container used by the <code>java_vuser</code> protocol. It runs governed JVM Vusers outside the generator process. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator.</p>`,
+    body: `<p>External-runner container (<code>cmd/apexload-java-vuser-runner</code>) used by the <code>java_vuser</code> protocol to run governed JVM Vusers outside the generator process (shared/pooled or one-per-VUser; see <code>docs/JAVA_SHARED_AND_PILOT_RUNTIME.md</code>). Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator.</p>
+    <p>Experimental dedicated execution-pod isolation binaries (not enabled by default): <code>cmd/apexload-java-host-broker</code>, <code>cmd/apexload-java-host-supervisor</code>, and <code>cmd/apexload-java-host-facade</code> (see <code>docs/JAVA_DEDICATED_BROKER_EXPERIMENTAL.md</code>).</p>`,
     connections: ['Java Vuser Protocol &mdash; runner bridge', 'Generator &mdash; sidecar host'],
-    files: ['cmd/apexload-java-vuser-runner/main.go', 'pkg/javarunner/', 'pkg/javasidecar/', 'docs/PROTOCOL_SUPPORT.md', 'deployments/k8s/components/java-vuser-runner/']
+    files: ['cmd/apexload-java-vuser-runner/main.go', 'cmd/apexload-java-host-broker/', 'cmd/apexload-java-host-supervisor/', 'cmd/apexload-java-host-facade/', 'pkg/javarunner/', 'pkg/javasidecar/', 'docs/JAVA_SHARED_AND_PILOT_RUNTIME.md', 'docs/JAVA_DEDICATED_BROKER_EXPERIMENTAL.md']
   },
   collectoragent: {
     title: 'Collector Agent',
@@ -1145,41 +1176,41 @@ const COMPONENTS = {
     files: ['cmd/apexload-record-agent/main.go', 'pkg/recordagent/', 'docs/recording-agent.md']
   },
   devtools: {
-    title: 'Dev Tooling',
-    subtitle: 'Generators and harnesses',
+    title: 'Dev Tooling &amp; Codegen',
+    subtitle: 'Harnesses, fault target, and all 6 Go generators',
     layer: 'engine',
-    body: `<p>Developer/CI binaries, not part of the runtime path: <code>apexbench</code> (controlled local performance-evidence harness), <code>dslschema</code> (generates <code>docs/dsl.schema.json</code> and the action reference), <code>swaggergen</code> (generates <code>docs/swagger.yaml</code> and the endpoint catalog), <code>openapits</code> (dashboard TypeScript API contract), and <code>webcoverage</code> (LoadRunner import coverage docs).</p>`,
-    connections: ['DSL Parser &mdash; schema generation', 'REST API Server &mdash; OpenAPI generation'],
-    files: ['cmd/apexbench/', 'cmd/dslschema/', 'cmd/swaggergen/', 'cmd/openapits/', 'cmd/webcoverage/']
+    body: `<p>Developer/CI binaries under <code>cmd/</code>, not part of the production serving path: <code>apexbench</code> (controlled local performance-evidence harness), <code>apexfault-target</code> (authenticated independent HTTP traffic counter for disposable fault trials), <code>dslschema</code> (<code>docs/dsl.schema.json</code> + <code>docs/DSL_ACTION_REFERENCE.md</code>), <code>swaggergen</code> (<code>docs/swagger.yaml</code> + <code>docs/api-endpoint-catalog.json</code>), <code>openapits</code> (<code>dashboard/src/types/generated/openapi.ts</code>), <code>datamodeldoc</code> (<code>docs/DATA_MODEL.md</code>), <code>webcoverage</code> (<code>docs/LOADRUNNER_COVERAGE.md</code>), and <code>storeoverlay</code> (<code>pkg/api/store_overlay_test.go</code>).</p>`,
+    connections: ['DSL Parser &mdash; schema generation', 'REST API Server &mdash; OpenAPI &amp; store overlay generation', 'SQLite / PostgreSQL &mdash; data model doc generation'],
+    files: ['cmd/apexbench/', 'cmd/apexfault-target/', 'cmd/dslschema/', 'cmd/swaggergen/', 'cmd/openapits/', 'cmd/datamodeldoc/', 'cmd/webcoverage/', 'cmd/storeoverlay/']
   },
   redis: {
     title: 'Redis / Valkey',
     subtitle: 'Optional live state and fanout',
     layer: 'storage',
-    body: `<p>Optional cache backend (<code>APEXLOAD_CACHE_BACKEND</code>, <code>APEXLOAD_REDIS_URL</code>). Holds live run snapshots, generator inventory cache, idempotency keys, API-key rate limits, and the WebSocket fanout bus for multi-controller HA (<code>APEXLOAD_CONTROLLER_HA=true</code>).</p>
-    <p>Memory is the local default. Redis/Valkey is <strong>not</strong> authoritative durable state; PostgreSQL holds metadata and leases.</p>`,
+    body: `<p>Optional cache backend (<code>APEXLOAD_CACHE_BACKEND</code>, <code>APEXLOAD_REDIS_URL</code>, <code>APEXLOAD_REDIS_TLS</code>). Holds live run snapshots, generator inventory cache, idempotency keys, API-key rate limits, and the WebSocket fanout bus for multi-controller HA (<code>APEXLOAD_CONTROLLER_HA=true</code>).</p>
+    <p>Memory is the local default. Redis/Valkey is <strong>not</strong> authoritative durable state; PostgreSQL holds metadata and leases. See <code>docs/ENTERPRISE_PLATFORM_RUNBOOK.md</code>.</p>`,
     connections: ['WebSocket Hub &mdash; fanout bus', 'REST API Server &mdash; idempotency and rate limits', 'Test Runner &mdash; live snapshots'],
-    files: ['pkg/api/cache_backend.go', 'pkg/config/config.go', 'deployments/k8s/ha/']
+    files: ['pkg/api/cache_backend.go', 'pkg/config/config.go', 'deployments/k8s/ha/', 'docs/ENTERPRISE_PLATFORM_RUNBOOK.md']
   },
   archive: {
     title: 'Archive Store',
     subtitle: 'Immutable run evidence',
     layer: 'storage',
     body: `<p>Completed runs write archive bundles: manifests, transaction/resource/summary datasets, browser diagnostics, JSONL/CSV/Parquet exports, and HTML/JSON/CSV reports. Backends: local filesystem (default), or S3, Azure Blob, and GCS for enterprise (<code>APEXLOAD_ARCHIVE_BACKEND</code>).</p>
-    <p>High-cardinality raw transaction evidence belongs here, not in SQL or Redis.</p>`,
+    <p>High-cardinality raw transaction evidence belongs here, not in SQL or Redis. See <code>docs/NATIVE_ANALYTICS.md</code>, <code>docs/ARCHIVE_SOURCE_RETENTION.md</code>, and <code>docs/ENTERPRISE_PLATFORM_RUNBOOK.md</code>.</p>`,
     connections: ['Test Runner &mdash; archive finalization', 'Generator &mdash; artifact staging', 'REST API Server &mdash; reports and comparisons'],
-    files: ['pkg/storage/sqlite_archives.go', 'pkg/api/execution_backend.go', 'pkg/distributed/generatorrpc/archive.go']
+    files: ['pkg/storage/sqlite_archives.go', 'pkg/api/execution_backend.go', 'pkg/distributed/generatorrpc/archive.go', 'docs/NATIVE_ANALYTICS.md', 'docs/ARCHIVE_SOURCE_RETENTION.md']
   },
   integrations: {
     title: 'Integrations',
     subtitle: 'Monitoring systems',
     layer: 'storage',
     body: `<p>External monitoring integrations configured per project/domain:</p>
-    <p>&bull; Dynatrace (SaaS monitoring, event webhooks)<br/>
-    &bull; ELK monitoring<br/>
+    <p>&bull; Dynatrace (SaaS Classic &amp; Grail monitoring, event webhooks)<br/>
+    &bull; Elastic / OpenSearch (ELK) monitoring<br/>
     &bull; Grafana dashboards and Prometheus graph data sources<br/>
-    &bull; OpenTelemetry traces (opt-in)</p>
-    <p>See <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>.</p>`,
+    &bull; OpenTelemetry traces (opt-in; AppDynamics monitoring is retired under <code>docs/RETIRED_INTEGRATIONS.md</code>)</p>
+    <p>See <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>, <code>docs/DYNATRACE.md</code>, <code>docs/ELASTIC.md</code>, and <code>docs/PROMETHEUS_MONITORING.md</code>.</p>`,
     connections: ['REST API Server &mdash; connection management', 'Telemetry Export &mdash; event/metric emission'],
     files: ['pkg/api/dynatrace_monitoring.go', 'pkg/api/elk_monitoring.go', 'pkg/api/graph_datasource_grafana.go', 'pkg/storage/sqlite_dynatrace_connections.go']
   },
@@ -1188,7 +1219,7 @@ const COMPONENTS = {
     subtitle: 'GitHub Actions + Power BI',
     layer: 'storage',
     body: `<p>CI/CD: GitHub (including Enterprise Server) integration, GitHub OIDC exchange for CI runs, and <code>apexctl</code> CI commands with SLA-based exit codes and JUnit output. BI: Power BI dataset publishing of run results.</p>
-    <p>See <code>docs/CICD_INTEGRATION.md</code>, <code>docs/CICD_INTEGRATION.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>.</p>`,
+    <p>See <code>docs/CICD_INTEGRATION.md</code> and <code>docs/GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md</code>.</p>`,
     connections: ['REST API Server &mdash; /api/v1/ci/runs, GitHub handlers', 'apexctl &mdash; CI client'],
     files: ['pkg/api/github_handlers.go', 'pkg/api/github_oauth.go', 'pkg/api/powerbi_publish.go', 'cmd/apexctl/ci.go']
   },
@@ -1220,9 +1251,9 @@ const COMPONENTS = {
     title: 'Java Vuser Protocol',
     subtitle: 'Governed JVM sidecar runner',
     layer: 'protocol',
-    body: `<p>Governed JVM sidecar runner (<code>java_vuser</code>) for Java Vuser scripts. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator; capacity is reserved per pod.</p>`,
+    body: `<p>Governed JVM sidecar runner (<code>java_vuser</code>) for Java Vuser scripts (shared/pooled or one-per-VUser; see <code>docs/JAVA_SHARED_AND_PILOT_RUNTIME.md</code>). Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator; capacity is reserved per pod.</p>`,
     connections: ['VUser Engine &mdash; Execute() calls', 'Java Vuser Runner &mdash; external-runner bridge'],
-    files: ['pkg/protocol/java_vuser/', 'pkg/javarunner/', 'docs/PROTOCOL_SUPPORT.md']
+    files: ['pkg/protocol/java_vuser/', 'pkg/javarunner/', 'docs/JAVA_SHARED_AND_PILOT_RUNTIME.md', 'docs/PROTOCOL_SUPPORT.md']
   },
   'conv-bruno': {
     title: 'Bruno Converter',
@@ -1277,6 +1308,8 @@ const COMPONENTS = {
 const CONNECTIONS = [
   { from: 'dashboard', to: 'restapi', type: 'solid' },
   { from: 'dashboard', to: 'wshub', type: 'ws' },
+  { from: 'desktop', to: 'restapi', type: 'solid' },
+  { from: 'desktop', to: 'wshub', type: 'ws' },
   { from: 'apexctl', to: 'restapi', type: 'solid' },
   { from: 'websocket', to: 'wshub', type: 'ws' },
   { from: 'agentic', to: 'restapi', type: 'solid' },
@@ -1324,6 +1357,7 @@ const CONNECTIONS = [
   { from: 'engine', to: 'proto-javahttp', type: 'solid' },
   { from: 'engine', to: 'proto-kafka', type: 'solid' },
   { from: 'engine', to: 'proto-eventhubs', type: 'solid' },
+  { from: 'engine', to: 'proto-appium', type: 'solid' },
   { from: 'engine', to: 'proto-javavuser', type: 'solid' },
   { from: 'proto-javavuser', to: 'javarunner', type: 'solid' },
   { from: 'conv-bruno', to: 'dslparser', type: 'solid' },

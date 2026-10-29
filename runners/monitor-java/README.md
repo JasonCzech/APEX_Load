@@ -27,6 +27,26 @@ limits, and a single-row result. Arbitrary SQL, connection properties, and drive
 classes are prohibited. This pack measures connection/query health; it does not
 claim to measure database server load.
 
+## Emitted metrics
+
+Every point is emitted as a finite JSON `gauge` (`Double.isFinite` enforced before serialization):
+
+| Pack | Query pack | Metric name | Unit | Source |
+| --- | --- | --- | --- | --- |
+| `jmx` | `jvm-basic-v1` | `jvm.threads` | `1` | `java.lang:type=Threading` → `ThreadCount` |
+| `jmx` | `jvm-basic-v1` | `jvm.uptime` | `ms` | `java.lang:type=Runtime` → `Uptime` |
+| `jmx` | `jvm-basic-v1` | `jvm.heap.used` | `By` | `java.lang:type=Memory` → `HeapMemoryUsage.used` |
+| `jdbc` | `connection-health-v1` | `jdbc.connection_health.duration` | `ms` | Elapsed wall time across TLS connect, read-only `SELECT 1` (`maxRows=1`) and `rollback()` |
+
+## Safety bounds
+
+| Layer | Enforced limits and hardening |
+| --- | --- |
+| Collector subprocess (`pkg/collectoragent/java.go`) | `-Xmx64m`, `-XX:ActiveProcessorCount=1`, `-Djava.rmi.server.useCodebaseOnly=true`, `-Dcom.sun.jndi.rmi.object.trustURLCodebase=false`; empty process environment (`Env = []`); 15-second context timeout (`1s` `WaitDelay`); `stdout` capped at 64 KiB (1–32 decoded `MetricPoint` entries) and `stderr` capped at 4 KiB. |
+| Stdin & URI admission (`ApexMonitor.java`) | Two line-delimited credentials on `stdin` (CR/LF rejected by collector; `username` ≤ 128 chars, `password` ≤ 16,384 chars); URIs reject embedded `userInfo`, query strings and fragments (and any path on `jmx://host:port`). |
+| JMX deserialization & socket pinning | Process-wide `ObjectInputFilter` (`depth ≤ 20`, `references ≤ 10,000`, `streamBytes ≤ 1,048,576`, `arrayLength ≤ 10,000`, plus explicit rejection of `RMIClientSocketFactory` classes); custom `RMISocketFactory` refuses `createServerSocket` listeners and permits outbound `SSLSocket` connections only to the exact approved `host:port` with `HTTPS` hostname verification and 5,000 ms connect, socket and `jmx.remote.x.request.waiting.timeout` deadlines. |
+| JDBC transaction containment | Explicit `org.postgresql.Driver`, `sslmode=verify-full`, 5-second `connectTimeout`, `socketTimeout` and `queryTimeout`, `readOnly=true`, `autoCommit=false`, `maxRows=1`, fixed `SELECT 1` verification, and unconditional `rollback()` in `finally`. |
+
 Example local approval:
 
 ```json

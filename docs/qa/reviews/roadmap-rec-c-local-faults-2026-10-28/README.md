@@ -2,7 +2,7 @@
 
 ## Scope
 
-This review record documents the repeatable 3-repetition local fault qualification harness (`REC-C` / `REC-C1`) defined in [ROADMAP_IMPLEMENTATION_SPEC.md](../../../ROADMAP_IMPLEMENTATION_SPEC.md) and [NODE_FAILURE_READINESS_PLAN.md](../../../NODE_FAILURE_READINESS_PLAN.md) (Package 8: Integrated Fault Qualification, Soak, and Release Gates).
+This review record documents the repeatable 3-repetition local fault qualification harness (`REC-C` / `REC-C1`) defined in [ROADMAP_IMPLEMENTATION_SPEC.md](../../../archive/plans/ROADMAP_IMPLEMENTATION_SPEC_2026-10-28.md) and [NODE_FAILURE_READINESS_PLAN.md](../../../NODE_FAILURE_READINESS_PLAN.md) (Package 8: Integrated Fault Qualification, Soak, and Release Gates).
 
 - **Qualification Harness**: [`TestRECCIntegratedLocalFaultQualification3Rep`](../../../../pkg/api/rec_c_local_fault_qualification_test.go)
 - **Real Generator Fleet Execution**: Every participating generator (`gen-0`, `gen-a`, `gen-b`, `gen-c`, `gen-d`, `gen-e`) runs a real in-process `generatorrpc.Service` with `WithExecution()` enabled. Outbound VUser HTTP requests carry `X-Apexload-Fault-Generation` stamped strictly from the generation accepted by each generator's real gRPC control plane (`ClaimExecutionEpoch`, `ClaimExecutionEpochWithAdoptions`, `ClaimRunSupervision`, `AssignWork`).

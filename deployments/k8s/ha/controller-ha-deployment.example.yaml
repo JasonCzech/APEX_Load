@@ -18,7 +18,12 @@ spec:
         app.kubernetes.io/component: controller
     spec:
       terminationGracePeriodSeconds: 45
-      automountServiceAccountToken: false
+      serviceAccountName: apexload-controller
+      # Active EndpointSlice leadership publishing (APEXLOAD_ACTIVE_ENDPOINT_SLICE)
+      # and optional audited restart controls require a mounted Kubernetes API token
+      # on the controller ServiceAccount (keep automountServiceAccountToken: false
+      # on generator pods).
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -38,7 +43,8 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: controller
-          image: ghcr.io/jasonczech/apexload-controller:latest
+          # Pin an immutable semantic release tag or digest in production; never use :latest.
+          image: ghcr.io/jasonczech/apexload-controller:0.1.0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -66,6 +72,23 @@ spec:
             # (Point apexload-data-platform at PostgreSQL via APEXLOAD_DATABASE_URL.)
             - name: APEXLOAD_CONTROLLER_HA
               value: "true"
+            - name: APEXLOAD_ACTIVE_ENDPOINT_SLICE
+              value: apexload-controller-active
+            - name: APEXLOAD_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: APEXLOAD_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: APEXLOAD_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Keep process-local reader materialization caches off any shared RWX volume.
+            - name: APEXLOAD_ARCHIVE_READER_CACHE_DIR
+              value: /tmp/apexload-archive-read-cache
           envFrom:
             - configMapRef:
                 name: apexload-data-platform
@@ -74,7 +97,7 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            - name: data
+            - name: archive-staging
               mountPath: /var/lib/apexload
           readinessProbe:
             httpGet:
@@ -97,12 +120,18 @@ spec:
               cpu: "2"
               memory: 4Gi
       volumes:
-        # Ephemeral scratch for the read-only-root container. In HA, point
-        # APEXLOAD_EXPORT_DIR / persistence at shared storage instead.
+        # Private per-pod ephemeral scratch for /tmp and process-local reader caches.
         - name: tmp
-          emptyDir: {}
-        - name: data
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 2Gi
+        # HA archives must publish to shared object storage (s3, azure_blob, or gcs)
+        # via apexload-data-platform, and any shared staging/export or import-assets
+        # mount across controller replicas must use a qualified ReadWriteMany PVC
+        # (never rely on per-pod emptyDir for durable archives or cross-replica assets;
+        # see docs/ARCHIVE_SOURCE_RETENTION.md#shared-controller-staging).
+        - name: archive-staging
+          persistentVolumeClaim:
+            claimName: apexload-controller-archive-staging
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

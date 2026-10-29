@@ -35,9 +35,13 @@ Controller API
 | Surface | Code | Responsibility |
 | --- | --- | --- |
 | Controller API | `cmd/controller`, `pkg/api` | REST API, WebSocket streams, dashboard hosting, scheduling, orchestration, governance, reporting, readiness, inventory |
-| Dashboard | `dashboard/` | React SPA for administration, repository management, authoring, scenario assembly, monitoring, reports, API guide, access/API keys |
-| CLI | `cmd/apexctl` | Local script execution and controller-backed CI/CD runs |
+| Dashboard | `dashboard/` | React SPA for administration, repository management, authoring, scenario assembly, monitoring, reports, API guide, Access (`#/access`) |
+| Desktop Workspace | `desktop/` | Wails v2 native client embedding a loopback controller + dashboard with local SQLite/keyring storage and Remote Workspace sync/remote execution |
+| CLI | `cmd/apexctl` | Local script execution and controller-backed CI/CD, analysis, RCA, monitoring, and import workflows |
 | Generator | `cmd/generator`, `pkg/distributed/generatorrpc` | Remote worker that executes assigned groups and streams metrics/artifacts to the controller |
+| Recording Agent | `cmd/apexload-record-agent`, `pkg/recordagent` | Workstation browser-recording bridge pairing local Playwright/Chromium capture with a remote controller dashboard |
+| Monitoring Collector | `cmd/apexload-collector-agent`, `pkg/collectoragent` | Out-of-band monitoring agent polling signed target-system metric jobs (Linux/Prometheus, SSH, OTLP, restricted Java packs) |
+| Java Vuser Runner | `cmd/apexload-java-vuser-runner`, `pkg/javarunner`, `pkg/javasidecar` | Governed loopback/sidecar JVM runner container executing `java_vuser` actions (disabled unless operator config enables it) |
 | MCP server | `mcp/` | FastMCP bridge for agents and automation against the documented REST API |
 
 The controller embeds the built dashboard from `pkg/api/static`. During dashboard development, the Vite dev server proxies API calls to the controller.
@@ -122,7 +126,7 @@ If `APEXLOAD_GENERATORS` is configured, the controller uses the distributed back
 
 Generator targets are static `host:port` entries, or `dns://host:port` entries that the controller re-resolves on an interval (`APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`, default 15s) — in Kubernetes this points at the generator headless service, so pods added or removed by KEDA/HPA autoscaling join and leave the fleet automatically.
 
-The gRPC channel supports TLS/mTLS plus shared-token auth via `APEXLOAD_GRPC_TLS_*` and `APEXLOAD_GRPC_AUTH_TOKEN` (certificates are re-read per handshake/dial, so cert-manager rotation needs no restart). Unconfigured, the channel is plaintext and unauthenticated — both binaries log a warning in `APEXLOAD_ENV=production` — so production deployments should enable at least token auth rather than relying on NetworkPolicy alone.
+The gRPC channel enforces TLS/mTLS plus shared-token authentication via `APEXLOAD_GRPC_TLS_*` and `APEXLOAD_GRPC_AUTH_TOKEN` (certificates are re-read per handshake/dial, so cert-manager rotation needs no restart). In `APEXLOAD_ENV=production` or `prod`, both controller (when distributed targets are configured) and generator **fail closed and refuse startup** (`TransportSecurity.MustRefuseInsecure`) unless controller↔generator gRPC uses mTLS, verified TLS + `APEXLOAD_GRPC_AUTH_TOKEN` (>= 32 bytes when not using mTLS), or an authenticated WSS reverse tunnel (`APEXLOAD_GRPC_REVERSE_TUNNEL_SECURE=true` with `APEXLOAD_GENERATOR_CONNECTIVITY_MODE=reverse`). Bearer token authentication over plaintext is explicitly rejected, as is server-only TLS without client certificates or a shared token.
 
 The public REST and WebSocket contracts are the same in local and distributed mode.
 
@@ -149,23 +153,24 @@ Metrics flow through buffered channels and are aggregated into streaming percent
 
 ## Protocol And Import Architecture
 
-Protocols implement the compiled-in `pkg/protocol.Protocol` interface and are registered in `pkg/protocol/registry.go`. Current protocol/runtime surfaces include:
+Protocols implement the compiled-in `pkg/protocol.Protocol` interface, register themselves via `protocol.Register` in their package `init()`, and are linked into standard binaries through blank imports in `pkg/protocol/builtin/builtin.go`. Current protocol/runtime surfaces include:
 
 - HTTP/1.1, HTTP/2 and an HTTP/3 preview (exact `3` and the `auto+h3` Alt-Svc upgrade) behind `APEXLOAD_HTTP3` (`http` negotiates; `http/1.1`, `http/2` and `http/3` supply exact inherited defaults)
 - SOAP and WSDL import
-- Java-over-HTTP bounded codec support
-- Java Vuser (`java_vuser`): governed JVM sidecar runner; disabled unless an operator sets `APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true` on the generator
-- Bruno (`bruno`): governed Node sidecar runner for imported Bruno collections; distributed execution disabled unless `APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED` is set and a governed egress broker is configured
-- WebSocket
-- gRPC
-- JMS Solace, IBM MQ, and Azure Service Bus (real Service Bus adapter opt-in via `-tags jms_servicebus_real`)
-- Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`)
+- Java-over-HTTP (`java_http`) bounded codec support
+- Java Vuser (`java_vuser`): governed JVM sidecar runner; disabled unless an operator sets `APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true` on the generator (see [docs/JAVA_SHARED_AND_PILOT_RUNTIME.md](docs/JAVA_SHARED_AND_PILOT_RUNTIME.md) and experimental isolation contracts in [docs/JAVA_DEDICATED_BROKER_EXPERIMENTAL.md](docs/JAVA_DEDICATED_BROKER_EXPERIMENTAL.md))
+- WebSocket (`websocket`)
+- gRPC (`grpc`)
+- JMS Solace (`jms-solace`), IBM MQ (`jms-ibmmq`), and Azure Service Bus (`jms-servicebus`; real Service Bus adapter opt-in via `-tags jms_servicebus_real`)
+- Kafka (`kafka`: produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`)
 - Azure Event Hubs (`eventhubs`): producer-first with observer consumption; real AMQP adapter opt-in via `-tags eventhubs_real`
-- database and network protocol import/runtime paths where supported
-- browser replay and browser canary diagnostics
+- database (`database`) and network (`network`: DNS, TCP, UDP, FTP, SMTP, POP3, IMAP, LDAP) protocol import/runtime paths
+- browser (`browser`) replay and browser canary diagnostics (see [docs/BROWSER_EVIDENCE_ARCHITECTURE.md](docs/BROWSER_EVIDENCE_ARCHITECTURE.md))
 - Appium (`appium`): a device observer that drives one real device or simulator through an Appium server (a device cloud's hub, or Appium on a Mac) while HTTP groups supply the load
 
-Script inputs can be created directly in the dashboard, through REST, through `apexctl`, or by import. Import surfaces include LoadRunner/VuGen ZIP, JMeter, DevWeb, HAR, OpenAPI/Swagger, WSDL, raw HTTP, cURL, REST JSON, and sample packs.
+Bruno Runner is retired under `_retired/bruno-runner` and excluded from builds; native Bruno HTTP collection import remains built into `pkg/convert` and `apexctl import bruno`. `sap_gui` actions are authorable/importable via the DSL catalog for migration inspection but have no registered runtime protocol.
+
+Script inputs can be created directly in the dashboard, through REST, through `apexctl`, or by import. Import surfaces include LoadRunner/VuGen ZIP, native Bruno HTTP collections, JMeter, k6, DevWeb, HAR, OpenAPI/Swagger, WSDL, Postman, AsyncAPI, raw HTTP, cURL, REST JSON, and sample packs.
 
 The LoadRunner importer is protocol-aware. It classifies known VuGen protocol families, returns confidence/signals/conflicts, routes executable protocols to native APEX Load targets, and creates review artifacts for external-runner or unsupported protocols instead of pretending they are executable.
 
@@ -199,7 +204,7 @@ Live monitoring is fed by WebSocket events:
 - telemetry diagnostics and threshold alerts
 - browser and resource summaries where available
 
-Completed runs write archive bundles with manifests, transaction/resource/summary datasets, browser diagnostics, JSONL/CSV/Parquet exports, HTML/JSON/CSV reports, root-cause summaries, and comparison views. Report profiles support executive, engineer, and audit-oriented outputs.
+Completed runs write archive bundles with manifests, transaction/resource/summary datasets, browser diagnostics, JSONL/CSV/Parquet exports, HTML/JSON/CSV reports, root-cause summaries, and comparison views (see [docs/NATIVE_ANALYTICS.md](docs/NATIVE_ANALYTICS.md) and [docs/ARCHIVE_SOURCE_RETENTION.md](docs/ARCHIVE_SOURCE_RETENTION.md)). Report profiles support executive, engineer, and audit-oriented outputs.
 
 Usage accounting snapshots, archive retention planning/apply events, release trends, parity status, fleet alerts, and support matrices are exposed through REST and dashboard views.
 
@@ -235,7 +240,7 @@ Examples live under `deployments/k8s/`, including production data-platform setti
 
 For production on-prem clusters, `deployments/k8s/onprem/` is a hardened manifest set: gRPC mTLS + token auth, TLS ingress, a dedicated metrics port scoped to the monitoring namespace, Pod Security Admission `restricted`, scoped network policies with opt-in egress templates, ephemeral-storage bounds, and PDBs — see its README for the CNI-enforcement verification step.
 
-For Azure, `deployments/k8s/aks/` is a complete production manifest set (workload-identity service accounts, KEDA ScaledObject, managed-NGINX ingress, Azure data-platform ConfigMap) and `deployments/azure/terraform/` provisions the matching infrastructure (AKS with OIDC issuer + workload identity + managed KEDA, ACR, PostgreSQL Flexible Server, Azure Cache for Redis, Blob Storage, Key Vault, federated identity credentials). The on-prem → AKS migration runbook is `deployments/k8s/aks/README.md`.
+For Azure, `deployments/k8s/aks/` is a complete production manifest set (workload-identity service accounts, KEDA ScaledObject, managed-NGINX ingress, Azure data-platform ConfigMap) and `deployments/azure/terraform/` provisions the matching infrastructure (AKS with OIDC issuer + workload identity + managed KEDA, ACR, PostgreSQL Flexible Server, Azure Cache for Redis, Blob Storage, Key Vault, federated identity credentials). The on-prem → AKS migration runbook is `deployments/k8s/aks/README.md`. For AWS, `deployments/k8s/eks/` and `deployments/aws/terraform/` provide the corresponding EKS/IRSA/RDS/ElastiCache/S3/KMS stack. Provider-neutral async cloud capacity (`pkg/compute`) also supports ephemeral reverse-tunnel generators on Azure Container Apps/Jobs, Azure Container Instances, and AWS ECS Fargate (see [docs/ENTERPRISE_PLATFORM_RUNBOOK.md](docs/ENTERPRISE_PLATFORM_RUNBOOK.md)).
 
 ## Performance Targets
 
@@ -248,19 +253,19 @@ For Azure, `deployments/k8s/aks/` is a complete production manifest set (workloa
 | Ramp-up rate | 500 VUsers/second/pod | Protocol and target dependent |
 | Browser VUsers | diagnostic canaries | Not intended as HTTP-density load generators |
 
-Protocol-specific density envelopes and benchmark evidence are tracked in the support matrix and browser benchmark documents.
+Protocol-specific density envelopes and benchmark evidence are tracked in [docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md) and [docs/PERFORMANCE_BENCHMARKS.md](docs/PERFORMANCE_BENCHMARKS.md).
 
 ## Extension Points
 
 | Extension | Primary files |
 | --- | --- |
-| Protocol runtime | `pkg/protocol`, `pkg/protocol/registry.go` |
+| Protocol runtime | `pkg/protocol`, package `init()` (`protocol.Register`) + blank import in `pkg/protocol/builtin/builtin.go` |
 | Script import converter | `pkg/convert`, `pkg/api/handlers_scripts.go` |
-| API endpoint | `pkg/api/server.go`, matching handler/test file |
+| API endpoint | `pkg/api/route_registry_*.go`, `pkg/api/route_catalog.go`, matching `pkg/api/handlers_*.go` & test file |
 | Dashboard page or workflow | `dashboard/src/` |
 | Storage schema/contract | `pkg/storage` |
 | MCP tool coverage | `mcp/apexload_mcp/` |
-| Deployment shape | `deployments/k8s/` |
+| Deployment shape | `deployments/k8s/`, `deployments/helm/apexload` |
 
 New features should include tests alongside the changed package and documentation updates for changed public behavior.
 

@@ -5,6 +5,10 @@ APEX Load reads Dynatrace SaaS monitoring data during explicitly selected manage
 
 Shared pipeline ownership and provider qualification are in [observability integrations](OBSERVABILITY_INTEGRATIONS.md#governed-provider-registry). [Lifecycle webhooks](#dynatrace-lifecycle-webhooks) publish notifications separately from read-side monitoring.
 
+### Package boundaries and ownership
+
+`pkg/dynatrace` owns read-only SaaS Classic Environment (`/api/v2/metrics`, `/api/v2/entities`, `/api/v2/problems`, `/api/v2/events`) and independently authenticated Platform/Grail DQL and Smartscape transport, dial-time DNS/TLS SaaS-origin validation, discovery, selector and DQL projection validation, Grail scan-budget accounting and normalization over `pkg/analysis`. It never imports `pkg/api`, `pkg/storage` or `pkg/engine`. `pkg/analysis` owns typed bucket and query-window semantics, coverage and terminal acceptance rules. `pkg/api` and `pkg/storage` own project authorization, write-only secret references, revisioned connections and asynchronous inspection operations, execution-owner/grant fencing, resumable Grail query cursors, content-addressed receipts and canonical metric/diagnostic heads. `pkg/collectoragent` executes the same `pkg/dynatrace` adapter under local SaaS origin approval, X25519-sealed credentials and bounded spool replay.
+
 ## Set up a connection
 
 1. Store credentials in the project's secret provider. Use a read-only Environment API token for selected Classic capabilities. Metrics, entity discovery, problems and events need their corresponding read permissions. Platform/Grail needs separate authentication: a dedicated OAuth client with client ID, client secret, resource and approved read scopes, or an explicitly configured Platform token. Grant only selected dataset and bucket access. Availability also depends on tenant configuration, data retention and licensing.
@@ -44,7 +48,25 @@ Choose **Classic entities** or **Smartscape** topology when needed. Problems ret
 
 Attach sources to scenarios for repeatable preparations, schedules, distributed runs, desktop and controller-managed CLI/CI execution. Per-test `monitor_bindings` omitted means inherit scenario bindings; `[]` turns native monitoring off; a nonempty array replaces inherited bindings. Required sources block preparation when unavailable. Source/connection revisions and rules are frozen in the run. Edits affect future runs and invalidate unconsumed preparations. Runtime outages update monitoring health while load execution and controls continue.
 
-The controller-managed CLI uses `apexctl dynatrace list|create|get|update|delete` for connections and `test|discover|preview|operation` for asynchronous inspection. Connection update JSON includes `expected_revision`; delete uses `--revision`. Editors can preview an approved saved source with `apexctl dynatrace preview --project ID --id CONNECTION --source-id SOURCE --wait`; the server derives its frozen selection. Arbitrary `--file` previews, verification and discovery remain administrator operations. `apexctl dynatrace sources|create-source|update-source|delete-source|bindings|bind|series|evidence` provides the shared monitoring workflows, also available under `apexctl monitor`. The MCP tools expose `dynatrace_connection_*` and `dynatrace_operation_*` plus provider-neutral monitor source, binding, series and evidence tools. An approved-source MCP preview supplies `kind: "preview"` and `source_id` without selection/options overrides. Use the generated API contract for the exact request fields.
+The controller-managed CLI exposes every connection, asynchronous inspection and shared run-monitoring action under `apexctl dynatrace` (JSON request files for connection/preview subcommands are capped at 64 KiB, and `--wait` polls up to `--timeout`, default and maximum `1m`):
+
+| Command | Purpose |
+| --- | --- |
+| `apexctl dynatrace list --project ID` | Lists Dynatrace connections in the project (`GET .../monitoring/dynatrace-connections`). |
+| `apexctl dynatrace create --project ID --file conn.json` | Creates a connection with write-only project-secret references (`POST .../monitoring/dynatrace-connections`). |
+| `apexctl dynatrace get --project ID --id CONN` | Reads a saved connection summary (`GET .../dynatrace-connections/{id}`). |
+| `apexctl dynatrace update --project ID --id CONN --file conn.json` | Updates a connection (`PUT`; JSON includes `expected_revision`). |
+| `apexctl dynatrace delete --project ID --id CONN --revision N` | Deletes a connection at expected revision `N` (`DELETE ...?expected_revision=N`). |
+| `apexctl dynatrace test --project ID --id CONN [--wait] [--timeout 1m]` | Starts (and optionally waits for) saved-location `verify` inspection (`POST .../operations`). |
+| `apexctl dynatrace discover --project ID --id CONN [--kind metrics\|entities\|entity_types\|smartscape] [--selector S] [--search Q] [--cursor C] [--limit 1..100] [--wait]` | Runs bounded discovery at the saved execution location (`POST .../operations` with `kind: "discover"`). |
+| `apexctl dynatrace preview --project ID --id CONN (--source-id SOURCE \| --file selection.json) [--wait]` | Previews an editor-accessible saved `source_id` (derived server-side) or an administrator-supplied selection JSON (`--source-id` and `--file` are mutually exclusive). |
+| `apexctl dynatrace operation --project ID --id CONN --operation OP` | Reads an asynchronous inspection operation's status and result (`GET .../operations/{op}`). |
+| `apexctl dynatrace sources \| create-source \| update-source \| delete-source` | Lists, creates, updates (with `revision`) or deletes (`--revision`) reusable project monitor sources (delegates to `apexctl monitor`). |
+| `apexctl dynatrace bindings \| bind --id SCENARIO [--file bindings.json]` | Reads or replaces scenario monitor bindings (`GET` / `PUT /api/v1/scenarios/{id}/monitor-bindings`). |
+| `apexctl dynatrace create-run --file test.json [--project ID]` | Creates a run with `monitor_bindings` and `goal_config.monitor_rules` (`POST /api/v1/tests`). |
+| `apexctl dynatrace run \| series \| evidence \| dependencies --id RUN [...]` | Reads run monitor status (`/monitors`), paginated metric series (`/monitor-series`), diagnostic evidence (`/monitor-evidence`) or interval dependency evidence (`/dependency-evidence`). |
+
+The MCP tools expose `dynatrace_connection_*` and `dynatrace_operation_*` plus provider-neutral monitor source, binding, series and evidence tools. An approved-source MCP preview supplies `kind: "preview"` and `source_id` without selection/options overrides. Use the generated [OpenAPI specification](swagger.yaml) for the exact request fields.
 
 The terminal criterion editor previews approved sources to select an exact provider series. Preview results are tied to the source and connection revisions; edits require another preview. Editors cannot change the frozen query through this operation, and viewers cannot initiate it.
 
@@ -82,7 +104,7 @@ Existing connection IDs, references and old archives remain readable. The legacy
 | Grail numeric/log/event/span/trace summaries and Smartscape | Fixture projections and typed ingestion scenarios | None yet |
 | Direct/collector, durable ingestion and reconciliation | Fixture integration/race/database/browser scenarios | None yet |
 
-Fixture success does not establish compatibility with a real licensed tenant. Publish exact tenant release/API capabilities, permissions and qualification dates after SaaS testing. See [the implementation contract](DYNATRACE_SPEC.md), [provider qualification](OBSERVABILITY_INTEGRATIONS.md#provider-qualification), [generated OpenAPI](swagger.yaml), and [archive retention](ARCHIVE_SOURCE_RETENTION.md).
+Fixture success does not establish compatibility with a real licensed tenant. Publish exact tenant release/API capabilities, permissions and qualification dates after SaaS testing. See the archived implementation contract (`docs/archive/plans/DYNATRACE_SPEC_2026-10.md`), [provider qualification](OBSERVABILITY_INTEGRATIONS.md#provider-qualification), [generated OpenAPI](swagger.yaml), and [archive retention](ARCHIVE_SOURCE_RETENTION.md).
 
 ## Dynatrace lifecycle webhooks
 

@@ -23,6 +23,35 @@ READMEs own the details; this page is the router.
 | Java Vuser runner component | [Java Vuser runner component](#java-vuser-runner-component) |
 | Browser generator for observer pools | [Browser generator for observer pools](#browser-generator-for-observer-pools) |
 | Local AI provider secrets | [AI provider setup for local Kubernetes](#ai-provider-setup-for-local-kubernetes) |
+| Azure App Service controller launcher | `deployments/azure/appservice/README.md` |
+
+### Kubernetes directory map
+
+Every directory under `deployments/k8s/` serves a distinct base, cloud/HA overlay, or opt-in Kustomize component:
+
+| Directory | Purpose |
+| --- | --- |
+| `k8s/local` | Single-controller + 2-generator development base for Docker Desktop `kubeadm` mode (no KEDA/ServiceMonitor CRDs). |
+| `k8s/local-kind` | Local overlay rewriting images to `localhost:5001/apexload-*` for multi-node Docker Desktop `kind` clusters. |
+| `k8s/local-java-vuser` | Local overlay composing `components/java-vuser-runner` into the generator pod. |
+| `k8s/onprem` | Hardened self-managed Kubernetes base (mTLS + token gRPC, TLS ingress, PSA `restricted`, NetworkPolicies, PDBs). |
+| `k8s/onprem-ha` | Multi-replica controller HA overlay on `onprem` with selectorless `apexload-controller-active` Service, fenced EndpointSlice, and RWX import-assets PVC. |
+| `k8s/onprem-autoscaling` | Adds the KEDA `ScaledObject` and `monitoring` Prometheus Operator resources to `onprem`. |
+| `k8s/onprem-ha-autoscaling` | Combines `onprem-ha` controller high availability with KEDA autoscaling and `monitoring`. |
+| `k8s/onprem-java-vuser` | On-premises overlay composing `components/java-vuser-runner` into the generator StatefulSet. |
+| `k8s/aks` | Production Azure AKS base (PostgreSQL, Managed Redis, Blob Storage, Key Vault workload identity, KEDA, headless DNS discovery). |
+| `k8s/aks-ha` | Multi-replica controller HA overlay on `aks` using `azurefile-csi` for RWX import assets and fenced active EndpointSlice. |
+| `k8s/aks-prometheus` | Adds `monitoring` (`ServiceMonitor` + `PrometheusRule`) to `aks` for in-cluster kube-prometheus-stack. |
+| `k8s/aks-azure-monitor` | Switches the AKS KEDA `ScaledObject` to Azure Monitor managed Prometheus with workload-identity `TriggerAuthentication`. |
+| `k8s/aks-java-vuser` | AKS overlay composing `components/java-vuser-runner` into the generator StatefulSet. |
+| `k8s/eks` | Production Amazon EKS base (RDS PostgreSQL, ElastiCache Redis, S3, Secrets Manager + KMS via IRSA, KEDA, ALB ingress). |
+| `k8s/eks-ha` | Multi-replica controller HA overlay on `eks` using `efs-sc` for RWX import assets and fenced active EndpointSlice. |
+| `k8s/eks-prometheus` | Adds `monitoring` (`ServiceMonitor` + `PrometheusRule`) to `eks`. |
+| `k8s/components/archive-staging` | Opt-in Kustomize component mounting a shared RWX `apexload-controller-archive-staging` PVC and isolating per-pod reader caches. |
+| `k8s/components/java-vuser-runner` | Opt-in Kustomize component adding the credential-minimized loopback Java Vuser sidecar (`legacy full_lifecycle` only). |
+| `k8s/monitoring` | Shared Kustomize base containing `servicemonitor.yaml`, `prometheusrule.yaml`, and remote-write reference config. |
+| `k8s/ha` | Standalone reference examples for HA controller deployments (`controller-ha-deployment.example.yaml`) and Valkey (`redis-valkey.example.yaml`). |
+| `k8s/java-host-broker` | Experimental mTLS broker manifests for dedicated Java execution pods (disabled by default; not part of standard overlays). |
 
 ## Validation Baseline
 
@@ -48,6 +77,14 @@ these overlays, and `scripts/render-onprem-manifests.sh`,
 `scripts/render-aks-manifests.sh`, and `scripts/render-eks-manifests.sh` render
 validated manifests with environment values; see the `Makefile` for the exact
 commands.
+
+> **Important (on-premises rendering):** While `make k8s-aks-apply` and
+> `make k8s-eks-apply` invoke their render scripts automatically,
+> `make k8s-onprem-apply` and `make k8s-onprem-autoscaling-apply` execute raw
+> `kubectl apply -k`. Never apply an unrendered `onprem*` directory directly: edit
+> the `CHANGE-ME` values, set a unique `APEXLOAD_FLEET_ID`, render with
+> `./scripts/render-onprem-manifests.sh --output /tmp/apexload-onprem.yaml`, and
+> apply the rendered file as documented in [k8s/onprem/README.md](k8s/onprem/README.md).
 
 ## AI provider setup for local Kubernetes
 

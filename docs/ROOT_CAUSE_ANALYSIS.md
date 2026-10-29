@@ -1,6 +1,6 @@
 # Root-cause analysis contracts and qualification
 
-Run validity, evidence budgets, onset detection, browser anomalies, graph construction, hypotheses and service boundaries. These contracts preserve the distinction between observations, advisory inference and qualified causal evidence. Start with [analysis enablement](ANALYSIS_WORKFLOWS.md#enable-the-workflows); imported data and panels are described in [native analytics](NATIVE_ANALYTICS.md).
+Run validity, evidence budgets, onset detection, browser anomalies, graph construction, hypotheses, service boundaries and multi-run baseline comparison. These contracts preserve the distinction between observations, advisory inference and qualified causal evidence. Start with [analysis enablement](NATIVE_ANALYTICS.md#enable-the-workflows); imported data and panels are described in [native analytics](NATIVE_ANALYTICS.md).
 
 ## Contents
 
@@ -13,6 +13,7 @@ Run validity, evidence budgets, onset detection, browser anomalies, graph constr
 - [Root-cause hypotheses and capacity](#root-cause-hypotheses-and-capacity)
 - [Root-cause evaluation](#root-cause-evaluation)
 - [Root-cause analysis service](#root-cause-analysis-service)
+- [Baseline comparison](#baseline-comparison)
 
 ## Qualified diagnostics and dependency evidence
 
@@ -296,11 +297,21 @@ An explicit `baseline_test_id` remains supported for general RCA.
 compares only when the analysis's baseline is the pinned run
 (`policy_pinned_run` when it compares with another run; without a qualified
 baseline the section says `no_qualified_baseline`), and `latest_compatible`
-uses the explicitly supplied analysis baseline for now; automatic compatible-run
-selection remains pending. The section names the policy (`policy`, id@revision). A pinned
-revision that is missing, no longer matches its pin or is invalid leaves the
-defaults (`policy_unavailable`, `partial`); a store that cannot read it fails
-the analysis, which can be retried.
+either evaluates an explicitly supplied `baseline_test_id` or—when
+`baseline_test_id` is omitted—automatically inspects a bounded inventory of up
+to 128 completed project runs (`rca.SelectBrowserBaseline`) ordered by exact
+immutable archive completion time, selecting the newest run completed before
+the current run started whose policy revision, workload, script/structure
+digests and archived browser document cohorts are compatible. Admission freezes
+a deterministic `browser_selection` receipt (`browser_selection.v1`, no
+wall-clock inspection timestamp) recording `status`, `inventory_count`,
+`selected_test_id`, `selected_digest` and every rejected candidate's reasons
+(for example `policy_revision_mismatch`, `step_topology_mismatch` or
+`completion_not_before_start`, yielding `not_selected` with
+`no_compatible_candidate` when none qualifies). The section names the policy
+(`policy`, id@revision). A pinned revision that is missing, no longer matches
+its pin or is invalid leaves the defaults (`policy_unavailable`, `partial`); a
+store that cannot read it fails the analysis, which can be retried.
 
 - **Cohorts.** A cohort is one exact measurement tuple: metric and algorithm
   version, engine, device profile, scenario group and region, frame scope,
@@ -389,7 +400,7 @@ points and the mapping decisions frozen into the evidence revision.
 | `transaction`, `action` | Archived rows; IDs match the detection series (`transaction:<name>`, `action:<name>`) |
 | `dependency` | The dependency type and target an action reached, with the target's host |
 | `monitor_source` | Each monitor job bound to the run |
-| `provider_entity` | Dynatrace entities (classic and Smartscape), AppDynamics tiers, nodes and business transactions |
+| `provider_entity` | Dynatrace entities (classic and Smartscape) and retained historical AppDynamics tiers, nodes and business transactions in older archives |
 | `infrastructure` | Hosts, processes, containers, pods, nodes and queues, from provider entities or monitor point dimensions |
 
 | Edge | Meaning | Confidence |
@@ -508,7 +519,7 @@ Capacity is reported beside the hypotheses:
 ## Root-cause evaluation
 
 The engine is calibrated and judged on a labelled corpus in
-[`docs/qa/rca-eval`](qa/rca-eval/README.md) (WP3.9). Each trial names its run,
+`docs/qa/rca-eval/README.md` (WP3.9). Each trial names its run,
 fault class, fault window and the signature that should rank first; healthy
 controls name none. A trial's seed fixes its split: 30% calibrate, 70% are
 held out, decided by the seed's hash before any tuning (`rca.EvalSplit`).
@@ -742,3 +753,33 @@ Schema release 40 (`rca-analysis-revisions`) adds `rca_evidence_revisions`
 and `rca_analyses`; release 42 (`rca-critiques`) adds `rca_critiques`;
 release 55 (`rca-analysis-origin`) adds `rca_analyses.origin`. The project
 analysis settings ride the project's settings JSON and need no release.
+
+## Baseline comparison
+
+Open **Baseline Comparison** (or **Compare**) on an archived run. Choose up to five independently pinned runs; pins in the same release remain independent. The picker defaults to the same scenario, with an explicit option for other scenarios in the application. Failed and aborted references remain visibly qualified.
+
+Apply the selection to create an immutable assessment. The persistent context shows its load range, matching tolerance and measurement-window settings. Changing controls creates a draft; existing findings and exports continue to describe the saved assessment until you apply again. Permanent links and JSON, CSV, HTML, PDF and Word exports carry the comparison ID. Scenario editors can save shared policies with revision conflict checking.
+
+### Reading evidence
+
+Start with findings, then search the transaction matrix or switch to Resources and Setup differences. Open a row to inspect values, matched windows, coverage, evaluation rules and archived evidence. The load chart shows each selected plateau; the separate elapsed-time chart retains each run's own clock. Resource changes are contemporaneous evidence, not transaction-level attribution.
+
+Transactions match group, protocol and name within one population. Named transactions, requests/actions and legacy populations remain separate. Copied groups need unambiguous identities or explicit one-to-one mappings. Percentiles are calculated from successful events using a mergeable distribution, never by averaging reported percentiles.
+
+Stable observed plateaus exclude recorded pauses, idle/baseline phases and the first 30 seconds; at least 60 seconds must remain. A missed interval ends a plateau; the few milliseconds by which a summary's timestamp can sit off its measured window do not. Matching prefers exact loads, otherwise the closest within the configured tolerance (5% by default), with increasing and decreasing stages separate. Group load aligns transactions; total load aligns resources unless explicitly mapped to a group. Workload mix and setup differences qualify the assessment.
+
+Default changes: latency 10% **and** 10 ms; throughput 10%; errors 1 percentage point; resources 20% in either direction. Mean/P95 require 100 successful samples, P99 1,000; resources require 10 samples and 80% coverage. Zero references have absolute differences with percentage unavailable. Lower resource usage is not automatically an improvement. Rules are advisory and do not alter recorded SLA or acceptance outcomes.
+
+### Workload qualification
+
+Each assessment carries a `workload` block: the current run's offered workload and, per baseline, a status of `qualified`, `partial` or `unqualified` with reasons. The key comes from the run's frozen start configuration: each group's arrival model (closed VUsers, open arrival rate, or goal-oriented target rate), its planned load levels, the planned mix, pacing and think time, disclosure-safe script digests and a digest of the other runtime overrides.
+
+A baseline is unqualified when the arrival model or load unit changes, a group's number of planned levels changes, any level differs by more than 5%, or the planned mix moves by an L1 distance above 0.05 (`arrival_model_changed`, `levels_changed`, `offered_load_changed`, `mix_changed`). It is partial when the load matches but pacing, a script or the runtime configuration changed (`pacing_changed`, `script_changed`, `config_changed`), or when something cannot be confirmed. Runs archived before keys were frozen get a key derived from recorded provenance, which lacks the arrival model and script digests, so they are at best partial. Achieved throughput is reported beside the status as an outcome; it never qualifies a baseline. The block is advisory and does not change matched windows, row qualifications, findings or the verdict.
+
+### Monitoring and historical limitations
+
+Only archived resources and frozen dashboard captures are read. Historical comparisons never query current monitoring. Known source identity, units, metric kind and labels must match, or an operator must explicitly confirm a mapping. Sum/mean/max aggregation uses aligned contributing instances; incomplete intervals reduce coverage. Counters are converted to rates before instance aggregation and reset intervals are excluded. Instance counts are displayed.
+
+New captures include versioned fingerprints of disclosure-safe configuration and optional metric definitions. Existing IDs do not establish content equality. Older archives, absent units, unknown metric semantics, missing windows and insufficient samples remain explicit evidence gaps. Archive and comparison budgets are bounded; exceeded limits fail explicitly rather than silently replacing or dropping selected runs. Large comparisons may need fewer selected runs or narrower measurement windows.
+
+See the generated [OpenAPI contract](swagger.yaml) and [endpoint catalog](api-endpoint-catalog.json) for candidate, snapshot and policy interfaces. Saved assessments are scoped to the current project and application and recheck all referenced runs on access/export.

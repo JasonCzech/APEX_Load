@@ -81,7 +81,7 @@ The QUIC (HTTP/3) panel sits under the HTTP version in Runtime Settings and in s
 | `alt_svc_cache` | `per_vuser`, `per_iteration` | `per_vuser` | Scope of remembered HTTP/3 advertisements (`auto+h3`) |
 | `broken_ttl_ms` | 0–600,000 | 300,000 | How long `auto+h3` keeps an origin on TCP after its QUIC connection failed; 0 forgets at once |
 
-Receive windows, header limits, stream budgets and packet sizing are not script settings; operators set them for the installation (see [Enable HTTP/3 execution](#enable-http-3-execution)). The connection settings you already use (maximum connections per host, keep-alive, idle timeout, IP version, DNS cache, source IP) and the TLS client certificate, CA file and verification setting apply to QUIC as well.
+Receive windows, header limits, stream budgets and packet sizing are not script settings; operators set them for the installation (see [Enable HTTP/3 execution](#enable-http3-execution)). The connection settings you already use (maximum connections per host, keep-alive, idle timeout, IP version, DNS cache, source IP) and the TLS client certificate, CA file and verification setting apply to QUIC as well.
 
 ## What stays on TCP
 

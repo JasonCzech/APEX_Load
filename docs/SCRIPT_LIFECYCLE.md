@@ -355,16 +355,18 @@ sequenceDiagram
 Just before a protocol action runs, `vu.resolveAction` (`pkg/engine/vuser_resolve.go`)
 expands every template in `target`, `headers`, `body`, and `params` via
 `interpolateWithSecrets`, producing a `*protocol.Action` with fully-resolved strings (plus
-redacted copies for logging). Namespaces:
+redacted copies for logging). See [DSL operator guide](HELP_DSL_OPERATOR_GUIDE.md#choose-data-and-variable-lifetimes) for operator guidance. Namespaces and runtime gates:
 
-| Template | Resolves to | Source |
+| Template | Resolves to | Source & unresolved / security rules |
 |---|---|---|
-| `{{var.NAME}}` | a runtime variable (often an earlier extraction) | `vu.Variables` |
-| `{{param.NAME}}` | a parameter (file/list/counter/uuid/…) | `ParameterRuntime` |
-| `{{data.source.col}}` | the current data-feeder row | `loadDataRow()` |
-| `{{env.KEY}}` | process environment | `os.LookupEnv` |
-| `{{secret.NAME}}` | a secret store (vault/k8s/…) | `SecretResolver` |
-| `{{fn.*}}` / `{{fake.*}}` | built-ins (`fn.uuid()`, `fn.timestamp.iso8601()`, `fake.email()`) | `pkg/engine/parameters.go` |
+| `{{run.id}}` | Managed test run ID or debug/replay session ID | `vu.RunID`; fails execution closed outside a managed run or debug session |
+| `{{var.NAME}}` | Runtime variable (typically an earlier extraction, falling back to a named parameter) | `vu.Variables` → `ParameterRuntime`; unresolved `{{var.*}}` remains literal text in HTTP-family requests (with `unresolved_variable_sent` warning) and fails closed in non-HTTP protocols, JSON helpers, and raw base64 `java_http` bodies |
+| `{{param.NAME}}` | Declared named parameter (`once`, `each_iteration`, `each_occurrence`) | `ParameterRuntime`; unresolved `{{param.*}}` fails action execution closed (`actionContainsUnresolvedParameter`) |
+| `{{data.source.col}}` | Current data-source or data-pool row value | `loadDataRow()` (`vu.Variables["source.col"]`) |
+| `{{file.NAME}}` | File data-source content (redacted in logs as `[FILE:NAME]`) | `DataProvider.GetFileContent`; unresolved `{{file.*}}` fails execution closed unless `APEXLOAD_ALLOW_UNRESOLVED_FILES=true` |
+| `{{env.KEY}}` | Allowlisted operator environment variable | `lookupScriptEnv` (`pkg/engine/script_env.go`, shared with CEL `env`): **default-deny** unless `KEY` is listed in `APEXLOAD_SCRIPT_ENV_ALLOWLIST` (there is no `-env` CLI flag); unconditionally blocks `APEXLOAD_SECRET_`, `AWS_`, `AZURE_`, `GOOGLE_`, `GCP_`, `OCI_`, `KUBERNETES_` prefixes and keys containing `SECRET`, `TOKEN`, `PASSWORD`, `PASSWD`, `API_KEY`, `PRIVATE_KEY`, or `CREDENTIAL` |
+| `{{secret.NAME}}` | Project or application secret (redacted in logs as `[REDACTED]`) | `SecretResolver`; unresolved `{{secret.*}}` fails execution closed unless `APEXLOAD_ALLOW_UNRESOLVED_SECRETS=true` |
+| `{{fn.*}}` / `{{fake.*}}` | Built-in generators (`fn.uuid()`, `fn.timestamp.unix()`, `fn.timestamp.unix_ms()`, `fn.timestamp.iso8601()`, `fn.timestamp.rfc3339()`, `fn.random(min,max)`, `fn.random_string(n)`, `fake.email()`, `fake.uuid`) | `resolveBuiltinFunction` (`pkg/engine/vuser_resolve.go`) |
 
 ### 3.4 Protocol dispatch
 
@@ -473,7 +475,7 @@ A recorded login POST, traced through all three stages:
    {
      "name": "login", "type": "POST", "target": "/login",
      "body": "{\"user\":\"alice\",\"pass\":\"{{secret.pw}}\"}",
-     "extractors": [{ "name": "token", "type": "json", "expression": "$.token" }],
+     "extractors": [{ "name": "token", "type": "jsonpath", "expression": "$.token" }],
      "assertions": [{ "type": "status_code", "expected": "200" }]
    }
    ```
@@ -484,7 +486,8 @@ A recorded login POST, traced through all three stages:
 
 2. **Stage 2 (parse → validate).** On save, `dsl.Parse` unmarshals the script;
    `validate.go` confirms `POST` is a real catalog action for the `http` protocol and that
-   its fields/extractors are well-formed. Templates stay as literal strings.
+   its fields/extractors are well-formed (JSON body extractors require `"type": "jsonpath"` or
+   its `"json_path"` alias; `"type": "json"` is rejected). Templates stay as literal strings.
 
 3. **Stage 3 (interpret).** Per iteration, each VUser goroutine calls `resolveAction`:
    `{{secret.pw}}` → the vaulted password, `{{var.token}}` (on the *next* action) → whatever
@@ -740,10 +743,6 @@ one opens the reconciliation panel) and, when only the bindings changed,
 adopts the new revision so the next scenario save is not a self-inflicted
 conflict.
 
-Create-intent idempotency keys in the dashboard, queued revise-copy idempotency
-and the complete shared-owner/lifecycle matrix remain open in
-[AUTH-1–AUTH-3](FEATURE_COMPLETION_SPEC.md#auth-1-two-shared-owners-and-revision-safety).
-
 The generated [OpenAPI contract](swagger.yaml) describes the authoring read and
 save representations and error headers. Content revisions are server-owned
 metadata and never become executable DSL fields.
@@ -854,7 +853,7 @@ while queueing was pending, those later edits remain open and unsaved.
 Pending sibling drafts stay in the archive review. A source session shared by
 multiple generated lanes is retained while another lane still needs it.
 Protected imports continue to require saving before editing. The
-[handoff review](qa/reviews/roadmap-archive-approval-handoff-2026-10-19/README.md)
+[handoff review](archive/qa-reviews/INTEGRATION_AND_CODEBASE_REVIEWS_2026-10.md#roadmap-archive-approval-handoff-2026-10-19)
 records coverage and remaining lifecycle work.
 
 ### Scenario prerequisite handoff

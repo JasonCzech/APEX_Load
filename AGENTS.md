@@ -32,6 +32,7 @@ cmd/
   apexload-java-host-broker/ — Experimental mTLS broker for dedicated Java pods and externally attested cleanup (not enabled by default)
   apexfault-target/ — Authenticated independent HTTP traffic counter for disposable fault trials
   apexbench/     — Controlled local performance-evidence harness (`make performance-smoke`)
+  datamodeldoc/  — Code generator for docs/DATA_MODEL.md
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
   swaggergen/    — Code generator for docs/swagger.yaml + docs/api-endpoint-catalog.json
   openapits/     — Code generator for the dashboard's TypeScript API contract from the OpenAPI document
@@ -69,7 +70,7 @@ pkg/
   recordagent/   — Local recording-agent runtime (Playwright/Chromium provisioning + bridge)
   recordbridge/  — Standalone recording bridge and shared recording/replay session services
   collectoragent/ — Monitoring collector with signed jobs, sealed credentials, Linux/Prometheus, SSH, OTLP and restricted Java packs
-  compute/       — Provider-neutral async capacity backends (Kubernetes, Azure Container Apps/Jobs, ECS Fargate)
+  compute/       — Provider-neutral async capacity backends (Kubernetes, Azure Container Apps/Jobs, Azure Container Instances, ECS Fargate)
   telemetry/     — Opt-in OpenTelemetry tracing setup + HTTP instrumentation (off unless APEXLOAD_OTEL_ENABLED)
   telemetrypolicy/ — Pure telemetry policy receipts, validation, and hashing
   trafficprofile/ — Production time-series parsing, normalization, shaping, and runtime profile contracts
@@ -149,7 +150,7 @@ whose first token is the directory name — a mention elsewhere in the fence
 - Manual timer-based duration management to support robust pause/resume
 
 ## Protocol Interface
-All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
+All protocols implement `pkg/protocol.Protocol`. Each protocol package registers itself via `protocol.Register` in its package `init()` and is compiled into standard binaries via blank imports in `pkg/protocol/builtin/builtin.go`.
 Bundled and compiled into the standard binaries via `pkg/protocol/builtin`: HTTP (http/1.1, http/2, http/3),
 SOAP (+ WSDL import), Java-over-HTTP (`java_http`, bounded codec MVP), Java Vuser sidecar bridge
 (`java_vuser`, external-runner; governed and disabled unless runner config enables it), WebSocket,
@@ -168,7 +169,7 @@ protocol and cannot be executed.
 
 ## Script DSL
 JSON-based. Template namespaces: `{{run.id}}` (managed test ID), `{{env.KEY}}`, `{{data.source.col}}`, `{{var.name}}`,
-`{{param.name}}`, `{{secret.name}}`, plus built-in functions under `{{fn.*}}`/`{{fake.*}}`
+`{{param.name}}`, `{{secret.name}}`, `{{file.name}}`, plus built-in functions under `{{fn.*}}`/`{{fake.*}}`
 (e.g. `fn.uuid()`, `fn.timestamp.unix()`, `fn.timestamp.iso8601()`, `fn.random(min,max)`, `fn.random_string(n)`, `fake.email()`).
 Sections: config, data_sources, init, actions, teardown.
 The per-action-type contract is declared in the action catalog (`pkg/dsl/catalog*.go`), which drives
@@ -298,4 +299,4 @@ These are design targets, not yet backed by published benchmark artifacts. Do no
 - Ramp-up rate: 500 VUsers/second/pod
 
 ## Tech Stack
-Go 1.26+ | SQLite (default) / PostgreSQL 16 (optional) | Redis/Valkey (optional, HA) | React 18 + TS | Prometheus + gRPC | AKS | Helm | Terraform
+Go 1.26.10+ | SQLite (default) / PostgreSQL 16 (optional) | Redis/Valkey (optional, HA) | React 18 + TS | Prometheus + gRPC | AKS / EKS / ECS Fargate / Azure Container Apps & Container Instances | Helm | Terraform

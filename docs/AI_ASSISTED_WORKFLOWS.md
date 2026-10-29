@@ -86,6 +86,15 @@ Every explanation includes citations and limitations so prose is grounded in loc
 
 The queue complements the broader authoring session APIs and gives dashboard/workflow clients a direct AI-specific review lane.
 
+## MCP Server Integration
+
+Coding and operations agents invoke APEX Load's deterministic authoring, run management, analytics, browser intelligence, and root-cause analysis workflows through the Python Model Context Protocol bridge in `mcp/` (see `mcp/README.md` for stdio client setup and tool contracts):
+
+- **Deterministic authoring and review sessions**: Agents inspect `ai_authoring_contract` and `ai_policy`, generate or repair drafts via `ai_drafts`, `ai_repairs`, `ai_explain`, and `ai_review_queue`, validate and replay drafts (`script_validate_draft`, `script_replay_draft`, `script_diagnose_replay`, `script_authoring_correlation_preview`), and manage conditional edits using `script_get` / `scenario_get` (`query.view="authoring"`) paired with `if_match` on `script_update` / `scenario_update`. AI drafts remain authoring sessions until explicitly promoted via `script_authoring_session_approve`.
+- **Run orchestration and governed monitoring**: Agents estimate and manage runs (`run_estimate`, `run_create`, `run_start`, `run_pause`, `run_resume`, `run_stop`, `run_metrics`, `run_sla_status`) and inspect project-scoped Prometheus, Dynatrace, and Elasticsearch/OpenSearch telemetry (`prometheus_*`, `dynatrace_*`, `elastic_*`, `run_monitors_get`, `run_monitor_series`, `run_monitor_evidence`).
+- **Browser intelligence and RCA v2 narration verification**: Agents query finalized browser findings, interaction patterns, journey accounting, synthetic/native HAR entries, and revisioned analysis policies (`run_archive_browser_findings`, `run_archive_browser_interactions`, `run_archive_journeys`, `run_archive_browser_har_entry`, `analysis_policy_*`). For root-cause analysis, agents trigger or read v2 assessments (`run_rca_analyze`, `run_rca_status`, `run_rca_assessment`), fetch the bounded `apexload.rca_bundle.v2` evidence bundle (`run_rca_bundle`), verify narrative citations and numeric rounding against that bundle (`run_rca_check_narration`), and persist immutable sidecar critiques (`run_rca_critique_add`, `run_rca_critiques`) without altering the underlying deterministic assessment.
+- **Two-tier agent safety fence**: Controller RBAC and token scopes remain authoritative, while the `mcp/` bridge enforces `confirm: true` on mutating tools and both `confirm: true` and a non-empty `reason` on destructive or administrative tools before any HTTP request is sent.
+
 ## Verification
 
 Current backend evidence:

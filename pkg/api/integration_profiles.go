@@ -191,14 +191,14 @@ func (s *Server) handleListInfrastructureMonitorPacks(w http.ResponseWriter, r *
 				ID: "cloudwatch", Name: "AWS CloudWatch", Status: "preview",
 				Source: "signed collector jobs with operator-approved cloud identity and queries", ResourceType: "cloud",
 				Signals:      []string{"approved one-minute metric summaries"},
-				Evidence:     []string{"pkg/collectoragent/cloud_test.go", "docs/ANALYSIS_WORKFLOWS.md"},
+				Evidence:     []string{"pkg/collectoragent/cloud_test.go", "docs/NATIVE_ANALYTICS.md"},
 				SetupActions: []string{"Configure an approved collector target and scoped identity; opt-in live cloud acceptance remains required."},
 			},
 			{
 				ID: "azure-monitor", Name: "Azure Monitor", Status: "preview",
 				Source: "signed collector jobs with operator-approved cloud identity and queries", ResourceType: "cloud",
 				Signals:      []string{"approved one-minute metric summaries"},
-				Evidence:     []string{"pkg/collectoragent/cloud_test.go", "docs/ANALYSIS_WORKFLOWS.md"},
+				Evidence:     []string{"pkg/collectoragent/cloud_test.go", "docs/NATIVE_ANALYTICS.md"},
 				SetupActions: []string{"Configure an approved collector target and scoped identity; opt-in live cloud acceptance remains required."},
 			},
 			{

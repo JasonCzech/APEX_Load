@@ -167,9 +167,15 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
 **Symptom:** Click "Start" but test remains queued
 
 **Solutions:**
-1. Check controller logs for errors:
+1. Check structured JSON controller/generator logs and queue status:
    ```bash
-   # Look for lines like: "test starting" or error messages
+   # Controller and generator emit JSON slog lines ("msg" field), e.g.:
+   #   "controller bind address resolved", "distributed execution enabled",
+   #   "HA execution leader election enabled; only the lease holder will run tests",
+   #   "apexload generator starting", or error records ("level":"ERROR")
+   # Inspect the queued run's pending_reason and readiness checks directly:
+   curl -fsS "http://localhost:8080/api/v1/tests/<test-id>" | jq '{status, pending_reason, error}'
+   curl -fsS "http://localhost:8080/api/v1/system/readiness" | jq .
    ```
 
 2. Verify script is valid:
@@ -177,9 +183,13 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
    - Click script → Click "Validate"
    - Should show "Valid" with no errors
 
-3. Check protocol availability:
+3. Check runtime protocol availability vs authoring-only catalog entries:
    ```bash
-   # Inspect the code-owned action catalog exposed by the running controller
+   # Pass -H "X-APEXLoad-API-Key: $APEXLOAD_API_KEY" (or Bearer token) when auth is enabled.
+   # Prefer the native runtime support matrix to distinguish executable protocols (and opt-in
+   # runners like java_vuser) from authoring/import-only catalog entries such as sap_gui:
+   curl -fsS "http://localhost:8080/api/v1/protocols/native-support-matrix" | jq .
+   # Full DSL action catalog (includes authoring-only sap_gui actions):
    curl -fsS "http://localhost:8080/api/v1/dsl/actions" | jq '.protocols'
    ```
 
@@ -219,8 +229,9 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
    curl http://target-system:port/health
    ```
 
-3. Check metrics collector initialization:
-   - Look for "metrics collector starting" in logs
+3. Check protocol initialization logs and collector drop telemetry:
+   - `engine.MetricsCollector` starts automatically with each group (there is no separate collector startup log banner); check structured logs for `"failed to create protocol"`, `"failed to init protocol"`, or `"health check failed, proceeding anyway"`
+   - Query `GET /api/v1/tests/{id}/metrics` and inspect `telemetry.dropped_results` and `telemetry.websocket_dropped_events`
 
 #### High error rate despite valid script
 **Symptom:** Many transactions fail with 500 errors
@@ -236,29 +247,21 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
    - Gradually increase (10 → 50 → 100)
    - Identify where error rate jumps
 
-4. Check target system logs for errors
+3. Check target system logs for errors
 
 #### Latency seems unrealistically low
 **Symptom:** All transactions showing 1-5 ms latency
 
 **Solutions:**
-1. Verify assertions are actually running:
-   - Add body assertion to force evaluation
-   - Check results for "assertion_failed" count
+1. Confirm you are not hitting a loopback/mock target or fast error response:
+   - Requests against `127.0.0.1` / `localhost`, an in-cluster stub, or a reverse proxy returning an immediate `401`/`403`/`404`/`502` tiny body legitimately complete in 1–5 ms
+   - Note: `think_time` sleeps **between** actions outside measured action/transaction duration, so adding `think_time` lowers request rate (TPS) without increasing per-action latency
 
-2. Check if think time is being applied:
-   ```json
-   {
-     "think_time": {
-       "type": "fixed",
-       "mean_ms": 1000
-     }
-   }
-   ```
+2. Verify status and body assertions are configured:
+   - Without assertions, fast HTTP error responses or empty cached payloads may be recorded as low-latency completions; add `status_code` and `body` assertions and inspect `assertion_failed` counts
 
-3. Verify target system is responding:
-   - Test endpoint manually with curl
-   - Check if response is properly sized
+3. Check for upstream/CDN caching or connection-reuse effects:
+   - Test the target directly (`curl -w '\n%{http_code} %{size_download}B %{time_total}s\n' -o /dev/null -s http://target-system/endpoint`) to verify payload size, cache headers (`Age`, `X-Cache`), and actual server processing time
 
 ---
 
@@ -323,8 +326,8 @@ go build -o apexctl ./cmd/apexctl
 
 2. Verify build output:
    ```bash
-   ls -la ../pkg/api/static/
-   # Should show index.html, main.js, etc.
+   ls -la ../pkg/api/static/ ../pkg/api/static/assets/
+   # Should show index.html and Vite's hashed assets/index-<hash>.js + assets/index-<hash>.css
    ```
 
 3. Restart controller to load new assets:
@@ -383,7 +386,7 @@ go test -timeout=20m ./...
    - Test target directly: `ab -n 10000 http://target/endpoint`
    - Increase target server capacity
 
-4. **Network latency:**
+3. **Network latency:**
    - Measure end-to-end latency: `ping target`
    - Consider network proximity
 
