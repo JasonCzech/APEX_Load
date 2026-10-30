@@ -524,8 +524,12 @@ func forEachAction(script *dsl.Script, visit func(section string, index int, req
 	}
 	visitSection := func(section string, actions []dsl.Action) {
 		for i := range actions {
-			visit(section, i, nil, &actions[i])
 			children := groupRequests(&actions[i], false)
+			if len(children) == 0 {
+				visit(section, i, nil, &actions[i])
+			}
+			// A request group sends only its requests; its own target is a
+			// copy of the first request's, so it is not scanned.
 			for j := range children {
 				request := j
 				visit(section, i, &request, &children[j])
@@ -585,19 +589,28 @@ func groupRequests(action *dsl.Action, store bool) []dsl.Action {
 	case []dsl.Action:
 		return requests
 	case []any:
-		decoded := make([]dsl.Action, len(requests))
-		for index, request := range requests {
-			raw, err := json.Marshal(request)
-			if err != nil || json.Unmarshal(raw, &decoded[index]) != nil {
-				return nil
-			}
-		}
-		if store {
-			action.Params["requests"] = decoded
-		}
-		return decoded
+		return decodeGroupRequests(action, requests, store)
+	case []map[string]any:
+		// The LoadRunner archive importer builds its transaction groups so.
+		return decodeGroupRequests(action, requests, store)
 	}
 	return nil
+}
+
+// decodeGroupRequests decodes a group's JSON-shaped requests into typed
+// actions, storing them back into the action when store is set.
+func decodeGroupRequests[T any](action *dsl.Action, requests []T, store bool) []dsl.Action {
+	decoded := make([]dsl.Action, len(requests))
+	for index, request := range requests {
+		raw, err := json.Marshal(request)
+		if err != nil || json.Unmarshal(raw, &decoded[index]) != nil {
+			return nil
+		}
+	}
+	if store {
+		action.Params["requests"] = decoded
+	}
+	return decoded
 }
 
 func actionAt(script *dsl.Script, section string, index int) *dsl.Action {

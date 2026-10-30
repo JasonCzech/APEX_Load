@@ -17,9 +17,11 @@ const recordedConcurrencyMetadataKey = "recorded_concurrent_group"
 
 var recordedConcurrencyActionPath = regexp.MustCompile(`^actions\[(\d+)\](.*)$`)
 
-// recordedTiming is when a top-level action's request ran in the recording.
+// recordedTiming is when a top-level action's request ran in the recording,
+// and whether the recorder measured the pause after it.
 type recordedTiming struct {
-	start, end time.Time
+	start, end    time.Time
+	recordedPause bool
 }
 
 // groupRecordedConcurrency replays the requests the browser had in flight at
@@ -33,13 +35,20 @@ type recordedTiming struct {
 // a group or one the group's size limits leave out. The last member's think
 // time becomes the group's.
 //
+// A group that does not validate (a dependency the pre-check missed, the
+// preparation limit) is retried without its last member, down to two, before
+// its first request is left sequential. The group's think time is the
+// recorded pause after the whole group, measured from its last request to
+// finish, when it exceeds threshold.
+//
 // newIndex maps each exchange to its top-level action (nil: the same index).
 // It returns the source mappings re-pointed at the grouped actions, the new
 // top-level index of each exchange (-1 for a request now inside a group, so
-// the replay baseline leaves it out), and how many groups it built.
-func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex []int, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, int) {
+// the replay baseline leaves it out), how many groups it built, and how many
+// runs of in-flight requests it had to leave sequential.
+func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex []int, mappings []sourceview.Mapping, threshold time.Duration) ([]sourceview.Mapping, []int, int, int) {
 	if script == nil || len(script.Actions) < 2 {
-		return mappings, newIndex, 0
+		return mappings, newIndex, 0, 0
 	}
 	timings := make(map[int]recordedTiming, len(exchanges))
 	for index, ex := range exchanges {
@@ -56,7 +65,7 @@ func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex
 		if position < 0 || position >= len(script.Actions) {
 			continue
 		}
-		timings[position] = recordedTiming{start: ex.StartedAt, end: ex.StartedAt.Add(time.Duration(ex.DurationMs * float64(time.Millisecond)))}
+		timings[position] = recordedTiming{start: ex.StartedAt, end: ex.StartedAt.Add(time.Duration(ex.DurationMs * float64(time.Millisecond))), recordedPause: ex.HasRecordedThinkTime}
 	}
 
 	actions := script.Actions
@@ -64,22 +73,32 @@ func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex
 	// moved[old] is the new path prefix of top-level action old.
 	moved := make([]string, len(actions))
 	topLevel := make([]int, len(actions))
-	groups := 0
-	workRemaining := dsl.MaxHTTPConcurrentPreparationWork
+	groups, refused := 0, 0
 	for index := 0; index < len(actions); {
 		members := recordedConcurrentMembers(actions, timings, index)
-		if len(members) >= 2 {
-			if wrapper, ok := recordedConcurrentGroup(actions, members, groups+1, script, &workRemaining); ok {
-				groups++
-				position := len(out)
-				out = append(out, wrapper)
-				for child, old := range members {
-					moved[old] = fmt.Sprintf("actions[%d].params.requests[%d]", position, child)
-					topLevel[old] = -1
-				}
-				index = members[len(members)-1] + 1
+		grouped := false
+		for size := len(members); size >= 2 && !grouped; size-- {
+			candidate := members[:size]
+			thinkTime, thinkTimeAfter := recordedGroupThinkTime(actions, timings, candidate, threshold)
+			wrapper, ok := recordedConcurrentGroup(actions, candidate, groups+1, script, thinkTime, thinkTimeAfter)
+			if !ok {
 				continue
 			}
+			grouped = true
+			groups++
+			position := len(out)
+			out = append(out, wrapper)
+			for child, old := range candidate {
+				moved[old] = fmt.Sprintf("actions[%d].params.requests[%d]", position, child)
+				topLevel[old] = -1
+			}
+			index = candidate[len(candidate)-1] + 1
+		}
+		if grouped {
+			continue
+		}
+		if len(members) >= 2 {
+			refused++
 		}
 		moved[index] = fmt.Sprintf("actions[%d]", len(out))
 		topLevel[index] = len(out)
@@ -87,7 +106,7 @@ func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex
 		index++
 	}
 	if groups == 0 {
-		return mappings, newIndex, 0
+		return mappings, newIndex, 0, refused
 	}
 	script.Actions = out
 
@@ -114,7 +133,31 @@ func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex
 			positions[index] = topLevel[old]
 		}
 	}
-	return remapped, positions, groups
+	return remapped, positions, groups, refused
+}
+
+// recordedGroupThinkTime is the think time after a group: the last member's
+// own when the recorder measured it, else the recorded pause from the group's
+// last request to finish to the next step's start, when it exceeds threshold.
+func recordedGroupThinkTime(actions []dsl.Action, timings map[int]recordedTiming, members []int, threshold time.Duration) (dsl.ThinkTimeConfig, bool) {
+	last := members[len(members)-1]
+	if timings[last].recordedPause {
+		return actions[last].ThinkTime, actions[last].ThinkTimeAfter
+	}
+	next, timed := timings[last+1]
+	if !timed {
+		return actions[last].ThinkTime, actions[last].ThinkTimeAfter
+	}
+	var end time.Time
+	for _, member := range members {
+		if timings[member].end.After(end) {
+			end = timings[member].end
+		}
+	}
+	if pause := next.start.Sub(end); pause > threshold {
+		return dsl.ThinkTimeConfig{Type: "fixed", MeanMs: float64(pause / time.Millisecond)}, true
+	}
+	return dsl.ThinkTimeConfig{}, false
 }
 
 // recordedConcurrentMembers is the run of top-level actions from start that
@@ -208,10 +251,10 @@ func recordedReferencesAny(action dsl.Action, names map[string]bool) bool {
 	return false
 }
 
-// recordedConcurrentGroup wraps members in a concurrent request group, or
-// reports false when the group would not validate or exceeds the preparation
-// work left.
-func recordedConcurrentGroup(actions []dsl.Action, members []int, number int, script *dsl.Script, workRemaining *int) (dsl.Action, bool) {
+// recordedConcurrentGroup wraps members in a concurrent request group with
+// the given think time, or reports false when the group would not validate or
+// exceeds the preparation work the runtime allows one group.
+func recordedConcurrentGroup(actions []dsl.Action, members []int, number int, script *dsl.Script, thinkTime dsl.ThinkTimeConfig, thinkTimeAfter bool) (dsl.Action, bool) {
 	children := make([]dsl.Action, len(members))
 	for child, old := range members {
 		children[child] = actions[old]
@@ -221,8 +264,10 @@ func recordedConcurrentGroup(actions []dsl.Action, members []int, number int, sc
 	if err := dsl.ValidateHTTPConcurrentChildren(children); err != nil {
 		return dsl.Action{}, false
 	}
-	last := actions[members[len(members)-1]]
-	metadata := map[string]any{recordedConcurrencyMetadataKey: number, "source_request_count": len(children)}
+	// The group only sends its requests together; it is not a business step
+	// of its own, so it records no transaction (the step transactions and the
+	// iteration transaction around it stay as they were).
+	metadata := map[string]any{recordedConcurrencyMetadataKey: number, "source_request_count": len(children), dsl.HTTPSequenceTransparentMetadataKey: true}
 	if transaction, shared := recordedSharedTransaction(children); shared {
 		metadata[harSourceTransactionMeta] = transaction
 	}
@@ -233,12 +278,10 @@ func recordedConcurrentGroup(actions []dsl.Action, members []int, number int, sc
 		Target:         children[0].Target,
 		Params:         map[string]any{"requests": children, "execution_mode": dsl.HTTPSequenceConcurrent},
 		Metadata:       metadata,
-		ThinkTime:      last.ThinkTime,
-		ThinkTimeAfter: last.ThinkTimeAfter,
+		ThinkTime:      thinkTime,
+		ThinkTimeAfter: thinkTimeAfter,
 	}
-	_, work, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(*workRemaining, wrapper, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList)
-	*workRemaining = max(0, *workRemaining-work)
-	if err != nil {
+	if _, _, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, wrapper, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList); err != nil {
 		return dsl.Action{}, false
 	}
 	return wrapper, true

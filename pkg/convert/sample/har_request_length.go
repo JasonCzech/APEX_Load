@@ -377,3 +377,23 @@ func isAuraTelemetryBeacon(method, rawURL string) bool {
 	}
 	return actions > 0
 }
+
+// harEntryOmittedTelemetryBeacon reports an entry the import leaves out as a
+// telemetry beacon whose body the export dropped, from the raw HAR request (as
+// normalizeHARContentLength decides it for the parsed exchange).
+func harEntryOmittedTelemetryBeacon(requestData map[string]any) bool {
+	method := stringValue(requestData["method"])
+	if !isAuraTelemetryBeacon(method, stringValue(requestData["url"])) {
+		return false
+	}
+	recorded, ok := harRecordedContentLength(harRequestHeaderList(requestData["headers"]))
+	if !ok || recorded <= 0 {
+		return false
+	}
+	postData, ok := requestData["postData"].(map[string]any)
+	if !ok {
+		return true
+	}
+	params, _ := postData["params"].([]any)
+	return bodyValue(postData["text"]) == "" && len(params) == 0
+}

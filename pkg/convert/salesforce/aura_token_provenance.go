@@ -55,7 +55,11 @@ func auraTokenProvenanceWarning(script *dsl.Script, correlations []correlate.Cor
 	}
 	if literal == 0 {
 		if inferred {
-			return "Aura requests send the aura.token read at replay from the __Host-ERIC_* Set-Cookie of /one/one.app. The capture holds no Set-Cookie to confirm it (likely a sanitized export), so the first replay confirms it: if that response does not set the cookie, every Aura request fails with an invalid token."
+			cause := "The capture shows no response setting it"
+			if sanitized {
+				cause = "The capture holds no Set-Cookie to confirm it (likely a sanitized export)"
+			}
+			return "Aura requests send the aura.token read at replay from the __Host-ERIC_* Set-Cookie of /one/one.app. " + cause + ", so the first replay confirms it: if that response does not set the cookie, every Aura request fails with an invalid token."
 		}
 		return ""
 	}

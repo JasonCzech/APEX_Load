@@ -58,10 +58,12 @@ var generatedReferenceStems = []string{"conversation", "transaction", "event"}
 var generatedIdentifierSuffixes = map[string]bool{"": true, "s": true, "id": true, "ids": true, "uuid": true, "guid": true, "key": true, "parent": true, "state": true, "no": true, "num": true, "number": true}
 
 // generatedIdentifierWords and generatedReferenceWords match only as whole
-// words. A cache word names a client's cache-busting or page-cache id
-// (Lightning's X-SFDC-Page-Cache, a cachebuster).
+// words. A cache buster is made up per request; a page cache id is made up per
+// page load (Lightning's X-SFDC-Page-Cache) and is matched as the pair of
+// words in generatedCacheIdentifier, not by "cache" alone, which also names
+// server-issued cache keys, versions and hashes.
 var (
-	generatedIdentifierWords = map[string]bool{"req": true, "rqid": true, "cache": true, "cachebuster": true}
+	generatedIdentifierWords = map[string]bool{"req": true, "rqid": true, "cachebuster": true, "cachebust": true}
 	generatedReferenceWords  = map[string]bool{"txn": true}
 )
 
@@ -90,10 +92,34 @@ func generatedStemWord(word string, stems []string) bool {
 	return false
 }
 
+// generatedCacheIdentifier reports a field named for a client-made cache id:
+// a page cache, or a cache buster written as two words. A field that also
+// names a key, version, hash, tag or digest holds a server's value instead.
+func generatedCacheIdentifier(words []string) bool {
+	cache, page, buster := false, false, false
+	for _, word := range words {
+		switch word {
+		case "cache":
+			cache = true
+		case "page":
+			page = true
+		case "buster", "bust":
+			buster = true
+		case "key", "keys", "version", "ver", "hash", "tag", "etag", "digest", "checksum":
+			return false
+		}
+	}
+	return cache && (page || buster)
+}
+
 func classifyGeneratedKey(key string) generatedKeyRole {
 	var role generatedKeyRole
 	timeWord := false
-	for _, word := range parameterNameWords(key) {
+	words := parameterNameWords(key)
+	if generatedCacheIdentifier(words) {
+		role.identifier = true
+	}
+	for _, word := range words {
 		switch {
 		case generatedSessionWords[word] || strings.HasPrefix(word, "session"):
 			role.session = true

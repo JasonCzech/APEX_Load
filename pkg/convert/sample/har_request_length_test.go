@@ -300,3 +300,28 @@ func TestIsAuraTelemetryBeacon(t *testing.T) {
 		t.Error("a GET was read as a beacon post")
 	}
 }
+
+// Resources recorded after an omitted telemetry beacon attach to the page
+// before it, not to the beacon that is no step.
+func TestInStepResourcesSkipAnOmittedTelemetryBeacon(t *testing.T) {
+	data, err := json.Marshal(map[string]any{"log": map[string]any{"entries": []any{
+		map[string]any{"request": map[string]any{"method": "GET", "url": "https://acme.lightning.force.com/one/one.app", "headers": []any{}},
+			"response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "text/html", "text": "<html></html>"}}},
+		map[string]any{"request": map[string]any{"method": "POST", "url": "https://acme.lightning.force.com/aura?r=1&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1",
+			"headers": []any{map[string]any{"name": "Content-Length", "value": "96719"}}},
+			"response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "application/json", "text": "{}"}}},
+		map[string]any{"request": map[string]any{"method": "GET", "url": "https://acme.lightning.force.com/app.js", "headers": []any{}},
+			"response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "application/javascript", "text": "x"}}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := ParseHARDocument(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := document.inStepResources()
+	if len(resources[1]) != 1 || len(resources[2]) != 0 {
+		t.Fatalf("resources = %#v, want app.js on the page (entry 1), not the omitted beacon (entry 2)", resources)
+	}
+}

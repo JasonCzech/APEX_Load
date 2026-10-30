@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -352,5 +353,47 @@ func TestMoveToInitRefusesAConversationThatOutlivesSignIn(t *testing.T) {
 	}
 	if !slices.Equal(moved, []int{-1, -1, 0}) || mappings[0].TargetPath != "actions[0].target" || mappings[1].TargetPath != "init[1]" {
 		t.Fatalf("moved = %v, mappings = %+v", moved, mappings)
+	}
+}
+
+// An app fires its first API call right after the sign-in, with no pause.
+// With step transactions on, the step that holds the sign-in still ends at
+// the sign-in boundary, so that call stays in the iteration instead of
+// moving to init with the sign-in.
+func TestSalesforceSignInEndsTheStepTransactionAtTheBoundary(t *testing.T) {
+	var document map[string]any
+	if err := json.Unmarshal([]byte(salesforceSignInHAR(t, signInVariant{})), &document); err != nil {
+		t.Fatal(err)
+	}
+	entries := document["log"].(map[string]any)["entries"].([]any)
+	entries[len(entries)-2].(map[string]any)["startedDateTime"] = "2026-01-01T00:00:11.290Z"
+	entries[len(entries)-1].(map[string]any)["startedDateTime"] = "2026-01-01T00:00:11.400Z"
+	content, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	result, err := Convert(ImportRequest{Format: "har", Content: string(content), Options: ConvertOptions{HighConfidenceOnly: true, OmitSourceReview: true, StepTransactions: &on}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range result.Script.Init {
+		if strings.Contains(action.Target, "/services/data/") {
+			t.Fatalf("init holds %s %s, want the app's API calls left in the iteration", action.Method, action.Target)
+		}
+	}
+	var iteration []string
+	for _, action := range result.Script.Actions {
+		if action.Type == "request" {
+			iteration = append(iteration, action.Target)
+		}
+	}
+	if len(iteration) != 2 || !strings.Contains(iteration[0], "/query") {
+		t.Fatalf("iteration requests = %q, want the query and limits calls", iteration)
+	}
+	for _, action := range result.Script.Actions {
+		if strings.Contains(action.Name, "0055g00000ABCDeAAH") {
+			t.Fatalf("a step is named for the user id: %q", action.Name)
+		}
 	}
 }

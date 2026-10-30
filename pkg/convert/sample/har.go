@@ -1211,7 +1211,8 @@ func (d *HARDocument) inStepResources() map[int][]any {
 		requestData, _ := item["request"].(map[string]any)
 		rawURL := strings.TrimSpace(stringValue(requestData["url"]))
 		if !isStaticHAREntry(item) {
-			if !isHARWebSocketUpgrade(item) && !strings.EqualFold(strings.TrimSpace(stringValue(requestData["method"])), http.MethodConnect) {
+			// An omitted telemetry beacon is no step, so it holds no resources.
+			if !isHARWebSocketUpgrade(item) && !strings.EqualFold(strings.TrimSpace(stringValue(requestData["method"])), http.MethodConnect) && !harEntryOmittedTelemetryBeacon(requestData) {
 				lastPage = index + 1
 				pageByURL[rawURL] = index + 1
 			}

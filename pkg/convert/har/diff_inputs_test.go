@@ -96,7 +96,7 @@ func TestDiffListsRequestInputsTheScriptStillSendsAsRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report.ResolveUnhandledInputs(func(value string) bool { return ScriptRequestValues(result.Script)[value] })
+	report.ResolveUnhandledInputs(func(value string) bool { return ScriptRequestValues(result.Script).Sends(value) })
 	got := unhandledByField(report)
 	for field, kind := range map[string]string{
 		"header:x-page-id": DiffInputGeneratedID,
@@ -145,7 +145,7 @@ func TestDiffInputsTheScriptReplacedAreNotUnhandled(t *testing.T) {
 		action := &result.Script.Actions[index]
 		action.Body = strings.Replace(action.Body, "mystery=Zq9vT0kenAAA", "mystery={{var.mystery}}", 1)
 	}
-	report.ResolveUnhandledInputs(func(value string) bool { return ScriptRequestValues(result.Script)[value] })
+	report.ResolveUnhandledInputs(func(value string) bool { return ScriptRequestValues(result.Script).Sends(value) })
 	if _, ok := unhandledByField(report)["form:mystery"]; ok {
 		t.Fatalf("unhandled inputs = %#v, want the templated field left out", report.UnhandledInputs)
 	}
@@ -165,11 +165,11 @@ func TestScriptRequestValuesReadsEveryRequestSurface(t *testing.T) {
 	}}}
 	values := ScriptRequestValues(script)
 	for _, want := range []string{"hello there", "{{var.x}}", "header-value", "12;a", "form-value"} {
-		if !values[want] {
+		if !values.Sends(want) {
 			t.Errorf("values = %v, want %q", values, want)
 		}
 	}
-	if values["disabled-value"] {
+	if values.Sends("disabled-value") {
 		t.Errorf("a disabled header's value was read as sent")
 	}
 }
@@ -294,6 +294,7 @@ func TestDiffInputKindPrefersAServerValueOverACounter(t *testing.T) {
 		{Observation: correlate.Observation{ID: 2}},
 	}}
 	scan.build()
+	scan.joinResponses()
 	scan.remaining = int64(len(scan.joined)) + 1
 	if found, checked := scan.before(1, value); !found || !checked {
 		t.Fatalf("hit lost when the budget ran out on a later form: %v, %v", found, checked)
@@ -377,7 +378,41 @@ func TestScriptRequestValuesReadsRequestGroupRequests(t *testing.T) {
 		Name: "group", Type: "http_sequence", Method: "SEQUENCE", Target: "/data",
 		Params: map[string]any{"execution_mode": dsl.HTTPSequenceConcurrent, "requests": []any{child}},
 	}}}
-	if !ScriptRequestValues(script)["group-value"] {
+	if !ScriptRequestValues(script).Sends("group-value") {
 		t.Fatal("a JSON-shaped group request's value was not read as sent")
+	}
+}
+
+// A JSON body whose number a template replaced is no longer valid JSON; its
+// other fields still count as sent, and a body that cannot be read at all is
+// matched whole, so a value it holds is never taken for handled.
+func TestScriptRequestValuesReadTemplatedJSONBodies(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{
+		{Name: "a", Type: "request", Method: "POST", Target: "/a", Body: `{"ts":{{fn.timestamp.unix_ms}},"pageId":"Zq9vT0kenAAA","note":"keep {{var.x}} here"}`},
+		{Name: "b", Type: "request", Method: "POST", Target: "/b", Body: `{"broken": {{var.y}} "tail":"RawOnlyValue1"`},
+	}}
+	values := ScriptRequestValues(script)
+	if !values.Sends("Zq9vT0kenAAA") || !values.Sends("keep {{var.x}} here") {
+		t.Fatal("a templated JSON body's other fields were not read as sent")
+	}
+	if !values.Sends("RawOnlyValue1") {
+		t.Fatal("a value in an unreadable body was taken for handled")
+	}
+}
+
+// A value an earlier response returns only inside a path or dotted name is
+// still found by the token index.
+func TestDiffResponseScanFindsValuesInsidePaths(t *testing.T) {
+	scan := &diffResponseScan{observations: []sample.HARSourceObservation{
+		{Observation: correlate.Observation{ID: 1, ResponseBody: `{"url":"/services/data/v59.0/sobjects/Account/001xx000003DGb2AAG"} <a href="/s/detail/a0B5e00000ABCDEFGH">`}},
+		{Observation: correlate.Observation{ID: 2}},
+	}}
+	for _, value := range []string{"001xx000003DGb2AAG", "a0B5e00000ABCDEFGH"} {
+		if found, checked := scan.before(1, value); !found || !checked {
+			t.Errorf("%s: found = %v, checked = %v, want found", value, found, checked)
+		}
+	}
+	if scan.joinedBuilt {
+		t.Error("token lookups built the joined response text")
 	}
 }

@@ -631,7 +631,9 @@ func (lc *lifecycleRun) runLeaf(step *dsl.Action) (actionFlow, bool) {
 		return flowNext, lc.actionCtx.Err() == nil && lc.boundaryCtx.Err() == nil
 	}
 	if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
-		markerOwned := vu.activeSourceTransactionOwnsHTTPSequence(action)
+		// A transparent group records no transaction, as one an open source
+		// transaction owns records none of its own.
+		markerOwned := vu.activeSourceTransactionOwnsHTTPSequence(action) || !dsl.HTTPSequenceRecordsTransaction(action)
 		if !markerOwned && !lc.claimTransaction() {
 			if ignoreErrors {
 				return flowNext, false

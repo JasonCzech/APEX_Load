@@ -43,7 +43,7 @@ func TestRecordedConcurrencyGroupsRequestsInFlightTogether(t *testing.T) {
 	}
 	mappings := []sourceview.Mapping{{ID: "m2", TargetPath: "actions[2].headers"}, {ID: "m3", TargetPath: "actions[3]"}, {ID: "m5", TargetPath: "actions[5]"}}
 
-	remapped, positions, groups := groupRecordedConcurrency(script, exchanges, nil, mappings)
+	remapped, positions, groups, _ := groupRecordedConcurrency(script, exchanges, nil, mappings, 500*time.Millisecond)
 	if groups != 2 || len(script.Actions) != 3 {
 		t.Fatalf("groups = %d, actions = %#v, want [a b d] [c] [e f]", groups, script.Actions)
 	}
@@ -80,7 +80,46 @@ func TestRecordedConcurrencyGroupsRequestsInFlightTogether(t *testing.T) {
 func TestRecordedConcurrencyLeavesSequentialRecordingsAlone(t *testing.T) {
 	script := &dsl.Script{Actions: []dsl.Action{concurrencyRequest("a", "/a"), concurrencyRequest("b", "/b")}}
 	exchanges := []exchange{concurrencyExchange(0, 100), concurrencyExchange(100, 100)}
-	if _, _, groups := groupRecordedConcurrency(script, exchanges, nil, nil); groups != 0 || len(script.Actions) != 2 {
+	if _, _, groups, _ := groupRecordedConcurrency(script, exchanges, nil, nil, 500*time.Millisecond); groups != 0 || len(script.Actions) != 2 {
 		t.Fatalf("groups = %d, actions = %d, want nothing grouped", groups, len(script.Actions))
+	}
+}
+
+// The pause after a group is measured from the group's last request to
+// finish, not from the last one to start; the group is transparent, so it
+// records no transaction of its own.
+func TestRecordedConcurrencyGroupThinkTimeStartsWhenTheGroupEnds(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{concurrencyRequest("a", "/a"), concurrencyRequest("b", "/b"), concurrencyRequest("next", "/next")}}
+	script.Actions[1].ThinkTimeAfter = true
+	script.Actions[1].ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 5940}
+	exchanges := []exchange{concurrencyExchange(0, 3000), concurrencyExchange(10, 50), concurrencyExchange(6000, 100)}
+	if _, _, groups, _ := groupRecordedConcurrency(script, exchanges, nil, nil, 500*time.Millisecond); groups != 1 {
+		t.Fatalf("groups = %d, want one", groups)
+	}
+	group := script.Actions[0]
+	if !group.ThinkTimeAfter || group.ThinkTime.MeanMs != 3000 {
+		t.Fatalf("group think time = %+v (after %v), want the 3000 ms from the group's end to the next step", group.ThinkTime, group.ThinkTimeAfter)
+	}
+	if transparent, _ := group.Metadata[dsl.HTTPSequenceTransparentMetadataKey].(bool); !transparent || dsl.HTTPSequenceRecordsTransaction(group) {
+		t.Fatalf("group metadata = %v, want a transparent group", group.Metadata)
+	}
+}
+
+// A run the dependency pre-check passes but the group validator rejects (a
+// later member extracts a name an earlier one reads) is cut back until it
+// validates, instead of leaving the whole run sequential.
+func TestRecordedConcurrencyShrinksAGroupThatDoesNotValidate(t *testing.T) {
+	reader := concurrencyRequest("reader", "/reader?v={{var.late_value}}")
+	late := concurrencyRequest("late", "/late")
+	late.Extractors = []dsl.Extractor{{Name: "late_value", Source: "body", Type: "regex", Expression: "v=(\\d+)"}}
+	script := &dsl.Script{Actions: []dsl.Action{concurrencyRequest("a", "/a"), reader, late}}
+	exchanges := []exchange{concurrencyExchange(0, 1000), concurrencyExchange(10, 900), concurrencyExchange(20, 800)}
+	_, _, groups, refused := groupRecordedConcurrency(script, exchanges, nil, nil, 500*time.Millisecond)
+	if groups != 1 || refused != 0 || len(script.Actions) != 2 {
+		t.Fatalf("groups = %d, refused = %d, actions = %d, want [a reader] then late", groups, refused, len(script.Actions))
+	}
+	children, _ := script.Actions[0].Params["requests"].([]dsl.Action)
+	if len(children) != 2 || script.Actions[1].Name != "late" {
+		t.Fatalf("actions = %#v", script.Actions)
 	}
 }

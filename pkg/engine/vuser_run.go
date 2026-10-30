@@ -828,7 +828,9 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 	}
 
 	if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
-		markerOwned := run.vu.activeSourceTransactionOwnsHTTPSequence(action)
+		// A transparent group records no transaction, as one an open source
+		// transaction owns records none of its own.
+		markerOwned := run.vu.activeSourceTransactionOwnsHTTPSequence(action) || !dsl.HTTPSequenceRecordsTransaction(action)
 		if !markerOwned && !run.claimActionTransaction() {
 			return flowTeardown, false
 		}

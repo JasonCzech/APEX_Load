@@ -235,3 +235,36 @@ func TestUncapturedAuraTokensAreDecidedAtTheirFirstUse(t *testing.T) {
 		t.Fatalf("limit 1 gave %d correlations", len(limited))
 	}
 }
+
+// A capture that keeps cookies and shows the bootstrap set no ERIC cookie
+// (the browser already held it), or a request already sending the token in an
+// ERIC cookie, is evidence against the inference: the token keeps its
+// stale-token warning instead of an extractor that would fail every
+// iteration at the bootstrap.
+func TestUncapturedAuraTokenIsNotInferredAgainstTheCapturesEvidence(t *testing.T) {
+	const host = "https://acme.lightning.force.com"
+	consumer := auraTokenObservation(2, host+"/aura?r=1", "held-token-value")
+	withoutERIC := correlate.Observation{ID: 1, RequestURL: host + "/one/one.app", ResponseHeaders: map[string]string{"Set-Cookie": "BrowserId=xyz123abcdef; Path=/"}}
+	if got, _ := detectUncapturedAuraTokenCorrelations([]correlate.Observation{withoutERIC, consumer}, map[string]bool{}, newSalesforceCorrelationBudget(), maxSalesforceShapeCorrelations); len(got) != 0 {
+		t.Fatalf("inferred despite a bootstrap response whose Set-Cookie lines set no ERIC cookie: %#v", got)
+	}
+	held := correlate.Observation{ID: 1, RequestURL: host + "/one/one.app", RequestHeaders: map[string]string{"Cookie": "sid=abc; __Host-ERIC_PROD-1=held-token-value"}}
+	if got, _ := detectUncapturedAuraTokenCorrelations([]correlate.Observation{held, consumer}, map[string]bool{}, newSalesforceCorrelationBudget(), maxSalesforceShapeCorrelations); len(got) != 0 {
+		t.Fatalf("inferred although the browser already sent the token in an ERIC cookie: %#v", got)
+	}
+	setsERIC := correlate.Observation{ID: 1, RequestURL: host + "/one/one.app", ResponseHeaders: map[string]string{"Set-Cookie": "BrowserId=xyz123abcdef; Path=/\n__Host-ERIC_PROD-1=other-value; Path=/"}}
+	if got, _ := detectUncapturedAuraTokenCorrelations([]correlate.Observation{setsERIC, consumer}, map[string]bool{}, newSalesforceCorrelationBudget(), maxSalesforceShapeCorrelations); len(got) != 1 {
+		t.Fatalf("correlations = %#v, want the inference when the bootstrap does set an ERIC cookie", got)
+	}
+}
+
+func TestAuraTokenInferredWarningNamesASanitizedExportOnlyWhenItIsOne(t *testing.T) {
+	inferred := []correlate.Correlation{{Name: "corr_salesforce_aura_token", RuleID: correlate.RuleSalesforceAuraTokenUncapturedCookie}}
+	script := auraTokenScript("{{var.corr_salesforce_aura_token}}")
+	if warning := auraTokenProvenanceWarning(script, inferred, false); strings.Contains(warning, "sanitized") || !strings.Contains(warning, "first replay confirms") {
+		t.Fatalf("unsanitized warning = %q", warning)
+	}
+	if warning := auraTokenProvenanceWarning(script, inferred, true); !strings.Contains(warning, "sanitized export") {
+		t.Fatalf("sanitized warning = %q", warning)
+	}
+}

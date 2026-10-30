@@ -1507,3 +1507,38 @@ func TestSensitiveExtractionObservedValuesProtectBufferedLogs(t *testing.T) {
 		t.Fatal("prior buffered classification epoch was not omitted before current safe error publication")
 	}
 }
+
+// A transparent group (an import replaying requests a browser had in flight
+// together) records no transaction of its own and claims no goal slot, so a
+// script that marks no transactions keeps its automatic iteration
+// transaction.
+func TestTransparentConcurrentHTTPGroupKeepsTheIterationTransaction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"value":"v"}`)
+	}))
+	defer server.Close()
+	runLogic := dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vu := newConcurrentVU(t, server.URL)
+	_, group, _ := concurrentActions()
+	group.Metadata = map[string]any{dsl.HTTPSequenceTransparentMetadataKey: true}
+	sink := &sequenceCaptureSink{}
+	vu.ResultSink = sink
+	vu.ExecutionGoals = NewExecutionGoalLimiter(runLogic, cancel)
+	vu.HardStopCtx = context.Background()
+	vu.ActionBoundaryCtx = ctx
+	vu.Script.Config.RunLogic = runLogic
+	vu.Script.Actions = []dsl.Action{group}
+	if scriptHasExplicitTransactions(vu.Script) {
+		t.Fatal("a transparent group counted as an explicit transaction")
+	}
+	vu.Run(ctx)
+	if len(sink.transactions) != 1 || sink.transactions[0].ActionName == group.Name {
+		names := make([]string, 0, len(sink.transactions))
+		for _, transaction := range sink.transactions {
+			names = append(names, transaction.ActionName)
+		}
+		t.Fatalf("transactions = %v, want only the iteration transaction", names)
+	}
+}

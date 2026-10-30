@@ -154,12 +154,35 @@ func (r *DiffReport) UnhandledRequestCount(include func(DiffRequestInput) bool) 
 	return len(requests)
 }
 
-// ScriptRequestValues is the set of field values the script's requests send,
-// read with the same field model as the pair diff, so a value the script has
-// templated (or replaced) is absent and one it still sends as recorded is
-// present.
-func ScriptRequestValues(script *dsl.Script) map[string]bool {
-	values := map[string]bool{}
+// ScriptValues is what a script's requests send, read with the same field
+// model as the pair diff, so a value the script has templated (or replaced)
+// is absent and one it still sends as recorded is present.
+type ScriptValues struct {
+	fields map[string]bool
+	// unread holds the bodies whose fields could not be read even with their
+	// templates neutralized; a value they contain counts as sent.
+	unread []string
+}
+
+// Sends reports whether the script still sends value as recorded.
+func (v ScriptValues) Sends(value string) bool {
+	if v.fields[value] {
+		return true
+	}
+	for _, body := range v.unread {
+		if strings.Contains(body, value) || strings.Contains(body, url.QueryEscape(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+// ScriptRequestValues reads what the script's requests send. A JSON body the
+// import's own rewrites made invalid (a number replaced by an unquoted
+// template) is read with its templates neutralized; a body that still cannot
+// be read is kept whole, so a value it holds is never taken for handled.
+func ScriptRequestValues(script *dsl.Script) ScriptValues {
+	values := ScriptValues{fields: map[string]bool{}}
 	if script == nil {
 		return values
 	}
@@ -186,12 +209,70 @@ func ScriptRequestValues(script *dsl.Script) map[string]bool {
 				headers[header.Name] = header.Value
 			}
 		}
-		requestFieldValues(action.Target, headers, action.Body, func(_, value string) {
-			values[value] = true
-		})
+		emit := func(_, value string) { values.fields[value] = true }
+		body := action.Body
+		if strings.Contains(body, "{{") && !diffBodyReadable(body) {
+			if neutral := diffNeutralizeJSONTemplates(body); diffBodyReadable(neutral) {
+				body = neutral
+			} else {
+				values.unread = append(values.unread, body)
+			}
+		}
+		requestFieldValues(action.Target, headers, body, emit)
 		return nil
 	})
 	return values
+}
+
+// diffBodyReadable reports a body requestFieldValues reads fields from: JSON,
+// or a single-line form.
+func diffBodyReadable(body string) bool {
+	if _, ok := diffDecodeJSON(body); ok {
+		return true
+	}
+	trimmed := strings.TrimSpace(body)
+	if trimmed != "" && (trimmed[0] == '{' || trimmed[0] == '[') {
+		return false
+	}
+	return !strings.ContainsAny(body, "\r\n") && strings.Contains(body, "=")
+}
+
+// diffNeutralizeJSONTemplates replaces each {{...}} template outside a JSON
+// string with 0, so a body whose number a template replaced decodes again; a
+// template inside a string is part of that string and stays.
+func diffNeutralizeJSONTemplates(body string) string {
+	var out strings.Builder
+	out.Grow(len(body))
+	inString, escaped := false, false
+	for index := 0; index < len(body); index++ {
+		c := body[index]
+		if inString {
+			out.WriteByte(c)
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		if c == '"' {
+			inString = true
+			out.WriteByte(c)
+			continue
+		}
+		if c == '{' && index+1 < len(body) && body[index+1] == '{' {
+			if end := strings.Index(body[index:], "}}"); end >= 0 {
+				out.WriteByte('0')
+				index += end + 1
+				continue
+			}
+		}
+		out.WriteByte(c)
+	}
+	return out.String()
 }
 
 // decodeGroupRequest decodes a JSON-shaped request group request; false when
@@ -585,7 +666,11 @@ type diffResponseScan struct {
 	observations []sample.HARSourceObservation
 	built        bool
 	joined       string
+	joinedBuilt  bool
+	joinedSize   int
 	ends         []int // ends[i] is the end offset of response i in joined
+	// included marks the responses within the budget.
+	included []bool
 	// firstSkipped is the first response left out to fit the budget, or
 	// len(observations) when none was.
 	firstSkipped int
@@ -642,32 +727,57 @@ func (s *diffResponseScan) build() {
 	s.firstSkipped = len(s.observations)
 	s.tokens = map[string]int{}
 	s.tokensComplete = true
+	s.included = make([]bool, len(s.observations))
+	var total int64
+	for index, observation := range s.observations {
+		if diffStaticResponse(observation.ResponseHeaders) {
+			continue
+		}
+		size := int64(diffResponseSize(observation))
+		if total+size > diffInputMaxResponseScanBytes {
+			s.firstSkipped = min(s.firstSkipped, index)
+			continue
+		}
+		total += size
+		s.included[index] = true
+		// Tokens are cut from the observation's own strings.
+		s.indexTokens(observation.ResponseBody, index)
+		for _, value := range observation.ResponseHeaders {
+			s.indexTokens(value, index)
+		}
+	}
+	s.joinedSize = int(total)
+}
+
+// diffResponseSize is the bytes a response takes in the joined search text.
+func diffResponseSize(observation sample.HARSourceObservation) int {
+	size := len(observation.ResponseBody) + 1
+	for name, value := range observation.ResponseHeaders {
+		size += len(name) + len(value) + 3
+	}
+	return size
+}
+
+// joinResponses builds the joined search text on the first search that needs
+// it, in one allocation.
+func (s *diffResponseScan) joinResponses() {
+	if s.joinedBuilt {
+		return
+	}
+	s.joinedBuilt = true
 	var builder strings.Builder
+	builder.Grow(s.joinedSize)
 	s.ends = make([]int, len(s.observations))
 	for index, observation := range s.observations {
-		if !diffStaticResponse(observation.ResponseHeaders) {
-			size := len(observation.ResponseBody) + 1
+		if s.included[index] {
+			builder.WriteString(observation.ResponseBody)
 			for name, value := range observation.ResponseHeaders {
-				size += len(name) + len(value) + 3
+				builder.WriteString("\n")
+				builder.WriteString(name)
+				builder.WriteString(": ")
+				builder.WriteString(value)
 			}
-			if int64(builder.Len()+size) > diffInputMaxResponseScanBytes {
-				s.firstSkipped = min(s.firstSkipped, index)
-			} else {
-				builder.WriteString(observation.ResponseBody)
-				for name, value := range observation.ResponseHeaders {
-					builder.WriteString("\n")
-					builder.WriteString(name)
-					builder.WriteString(": ")
-					builder.WriteString(value)
-				}
-				builder.WriteString("\x00")
-				// Tokens are cut from the observation's own strings, not the
-				// growing builder, so they hold no superseded buffer alive.
-				s.indexTokens(observation.ResponseBody, index)
-				for _, value := range observation.ResponseHeaders {
-					s.indexTokens(value, index)
-				}
-			}
+			builder.WriteString("\x00")
 		}
 		s.ends[index] = builder.Len()
 	}
@@ -693,17 +803,52 @@ func (s *diffResponseScan) indexTokens(text string, index int) {
 			end++
 		}
 		if length := end - start; length >= diffInputMinSearchBytes && length <= diffInputMaxTokenBytes {
+			if !s.indexToken(text[start:end], index) {
+				return
+			}
+			// A value also appears inside a path or dotted name
+			// (/sobjects/Account/001..., a0B.Name), so the pieces of a token
+			// cut at those separators are indexed too.
 			token := text[start:end]
-			if _, seen := s.tokens[token]; !seen {
-				if len(s.tokens) >= diffInputMaxResponseTokens {
-					s.tokensComplete = false
-					return
+			for pieceStart := 0; pieceStart < len(token); {
+				pieceEnd := pieceStart
+				for pieceEnd < len(token) && !diffTokenSeparator(token[pieceEnd]) {
+					pieceEnd++
 				}
-				s.tokens[token] = index
+				if pieceEnd-pieceStart >= diffInputMinSearchBytes && pieceEnd-pieceStart < len(token) {
+					if !s.indexToken(token[pieceStart:pieceEnd], index) {
+						return
+					}
+				}
+				pieceStart = pieceEnd + 1
 			}
 		}
 		start = end
 	}
+}
+
+// indexToken records the first response holding token; false once the token
+// limit stops the index.
+func (s *diffResponseScan) indexToken(token string, index int) bool {
+	if _, seen := s.tokens[token]; seen {
+		return true
+	}
+	if len(s.tokens) >= diffInputMaxResponseTokens {
+		s.tokensComplete = false
+		return false
+	}
+	s.tokens[token] = index
+	return true
+}
+
+// diffTokenSeparator reports a byte that separates the pieces of a response
+// token (a path, a dotted name, an encoded or joined value).
+func diffTokenSeparator(c byte) bool {
+	switch c {
+	case '/', '.', '%', '+', '|', '~', '!', '*', '@', '$':
+		return true
+	}
+	return false
 }
 
 // diffTokenValue reports a value the token index can answer: no delimiter
@@ -737,6 +882,7 @@ func (s *diffResponseScan) firstResponse(value string) diffResponseHit {
 			}
 			continue
 		}
+		s.joinResponses()
 		s.remaining -= int64(len(s.joined))
 		if s.remaining < 0 {
 			searched = false

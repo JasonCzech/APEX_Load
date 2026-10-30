@@ -365,6 +365,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		if warning := auraTokenProvenanceWarning(preview.Script, correlations, document.LooksSanitized()); warning != "" {
 			review.Warnings = append(review.Warnings, warning)
 		}
+		review.Blockers = append(review.Blockers, invalidConcurrentGroupBlockers(preview.Script)...)
 		if preview.CorrelationCoverage != nil && len(correlationWarnings) > 0 {
 			preview.referenceCatalog.base.Complete = false
 			preview.CorrelationCoverage.Complete = false
@@ -485,7 +486,15 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 					// Preserve mutable child pointers inside the returned native script.
 					action.Params["requests"] = children
 				}
+				// A concurrent group's requests run at once, so they share one
+				// sequence number: none of them can use a value a sibling
+				// extracts (the engine merges a group's extractions only after
+				// it joins), while the steps after the group can.
+				groupSequence, concurrent := seq, salesforceConcurrentSequence(*action)
 				for childIndex := range children {
+					if concurrent {
+						seq = groupSequence
+					}
 					child := &children[childIndex]
 					if persistSequenceChildren {
 						if child.Metadata == nil {
@@ -500,6 +509,9 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 						childPath = fmt.Sprintf("%s.params.requests[%d]", actionPath, childIndex)
 					}
 					appendRef(phase, index, child, transaction, childPath)
+				}
+				if concurrent && seq > groupSequence {
+					seq = groupSequence + 1
 				}
 			} else {
 				appendRef(phase, index, action, transaction, actionPath)
@@ -3705,4 +3717,35 @@ func containsAny(value string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+// salesforceConcurrentSequence reports an http_sequence whose requests run
+// concurrently.
+func salesforceConcurrentSequence(action dsl.Action) bool {
+	mode, _, err := dsl.HTTPSequenceExecutionSettings(action)
+	return err == nil && mode == dsl.HTTPSequenceConcurrent
+}
+
+// invalidConcurrentGroupBlockers names the concurrent request groups of the
+// native script whose requests no longer run together, for example because a
+// correlation made one use a value a sibling extracts. Sequence numbering keeps
+// the native rewrite from doing that, so this is a backstop.
+func invalidConcurrentGroupBlockers(script *dsl.Script) []string {
+	if script == nil {
+		return nil
+	}
+	var blockers []string
+	for index, action := range script.Actions {
+		if !strings.EqualFold(action.Type, "http_sequence") || !salesforceConcurrentSequence(action) {
+			continue
+		}
+		children := salesforceSequenceChildren(action)
+		if len(children) == 0 {
+			continue
+		}
+		if err := dsl.ValidateHTTPConcurrentChildren(children); err != nil {
+			blockers = append(blockers, fmt.Sprintf("The concurrent request group actions[%d] %q cannot run as one group after the Salesforce rewrite (%v); replay it sequentially or re-import without recorded concurrency.", index, action.Name, err))
+		}
+	}
+	return blockers
 }

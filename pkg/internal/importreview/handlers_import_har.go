@@ -150,7 +150,7 @@ func ResolveHARPairUnhandledInputs(diff *har.DiffReport, script *dsl.Script, par
 		}
 	}
 	diff.ResolveUnhandledInputs(func(value string) bool {
-		return sent[value] && !replaced[value]
+		return sent.Sends(value) && !replaced[value]
 	})
 }
 

@@ -202,3 +202,27 @@ func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofil
 	}
 	return kept, filtered
 }
+
+// shapingFoldedExchanges is the set of exchanges the recorded shape would turn
+// into background conversations or other non-request steps, found by shaping
+// a copy of the script; nil when there are none.
+func shapingFoldedExchanges(script *dsl.Script, exchanges []exchange, document *HARDocument, asyncScan bool, background []string) map[int]bool {
+	if script == nil || len(script.Actions) != len(exchanges) {
+		return nil
+	}
+	trial := *script
+	trial.Actions = cloneScriptActions(script.Actions)
+	_, newIndex, _, _ := shapeRecordedHAR(&trial, exchanges, document, asyncScan, background, nil)
+	var folded map[int]bool
+	for index, position := range newIndex {
+		// A conversation keeps its first request as its own (non-request)
+		// action and folds the rest.
+		if position < 0 || (position < len(trial.Actions) && trial.Actions[position].Type != "request") {
+			if folded == nil {
+				folded = map[int]bool{}
+			}
+			folded[index] = true
+		}
+	}
+	return folded
+}

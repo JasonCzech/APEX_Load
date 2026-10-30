@@ -417,8 +417,11 @@ func actionsHaveExplicitTransactions(actions []dsl.Action) bool {
 			// actually-open source transaction owns it at runtime. Treating only
 			// metadata-bearing sequences as explicit lets the default automatic
 			// iteration transaction consume the same goal slot first and either
-			// double-count or suppress the sequence aggregate.
-			return true
+			// double-count or suppress the sequence aggregate. A transparent
+			// group records none, so it leaves the iteration transaction alone.
+			if dsl.HTTPSequenceRecordsTransaction(action) {
+				return true
+			}
 		}
 		if action.Control != nil {
 			for _, branch := range action.Control.ActionBranches() {
@@ -492,7 +495,7 @@ func actionsMayRecordActionTransaction(actions []dsl.Action) bool {
 // even when auto_transactions is "none".
 func actionsMayRecordHTTPSequenceTransaction(actions []dsl.Action) bool {
 	for _, action := range actions {
-		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") && dsl.HTTPSequenceRecordsTransaction(action) {
 			return true
 		}
 		if action.Control != nil {

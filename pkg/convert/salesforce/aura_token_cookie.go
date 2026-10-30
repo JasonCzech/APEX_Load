@@ -2,6 +2,7 @@ package salesforce
 
 import (
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -32,8 +33,9 @@ const auraTokenCookieBootstrapPath = "/one/one.app"
 // recorded token would be replayed stale. The live server sends that cookie
 // at replay, so the extractor goes on the last /one/one.app request on the
 // same host before the token is first sent (__Host- cookies are host-only).
-// Values another pass already correlated, placeholders, and tokens with no
-// such bootstrap request before their first use are left alone. One forward
+// Values another pass already correlated, placeholders, tokens with no such
+// bootstrap request before their first use, and tokens the capture shows came
+// from elsewhere are left alone (auraTokenCookieEvidenceAgainst). One forward
 // pass decides each token at its first use, so the cost stays linear in the
 // capture, and every scanned body is charged to budget.
 func detectUncapturedAuraTokenCorrelations(observations []correlate.Observation, seenValues map[string]bool, budget *salesforceCorrelationBudget, limit int) ([]correlate.Correlation, error) {
@@ -63,7 +65,7 @@ func detectUncapturedAuraTokenCorrelations(observations []correlate.Observation,
 		}
 		decided[token] = true
 		producer, found := lastBootstrap[host]
-		if !found || len(correlations) >= limit {
+		if !found || len(correlations) >= limit || auraTokenCookieEvidenceAgainst(observations, producer, index, token) {
 			continue
 		}
 		if err := budget.chargeCandidates(1); err != nil {
@@ -140,4 +142,43 @@ func auraTokenFormValue(body string) string {
 // including Experience Cloud's /s/sfsites/aura.
 func isAuraPath(path string) bool {
 	return path == "/aura" || strings.HasSuffix(path, "/aura")
+}
+
+// auraTokenCookieEvidenceAgainst reports a capture that shows the bootstrap
+// did not issue the token: its response kept Set-Cookie lines but none sets an
+// ERIC cookie (an export that keeps cookies, with the browser already holding
+// it), or a request up to the token's first use already sends the token in an
+// ERIC cookie. Inferring the cookie then would fail every iteration at the
+// bootstrap, so the token is left to the stale-token warning.
+func auraTokenCookieEvidenceAgainst(observations []correlate.Observation, producer, consumer int, token string) bool {
+	if setCookie := auraTokenHeader(observations[producer].ResponseHeaders, "Set-Cookie"); setCookie != "" {
+		if !auraTokenCookiePattern.MatchString("Set-Cookie: " + strings.ReplaceAll(setCookie, "\n", "\nSet-Cookie: ")) {
+			return true
+		}
+	}
+	for index := 0; index <= consumer && index < len(observations); index++ {
+		cookie := auraTokenHeader(observations[index].RequestHeaders, "Cookie")
+		if cookie == "" || !strings.Contains(cookie, "ERIC_") {
+			continue
+		}
+		for _, pair := range strings.Split(cookie, ";") {
+			name, value, _ := strings.Cut(strings.TrimSpace(pair), "=")
+			if strings.Contains(name, "ERIC_") && strings.Trim(value, `"`) == token {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var auraTokenCookiePattern = regexp.MustCompile(auraTokenCookieExtractor)
+
+// auraTokenHeader is a header's value, matched case-insensitively.
+func auraTokenHeader(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
 }

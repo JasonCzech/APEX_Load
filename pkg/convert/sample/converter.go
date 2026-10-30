@@ -401,11 +401,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
 	}
-	if format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, false) {
-		req.Options.Transactions = stepTransactionWindows(exchanges, thinkThreshold(req.Options.Profile))
-		if len(req.Options.Transactions) == 0 {
-			warnings = append(warnings, "Step transactions were not added: some requests have no recorded start time, so the steps cannot be placed.")
-		}
+	// Step transactions are placed once the requests are built (below), so
+	// they can leave out the background requests the recorded shape folds.
+	stepTransactions := format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, false)
+	if stepTransactions && exchangesCarryRecordedTransactions(exchanges) {
+		stepTransactions = false
+		warnings = append(warnings, "Step transactions were not added: the recording already marks its transactions, which the script keeps.")
 	}
 	// A recorded Salesforce Mobile SDK sign-in reads its credentials from a
 	// users file and is reviewed before correlation (salesforce_signin.go).
@@ -762,7 +763,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
 	if len(pageResources) > 0 && simulateBrowserCacheForPageResources(result.Script) {
-		diagnostics.Add(diag.Info, "HAR page resources", "HAR import", "Recorded static resources are attached to the pages that requested them, and browser cache simulation is on: each resource is fetched once per new user and then served from the virtual user's cache as its response headers allow, as a browser does. Turn off Simulate browser cache in Runtime Settings to fetch every resource on every page.")
+		diagnostics.Add(diag.Info, "HAR page resources", "HAR import", "Recorded static resources are attached to the pages that requested them, and browser cache simulation is on: each resource is fetched once per new user and then served from the virtual user's cache as its response headers allow, as a browser does. The cache applies to the script's own GET steps too, so a step whose response the server marks cacheable is also served from the cache while it is fresh. Turn off Simulate browser cache in Runtime Settings to fetch every resource and step every time.")
 	}
 	if signIn != nil {
 		if note := signIn.addUsersDataSource(result.Script); note != "" {
@@ -794,6 +795,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		var shapeWarnings []string
 		var newIndex []int
 		var startedAt []time.Time
+		if stepTransactions {
+			windows, member := stepTransactionWindows(exchanges, thinkThreshold(req.Options.Profile), shapingFoldedExchanges(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns()), signIn.stepBoundary(exchanges))
+			if len(windows) == 0 {
+				result.Warnings = append(result.Warnings, "Step transactions were not added: some requests have no recorded start time, so the steps cannot be placed.")
+			} else {
+				tagStepTransactions(result.Script.Actions, windows, member)
+				req.Options.Transactions = windows
+			}
+		}
 		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
 		result.Warnings = append(result.Warnings, shapeWarnings...)
 		if len(req.Options.Transactions) > 0 {
@@ -821,10 +831,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			signIn.restoreRecordedBodies(exchanges)
 		}
 		if convertutil.BoolOption(req.Options.RecordedConcurrency, false) {
-			var groups int
-			sourceMappings, newIndex, groups = groupRecordedConcurrency(result.Script, exchanges, newIndex, sourceMappings)
+			var groups, refused int
+			sourceMappings, newIndex, groups, refused = groupRecordedConcurrency(result.Script, exchanges, newIndex, sourceMappings, thinkThreshold(req.Options.Profile))
 			if groups > 0 {
 				diagnostics.Add(diag.Info, "HAR concurrent requests", "HAR import", fmt.Sprintf("%d group(s) of requests the browser had in flight together replay concurrently, as the recording sent them; their requests are left out of the replay comparison baseline", groups))
+			}
+			if refused > 0 {
+				diagnostics.Add(diag.Info, "HAR concurrent requests", "HAR import", fmt.Sprintf("%d run(s) of requests the browser had in flight together replay one after another: they cannot form a valid concurrent group (a request uses another's extracted value, or the group exceeds the runtime's preparation limit)", refused))
 			}
 		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)

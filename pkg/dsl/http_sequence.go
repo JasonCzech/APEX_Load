@@ -27,7 +27,22 @@ const (
 	// transactions, each timed by its request, instead of a group aggregate.
 	HTTPConcurrentRequestTransactionMetadataKey = "source_request_transaction"
 	maxHTTPConcurrentRequestTransactionBytes    = 4096
+	// HTTPSequenceTransparentMetadataKey marks a request group that is only a
+	// way of sending its requests (an importer replaying requests a browser
+	// had in flight together), not a business step: when true, the group
+	// records no aggregate transaction, claims no transaction-goal slot, and
+	// does not count as an explicit transaction, so the script keeps its
+	// automatic iteration transaction and the transactions around the group.
+	HTTPSequenceTransparentMetadataKey = "transparent_request_group"
 )
+
+// HTTPSequenceRecordsTransaction reports whether an http_sequence records a
+// transaction of its own (an aggregate, or its requests' transactions): every
+// sequence but a transparent one.
+func HTTPSequenceRecordsTransaction(action Action) bool {
+	transparent, _ := action.Metadata[HTTPSequenceTransparentMetadataKey].(bool)
+	return !transparent
+}
 
 // HTTPConcurrentRequestTransactions returns the child transaction names of a
 // group that names one for every child, or nil.
