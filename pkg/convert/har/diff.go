@@ -456,13 +456,13 @@ func (a *diffAligner) reextract(corr sample.Correlation, baselineValue string, n
 	return miss, true
 }
 
-// narrow is filterDiffQueryKeys for a request group, once per group and
+// narrow is observationsWithQueryKeySet for a request group, once per group and
 // query-key set: every producer of a long same-endpoint group narrows it.
 func (a *diffAligner) narrow(key diffNarrowKey, observations []sample.HARSourceObservation) []sample.HARSourceObservation {
 	if narrowed, ok := a.narrowed[key]; ok {
 		return narrowed
 	}
-	narrowed := filterDiffQueryKeys(observations, key.queryKeys)
+	narrowed := observationsWithQueryKeySet(observations, key.queryKeys)
 	a.narrowed[key] = narrowed
 	return narrowed
 }
@@ -780,7 +780,7 @@ func diffQueryKeySet(rawURL string) string {
 	return strings.Join(keys, "&")
 }
 
-func filterDiffQueryKeys(observations []sample.HARSourceObservation, keySet string) []sample.HARSourceObservation {
+func observationsWithQueryKeySet(observations []sample.HARSourceObservation, keySet string) []sample.HARSourceObservation {
 	var out []sample.HARSourceObservation
 	for _, observation := range observations {
 		if diffQueryKeySet(observation.RequestURL) == keySet {
