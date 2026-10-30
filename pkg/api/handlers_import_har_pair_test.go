@@ -579,14 +579,18 @@ func holdBaselineFailureWhileComparisonConverts(t *testing.T) bool {
 	hold := make(chan struct{})
 	ended := make(chan struct{})
 	var once sync.Once
-	previous := harComparisonPreparer
+	previous, previousSlots := harComparisonPreparer, harComparisonSlots
 	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		defer once.Do(func() { close(ended) })
 		started <- ctx
 		<-hold
 		return nil, nil, ctx.Err()
 	}
-	defer func() { harComparisonPreparer = previous }()
+	// Free slots of its own: comparisons earlier tests left converting would
+	// otherwise hold the shared ones, so every attempt's comparison would wait
+	// for a slot until its import had already failed.
+	harComparisonSlots = make(chan struct{}, 2)
+	defer func() { harComparisonPreparer, harComparisonSlots = previous, previousSlots }()
 
 	payload, err := json.Marshal(map[string]any{
 		"name":              "Broken baseline",
