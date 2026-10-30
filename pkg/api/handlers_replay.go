@@ -114,7 +114,7 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 			script.Name = stored.Name
 		}
 		var resolveErr error
-		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script)
+		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script, s.runner.preservedImportEditOptions())
 		if resolveErr != nil {
 			writeError(w, http.StatusBadRequest, resolveErr.Error())
 			return

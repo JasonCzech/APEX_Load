@@ -563,7 +563,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	if isCredentialPreservingImport(script) || isCredentialPreservingImport(stored.Script) {
 		var err error
-		script, err = preparePersistentLibraryScript(script, stored.Script)
+		script, err = s.runner.prepareLibraryScript(script, stored.Script)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

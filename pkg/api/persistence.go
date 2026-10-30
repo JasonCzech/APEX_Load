@@ -1951,7 +1951,7 @@ func (tr *TestRunner) saveStoredScriptWithImportTrust(
 	if trustedImport {
 		projected, err = preparePersistentImportedLibraryScript(script, prior, sourceProfile)
 	} else {
-		projected, err = preparePersistentLibraryScript(script, prior)
+		projected, err = tr.prepareLibraryScript(script, prior)
 	}
 	if err != nil {
 		return err

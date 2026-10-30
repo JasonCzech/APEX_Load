@@ -97560,6 +97560,7 @@ export interface operations {
               "missed_run_policy"?: string;
             };
             "script_imports": {
+              "allow_retained_credential_transport_edits": boolean;
               "allow_source_secret_migration": boolean;
             };
             "thresholds": {
@@ -207355,6 +207356,7 @@ export interface operations {
             "missed_run_policy"?: string;
           };
           "script_imports"?: {
+            "allow_retained_credential_transport_edits"?: boolean;
             "allow_source_secret_migration"?: boolean;
           };
           "thresholds"?: {
@@ -207534,6 +207536,7 @@ export interface operations {
               "missed_run_policy"?: string;
             };
             "script_imports": {
+              "allow_retained_credential_transport_edits": boolean;
               "allow_source_secret_migration": boolean;
             };
             "thresholds": {

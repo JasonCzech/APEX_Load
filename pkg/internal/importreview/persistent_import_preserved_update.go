@@ -9,6 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/contentcontract"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -104,7 +105,25 @@ func CloneImportSecurityMetadata(value any) (any, error) {
 	return cloned, nil
 }
 
+// PreservedImportEditOptions carries system-admin policy into the retained
+// credential checks.
+type PreservedImportEditOptions struct {
+	// AllowTransportRouteEdits lets an author change the proxy and TLS
+	// settings of a script that keeps imported credentials. By default those
+	// settings pin the context a retained credential is sent in, because an
+	// editor who cannot read the credential could otherwise route it through a
+	// proxy they control. A new credential must still be a runtime secret.
+	AllowTransportRouteEdits bool
+}
+
 func ValidatePreservedImportCredentialEdits(candidate, prior *dsl.Script) error {
+	return ValidatePreservedImportCredentialEditsWithOptions(candidate, prior, PreservedImportEditOptions{})
+}
+
+func ValidatePreservedImportCredentialEditsWithOptions(
+	candidate, prior *dsl.Script,
+	options PreservedImportEditOptions,
+) error {
 	if candidate == nil || prior == nil {
 		return fmt.Errorf("credential-preserving update requires a durable prior script")
 	}
@@ -147,14 +166,18 @@ func ValidatePreservedImportCredentialEdits(candidate, prior *dsl.Script) error 
 	if HasNewProjectedCredential(rawCandidate, safeCandidate, rawPrior, safePrior) {
 		return fmt.Errorf("script introduces new executable credentials; bind a runtime secret or run the source import again")
 	}
-	if context, changed := RetainedImportCredentialContextChange(
+	if context, changed := retainedImportCredentialContextChange(
 		rawCandidate,
 		safeCandidate,
 		rawPrior,
 		safePrior,
+		options,
 	); changed {
 		return fmt.Errorf(
-			"script changes the execution context for retained imported credentials at %s; bind a runtime secret or run the source import again",
+			"script changes the execution context for retained imported credentials at %s: "+
+				"this edit could send an imported credential somewhere new. Bind the imported credential "+
+				"to a runtime secret or run the source import again; a system administrator can allow some "+
+				"proxy and TLS edits (Access > Import credential policy)",
 			context,
 		)
 	}
@@ -338,6 +361,22 @@ func RetainedImportCredentialContextChange(
 	prior,
 	projectedPrior any,
 ) (string, bool) {
+	return retainedImportCredentialContextChange(
+		candidate,
+		projectedCandidate,
+		prior,
+		projectedPrior,
+		PreservedImportEditOptions{},
+	)
+}
+
+func retainedImportCredentialContextChange(
+	candidate,
+	projectedCandidate,
+	prior,
+	projectedPrior any,
+	options PreservedImportEditOptions,
+) (string, bool) {
 	candidateMap, candidateOK := projectedCandidate.(map[string]any)
 	priorMap, priorOK := projectedPrior.(map[string]any)
 	if !candidateOK || !priorOK {
@@ -347,6 +386,8 @@ func RetainedImportCredentialContextChange(
 	priorActions, priorOrder := ImportActionContexts(priorMap)
 	candidateTransport := ImportTransportContext(candidateMap)
 	priorTransport := ImportTransportContext(priorMap)
+	proxyAuthorizationKept := hasRetainedProxyAuthorization(priorMap) || hasRetainedProxyAuthorization(candidateMap)
+	relaxTransportRoute(candidateTransport, priorTransport, options, proxyAuthorizationKept)
 	candidateGlobal := ImportGlobalCredentialContext(
 		candidateMap,
 		candidateTransport,
@@ -480,12 +521,248 @@ func ImportTransportContext(script map[string]any) map[string]any {
 		switch NormalizeScriptFieldName(key) {
 		case "thinktime", "pacing", "errorhandling", "runlogic", "observability", "log", "results":
 			continue
+		case "http":
+			transport[key] = withoutFields(value, httpTuningFields)
+		case "webruntime":
+			transport[key] = withoutFields(value, webRuntimeBehaviourFields)
+		case "soap":
+			transport[key] = withoutFields(value, soapBehaviourFields)
+		case "browseremulation":
+			// Browser emulation picks a user agent and cache behaviour; it never
+			// changes where a request goes or what credential it carries.
+			continue
 		default:
 			transport[key] = value
 		}
 	}
 	context["config"] = transport
 	return context
+}
+
+// httpTuningFields are HTTP settings that size buffers, timeouts and
+// connection reuse, judge responses, cache, handle cookies, or set ordinary
+// header text. They change neither where nor how a retained credential is
+// delivered, so editing them must not pin the request context. Fields that do
+// (base URL, proxy, TLS, HTTP version and QUIC, redirects, default headers and
+// authentication) stay pinned.
+var httpTuningFields = map[string]struct{}{
+	"receivebufferbytes":       {},
+	"maxmetarefresh":           {},
+	"contentcheckerrorlimit":   {},
+	"pagetimeoutms":            {},
+	"challengedelayms":         {},
+	"cachemaxunusediterations": {},
+	"keepalive":                {},
+	"maxconnsperhost":          {},
+	"maxidleconns":             {},
+	"connecttimeoutms":         {},
+	"requesttimeoutms":         {},
+	"tlstimeoutms":             {},
+	"idletimeoutms":            {},
+	"httperrorsaswarnings":     {},
+	"failnoncriticalresources": {},
+	"resourcetimeoutaswarning": {},
+	"legacyhtmlchecks":         {},
+	"dnscache":                 {},
+	"ipversion":                {},
+	"cacheexcludedmimetypes":   {},
+	"htmlparsemode":            {},
+	"htmlexcludedmimetypes":    {},
+	"aurarecordedfailures":     {},
+	"cookiesenabled":           {},
+	"clearcookiesperiteration": {},
+	"cacheenabled":             {},
+	"traceparent":              {},
+	"traceparentsampled":       {},
+	"useragent":                {},
+	"acceptencoding":           {},
+	"acceptlanguage":           {},
+}
+
+// webRuntimeBehaviourFields are web runtime settings that shape pacing,
+// checks, downloads and local addressing. The free-form additional attributes
+// stay pinned because their meaning is open-ended.
+var webRuntimeBehaviourFields = map[string]struct{}{
+	"downloadfilters":   {},
+	"contentchecks":     {},
+	"networksimulation": {},
+	"streaming":         {},
+	"dataformatting":    {},
+	"sourceips":         {},
+	"networkprofiles":   {},
+}
+
+// soapBehaviourFields pick the envelope version and judge faults. WS-Security,
+// which carries credentials, and the namespaces, which decide which operation
+// a kept token authorises, stay pinned.
+var soapBehaviourFields = map[string]struct{}{
+	"version":       {},
+	"faulthandling": {},
+}
+
+// withoutFields returns a copy of a settings map without the named
+// (normalized) fields.
+func withoutFields(value any, fields map[string]struct{}) any {
+	settings, _ := value.(map[string]any)
+	if settings == nil {
+		return value
+	}
+	kept := make(map[string]any, len(settings))
+	for key, child := range settings {
+		if _, drop := fields[NormalizeScriptFieldName(key)]; drop {
+			continue
+		}
+		kept[key] = child
+	}
+	return kept
+}
+
+func transportHTTP(transport map[string]any) map[string]any {
+	config, _ := transport["config"].(map[string]any)
+	for key, value := range config {
+		if NormalizeScriptFieldName(key) == "http" {
+			http, _ := value.(map[string]any)
+			return http
+		}
+	}
+	return nil
+}
+
+func directProxyMode(transport map[string]any) bool {
+	mode, _ := transportHTTP(transport)["proxy_mode"].(string)
+	return strings.EqualFold(strings.TrimSpace(mode), "none")
+}
+
+// relaxTransportRoute removes from the compared contexts the transport
+// settings an edit may change without redirecting a retained credential.
+//
+// Choosing No Proxy sends the credential straight to the host its request
+// already names, so it narrows the route rather than redirecting it. The proxy
+// block it leaves behind is dormant but could be re-activated by a later
+// trusted flip back to a proxy, so it may only lose fields (stay as it was,
+// lose some, or be cleared); it may not gain or change one.
+//
+// With the admin policy on, proxy mode and TLS may change freely. The proxy
+// block is released too, unless a retained proxy credential (a masked proxy
+// username, password or URL userinfo, or a masked Proxy-Authorization header)
+// would follow a new proxy URL: then it may still only lose fields, and the
+// credential must be bound to a runtime secret before the proxy can change.
+// A kept Proxy-Authorization header also pins the proxy mode, under either
+// policy, because changing the mode changes who receives the header.
+func relaxTransportRoute(
+	candidate, prior map[string]any,
+	options PreservedImportEditOptions,
+	proxyAuthorizationKept bool,
+) {
+	// A kept Proxy-Authorization header is sent to whichever proxy the mode
+	// picks, or to the origin when there is none, so it pins the mode itself.
+	direct := !proxyAuthorizationKept && directProxyMode(candidate)
+	if options.AllowTransportRouteEdits {
+		withoutHTTPRoute(candidate, "tls")
+		withoutHTTPRoute(prior, "tls")
+		if !proxyAuthorizationKept {
+			withoutHTTPRoute(candidate, "proxymode")
+			withoutHTTPRoute(prior, "proxymode")
+		}
+	}
+	if direct {
+		withoutHTTPRoute(candidate, "proxymode")
+		withoutHTTPRoute(prior, "proxymode")
+	}
+	// A block that only lost fields cannot send anything anywhere new.
+	// A kept Proxy-Authorization header pins the whole block: blanking the
+	// URL under the legacy empty mode would connect directly and hand the
+	// header to the origin.
+	releaseProxy := !proxyAuthorizationKept && (direct || options.AllowTransportRouteEdits) &&
+		proxyOnlyLostFields(candidate, prior)
+	if options.AllowTransportRouteEdits && !proxyAuthorizationKept {
+		releaseProxy = releaseProxy ||
+			(!hasRetainedProxyCredential(candidate) && !hasRetainedProxyCredential(prior))
+	}
+	if releaseProxy {
+		withoutHTTPRoute(candidate, "proxy")
+		withoutHTTPRoute(prior, "proxy")
+	}
+}
+
+// proxyOnlyLostFields reports whether every field of the candidate's proxy
+// block is present, unchanged, in the prior's. An empty candidate block
+// qualifies.
+func proxyOnlyLostFields(candidate, prior map[string]any) bool {
+	priorProxy := transportProxy(prior)
+	for key, value := range transportProxy(candidate) {
+		priorValue, exists := priorProxy[key]
+		if !exists || !reflect.DeepEqual(value, priorValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func transportProxy(transport map[string]any) map[string]any {
+	for key, value := range transportHTTP(transport) {
+		if NormalizeScriptFieldName(key) == "proxy" {
+			proxy, _ := value.(map[string]any)
+			return proxy
+		}
+	}
+	return nil
+}
+
+// hasRetainedProxyCredential reports whether the projected proxy block carries
+// a masked value: a kept proxy username, password or URL userinfo.
+func hasRetainedProxyCredential(transport map[string]any) bool {
+	for _, value := range transportProxy(transport) {
+		if text, _ := value.(string); strings.Contains(text, MaskedScriptSecret) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasRetainedProxyAuthorization reports whether a masked Proxy-Authorization
+// header survives anywhere in the projected script, as a header map entry or as
+// a name/value header pair. Such a header is a proxy credential that follows
+// the proxy URL like a proxy password does.
+func hasRetainedProxyAuthorization(value any) bool {
+	masked := func(text any) bool {
+		str, _ := text.(string)
+		return strings.Contains(str, MaskedScriptSecret)
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		if name, _ := typed["name"].(string); NormalizeScriptFieldName(name) == "proxyauthorization" &&
+			masked(typed["value"]) {
+			return true
+		}
+		for key, child := range typed {
+			if NormalizeScriptFieldName(key) == "proxyauthorization" && masked(child) {
+				return true
+			}
+			if hasRetainedProxyAuthorization(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if hasRetainedProxyAuthorization(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// withoutHTTPRoute drops the named (normalized) HTTP fields from a transport
+// context. The http map is a fresh copy (withoutFields), so this never
+// alters the projected script.
+func withoutHTTPRoute(transport map[string]any, fields ...string) {
+	http := transportHTTP(transport)
+	for key := range http {
+		if slices.Contains(fields, NormalizeScriptFieldName(key)) {
+			delete(http, key)
+		}
+	}
 }
 
 func ImportGlobalCredentialContext(

@@ -1946,3 +1946,44 @@ func TestBrowserLocatorTargetsAreNotSecretBindingRequirements(t *testing.T) {
 		}
 	}
 }
+
+func TestReconcileMaskedScriptSecretsAllowsJavaVMArgumentEditsBesideMaskedOnes(t *testing.T) {
+	const secretArg = "-Dpassword=q7W9pL2xN8vC4mR6tY1kH5sF3dJ0aB9uE2zG"
+	newPrior := func() *dsl.Script {
+		prior := secretBearingScript("java-vm-edit", "project-a")
+		prior.Config.JavaVuser.AdditionalVMParameters = []string{"-Xmx512m", secretArg, "-Dlabel=a"}
+		return prior
+	}
+	t.Run("append and edit non-sensitive arguments", func(t *testing.T) {
+		prior := newPrior()
+		incoming := maskScriptSecrets(prior)
+		incoming.Config.JavaVuser.AdditionalVMParameters[0] = "-Xmx1g"
+		incoming.Config.JavaVuser.AdditionalVMParameters = append(incoming.Config.JavaVuser.AdditionalVMParameters, "-Dnew=1")
+		if err := reconcileMaskedScriptSecrets(incoming, prior); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		got := incoming.Config.JavaVuser.AdditionalVMParameters
+		if len(got) != 4 || got[0] != "-Xmx1g" || got[1] != secretArg || got[3] != "-Dnew=1" {
+			t.Fatalf("reconciled Java VM parameters = %#v", got)
+		}
+	})
+	t.Run("deleting a masked argument drops it", func(t *testing.T) {
+		prior := newPrior()
+		deleted := maskScriptSecrets(prior)
+		deleted.Config.JavaVuser.AdditionalVMParameters = []string{"-Xmx512m", "-Dlabel=a"}
+		if err := reconcileMaskedScriptSecrets(deleted, prior); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if got := deleted.Config.JavaVuser.AdditionalVMParameters; len(got) != 2 || got[1] != "-Dlabel=a" {
+			t.Fatalf("reconciled Java VM parameters = %#v", got)
+		}
+	})
+	t.Run("moving a masked argument fails closed", func(t *testing.T) {
+		prior := newPrior()
+		moved := maskScriptSecrets(prior)
+		moved.Config.JavaVuser.AdditionalVMParameters = []string{maskedScriptSecret, "-Xmx512m", "-Dlabel=a"}
+		if err := reconcileMaskedScriptSecrets(moved, prior); err == nil {
+			t.Fatal("moving a masked Java VM argument was accepted")
+		}
+	})
+}

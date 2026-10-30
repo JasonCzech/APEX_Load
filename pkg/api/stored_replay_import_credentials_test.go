@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -160,7 +161,7 @@ func TestResolveStoredReplayImportScriptRestoresEditedProjection(t *testing.T) {
 
 	edited := cloneScriptDefinition(maskScriptSecrets(stored.Script))
 	edited.Actions[1].Body = `{"edited":true}`
-	restored, trusted, err := resolveStoredReplayImportScript(edited, stored.Script)
+	restored, trusted, err := resolveStoredReplayImportScript(edited, stored.Script, importreview.PreservedImportEditOptions{})
 	if err != nil || !trusted {
 		t.Fatalf("resolve edited projection = trusted:%v err:%v, want a trusted restoration", trusted, err)
 	}
@@ -173,7 +174,7 @@ func TestResolveStoredReplayImportScriptRestoresEditedProjection(t *testing.T) {
 
 	// An ordinary (non-import) stored script keeps the untrusted path.
 	ordinary := &dsl.Script{Name: "ordinary", Protocol: "http"}
-	resolved, trusted, err := resolveStoredReplayImportScript(edited, ordinary)
+	resolved, trusted, err := resolveStoredReplayImportScript(edited, ordinary, importreview.PreservedImportEditOptions{})
 	if err != nil || trusted || resolved != edited {
 		t.Fatalf("ordinary resolve = %#v trusted:%v err:%v, want the untrusted candidate", resolved, trusted, err)
 	}

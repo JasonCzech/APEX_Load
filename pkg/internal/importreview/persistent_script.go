@@ -16,6 +16,15 @@ func PreparePersistentLibraryScript(script, prior *dsl.Script) (*dsl.Script, err
 	return PreparePersistentLibraryScriptWithImportTrust(script, prior, false, "")
 }
 
+// PreparePersistentLibraryScriptWithOptions is PreparePersistentLibraryScript
+// under the system-admin retained-credential edit policy.
+func PreparePersistentLibraryScriptWithOptions(
+	script, prior *dsl.Script,
+	options PreservedImportEditOptions,
+) (*dsl.Script, error) {
+	return preparePersistentLibraryScript(script, prior, false, "", options)
+}
+
 func PreparePersistentImportedLibraryScript(
 	script, prior *dsl.Script,
 	sourceProfile string,
@@ -32,6 +41,15 @@ func PreparePersistentLibraryScriptWithImportTrust(
 	script, prior *dsl.Script,
 	trustedImport bool,
 	sourceProfile string,
+) (*dsl.Script, error) {
+	return preparePersistentLibraryScript(script, prior, trustedImport, sourceProfile, PreservedImportEditOptions{})
+}
+
+func preparePersistentLibraryScript(
+	script, prior *dsl.Script,
+	trustedImport bool,
+	sourceProfile string,
+	options PreservedImportEditOptions,
 ) (*dsl.Script, error) {
 	candidate := CloneScriptDefinition(script)
 	if candidate == nil {
@@ -110,7 +128,7 @@ func PreparePersistentLibraryScriptWithImportTrust(
 			return nil, err
 		}
 		if !trustedImport && prior != nil {
-			if err := ValidatePreservedImportCredentialEdits(preserved, prior); err != nil {
+			if err := ValidatePreservedImportCredentialEditsWithOptions(preserved, prior, options); err != nil {
 				return nil, err
 			}
 		}
