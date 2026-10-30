@@ -663,6 +663,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			SalvageTruncated           *bool                                 `json:"salvage_truncated,omitempty"`
 			AsyncScan                  *bool                                 `json:"async_scan,omitempty"`
 			StepTransactions           *bool                                 `json:"step_transactions,omitempty"`
+			RecordedConcurrency        *bool                                 `json:"recorded_concurrency,omitempty"`
 			HTTPVersionMode            string                                `json:"http_version_mode,omitempty"`
 			DisableSalesforce          *bool                                 `json:"disable_salesforce,omitempty"`
 			SalesforceNative           *bool                                 `json:"salesforce_native,omitempty"`
@@ -695,6 +696,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		req.Options.SalvageTruncated = firstNonNilBool(req.SalvageTruncated, req.Options.SalvageTruncated, parseOptionalBool(upload.Value("salvage_truncated")))
 		req.Options.AsyncScan = firstNonNilBool(req.AsyncScan, req.Options.AsyncScan, parseOptionalBool(upload.Value("async_scan")))
 		req.Options.StepTransactions = firstNonNilBool(req.StepTransactions, req.Options.StepTransactions, parseOptionalBool(upload.Value("step_transactions")))
+		req.Options.RecordedConcurrency = firstNonNilBool(req.RecordedConcurrency, req.Options.RecordedConcurrency, parseOptionalBool(upload.Value("recorded_concurrency")))
 		req.Options.DisableSalesforce = firstNonNilBool(req.DisableSalesforce, req.Options.DisableSalesforce, parseOptionalBool(upload.Value("disable_salesforce")))
 		req.Options.SalesforceNative = firstNonNilBool(req.SalesforceNative, req.Options.SalesforceNative, parseOptionalBool(upload.Value("salesforce_native")))
 		req.Options.AgentforceTransform = firstNonNilBool(req.AgentforceTransform, req.Options.AgentforceTransform, parseOptionalBool(upload.Value("agentforce_transform")))
@@ -767,6 +769,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
 		AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
 		StepTransactions:    parseOptionalBool(upload.Value("step_transactions")),
+		RecordedConcurrency: parseOptionalBool(upload.Value("recorded_concurrency")),
 		DisableSalesforce:   parseOptionalBool(upload.Value("disable_salesforce")),
 		SalesforceNative:    parseOptionalBool(upload.Value("salesforce_native")),
 		AgentforceTransform: parseOptionalBool(upload.Value("agentforce_transform")),

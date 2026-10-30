@@ -1291,6 +1291,8 @@ export function useScriptApi() {
       http_version_mode?: 'upgrade' | 'exact' | 'inherit'
       /** Time each user step (split at recorded pauses) as a transaction. */
       step_transactions?: boolean
+      /** Replay the requests the browser had in flight together concurrently. */
+      recorded_concurrency?: boolean
       signal?: AbortSignal
       timeoutMs?: number
     }): Promise<HARImportResult> => {
@@ -1307,6 +1309,7 @@ export function useScriptApi() {
       if (options?.salvage_truncated) formData.append('salvage_truncated', 'true')
       if (options?.http_version_mode) formData.append('http_version_mode', options.http_version_mode)
       if (options?.step_transactions) formData.append('step_transactions', 'true')
+      if (options?.recorded_concurrency) formData.append('recorded_concurrency', 'true')
 
       const query = new URLSearchParams()
       if (options?.project_id) query.set('project_id', options.project_id)

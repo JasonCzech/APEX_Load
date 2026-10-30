@@ -62,6 +62,9 @@ type ConvertOptions struct {
 	// marked no transactions as its own transaction: a step starts at a new
 	// page, a new Lightning page, or after a recorded pause.
 	StepTransactions *bool `json:"step_transactions,omitempty"`
+	// RecordedConcurrency (default off) replays the requests the browser had
+	// in flight together as concurrent request groups.
+	RecordedConcurrency *bool `json:"recorded_concurrency,omitempty"`
 	// Profile is the project recording profile; it applies its filters,
 	// header drop list, think-time threshold and correlation settings and
 	// supplies the options above that are left unset.
@@ -161,6 +164,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			Notes:                      opts.Notes,
 			AsyncScan:                  opts.AsyncScan,
 			StepTransactions:           opts.StepTransactions,
+			RecordedConcurrency:        opts.RecordedConcurrency,
 			Profile:                    opts.Profile,
 			HighConfidenceOnly:         opts.HighConfidenceOnly,
 			ReviewOnlyCorrelations:     opts.ReviewOnlyCorrelations,

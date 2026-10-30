@@ -91,6 +91,10 @@ type ConvertOptions struct {
 	// StepTransactions (HAR input; default off) times each user step as a
 	// transaction when the recording marked none (stepTransactionWindows).
 	StepTransactions *bool `json:"step_transactions,omitempty"`
+	// RecordedConcurrency (HAR input; default off) replays the requests the
+	// browser had in flight together as concurrent request groups
+	// (groupRecordedConcurrency).
+	RecordedConcurrency *bool `json:"recorded_concurrency,omitempty"`
 	// Profile is the project recording profile (HAR input): its host and
 	// content-type filters, header drop list, think-time threshold and
 	// correlation settings apply.
@@ -815,6 +819,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			newIndex, sourceMappings, moved, notMoved = signIn.moveToInit(result.Script, exchanges, newIndex, sourceMappings)
 			result.Warnings = append(result.Warnings, signIn.warnings(moved, notMoved)...)
 			signIn.restoreRecordedBodies(exchanges)
+		}
+		if convertutil.BoolOption(req.Options.RecordedConcurrency, false) {
+			var groups int
+			sourceMappings, newIndex, groups = groupRecordedConcurrency(result.Script, exchanges, newIndex, sourceMappings)
+			if groups > 0 {
+				diagnostics.Add(diag.Info, "HAR concurrent requests", "HAR import", fmt.Sprintf("%d group(s) of requests the browser had in flight together replay concurrently, as the recording sent them; their requests are left out of the replay comparison baseline", groups))
+			}
 		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)
 	}
