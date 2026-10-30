@@ -256,6 +256,10 @@ type TestRunner struct {
 	settingsRefreshInFlight  chan struct{}
 	systemSettingsRaw        string
 	settingsRevision         uint64
+	// allowRetainedCredentialTransportEdits mirrors
+	// settings.ScriptImports.AllowRetainedCredentialTransportEdits for writers
+	// that already hold mu, where reading the settings snapshot would deadlock.
+	allowRetainedCredentialTransportEdits atomic.Bool
 	// readinessRuntime is a fixed-size immutable projection published only
 	// while mu is held. readinessScheduler is the mutable counter source for
 	// that combined projection and is likewise guarded by mu.

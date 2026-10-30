@@ -206,6 +206,8 @@ export interface DashboardClientDownloadsSettings {
 
 export interface DashboardScriptImportSettings {
   allow_source_secret_migration: boolean
+  /** Lets authors change the proxy and TLS settings of a script that keeps imported credentials. */
+  allow_retained_credential_transport_edits: boolean
 }
 
 export interface DashboardSystemSettings {

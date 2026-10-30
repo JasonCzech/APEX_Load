@@ -391,7 +391,7 @@ func (s *Server) handleAIDraftGeneration(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	safeDraft, ok := prepareAuthoringSessionDraft(w, draft, nil)
+	safeDraft, ok := prepareAuthoringSessionDraft(w, draft, nil, s.runner.preservedImportEditOptions())
 	if !ok {
 		return
 	}

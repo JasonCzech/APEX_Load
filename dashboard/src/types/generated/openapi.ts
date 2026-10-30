@@ -97560,6 +97560,7 @@ export interface operations {
               "missed_run_policy"?: string;
             };
             "script_imports": {
+              "allow_retained_credential_transport_edits": boolean;
               "allow_source_secret_migration": boolean;
             };
             "thresholds": {
@@ -108310,63 +108311,13 @@ export interface operations {
   "handleImportHAR": {
     parameters: {
       "query"?: {
-        "agentforce_transform"?: boolean;
-        "artifact_mode"?: string;
-        "async_scan"?: boolean;
-        "base_url"?: string;
-        "conversion_policy"?: string;
-        "correlation_mode"?: string;
-        "disable_salesforce"?: string;
         "filename"?: string;
-        "http_version_mode"?: string;
-        "include_assertions"?: string;
-        "include_static_assets"?: boolean;
-        "infer_extractors"?: string;
-        "name"?: string;
-        "page_title_checks"?: string;
-        "parameterization_selections"?: string;
-        "parameterize"?: string;
-        "profile_id"?: string;
-        "project_id"?: string;
-        "recording_profile_id"?: string;
-        "redact_sensitive"?: boolean;
-        "resource_mode"?: string;
         "response_format"?: string;
-        "retention_days"?: number;
-        "salesforce_native"?: boolean;
-        "salvage_truncated"?: boolean;
-        "secret_bindings"?: string;
       };
     };
     requestBody: {
       content: {
-        "multipart/form-data": {
-          "agentforce_transform"?: string;
-          "artifact_mode"?: string;
-          "async_scan"?: string;
-          "base_url"?: string;
-          "conversion_policy"?: string;
-          "correlation_mode"?: string;
-          "disable_salesforce"?: string;
-          "file"?: string;
-          "http_version_mode"?: string;
-          "include_assertions"?: string;
-          "include_static_assets"?: string;
-          "infer_extractors"?: string;
-          "name"?: string;
-          "page_title_checks"?: string;
-          "parameterization_selections"?: string;
-          "parameterize"?: string;
-          "profile_id"?: string;
-          "recording_profile_id"?: string;
-          "redact_sensitive"?: string;
-          "resource_mode"?: string;
-          "retention_days"?: string;
-          "salesforce_native"?: string;
-          "salvage_truncated"?: string;
-          "secret_bindings"?: string;
-          [key: string]: unknown;
-        };
+        "application/octet-stream": string;
       };
     };
     responses: {
@@ -108719,63 +108670,13 @@ export interface operations {
   "handleImportSalesforce": {
     parameters: {
       "query"?: {
-        "agentforce_transform"?: boolean;
-        "artifact_mode"?: string;
-        "async_scan"?: boolean;
-        "base_url"?: string;
-        "conversion_policy"?: string;
-        "correlation_mode"?: string;
-        "disable_salesforce"?: string;
         "filename"?: string;
-        "http_version_mode"?: string;
-        "include_assertions"?: string;
-        "include_static_assets"?: boolean;
-        "infer_extractors"?: string;
-        "name"?: string;
-        "page_title_checks"?: string;
-        "parameterization_selections"?: string;
-        "parameterize"?: string;
-        "profile_id"?: string;
-        "project_id"?: string;
-        "recording_profile_id"?: string;
-        "redact_sensitive"?: boolean;
-        "resource_mode"?: string;
         "response_format"?: string;
-        "retention_days"?: number;
-        "salesforce_native"?: boolean;
-        "salvage_truncated"?: boolean;
-        "secret_bindings"?: string;
       };
     };
     requestBody: {
       content: {
-        "multipart/form-data": {
-          "agentforce_transform"?: string;
-          "artifact_mode"?: string;
-          "async_scan"?: string;
-          "base_url"?: string;
-          "conversion_policy"?: string;
-          "correlation_mode"?: string;
-          "disable_salesforce"?: string;
-          "file"?: string;
-          "http_version_mode"?: string;
-          "include_assertions"?: string;
-          "include_static_assets"?: string;
-          "infer_extractors"?: string;
-          "name"?: string;
-          "page_title_checks"?: string;
-          "parameterization_selections"?: string;
-          "parameterize"?: string;
-          "profile_id"?: string;
-          "recording_profile_id"?: string;
-          "redact_sensitive"?: string;
-          "resource_mode"?: string;
-          "retention_days"?: string;
-          "salesforce_native"?: string;
-          "salvage_truncated"?: string;
-          "secret_bindings"?: string;
-          [key: string]: unknown;
-        };
+        "application/octet-stream": string;
       };
     };
     responses: {
@@ -207355,6 +207256,7 @@ export interface operations {
             "missed_run_policy"?: string;
           };
           "script_imports"?: {
+            "allow_retained_credential_transport_edits"?: boolean;
             "allow_source_secret_migration"?: boolean;
           };
           "thresholds"?: {
@@ -207534,6 +207436,7 @@ export interface operations {
               "missed_run_policy"?: string;
             };
             "script_imports": {
+              "allow_retained_credential_transport_edits": boolean;
               "allow_source_secret_migration": boolean;
             };
             "thresholds": {

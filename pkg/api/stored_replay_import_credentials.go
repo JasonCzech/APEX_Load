@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 )
 
 // resolveStoredReplayImportScript decides which executable script a saved-script
@@ -29,7 +30,7 @@ import (
 // projection; introducing a new credential, moving a retained credential to a
 // different request context, or rewriting server-owned import metadata is still
 // refused.
-func resolveStoredReplayImportScript(candidate, stored *dsl.Script) (*dsl.Script, bool, error) {
+func resolveStoredReplayImportScript(candidate, stored *dsl.Script, options importreview.PreservedImportEditOptions) (*dsl.Script, bool, error) {
 	if candidate == nil {
 		return stored, isCredentialPreservingImport(stored), nil
 	}
@@ -39,7 +40,7 @@ func resolveStoredReplayImportScript(candidate, stored *dsl.Script) (*dsl.Script
 	if matchesStoredScriptDisclosureProjection(candidate, stored) {
 		return stored, true, nil
 	}
-	restored, err := restoreDurableImportCredentialsForExecution(candidate, stored)
+	restored, err := restoreDurableImportCredentialsForExecution(candidate, stored, options)
 	if err != nil {
 		return candidate, false, err
 	}
@@ -52,7 +53,7 @@ func resolveStoredReplayImportScript(candidate, stored *dsl.Script) (*dsl.Script
 // order, as an ordinary (untrusted) masked read-modify-write save: the two must
 // accept and reject exactly the same edits, or the debugger and the durable
 // library would disagree about what an operator is allowed to run.
-func restoreDurableImportCredentialsForExecution(candidate, prior *dsl.Script) (*dsl.Script, error) {
+func restoreDurableImportCredentialsForExecution(candidate, prior *dsl.Script, options importreview.PreservedImportEditOptions) (*dsl.Script, error) {
 	if candidate == nil || prior == nil {
 		return nil, fmt.Errorf("credential-preserving replay requires a durable prior script")
 	}
@@ -86,7 +87,7 @@ func restoreDurableImportCredentialsForExecution(candidate, prior *dsl.Script) (
 	if err := sanitizePersistentImportReviewSurfaces(restored); err != nil {
 		return nil, err
 	}
-	if err := validatePreservedImportCredentialEdits(restored, prior); err != nil {
+	if err := importreview.ValidatePreservedImportCredentialEditsWithOptions(restored, prior, options); err != nil {
 		return nil, err
 	}
 	return restored, nil
