@@ -282,7 +282,7 @@ func TestValidatePreservedImportCredentialEditsBoundsTheCostOfAFamily(t *testing
 	candidate.Parameters[1].Values = []string{"changed"}
 	started := time.Now()
 	expectAccepted(t, candidate, prior)
-	if elapsed := time.Since(started); elapsed > 20*time.Second {
+	if elapsed := time.Since(started); elapsed > importReferenceTimeBudget(20*time.Second) {
 		t.Fatalf("validating %d steps that each read a WebSocket variable took %v", steps, elapsed)
 	}
 	// Steps that compute their output name may write anything: they are held
@@ -294,7 +294,7 @@ func TestValidatePreservedImportCredentialEditsBoundsTheCostOfAFamily(t *testing
 	candidate.Parameters[1].Values = []string{"changed"}
 	started = time.Now()
 	expectAccepted(t, candidate, prior)
-	if elapsed := time.Since(started); elapsed > 20*time.Second {
+	if elapsed := time.Since(started); elapsed > importReferenceTimeBudget(20*time.Second) {
 		t.Fatalf("validating %d computed-name steps took %v", steps, elapsed)
 	}
 }
@@ -576,7 +576,7 @@ func TestValidatePreservedImportCredentialEditsBoundsTheCostOfSharedState(t *tes
 	candidate.Parameters[1].Values = []string{"changed"}
 	started := time.Now()
 	expectAccepted(t, candidate, prior)
-	if elapsed := time.Since(started); elapsed > 20*time.Second {
+	if elapsed := time.Since(started); elapsed > importReferenceTimeBudget(20*time.Second) {
 		t.Fatalf("validating %d requests that read table and document state took %v", steps, elapsed)
 	}
 }

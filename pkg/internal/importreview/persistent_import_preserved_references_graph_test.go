@@ -354,7 +354,7 @@ func TestValidatePreservedImportCredentialEditsBoundsTheCostOfAReference(t *test
 		// so the unrelated parameter is held too, and it is decided quickly.
 		started := time.Now()
 		expectRefusal(t, candidate, prior, "actions[0]")
-		if elapsed := time.Since(started); elapsed > 10*time.Second {
+		if elapsed := time.Since(started); elapsed > importReferenceTimeBudget(10*time.Second) {
 			t.Fatalf("validating a 16 KB reference took %v", elapsed)
 		}
 	})
@@ -375,7 +375,7 @@ func TestValidatePreservedImportCredentialEditsBoundsTheCostOfAReference(t *test
 		candidate.Parameters[1].Values = []string{"changed"}
 		started := time.Now()
 		expectAccepted(t, candidate, prior)
-		if elapsed := time.Since(started); elapsed > 15*time.Second {
+		if elapsed := time.Since(started); elapsed > importReferenceTimeBudget(15*time.Second) {
 			t.Fatalf("validating %d requests that read one widely written variable took %v", requests, elapsed)
 		}
 	})

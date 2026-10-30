@@ -509,7 +509,7 @@ func TestValidatePreservedImportCredentialEditsScalesWithCorrelatedRequests(t *t
 
 	started := time.Now()
 	expectAccepted(t, candidate, prior)
-	if elapsed := time.Since(started); elapsed > 20*time.Second {
+	if elapsed := time.Since(started); elapsed > importReferenceTimeBudget(20*time.Second) {
 		t.Fatalf("validating %d correlated requests took %v", requests, elapsed)
 	}
 	candidate.Actions[0].Extractors[0].DefaultValue = stringPointer("attacker.test")
