@@ -13,7 +13,7 @@ vi.mock('../apiClient', () => ({
 }))
 
 import { apiFetch, request, requestWithResponse } from '../apiClient'
-import { useScriptApi } from './useScriptApi'
+import { HAR_IMPORT_TIMEOUT_MS, harImportTimeoutMessage, harImportTimeoutMs, useScriptApi } from './useScriptApi'
 import type { ApplyParameterizationRequest } from '../../types/scriptImports'
 import type { StoredScript } from '../../types/storedContent'
 import { ScriptSaveOutcomeUnknown } from '../../utils/scriptAuthoringRevision'
@@ -415,6 +415,158 @@ describe('useScriptApi import wrappers', () => {
     expect(url).toBe('/scripts/import/har?project_id=project-1&salesforce_native=false&response_format=canonical-v1')
     expect(Array.from((options.body as FormData).keys())).toEqual(['project_id', 'file', 'include_static_assets', 'secondary_file'])
     expect((options.body as FormData).get('secondary_file')).toBe(second)
+  })
+
+  it('bounds HAR imports with a deadline that outlasts the controller and grants upload time', async () => {
+    expect(HAR_IMPORT_TIMEOUT_MS).toBe(330_000)
+    expect(harImportTimeoutMs()).toBe(HAR_IMPORT_TIMEOUT_MS)
+    // Upload time is estimated at 512 KiB/s and capped at the controller's
+    // five-minute upload window, past which the controller drops the upload.
+    expect(harImportTimeoutMs(1)).toBe(HAR_IMPORT_TIMEOUT_MS + 1)
+    expect(harImportTimeoutMs(50 * 1024 * 1024)).toBe(HAR_IMPORT_TIMEOUT_MS + 100_000)
+    expect(harImportTimeoutMs(150 * 1024 * 1024)).toBe(HAR_IMPORT_TIMEOUT_MS + 300_000)
+    expect(harImportTimeoutMs(2 * 300 * 1024 * 1024)).toBe(HAR_IMPORT_TIMEOUT_MS + 300_000)
+    expect(harImportTimeoutMs(-1)).toBe(HAR_IMPORT_TIMEOUT_MS)
+
+    vi.useFakeTimers()
+    const file = new File(['{"log":{}}'], 'first.har')
+    const second = new File(['{"log":{"entries":[]}}'], 'second.har')
+    const timeoutMs = harImportTimeoutMs(file.size + second.size)
+    ;(apiFetch as Mock).mockImplementationOnce(() => new Promise(() => {}))
+    const timedOut = api.importHAR(file, { project_id: 'project-1', secondary_file: second })
+    const assertion = expect(timedOut).rejects.toThrow(harImportTimeoutMessage(timeoutMs))
+    const options = (apiFetch as Mock).mock.calls[0][1] as RequestInit & { timeoutMs?: number }
+    // The deadline is owned by importHAR so it also covers the body read.
+    expect(options.timeoutMs).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(timeoutMs - 1)
+    expect(options.signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await assertion
+    expect(options.signal?.aborted).toBe(true)
+
+    ;(apiFetch as Mock).mockImplementationOnce(() => new Promise(() => {}))
+    const overridden = api.importHAR(file, { project_id: 'project-1', timeoutMs: 60_000 })
+    const overriddenAssertion = expect(overridden).rejects.toThrow('within 1 minute.')
+    await vi.advanceTimersByTimeAsync(60_000)
+    await overriddenAssertion
+  })
+
+  it('keeps the HAR deadline running while the result body is read', async () => {
+    vi.useFakeTimers()
+    const file = new File(['{}'], 'first.har')
+    ;(apiFetch as Mock).mockResolvedValueOnce({ ok: true, json: () => new Promise(() => {}) })
+    const stalled = api.importHAR(file, { project_id: 'project-1', timeoutMs: 1_000 })
+    const assertion = expect(stalled).rejects.toThrow(harImportTimeoutMessage(1_000))
+    await vi.advanceTimersByTimeAsync(1_000)
+    await assertion
+    expect(((apiFetch as Mock).mock.calls[0][1] as RequestInit).signal?.aborted).toBe(true)
+  })
+
+  it('maps the deadline through the real apiFetch for stalled headers and stalled bodies', async () => {
+    const actual = await vi.importActual<typeof import('../apiClient')>('../apiClient')
+    vi.useFakeTimers()
+    const file = new File(['{}'], 'first.har')
+    const timeoutMs = harImportTimeoutMs(file.size)
+    const fetchSignals: AbortSignal[] = []
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal) fetchSignals.push(init.signal)
+      // Model an embedded transport that never settles, even when aborted.
+      return new Promise<Response>(() => {})
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      ;(apiFetch as Mock).mockImplementation(actual.apiFetch)
+      const headers = api.importHAR(file, { project_id: 'project-1' })
+      const headersAssertion = expect(headers).rejects.toThrow(harImportTimeoutMessage(timeoutMs))
+      await vi.advanceTimersByTimeAsync(timeoutMs)
+      await headersAssertion
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchSignals[0]?.aborted).toBe(true)
+
+      // Headers arrive, then the body never finishes.
+      fetchMock.mockImplementationOnce((_input, init) => {
+        if (init?.signal) fetchSignals.push(init.signal)
+        return Promise.resolve(new Response(new ReadableStream({ start() {} }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      })
+      const body = api.importHAR(file, { project_id: 'project-1' })
+      const bodyAssertion = expect(body).rejects.toThrow(harImportTimeoutMessage(timeoutMs))
+      await vi.advanceTimersByTimeAsync(timeoutMs)
+      await bodyAssertion
+      expect(fetchSignals[1]?.aborted).toBe(true)
+
+      // A caller abort ends the import at once with the caller's reason, even
+      // though the transport ignores the abort, and never as a timeout.
+      const controller = new AbortController()
+      const canceled = api.importHAR(file, { project_id: 'project-1', signal: controller.signal })
+      let settled: unknown
+      canceled.catch(error => { settled = error })
+      await vi.advanceTimersByTimeAsync(100)
+      const reason = new DOMException('The operation was aborted.', 'AbortError')
+      controller.abort(reason)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBe(reason)
+      expect(fetchSignals[2]?.aborted).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      ;(apiFetch as Mock).mockReset()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('bounds Salesforce HAR imports with the same deadline and caller signal', async () => {
+    vi.useFakeTimers()
+    const file = new File(['{"log":{}}'], 'capture.har')
+    const timeoutMs = harImportTimeoutMs(file.size)
+    ;(apiFetch as Mock).mockImplementationOnce(() => new Promise(() => {}))
+    const timedOut = api.importSalesforce(file, { project_id: 'project-1' })
+    const assertion = expect(timedOut).rejects.toThrow(harImportTimeoutMessage(timeoutMs, 'salesforce'))
+    const options = (apiFetch as Mock).mock.calls[0][1] as RequestInit & { timeoutMs?: number }
+    expect(options.timeoutMs).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(timeoutMs - 1)
+    expect(options.signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await assertion
+    expect(options.signal?.aborted).toBe(true)
+    expect(harImportTimeoutMessage(timeoutMs, 'salesforce')).toContain('/api/v1/scripts/import/salesforce request')
+
+    const controller = new AbortController()
+    ;(apiFetch as Mock).mockImplementationOnce(() => new Promise(() => {}))
+    const canceled = api.importSalesforce(file, { project_id: 'project-1', signal: controller.signal, timeoutMs: 60_000 })
+    const reason = new DOMException('The operation was aborted.', 'AbortError')
+    controller.abort(reason)
+    await expect(canceled).rejects.toBe(reason)
+    expect(((apiFetch as Mock).mock.calls[1][1] as RequestInit).signal?.aborted).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('passes caller aborts and transport failures through unchanged', async () => {
+    const file = new File(['{}'], 'first.har')
+    const controller = new AbortController()
+    let forwarded: AbortSignal | undefined
+    ;(apiFetch as Mock).mockImplementationOnce((_url: string, options: RequestInit) => new Promise((_resolve, reject) => {
+      forwarded = options.signal ?? undefined
+      forwarded?.addEventListener('abort', () => reject(forwarded?.reason), { once: true })
+    }))
+    const canceled = api.importHAR(file, { project_id: 'project-1', signal: controller.signal })
+    expect(forwarded?.aborted).toBe(false)
+    const reason = new DOMException('The operation was aborted.', 'AbortError')
+    controller.abort(reason)
+    await expect(canceled).rejects.toBe(reason)
+
+    const alreadyAborted = new AbortController()
+    alreadyAborted.abort()
+    ;(apiFetch as Mock).mockImplementationOnce((_url: string, options: RequestInit) => {
+      expect(options.signal?.aborted).toBe(true)
+      return Promise.reject(options.signal?.reason)
+    })
+    await expect(api.importHAR(file, { project_id: 'project-1', signal: alreadyAborted.signal })).rejects.toMatchObject({ name: 'AbortError' })
+
+    const network = new TypeError('Failed to fetch')
+    ;(apiFetch as Mock).mockRejectedValueOnce(network)
+    await expect(api.importHAR(file, { project_id: 'project-1' })).rejects.toBe(network)
+
+    ;(apiFetch as Mock).mockResolvedValueOnce(new Response(JSON.stringify({ error: 'HAR import exceeded the processing limit' }), { status: 504, headers: { 'Content-Type': 'application/json' } }))
+    await expect(api.importHAR(file, { project_id: 'project-1' })).rejects.toThrow('HAR import exceeded the processing limit')
   })
 
   it('sends OpenAPI project scope before file bytes for streaming authorization', async () => {

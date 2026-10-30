@@ -43,6 +43,11 @@ func accessRequirementFingerprintWithScopes(r *http.Request, includeScopes bool)
 		// withDomainFeature wrapper left the golden byte-identical.
 		"featureID=" + req.DomainFeatureID,
 	}
+	if req.NonMultipartMaxBodyBytes > 0 {
+		// The JSON and raw-body envelope of a route whose multipart reader
+		// streams a larger one; only routes that set it carry the part.
+		parts = append(parts, fmt.Sprintf("nonMultipartMaxBody=%d", req.NonMultipartMaxBodyBytes))
+	}
 	if includeScopes {
 		parts = append(parts,
 			"serviceScope="+req.ServiceAccountScope,
@@ -872,7 +877,7 @@ var accessRequirementGolden = map[string]string{
 	"POST /api/v1/scripts/import/enterprise-script-archive/validate":                                     "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=104857600 featureID=script_import.enterprise_archive",
 	"POST /api/v1/scripts/import/eventhubs-capture":                                                      "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520 featureID=script_import.eventhubs_capture",
 	"POST /api/v1/scripts/import/github":                                                                 "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
-	"POST /api/v1/scripts/import/har":                                                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=315621376 featureID=script_import.traffic_har",
+	"POST /api/v1/scripts/import/har":                                                                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=630194176 featureID=script_import.traffic_har nonMultipartMaxBody=315621376",
 	"POST /api/v1/scripts/import/jmeter":                                                                 "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=52428800 featureID=script_import.jmeter",
 	"POST /api/v1/scripts/import/jmeter/save":                                                            "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=134217728 featureID=script_import.jmeter",
 	"POST /api/v1/scripts/import/jmeter/validate":                                                        "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=52428800 featureID=script_import.jmeter",

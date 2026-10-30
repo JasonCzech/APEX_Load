@@ -55,10 +55,12 @@ func TestHARUploadAboveFormerLimitPreservesBytes(t *testing.T) {
 }
 
 func TestHARUploadLimitStillRejectsOversizedCapture(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", io.LimitReader(zeroReader{}, harImportMaxBodyBytes+1))
+	// The envelope fits a capture pair; one capture is still held to the
+	// per-file limit, and the refusal is 413.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", io.LimitReader(zeroReader{}, harImportMaxFileBytes+1))
 	req.Header.Set("Content-Type", "application/octet-stream")
 	resp := httptest.NewRecorder()
-	if _, ok := readHARImportRequest(resp, req); ok || resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "request body too large") {
+	if _, ok := readHARImportRequest(resp, req); ok || resp.Code != http.StatusRequestEntityTooLarge || !strings.Contains(resp.Body.String(), "request body too large") {
 		t.Fatalf("oversized upload accepted or wrong status: %d", resp.Code)
 	}
 }

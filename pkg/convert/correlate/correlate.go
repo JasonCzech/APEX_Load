@@ -7,10 +7,14 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -202,9 +206,23 @@ func DetectChecked(observations []Observation) ([]Correlation, error) {
 // per-response candidate truncation and analysis-budget exhaustion preserve
 // the completed prefix and record degradation warnings.
 func DetectCheckedWithWarnings(observations []Observation) ([]Correlation, []string, error) {
+	return detectCheckedWithWarnings(observations, candidatesCheckedWithTruncation, correlationCandidateWorkers())
+}
+
+// detectCheckedWithWarnings takes the candidate extractor and worker count as
+// parameters so tests can prove the prefetched scan matches the sequential one,
+// including injected extraction errors and panics.
+func detectCheckedWithWarnings(observations []Observation, extract candidateExtractor, workers int) ([]Correlation, []string, error) {
 	if err := validateCorrelationObservations(observations); err != nil {
 		return nil, nil, err
 	}
+	// Candidate discovery is independent per response, so it runs ahead on a
+	// worker pool while the scan below consumes results strictly in index order.
+	// Every order-dependent decision (checkedValues, budgets, break points,
+	// warnings, the first error) is therefore made exactly as in a sequential
+	// scan; work computed past an early return is discarded.
+	discovery := startCandidatePrefetch(observations, extract, workers)
+	defer discovery.stop()
 	checkedValues := map[string]bool{}
 	requests := NewRequestSearch(observations)
 	var searchBytes int64
@@ -224,7 +242,7 @@ scan:
 		if observation.ResponseBody == "" && len(observation.ResponseHeaders) == 0 {
 			continue
 		}
-		candidates, candidatesTruncated, err := candidatesCheckedWithTruncation(observation.ResponseBody, observation.ResponseHeaders)
+		candidates, candidatesTruncated, err := discovery.take(index)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -300,6 +318,156 @@ scan:
 	})
 	uniquifyCorrelationNames(correlations)
 	return correlations, warnings, nil
+}
+
+const (
+	// correlationCandidateWorkerLimit caps the goroutines that precompute
+	// per-response candidate discovery for one detection.
+	correlationCandidateWorkerLimit = 8
+	// correlationCandidateLookaheadPerWorker bounds the discovered-but-unconsumed
+	// results each worker may hold, so peak memory stays a small multiple of the
+	// sequential scan's one candidate slice instead of every response's.
+	correlationCandidateLookaheadPerWorker = 4
+)
+
+type candidateExtractor func(responseBody string, responseHeaders map[string]string) ([]Candidate, bool, error)
+
+func correlationCandidateWorkers() int {
+	return min(runtime.GOMAXPROCS(0), correlationCandidateWorkerLimit)
+}
+
+type candidateDiscovery struct {
+	candidates []Candidate
+	truncated  bool
+	err        error
+	// A worker recovers an extractor panic and keeps only the fact that it
+	// panicked. When the scan reaches that observation it reruns the (pure,
+	// deterministic) extraction on the caller's goroutine, so the panic is
+	// raised as a sequential scan would raise it: same value, and a stack that
+	// points at the failing line rather than at the prefetch. A panic past an
+	// early return is discarded with the result and costs no rerun.
+	panicked bool
+}
+
+// candidatePrefetch runs candidate discovery ahead of DetectCheckedWithWarnings'
+// in-order scan. Workers claim responses in index order, the order the scan
+// consumes them, so the lookahead window always starts at the scan's position
+// and slides with it: the work just ahead of the scan is what runs in
+// parallel, wherever the large responses fall in the recording. The scan
+// claims and computes inline any response no worker has started, so it never
+// waits on an unclaimed result and a full lookahead window cannot deadlock it.
+// With no workers every response is computed inline, which is exactly the
+// sequential scan.
+type candidatePrefetch struct {
+	observations []Observation
+	extract      candidateExtractor
+	workers      int
+	order        []int // observation indexes with response evidence, in index order
+	next         atomic.Int64
+	claimed      []atomic.Bool
+	done         []chan struct{}
+	results      []candidateDiscovery
+	slots        chan struct{} // one token per worker result not yet consumed
+	quit         chan struct{}
+	wg           sync.WaitGroup
+}
+
+func startCandidatePrefetch(observations []Observation, extract candidateExtractor, workers int) *candidatePrefetch {
+	prefetch := &candidatePrefetch{observations: observations, extract: extract}
+	order := make([]int, 0, len(observations))
+	for index, observation := range observations {
+		if observation.ResponseBody != "" || len(observation.ResponseHeaders) > 0 {
+			order = append(order, index)
+		}
+	}
+	workers = min(workers, len(order))
+	if workers < 2 {
+		// One response, or one CPU, gains nothing from a pool.
+		return prefetch
+	}
+	prefetch.workers = workers
+	prefetch.order = order
+	prefetch.claimed = make([]atomic.Bool, len(observations))
+	prefetch.done = make([]chan struct{}, len(observations))
+	for _, index := range order {
+		prefetch.done[index] = make(chan struct{})
+	}
+	prefetch.results = make([]candidateDiscovery, len(observations))
+	prefetch.slots = make(chan struct{}, workers*correlationCandidateLookaheadPerWorker)
+	prefetch.quit = make(chan struct{})
+	prefetch.wg.Add(workers)
+	for range workers {
+		go prefetch.work()
+	}
+	return prefetch
+}
+
+func (prefetch *candidatePrefetch) work() {
+	defer prefetch.wg.Done()
+	for {
+		select {
+		case <-prefetch.quit:
+			return
+		case prefetch.slots <- struct{}{}:
+		}
+		select {
+		case <-prefetch.quit:
+			return
+		default:
+		}
+		position := prefetch.next.Add(1) - 1
+		if position >= int64(len(prefetch.order)) {
+			<-prefetch.slots
+			return
+		}
+		index := prefetch.order[position]
+		if !prefetch.claimed[index].CompareAndSwap(false, true) {
+			// The scan reached this response first and computed it inline.
+			<-prefetch.slots
+			continue
+		}
+		prefetch.results[index] = prefetch.discover(index)
+		close(prefetch.done[index])
+	}
+}
+
+func (prefetch *candidatePrefetch) discover(index int) (result candidateDiscovery) {
+	defer func() {
+		if recover() != nil {
+			result = candidateDiscovery{panicked: true}
+		}
+	}()
+	observation := prefetch.observations[index]
+	result.candidates, result.truncated, result.err = prefetch.extract(observation.ResponseBody, observation.ResponseHeaders)
+	return result
+}
+
+// take returns the discovery result for observations[index]. The scan calls it
+// once per observation with response evidence, in increasing index order.
+func (prefetch *candidatePrefetch) take(index int) ([]Candidate, bool, error) {
+	observation := prefetch.observations[index]
+	if prefetch.workers == 0 || prefetch.claimed[index].CompareAndSwap(false, true) {
+		return prefetch.extract(observation.ResponseBody, observation.ResponseHeaders)
+	}
+	<-prefetch.done[index]
+	result := prefetch.results[index]
+	prefetch.results[index] = candidateDiscovery{}
+	<-prefetch.slots
+	if result.panicked {
+		// Re-raise the worker's panic here, with this goroutine's stack.
+		return prefetch.extract(observation.ResponseBody, observation.ResponseHeaders)
+	}
+	return result.candidates, result.truncated, result.err
+}
+
+// stop discards unconsumed work and waits for in-flight discovery, so no
+// worker outlives the detection that started it.
+func (prefetch *candidatePrefetch) stop() {
+	if prefetch.workers == 0 {
+		return
+	}
+	close(prefetch.quit)
+	prefetch.wg.Wait()
 }
 
 type observationSearch struct {
@@ -2258,7 +2426,7 @@ func xmlCandidatesWithTruncation(body string) ([]Candidate, bool) {
 	}
 	var attributeMatches [][]int
 	if strings.Contains(body, "=") && strings.Contains(body, `"`) {
-		attributeMatches = xmlAttrTokenPattern.FindAllStringSubmatchIndex(body, remaining+1)
+		attributeMatches = xmlAttrTokenMatches(body, remaining+1)
 	}
 	if len(attributeMatches) > remaining {
 		attributeMatches = attributeMatches[:remaining]
@@ -2297,6 +2465,91 @@ func xmlCandidatesWithTruncation(body string) ([]Candidate, bool) {
 		truncated = true
 	}
 	return candidates, truncated
+}
+
+// xmlAttrTokenMatches returns exactly what
+// xmlAttrTokenPattern.FindAllStringSubmatchIndex(body, n) returns, without
+// running the pattern over the whole body. The pattern has no literal prefix,
+// so the unanchored matcher steps through every byte of a large response, and
+// on multi-megabyte minified JavaScript that dominated HAR import time.
+//
+// Every match ends in `=\s*"[^"]{6,}"`, and everything before its `=` is
+// name runes (with an optional `prefix:`) followed by whitespace. So a match
+// lies inside the window that runs from the start of the name run before an
+// `=\s*"` site to the first quote after that site's opening quote, and windows
+// of successive sites start in site order. The name run is bounded by a rune
+// that is not a word character, which is also how `\b` sees the window's start.
+// Running the same pattern on each window therefore yields the same matches,
+// in the same order, with the same submatches.
+func xmlAttrTokenMatches(body string, n int) [][]int {
+	if n == 0 {
+		return nil
+	}
+	var matches [][]int
+	for search := 0; search < len(body) && (n < 0 || len(matches) < n); {
+		eq := strings.IndexByte(body[search:], '=')
+		if eq < 0 {
+			break
+		}
+		eq += search
+		search = eq + 1
+		quote := eq + 1
+		for quote < len(body) && isRegexpPerlSpace(body[quote]) {
+			quote++
+		}
+		if quote >= len(body) || body[quote] != '"' {
+			continue
+		}
+		closing := strings.IndexByte(body[quote+1:], '"')
+		if closing < 0 {
+			// No later site can close its value either.
+			break
+		}
+		end := quote + 1 + closing + 1
+		start := eq
+		for start > 0 && isRegexpPerlSpace(body[start-1]) {
+			start--
+		}
+		for start > 0 {
+			r, size := utf8.DecodeLastRuneInString(body[:start])
+			if !xmlAttrNameRune(r) {
+				break
+			}
+			start -= size
+		}
+		// A match ends at a quote and the run before a later site cannot cross
+		// one, so a window never starts inside an earlier match.
+		match := xmlAttrTokenPattern.FindStringSubmatchIndex(body[start:end])
+		if match == nil {
+			continue
+		}
+		for i := range match {
+			if match[i] >= 0 {
+				match[i] += start
+			}
+		}
+		matches = append(matches, match)
+		search = match[1]
+	}
+	return matches
+}
+
+// xmlAttrNameRune reports whether r can appear in the attribute name (or its
+// prefix) of xmlAttrTokenPattern. Under (?i), [A-Za-z] also matches U+017F
+// (folds to s) and U+212A (folds to k).
+func xmlAttrNameRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	case r == '_', r == '.', r == '-', r == ':', r == 'ſ', r == 'K':
+		return true
+	}
+	return false
+}
+
+// isRegexpPerlSpace matches RE2's \s class: [\t\n\f\r ].
+func isRegexpPerlSpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\f' || b == '\r'
 }
 
 func regexpIndexedSubmatch(input string, match []int, group int) string {

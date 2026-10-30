@@ -8,8 +8,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+// HARRequestBodyNotExportedCode gates a HAR request whose recorded
+// Content-Length says it sent a body that the HAR export left out: the entry
+// has no postData text or params. Browser HAR exports can drop large request
+// bodies this way; replaying the step would send an empty body.
+const HARRequestBodyNotExportedCode = "har_request_body_not_exported"
 
 // A recorded Content-Length is transport framing that Go regenerates after
 // correlation and template expansion. It is dropped only when the captured
@@ -21,6 +28,16 @@ import (
 func normalizeHARContentLength(ex *exchange, requestData map[string]any, diagnostics *diag.Collector, location string) {
 	recorded, ok := harRecordedContentLength(ex.HeaderList)
 	if !ok {
+		return
+	}
+	if recorded > 0 && harRequestBodyNotExported(ex, requestData) {
+		// The header is not the problem, so it is not left for the framing
+		// review: the body it framed is missing, which gates the step.
+		dropHARRequestHeaders(ex, "Content-Length")
+		setHARRequestMetadata(ex, "har.request.recorded_content_length", recorded)
+		finding := harRequestBodyNotExportedFinding(ex.SourceEntryID, recorded)
+		ex.ReviewFindings = append(ex.ReviewFindings, finding)
+		diagnostics.Add(diag.Blocker, "HAR request body", fmt.Sprintf("HAR entry %d", ex.SourceEntryID), finding.Detail)
 		return
 	}
 	length := int64(len(ex.Body))
@@ -70,6 +87,43 @@ func normalizeHARContentLength(ex *exchange, requestData map[string]any, diagnos
 	}
 	if strings.ContainsRune(ex.Body, utf8.RuneError) {
 		diagnostics.Add(diag.Warning, "HAR request body", location, fmt.Sprintf("request body text contains Unicode replacement characters and has %d bytes against a recorded Content-Length of %d: binary bytes were lost when the HAR was written, so this request cannot be replayed as recorded. Re-capture with binary bodies preserved, or remove the step", length, recorded))
+	}
+}
+
+// harRequestBodyNotExported reports a request that recorded a body (the
+// caller checked its Content-Length) while its HAR entry kept none: no
+// postData, or postData with neither text nor params.
+func harRequestBodyNotExported(ex *exchange, requestData map[string]any) bool {
+	if !harMethodCarriesBody(ex.Method) || ex.Body != "" || len(ex.FileAssets) > 0 {
+		return false
+	}
+	postData, ok := requestData["postData"].(map[string]any)
+	if !ok {
+		return true
+	}
+	params, _ := postData["params"].([]any)
+	return bodyValue(postData["text"]) == "" && len(params) == 0
+}
+
+// harMethodCarriesBody reports whether requests with this method normally
+// send content; a Content-Length on the others is left to the framing review.
+func harMethodCarriesBody(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "", "GET", "HEAD", "OPTIONS", "TRACE", "CONNECT":
+		return false
+	}
+	return true
+}
+
+// harRequestBodyNotExportedFinding is the execution gate for a request whose
+// body the HAR export did not include, in the shape of
+// requestimport.RecordedBodyTruncatedFinding.
+func harRequestBodyNotExportedFinding(entryID int, recorded int64) importreview.Finding {
+	return importreview.Finding{
+		Code: HARRequestBodyNotExportedCode, ReasonCode: HARRequestBodyNotExportedCode,
+		Severity: diag.Blocker, Gate: importreview.GateExecution,
+		Source: "har", SourceRef: fmt.Sprintf("entry-%d", entryID), Resolution: "recapture_body",
+		Detail: fmt.Sprintf("The HAR export did not include this request's body (recorded Content-Length %d bytes), so replaying it would send an empty body. Re-capture the request with its body (browser HAR exports can leave large request bodies out; the APEX recorder keeps them), or remove this step.", recorded),
 	}
 }
 

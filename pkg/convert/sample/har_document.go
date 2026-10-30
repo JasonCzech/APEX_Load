@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/clientids"
@@ -26,6 +28,16 @@ type HARDocument struct {
 	statusErrors   []error
 	byteOrderMark  bool
 	digest         [32]byte
+
+	// The response evidence scans are computed once per document: conversion
+	// and the import review both ask for them. Callers get their own maps.
+	timestampsOnce sync.Once
+	timestamps     clienttimestamps.Evidence
+	timestampsErr  error
+	uuidsOnce      sync.Once
+	uuids          map[string]bool
+	uuidsJudged    bool
+	uuidsErr       error
 }
 
 func ParseHARDocument(content string) (*HARDocument, error) {
@@ -112,6 +124,13 @@ func (d *HARDocument) SourceObservations(includeStaticAssets bool) ([]HARSourceO
 // ClientTimestamps preserves the timestamp adapter's canonical log.entries
 // interpretation, including its refusal of malformed typed evidence.
 func (d *HARDocument) ClientTimestamps() (clienttimestamps.Evidence, error) {
+	d.timestampsOnce.Do(func() { d.timestamps, d.timestampsErr = d.scanClientTimestamps() })
+	evidence := d.timestamps
+	evidence.Server = maps.Clone(evidence.Server)
+	return evidence, d.timestampsErr
+}
+
+func (d *HARDocument) scanClientTimestamps() (clienttimestamps.Evidence, error) {
 	evidence := clienttimestamps.Evidence{Server: map[string]bool{}}
 	if d.byteOrderMark {
 		return evidence, fmt.Errorf("timestamp evidence has a JSON byte order mark")
@@ -153,6 +172,11 @@ func (d *HARDocument) ClientTimestamps() (clienttimestamps.Evidence, error) {
 }
 
 func (d *HARDocument) ServerUUIDs() (map[string]bool, bool, error) {
+	d.uuidsOnce.Do(func() { d.uuids, d.uuidsJudged, d.uuidsErr = d.scanServerUUIDs() })
+	return maps.Clone(d.uuids), d.uuidsJudged, d.uuidsErr
+}
+
+func (d *HARDocument) scanServerUUIDs() (map[string]bool, bool, error) {
 	evidence := clientids.ServerEvidence{}
 	if d.evidenceErr != nil {
 		return nil, false, d.evidenceErr
