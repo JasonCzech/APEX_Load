@@ -9,8 +9,11 @@
     "browser_context.go",
     "connection.go",
     "frame.go",
+    "go.mod",
+    "go.sum",
     "request.go",
-    "response.go"
+    "response.go",
+    "transport.go"
   ],
   "sources": [
     {
