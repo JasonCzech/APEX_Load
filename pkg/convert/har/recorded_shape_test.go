@@ -97,3 +97,55 @@ func TestConvertAppliesRecordingProfile(t *testing.T) {
 		t.Fatalf("the project rule must correlate the order id: %q", actions[1].Target)
 	}
 }
+
+// Step transactions shape a copy of the script to learn which requests fold
+// into background conversations; that trial must not touch the real script,
+// or a value received over a WebSocket and sent later in a header loses its
+// correlation.
+func TestStepTransactionsKeepWebSocketFrameCorrelations(t *testing.T) {
+	har := map[string]any{"log": map[string]any{"version": "1.2", "creator": map[string]any{"name": "Chrome"}, "entries": []any{
+		map[string]any{
+			"startedDateTime": "2026-01-01T00:00:00.000Z", "time": 20,
+			"request":  map[string]any{"method": "GET", "url": "https://chat.example.test/home", "httpVersion": "HTTP/1.1", "headers": []any{}},
+			"response": map[string]any{"status": 200, "httpVersion": "HTTP/1.1", "headers": []any{map[string]any{"name": "Content-Type", "value": "text/html"}}, "content": map[string]any{"mimeType": "text/html", "text": "<html></html>"}},
+		},
+		map[string]any{
+			"startedDateTime": "2026-01-01T00:00:01.000Z", "time": 5000, "_resourceType": "websocket",
+			"request":  map[string]any{"method": "GET", "url": "wss://chat.example.test/socket", "httpVersion": "HTTP/1.1", "headers": []any{map[string]any{"name": "Upgrade", "value": "websocket"}}},
+			"response": map[string]any{"status": 101, "httpVersion": "HTTP/1.1", "headers": []any{map[string]any{"name": "Upgrade", "value": "websocket"}}, "content": map[string]any{}},
+			"_webSocketMessages": []any{
+				map[string]any{"type": "receive", "time": 1767225601.2, "opcode": 1, "data": `{"session":"wsTokenValue12345"}`},
+			},
+		},
+		map[string]any{
+			"startedDateTime": "2026-01-01T00:00:03.000Z", "time": 20,
+			"request":  map[string]any{"method": "GET", "url": "https://chat.example.test/api/data", "httpVersion": "HTTP/1.1", "headers": []any{map[string]any{"name": "X-Session", "value": "wsTokenValue12345"}}},
+			"response": map[string]any{"status": 200, "httpVersion": "HTTP/1.1", "headers": []any{map[string]any{"name": "Content-Type", "value": "application/json"}}, "content": map[string]any{"mimeType": "application/json", "text": "[]"}},
+		},
+	}}}
+	raw, _ := json.Marshal(har)
+	for _, steps := range []bool{false, true} {
+		result, err := Convert(raw, ConvertOptions{StepTransactions: &steps})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var extractor bool
+		var header string
+		for _, action := range result.Script.Actions {
+			if action.Type == "ws_receive" && len(action.Extractors) > 0 {
+				extractor = true
+			}
+			if action.Type == "request" && strings.Contains(action.Target, "/api/data") {
+				header = action.Headers["X-Session"]
+				for _, entry := range action.HeaderList {
+					if strings.EqualFold(entry.Name, "X-Session") {
+						header = entry.Value
+					}
+				}
+			}
+		}
+		if !extractor || !strings.Contains(header, "{{var.") {
+			t.Fatalf("step transactions %v: receive extractor %v, X-Session %q, want the frame value correlated", steps, extractor, header)
+		}
+	}
+}

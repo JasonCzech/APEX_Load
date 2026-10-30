@@ -159,33 +159,48 @@ func (r *DiffReport) UnhandledRequestCount(include func(DiffRequestInput) bool) 
 // is absent and one it still sends as recorded is present.
 type ScriptValues struct {
 	fields map[string]bool
-	// unread holds the bodies whose fields could not be read even with their
-	// templates neutralized; a value they contain counts as sent.
-	unread []string
+	// opaque indexes the request text whose fields could not be read even
+	// with templates neutralized (a body or a JSON form value); a value it
+	// holds counts as sent.
+	opaque diffTokenIndex
+	// opaqueText joins that text for values the token index cannot answer,
+	// searched within remaining bytes; past them a value counts as sent.
+	opaqueText string
+	remaining  *int64
 }
 
-// Sends reports whether the script still sends value as recorded.
+// Sends reports whether the script still sends value as recorded. Where it
+// cannot tell (the search budget is spent), it answers yes, so a value is
+// reported rather than taken for handled.
 func (v ScriptValues) Sends(value string) bool {
 	if v.fields[value] {
 		return true
 	}
-	for _, body := range v.unread {
-		if strings.Contains(body, value) || strings.Contains(body, url.QueryEscape(value)) {
-			return true
-		}
+	if v.opaqueText == "" {
+		return false
 	}
-	return false
+	if found, answered := v.opaque.lookup(value); answered {
+		return found
+	}
+	*v.remaining -= int64(len(v.opaqueText))
+	if *v.remaining < 0 {
+		return true
+	}
+	return strings.Contains(v.opaqueText, value) || strings.Contains(v.opaqueText, url.QueryEscape(value))
 }
 
-// ScriptRequestValues reads what the script's requests send. A JSON body the
+// ScriptRequestValues reads what the script's requests send. JSON the
 // import's own rewrites made invalid (a number replaced by an unquoted
-// template) is read with its templates neutralized; a body that still cannot
-// be read is kept whole, so a value it holds is never taken for handled.
+// template) is read with its templates neutralized, in a body or a form or
+// query value; text that still cannot be read is indexed whole, so a value it
+// holds is never taken for handled.
 func ScriptRequestValues(script *dsl.Script) ScriptValues {
-	values := ScriptValues{fields: map[string]bool{}}
+	remaining := diffInputMaxResponseScanBytes
+	values := ScriptValues{fields: map[string]bool{}, opaque: newDiffTokenIndex(), remaining: &remaining}
 	if script == nil {
 		return values
 	}
+	var opaque strings.Builder
 	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
 		action := ref.Action
 		if action == nil && ref.Request != nil {
@@ -209,32 +224,20 @@ func ScriptRequestValues(script *dsl.Script) ScriptValues {
 				headers[header.Name] = header.Value
 			}
 		}
-		emit := func(_, value string) { values.fields[value] = true }
-		body := action.Body
-		if strings.Contains(body, "{{") && !diffBodyReadable(body) {
-			if neutral := diffNeutralizeJSONTemplates(body); diffBodyReadable(neutral) {
-				body = neutral
-			} else {
-				values.unread = append(values.unread, body)
+		requestFieldValues(action.Target, headers, action.Body, func(_, value string) {
+			values.fields[value] = true
+		}, func(text string) {
+			if int64(opaque.Len()+len(text)) > diffInputMaxResponseScanBytes {
+				return
 			}
-		}
-		requestFieldValues(action.Target, headers, body, emit)
+			values.opaque.add(text, 0)
+			opaque.WriteString(text)
+			opaque.WriteByte(0)
+		})
 		return nil
 	})
+	values.opaqueText = opaque.String()
 	return values
-}
-
-// diffBodyReadable reports a body requestFieldValues reads fields from: JSON,
-// or a single-line form.
-func diffBodyReadable(body string) bool {
-	if _, ok := diffDecodeJSON(body); ok {
-		return true
-	}
-	trimmed := strings.TrimSpace(body)
-	if trimmed != "" && (trimmed[0] == '{' || trimmed[0] == '[') {
-		return false
-	}
-	return !strings.ContainsAny(body, "\r\n") && strings.Contains(body, "=")
 }
 
 // diffNeutralizeJSONTemplates replaces each {{...}} template outside a JSON
@@ -316,7 +319,7 @@ func diffRequestInputs(ctx context.Context, baseline, comparison []sample.HARSou
 			}
 			comparisonValues[field][diffValueHash(value)] = true
 			stored++
-		})
+		}, nil)
 	}
 	responses := &diffResponseScan{observations: baseline}
 	changed := map[string]map[string]*diffInputValue{}
@@ -338,7 +341,7 @@ func diffRequestInputs(ctx context.Context, baseline, comparison []sample.HARSou
 		comparisonFields := map[string][]string{}
 		requestFieldValues(counterpart.RequestURL, counterpart.RequestHeaders, counterpart.RequestBody, func(field, value string) {
 			comparisonFields[field] = append(comparisonFields[field], value)
-		})
+		}, nil)
 		seen := map[string]int{}
 		requestFieldValues(observation.RequestURL, observation.RequestHeaders, observation.RequestBody, func(field, value string) {
 			ordinal := seen[field]
@@ -371,7 +374,7 @@ func diffRequestInputs(ctx context.Context, baseline, comparison []sample.HARSou
 			if last := len(recorded.requests) - 1; last < 0 || recorded.requests[last] != observation.ID {
 				recorded.requests = append(recorded.requests, observation.ID)
 			}
-		})
+		}, nil)
 	}
 	inputs = make([]DiffRequestInput, 0, len(changed))
 	for field, values := range changed {
@@ -435,7 +438,7 @@ var diffIgnoredHeaders = map[string]bool{
 // requestFieldValues visits each field value a request sends: query
 // parameters, application headers, and form or JSON body fields, descending
 // into JSON values. Field names carry occurrence order through visit order.
-func requestFieldValues(rawURL string, headers map[string]string, body string, visit func(field, value string)) {
+func requestFieldValues(rawURL string, headers map[string]string, body string, visit func(field, value string), opaque func(text string)) {
 	budget := diffInputMaxFieldsPerRequest
 	emit := func(field, value string) {
 		if budget <= 0 {
@@ -449,7 +452,7 @@ func requestFieldValues(rawURL string, headers map[string]string, body string, v
 	}
 	if _, query, found := strings.Cut(rawURL, "?"); found {
 		query, _, _ = strings.Cut(query, "#")
-		diffFormFields("query:", query, emit)
+		diffFormFields("query:", query, emit, opaque)
 	}
 	names := make([]string, 0, len(headers))
 	for name := range headers {
@@ -471,17 +474,40 @@ func requestFieldValues(rawURL string, headers map[string]string, body string, v
 	if body == "" || len(body) > diffInputMaxBodyBytes {
 		return
 	}
-	if decoded, ok := diffDecodeJSON(body); ok {
+	if decoded, ok := diffDecodeTemplatedJSON(body); ok {
 		diffJSONFields("body", decoded, 0, emit)
 		return
 	}
-	if strings.ContainsAny(body, "\r\n") || !strings.Contains(body, "=") {
+	if diffJSONShaped(body) || strings.ContainsAny(body, "\r\n") || !strings.Contains(body, "=") {
+		// JSON that does not decode, or a body that is no form: its fields
+		// cannot be read. A script's templated body is still text it sends.
+		if opaque != nil && strings.Contains(body, "{{") {
+			opaque(body)
+		}
 		return
 	}
-	diffFormFields("form:", body, emit)
+	diffFormFields("form:", body, emit, opaque)
 }
 
-func diffFormFields(prefix, encoded string, emit func(field, value string)) {
+// diffJSONShaped reports text that starts like a JSON object or array.
+func diffJSONShaped(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed != "" && (trimmed[0] == '{' || trimmed[0] == '[')
+}
+
+// diffDecodeTemplatedJSON decodes JSON text, retrying with its templates
+// neutralized when a template made it invalid (diffNeutralizeJSONTemplates).
+func diffDecodeTemplatedJSON(text string) (any, bool) {
+	if decoded, ok := diffDecodeJSON(text); ok {
+		return decoded, true
+	}
+	if !strings.Contains(text, "{{") || !diffJSONShaped(text) {
+		return nil, false
+	}
+	return diffDecodeJSON(diffNeutralizeJSONTemplates(text))
+}
+
+func diffFormFields(prefix, encoded string, emit func(field, value string), opaque func(text string)) {
 	for _, pair := range strings.Split(encoded, "&") {
 		if pair == "" {
 			continue
@@ -496,9 +522,12 @@ func diffFormFields(prefix, encoded string, emit func(field, value string)) {
 			continue
 		}
 		field := prefix + name
-		if decoded, ok := diffDecodeJSON(value); ok {
+		if decoded, ok := diffDecodeTemplatedJSON(value); ok {
 			diffJSONFields(field, decoded, 0, emit)
 			continue
+		}
+		if opaque != nil && diffJSONShaped(value) && strings.Contains(value, "{{") {
+			opaque(value)
 		}
 		emit(field, value)
 	}
@@ -674,12 +703,10 @@ type diffResponseScan struct {
 	// firstSkipped is the first response left out to fit the budget, or
 	// len(observations) when none was.
 	firstSkipped int
-	// tokens maps each indexed token to the first response holding it;
-	// tokensComplete is false once the token limit stopped the index.
-	tokens         map[string]int
-	tokensComplete bool
-	first          map[string]diffResponseHit
-	remaining      int64
+	// tokens maps each indexed token to the first response holding it.
+	tokens    diffTokenIndex
+	first     map[string]diffResponseHit
+	remaining int64
 }
 
 const (
@@ -725,8 +752,7 @@ func (s *diffResponseScan) build() {
 	s.first = map[string]diffResponseHit{}
 	s.remaining = diffInputMaxResponseScanBytes
 	s.firstSkipped = len(s.observations)
-	s.tokens = map[string]int{}
-	s.tokensComplete = true
+	s.tokens = newDiffTokenIndex()
 	s.included = make([]bool, len(s.observations))
 	var total int64
 	for index, observation := range s.observations {
@@ -741,9 +767,9 @@ func (s *diffResponseScan) build() {
 		total += size
 		s.included[index] = true
 		// Tokens are cut from the observation's own strings.
-		s.indexTokens(observation.ResponseBody, index)
+		s.tokens.add(observation.ResponseBody, index)
 		for _, value := range observation.ResponseHeaders {
-			s.indexTokens(value, index)
+			s.tokens.add(value, index)
 		}
 	}
 	s.joinedSize = int(total)
@@ -793,7 +819,22 @@ func diffTokenDelimiter(c byte) bool {
 	return false
 }
 
-func (s *diffResponseScan) indexTokens(text string, index int) {
+// diffTokenIndex maps the tokens of indexed text to the first id that holds
+// them. A token is text between quotes, spaces and URL or markup delimiters;
+// its percent-decoded form, and the pieces of both cut at path and dotted-name
+// separators, are indexed too, so a value found inside a path, an encoded URL
+// or a long href is answered by lookup.
+type diffTokenIndex struct {
+	tokens   map[string]int
+	complete bool
+}
+
+func newDiffTokenIndex() diffTokenIndex {
+	return diffTokenIndex{tokens: map[string]int{}, complete: true}
+}
+
+// add indexes text under id; false once the token limit stops the index.
+func (x *diffTokenIndex) add(text string, id int) bool {
 	for start := 0; start < len(text); {
 		for start < len(text) && diffTokenDelimiter(text[start]) {
 			start++
@@ -802,43 +843,71 @@ func (s *diffResponseScan) indexTokens(text string, index int) {
 		for end < len(text) && !diffTokenDelimiter(text[end]) {
 			end++
 		}
-		if length := end - start; length >= diffInputMinSearchBytes && length <= diffInputMaxTokenBytes {
-			if !s.indexToken(text[start:end], index) {
-				return
-			}
-			// A value also appears inside a path or dotted name
-			// (/sobjects/Account/001..., a0B.Name), so the pieces of a token
-			// cut at those separators are indexed too.
+		if end-start >= diffInputMinSearchBytes {
 			token := text[start:end]
-			for pieceStart := 0; pieceStart < len(token); {
-				pieceEnd := pieceStart
-				for pieceEnd < len(token) && !diffTokenSeparator(token[pieceEnd]) {
-					pieceEnd++
+			if !x.addToken(token, id) {
+				return false
+			}
+			if strings.Contains(token, "%") {
+				if decoded, err := url.PathUnescape(token); err == nil && decoded != token && !x.addToken(decoded, id) {
+					return false
 				}
-				if pieceEnd-pieceStart >= diffInputMinSearchBytes && pieceEnd-pieceStart < len(token) {
-					if !s.indexToken(token[pieceStart:pieceEnd], index) {
-						return
-					}
-				}
-				pieceStart = pieceEnd + 1
 			}
 		}
 		start = end
 	}
+	return true
 }
 
-// indexToken records the first response holding token; false once the token
-// limit stops the index.
-func (s *diffResponseScan) indexToken(token string, index int) bool {
-	if _, seen := s.tokens[token]; seen {
-		return true
-	}
-	if len(s.tokens) >= diffInputMaxResponseTokens {
-		s.tokensComplete = false
+// addToken indexes a token (when short enough) and its pieces.
+func (x *diffTokenIndex) addToken(token string, id int) bool {
+	if len(token) <= diffInputMaxTokenBytes && !x.put(token, id) {
 		return false
 	}
-	s.tokens[token] = index
+	for pieceStart := 0; pieceStart < len(token); {
+		pieceEnd := pieceStart
+		for pieceEnd < len(token) && !diffTokenSeparator(token[pieceEnd]) {
+			pieceEnd++
+		}
+		if length := pieceEnd - pieceStart; length >= diffInputMinSearchBytes && length <= diffInputMaxTokenBytes && length < len(token) {
+			if !x.put(token[pieceStart:pieceEnd], id) {
+				return false
+			}
+		}
+		pieceStart = pieceEnd + 1
+	}
 	return true
+}
+
+func (x *diffTokenIndex) put(token string, id int) bool {
+	if x.tokens == nil {
+		*x = newDiffTokenIndex()
+	}
+	if _, seen := x.tokens[token]; seen {
+		return true
+	}
+	if len(x.tokens) >= diffInputMaxResponseTokens {
+		x.complete = false
+		return false
+	}
+	x.tokens[token] = id
+	return true
+}
+
+// lookup reports whether a value is indexed; answered is false when the index
+// cannot tell (a value with delimiters, or an index the limit stopped).
+func (x *diffTokenIndex) lookup(value string) (found, answered bool) {
+	_, found, answered = x.first(value)
+	return found, answered
+}
+
+// first is the first id holding value, under the same rules as lookup.
+func (x *diffTokenIndex) first(value string) (id int, found, answered bool) {
+	if !x.complete || !diffTokenValue(value) {
+		return 0, false, false
+	}
+	id, found = x.tokens[value]
+	return id, found, true
 }
 
 // diffTokenSeparator reports a byte that separates the pieces of a response
@@ -876,8 +945,8 @@ func (s *diffResponseScan) firstResponse(value string) diffResponseHit {
 	best := -1
 	searched := true
 	for _, form := range forms {
-		if s.tokensComplete && diffTokenValue(form) {
-			if at, found := s.tokens[form]; found && (best < 0 || at < best) {
+		if at, found, answered := s.tokens.first(form); answered {
+			if found && (best < 0 || at < best) {
 				best = at
 			}
 			continue

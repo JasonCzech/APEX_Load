@@ -92,6 +92,9 @@ func ApplySuggestions(script *dsl.Script, suggestions []Suggestion, selected map
 // all of its reviewed replacements, and that a secret/data replacement cannot
 // silently consume text owned by a correlation (or vice versa).
 func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Suggestion, selected map[string]bool) error {
+	// Locations read request groups' requests many times; decode JSON-shaped
+	// groups once, on a copy, instead of once per location.
+	script = scriptWithTypedGroups(script)
 	type source struct {
 		section     string
 		actionIndex int
@@ -943,4 +946,36 @@ func locationDiffPath(location Location) string {
 		prefix += fmt.Sprintf("/params/requests/%d", *location.RequestIndex)
 	}
 	return prefix + "/" + strings.ReplaceAll(location.Field, ".", "/")
+}
+
+// scriptWithTypedGroups is the script itself when every request group holds
+// typed requests, or a copy whose JSON-shaped groups were decoded once.
+func scriptWithTypedGroups(script *dsl.Script) *dsl.Script {
+	if script == nil {
+		return script
+	}
+	jsonShaped := false
+	for _, actions := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {
+		for index := range actions {
+			if actions[index].Type != "http_sequence" || actions[index].Params == nil {
+				continue
+			}
+			if _, typed := actions[index].Params["requests"].([]dsl.Action); !typed {
+				jsonShaped = true
+			}
+		}
+	}
+	if !jsonShaped {
+		return script
+	}
+	clone, err := cloneScript(script)
+	if err != nil {
+		return script
+	}
+	for _, actions := range [][]dsl.Action{clone.Init, clone.Actions, clone.Teardown} {
+		for index := range actions {
+			groupRequests(&actions[index], true)
+		}
+	}
+	return clone
 }

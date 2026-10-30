@@ -1542,3 +1542,35 @@ func TestTransparentConcurrentHTTPGroupKeepsTheIterationTransaction(t *testing.T
 		t.Fatalf("transactions = %v, want only the iteration transaction", names)
 	}
 }
+
+// In per_action mode every action is a transaction; a transparent group's
+// requests were actions before the import grouped them, so each still
+// records its own.
+func TestTransparentConcurrentHTTPGroupRecordsEachRequestPerAction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"value":"v"}`)
+	}))
+	defer server.Close()
+	runLogic := dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vu := newConcurrentVU(t, server.URL)
+	_, group, _ := concurrentActions()
+	group.Metadata = map[string]any{dsl.HTTPSequenceTransparentMetadataKey: true}
+	children := group.Params["requests"].([]dsl.Action)
+	sink := &sequenceCaptureSink{}
+	vu.ResultSink = sink
+	vu.ExecutionGoals = NewExecutionGoalLimiter(runLogic, cancel)
+	vu.HardStopCtx = context.Background()
+	vu.ActionBoundaryCtx = ctx
+	vu.Script.Config.RunLogic = runLogic
+	vu.Script.Actions = []dsl.Action{group}
+	vu.Run(ctx)
+	var names []string
+	for _, transaction := range sink.transactions {
+		names = append(names, transaction.ActionName)
+	}
+	if len(names) != len(children) || names[0] != children[0].Name {
+		t.Fatalf("transactions = %v, want one per group request", names)
+	}
+}

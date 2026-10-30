@@ -42,7 +42,24 @@ func detectUncapturedAuraTokenCorrelations(observations []correlate.Observation,
 	correlations := make([]correlate.Correlation, 0)
 	lastBootstrap := map[string]int{}
 	decided := map[string]bool{}
+	// firstERICSend is the first request that sends each value in an ERIC
+	// cookie, filled as the pass goes, so the evidence check stays linear.
+	firstERICSend := map[string]int{}
 	for index, observation := range observations {
+		if cookie := auraTokenHeader(observation.RequestHeaders, "Cookie"); strings.Contains(cookie, "ERIC_") {
+			if err := budget.chargeSearchBytes(int64(len(cookie))); err != nil {
+				return correlations, err
+			}
+			for _, pair := range strings.Split(cookie, ";") {
+				name, value, _ := strings.Cut(strings.TrimSpace(pair), "=")
+				value = strings.Trim(value, `"`)
+				if strings.Contains(name, "ERIC_") && value != "" {
+					if _, seen := firstERICSend[value]; !seen {
+						firstERICSend[value] = index
+					}
+				}
+			}
+		}
 		parsed, err := url.Parse(observation.RequestURL)
 		if err != nil || parsed.Host == "" {
 			continue
@@ -65,7 +82,7 @@ func detectUncapturedAuraTokenCorrelations(observations []correlate.Observation,
 		}
 		decided[token] = true
 		producer, found := lastBootstrap[host]
-		if !found || len(correlations) >= limit || auraTokenCookieEvidenceAgainst(observations, producer, index, token) {
+		if !found || len(correlations) >= limit || auraTokenCookieEvidenceAgainst(observations[producer], firstERICSend, producer, token) {
 			continue
 		}
 		if err := budget.chargeCandidates(1); err != nil {
@@ -147,28 +164,19 @@ func isAuraPath(path string) bool {
 // auraTokenCookieEvidenceAgainst reports a capture that shows the bootstrap
 // did not issue the token: its response kept Set-Cookie lines but none sets an
 // ERIC cookie (an export that keeps cookies, with the browser already holding
-// it), or a request up to the token's first use already sends the token in an
-// ERIC cookie. Inferring the cookie then would fail every iteration at the
+// it), or a request up to and including the bootstrap request already sent the
+// token in an ERIC cookie. A request after the bootstrap sending it is what a
+// bootstrap that issued it looks like, so it is no evidence against. Inferring
+// the cookie against the evidence would fail every iteration at the
 // bootstrap, so the token is left to the stale-token warning.
-func auraTokenCookieEvidenceAgainst(observations []correlate.Observation, producer, consumer int, token string) bool {
-	if setCookie := auraTokenHeader(observations[producer].ResponseHeaders, "Set-Cookie"); setCookie != "" {
+func auraTokenCookieEvidenceAgainst(bootstrap correlate.Observation, firstERICSend map[string]int, producer int, token string) bool {
+	if setCookie := auraTokenHeader(bootstrap.ResponseHeaders, "Set-Cookie"); setCookie != "" {
 		if !auraTokenCookiePattern.MatchString("Set-Cookie: " + strings.ReplaceAll(setCookie, "\n", "\nSet-Cookie: ")) {
 			return true
 		}
 	}
-	for index := 0; index <= consumer && index < len(observations); index++ {
-		cookie := auraTokenHeader(observations[index].RequestHeaders, "Cookie")
-		if cookie == "" || !strings.Contains(cookie, "ERIC_") {
-			continue
-		}
-		for _, pair := range strings.Split(cookie, ";") {
-			name, value, _ := strings.Cut(strings.TrimSpace(pair), "=")
-			if strings.Contains(name, "ERIC_") && strings.Trim(value, `"`) == token {
-				return true
-			}
-		}
-	}
-	return false
+	first, sent := firstERICSend[token]
+	return sent && first <= producer
 }
 
 var auraTokenCookiePattern = regexp.MustCompile(auraTokenCookieExtractor)

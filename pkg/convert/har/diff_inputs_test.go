@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -414,5 +415,31 @@ func TestDiffResponseScanFindsValuesInsidePaths(t *testing.T) {
 	}
 	if scan.joinedBuilt {
 		t.Error("token lookups built the joined response text")
+	}
+}
+
+// The Aura message= form value is JSON too: a template that made it invalid
+// is neutralized, so its other leaves still count as sent.
+func TestScriptRequestValuesReadTemplatedJSONInAFormValue(t *testing.T) {
+	message := `{"actions":[{"id":"12;a","params":{"recordId":"001xx000003DGb2AAG","pageSize":{{var.size}}}}]}`
+	script := &dsl.Script{Actions: []dsl.Action{{Name: "aura", Type: "request", Method: "POST", Target: "/aura",
+		Body: "message=" + url.QueryEscape(message) + "&aura.token=abc"}}}
+	if !ScriptRequestValues(script).Sends("001xx000003DGb2AAG") {
+		t.Fatal("a leaf of a templated JSON form value was taken for handled")
+	}
+}
+
+// Values an earlier response returns only percent-encoded inside a URL, or at
+// the end of a long href, are still found by the token index.
+func TestDiffResponseScanFindsEncodedAndLongTokenValues(t *testing.T) {
+	longHref := "/s/" + strings.Repeat("segment/", 70) + "a0B5e00000ABCDEFGH"
+	scan := &diffResponseScan{observations: []sample.HARSourceObservation{
+		{Observation: correlate.Observation{ID: 1, ResponseBody: `retURL=%2Flightning%2Fr%2FAccount%2F001xx000003DGb2AAG%2Fview <a href="` + longHref + `">`}},
+		{Observation: correlate.Observation{ID: 2}},
+	}}
+	for _, value := range []string{"001xx000003DGb2AAG", "a0B5e00000ABCDEFGH"} {
+		if found, checked := scan.before(1, value); !found || !checked {
+			t.Errorf("%s: found = %v, checked = %v, want found", value, found, checked)
+		}
 	}
 }

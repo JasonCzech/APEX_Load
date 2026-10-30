@@ -22,28 +22,34 @@ var stepTransactionLabelUnsafe = regexp.MustCompile(`[^A-Za-z0-9_]+`)
 // starts at the first request, after each recorded pause longer than the
 // think-time threshold (where the user read or typed and the generated script
 // also pauses), and at each forced boundary (the end of a sign-in that moves to
-// init). Redirects and the requests a page fires on its own stay in the step
-// that caused them. Requests in skip (background requests the recorded shape
-// folds into conversations) neither start nor join a step, so a poll during a
-// pause does not split it. Each step is named for the page most of its
+// init). A pause is measured from the end of the step's requests so far, so a
+// page load that waits on a slow response stays one step; a request held open
+// longer than stepLongHeldRequest (a long poll, a download) does not hold the
+// step open across later clicks. Redirects and the requests a page fires on
+// its own stay in the step that caused them.
+// Requests in skip (background requests the recorded shape folds into
+// conversations) neither start nor join a step, and a forced boundary on one
+// moves to the next request kept. Each step is named for the page most of its
 // requests belong to (the Lightning page an Aura request names in
 // aura.pageURI, or the page a navigation loaded), numbered in recording order
 // (01_login, 02_home, 03_Customer_Search), and spans its requests' earliest to
-// latest start. member gives each exchange's window, or -1. Requests without a
-// recorded start time cannot be placed, so a recording with any returns none.
-func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip, forced map[int]bool) (windows []TransactionWindow, member []int) {
+// latest start. member gives each exchange's window, or -1. Without windows,
+// reason says why: a request has no recorded start time, or every request
+// folds into the background.
+func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip, forced map[int]bool) (windows []TransactionWindow, member []int, reason string) {
 	if len(exchanges) == 0 {
-		return nil, nil
+		return nil, nil, ""
 	}
 	for _, ex := range exchanges {
 		if !ex.HasStartedAt {
-			return nil, nil
+			return nil, nil, "some requests have no recorded start time, so the steps cannot be placed"
 		}
 	}
 	member = make([]int, len(exchanges))
 	var labels map[string]int
 	var firstLabel string
 	var stepEnd time.Time
+	pendingForced := false
 	closeStep := func() {
 		if len(windows) == 0 {
 			return
@@ -60,14 +66,19 @@ func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip,
 	for index, ex := range exchanges {
 		member[index] = -1
 		if skip[index] {
+			pendingForced = pendingForced || forced[index]
 			continue
 		}
-		end := ex.StartedAt.Add(time.Duration(ex.DurationMs * float64(time.Millisecond)))
-		boundary := len(windows) == 0 || forced[index]
-		if !boundary {
+		duration := time.Duration(ex.DurationMs * float64(time.Millisecond))
+		boundary := len(windows) == 0 || forced[index] || pendingForced
+		pendingForced = false
+		// A request listed late but started within the current step's span
+		// (recorders append in completion order) belongs to that step.
+		if !boundary && ex.StartedAt.After(windows[len(windows)-1].End) {
 			pause := ex.StartedAt.Sub(stepEnd)
-			if ex.HasRecordedThinkTime {
-				// The recorder measured the pause before this request.
+			if ex.HasRecordedThinkTime && (index == 0 || !skip[index-1]) {
+				// The recorder measured the pause before this request from the
+				// previous one, which the step kept.
 				pause = time.Duration(ex.RecordedThinkTimeMs) * time.Millisecond
 			}
 			boundary = pause > threshold
@@ -78,6 +89,9 @@ func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip,
 			windows = append(windows, TransactionWindow{Start: ex.StartedAt, End: ex.StartedAt, StartOrder: 2 * number, EndOrder: 2*number + 1})
 			labels = map[string]int{}
 			firstLabel = stepTransactionLabel(ex.URL)
+			stepEnd = ex.StartedAt
+		}
+		if end := ex.StartedAt.Add(duration); duration <= stepLongHeldRequest && end.After(stepEnd) {
 			stepEnd = end
 		}
 		window := &windows[len(windows)-1]
@@ -87,17 +101,22 @@ func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip,
 		if ex.StartedAt.After(window.End) {
 			window.End = ex.StartedAt
 		}
-		if end.After(stepEnd) {
-			stepEnd = end
-		}
 		member[index] = len(windows) - 1
 		if label := stepPageLabel(ex); label != "" {
 			labels[label]++
 		}
 	}
 	closeStep()
-	return windows, member
+	if len(windows) == 0 {
+		return nil, nil, "every request folds into a background conversation, so there is no user step to time"
+	}
+	return windows, member, ""
 }
+
+// stepLongHeldRequest is the longest a request may run and still hold its
+// step open: a longer one (a long poll, a download) runs in the background of
+// the steps after it.
+const stepLongHeldRequest = 10 * time.Second
 
 // exchangesCarryRecordedTransactions reports a recording whose requests the
 // recorder already tagged with the transactions the tester marked.

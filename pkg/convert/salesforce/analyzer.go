@@ -195,9 +195,13 @@ type ParameterizationCandidate struct {
 }
 
 type actionRef struct {
-	Phase       string
-	Index       int
-	Sequence    int
+	Phase    string
+	Index    int
+	Sequence int
+	// Rank orders the request for correlation: the requests of a concurrent
+	// group share one rank (they run at once), while Sequence numbers every
+	// request for display.
+	Rank        int
 	Action      *dsl.Action
 	URL         string
 	Method      string
@@ -433,7 +437,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 		return nil, fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
 	}
 	refs := make([]actionRef, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
-	seq := 1
+	seq, rank := 1, 1
 	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction, actionPath string) {
 		method := strings.ToUpper(strings.TrimSpace(action.Method))
 		if method == "" {
@@ -450,6 +454,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 			ActionPath:  actionPath,
 			Index:       index,
 			Sequence:    seq,
+			Rank:        rank,
 			Action:      action,
 			URL:         resolved,
 			Method:      method,
@@ -460,6 +465,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 			Transaction: convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"), inheritedTransaction),
 		})
 		seq++
+		rank++
 	}
 	definitions := 0
 	var appendRefs func(string, []dsl.Action, string, int, string) error
@@ -487,13 +493,13 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 					action.Params["requests"] = children
 				}
 				// A concurrent group's requests run at once, so they share one
-				// sequence number: none of them can use a value a sibling
-				// extracts (the engine merges a group's extractions only after
-				// it joins), while the steps after the group can.
-				groupSequence, concurrent := seq, salesforceConcurrentSequence(*action)
+				// rank: none of them can use a value a sibling extracts (the
+				// engine merges a group's extractions only after it joins),
+				// while the steps after the group can.
+				groupRank, concurrent := rank, salesforceConcurrentSequence(*action)
 				for childIndex := range children {
 					if concurrent {
-						seq = groupSequence
+						rank = groupRank
 					}
 					child := &children[childIndex]
 					if persistSequenceChildren {
@@ -510,8 +516,8 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 					}
 					appendRef(phase, index, child, transaction, childPath)
 				}
-				if concurrent && seq > groupSequence {
-					seq = groupSequence + 1
+				if concurrent && rank > groupRank {
+					rank = groupRank + 1
 				}
 			} else {
 				appendRef(phase, index, action, transaction, actionPath)
@@ -1380,7 +1386,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 	for _, corr := range namedCorrelations {
 		foundRef := harIDToRef[corr.FoundInID]
 		automatic := !opts.ReviewOnlyCorrelations && (!highConfidenceOnly || correlate.HighConfidence(corr))
-		usage := correlationUsage(corr, harIDToRef, foundRef.Sequence)
+		usage := correlationUsage(corr, harIDToRef, foundRef.Rank)
 		value := correlationValue(corr)
 		queryEncoded := correlate.QueryEncodedFormOf(value)
 		encodedConvert, encodedConvertSupported := correlate.EncodedReuseExtractorConvert(corr.Convert)
@@ -1452,14 +1458,14 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		sourceExtractorCounts[plan.foundRef.Action] += requiredExtractors
 
 		if plan.rawMapped {
-			vars[plan.value] = append(vars[plan.value], nativeLiteralProducer{sequence: plan.foundRef.Sequence, template: "{{var." + corr.Name + "}}"})
+			vars[plan.value] = append(vars[plan.value], nativeLiteralProducer{sequence: plan.foundRef.Rank, template: "{{var." + corr.Name + "}}"})
 		}
 		if plan.encodedMapped {
 			plan.encodedName = corr.Name
 			if plan.rawMapped {
 				plan.encodedName = correlationNames.claim(corr.Name + "_encoded")
 			}
-			vars[plan.queryEncoded] = append(vars[plan.queryEncoded], nativeLiteralProducer{sequence: plan.foundRef.Sequence, template: "{{var." + plan.encodedName + "}}"})
+			vars[plan.queryEncoded] = append(vars[plan.queryEncoded], nativeLiteralProducer{sequence: plan.foundRef.Rank, template: "{{var." + plan.encodedName + "}}"})
 		}
 		applications[corr.Name] = status
 	}
@@ -1470,7 +1476,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 	landed := make(map[string]bool, len(vars))
 	for index := range cloneRefs {
 		action := cloneRefs[index].Action
-		actionVars := correlationVarsAvailableAfterSequence(vars, cloneRefs[index].Sequence)
+		actionVars := correlationVarsAvailableAfterSequence(vars, cloneRefs[index].Rank)
 		actionVars = withoutInnerVarsOfLiteralOuters(actionVars, containment, actionCorrelationSurfaces(action))
 		action.Target = correlate.ApplyVars(action.Target, actionVars)
 		action.Body = correlate.ApplyVars(action.Body, actionVars)
@@ -2171,7 +2177,7 @@ func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef, sourc
 	unsupportedEncoded := unsupportedCorrelationEncodings(value, queryEncoded)
 	for _, harID := range corr.UsedInIDs {
 		ref := refs[harID]
-		if ref == nil || ref.Action == nil || ref.Sequence <= sourceSequence {
+		if ref == nil || ref.Action == nil || ref.Rank <= sourceSequence {
 			continue
 		}
 		surfaces := actionCorrelationSurfaces(ref.Action)

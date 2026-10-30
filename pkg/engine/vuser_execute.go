@@ -1457,3 +1457,32 @@ func (vu *VUser) handleSnapshot(result *protocol.Result, errCfg dsl.ErrorHandlin
 		vu.SnapshotStore.Add(result.Snapshot)
 	}
 }
+
+// withPerRequestTransactions names a transaction for every request of a
+// concurrent group that does not name one (dsl.HTTPConcurrentRequestTransactionMetadataKey),
+// after the request, so the group records each request's own transaction.
+// The action is returned unchanged when its requests do not decode.
+func withPerRequestTransactions(action dsl.Action) dsl.Action {
+	children, err := httpSequenceChildActions(action)
+	if err != nil {
+		return action
+	}
+	for index := range children {
+		if name, _ := children[index].Metadata[dsl.HTTPConcurrentRequestTransactionMetadataKey].(string); strings.TrimSpace(name) != "" {
+			continue
+		}
+		metadata := make(map[string]any, len(children[index].Metadata)+1)
+		for key, value := range children[index].Metadata {
+			metadata[key] = value
+		}
+		metadata[dsl.HTTPConcurrentRequestTransactionMetadataKey] = children[index].Name
+		children[index].Metadata = metadata
+	}
+	params := make(map[string]any, len(action.Params))
+	for key, value := range action.Params {
+		params[key] = value
+	}
+	params["requests"] = children
+	action.Params = params
+	return action
+}

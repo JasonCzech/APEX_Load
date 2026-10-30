@@ -67,3 +67,27 @@ func TestNativePreviewKeepsConcurrentGroupRequestsIndependent(t *testing.T) {
 		}
 	}
 }
+
+// Every request keeps its own sequence number for display, while a concurrent
+// group's requests share one correlation rank.
+func TestFlattenNumbersGroupRequestsAndSharesTheirRank(t *testing.T) {
+	script := &dsl.Script{Config: dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"}, Actions: []dsl.Action{
+		{Name: "group", Type: "http_sequence", Method: "SEQUENCE", Target: "/a", Params: map[string]any{
+			"execution_mode": dsl.HTTPSequenceConcurrent,
+			"requests":       []dsl.Action{{Name: "a", Type: "request", Method: "GET", Target: "/a"}, {Name: "b", Type: "request", Method: "GET", Target: "/b"}},
+		}},
+		{Name: "after", Type: "request", Method: "GET", Target: "/c"},
+	}}
+	refs, err := flattenRequestActionsChecked(script, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sequences, ranks []int
+	for _, ref := range refs {
+		sequences = append(sequences, ref.Sequence)
+		ranks = append(ranks, ref.Rank)
+	}
+	if len(refs) != 3 || sequences[0] != 1 || sequences[1] != 2 || sequences[2] != 3 || ranks[0] != 1 || ranks[1] != 1 || ranks[2] != 2 {
+		t.Fatalf("sequences = %v, ranks = %v, want 1 2 3 and 1 1 2", sequences, ranks)
+	}
+}

@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -210,8 +211,14 @@ func shapingFoldedExchanges(script *dsl.Script, exchanges []exchange, document *
 	if script == nil || len(script.Actions) != len(exchanges) {
 		return nil
 	}
+	// The shaping passes rewrite headers, bodies and extractors in place, so
+	// the trial needs its own copy of every action, not a shared one.
+	actions, ok := deepCloneActions(script.Actions)
+	if !ok {
+		return nil
+	}
 	trial := *script
-	trial.Actions = cloneScriptActions(script.Actions)
+	trial.Actions = actions
 	_, newIndex, _, _ := shapeRecordedHAR(&trial, exchanges, document, asyncScan, background, nil)
 	var folded map[int]bool
 	for index, position := range newIndex {
@@ -225,4 +232,18 @@ func shapingFoldedExchanges(script *dsl.Script, exchanges []exchange, document *
 		}
 	}
 	return folded
+}
+
+// deepCloneActions copies actions with nothing shared with the originals
+// (maps, slices, nested requests), through their JSON form.
+func deepCloneActions(actions []dsl.Action) ([]dsl.Action, bool) {
+	raw, err := json.Marshal(actions)
+	if err != nil {
+		return nil, false
+	}
+	var clone []dsl.Action
+	if err := json.Unmarshal(raw, &clone); err != nil || len(clone) != len(actions) {
+		return nil, false
+	}
+	return clone, true
 }

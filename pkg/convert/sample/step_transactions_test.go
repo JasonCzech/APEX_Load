@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func stepTransactionHAR(t *testing.T) string {
@@ -175,5 +176,54 @@ func TestStepTransactionsSpanEntriesOutOfStartOrder(t *testing.T) {
 	))
 	if tags["02_search"] != 3 || tags[""] != 0 {
 		t.Fatalf("tags = %v, want the three second-step requests tagged 02_search", tags)
+	}
+}
+
+// A request held open for a long time (a CometD long poll, a slow download)
+// does not hold its step open across later clicks: a pause is measured from
+// the latest request that had finished.
+func TestStepTransactionsAreNotMergedByALongHeldRequest(t *testing.T) {
+	longPoll := stepEntry("2026-01-01T00:00:00.500Z", "GET", "https://app.test/cometd/connect", "application/json", "")
+	longPoll["time"] = 110000
+	markers, _ := stepMarkersAndTags(t, stepHAR(t,
+		stepEntry("2026-01-01T00:00:00.000Z", "GET", "https://app.test/home", "text/html", ""),
+		longPoll,
+		stepEntry("2026-01-01T00:00:10.000Z", "GET", "https://app.test/search", "text/html", ""),
+		stepEntry("2026-01-01T00:00:20.000Z", "GET", "https://app.test/detail", "text/html", ""),
+	))
+	if len(markers) != 6 {
+		t.Fatalf("markers = %q, want three steps", markers)
+	}
+}
+
+// A recorder's think time measured from a background poll does not decide a
+// step boundary; the pause from the last request the step kept does.
+func TestStepTransactionsIgnoreRecorderThinkTimeAfterAPoll(t *testing.T) {
+	think := func(entry map[string]any, ms int) map[string]any {
+		entry[harThinkTimeKey] = ms
+		return entry
+	}
+	entries := []any{think(stepEntry("2026-01-01T00:00:00.000Z", "GET", "https://app.test/home", "text/html", ""), 0)}
+	for second := 5; second <= 25; second += 5 {
+		entries = append(entries, think(stepEntry(fmt.Sprintf("2026-01-01T00:00:%02d.000Z", second), "GET", "https://app.test/api/poll", "application/json", ""), 4900))
+	}
+	entries = append(entries, think(stepEntry("2026-01-01T00:00:25.300Z", "GET", "https://app.test/search", "text/html", ""), 200))
+	markers, _ := stepMarkersAndTags(t, stepHAR(t, entries...))
+	if len(markers) != 4 {
+		t.Fatalf("markers = %q, want 01_home and 02_search", markers)
+	}
+}
+
+// A forced boundary (the end of a sign-in) on a request the recorded shape
+// folds into the background moves to the next request kept, so the step
+// still ends there.
+func TestStepTransactionWindowsCarryAForcedBoundaryPastAFoldedRequest(t *testing.T) {
+	at := func(ms int) exchange {
+		return exchange{URL: "https://app.test/x", Method: "GET", StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(ms) * time.Millisecond), HasStartedAt: true, DurationMs: 50}
+	}
+	exchanges := []exchange{at(0), at(100), at(150), at(200)}
+	windows, member, _ := stepTransactionWindows(exchanges, 500*time.Millisecond, map[int]bool{1: true}, map[int]bool{1: true})
+	if len(windows) != 2 || member[0] != 0 || member[1] != -1 || member[2] != 1 || member[3] != 1 {
+		t.Fatalf("windows = %d, member = %v, want the boundary moved to the request after the folded one", len(windows), member)
 	}
 }

@@ -796,9 +796,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		var newIndex []int
 		var startedAt []time.Time
 		if stepTransactions {
-			windows, member := stepTransactionWindows(exchanges, thinkThreshold(req.Options.Profile), shapingFoldedExchanges(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns()), signIn.stepBoundary(exchanges))
+			windows, member, reason := stepTransactionWindows(exchanges, thinkThreshold(req.Options.Profile), shapingFoldedExchanges(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns()), signIn.stepBoundary(exchanges))
 			if len(windows) == 0 {
-				result.Warnings = append(result.Warnings, "Step transactions were not added: some requests have no recorded start time, so the steps cannot be placed.")
+				if reason != "" {
+					result.Warnings = append(result.Warnings, "Step transactions were not added: "+reason+".")
+				}
 			} else {
 				tagStepTransactions(result.Script.Actions, windows, member)
 				req.Options.Transactions = windows

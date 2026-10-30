@@ -268,3 +268,36 @@ func TestAuraTokenInferredWarningNamesASanitizedExportOnlyWhenItIsOne(t *testing
 		t.Fatalf("sanitized warning = %q", warning)
 	}
 }
+
+// A capture that keeps request cookies shows every request after the
+// bootstrap sending the ERIC cookie it set: that is no evidence against the
+// inference, so the token is still read from the bootstrap.
+func TestUncapturedAuraTokenIsInferredWhenLaterRequestsSendTheCookie(t *testing.T) {
+	const host = "https://acme.lightning.force.com"
+	bootstrap := correlate.Observation{ID: 1, RequestURL: host + "/one/one.app", RequestHeaders: map[string]string{"Cookie": "sid=abc"}}
+	consumer := auraTokenObservation(2, host+"/aura?r=1", "issued-token-value")
+	consumer.RequestHeaders = map[string]string{"Cookie": "sid=abc; __Host-ERIC_PROD-1=issued-token-value"}
+	if got, _ := detectUncapturedAuraTokenCorrelations([]correlate.Observation{bootstrap, consumer}, map[string]bool{}, newSalesforceCorrelationBudget(), maxSalesforceShapeCorrelations); len(got) != 1 {
+		t.Fatalf("correlations = %#v, want the inference: the cookie appears only after the bootstrap", got)
+	}
+}
+
+// The evidence check is part of the same linear pass: many tokens, each sent
+// in its own ERIC cookie, stay fast.
+func TestUncapturedAuraTokenEvidenceCheckIsLinear(t *testing.T) {
+	const host = "https://acme.lightning.force.com"
+	observations := []correlate.Observation{{ID: 1, RequestURL: host + "/one/one.app"}}
+	for index := 0; index < 20000; index++ {
+		token := "token-" + strconv.Itoa(index) + "-abcdefghij"
+		observation := auraTokenObservation(index+2, host+"/aura?r="+strconv.Itoa(index), token)
+		observation.RequestHeaders = map[string]string{"Cookie": "__Host-ERIC_PROD-1=" + token}
+		observations = append(observations, observation)
+	}
+	started := time.Now()
+	if _, err := detectUncapturedAuraTokenCorrelations(observations, map[string]bool{}, newSalesforceCorrelationBudget(), maxSalesforceShapeCorrelations); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("20000 tokens took %s, want a linear pass", elapsed)
+	}
+}

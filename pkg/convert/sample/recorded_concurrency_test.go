@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -121,5 +122,46 @@ func TestRecordedConcurrencyShrinksAGroupThatDoesNotValidate(t *testing.T) {
 	children, _ := script.Actions[0].Params["requests"].([]dsl.Action)
 	if len(children) != 2 || script.Actions[1].Name != "late" {
 		t.Fatalf("actions = %#v", script.Actions)
+	}
+}
+
+// With transaction markers after a group, the marker that carries the pause
+// gets the one measured from the group's end, and the group none.
+func TestRecordedConcurrencyMovesTheGroupPauseOntoTheEndMarker(t *testing.T) {
+	end := dsl.TransactionMarker("Step", false)
+	end.ThinkTimeAfter = true
+	end.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 5940}
+	script := &dsl.Script{Actions: []dsl.Action{concurrencyRequest("a", "/a"), concurrencyRequest("b", "/b"), end, concurrencyRequest("next", "/next")}}
+	exchanges := []exchange{concurrencyExchange(0, 3000), concurrencyExchange(10, 50), concurrencyExchange(6000, 100)}
+	newIndex := []int{0, 1, 3}
+	if _, _, groups, _ := groupRecordedConcurrency(script, exchanges, newIndex, nil, 500*time.Millisecond); groups != 1 {
+		t.Fatalf("groups = %d, want one", groups)
+	}
+	if group := script.Actions[0]; group.ThinkTimeAfter {
+		t.Fatalf("group think time = %+v, want it on the marker", group.ThinkTime)
+	}
+	if marker := script.Actions[1]; !marker.ThinkTimeAfter || marker.ThinkTime.MeanMs != 3000 {
+		t.Fatalf("marker think time = %+v (after %v), want 3000 ms from the group's end", marker.ThinkTime, marker.ThinkTimeAfter)
+	}
+}
+
+// A group must leave the runtime half its preparation budget for resolving
+// its requests: two 3 MiB bodies stay sequential (counted once), small ones
+// group.
+func TestRecordedConcurrencyLeavesRoomForRuntimePreparation(t *testing.T) {
+	post := func(name string, size int) dsl.Action {
+		action := concurrencyRequest(name, "/upload/"+name)
+		action.Type, action.Method, action.Body = "POST", "POST", strings.Repeat("x", size)
+		action.Type = "request"
+		return action
+	}
+	exchanges := []exchange{concurrencyExchange(0, 1000), concurrencyExchange(10, 900), concurrencyExchange(20, 800)}
+	large := &dsl.Script{Actions: []dsl.Action{post("a", 3<<20), post("b", 3<<20), post("c", 3<<20)}}
+	if _, _, groups, refused := groupRecordedConcurrency(large, exchanges, nil, nil, 500*time.Millisecond); groups != 0 || refused != 1 {
+		t.Fatalf("large: groups = %d, refused = %d, want none grouped and one run counted", groups, refused)
+	}
+	small := &dsl.Script{Actions: []dsl.Action{post("a", 1<<10), post("b", 1<<10), post("c", 1<<10)}}
+	if _, _, groups, _ := groupRecordedConcurrency(small, exchanges, nil, nil, 500*time.Millisecond); groups != 1 {
+		t.Fatalf("small: groups = %d, want one", groups)
 	}
 }
