@@ -57,9 +57,11 @@ var generatedReferenceStems = []string{"conversation", "transaction", "event"}
 // requested does not.
 var generatedIdentifierSuffixes = map[string]bool{"": true, "s": true, "id": true, "ids": true, "uuid": true, "guid": true, "key": true, "parent": true, "state": true, "no": true, "num": true, "number": true}
 
-// generatedIdentifierWords and generatedReferenceWords match only as whole words.
+// generatedIdentifierWords and generatedReferenceWords match only as whole
+// words. A cache word names a client's cache-busting or page-cache id
+// (Lightning's X-SFDC-Page-Cache, a cachebuster).
 var (
-	generatedIdentifierWords = map[string]bool{"req": true, "rqid": true}
+	generatedIdentifierWords = map[string]bool{"req": true, "rqid": true, "cache": true, "cachebuster": true}
 	generatedReferenceWords  = map[string]bool{"txn": true}
 )
 

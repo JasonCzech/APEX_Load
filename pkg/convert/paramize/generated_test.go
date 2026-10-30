@@ -475,3 +475,25 @@ func TestGeneratedHeaderReplacementTextsIndex(t *testing.T) {
 		})
 	}
 }
+
+// Lightning sends a random page-cache id in X-SFDC-Page-Cache, one per page
+// load and repeated by every request of that page. Each recorded page's id
+// becomes its own parameter generated every iteration, so a replayed page
+// gets a fresh id shared by its requests, as a browser's page load does.
+func TestGeneratedPageCacheIDIsOneParameterPerPage(t *testing.T) {
+	const firstPage, secondPage = "a1b2c3d4e5f60718", "0f1e2d3c4b5a6978"
+	request := func(name, pageCache string) dsl.Action {
+		return dsl.Action{Name: name, Type: "http_request", Method: "POST", Target: "/aura",
+			HeaderList: dsl.HeaderList{{Name: "X-SFDC-Page-Cache", Value: pageCache}}}
+	}
+	script := generatedScript(request("a", firstPage), request("b", firstPage), request("c", secondPage), request("d", secondPage))
+	suggestions := suggestGenerated(script)
+	if len(suggestions) != 2 {
+		t.Fatalf("suggestions = %+v, want one per page", suggestions)
+	}
+	for _, suggestion := range suggestions {
+		if !suggestion.AutoApply || len(suggestion.Locations) != 2 || suggestion.Parameter == nil || suggestion.Parameter.Update != "each_iteration" {
+			t.Fatalf("suggestion = %+v, want an automatic parameter generated each iteration for both requests of its page", suggestion)
+		}
+	}
+}
