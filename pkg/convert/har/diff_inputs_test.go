@@ -470,3 +470,34 @@ func TestDiffResponseScanFindsValuesBehindEncodedDelimiters(t *testing.T) {
 		}
 	}
 }
+
+// Values the token index cannot answer share one search of the unreadable
+// text, so a budget that covers one pass answers them all: a value the script
+// templated is not reported because earlier misses spent the budget.
+func TestScriptValuesPrepareSharesOneSearch(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{
+		{Name: "b", Type: "request", Method: "POST", Target: "/b", Body: `{"broken": {{var.y}} "tail":"zzInsideTokenValuezz"`},
+	}}
+	values := ScriptRequestValues(script)
+	*values.remaining = int64(len(values.opaqueText)) + 1
+	candidates := []string{"InsideTokenValue", "TemplatedAway01", "TemplatedAway02", "TemplatedAway03"}
+	values.Prepare(candidates)
+	if !values.Sends("InsideTokenValue") {
+		t.Fatal("a value inside a longer token was taken for handled")
+	}
+	for _, value := range candidates[1:] {
+		if values.Sends(value) {
+			t.Fatalf("%q reported as sent after the budget covered one pass", value)
+		}
+	}
+}
+
+// Text encoded more than once is decoded layer by layer, so a value inside it
+// is indexed.
+func TestDiffTokenIndexDecodesRepeatedPercentEncoding(t *testing.T) {
+	index := newDiffTokenIndex()
+	index.add("payload=%257B%2522id%2522%253A%2522DoubleEncoded1%2522%257D", 1)
+	if found, _ := index.lookup("DoubleEncoded1"); !found {
+		t.Fatal("a value inside double-encoded text was not indexed")
+	}
+}

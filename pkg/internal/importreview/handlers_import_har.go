@@ -149,8 +149,16 @@ func ResolveHARPairUnhandledInputs(diff *har.DiffReport, script *dsl.Script, par
 			}
 		}
 	}
+	// Values a suggestion replaces need no search; the rest share one pass.
+	var search []string
+	for _, value := range diff.RequestInputValues() {
+		if !replaced[value] {
+			search = append(search, value)
+		}
+	}
+	sent.Prepare(search)
 	diff.ResolveUnhandledInputs(func(value string) bool {
-		return sent.Sends(value) && !replaced[value]
+		return !replaced[value] && sent.Sends(value)
 	})
 }
 

@@ -88,9 +88,11 @@ export function captureDebugTransactionDefinitions(script: ScriptDefinition): De
       const manual = action.type === 'source_transaction' && fn === 'lr_set_transaction'
       const args = action.params?.args
       const name = manual && Array.isArray(args) && typeof args[0] === 'string' ? args[0] : action.name || action.type || 'Step'
-      // A transparent request group only sends its requests together and
-      // records no transaction at run time, so it is a plain container here.
-      const sequenceTransaction = container === 'http_sequence' && action.metadata?.transparent_request_group !== true
+      // A transparent concurrent request group only sends its requests
+      // together and records no transaction at run time, so it is a plain
+      // container here; the runtime ignores the flag on a sequential group.
+      const transparentGroup = action.metadata?.transparent_request_group === true && action.params?.execution_mode === 'concurrent'
+      const sequenceTransaction = container === 'http_sequence' && !transparentGroup
       const node: DebugTransactionDefinition = { ...base, children: [], key: `step:${keyOf(location)}`, name, kind: manual || sequenceTransaction ? 'transaction' : container ? 'container' : ['request', 'GET', 'POST', 'browser_navigate'].includes(action.type) ? 'page' : 'step', mode: manual ? 'manual' : sequenceTransaction ? 'sequence' : container ? 'control' : 'action', location }
       if (container) {
         // Branch boundaries cannot pair transaction markers or tags together.

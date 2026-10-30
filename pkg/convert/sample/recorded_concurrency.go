@@ -338,6 +338,16 @@ func recordedSharedTransaction(children []dsl.Action) (string, bool) {
 // requests' templates at replay spends the same budgets again, so a group
 // must leave half of each for it.
 func recordedGroupFitsPreparation(wrapper dsl.Action, children []dsl.Action, script *dsl.Script) bool {
+	// The cheap checks on the typed group come first, so a group they refuse
+	// (and each shrinking retry of it) costs no JSON round trip.
+	sourceBytes, sourceWork, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, wrapper, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList)
+	if err != nil || sourceBytes*2 > dsl.MaxHTTPConcurrentPreparationBytes {
+		return false
+	}
+	validationWork, err := dsl.ValidateHTTPConcurrentChildrenWithWorkLimit(children, dsl.MaxHTTPConcurrentPreparationWork-sourceWork)
+	if err != nil || (sourceWork+validationWork)*2 > dsl.MaxHTTPConcurrentPreparationWork {
+		return false
+	}
 	// The runtime walks the stored script, whose requests are JSON-shaped
 	// maps (more structure nodes than typed actions); a group with twice the
 	// requests must still fit its walk, which leaves the other half spare.
@@ -345,15 +355,8 @@ func recordedGroupFitsPreparation(wrapper dsl.Action, children []dsl.Action, scr
 	if !ok {
 		return false
 	}
-	if _, _, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, stored, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList); err != nil {
-		return false
-	}
-	sourceBytes, sourceWork, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, wrapper, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList)
-	if err != nil || sourceBytes*2 > dsl.MaxHTTPConcurrentPreparationBytes {
-		return false
-	}
-	validationWork, err := dsl.ValidateHTTPConcurrentChildrenWithWorkLimit(children, dsl.MaxHTTPConcurrentPreparationWork-sourceWork)
-	return err == nil && (sourceWork+validationWork)*2 <= dsl.MaxHTTPConcurrentPreparationWork
+	_, _, err = dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, stored, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList)
+	return err == nil
 }
 
 // recordedStoredGroup is the group as a stored script holds it, after a JSON

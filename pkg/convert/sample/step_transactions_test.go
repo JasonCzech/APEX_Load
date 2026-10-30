@@ -278,3 +278,41 @@ func TestStepTransactionsStayDisjointWithALateListedLongRequest(t *testing.T) {
 		}
 	}
 }
+
+func stepAt(ms, durationMs int) exchange {
+	return exchange{URL: "https://app.test/x", Method: "GET", StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(ms) * time.Millisecond), HasStartedAt: true, DurationMs: float64(durationMs)}
+}
+
+// A long-held request started while another request is still in flight does
+// not open a step: the other request holds the step open.
+func TestStepTransactionWindowsHoldALongHeldRequestInItsStep(t *testing.T) {
+	exchanges := []exchange{stepAt(0, 100), stepAt(5000, 4000), stepAt(6000, 30000)}
+	windows, member, _ := stepTransactionWindows(exchanges, time.Second, nil, nil)
+	if len(windows) != 2 || member[2] != 1 {
+		t.Fatalf("windows = %d, member = %v, want the long request in the second step", len(windows), member)
+	}
+}
+
+// A long poll from an earlier step that ends during the user's pause does not
+// shorten the pause.
+func TestStepTransactionWindowsIgnoreAnEarlierStepsLongPollEnd(t *testing.T) {
+	exchanges := []exchange{stepAt(0, 100), stepAt(500, 12000), stepAt(3000, 100), stepAt(14000, 100)}
+	windows, member, _ := stepTransactionWindows(exchanges, 2*time.Second, nil, nil)
+	if len(windows) != 3 || member[3] != 2 {
+		t.Fatalf("windows = %d, member = %v, want a third step after the pause", len(windows), member)
+	}
+}
+
+// A forced boundary listed late starts its step after the previous one, so
+// the steps stay disjoint.
+func TestStepTransactionWindowsKeepALateForcedBoundaryDisjoint(t *testing.T) {
+	exchanges := []exchange{stepAt(0, 50), stepAt(1000, 50), stepAt(500, 50)}
+	windows, member, _ := stepTransactionWindows(exchanges, 5*time.Second, nil, map[int]bool{2: true})
+	if len(windows) != 2 || member[2] != 1 || !windows[1].Start.After(windows[0].End) {
+		t.Fatalf("windows = %+v, member = %v, want a second step after the first", windows, member)
+	}
+	starts := stepMarkerStarts(exchanges, windows, member)
+	if at, ok := starts[2]; !ok || at.Before(windows[1].Start) {
+		t.Fatalf("marker starts = %v, want the late request placed in its step", starts)
+	}
+}

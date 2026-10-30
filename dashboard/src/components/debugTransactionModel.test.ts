@@ -71,9 +71,11 @@ describe('debug transaction breakdown', () => {
     expect(debugTransactionTimingBreakdown(transaction)).toEqual({ childSpanTotalMs: 100, overlapMs: 0, outsideChildrenMs: 50, parentElapsedMs: 150 })
   })
   it('lists no transaction for a transparent request group, which records none at run time', () => {
-    const transparent = script([{ name: 'Concurrent requests 1 (2 requests)', type: 'http_sequence', target: '', metadata: { transparent_request_group: true }, params: { requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }])
+    const transparent = script([{ name: 'Concurrent requests 1 (2 requests)', type: 'http_sequence', target: '', metadata: { transparent_request_group: true }, params: { execution_mode: 'concurrent', requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }])
     expect(captureDebugTransactionDefinitions(transparent)).toEqual([])
-    const inStep = script([marker('Step'), { name: 'Concurrent requests 1 (2 requests)', type: 'http_sequence', target: '', metadata: { transparent_request_group: true }, params: { requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }, marker('Step', true)])
+    const sequential = script([{ name: 'Requests in order', type: 'http_sequence', target: '', metadata: { transparent_request_group: true }, params: { requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }])
+    expect(captureDebugTransactionDefinitions(sequential)[0]).toMatchObject({ name: 'Requests in order', kind: 'transaction', mode: 'sequence' })
+    const inStep = script([marker('Step'), { name: 'Concurrent requests 1 (2 requests)', type: 'http_sequence', target: '', metadata: { transparent_request_group: true }, params: { execution_mode: 'concurrent', requests: [{ name: 'First', target: '/1' }, { name: 'Second', target: '/2' }] } }, marker('Step', true)])
     const [step] = captureDebugTransactionDefinitions(inStep)
     expect(step).toMatchObject({ name: 'Step', kind: 'transaction' })
     expect(step.children[0]).toMatchObject({ kind: 'container', mode: 'control' })

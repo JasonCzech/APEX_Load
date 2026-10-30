@@ -167,6 +167,108 @@ type ScriptValues struct {
 	// searched within remaining bytes; past them a value counts as sent.
 	opaqueText string
 	remaining  *int64
+	// answers caches what Sends and Prepare found, so a value is searched
+	// for once.
+	answers map[string]bool
+}
+
+// RequestInputValues lists the distinct baseline values of the request
+// inputs that changed, for ScriptValues.Prepare.
+func (r *DiffReport) RequestInputValues() []string {
+	if r == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var values []string
+	for _, input := range r.requestInputs {
+		for value := range input.values {
+			if !seen[value] {
+				seen[value] = true
+				values = append(values, value)
+			}
+		}
+	}
+	sort.Strings(values)
+	return values
+}
+
+// diffPreparePrefixBytes is the prefix Prepare matches candidates on; a
+// shorter value is left to Sends.
+const diffPreparePrefixBytes = 4
+
+// Prepare answers Sends for values in one pass over the opaque text, so the
+// values the token index cannot answer share a single search instead of
+// spending it once each.
+func (v ScriptValues) Prepare(values []string) {
+	if v.opaqueText == "" || v.answers == nil {
+		return
+	}
+	byPrefix := map[string][]string{}
+	owners := map[string][]string{}
+	var pending []string
+	for _, value := range values {
+		if _, done := v.answers[value]; done {
+			continue
+		}
+		if v.fields[value] {
+			v.answers[value] = true
+			continue
+		}
+		if found, _ := v.opaque.lookup(value); found {
+			v.answers[value] = true
+			continue
+		}
+		forms := diffSearchForms(value)
+		short := false
+		for _, form := range forms {
+			if len(form) < diffPreparePrefixBytes {
+				short = true
+			}
+		}
+		if short {
+			continue
+		}
+		for _, form := range forms {
+			if _, seen := owners[form]; !seen {
+				byPrefix[form[:diffPreparePrefixBytes]] = append(byPrefix[form[:diffPreparePrefixBytes]], form)
+			}
+			owners[form] = append(owners[form], value)
+		}
+		pending = append(pending, value)
+	}
+	if len(pending) == 0 {
+		return
+	}
+	*v.remaining -= int64(len(v.opaqueText))
+	if *v.remaining < 0 {
+		// Past the budget every value counts as sent (Sends answers yes).
+		return
+	}
+	text := v.opaqueText
+	for at := 0; at+diffPreparePrefixBytes <= len(text); at++ {
+		candidates := byPrefix[text[at:at+diffPreparePrefixBytes]]
+		for _, form := range candidates {
+			if strings.HasPrefix(text[at:], form) {
+				for _, value := range owners[form] {
+					v.answers[value] = true
+				}
+			}
+		}
+	}
+	for _, value := range pending {
+		if !v.answers[value] {
+			v.answers[value] = false
+		}
+	}
+}
+
+// diffSearchForms is value as the opaque text may hold it: as is, and query
+// escaped when that differs.
+func diffSearchForms(value string) []string {
+	if escaped := url.QueryEscape(value); escaped != value {
+		return []string{value, escaped}
+	}
+	return []string{value}
 }
 
 // Sends reports whether the script still sends value as recorded. Where it
@@ -179,6 +281,9 @@ func (v ScriptValues) Sends(value string) bool {
 	if v.opaqueText == "" {
 		return false
 	}
+	if answer, done := v.answers[value]; done {
+		return answer
+	}
 	// The index answers only that a value is there: a short value, or one
 	// inside a longer token, is not indexed on its own, so a miss falls
 	// through to the search.
@@ -189,7 +294,17 @@ func (v ScriptValues) Sends(value string) bool {
 	if *v.remaining < 0 {
 		return true
 	}
-	return strings.Contains(v.opaqueText, value) || strings.Contains(v.opaqueText, url.QueryEscape(value))
+	answer := false
+	for _, form := range diffSearchForms(value) {
+		if strings.Contains(v.opaqueText, form) {
+			answer = true
+			break
+		}
+	}
+	if v.answers != nil {
+		v.answers[value] = answer
+	}
+	return answer
 }
 
 // ScriptRequestValues reads what the script's requests send. JSON the
@@ -199,7 +314,7 @@ func (v ScriptValues) Sends(value string) bool {
 // holds is never taken for handled.
 func ScriptRequestValues(script *dsl.Script) ScriptValues {
 	remaining := diffInputMaxResponseScanBytes
-	values := ScriptValues{fields: map[string]bool{}, opaque: newDiffTokenIndex(), remaining: &remaining}
+	values := ScriptValues{fields: map[string]bool{}, opaque: newDiffTokenIndex(), remaining: &remaining, answers: map[string]bool{}}
 	if script == nil {
 		return values
 	}
@@ -836,8 +951,17 @@ func newDiffTokenIndex() diffTokenIndex {
 	return diffTokenIndex{tokens: map[string]int{}, complete: true}
 }
 
+// diffTokenMaxDecodeDepth bounds how many layers of percent-encoding the
+// index decodes.
+const diffTokenMaxDecodeDepth = 3
+
 // add indexes text under id; false once the token limit stops the index.
 func (x *diffTokenIndex) add(text string, id int) bool {
+	return x.addDecoded(text, id, 0)
+}
+
+// addDecoded indexes text that depth layers of percent-decoding produced.
+func (x *diffTokenIndex) addDecoded(text string, id, depth int) bool {
 	for start := 0; start < len(text); {
 		for start < len(text) && diffTokenDelimiter(text[start]) {
 			start++
@@ -851,10 +975,11 @@ func (x *diffTokenIndex) add(text string, id int) bool {
 			if !x.addToken(token, id) {
 				return false
 			}
-			if strings.Contains(token, "%") {
+			if strings.Contains(token, "%") && depth < diffTokenMaxDecodeDepth {
 				// Percent-encoding hides delimiters (%22, %3F, %3D, %26), so the
-				// decoded text is tokenized again, once.
-				if decoded, err := url.PathUnescape(token); err == nil && decoded != token && !strings.Contains(decoded, "%") && !x.add(decoded, id) {
+				// decoded text is tokenized again, down to a bounded depth for
+				// text encoded more than once.
+				if decoded, err := url.PathUnescape(token); err == nil && decoded != token && !x.addDecoded(decoded, id, depth+1) {
 					return false
 				}
 			}
