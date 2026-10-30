@@ -436,7 +436,8 @@ func TestImportReferenceScopeMatchesWriterNames(t *testing.T) {
 func TestImportInternerFramesItsParts(t *testing.T) {
 	interner := newImportInterner()
 	token := interner.token
-	if token("ab", "c") == token("a", "bc") || token("a", "") == token("", "a") || token("a") == token("a", "") || token("a:b") == token("a", "b") || token("a", "b") != token("a", "b") {
+	first := token("a", "b")
+	if token("ab", "c") == token("a", "bc") || token("a", "") == token("", "a") || token("a") == token("a", "") || token("a:b") == first || token("a", "b") != first {
 		t.Fatal("token does not tell apart different splits of the same text, or differs for equal parts")
 	}
 }
