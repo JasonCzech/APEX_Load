@@ -312,7 +312,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 			review.Warnings = append(review.Warnings, "Captured Aura responses contain unsuccessful action states that could not be matched to the imported request; review those baseline failures before controlled replay.")
 		}
 		if buildNative && outcomes.InvalidRequests > 0 {
-			review.Blockers = append(review.Blockers, "Imported Aura requests could not be validated; native replay is gated until those request envelopes are repaired.")
+			review.Blockers = append(review.Blockers, auraInvalidRequestsBlocker(outcomes))
 		}
 	}
 	if buildNative && len(entries) == 0 {
@@ -362,7 +362,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 			preview.Script.GeneratedFrom = nativeGeneratedFrom(opts.Source)
 		}
 		review.NativePreview = preview
-		if warning := auraTokenProvenanceWarning(preview.Script, correlations); warning != "" {
+		if warning := auraTokenProvenanceWarning(preview.Script, correlations, document.LooksSanitized()); warning != "" {
 			review.Warnings = append(review.Warnings, warning)
 		}
 		if preview.CorrelationCoverage != nil && len(correlationWarnings) > 0 {
@@ -371,6 +371,42 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		}
 	}
 	return review, nil
+}
+
+// maxAuraBodyNotCapturedEntryIDs bounds the HAR entry IDs one blocker names.
+const maxAuraBodyNotCapturedEntryIDs = 10
+
+// auraInvalidRequestsBlocker gates native replay on invalid imported Aura
+// requests, naming the HAR entries whose request body the capture did not
+// include, since those need a re-capture rather than a repaired envelope.
+func auraInvalidRequestsBlocker(outcomes *AuraOutcomeReview) string {
+	const generic = "Imported Aura requests could not be validated; native replay is gated until those request envelopes are repaired."
+	count, entries := outcomes.RequestBodyNotCaptured()
+	if count == 0 {
+		return generic
+	}
+	where := ""
+	if len(entries) > 0 {
+		ids := make([]string, 0, min(len(entries), maxAuraBodyNotCapturedEntryIDs))
+		for _, id := range entries[:cap(ids)] {
+			ids = append(ids, strconv.Itoa(id))
+		}
+		label := "HAR entries "
+		if len(entries) == 1 {
+			label = "HAR entry "
+		}
+		more := ""
+		// count also covers requests not matched to a HAR entry.
+		if omitted := count - len(ids); omitted > 0 {
+			more = fmt.Sprintf(" and %d more", omitted)
+		}
+		where = " (" + label + strings.Join(ids, ", ") + more + ")"
+	}
+	notCaptured := fmt.Sprintf("%d Aura request(s)%s have no captured request body: the capture recorded a Content-Length, but its export did not include the body. Re-capture or remove those steps", count, where)
+	if count == outcomes.InvalidRequests {
+		return notCaptured + "; native replay is gated until then."
+	}
+	return generic + " " + notCaptured + "."
 }
 
 func flattenRequestActions(script *dsl.Script) []actionRef {
@@ -913,7 +949,12 @@ func salesforceActionEvidence(action *dsl.Action, rawURL string) string {
 	if action != nil {
 		values = append(values, action.Name, action.Target, action.Body)
 		for key, value := range action.Metadata {
-			values = append(values, key)
+			// The HAR importer's own har.request.* bookkeeping names describe
+			// the capture, not the Salesforce request: "recorded_content_length"
+			// would otherwise classify any step carrying it as a Record.
+			if !strings.HasPrefix(key, "har.request.") {
+				values = append(values, key)
+			}
 			switch typed := value.(type) {
 			case string:
 				values = append(values, typed)

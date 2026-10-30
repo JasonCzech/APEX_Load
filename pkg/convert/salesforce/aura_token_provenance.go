@@ -15,8 +15,9 @@ import (
 // new session, so every such request fails at replay. The capture either has
 // no producer (Chrome DevTools HAR exports drop Set-Cookie, which carries the
 // desktop __Host-ERIC_* token) or has one that could not be applied
-// automatically.
-func auraTokenProvenanceWarning(script *dsl.Script, correlations []correlate.Correlation) string {
+// automatically. sanitized names a sanitized export as the likely cause of a
+// missing producer; it does not apply when the capture has one.
+func auraTokenProvenanceWarning(script *dsl.Script, correlations []correlate.Correlation, sanitized bool) string {
 	refs, err := flattenRequestActionsChecked(script, false)
 	if err != nil {
 		return ""
@@ -51,5 +52,9 @@ func auraTokenProvenanceWarning(script *dsl.Script, correlations []correlate.Cor
 			return fmt.Sprintf("%d Aura request(s) send the recorded aura.token although the capture contains a producer for it; review the aura.token correlation before replay, or every one of these requests fails with a stale token.", literal)
 		}
 	}
-	return fmt.Sprintf("%d Aura request(s) send the recorded aura.token and the capture contains no response that issues it, so every one of them fails with a stale token at replay. Desktop Lightning issues it in the __Host-ERIC_* Set-Cookie of /one/one.app, which Chrome DevTools HAR exports omit; the Salesforce Mobile SDK returns it as csrf_token from /services/oauth2/token. Re-capture with response cookies (a proxy capture or a HAR export that keeps Set-Cookie) so it can be correlated.", literal)
+	warning := fmt.Sprintf("%d Aura request(s) send the recorded aura.token and the capture contains no response that issues it, so every one of them fails with a stale token at replay. Desktop Lightning issues it in the __Host-ERIC_* Set-Cookie of /one/one.app, which Chrome DevTools HAR exports omit; the Salesforce Mobile SDK returns it as csrf_token from /services/oauth2/token. Re-capture with response cookies (a proxy capture or a HAR export that keeps Set-Cookie) so it can be correlated.", literal)
+	if sanitized {
+		warning += " This capture has no Cookie, Set-Cookie or Authorization header and no cookies[] entry at all, so it looks like a sanitized export: the cookie that issues aura.token was likely removed. Re-export it with Chrome DevTools \"Export HAR (with sensitive data)\", or record with the APEX recorder."
+	}
+	return warning
 }

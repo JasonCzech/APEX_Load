@@ -366,6 +366,79 @@ async function errorMessageFromResponse(res: Response): Promise<string> {
 
 const enterpriseArchiveImportTimeoutMs = 210_000
 
+// The controller bounds HAR processing at five minutes. The client waits a
+// little longer so the controller's own error reaches the user whenever it can
+// answer at all, and a controller that never answers still ends the request.
+export const HAR_IMPORT_TIMEOUT_MS = 330_000
+
+// The client deadline starts before the multipart body is sent, while the
+// controller's processing window starts only once the body has arrived, so the
+// deadline also grants the upload time. The controller accepts an upload for
+// up to largeUploadReadWindow (five minutes) and drops a slower one itself, so
+// the allowance never exceeds that window. It is estimated at a slow 512 KiB/s
+// so a remote controller still answering after a slow upload gets the chance;
+// a capture pair of 150 MiB or more always gets the full five minutes.
+const harImportUploadBytesPerSecond = 512 * 1024
+const harImportUploadWindowMs = 300_000
+
+export function harImportTimeoutMs(uploadBytes = 0): number {
+  const uploadMs = Math.ceil((Math.max(0, uploadBytes) / harImportUploadBytesPerSecond) * 1000)
+  return HAR_IMPORT_TIMEOUT_MS + Math.min(uploadMs, harImportUploadWindowMs)
+}
+
+export function harImportTimeoutMessage(timeoutMs: number = HAR_IMPORT_TIMEOUT_MS, route: 'har' | 'salesforce' = 'har'): string {
+  const minutes = Math.round((timeoutMs / 60_000) * 10) / 10
+  const shrink = route === 'har'
+    ? 'To shrink a large HAR pair, leave Include static assets off, re-export the captures without static assets (images, fonts, scripts, stylesheets), or import a single HAR without the comparison capture.'
+    : 'To shrink a large capture, re-export it without static assets (images, fonts, scripts, stylesheets) or record a shorter flow.'
+  return `The controller did not answer the ${route === 'har' ? 'HAR' : 'Salesforce'} import within ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}. `
+    + `Check the controller console for the /api/v1/scripts/import/${route} request to see whether it is still running or failed; `
+    + 'the controller may still be processing it, so wait for it to finish before retrying. '
+    + shrink
+}
+
+// One deadline covers the whole HAR (or Salesforce HAR) import: upload, processing and reading the
+// result body. apiFetch's own timeoutMs ends when the response headers arrive,
+// and a body that stalls after them would leave the importer busy again. The
+// returned signal also follows the caller's signal. `expired` and `canceled`
+// reject on their own, so a transport that does not settle on abort still ends
+// the request: at the deadline with the timeout message, or at once with the
+// caller's abort reason.
+function startHARImportDeadline(timeoutMs: number, callerSignal?: AbortSignal, route: 'har' | 'salesforce' = 'har') {
+  const controller = new AbortController()
+  let timedOut = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let rejectCanceled: (reason: unknown) => void = () => {}
+  const canceled = new Promise<never>((_resolve, reject) => { rejectCanceled = reject })
+  const followCaller = () => {
+    const reason = callerSignal?.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+    controller.abort(reason)
+    rejectCanceled(reason)
+  }
+  if (callerSignal?.aborted) followCaller()
+  else callerSignal?.addEventListener('abort', followCaller, { once: true })
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+      reject(new Error(harImportTimeoutMessage(timeoutMs, route)))
+    }, timeoutMs)
+  })
+  // Every await below races `expired` and `canceled`; this only keeps a
+  // rejection that lands between two of them from being reported as unhandled.
+  expired.catch(() => {})
+  canceled.catch(() => {})
+  return {
+    signal: controller.signal,
+    within: <T>(work: Promise<T>) => Promise.race([work, canceled, expired]),
+    timedOut: () => timedOut,
+    clear: () => {
+      clearTimeout(timer)
+      callerSignal?.removeEventListener('abort', followCaller)
+    },
+  }
+}
+
 function rethrowEnterpriseArchiveReviewError(error: unknown): never {
   if (error instanceof Error && error.message === `Request timed out after ${enterpriseArchiveImportTimeoutMs}ms`) {
     throw new Error('Import review timed out after 3 minutes 30 seconds. Your archive remains in the queue. Retry validation.')
@@ -1216,6 +1289,8 @@ export function useScriptApi() {
       agentforce_transform?: boolean
       salvage_truncated?: boolean
       http_version_mode?: 'upgrade' | 'exact' | 'inherit'
+      signal?: AbortSignal
+      timeoutMs?: number
     }): Promise<HARImportResult> => {
       const formData = new FormData()
       if (options?.project_id) formData.append('project_id', options.project_id)
@@ -1235,17 +1310,32 @@ export function useScriptApi() {
       if (options?.salesforce_native === false) query.set('salesforce_native', 'false')
       if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
       const suffix = query.toString()
-      const res = await apiFetch(canonicalImportURL(`/scripts/import/har${suffix ? `?${suffix}` : ''}`), { method: 'POST', body: formData })
-      if (!res.ok) {
-        throw new Error(await errorMessageFromResponse(res))
+      // A caller abort surfaces as the fetch AbortError; only this request's
+      // own deadline becomes the actionable timeout message.
+      const timeoutMs = options?.timeoutMs ?? harImportTimeoutMs(file.size + (options?.secondary_file?.size ?? 0))
+      const deadline = startHARImportDeadline(timeoutMs, options?.signal)
+      try {
+        const res = await deadline.within(apiFetch(canonicalImportURL(`/scripts/import/har${suffix ? `?${suffix}` : ''}`), {
+          method: 'POST',
+          body: formData,
+          signal: deadline.signal,
+        }))
+        if (!res.ok) {
+          throw new Error(await deadline.within(errorMessageFromResponse(res)))
+        }
+        return restoreImportAliases(await deadline.within(res.json() as Promise<HARImportResult>))
+      } catch (error) {
+        if (deadline.timedOut()) throw new Error(harImportTimeoutMessage(timeoutMs))
+        throw error
+      } finally {
+        deadline.clear()
       }
-      return (res.json() as Promise<HARImportResult>).then(restoreImportAliases)
     },
     [],
   )
 
   const importSalesforce = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<SalesforceImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean; signal?: AbortSignal; timeoutMs?: number }): Promise<SalesforceImportResult> => {
       const formData = new FormData()
       if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
@@ -1256,11 +1346,26 @@ export function useScriptApi() {
       if (options?.project_id) query.set('project_id', options.project_id)
       if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
       const suffix = query.toString()
-      const res = await apiFetch(canonicalImportURL(`/scripts/import/salesforce${suffix ? `?${suffix}` : ''}`), { method: 'POST', body: formData })
-      if (!res.ok) {
-        throw new Error(await errorMessageFromResponse(res))
+      // The controller gives Salesforce HAR imports the same upload and
+      // processing windows as HAR imports, so the same deadline applies.
+      const timeoutMs = options?.timeoutMs ?? harImportTimeoutMs(file.size)
+      const deadline = startHARImportDeadline(timeoutMs, options?.signal, 'salesforce')
+      try {
+        const res = await deadline.within(apiFetch(canonicalImportURL(`/scripts/import/salesforce${suffix ? `?${suffix}` : ''}`), {
+          method: 'POST',
+          body: formData,
+          signal: deadline.signal,
+        }))
+        if (!res.ok) {
+          throw new Error(await deadline.within(errorMessageFromResponse(res)))
+        }
+        return restoreImportAliases(await deadline.within(res.json() as Promise<SalesforceImportResult>))
+      } catch (error) {
+        if (deadline.timedOut()) throw new Error(harImportTimeoutMessage(timeoutMs, 'salesforce'))
+        throw error
+      } finally {
+        deadline.clear()
       }
-      return (res.json() as Promise<SalesforceImportResult>).then(restoreImportAliases)
     },
     [],
   )

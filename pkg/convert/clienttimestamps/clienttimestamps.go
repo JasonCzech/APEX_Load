@@ -37,8 +37,9 @@ const (
 )
 
 var (
-	digitRun   = regexp.MustCompile(`[0-9]+`)
 	keyPattern = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.-]{0,63})\\*"?\s*[:=]\s*\\*"?$`)
+	// keyEscapes decodes the percent-escaped separators keyBefore looks for.
+	keyEscapes = strings.NewReplacer("%22", `"`, "%3A", ":", "%3a", ":", "%3D", "=", "%3d", "=")
 )
 
 // timeKeys are keys that name a timestamp or a cache-buster.
@@ -132,12 +133,34 @@ func (e *Evidence) AddServerText(text string) {
 	if e.Server == nil {
 		e.Server = map[string]bool{}
 	}
-	for _, run := range digitRun.FindAllString(text, -1) {
-		if len(run) == 10 || len(run) == 13 {
-			e.Server[run] = true
+	forEachDigitRun(text, func(start, end int) {
+		if epochLength(end - start) {
+			e.Server[text[start:end]] = true
 		}
+	})
+}
+
+// forEachDigitRun calls visit with the bounds of every maximal run of ASCII
+// digits in text, in order. These are exactly the matches of the regexp
+// `[0-9]+`: no byte of a multi-byte UTF-8 sequence is an ASCII digit.
+func forEachDigitRun(text string, visit func(start, end int)) {
+	for i := 0; i < len(text); i++ {
+		if !isDigit(text[i]) {
+			continue
+		}
+		start := i
+		for i < len(text) && isDigit(text[i]) {
+			i++
+		}
+		visit(start, i)
 	}
 }
+
+func isDigit(b byte) bool { return b >= '0' && b <= '9' }
+
+// epochLength reports whether a digit run has the length of a seconds or
+// milliseconds timestamp; templateFor rejects every other run.
+func epochLength(n int) bool { return n == 10 || n == 13 }
 
 // templateFor returns the template for a recorded number, or "" when it is
 // not an epoch timestamp within the capture window.
@@ -175,13 +198,16 @@ func Apply(script *dsl.Script, evidence Evidence) Report {
 	}
 	var found []occurrence
 	scan := func(text string) {
-		for _, span := range digitRun.FindAllStringIndex(text, -1) {
-			number := text[span[0]:span[1]]
-			if evidence.Server[number] || evidence.templateFor(number) == "" {
-				continue
+		forEachDigitRun(text, func(start, end int) {
+			if !epochLength(end - start) {
+				return
 			}
-			found = append(found, occurrence{number: number, key: keyBefore(text[:span[0]])})
-		}
+			number := text[start:end]
+			if evidence.Server[number] || evidence.templateFor(number) == "" {
+				return
+			}
+			found = append(found, occurrence{number: number, key: keyBefore(text[:start])})
+		})
 	}
 	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
 		if action := ref.Action; action != nil && safeBody(action) {
@@ -227,20 +253,24 @@ func Apply(script *dsl.Script, evidence Evidence) Report {
 	replace := func(text string) string {
 		var out strings.Builder
 		last := 0
-		for _, span := range digitRun.FindAllStringIndex(text, -1) {
-			number := text[span[0]:span[1]]
-			if evidence.Server[number] || !qualifies[keyBefore(text[:span[0]])] {
-				continue
+		forEachDigitRun(text, func(start, end int) {
+			// The conditions are pure, so the costly key lookup runs last.
+			if !epochLength(end - start) {
+				return
+			}
+			number := text[start:end]
+			if evidence.Server[number] {
+				return
 			}
 			template := evidence.templateFor(number)
-			if template == "" {
-				continue
+			if template == "" || !qualifies[keyBefore(text[:start])] {
+				return
 			}
-			out.WriteString(text[last:span[0]])
+			out.WriteString(text[last:start])
 			out.WriteString(template)
-			last = span[1]
+			last = end
 			report.Replaced++
-		}
+		})
 		if last == 0 {
 			return text
 		}
@@ -304,7 +334,7 @@ func keyBefore(prefix string) string {
 	if len(prefix) > 96 {
 		prefix = prefix[len(prefix)-96:]
 	}
-	prefix = strings.NewReplacer("%22", `"`, "%3A", ":", "%3a", ":", "%3D", "=", "%3d", "=").Replace(prefix)
+	prefix = keyEscapes.Replace(prefix)
 	if match := keyPattern.FindStringSubmatch(prefix); match != nil {
 		key := match[1]
 		if index := strings.LastIndexAny(key, ".["); index >= 0 {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import ProtocolAssetImport from './ProtocolAssetImport'
+import { harImportTimeoutMessage } from '../hooks/api/useScriptApi'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1988,6 +1989,165 @@ describe('ProtocolAssetImport', () => {
       secondary_file: undefined,
       artifact_mode: 'design_har',
     }))
+  })
+
+  describe('in-flight HAR inspection', () => {
+    const findButton = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === label)
+    const statusRegion = () => container.querySelector<HTMLElement>('.sr-only[role="status"]')
+    const canceledNotice = 'Inspection canceled. The controller may still be finishing the earlier request.'
+    const staleHARResult = {
+      script: { name: 'Stale HAR result', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [] },
+      scripts: [],
+      source_secret_session_id: 'stale-har-session',
+      warnings: [],
+      unsupported_elements: [],
+      review_sections: [],
+      stats: { converted_actions: 0 },
+    }
+
+    // Holds the HAR request open until the test settles it, recording the
+    // signal the component passed so the test can observe the abort.
+    function holdHARImport() {
+      const held: { signal?: AbortSignal } = {}
+      apiMock.importHAR.mockImplementationOnce((_file: File, options: { signal?: AbortSignal }) => new Promise((_resolve, reject) => {
+        held.signal = options.signal
+        options.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true })
+      }))
+      return held
+    }
+
+    async function startInspection(element = <ProtocolAssetImport kind="har" projectId="project-1" />) {
+      await act(async () => {
+        root.render(element)
+      })
+      const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')
+      const file = new File(['{"log":{"entries":[]}}'], 'capture.har', { type: 'application/json' })
+      await act(async () => {
+        Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+        fileInput?.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await act(async () => {
+        findButton('Inspect & review')?.click()
+        await Promise.resolve()
+      })
+    }
+
+    it('cancels the request and returns to the idle state with a neutral notice', async () => {
+      const held = holdHARImport()
+      await startInspection()
+
+      expect(container.textContent).toContain('Inspecting…')
+      expect(held.signal?.aborted).toBe(false)
+      const liveRegion = statusRegion()
+      expect(liveRegion?.textContent).toBe('')
+      const cancel = findButton('Cancel')
+      cancel?.focus()
+      expect(cancel).toBeTruthy()
+
+      await act(async () => {
+        cancel?.click()
+        await Promise.resolve()
+      })
+      await flushPromises()
+
+      expect(held.signal?.aborted).toBe(true)
+      expect(container.textContent).not.toContain('Inspecting…')
+      expect(findButton('Cancel')).toBeUndefined()
+      expect(findButton('Inspect & review')?.disabled).toBe(false)
+      // Focus returns to the button that started the request.
+      expect(document.activeElement).toBe(findButton('Inspect & review'))
+      // The live region was already mounted; only its text changed.
+      expect(statusRegion()).toBe(liveRegion)
+      expect(statusRegion()?.textContent).toBe(canceledNotice)
+      expect(container.querySelector('p.sample-import-muted[aria-hidden="true"]')?.textContent).toBe(canceledNotice)
+      expect(container.querySelector('[role="alert"]')).toBeNull()
+
+      // The next inspection clears the notice.
+      apiMock.importHAR.mockImplementationOnce(() => new Promise(() => {}))
+      await act(async () => {
+        findButton('Inspect & review')?.click()
+        await Promise.resolve()
+      })
+      expect(container.textContent).not.toContain('Inspection canceled.')
+      expect(statusRegion()?.textContent).toBe('')
+      expect(container.textContent).toContain('Inspecting…')
+    })
+
+    it('discards a late response the transport could not abort', async () => {
+      let resolveImport: ((value: unknown) => void) | undefined
+      apiMock.importHAR.mockImplementationOnce(() => new Promise(resolve => { resolveImport = resolve }))
+      await startInspection()
+      await act(async () => {
+        findButton('Cancel')?.click()
+        await Promise.resolve()
+      })
+      await act(async () => {
+        resolveImport?.(staleHARResult)
+        await Promise.resolve()
+      })
+      await flushPromises()
+
+      expect(container.textContent).not.toContain('Stale HAR result')
+      expect(statusRegion()?.textContent).toBe(canceledNotice)
+      expect(container.querySelector('[role="alert"]')).toBeNull()
+      expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+        project_id: 'project-1',
+        source_secret_session_id: 'stale-har-session',
+      })
+    })
+
+    it('aborts the request when the source changes or the importer unmounts', async () => {
+      const first = holdHARImport()
+      await startInspection()
+      const comparisonInput = container.querySelectorAll<HTMLInputElement>('input[type="file"]')[1]
+      await act(async () => {
+        Object.defineProperty(comparisonInput, 'files', { configurable: true, value: [new File(['{}'], 'comparison.har', { type: 'application/json' })] })
+        comparisonInput.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await flushPromises()
+      expect(first.signal?.aborted).toBe(true)
+      expect(container.textContent).not.toContain('Inspecting…')
+      expect(container.textContent).not.toContain('Inspection canceled.')
+      expect(container.querySelector('[role="alert"]')).toBeNull()
+
+      const second = holdHARImport()
+      await act(async () => {
+        findButton('Inspect & review')?.click()
+        await Promise.resolve()
+      })
+      expect(second.signal?.aborted).toBe(false)
+      await act(async () => {
+        root.render(<ProtocolAssetImport kind="har" projectId="project-2" />)
+      })
+      await flushPromises()
+      expect(second.signal?.aborted).toBe(true)
+
+      const third = holdHARImport()
+      await act(async () => {
+        findButton('Inspect & review')?.click()
+        await Promise.resolve()
+      })
+      expect(third.signal?.aborted).toBe(false)
+      await act(async () => {
+        root.render(<div />)
+      })
+      expect(third.signal?.aborted).toBe(true)
+    })
+
+    it('shows the actionable timeout error when the controller never answers', async () => {
+      apiMock.importHAR.mockRejectedValueOnce(new Error(harImportTimeoutMessage()))
+      await startInspection()
+      await flushPromises()
+
+      const alert = container.querySelector('[role="alert"]')
+      expect(alert?.textContent).toContain('did not answer the HAR import within 5.5 minutes')
+      expect(alert?.textContent).toContain('/api/v1/scripts/import/har')
+      expect(alert?.textContent).toContain('may still be processing it')
+      expect(alert?.textContent).toContain('import a single HAR')
+      expect(container.textContent).not.toContain('Inspecting…')
+      expect(findButton('Cancel')).toBeUndefined()
+    })
   })
 
   it('rejects unsupported dropped import files before conversion', async () => {

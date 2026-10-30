@@ -339,8 +339,8 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/java-compile", withDomainFeature(editorImportAccess(resolveImportProjectIDFromJSON, javaCompileMaxBodyBytes), "script_builder.imports")),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/oracle-ebusiness/review", editorImportAccess(resolveImportProjectIDFromJSONOrForm, oracleReviewImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/k6", editorImportAccess(resolveImportProjectIDFromJSONOrForm, k6ImportMaxBodyBytes)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/import/har", editorImportAccess(resolveImportProjectIDFromJSONOrForm, harImportMaxBodyBytes)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/import/salesforce", editorImportAccess(resolveImportProjectIDFromJSONOrForm, harImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/har", editorHARPairImportAccess(resolveImportProjectIDFromJSONOrForm)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/salesforce", editorImportAccess(resolveImportProjectIDFromJSONOrForm, salesforceImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/recorder", editorImportAccess(resolveImportProjectIDFromJSONOrForm, recorderImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/recorder/validate", editorImportAccess(resolveImportProjectIDFromJSONOrForm, recorderImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/recorder/replay", editorImportAccess(resolveImportProjectIDFromJSONOrForm, recorderImportMaxBodyBytes)),
@@ -534,6 +534,16 @@ func editorProjectAccessWithBodyLimit(lookup projectScopedLookup, maxBody int64)
 func editorImportAccess(lookup projectScopedLookup, maxBody int64) accessRequirement {
 	req := editorProjectAccess(lookup)
 	req.MaxBodyBytes = maxBody
+	return req
+}
+
+// editorHARPairImportAccess is editorImportAccess for the HAR import. Its
+// multipart envelope fits a baseline and a comparison capture, which the
+// handler streams part by part; a JSON or raw upload is buffered whole, so it
+// keeps the one-capture envelope.
+func editorHARPairImportAccess(lookup projectScopedLookup) accessRequirement {
+	req := editorImportAccess(lookup, harImportMaxBodyBytes)
+	req.NonMultipartMaxBodyBytes = harSingleCaptureMaxBodyBytes
 	return req
 }
 

@@ -1707,7 +1707,7 @@ func TestImportMultipartProjectLookupHonorsRouteBodyLimits(t *testing.T) {
 		{name: "asyncapi import", path: "/api/v1/scripts/import/asyncapi", limit: webAPIImportMaxBodyBytes},
 		{name: "raml import", path: "/api/v1/scripts/import/raml", limit: webAPIImportMaxBodyBytes},
 		{name: "har import", path: "/api/v1/scripts/import/har", limit: harImportMaxBodyBytes},
-		{name: "salesforce import", path: "/api/v1/scripts/import/salesforce", limit: harImportMaxBodyBytes},
+		{name: "salesforce import", path: "/api/v1/scripts/import/salesforce", limit: salesforceImportMaxBodyBytes},
 		{name: "jmeter import", path: "/api/v1/scripts/import/jmeter", limit: jmeterImportMaxBodyBytes},
 		{name: "enterprise archive import", path: "/api/v1/scripts/import/enterprise-script-archive", limit: enterpriseArchiveImportMaxBodyBytes},
 		{name: "cloudtest import", path: "/api/v1/scripts/import/cloudtest", limit: webAPIImportMaxBodyBytes},
@@ -1721,8 +1721,14 @@ func TestImportMultipartProjectLookupHonorsRouteBodyLimits(t *testing.T) {
 
 			server.httpServer.Handler.ServeHTTP(resp, req)
 
-			if resp.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+			want := http.StatusBadRequest
+			if tt.limit == harImportMaxBodyBytes || tt.limit == salesforceImportMaxBodyBytes {
+				// The HAR reader streams its file parts and refuses one over the
+				// per-capture limit with 413.
+				want = http.StatusRequestEntityTooLarge
+			}
+			if resp.Code != want {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, want, resp.Body.String())
 			}
 		})
 	}
@@ -1735,7 +1741,9 @@ func TestRequestBodyLimitsUseSmallDefaultAndExplicitImportEnvelopes(t *testing.T
 		path   string
 		want   int64
 	}{
-		{name: "HAR capture import", method: http.MethodPost, path: "/api/v1/scripts/import/har", want: 300<<20 + 1<<20},
+		// The HAR envelope fits a baseline and a comparison capture of 300 MiB
+		// each; the Salesforce importer converts one capture.
+		{name: "HAR capture import", method: http.MethodPost, path: "/api/v1/scripts/import/har", want: 2*(300<<20) + 1<<20},
 		{name: "Salesforce capture import", method: http.MethodPost, path: "/api/v1/scripts/import/salesforce", want: 300<<20 + 1<<20},
 		{name: "import asset upload", method: http.MethodPost, path: "/api/v1/scripts/import/session/assets/upload", want: 50 << 20},
 		{name: "ordinary settings mutation", method: http.MethodPut, path: "/api/v1/system/settings", want: defaultMaxRequestBodyBytes},
@@ -1753,10 +1761,20 @@ func TestRequestBodyLimitsUseSmallDefaultAndExplicitImportEnvelopes(t *testing.T
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
 			if got := requestMaxBodyBytes(req); got != tt.want {
 				t.Fatalf("requestMaxBodyBytes() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+	// Only the HAR import's multipart reader streams a two-capture envelope;
+	// its JSON and raw uploads are buffered whole and keep one capture's.
+	for _, contentType := range []string{"application/json", "application/zip", ""} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil)
+		req.Header.Set("Content-Type", contentType)
+		if got, want := requestMaxBodyBytes(req), int64(300<<20+1<<20); got != want {
+			t.Fatalf("HAR import %q requestMaxBodyBytes() = %d, want %d", contentType, got, want)
+		}
 	}
 	if defaultMaxRequestBodyBytes != 8<<20 {
 		t.Fatalf("default request envelope = %d, want 8 MiB", defaultMaxRequestBodyBytes)

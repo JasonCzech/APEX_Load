@@ -30,18 +30,18 @@ func auraTokenScript(token string) *dsl.Script {
 // token. The review must say so instead of staying silent.
 func TestAuraTokenProvenanceWarning(t *testing.T) {
 	const token = "eyJub25jZSI6InJlY29yZGVkIn0"
-	if warning := auraTokenProvenanceWarning(auraTokenScript(token), nil); !strings.Contains(warning, "2 Aura request(s)") || !strings.Contains(warning, "no response that issues it") {
+	if warning := auraTokenProvenanceWarning(auraTokenScript(token), nil, false); !strings.Contains(warning, "2 Aura request(s)") || !strings.Contains(warning, "no response that issues it") {
 		t.Fatalf("missing-producer warning = %q", warning)
 	}
 	producer := []correlate.Correlation{{Name: "corr_cookie_host_eric_prod", Value: token}}
-	if warning := auraTokenProvenanceWarning(auraTokenScript(token), producer); !strings.Contains(warning, "contains a producer") {
+	if warning := auraTokenProvenanceWarning(auraTokenScript(token), producer, false); !strings.Contains(warning, "contains a producer") {
 		t.Fatalf("unapplied-producer warning = %q", warning)
 	}
-	if warning := auraTokenProvenanceWarning(auraTokenScript("{{var.corr_cookie_host_eric_prod_encoded}}"), producer); warning != "" {
+	if warning := auraTokenProvenanceWarning(auraTokenScript("{{var.corr_cookie_host_eric_prod_encoded}}"), producer, false); warning != "" {
 		t.Fatalf("wired token produced a warning: %q", warning)
 	}
 	for _, placeholder := range []string{"undefined", "null"} {
-		if warning := auraTokenProvenanceWarning(auraTokenScript(placeholder), nil); warning != "" {
+		if warning := auraTokenProvenanceWarning(auraTokenScript(placeholder), nil, false); warning != "" {
 			t.Fatalf("guest placeholder %q produced a warning: %q", placeholder, warning)
 		}
 	}

@@ -149,6 +149,59 @@ func TestRequestLoggingSuccessIsInfoWithRouteAndNoError(t *testing.T) {
 	}
 }
 
+func TestRequestLoggingMarksAClientThatLeftBeforeAnyResponse(t *testing.T) {
+	logger, logs := newCapturedRequestLogger()
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil).WithContext(ctx)
+	resp := serveLogged(t, logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The client disconnects mid-import and the handler returns without
+		// writing, as a canceled HAR import does.
+		cancel()
+		<-r.Context().Done()
+	}), req)
+
+	line := findLogRecord(t, logs, "http request", resp.Header().Get(requestIDHeader))
+	if line["status"] != float64(statusClientClosedRequest) {
+		t.Fatalf("access line status = %v, want %d for a client that left before any response", line["status"], statusClientClosedRequest)
+	}
+
+	// A handler that answered before its client left keeps its status.
+	logs2Logger, logs2 := newCapturedRequestLogger()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/things", nil).WithContext(ctx2)
+	resp2 := serveLogged(t, logs2Logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"ok": "yes"})
+		cancel2()
+	}), req2)
+	if line := findLogRecord(t, logs2, "http request", resp2.Header().Get(requestIDHeader)); line["status"] != float64(http.StatusOK) {
+		t.Fatalf("access line status = %v, want 200 for a response written before the client left", line["status"])
+	}
+
+	// A flush commits the 200 status line even with no body written.
+	logs3Logger, logs3 := newCapturedRequestLogger()
+	ctx3, cancel3 := context.WithCancel(context.Background())
+	req3 := httptest.NewRequest(http.MethodGet, "/api/v1/stream", nil).WithContext(ctx3)
+	resp3 := serveLogged(t, logs3Logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.(http.Flusher).Flush()
+		cancel3()
+	}), req3)
+	if line := findLogRecord(t, logs3, "http request", resp3.Header().Get(requestIDHeader)); line["status"] != float64(http.StatusOK) {
+		t.Fatalf("access line status = %v, want 200 for a response flushed before the client left", line["status"])
+	}
+
+	// A request context that only ran out of time is not a client that left.
+	logs4Logger, logs4 := newCapturedRequestLogger()
+	ctx4, cancel4 := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel4()
+	req4 := httptest.NewRequest(http.MethodGet, "/api/v1/things", nil).WithContext(ctx4)
+	resp4 := serveLogged(t, logs4Logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}), req4)
+	if line := findLogRecord(t, logs4, "http request", resp4.Header().Get(requestIDHeader)); line["status"] == float64(statusClientClosedRequest) {
+		t.Fatalf("access line status = %v, want no 499 for a deadline", line["status"])
+	}
+}
+
 func TestRequestLoggingRequestIDPropagation(t *testing.T) {
 	for _, test := range []struct {
 		name     string
