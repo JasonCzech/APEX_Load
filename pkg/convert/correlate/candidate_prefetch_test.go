@@ -419,7 +419,7 @@ func panickingCandidateExtractor(calls *atomic.Int64) candidateExtractor {
 	return func(body string, _ map[string]string) ([]Candidate, bool, error) {
 		if body == "panic" {
 			calls.Add(1)
-			var rows []Candidate
+			rows := make([]Candidate, 0)
 			_ = rows[len(body)] // index out of range, like a failing helper
 		}
 		return []Candidate{{Value: body}}, false, nil
