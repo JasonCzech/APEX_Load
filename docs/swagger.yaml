@@ -328218,6 +328218,8 @@ paths:
                   type: string
                 profile_id:
                   type: string
+                recorded_concurrency:
+                  type: string
                 recording_profile_id:
                   type: string
                 redact_sensitive:
@@ -328231,6 +328233,8 @@ paths:
                 salvage_truncated:
                   type: string
                 secret_bindings:
+                  type: string
+                step_transactions:
                   type: string
               additionalProperties: true
       responses:
@@ -328380,6 +328384,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: recorded_concurrency
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: recording_profile_id
           in: query
           description: Handler-defined query parameter.
@@ -328424,6 +328434,12 @@ paths:
           schema:
             type: boolean
         - name: secret_bindings
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: step_transactions
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -352847,6 +352863,8 @@ paths:
                   type: string
                 profile_id:
                   type: string
+                recorded_concurrency:
+                  type: string
                 recording_profile_id:
                   type: string
                 redact_sensitive:
@@ -352860,6 +352878,8 @@ paths:
                 salvage_truncated:
                   type: string
                 secret_bindings:
+                  type: string
+                step_transactions:
                   type: string
               additionalProperties: true
       responses:
@@ -353009,6 +353029,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: recorded_concurrency
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: recording_profile_id
           in: query
           description: Handler-defined query parameter.
@@ -353053,6 +353079,12 @@ paths:
           schema:
             type: boolean
         - name: secret_bindings
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: step_transactions
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -353143,6 +353175,9 @@ paths:
                         additionalProperties: true
                     parameterize:
                       type: boolean
+                    recorded_concurrency:
+                      type: boolean
+                      nullable: true
                     recording_profile_id:
                       type: string
                     resource_mode:
@@ -353151,6 +353186,9 @@ paths:
                       type: boolean
                       nullable: true
                     sanitize_sensitive:
+                      type: boolean
+                      nullable: true
+                    step_transactions:
                       type: boolean
                       nullable: true
                 page_title_checks:

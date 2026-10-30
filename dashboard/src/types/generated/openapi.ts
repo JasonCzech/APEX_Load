@@ -108329,6 +108329,7 @@ export interface operations {
         "parameterize"?: string;
         "profile_id"?: string;
         "project_id"?: string;
+        "recorded_concurrency"?: string;
         "recording_profile_id"?: string;
         "redact_sensitive"?: boolean;
         "resource_mode"?: string;
@@ -108337,6 +108338,7 @@ export interface operations {
         "salesforce_native"?: boolean;
         "salvage_truncated"?: boolean;
         "secret_bindings"?: string;
+        "step_transactions"?: string;
       };
     };
     requestBody: {
@@ -108359,6 +108361,7 @@ export interface operations {
           "parameterization_selections"?: string;
           "parameterize"?: string;
           "profile_id"?: string;
+          "recorded_concurrency"?: string;
           "recording_profile_id"?: string;
           "redact_sensitive"?: string;
           "resource_mode"?: string;
@@ -108366,6 +108369,7 @@ export interface operations {
           "salesforce_native"?: string;
           "salvage_truncated"?: string;
           "secret_bindings"?: string;
+          "step_transactions"?: string;
           [key: string]: unknown;
         };
       };
@@ -108738,6 +108742,7 @@ export interface operations {
         "parameterize"?: string;
         "profile_id"?: string;
         "project_id"?: string;
+        "recorded_concurrency"?: string;
         "recording_profile_id"?: string;
         "redact_sensitive"?: boolean;
         "resource_mode"?: string;
@@ -108746,6 +108751,7 @@ export interface operations {
         "salesforce_native"?: boolean;
         "salvage_truncated"?: boolean;
         "secret_bindings"?: string;
+        "step_transactions"?: string;
       };
     };
     requestBody: {
@@ -108768,6 +108774,7 @@ export interface operations {
           "parameterization_selections"?: string;
           "parameterize"?: string;
           "profile_id"?: string;
+          "recorded_concurrency"?: string;
           "recording_profile_id"?: string;
           "redact_sensitive"?: string;
           "resource_mode"?: string;
@@ -108775,6 +108782,7 @@ export interface operations {
           "salesforce_native"?: string;
           "salvage_truncated"?: string;
           "secret_bindings"?: string;
+          "step_transactions"?: string;
           [key: string]: unknown;
         };
       };
@@ -108862,10 +108870,12 @@ export interface operations {
             "page_title_checks"?: (boolean) | null;
             "parameterization_selections"?: Array<Record<string, unknown>>;
             "parameterize"?: boolean;
+            "recorded_concurrency"?: (boolean) | null;
             "recording_profile_id"?: string;
             "resource_mode"?: string;
             "salesforce_native"?: (boolean) | null;
             "sanitize_sensitive"?: (boolean) | null;
+            "step_transactions"?: (boolean) | null;
           };
           "page_title_checks"?: (boolean) | null;
           "parameterization_selections"?: Array<Record<string, unknown>>;
