@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -219,8 +220,17 @@ func writePanicResponse(w http.ResponseWriter, requestID string) {
 	})
 }
 
+// statusClientClosedRequest is logged for a request whose client went away
+// (net/http cancels the request context) before any response was committed
+// (nginx's 499): net/http has nothing to send, and the recorder's default 200
+// would read as a success.
+const statusClientClosedRequest = 499
+
 func logHTTPRequest(logger *slog.Logger, r *http.Request, rw *accessLogResponseWriter, entry *requestLogEntry, requestID string, start time.Time, panicked bool) {
 	status := rw.status
+	if !rw.wrote && !rw.hijacked && errors.Is(r.Context().Err(), context.Canceled) {
+		status = statusClientClosedRequest
+	}
 	attrs := make([]slog.Attr, 0, 14)
 	attrs = append(attrs,
 		slog.String("method", r.Method),

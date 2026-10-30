@@ -815,8 +815,8 @@ func NewServer(cfg ServerConfig) *Server {
 	s.httpServer = &http.Server{
 		Addr:           cfg.Addr,
 		Handler:        telemetry.HTTPMiddleware(securityHeadersMiddleware(handler)),
-		ReadTimeout:    15 * time.Second,
-		WriteTimeout:   60 * time.Second,
+		ReadTimeout:    apiServerReadTimeout,
+		WriteTimeout:   apiServerWriteTimeout,
 		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1 MiB
 		ErrorLog:       httpServerErrorLog(),
@@ -825,6 +825,17 @@ func NewServer(cfg ServerConfig) *Server {
 	s.startNativeAnalysisReconciliation()
 	return s
 }
+
+// apiServerReadTimeout and apiServerWriteTimeout are the API server's
+// per-request deadlines for ordinary routes: the whole request (body included)
+// must arrive within the first, and the response must be written within the
+// second. Large-upload routes extend them per request: the auth middlewares
+// grant an authenticated caller grantLargeUploadWindow, and the HAR imports
+// extend the write deadline again for processing (harImportProcessingRequest). Variables only so tests can scale them down.
+var (
+	apiServerReadTimeout  = 15 * time.Second
+	apiServerWriteTimeout = 60 * time.Second
+)
 
 // authSettingsForRequest returns the authentication configuration activated for
 // this controller process. Local Test Login is deliberately restart-required:

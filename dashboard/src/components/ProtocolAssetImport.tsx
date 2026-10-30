@@ -159,6 +159,9 @@ const copy = {
 } satisfies Record<ImportKind, Record<string, string>>
 
 const IMPORT_FILE_MAX_BYTES = 50 * 1024 * 1024
+// The controller's per-capture HAR limit (harImportMaxFileBytes). The baseline
+// and the comparison capture are each held to it, and the controller's request
+// limit fits both of them plus the multipart overhead.
 const HAR_FILE_MAX_BYTES = 300 * 1024 * 1024
 const POSTMAN_ENVIRONMENT_ACCEPT = '.postman_environment.json,.json,application/json'
 
@@ -763,6 +766,16 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     // sequential Save All cannot start another commit after unmount.
     reviewGenerationRef.current += 1
   }, [reviewGenerationRef])
+  // The in-flight conversion request. Aborting it disconnects this client; the
+  // controller finishes the stage it is running and then drops the request
+  // without a response. The generation guards still discard any response that
+  // settles.
+  const conversionAbortRef = useRef<AbortController | null>(null)
+  const abortConversionRequest = useCallback(() => {
+    conversionAbortRef.current?.abort()
+    conversionAbortRef.current = null
+  }, [])
+  useEffect(() => abortConversionRequest, [abortConversionRequest])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
   // The converted draft lives only in this review until it is saved.
@@ -862,6 +875,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [harSalesforceNative, setHARSalesforceNative] = useState(initialMode !== 'force_generic')
   const [retentionDays, setRetentionDays] = useState(7)
   const [messageError, setMessageError] = useState('')
+  const [conversionNotice, setConversionNotice] = useState('')
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
   const replayTask = useAsyncTask<BrowserReplayStartResponse>()
   const [recorderReplaySessionId, setRecorderReplaySessionId] = useState('')
@@ -967,6 +981,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     return () => onOperationBusyChange?.(false)
   }, [onOperationBusyChange, operationBusy])
   const invalidateConversionSource = useCallback(() => {
+    abortConversionRequest()
     sourceSecretSessions.clear('conversion')
     settledSourceSecretSelectionsRef.current.clear()
     asyncAPICredentialBatchRequiredRef.current = false
@@ -993,7 +1008,29 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     setPreparedCredentialSummary(null)
     resetAsyncAPISavedScripts()
     setMessageError('')
-  }, [advanceReviewGeneration, resetAsyncAPISavedScripts, resetConvertTask, resetSaveTask, sourceSecretSessions])
+    setConversionNotice('')
+  }, [abortConversionRequest, advanceReviewGeneration, resetAsyncAPISavedScripts, resetConvertTask, resetSaveTask, sourceSecretSessions])
+  // Cancel returns the importer to its idle state at once. Invalidation aborts
+  // the request and advances the review generation, so a response that still
+  // settles is discarded with its unaccepted source-secret session. Focus goes
+  // back to the button that started the request once it is enabled again,
+  // because the focused Cancel button unmounts.
+  const inspectButtonRef = useRef<HTMLButtonElement>(null)
+  const validateButtonRef = useRef<HTMLButtonElement>(null)
+  const refocusAfterCancelRef = useRef<'conversion' | 'validation' | null>(null)
+  const cancelConversion = () => {
+    const notice = `${reviewMode === 'validation' ? 'Validation' : 'Inspection'} canceled. The controller may still be finishing the earlier request.`
+    refocusAfterCancelRef.current = reviewMode
+    invalidateConversionSource()
+    setConversionNotice(notice)
+  }
+  useEffect(() => {
+    const mode = refocusAfterCancelRef.current
+    if (!mode || convertTask.pending) return
+    refocusAfterCancelRef.current = null
+    ;(mode === 'validation' ? validateButtonRef : inspectButtonRef).current?.focus()
+  }, [convertTask.pending])
+  const showConversionNotice = Boolean(conversionNotice) && !messageError && !convertTask.error
   const previousProjectIdRef = useRef(projectId)
   useEffect(() => {
     if (previousProjectIdRef.current === projectId) return
@@ -1064,6 +1101,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       return
     }
     resetAsyncAPISavedScripts()
+    abortConversionRequest()
+    const abortController = new AbortController()
+    conversionAbortRef.current = abortController
     const sourceGeneration = advanceReviewGeneration()
     const sourceProjectId = reviewProjectIdRef.current
     const sourceFile = file
@@ -1071,6 +1111,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       && reviewProjectIdRef.current === sourceProjectId
       && sourceFileRef.current === sourceFile
     setMessageError('')
+    setConversionNotice('')
     setReviewMode(mode)
     recorderReplaySessionIdRef.current = ''
     recorderReplayStatusRef.current = 'idle'
@@ -1114,6 +1155,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           redact_sensitive: redactSensitive,
           salesforce_native: overrides?.salesforceNative ?? harSalesforceNative,
           agentforce_transform: agentforceReplayReady,
+          signal: abortController.signal,
         }))
         if (kind === 'recorder-export') return guardResponse(mode === 'validation' ? api.validateBrowserRecordingImport(file, options) : api.importBrowserRecording(file, options))
         if (kind === 'openapi') return guardResponse(api.importOpenAPI(file, { ...options, agentforce_transform: agentforceReplayReady }))
@@ -1150,6 +1192,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         sourceSecretSessions.clear('conversion')
         setMessageError(getErrorMessage(error, `Import ${labels.title} failed`))
       }
+    } finally {
+      if (conversionAbortRef.current === abortController) conversionAbortRef.current = null
     }
   }
 
@@ -2385,17 +2429,25 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       <div className="sample-import-actions">
         {projectScopeRequired && <p id="har-project-scope-required" className="sample-import-error" role="status">Select a project from the workspace context before inspecting HAR traffic.</p>}
         {kind !== 'asyncapi' && (
-          <details><summary>Advanced validation only</summary><p>Run the validator to inspect a draft without saving. Review its findings before choosing whether to save.</p><button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired}>
+          <details><summary>Advanced validation only</summary><p>Run the validator to inspect a draft without saving. Review its findings before choosing whether to save.</p><button ref={validateButtonRef} className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired}>
             {convertTask.pending && reviewMode === 'validation' ? <><span className="spinner" /> Validating…</> : 'Validate Only'}
           </button></details>
         )}
-        <button className="btn btn-primary btn-lg" onClick={() => handleConvert('conversion')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired} aria-describedby={projectScopeRequired ? 'har-project-scope-required' : undefined}>
+        <button ref={inspectButtonRef} className="btn btn-primary btn-lg" onClick={() => handleConvert('conversion')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired} aria-describedby={projectScopeRequired ? 'har-project-scope-required' : undefined}>
           {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Inspecting…</> : 'Inspect & review'}
         </button>
+        {convertTask.pending && (
+          <button type="button" className="btn btn-secondary btn-lg" onClick={cancelConversion}>Cancel</button>
+        )}
       </div>
 
       </details>
       {(messageError || convertTask.error) && <div className="sample-import-error" role="alert">{messageError || convertTask.error}</div>}
+      {/* The live region stays mounted so screen readers announce a notice
+          when its text changes; it is visually hidden (and out of the flex
+          gap) while the visible copy is hidden from assistive technology. */}
+      <div className="sr-only" role="status">{showConversionNotice ? conversionNotice : ''}</div>
+      {showConversionNotice && <p className="sample-import-muted" aria-hidden="true">{conversionNotice}</p>}
 
       {sourceImportSupportHasLimitations(sourceImportSupport) && (
         <SourceImportCoveragePanel kind={kind} support={sourceImportSupport} />

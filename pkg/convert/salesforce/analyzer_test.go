@@ -2606,6 +2606,28 @@ func TestClassifySalesforceCometd(t *testing.T) {
 	}
 }
 
+// TestSalesforceEvidenceIgnoresHARRequestBookkeepingKeys guards the object
+// classifier against the importer's own metadata names: an Aura step whose
+// body was not exported carries har.request.recorded_content_length, which
+// must not make it a Record.
+func TestSalesforceEvidenceIgnoresHARRequestBookkeepingKeys(t *testing.T) {
+	action := &dsl.Action{
+		Method: "POST",
+		Target: "https://acme.lightning.force.com/aura?r=12",
+		Metadata: map[string]any{
+			"har.request.recorded_content_length": 268276,
+			"har.request.query_string":            "r=12",
+		},
+	}
+	evidence := salesforceActionEvidence(action, action.Target)
+	if got := classifySalesforceObject(evidence, ""); got != "" {
+		t.Fatalf("classifySalesforceObject = %q, want none for an Aura POST with no record evidence", got)
+	}
+	if !strings.Contains(evidence, "r=12") {
+		t.Fatalf("evidence %q dropped the har.request.* metadata values", evidence)
+	}
+}
+
 // TestCometdCandidatesParsesHandshakeArray covers the CometD clientId parser:
 // it extracts the clientId from the /meta/handshake message in a Bayeux response
 // array, and no-ops on non-array bodies and arrays without a handshake clientId.

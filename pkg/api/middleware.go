@@ -164,6 +164,12 @@ type accessRequirement struct {
 	ServiceAccountScope       string
 	ServiceAccountScopeLookup func(*http.Request) string
 	MaxBodyBytes              int64
+	// NonMultipartMaxBodyBytes, when set, replaces MaxBodyBytes for a body
+	// that is not multipart/form-data. A route whose multipart reader streams
+	// a large envelope part by part sets it so its JSON and raw transports,
+	// which are buffered whole (the import project lookup reads a JSON body
+	// before the handler does), keep a smaller envelope.
+	NonMultipartMaxBodyBytes int64
 	// DomainFeatureID is a second authorization gate applied after RBAC. Unlike
 	// roles, global administrators do not bypass a disabled domain feature.
 	DomainFeatureID string
@@ -281,12 +287,18 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 				r = r.WithContext(context.WithValue(r.Context(), websocketAuthSettingsContextKey{}, current))
 			}
 			if resolution, _, ok := devPreviewResolutionForRequest(current, r); ok {
+				if resolution.User != nil {
+					grantLargeUploadWindow(w, r)
+				}
 				if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 				}
 				return
 			}
 			if isAuthBypassMode(current.Mode) {
+				// Authentication is off, so every caller is as identified as
+				// this controller ever requires.
+				grantLargeUploadWindow(w, r)
 				bindMutationRequirementProjectBestEffort(r, store, requirement)
 				if !domainFeatureAllowsRequest(w, r, store, requirement) {
 					return
@@ -303,6 +315,9 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 			}
 			if !enforceServiceAccountRateLimit(w, r, coordination, resolution.ServiceAccount) {
 				return
+			}
+			if resolution.User != nil {
+				grantLargeUploadWindow(w, r)
 			}
 			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 				reservation, ok := enforceIdempotencyKey(w, r, coordination, resolution)
@@ -355,6 +370,9 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 				}
 			}
 			if resolution, _, ok := devPreviewResolutionForRequest(current, r); ok {
+				if resolution.User != nil {
+					grantLargeUploadWindow(w, r)
+				}
 				if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 				} else {
@@ -363,6 +381,9 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 				return
 			}
 			if isAuthBypassMode(current.Mode) {
+				// Authentication is off, so every caller is as identified as
+				// this controller ever requires.
+				grantLargeUploadWindow(w, r)
 				bindMutationRequirementProjectBestEffort(r, store, requirement)
 				next.ServeHTTP(w, r)
 				return
@@ -376,6 +397,9 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 			}
 			if !enforceServiceAccountRateLimit(w, r, coordination, resolution.ServiceAccount) {
 				return
+			}
+			if resolution.User != nil {
+				grantLargeUploadWindow(w, r)
 			}
 			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 				reservation, ok := enforceIdempotencyKey(w, r, coordination, resolution)
@@ -853,9 +877,14 @@ func isSafeRequestMethod(method string) bool {
 }
 
 // harImportMaxFileBytes is the largest HAR (or Salesforce HAR) capture the
-// importer accepts, uploaded as is or decompressed from a .zip.
-// harImportMaxBodyBytes adds headroom for multipart framing and sibling form
-// fields so a capture at the limit still fits.
+// importer accepts, uploaded as is or decompressed from a .zip. The limit is
+// per capture: harImportMaxBodyBytes fits a baseline and a comparison capture
+// at the limit, plus headroom for multipart framing and sibling form fields,
+// and the HAR reader holds each file part to harImportMaxFileBytes itself.
+// harSingleCaptureMaxBodyBytes fits one capture: it is the Salesforce
+// importer's envelope, which converts one capture, and the HAR import's
+// envelope for JSON and raw uploads, which are buffered whole rather than
+// streamed.
 const harImportMaxFileBytes int64 = 300 << 20
 
 // defaultMaxRequestBodyBytes is the conservative backstop for ordinary JSON
@@ -867,7 +896,9 @@ const (
 	recorderImportMaxBodyBytes          int64 = 10 << 20
 	oracleReviewImportMaxBodyBytes      int64 = 10 << 20
 	webAPIImportMaxBodyBytes            int64 = 20 << 20
-	harImportMaxBodyBytes               int64 = harImportMaxFileBytes + (1 << 20)
+	harImportMaxBodyBytes               int64 = 2*harImportMaxFileBytes + (1 << 20)
+	harSingleCaptureMaxBodyBytes        int64 = harImportMaxFileBytes + (1 << 20)
+	salesforceImportMaxBodyBytes        int64 = harSingleCaptureMaxBodyBytes
 	importAssetMaxBodyBytes             int64 = 50 << 20
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
@@ -909,6 +940,20 @@ const (
 	libraryArchiveImportMaxBodyBytes int64 = defaultLibraryArchiveMaxBytes + (32 << 20)
 )
 
+// largeUploadReadWindow bounds how long an authenticated request on a route
+// that accepts more than the ordinary request body may take to send it. The
+// server's 15 s ReadTimeout covers the whole body, so a 175 MB capture pair
+// arriving slower than about 12 MB/s would otherwise fail with an i/o
+// timeout; the window keeps a large upload finite without holding small
+// requests to it. It is granted only once the caller is authenticated
+// (grantLargeUploadWindow), so an anonymous client cannot hold a connection
+// past ReadTimeout by trickling a body. largeUploadWriteGrace keeps an error
+// found at the end of such an upload writable.
+var largeUploadReadWindow = 5 * time.Minute
+
+// largeUploadWriteGrace is a variable only so tests can scale it down.
+var largeUploadWriteGrace = 10 * time.Second
+
 // bodyLimitMiddleware caps request body size as a defense against memory-
 // exhaustion DoS on handlers that decode the body without their own limit.
 func bodyLimitMiddleware(next http.Handler) http.Handler {
@@ -922,6 +967,32 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// grantLargeUploadWindow extends the read deadline of a request on a
+// large-upload route (one whose body limit exceeds
+// defaultMaxRequestBodyBytes). The auth middlewares call it once the caller
+// is authenticated and before authorization, whose project lookup may read
+// the whole body; anonymous requests keep the server's ReadTimeout.
+func grantLargeUploadWindow(w http.ResponseWriter, r *http.Request) {
+	if r.Body == nil || !isMutatingMethod(r.Method) || requestMaxBodyBytes(r) <= defaultMaxRequestBodyBytes {
+		return
+	}
+	extendLargeUploadDeadlines(w, r)
+}
+
+// extendLargeUploadDeadlines gives a request largeUploadReadWindow to deliver
+// its body, keeping a shorter deadline the caller already set. Handlers that
+// then process the upload for long extend the write deadline again (see
+// harImportProcessingRequest).
+func extendLargeUploadDeadlines(w http.ResponseWriter, r *http.Request) {
+	deadline := time.Now().Add(largeUploadReadWindow)
+	if callerDeadline, ok := r.Context().Deadline(); ok && callerDeadline.Before(deadline) {
+		deadline = callerDeadline
+	}
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(deadline)
+	_ = controller.SetWriteDeadline(deadline.Add(largeUploadWriteGrace))
+}
+
 func requestMaxBodyBytes(r *http.Request) int64 {
 	limit := defaultMaxRequestBodyBytes
 	// An explicit per-route MaxBodyBytes is authoritative — it may tighten the
@@ -930,6 +1001,9 @@ func requestMaxBodyBytes(r *http.Request) int64 {
 	// Per-route limits are code-defined constants, not attacker-controlled.
 	if requirement, ok := accessRequirementForRequest(r); ok && requirement.MaxBodyBytes > 0 {
 		limit = requirement.MaxBodyBytes
+		if requirement.NonMultipartMaxBodyBytes > 0 && !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			limit = requirement.NonMultipartMaxBodyBytes
+		}
 	}
 	return limit
 }
@@ -997,6 +1071,9 @@ func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (rw *responseWriter) Flush() {
 	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		// A flush commits the response: net/http sends the status line (200
+		// unless WriteHeader set one) even when nothing was written.
+		rw.wrote = true
 		f.Flush()
 	}
 }

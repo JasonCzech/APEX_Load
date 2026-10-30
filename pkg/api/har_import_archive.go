@@ -78,27 +78,24 @@ func (e *harArchiveLimitError) Error() string {
 
 func (e *harArchiveLimitError) Unwrap() error { return e.err }
 
-// unwrapHARImportArchives replaces zipped captures in an import request with
-// the HAR each holds. On failure it writes the response and returns false.
+// unwrapHARImportArchives replaces a zipped baseline capture in an import
+// request with the HAR it holds. On failure it writes the response and returns
+// false. A comparison HAR is unwrapped with its own conversion
+// (prepareHARComparison), where a bad archive costs only the comparison.
 func unwrapHARImportArchives(w http.ResponseWriter, req *harImportRequest) bool {
-	for _, target := range []struct {
-		data  *[]byte
-		label string
-	}{{&req.Data, "HAR"}, {&req.SecondaryData, "comparison HAR"}} {
-		if len(*target.data) == 0 {
-			continue
-		}
-		unwrapped, err := unwrapHARArchive(*target.data)
-		if err != nil {
-			status := http.StatusBadRequest
-			var limitErr *harArchiveLimitError
-			if errors.As(err, &limitErr) {
-				status = http.StatusRequestEntityTooLarge
-			}
-			writeError(w, status, target.label+" upload: "+err.Error())
-			return false
-		}
-		*target.data = unwrapped
+	if len(req.Data) == 0 {
+		return true
 	}
+	unwrapped, err := unwrapHARArchive(req.Data)
+	if err != nil {
+		status := http.StatusBadRequest
+		var limitErr *harArchiveLimitError
+		if errors.As(err, &limitErr) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeError(w, status, "HAR upload: "+err.Error())
+		return false
+	}
+	req.Data = unwrapped
 	return true
 }
