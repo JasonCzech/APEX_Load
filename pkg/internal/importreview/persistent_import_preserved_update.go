@@ -359,6 +359,10 @@ func RetainedImportCredentialContextChange(
 		priorActions,
 		priorOrder,
 	)
+	// A request that carries a kept credential is also pinned to the
+	// parameters, data sources and variable-writing steps its wire fields
+	// interpolate (importReferenceGuard).
+	references := newImportReferenceGuard(candidate, candidateMap, prior, priorMap)
 
 	var visit func(
 		raw,
@@ -441,7 +445,9 @@ func RetainedImportCredentialContextChange(
 				return "", false
 			}
 			if actionPath == "" {
-				if !reflect.DeepEqual(candidateGlobal, priorGlobal) {
+				// A credential kept at script level is sent with every request,
+				// so it also holds what every request reads.
+				if !reflect.DeepEqual(candidateGlobal, priorGlobal) || references.scriptChanged() {
 					return "script", true
 				}
 				return "", false
@@ -450,7 +456,8 @@ func RetainedImportCredentialContextChange(
 			priorAction, priorExists := priorActions[actionPath]
 			if !candidateExists || !priorExists ||
 				!reflect.DeepEqual(candidateTransport, priorTransport) ||
-				!reflect.DeepEqual(candidateAction, priorAction) {
+				!reflect.DeepEqual(candidateAction, priorAction) ||
+				references.requestChanged(actionPath) {
 				return ImportContextDisplayPath(actionPath), true
 			}
 		}
@@ -505,6 +512,19 @@ func ImportGlobalCredentialContext(
 func ImportActionContexts(script map[string]any) (map[string]any, []string) {
 	contexts := make(map[string]any)
 	order := make([]string, 0)
+	walkImportActions(script, func(path string, action map[string]any) {
+		contexts[path] = ImportActionWireContext(action)
+		order = append(order, path)
+	})
+	return contexts, order
+}
+
+// walkImportActions calls visit for every action of a projected script, in
+// execution-phase order, by structural path: the top-level steps of each phase,
+// the steps of every control container (the if branches, switch cases and
+// default, and parallel or async-callback branches that
+// dsl.ControlFlow.ActionBranches lists) and the children of an HTTP sequence.
+func walkImportActions(script map[string]any, visit func(path string, action map[string]any)) {
 	var walkActions func(any, string)
 	var walkAction func(map[string]any, string)
 
@@ -519,13 +539,20 @@ func ImportActionContexts(script map[string]any) (map[string]any, []string) {
 		}
 	}
 	walkAction = func(action map[string]any, path string) {
-		contexts[path] = ImportActionWireContext(action)
-		order = append(order, path)
+		visit(path, action)
 
 		control, _ := action["control"].(map[string]any)
 		if control != nil {
 			walkActions(control["steps"], AppendImportContextPath(path, "control", "steps"))
 			walkActions(control["else"], AppendImportContextPath(path, "control", "else"))
+			walkActions(control["default"], AppendImportContextPath(path, "control", "default"))
+			for _, container := range []string{"cases", "branches"} {
+				entries, _ := control[container].([]any)
+				for index, entry := range entries {
+					entryMap, _ := entry.(map[string]any)
+					walkActions(entryMap["steps"], AppendImportContextPath(path, "control", container, strconv.Itoa(index), "steps"))
+				}
+			}
 		}
 		if !strings.EqualFold(strings.TrimSpace(StringJSONValue(action["type"])), "http_sequence") {
 			return
@@ -539,7 +566,6 @@ func ImportActionContexts(script map[string]any) (map[string]any, []string) {
 	for _, phase := range []string{"init", "actions", "teardown"} {
 		walkActions(script[phase], "/"+phase)
 	}
-	return contexts, order
 }
 
 func ImportActionWireContext(action map[string]any) map[string]any {
