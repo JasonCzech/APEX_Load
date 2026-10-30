@@ -422,17 +422,24 @@ masked and cannot read them, but every run still sends them. To stop an editor
 from capturing a credential they cannot read, the settings that decide where
 and how it is sent are locked once such a script is saved: the base URL, the
 proxy mode and proxy settings, TLS, the HTTP version and QUIC, the redirect
-limit, default headers, HTTP authentication, WS-Security and the web runtime's
-additional attributes, plus the connection settings of the other protocols
-(WebSocket, gRPC, database, messaging, Java and the rest). A save that changes one of them is refused with "script
-changes the execution context for retained imported credentials", and the
-message says how to proceed.
+limit, default headers, HTTP authentication, WS-Security, the SOAP namespaces
+and the web runtime's additional attributes, plus every configuration section not listed below as
+saving: the other protocols' settings (WebSocket, gRPC, database, messaging,
+Java, browser and the rest, timeouts included), JMeter compatibility, sampler
+schedules and native services. A save that changes one of them is refused with
+"script changes the execution context for retained imported credentials", and the
+message says how to proceed. The same refusal covers a parameter, data source or
+step that a credential-bearing request reads (for a credential kept at script
+level, every parameter and data source, and the wire fields of every request;
+see Import fidelity and repairs); the policy below never unlocks those.
 
-Other runtime settings still save: think time, pacing, logging, error handling,
-timeouts, connection limits and keep-alive, response checks and warnings,
-caching, cookies, DNS cache and IP version, the user agent and accept headers,
-browser emulation, network simulation and the other web runtime settings, and
-SOAP version and fault handling. Choosing **No Proxy** is also
+Of the script's configuration, only these runtime settings still save: think time, pacing, error handling, run
+logic, observability, logging, results and browser emulation; HTTP tuning such
+as the HTTP section's timeouts (other than QUIC's), connection limits and keep-alive,
+response checks and warnings, caching, cookies, DNS cache and IP version, trace
+headers, and the HTTP user agent and accept headers; the web runtime's download
+filters, content checks, network simulation and profiles, streaming, data
+formatting and source IPs; and the SOAP version and fault handling. Choosing **No Proxy** is also
 allowed, because it sends the credential straight to the host it already goes
 to; the exception is a script that keeps a `Proxy-Authorization` header, which
 would then go to that host. After No Proxy, the saved proxy settings can stay
