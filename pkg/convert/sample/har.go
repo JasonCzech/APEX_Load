@@ -117,7 +117,7 @@ func (d *HARDocument) parse(includeStaticAssets bool, mode string, diagnostics *
 	// Per origin: final h3 requests mapped by mode, and draft tokens seen.
 	h3Mapped := map[string]int{}
 	h3Drafts := map[string]int{}
-	var localEntries, braceEntries []int
+	var localEntries, braceEntries, telemetryEntries []int
 	localSchemes := map[string]int{}
 	requestDecodeBudget := int64(maxDecodedHARRequestBodiesBytes)
 	for index, item := range items {
@@ -156,6 +156,11 @@ func (d *HARDocument) parse(includeStaticAssets bool, mode string, diagnostics *
 		if err != nil {
 			diagnostics.Add(diag.Warning, "HAR entry skipped", fmt.Sprintf("HAR entry %d", index+1), err.Error())
 			warnings = append(warnings, fmt.Sprintf("HAR entry %d was skipped: %s", index+1, err.Error()))
+			skipped++
+			continue
+		}
+		if ex.TelemetryBeaconOmitted {
+			telemetryEntries = append(telemetryEntries, index+1)
 			skipped++
 			continue
 		}
@@ -221,6 +226,9 @@ func (d *HARDocument) parse(includeStaticAssets bool, mode string, diagnostics *
 			schemes = append(schemes, fmt.Sprintf("%s %d", scheme, localSchemes[scheme]))
 		}
 		diagnostics.Add(diag.Info, "HAR local URLs", harEntryList(localEntries), fmt.Sprintf("%d URL(s) the browser made itself (%s) never reached the network, so they are not requests to replay", len(localEntries), strings.Join(schemes, ", ")))
+	}
+	if len(telemetryEntries) > 0 {
+		diagnostics.Add(diag.Info, "HAR telemetry beacon", harEntryList(telemetryEntries), fmt.Sprintf("%d Salesforce telemetry beacon request(s) (InstrumentationBeacon actions) were left out: the HAR export dropped their bodies, and they only report the browser's own instrumentation, so replay does not need them", len(telemetryEntries)))
 	}
 	if len(braceEntries) > 0 {
 		diagnostics.Add(diag.Info, "HAR URL braces", harEntryList(braceEntries), `these URLs hold a literal "{{" or "}}", which a script reads as a template, so their braces are sent as %7B and %7D; servers decode them to the same characters`)

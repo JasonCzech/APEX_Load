@@ -221,6 +221,9 @@ type exchange struct {
 	// validators were removed (see dropHARCacheValidators): replay asks for
 	// the full response.
 	CacheValidatorsDropped bool
+	// TelemetryBeaconOmitted marks an Aura instrumentation beacon whose body
+	// the HAR export dropped; the import leaves it out instead of gating it.
+	TelemetryBeaconOmitted bool
 	// ContentEncoding compresses the readable Body on the wire at replay
 	// (params.content_encoding): the request was a gzip or deflate upload.
 	ContentEncoding string
