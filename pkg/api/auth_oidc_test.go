@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"golang.org/x/oauth2"
 )
@@ -1102,7 +1102,7 @@ func (p *fakeOIDCProvider) signIDToken(nonce string) (string, error) {
 		"project_roles": map[string][]string{
 			"project-a": {RoleEditor},
 		},
-	}).CompactSerialize()
+	}).Serialize()
 }
 
 func oidcCallbackURL(code string, state string) string {
