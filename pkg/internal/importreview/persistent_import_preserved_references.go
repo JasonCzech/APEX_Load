@@ -1,11 +1,8 @@
 package importreview
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/url"
 	"regexp"
 	"sort"
@@ -158,6 +155,7 @@ type importReferenceScope struct {
 	reads           map[string]map[string]struct{}
 	digests         map[string]string
 	everyDigest     string
+	interner        *importInterner
 	graph           *importRefGraph
 	memo            map[string]string
 	everything      string
@@ -189,8 +187,9 @@ type importWriter struct {
 	any bool
 }
 
-func newImportReferenceScope(script map[string]any) *importReferenceScope {
+func newImportReferenceScope(script map[string]any, interner *importInterner) *importReferenceScope {
 	scope := &importReferenceScope{
+		interner:        interner,
 		parameters:      importMapEntries(script["parameters"]),
 		dataSources:     importMapEntries(script["data_sources"]),
 		paramsByName:    make(map[string][]int),
@@ -284,7 +283,7 @@ func importCanonicalName(name string) string {
 // through with what the same requests resolved through in the prior script. The
 // scopes read the executable script, not its disclosure projection: masking
 // redacts a whole field it cannot read into (a base64 body, say), and the
-// template inside is still filled in at run time. They only hash what they
+// template inside is still filled in at run time. They only compare what they
 // read, so no credential reaches a message.
 type importReferenceGuard struct {
 	candidate, prior           any
@@ -310,8 +309,9 @@ func (g *importReferenceGuard) scopes() (*importReferenceScope, *importReference
 			g.unreadable = true
 			candidate, prior = g.projectedCandidate, g.projectedPrior
 		}
-		g.candidateScope = newImportReferenceScope(candidate)
-		g.priorScope = newImportReferenceScope(prior)
+		interner := newImportInterner()
+		g.candidateScope = newImportReferenceScope(candidate, interner)
+		g.priorScope = newImportReferenceScope(prior, interner)
 	}
 	return g.candidateScope, g.priorScope
 }
@@ -442,7 +442,7 @@ func importReferenceKey(expr string) string {
 // fingerprint combines the fingerprints of the graph nodes the roots start
 // from.
 func (s *importReferenceScope) fingerprint(roots *importRootSet) string {
-	parts := make(map[string]struct{}, len(roots.keys)+1)
+	parts := make(map[string]struct{})
 	for key := range roots.keys {
 		if fingerprint := s.graph.visit(key).fingerprint; fingerprint != importEmptyFingerprint {
 			parts[fingerprint] = struct{}{}
@@ -451,7 +451,7 @@ func (s *importReferenceScope) fingerprint(roots *importRootSet) string {
 	if roots.all {
 		parts["all:"+s.allDigest()] = struct{}{}
 	}
-	return importHash(sortedImportKeys(parts)...)
+	return s.interner.token(sortedImportKeys(parts)...)
 }
 
 func sortedImportKeys(set map[string]struct{}) []string {
@@ -463,28 +463,48 @@ func sortedImportKeys(set map[string]struct{}) []string {
 	return keys
 }
 
-func importHash(parts ...string) string {
-	hash := sha256.New()
+// importInterner gives each distinct content one short token, the same in
+// every scope that shares the interner. The candidate and prior scopes share
+// one, so two fingerprints are equal exactly when what they cover is equal:
+// nothing is hashed, and there is no collision for an editor to craft.
+type importInterner struct {
+	tokens map[string]string
+}
+
+func newImportInterner() *importInterner {
+	return &importInterner{tokens: make(map[string]string)}
+}
+
+// token returns the token of parts. Each part is framed by its length, so
+// different splits of the same text get different tokens.
+func (in *importInterner) token(parts ...string) string {
+	var framed strings.Builder
 	for _, part := range parts {
-		_, _ = io.WriteString(hash, strconv.Itoa(len(part)))
-		_, _ = hash.Write([]byte{':'})
-		_, _ = io.WriteString(hash, part)
+		framed.WriteString(strconv.Itoa(len(part)))
+		framed.WriteByte(':')
+		framed.WriteString(part)
 	}
-	return hex.EncodeToString(hash.Sum(nil)[:16])
+	key := framed.String()
+	if token, ok := in.tokens[key]; ok {
+		return token
+	}
+	token := "#" + strconv.Itoa(len(in.tokens))
+	in.tokens[key] = token
+	return token
 }
 
 // allDigest is the digest of every parameter and data source, which a step
 // that reads them all holds.
 func (s *importReferenceScope) allDigest() string {
 	if s.everyDigest == "" {
-		parts := make(map[string]struct{}, len(s.parameters)+len(s.dataSources))
+		parts := make(map[string]struct{})
 		for index := range s.parameters {
 			parts["p:"+s.parameterDigest(index)] = struct{}{}
 		}
 		for index := range s.dataSources {
 			parts["s:"+s.sourceDigest(index)] = struct{}{}
 		}
-		s.everyDigest = importHash(sortedImportKeys(parts)...)
+		s.everyDigest = s.interner.token(sortedImportKeys(parts)...)
 	}
 	return s.everyDigest
 }
@@ -498,7 +518,7 @@ func (s *importReferenceScope) digest(key string, value any) string {
 	if err != nil {
 		payload = []byte(fmt.Sprintf("%#v", value))
 	}
-	digest := importHash(string(payload))
+	digest := s.interner.token(string(payload))
 	s.digests[key] = digest
 	return digest
 }
@@ -525,7 +545,7 @@ func (s *importReferenceScope) parameterDigest(index int) string {
 }
 
 // sourceDigest digests a data source without its selection strategy, and
-// hashes its inline rows directly rather than copying them into another
+// takes its inline rows directly rather than copying them into another
 // encoding.
 func (s *importReferenceScope) sourceDigest(index int) string {
 	key := fmt.Sprintf("s:%d", index)
@@ -539,7 +559,7 @@ func (s *importReferenceScope) sourceDigest(index int) string {
 		}
 	}
 	payload, _ := json.Marshal(held)
-	digest := importHash(string(payload), StringJSONValue(s.dataSources[index]["inline_data"]))
+	digest := s.interner.token(string(payload), StringJSONValue(s.dataSources[index]["inline_data"]))
 	s.digests[key] = digest
 	return digest
 }
@@ -1305,7 +1325,7 @@ func (s *importReferenceScope) componentFingerprint(g *importRefGraph, members [
 	if len(parts) == 0 && len(reads) == 0 {
 		return importEmptyFingerprint
 	}
-	return importHash(append(append(parts, "reads"), sortedImportKeys(reads)...)...)
+	return s.interner.token(append(append(parts, "reads"), sortedImportKeys(reads)...)...)
 }
 
 // importRefBuilder gathers the content and successors of one graph node.

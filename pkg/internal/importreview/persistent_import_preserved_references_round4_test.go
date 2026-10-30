@@ -410,7 +410,7 @@ func TestImportReferenceScopeMatchesWriterNames(t *testing.T) {
 			map[string]any{"name": "js", "type": "native_javascript", "params": map[string]any{"result_prefix": "out"}},
 			map[string]any{"name": "slot", "type": "source_parameter", "params": map[string]any{"function": "lr_save_string", "args": []any{"x", "Rows_2"}}},
 		},
-	})
+	}, newImportInterner())
 	for name, want := range map[string]int{
 		"token":      1, // exact
 		"TOKEN":      1,
@@ -433,9 +433,11 @@ func TestImportReferenceScopeMatchesWriterNames(t *testing.T) {
 }
 
 // Digests cannot be made equal by moving text between their parts.
-func TestImportHashFramesItsParts(t *testing.T) {
-	if importHash("ab", "c") == importHash("a", "bc") || importHash("a", "") == importHash("", "a") || importHash("a") == importHash("a", "") || importHash("a:b") == importHash("a", "b") {
-		t.Fatal("importHash does not tell apart different splits of the same text")
+func TestImportInternerFramesItsParts(t *testing.T) {
+	interner := newImportInterner()
+	token := interner.token
+	if token("ab", "c") == token("a", "bc") || token("a", "") == token("", "a") || token("a") == token("a", "") || token("a:b") == token("a", "b") || token("a", "b") != token("a", "b") {
+		t.Fatal("token does not tell apart different splits of the same text, or differs for equal parts")
 	}
 }
 
@@ -851,10 +853,11 @@ func TestImportReferenceGraphFingerprintsCyclesIndependentlyOfVisitOrder(t *test
 	}
 	for _, order := range [][2]string{{"/actions/0", "/actions/1"}, {"/actions/1", "/actions/0"}} {
 		raw, _ := ScriptAsJSONValue(build())
-		scope := newImportReferenceScope(raw.(map[string]any))
+		interner := newImportInterner()
+		scope := newImportReferenceScope(raw.(map[string]any), interner)
 		first, second := scope.dependencies(order[0]), scope.dependencies(order[1])
 		raw2, _ := ScriptAsJSONValue(build())
-		scope2 := newImportReferenceScope(raw2.(map[string]any))
+		scope2 := newImportReferenceScope(raw2.(map[string]any), interner)
 		if scope2.dependencies(order[1]) != second || scope2.dependencies(order[0]) != first {
 			t.Fatalf("fingerprints depend on the order requests are visited in (%v)", order)
 		}
@@ -884,7 +887,7 @@ func TestImportReferenceScopeFindsAccumulatingSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope := newImportReferenceScope(value.(map[string]any))
+	scope := newImportReferenceScope(value.(map[string]any), newImportInterner())
 	for path, want := range map[string]bool{
 		"/actions/0": false, "/actions/1": true, "/actions/2": true, "/actions/3": true,
 		"/actions/4": true, "/actions/5": false, "/actions/6": false, "/actions/7": true,

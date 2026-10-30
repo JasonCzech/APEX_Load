@@ -481,7 +481,7 @@ func TestImportReferenceScopeTreatsUndecodableStepsAsWritingAnything(t *testing.
 			map[string]any{"name": "odd", "type": 5.0},
 			map[string]any{"name": "plain", "type": "GET"},
 		},
-	})
+	}, newImportInterner())
 	writers := scope.writers("anything")
 	if len(writers) != 1 || writers[0].path != "/actions/0" || !writers[0].any {
 		t.Fatalf("writers = %+v, want the undecodable step as a writer of anything", writers)
