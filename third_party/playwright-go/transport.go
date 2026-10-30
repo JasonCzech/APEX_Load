@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/go-jose/go-jose/v3/json"
+	"github.com/go-jose/go-jose/v4/json"
 )
 
 type transport interface {
