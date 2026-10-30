@@ -6,9 +6,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+// alteredUpstreamFiles are the copied upstream files APEX_PATCHES.md
+// declares changed; the manifest keeps their pristine upstream hashes.
+var alteredUpstreamFiles = []string{"browser_context.go", "connection.go", "frame.go", "go.mod", "go.sum", "request.go", "response.go", "transport.go"}
 
 func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 	root := ".."
@@ -28,7 +33,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			SHA          string `json:"sha256"`
 		} `json:"sources"`
 	}
-	if json.Unmarshal(data, &manifest) != nil || manifest.UpstreamModule != "github.com/mxschmitt/playwright-go" || manifest.UpstreamVersion != "v0.6100.0" || manifest.ModuleZipSum != "h1:HYNnbGZsTHz8veJyDGe4fU1iPxfvXqzmwKchzuvGCsY=" || len(manifest.Sources) != 80 || len(manifest.Altered) != 5 || manifest.Altered[0] != "browser_context.go" || manifest.Altered[1] != "connection.go" || manifest.Altered[2] != "frame.go" || manifest.Altered[3] != "request.go" || manifest.Altered[4] != "response.go" {
+	if json.Unmarshal(data, &manifest) != nil || manifest.UpstreamModule != "github.com/mxschmitt/playwright-go" || manifest.UpstreamVersion != "v0.6100.0" || manifest.ModuleZipSum != "h1:HYNnbGZsTHz8veJyDGe4fU1iPxfvXqzmwKchzuvGCsY=" || len(manifest.Sources) != 80 || strings.Join(manifest.Altered, ",") != strings.Join(alteredUpstreamFiles, ",") {
 		t.Fatal("pinned SDK provenance/source boundary changed")
 	}
 	renamedREADME := 0
@@ -49,7 +54,7 @@ func TestOwnedHARSDKForkIntegrityAndPackaging(t *testing.T) {
 			t.Fatal(err)
 		}
 		sum := sha256.Sum256(bytes)
-		if item.Path != "browser_context.go" && item.Path != "connection.go" && item.Path != "frame.go" && item.Path != "request.go" && item.Path != "response.go" && hex.EncodeToString(sum[:]) != item.SHA {
+		if !slices.Contains(alteredUpstreamFiles, item.Path) && hex.EncodeToString(sum[:]) != item.SHA {
 			t.Fatalf("undeclared SDK source delta: %s", item.Path)
 		}
 	}
