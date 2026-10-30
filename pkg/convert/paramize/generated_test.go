@@ -497,3 +497,39 @@ func TestGeneratedPageCacheIDIsOneParameterPerPage(t *testing.T) {
 		}
 	}
 }
+
+// Requests a HAR import replays as a concurrent request group keep their
+// generated values: the suggestion locates each one by its index in the
+// group, and applying it rewrites that request.
+func TestGeneratedValuesInsideAConcurrentRequestGroup(t *testing.T) {
+	child := func(name, traceID string) dsl.Action {
+		return dsl.Action{Name: name, Type: "request", Method: "GET", Target: "/data",
+			HeaderList: dsl.HeaderList{{Name: "X-B3-TraceId", Value: traceID}}}
+	}
+	group := dsl.Action{Name: "group", Type: "http_sequence", Method: "SEQUENCE", Target: "/data",
+		Params: map[string]any{"execution_mode": dsl.HTTPSequenceConcurrent, "requests": []dsl.Action{child("a", testTraceID), child("b", testSpanID)}}}
+	script := generatedScript(group)
+	suggestions := suggestGenerated(script)
+	if len(suggestions) != 1 || len(suggestions[0].Locations) != 2 {
+		t.Fatalf("suggestions = %+v, want one each-use parameter for both group requests", suggestions)
+	}
+	for index, location := range suggestions[0].Locations {
+		if location.RequestIndex == nil || *location.RequestIndex != index || location.ActionIndex != 0 {
+			t.Fatalf("location %d = %+v, want group request %d", index, location, index)
+		}
+	}
+	applied, diffs, err := ApplySuggestions(script, suggestions, map[string]bool{suggestions[0].ID: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The apply clone decodes the group's requests, so they come back typed.
+	children := applied.Actions[0].Params["requests"].([]dsl.Action)
+	for _, request := range children {
+		if value := request.HeaderList[0].Value; !strings.HasPrefix(value, "{{var.") {
+			t.Fatalf("group request %q header = %q, want the parameter (diffs %+v)", request.Name, value, diffs)
+		}
+	}
+	if len(diffs) != 3 || !strings.Contains(diffs[0].Path, "/params/requests/0/") || !strings.Contains(diffs[1].Path, "/params/requests/1/") {
+		t.Fatalf("diffs = %+v, want a replacement per group request with its path, then the parameter", diffs)
+	}
+}

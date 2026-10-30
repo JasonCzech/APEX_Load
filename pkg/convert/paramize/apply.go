@@ -99,6 +99,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 	type surface struct {
 		section     string
 		actionIndex int
+		request     string
 		field       string
 	}
 	type owner struct {
@@ -177,7 +178,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 			if strings.HasPrefix(strings.ToLower(field), "headers.") {
 				field = strings.ToLower(field)
 			}
-			key := surface{section: location.Section, actionIndex: location.ActionIndex, field: field}
+			key := surface{section: location.Section, actionIndex: location.ActionIndex, request: requestKey(location.RequestIndex), field: field}
 			current := owner{suggestionIndex: index, literal: literal, replacement: location.ReplaceText}
 			for _, existing := range owners[key] {
 				if existing.suggestionIndex == index {
@@ -210,7 +211,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 }
 
 func locationContainsOutsideTemplates(script *dsl.Script, location Location, literal string) bool {
-	action := actionAt(script, location.Section, location.ActionIndex)
+	action := locationAction(script, location, false)
 	if action == nil || literal == "" {
 		return false
 	}
@@ -276,7 +277,7 @@ func literalsPartiallyOverlapInLocation(script *dsl.Script, location Location, l
 }
 
 func locationStringValues(script *dsl.Script, location Location) []string {
-	action := actionAt(script, location.Section, location.ActionIndex)
+	action := locationAction(script, location, false)
 	if action == nil {
 		return nil
 	}
@@ -492,6 +493,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 	type fieldKey struct {
 		section     string
 		actionIndex int
+		request     string
 		field       string
 	}
 	type fieldReplacements struct {
@@ -507,7 +509,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 		if location.SearchText == "" {
 			continue
 		}
-		key := fieldKey{section: location.Section, actionIndex: location.ActionIndex, field: location.Field}
+		key := fieldKey{section: location.Section, actionIndex: location.ActionIndex, request: requestKey(location.RequestIndex), field: location.Field}
 		group, exists := groups[key]
 		if !exists {
 			group = &fieldReplacements{location: location, replacements: make(map[string]string)}
@@ -522,7 +524,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 	diffs := make([]Diff, 0, len(order))
 	for _, key := range order {
 		group := groups[key]
-		action := actionAt(script, group.location.Section, group.location.ActionIndex)
+		action := locationAction(script, group.location, true)
 		if action == nil {
 			continue
 		}
@@ -533,7 +535,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 		diffs = append(diffs, Diff{
 			SuggestionID: suggestion.ID,
 			Kind:         "value_replaced",
-			Path:         fmt.Sprintf("/%s/%d/%s", group.location.Section, group.location.ActionIndex, strings.ReplaceAll(group.location.Field, ".", "/")),
+			Path:         locationDiffPath(group.location),
 			Before:       truncateValue(before),
 			After:        truncateValue(after),
 		})
@@ -931,4 +933,14 @@ func multipartFieldValue(action *dsl.Action, field string) (*string, bool) {
 		return nil, false
 	}
 	return &part.Value, true
+}
+
+// locationDiffPath is a location's JSON-pointer-style diff path, through the
+// group request it names.
+func locationDiffPath(location Location) string {
+	prefix := fmt.Sprintf("/%s/%d", location.Section, location.ActionIndex)
+	if location.RequestIndex != nil {
+		prefix += fmt.Sprintf("/params/requests/%d", *location.RequestIndex)
+	}
+	return prefix + "/" + strings.ReplaceAll(location.Field, ".", "/")
 }

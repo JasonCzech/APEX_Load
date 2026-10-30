@@ -165,6 +165,15 @@ func ScriptRequestValues(script *dsl.Script) map[string]bool {
 	}
 	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
 		action := ref.Action
+		if action == nil && ref.Request != nil {
+			// A request group's request in its JSON-shaped form, as a script
+			// holds it after a JSON round trip.
+			decoded, ok := decodeGroupRequest(ref.Request)
+			if !ok {
+				return nil
+			}
+			action = &decoded
+		}
 		if action == nil || strings.TrimSpace(action.Target) == "" {
 			return nil
 		}
@@ -183,6 +192,17 @@ func ScriptRequestValues(script *dsl.Script) map[string]bool {
 		return nil
 	})
 	return values
+}
+
+// decodeGroupRequest decodes a JSON-shaped request group request; false when
+// it does not decode, and the walk passes over it.
+func decodeGroupRequest(request map[string]any) (dsl.Action, bool) {
+	var decoded dsl.Action
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return decoded, false
+	}
+	return decoded, json.Unmarshal(raw, &decoded) == nil
 }
 
 // diffRequestInputs pairs baseline and comparison requests (by method, host,

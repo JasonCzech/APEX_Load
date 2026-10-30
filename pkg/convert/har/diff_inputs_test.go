@@ -368,3 +368,16 @@ func TestDiffShortCounterValuesAllowLongerRuns(t *testing.T) {
 		t.Fatal("a long value with six-digit runs was read as a counter")
 	}
 }
+
+// A request group's requests count as sent whether the script holds them as
+// typed actions or, after a JSON round trip, in their JSON-shaped form.
+func TestScriptRequestValuesReadsRequestGroupRequests(t *testing.T) {
+	child := map[string]any{"name": "a", "type": "request", "method": "GET", "target": "/data?token=group-value"}
+	script := &dsl.Script{Actions: []dsl.Action{{
+		Name: "group", Type: "http_sequence", Method: "SEQUENCE", Target: "/data",
+		Params: map[string]any{"execution_mode": dsl.HTTPSequenceConcurrent, "requests": []any{child}},
+	}}}
+	if !ScriptRequestValues(script)["group-value"] {
+		t.Fatal("a JSON-shaped group request's value was not read as sent")
+	}
+}

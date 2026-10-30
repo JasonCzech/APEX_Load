@@ -275,7 +275,7 @@ func newGeneratedCollector(names *nameRegistry, claimed map[string]bool) *genera
 
 // add records one occurrence of value in field. place describes the field
 // for the rationale ("idp-trace-id header", "messageId body field").
-func (c *generatedCollector) add(rule, value, key, place, section string, index int, action *dsl.Action, field string, occurrences int) {
+func (c *generatedCollector) add(rule, value, key, place, section string, index int, request *int, action *dsl.Action, field string, occurrences int) {
 	for literal := range c.claimed {
 		// A value inside a correlated or secret literal belongs to that pass.
 		if strings.Contains(literal, value) {
@@ -300,13 +300,14 @@ func (c *generatedCollector) add(rule, value, key, place, section string, index 
 		// Even two occurrences in one field can have different roles.
 		group.confident = group.confident && confident
 	}
-	locationKey := fmt.Sprintf("%s|%s|%d|%s", value, section, index, field)
+	locationKey := fmt.Sprintf("%s|%s|%d|%s|%s", value, section, index, requestKey(request), field)
 	if c.seen[locationKey] {
 		return
 	}
 	c.seen[locationKey] = true
 	location := Location{
-		Section: section, ActionIndex: index, ActionName: action.Name, Field: field,
+		Section: section, ActionIndex: index,
+		RequestIndex: request, ActionName: action.Name, Field: field,
 		SearchText: value,
 	}
 	if group, ok := c.grouped[value]; ok {
@@ -381,7 +382,7 @@ func (c *generatedCollector) suggestions() []Suggestion {
 			continue
 		}
 		location := group.suggestion.Locations[0]
-		action := fmt.Sprintf("%s|%d", location.Section, location.ActionIndex)
+		action := slotPath(location.Section, location.ActionIndex, location.RequestIndex)
 		if seenInAction[key] == nil {
 			seenInAction[key] = map[string]int{}
 		}
@@ -542,7 +543,7 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 	// classifies a value unless the value names its part (a cookie's sid=).
 	// leave is the rest of the field, outside text, where a value must not
 	// also appear: a replacement rewrites the whole field.
-	scan := func(text, leave, headerName, kind, section string, index int, action *dsl.Action, field string, replacementTexts []string) {
+	scan := func(text, leave, headerName, kind, section string, index int, request *int, action *dsl.Action, field string, replacementTexts []string) {
 		if scanErr != nil {
 			return
 		}
@@ -591,10 +592,10 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 				}
 				counts[value] = count
 			}
-			collector.add(token.rule, value, key, place, section, index, action, field, count)
+			collector.add(token.rule, value, key, place, section, index, request, action, field, count)
 		}
 	}
-	forEachAction(script, func(section string, index int, action *dsl.Action) {
+	forEachAction(script, func(section string, index int, request *int, action *dsl.Action) {
 		headerFields := map[string]string{}
 		headerTexts := generatedHeaderReplacementTexts(action)
 		for _, header := range actionHeaders(action, nil) {
@@ -607,14 +608,14 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 				field = "headers." + header.name
 				headerFields[name] = field
 			}
-			scan(header.value, "", header.name, "header", section, index, action, field, headerTexts[name])
+			scan(header.value, "", header.name, "header", section, index, request, action, field, headerTexts[name])
 		}
 		if query := strings.Index(action.Target, "?"); query >= 0 {
 			// Path segments name resources, so only the query is read, and a
 			// value the path also holds stays as recorded.
-			scan(action.Target[query:], action.Target[:query], "", "query", section, index, action, "target", nil)
+			scan(action.Target[query:], action.Target[:query], "", "query", section, index, request, action, "target", nil)
 		}
-		scan(action.Body, "", "", "body", section, index, action, "body", nil)
+		scan(action.Body, "", "", "body", section, index, request, action, "body", nil)
 	})
 	if scanErr != nil {
 		return nil, scanErr

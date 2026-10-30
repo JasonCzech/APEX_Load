@@ -534,7 +534,7 @@ func planAuraApplication(script *dsl.Script, suggestions []Suggestion, selected 
 			if hasAuraLocation(l) || l.Field != "body" {
 				continue
 			}
-			path := fmt.Sprintf("%s[%d]", l.Section, l.ActionIndex)
+			path := slotPath(l.Section, l.ActionIndex, l.RequestIndex)
 			if _, exists := groups[path]; exists {
 				return nil, fmt.Errorf("selected Aura and literal body parameterizations overlap")
 			}

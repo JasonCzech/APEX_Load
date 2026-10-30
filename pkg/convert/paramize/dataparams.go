@@ -38,23 +38,23 @@ func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 	collector.generatedParts = generatedParts
 	budget := &suggestionRegexBudget{}
 	var scanErr error
-	forEachAction(script, func(section string, index int, action *dsl.Action) {
+	forEachAction(script, func(section string, index int, request *int, action *dsl.Action) {
 		if scanErr != nil {
 			return
 		}
-		scanErr = collectQueryParams(collector, budget, section, index, action)
+		scanErr = collectQueryParams(collector, budget, section, index, request, action)
 		if scanErr != nil {
 			return
 		}
-		if !skipBodies[fmt.Sprintf("%s[%d]", section, index)] {
-			scanErr = collectBodyParams(collector, budget, section, index, action)
+		if !skipBodies[slotPath(section, index, request)] {
+			scanErr = collectBodyParams(collector, budget, section, index, request, action)
 			if scanErr != nil {
 				return
 			}
 		}
-		collectFillParams(collector, section, index, action)
-		collectUploadParams(collector, section, index, action)
-		collectMessagingParams(collector, section, index, action)
+		collectFillParams(collector, section, index, request, action)
+		collectUploadParams(collector, section, index, request, action)
+		collectMessagingParams(collector, section, index, request, action)
 	})
 	if scanErr != nil {
 		return nil, scanErr
@@ -74,7 +74,7 @@ var messagingParamKeys = []string{"correlation_id", "key", "partition_key", "mes
 // messaging action's Params map. The generic data-param scanners only look at
 // target/body/value/headers, so without this pass these values are invisible to
 // parameterization (action.Params is where kafka/jms carry them).
-func collectMessagingParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
+func collectMessagingParams(collector *dataParamCollector, section string, index int, request *int, action *dsl.Action) {
 	if !isMessagingActionType(action.Type) || len(action.Params) == 0 {
 		return
 	}
@@ -87,7 +87,7 @@ func collectMessagingParams(collector *dataParamCollector, section string, index
 		if !ok || value == "" || isTemplated(value) {
 			continue
 		}
-		collector.add(key, value, "message "+key, section, index, action,
+		collector.add(key, value, "message "+key, section, index, request, action,
 			"params."+key, value, func(template string) string { return template })
 	}
 }
@@ -98,7 +98,7 @@ func isMessagingActionType(actionType string) bool {
 		strings.HasPrefix(actionType, "eventhubs_")
 }
 
-func collectQueryParams(collector *dataParamCollector, budget *suggestionRegexBudget, section string, index int, action *dsl.Action) error {
+func collectQueryParams(collector *dataParamCollector, budget *suggestionRegexBudget, section string, index int, request *int, action *dsl.Action) error {
 	queryStart := strings.Index(action.Target, "?")
 	if queryStart < 0 {
 		return nil
@@ -119,13 +119,13 @@ func collectQueryParams(collector *dataParamCollector, budget *suggestionRegexBu
 		if !ok {
 			continue
 		}
-		collector.add(key, value, "query parameter", section, index, action,
+		collector.add(key, value, "query parameter", section, index, request, action,
 			"target", search, buildReplace)
 	}
 	return nil
 }
 
-func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBudget, section string, index int, action *dsl.Action) error {
+func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBudget, section string, index int, request *int, action *dsl.Action) error {
 	body := strings.TrimSpace(action.Body)
 	if body == "" {
 		return nil
@@ -140,7 +140,7 @@ func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBud
 			if !LooksParameterName(key) || value == "" || isTemplated(value) {
 				continue
 			}
-			collector.add(key, value, "JSON body field", section, index, action,
+			collector.add(key, value, "JSON body field", section, index, request, action,
 				"body", match[0], func(template string) string {
 					return strings.Replace(match[0], `"`+value+`"`, `"`+template+`"`, 1)
 				})
@@ -154,7 +154,7 @@ func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBud
 			if !LooksParameterName(key) {
 				continue
 			}
-			collector.add(key, value, "JSON body field", section, index, action,
+			collector.add(key, value, "JSON body field", section, index, request, action,
 				"body", match[0], func(template string) string {
 					// Numbers stay unquoted so template expansion preserves the
 					// JSON type when the data column holds a numeric value. The value
@@ -184,7 +184,7 @@ func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBud
 		if !ok {
 			continue
 		}
-		collector.add(key, value, "form field", section, index, action,
+		collector.add(key, value, "form field", section, index, request, action,
 			"body", search, buildReplace)
 	}
 	return nil
@@ -253,7 +253,7 @@ func isPairKeyByte(b byte) bool {
 
 // collectFillParams treats browser fill values as parameterizable when the
 // selector names a business-data field (e.g. #user_email).
-func collectFillParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
+func collectFillParams(collector *dataParamCollector, section string, index int, request *int, action *dsl.Action) {
 	if action.Type != "browser_fill" || strings.TrimSpace(action.Value) == "" || isTemplated(action.Value) {
 		return
 	}
@@ -261,11 +261,11 @@ func collectFillParams(collector *dataParamCollector, section string, index int,
 	if hint == "" || !LooksParameterName(hint) || strings.Contains(strings.ToLower(hint), "password") {
 		return
 	}
-	collector.add(hint, action.Value, "browser fill value", section, index, action,
+	collector.add(hint, action.Value, "browser fill value", section, index, request, action,
 		"value", action.Value, func(template string) string { return template })
 }
 
-func collectUploadParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
+func collectUploadParams(collector *dataParamCollector, section string, index int, request *int, action *dsl.Action) {
 	if action.Type != "browser_set_files" || strings.TrimSpace(action.Value) == "" || isTemplated(action.Value) {
 		return
 	}
@@ -276,7 +276,7 @@ func collectUploadParams(collector *dataParamCollector, section string, index in
 	if key == "" || !LooksParameterName(key) {
 		key = "upload_file"
 	}
-	collector.add(key, action.Value, "browser upload fixture", section, index, action,
+	collector.add(key, action.Value, "browser upload fixture", section, index, request, action,
 		"value", action.Value, func(template string) string { return template })
 }
 
@@ -300,7 +300,7 @@ func newDataParamCollector(names *nameRegistry, claimed map[string]bool) *dataPa
 	}
 }
 
-func (c *dataParamCollector) add(key, value, kind, section string, index int, action *dsl.Action, field, search string, buildReplace func(template string) string) {
+func (c *dataParamCollector) add(key, value, kind, section string, index int, request *int, action *dsl.Action, field, search string, buildReplace func(template string) string) {
 	if c.claimed[value] {
 		return
 	}
@@ -310,7 +310,7 @@ func (c *dataParamCollector) add(key, value, kind, section string, index int, ac
 		}
 	}
 	groupKey := strings.ToLower(key) + "|" + value
-	locationKey := fmt.Sprintf("%s|%s|%d|%s|%s", groupKey, section, index, field, search)
+	locationKey := fmt.Sprintf("%s|%s|%d|%s|%s|%s", groupKey, section, index, requestKey(request), field, search)
 	if c.seen[locationKey] {
 		return
 	}
@@ -318,12 +318,13 @@ func (c *dataParamCollector) add(key, value, kind, section string, index int, ac
 
 	if existing, ok := c.grouped[groupKey]; ok {
 		existing.Locations = append(existing.Locations, Location{
-			Section:     section,
-			ActionIndex: index,
-			ActionName:  action.Name,
-			Field:       field,
-			SearchText:  search,
-			ReplaceText: buildReplace(existing.Replacement),
+			Section:      section,
+			ActionIndex:  index,
+			RequestIndex: request,
+			ActionName:   action.Name,
+			Field:        field,
+			SearchText:   search,
+			ReplaceText:  buildReplace(existing.Replacement),
 		})
 		return
 	}
@@ -337,12 +338,13 @@ func (c *dataParamCollector) add(key, value, kind, section string, index int, ac
 		LiteralValue: value,
 		SampleValue:  truncateValue(value),
 		Locations: []Location{{
-			Section:     section,
-			ActionIndex: index,
-			ActionName:  action.Name,
-			Field:       field,
-			SearchText:  search,
-			ReplaceText: buildReplace(template),
+			Section:      section,
+			ActionIndex:  index,
+			RequestIndex: request,
+			ActionName:   action.Name,
+			Field:        field,
+			SearchText:   search,
+			ReplaceText:  buildReplace(template),
 		}},
 		Confidence: dataParamConfidence,
 		RuleID:     "data_param.name_heuristic",
