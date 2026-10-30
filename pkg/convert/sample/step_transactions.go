@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"container/heap"
 	"fmt"
 	"net/url"
 	"path"
@@ -22,18 +23,21 @@ var stepTransactionLabelUnsafe = regexp.MustCompile(`[^A-Za-z0-9_]+`)
 // starts at the first request, after each recorded pause longer than the
 // think-time threshold (where the user read or typed and the generated script
 // also pauses), and at each forced boundary (the end of a sign-in that moves to
-// init). A pause is measured from the end of the step's requests so far, so a
-// page load that waits on a slow response stays one step; a request held open
-// longer than stepLongHeldRequest (a long poll, a download) does not hold the
-// step open across later clicks. Redirects and the requests a page fires on
+// init). A pause is the time since the latest request finished, counted only
+// when no other request is in flight, so a page load that waits on a slow
+// response stays one step; a request held open longer than
+// stepLongHeldRequest (a long poll, a download) does not count as in flight,
+// so it does not hold the step open across later clicks, though its end
+// counts once it finished. Redirects and the requests a page fires on
 // its own stay in the step that caused them.
 // Requests in skip (background requests the recorded shape folds into
 // conversations) neither start nor join a step, and a forced boundary on one
 // moves to the next request kept. Each step is named for the page most of its
 // requests belong to (the Lightning page an Aura request names in
 // aura.pageURI, or the page a navigation loaded), numbered in recording order
-// (01_login, 02_home, 03_Customer_Search), and spans its requests' earliest to
-// latest start. member gives each exchange's window, or -1. Without windows,
+// (01_login, 02_home, 03_Customer_Search). A request listed after a later one
+// (recorders append in completion order) joins the step it is listed, and so
+// sent, in; the steps stay disjoint. member gives each exchange's window, or -1. Without windows,
 // reason says why: a request has no recorded start time, or every request
 // folds into the background.
 func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip, forced map[int]bool) (windows []TransactionWindow, member []int, reason string) {
@@ -48,7 +52,11 @@ func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip,
 	member = make([]int, len(exchanges))
 	var labels map[string]int
 	var firstLabel string
-	var stepEnd time.Time
+	// inFlight holds the ends of kept requests not yet finished; pending
+	// counts those that are not long-held; finished is the latest end.
+	var inFlight stepEndHeap
+	var finished time.Time
+	pending := 0
 	pendingForced := false
 	closeStep := func() {
 		if len(windows) == 0 {
@@ -70,12 +78,35 @@ func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip,
 			continue
 		}
 		duration := time.Duration(ex.DurationMs * float64(time.Millisecond))
+		// Requests that finished by now set the latest end; one still in
+		// flight holds the step open unless it is long-held.
+		for inFlight.Len() > 0 && !inFlight[0].end.After(ex.StartedAt) {
+			done := heap.Pop(&inFlight).(stepRequestEnd)
+			if done.end.After(finished) {
+				finished = done.end
+			}
+			if !done.longHeld {
+				pending--
+			}
+		}
+		heap.Push(&inFlight, stepRequestEnd{end: ex.StartedAt.Add(duration), longHeld: duration > stepLongHeldRequest})
+		if duration <= stepLongHeldRequest {
+			pending++
+		}
+		if len(windows) > 0 && !ex.StartedAt.After(windows[len(windows)-1].End) && !forced[index] && !pendingForced {
+			// Listed late (recorders append in completion order): it joins the
+			// step the script sends it in (stepWindowAt).
+			member[index] = stepWindowAt(windows, ex.StartedAt, threshold)
+			if label := stepPageLabel(ex); label != "" {
+				labels[label]++
+			}
+			continue
+		}
 		boundary := len(windows) == 0 || forced[index] || pendingForced
 		pendingForced = false
-		// A request listed late but started within the current step's span
-		// (recorders append in completion order) belongs to that step.
-		if !boundary && ex.StartedAt.After(windows[len(windows)-1].End) {
-			pause := ex.StartedAt.Sub(stepEnd)
+		if !boundary && pending <= 1 && !finished.IsZero() {
+			// pending counts this request too.
+			pause := ex.StartedAt.Sub(finished)
 			if ex.HasRecordedThinkTime && (index == 0 || !skip[index-1]) {
 				// The recorder measured the pause before this request from the
 				// previous one, which the step kept.
@@ -89,18 +120,8 @@ func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip,
 			windows = append(windows, TransactionWindow{Start: ex.StartedAt, End: ex.StartedAt, StartOrder: 2 * number, EndOrder: 2*number + 1})
 			labels = map[string]int{}
 			firstLabel = stepTransactionLabel(ex.URL)
-			stepEnd = ex.StartedAt
 		}
-		if end := ex.StartedAt.Add(duration); duration <= stepLongHeldRequest && end.After(stepEnd) {
-			stepEnd = end
-		}
-		window := &windows[len(windows)-1]
-		if ex.StartedAt.Before(window.Start) {
-			window.Start = ex.StartedAt
-		}
-		if ex.StartedAt.After(window.End) {
-			window.End = ex.StartedAt
-		}
+		windows[len(windows)-1].End = ex.StartedAt
 		member[index] = len(windows) - 1
 		if label := stepPageLabel(ex); label != "" {
 			labels[label]++
@@ -111,6 +132,63 @@ func stepTransactionWindows(exchanges []exchange, threshold time.Duration, skip,
 		return nil, nil, "every request folds into a background conversation, so there is no user step to time"
 	}
 	return windows, member, ""
+}
+
+// stepWindowAt is the window a late-listed request that started at joins:
+// the current (last) one, since the script sends requests in listed order and
+// so sends it in that step. When it started in the pause before that step
+// (more than threshold after the previous step's last start) it is the step's
+// own first request, and the step's start moves back to it; otherwise the
+// windows keep their spans, so they stay disjoint and no step times the
+// user's pause.
+func stepWindowAt(windows []TransactionWindow, at time.Time, threshold time.Duration) int {
+	current := len(windows) - 1
+	if at.Before(windows[current].Start) {
+		if current == 0 || at.Sub(windows[current-1].End) > threshold {
+			windows[current].Start = at
+		}
+	}
+	return current
+}
+
+// stepMarkerStarts is, for each request that started outside the step it
+// joined (listed late), a start inside that step's span, so the transaction
+// markers place it within the step the script sends it in.
+func stepMarkerStarts(exchanges []exchange, windows []TransactionWindow, member []int) map[int]time.Time {
+	var starts map[int]time.Time
+	for index, window := range member {
+		if window < 0 || index >= len(exchanges) {
+			continue
+		}
+		at := exchanges[index].StartedAt
+		if at.Before(windows[window].Start) || at.After(windows[window].End) {
+			if starts == nil {
+				starts = map[int]time.Time{}
+			}
+			starts[index] = windows[window].End
+		}
+	}
+	return starts
+}
+
+// stepRequestEnd is when a kept request ends, and whether it is long-held.
+type stepRequestEnd struct {
+	end      time.Time
+	longHeld bool
+}
+
+// stepEndHeap is a min-heap of request ends.
+type stepEndHeap []stepRequestEnd
+
+func (h stepEndHeap) Len() int           { return len(h) }
+func (h stepEndHeap) Less(i, j int) bool { return h[i].end.Before(h[j].end) }
+func (h stepEndHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *stepEndHeap) Push(value any)    { *h = append(*h, value.(stepRequestEnd)) }
+func (h *stepEndHeap) Pop() any {
+	old := *h
+	value := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return value
 }
 
 // stepLongHeldRequest is the longest a request may run and still hold its

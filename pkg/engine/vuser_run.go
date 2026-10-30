@@ -876,7 +876,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 				}
 				run.vu.recordTransaction(action.Name, result.Duration, false, result)
 			}
-			if !markerOwned {
+			if !markerOwned || requestTransactions {
 				run.restoreIterationBoundary()
 			}
 			run.logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, run.vu.RedactionConfig))
@@ -892,7 +892,9 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 		if aggregateTransaction {
 			run.vu.recordTransaction(action.Name, result.Duration, result.Success, result)
 		}
-		if !markerOwned {
+		// Per-request claims move the boundary too, even for a group that
+		// claimed no slot of its own.
+		if !markerOwned || requestTransactions {
 			run.restoreIterationBoundary()
 		}
 		if !result.Success {

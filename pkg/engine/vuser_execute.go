@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -1475,7 +1476,7 @@ func withPerRequestTransactions(action dsl.Action) dsl.Action {
 		for key, value := range children[index].Metadata {
 			metadata[key] = value
 		}
-		metadata[dsl.HTTPConcurrentRequestTransactionMetadataKey] = children[index].Name
+		metadata[dsl.HTTPConcurrentRequestTransactionMetadataKey] = perRequestTransactionName(action.Name, index, children[index].Name)
 		children[index].Metadata = metadata
 	}
 	params := make(map[string]any, len(action.Params))
@@ -1485,4 +1486,22 @@ func withPerRequestTransactions(action dsl.Action) dsl.Action {
 	params["requests"] = children
 	action.Params = params
 	return action
+}
+
+// perRequestTransactionName is a request's transaction name: its own,
+// trimmed and cut to the DSL's limit on a rune boundary, or the group's name
+// with the request's position when it has none.
+func perRequestTransactionName(group string, index int, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = fmt.Sprintf("%s_%d", strings.TrimSpace(group), index+1)
+	}
+	if len(name) > dsl.MaxHTTPConcurrentRequestTransactionBytes {
+		cut := dsl.MaxHTTPConcurrentRequestTransactionBytes
+		for cut > 0 && !utf8.RuneStart(name[cut]) {
+			cut--
+		}
+		name = name[:cut]
+	}
+	return name
 }

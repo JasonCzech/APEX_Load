@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -143,9 +144,10 @@ func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex
 	return remapped, positions, groups, refused
 }
 
-// recordedGroupThinkTime is the think time after a group: the last member's
-// own when the recorder measured it, else the recorded pause from the group's
-// last request to finish to the next step's start, when it exceeds threshold.
+// recordedGroupThinkTime is the think time after a group: as the import set
+// it when the recorder measured the pause before the next request, else the
+// recorded pause from the group's last request to finish to the next step's
+// start, when it exceeds threshold.
 //
 // Transaction markers between the group and the next request carry the pause
 // instead (insertTransactionMarkers moves it past the end markers, measured
@@ -154,9 +156,6 @@ func groupRecordedConcurrency(script *dsl.Script, exchanges []exchange, newIndex
 func recordedGroupThinkTime(actions []dsl.Action, timings map[int]recordedTiming, members []int, threshold time.Duration) recordedGroupPause {
 	last := members[len(members)-1]
 	unchanged := recordedGroupPause{group: actions[last].ThinkTime, groupAfter: actions[last].ThinkTimeAfter, holder: -1}
-	if timings[last].recordedPause {
-		return unchanged
-	}
 	nextIndex := last + 1
 	holder := -1
 	for nextIndex < len(actions) && actions[nextIndex].Type == "source_transaction" {
@@ -166,7 +165,9 @@ func recordedGroupThinkTime(actions []dsl.Action, timings map[int]recordedTiming
 		nextIndex++
 	}
 	next, timed := timings[nextIndex]
-	if !timed {
+	// A pause the recorder measured (or a tester edited) before the next
+	// request is kept where the import put it.
+	if !timed || next.recordedPause {
 		return unchanged
 	}
 	var end time.Time
@@ -337,10 +338,46 @@ func recordedSharedTransaction(children []dsl.Action) (string, bool) {
 // requests' templates at replay spends the same budgets again, so a group
 // must leave half of each for it.
 func recordedGroupFitsPreparation(wrapper dsl.Action, children []dsl.Action, script *dsl.Script) bool {
+	// The runtime walks the stored script, whose requests are JSON-shaped
+	// maps (more structure nodes than typed actions); a group with twice the
+	// requests must still fit its walk, which leaves the other half spare.
+	stored, ok := recordedStoredGroup(wrapper, 2)
+	if !ok {
+		return false
+	}
+	if _, _, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, stored, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList); err != nil {
+		return false
+	}
 	sourceBytes, sourceWork, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, wrapper, script.Config.HTTP.DefaultHeaders, script.Config.HTTP.DefaultHeaderList)
 	if err != nil || sourceBytes*2 > dsl.MaxHTTPConcurrentPreparationBytes {
 		return false
 	}
 	validationWork, err := dsl.ValidateHTTPConcurrentChildrenWithWorkLimit(children, dsl.MaxHTTPConcurrentPreparationWork-sourceWork)
 	return err == nil && (sourceWork+validationWork)*2 <= dsl.MaxHTTPConcurrentPreparationWork
+}
+
+// recordedStoredGroup is the group as a stored script holds it, after a JSON
+// round trip, with its requests repeated copies times.
+func recordedStoredGroup(wrapper dsl.Action, copies int) (dsl.Action, bool) {
+	children, _ := wrapper.Params["requests"].([]dsl.Action)
+	repeated := make([]dsl.Action, 0, len(children)*copies)
+	for copy := 0; copy < copies; copy++ {
+		repeated = append(repeated, children...)
+	}
+	params := make(map[string]any, len(wrapper.Params))
+	for key, value := range wrapper.Params {
+		params[key] = value
+	}
+	params["requests"] = repeated
+	probe := wrapper
+	probe.Params = params
+	raw, err := json.Marshal(probe)
+	if err != nil {
+		return dsl.Action{}, false
+	}
+	var stored dsl.Action
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return dsl.Action{}, false
+	}
+	return stored, true
 }

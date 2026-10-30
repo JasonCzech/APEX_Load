@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -163,5 +164,52 @@ func TestRecordedConcurrencyLeavesRoomForRuntimePreparation(t *testing.T) {
 	small := &dsl.Script{Actions: []dsl.Action{post("a", 1<<10), post("b", 1<<10), post("c", 1<<10)}}
 	if _, _, groups, _ := groupRecordedConcurrency(small, exchanges, nil, nil, 500*time.Millisecond); groups != 1 {
 		t.Fatalf("small: groups = %d, want one", groups)
+	}
+}
+
+// A pause the recorder measured before the request after a group stays as
+// the import set it, instead of being recomputed from timestamps.
+func TestRecordedConcurrencyKeepsARecorderMeasuredPause(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{concurrencyRequest("a", "/a"), concurrencyRequest("b", "/b"), concurrencyRequest("next", "/next")}}
+	script.Actions[1].ThinkTimeAfter = true
+	script.Actions[1].ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 8000}
+	exchanges := []exchange{concurrencyExchange(0, 3000), concurrencyExchange(10, 50), concurrencyExchange(6000, 100)}
+	exchanges[2].HasRecordedThinkTime, exchanges[2].RecordedThinkTimeMs = true, 8000
+	if _, _, groups, _ := groupRecordedConcurrency(script, exchanges, nil, nil, 500*time.Millisecond); groups != 1 {
+		t.Fatalf("groups = %d, want one", groups)
+	}
+	if group := script.Actions[0]; !group.ThinkTimeAfter || group.ThinkTime.MeanMs != 8000 {
+		t.Fatalf("group think time = %+v, want the recorder's 8000 ms", group.ThinkTime)
+	}
+}
+
+// Every group the import builds passes the runtime's preparation walk in the
+// stored, JSON-shaped form, where each request costs more structure.
+func TestRecordedConcurrencyGroupsFitTheStoredPreparationWalk(t *testing.T) {
+	var actions []dsl.Action
+	var exchanges []exchange
+	for index := 0; index < 200; index++ {
+		action := concurrencyRequest(fmt.Sprintf("r%d", index), fmt.Sprintf("/r/%d", index))
+		for header := 0; header < 14; header++ {
+			action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: fmt.Sprintf("X-H%d", header), Value: "v"})
+		}
+		actions = append(actions, action)
+		exchanges = append(exchanges, concurrencyExchange(index, 5000))
+	}
+	script := &dsl.Script{Actions: actions}
+	if _, _, groups, _ := groupRecordedConcurrency(script, exchanges, nil, nil, 500*time.Millisecond); groups == 0 {
+		t.Fatal("no group was built")
+	}
+	for _, action := range script.Actions {
+		if action.Type != "http_sequence" {
+			continue
+		}
+		stored, ok := recordedStoredGroup(action, 1)
+		if !ok {
+			t.Fatal("group did not round-trip")
+		}
+		if _, _, err := dsl.HTTPConcurrentPreparationSourceSizeWithWorkLimit(dsl.MaxHTTPConcurrentPreparationWork, stored); err != nil {
+			t.Fatalf("stored group of %d requests fails the runtime walk: %v", len(action.Params["requests"].([]dsl.Action)), err)
+		}
 	}
 }

@@ -795,6 +795,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		var shapeWarnings []string
 		var newIndex []int
 		var startedAt []time.Time
+		// stepStarts places late-listed requests inside the step they join,
+		// for the transaction markers only.
+		var stepStarts map[int]time.Time
 		if stepTransactions {
 			windows, member, reason := stepTransactionWindows(exchanges, thinkThreshold(req.Options.Profile), shapingFoldedExchanges(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns()), signIn.stepBoundary(exchanges))
 			if len(windows) == 0 {
@@ -804,6 +807,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			} else {
 				tagStepTransactions(result.Script.Actions, windows, member)
 				req.Options.Transactions = windows
+				stepStarts = stepMarkerStarts(exchanges, windows, member)
 			}
 		}
 		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
@@ -811,6 +815,18 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if len(req.Options.Transactions) > 0 {
 			if newIndex == nil {
 				startedAt = exchangeStartTimes(exchanges, len(result.Script.Actions))
+			}
+			for exchangeIndex, at := range stepStarts {
+				position := exchangeIndex
+				if newIndex != nil {
+					position = -1
+					if exchangeIndex < len(newIndex) {
+						position = newIndex[exchangeIndex]
+					}
+				}
+				if position >= 0 && position < len(startedAt) {
+					startedAt[position] = at
+				}
 			}
 			positions, note := insertTransactionMarkers(result.Script, startedAt, req.Options.Transactions)
 			if note != "" {

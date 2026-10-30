@@ -227,3 +227,54 @@ func TestStepTransactionWindowsCarryAForcedBoundaryPastAFoldedRequest(t *testing
 		t.Fatalf("windows = %d, member = %v, want the boundary moved to the request after the folded one", len(windows), member)
 	}
 }
+
+// A slow request (a 12 s report) still holds its step once it has finished:
+// the request its response triggers 100 ms later stays in the same step.
+func TestStepTransactionsKeepASlowRequestsFollowUp(t *testing.T) {
+	report := stepEntry("2026-01-01T00:00:03.000Z", "POST", "https://app.test/api/report", "application/json", "q=1")
+	report["time"] = 12000
+	markers, tags := stepMarkersAndTags(t, stepHAR(t,
+		stepEntry("2026-01-01T00:00:00.000Z", "GET", "https://app.test/home", "text/html", ""),
+		report,
+		stepEntry("2026-01-01T00:00:15.100Z", "GET", "https://app.test/api/report/1/render", "application/json", ""),
+	))
+	if len(markers) != 4 || len(tags) != 2 {
+		t.Fatalf("markers = %q, tags = %v, want two steps with the render in the report's", markers, tags)
+	}
+}
+
+// A request held across later clicks and listed last (recorders append in
+// completion order) is sent last by the script, so it joins the last step
+// without stretching that step back over the earlier ones: the steps stay
+// disjoint.
+func TestStepTransactionsStayDisjointWithALateListedLongRequest(t *testing.T) {
+	long := stepEntry("2026-01-01T00:00:00.050Z", "GET", "https://app.test/api/export", "application/json", "")
+	long["time"] = 30000
+	on := true
+	result, err := Convert(ImportRequest{Name: "Steps", Format: "har", Content: stepHAR(t,
+		stepEntry("2026-01-01T00:00:00.000Z", "GET", "https://app.test/home", "text/html", ""),
+		stepEntry("2026-01-01T00:00:10.000Z", "GET", "https://app.test/search", "text/html", ""),
+		stepEntry("2026-01-01T00:00:20.000Z", "GET", "https://app.test/detail", "text/html", ""),
+		long,
+	), Options: ConvertOptions{StepTransactions: &on}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shape []string
+	for _, action := range result.Script.Actions {
+		if action.Type == "source_transaction" {
+			shape = append(shape, action.Name)
+			continue
+		}
+		shape = append(shape, action.Target)
+	}
+	want := "Start 01_home transaction|/home|End 01_home transaction|Start 02_search transaction|/search|End 02_search transaction|Start 03_detail transaction|/detail|/api/export|End 03_detail transaction"
+	if strings.Join(shape, "|") != want {
+		t.Fatalf("shape = %q, want %q", shape, want)
+	}
+	for _, action := range result.Script.Actions {
+		if action.Target == "/api/export" && action.Metadata[harSourceTransactionMeta] != "03_detail" {
+			t.Fatalf("export tagged %v, want the step the script sends it in", action.Metadata[harSourceTransactionMeta])
+		}
+	}
+}

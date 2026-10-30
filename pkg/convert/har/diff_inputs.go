@@ -179,8 +179,11 @@ func (v ScriptValues) Sends(value string) bool {
 	if v.opaqueText == "" {
 		return false
 	}
-	if found, answered := v.opaque.lookup(value); answered {
-		return found
+	// The index answers only that a value is there: a short value, or one
+	// inside a longer token, is not indexed on its own, so a miss falls
+	// through to the search.
+	if found, _ := v.opaque.lookup(value); found {
+		return true
 	}
 	*v.remaining -= int64(len(v.opaqueText))
 	if *v.remaining < 0 {
@@ -849,7 +852,9 @@ func (x *diffTokenIndex) add(text string, id int) bool {
 				return false
 			}
 			if strings.Contains(token, "%") {
-				if decoded, err := url.PathUnescape(token); err == nil && decoded != token && !x.addToken(decoded, id) {
+				// Percent-encoding hides delimiters (%22, %3F, %3D, %26), so the
+				// decoded text is tokenized again, once.
+				if decoded, err := url.PathUnescape(token); err == nil && decoded != token && !strings.Contains(decoded, "%") && !x.add(decoded, id) {
 					return false
 				}
 			}

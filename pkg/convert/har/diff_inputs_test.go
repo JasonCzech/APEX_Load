@@ -443,3 +443,30 @@ func TestDiffResponseScanFindsEncodedAndLongTokenValues(t *testing.T) {
 		}
 	}
 }
+
+// A short value, or one inside a longer token, in a script body that cannot be
+// read is still found by the search: only a token-index hit is final.
+func TestScriptRequestValuesFindShortAndEmbeddedValuesInOpaqueText(t *testing.T) {
+	body := "<req>\n<code>Zx81Kq</code>\n<ref>row_001xx000003DGb2AAG</ref>\n<t>{{var.a}}</t>\n</req>"
+	script := &dsl.Script{Actions: []dsl.Action{{Name: "soap", Type: "request", Method: "POST", Target: "/soap", Body: body}}}
+	values := ScriptRequestValues(script)
+	for _, value := range []string{"Zx81Kq", "001xx000003DGb2AAG"} {
+		if !values.Sends(value) {
+			t.Errorf("%s in a templated XML body was taken for handled", value)
+		}
+	}
+}
+
+// Percent-encoding hides quotes and query delimiters; the decoded text is
+// tokenized again, so the ids inside are found.
+func TestDiffResponseScanFindsValuesBehindEncodedDelimiters(t *testing.T) {
+	scan := &diffResponseScan{observations: []sample.HARSourceObservation{
+		{Observation: correlate.Observation{ID: 1, ResponseBody: `state=%22a0B5e00000ABCDEFGH%22 startURL=%2Fapex%2FPage%3Fid%3D001xx000003DGb2AAG%26x%3D1`}},
+		{Observation: correlate.Observation{ID: 2}},
+	}}
+	for _, value := range []string{"a0B5e00000ABCDEFGH", "001xx000003DGb2AAG"} {
+		if found, checked := scan.before(1, value); !found || !checked {
+			t.Errorf("%s: found = %v, checked = %v, want found", value, found, checked)
+		}
+	}
+}
