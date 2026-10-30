@@ -8417,7 +8417,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 aria-valuenow={authorUtilityActualWidth ?? authorUtilityWidth ?? 320}
                 title="Drag to resize the right sidebar"
                 onPointerDown={startAuthorUtilityDrag}
-                onKeyDown={handleAuthorUtilityResizeKey}
+                onKeyDownCapture={handleAuthorUtilityResizeKey}
               />}
               <div ref={authorUtilityRef} id="script-details-panel" className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (

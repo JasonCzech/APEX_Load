@@ -173,12 +173,9 @@ func (s *Server) handlePartial(w http.ResponseWriter, r *http.Request) {
 		s.Ledger.applyEffect(key)
 	}
 	if r.URL.Query().Get("headers") == "0" {
-		if streamer, ok := w.(http3.HTTPStreamer); ok {
-			str := streamer.HTTPStream()
-			str.CancelRead(quic.StreamErrorCode(http3.ErrCodeInternalError))
-			str.CancelWrite(quic.StreamErrorCode(http3.ErrCodeInternalError))
-			return
-		}
+		// Not HTTPStream: it flushes a 200 header first, which can reach the
+		// client before the reset. An aborted handler makes the HTTP/3 server
+		// reset both directions without writing any header.
 		panic(http.ErrAbortHandler)
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(partialBodySize))

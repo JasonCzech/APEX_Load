@@ -15,7 +15,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dop251/goja v0.0.0-20260917113740-793a2a65c13b
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/google/cel-go v0.29.2
 	github.com/google/uuid v1.6.0

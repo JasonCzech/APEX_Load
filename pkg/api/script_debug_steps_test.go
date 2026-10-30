@@ -226,7 +226,7 @@ func TestScriptDebugManagerCapturesConditionEvidence(t *testing.T) {
 	}
 }
 
-func TestScriptDebugManagerShowsSecretValuesInFinalReport(t *testing.T) {
+func TestScriptDebugManagerHidesSecretValuesInFinalReport(t *testing.T) {
 	const secretValue = "debug-condition-project-secret"
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
@@ -266,15 +266,16 @@ func TestScriptDebugManagerShowsSecretValuesInFinalReport(t *testing.T) {
 	if done.FinalReport == nil {
 		t.Fatal("completed debugger session has no final replay report")
 	}
-	if got := done.FinalReport.FinalVariables["public_alias"]; got != secretValue {
-		t.Fatalf("debug final public_alias = %q, want original value", got)
+	// Unredacted debug shows runtime values, but never secret-store values.
+	if got := done.FinalReport.FinalVariables["public_alias"]; got != "[REDACTED]" {
+		t.Fatalf("debug final public_alias = %q, want [REDACTED]", got)
 	}
 	payload, err := json.Marshal(done)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(payload), secretValue) {
-		t.Fatalf("serialized debugger session did not include the configured secret: %s", payload)
+	if strings.Contains(string(payload), secretValue) {
+		t.Fatalf("serialized debugger session included the configured secret: %s", payload)
 	}
 }
 

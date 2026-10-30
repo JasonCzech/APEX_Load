@@ -328179,60 +328179,10 @@ paths:
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/octet-stream:
             schema:
-              type: object
-              properties:
-                agentforce_transform:
-                  type: string
-                artifact_mode:
-                  type: string
-                async_scan:
-                  type: string
-                base_url:
-                  type: string
-                conversion_policy:
-                  type: string
-                correlation_mode:
-                  type: string
-                disable_salesforce:
-                  type: string
-                file:
-                  type: string
-                  format: binary
-                http_version_mode:
-                  type: string
-                include_assertions:
-                  type: string
-                include_static_assets:
-                  type: string
-                infer_extractors:
-                  type: string
-                name:
-                  type: string
-                page_title_checks:
-                  type: string
-                parameterization_selections:
-                  type: string
-                parameterize:
-                  type: string
-                profile_id:
-                  type: string
-                recording_profile_id:
-                  type: string
-                redact_sensitive:
-                  type: string
-                resource_mode:
-                  type: string
-                retention_days:
-                  type: string
-                salesforce_native:
-                  type: string
-                salvage_truncated:
-                  type: string
-                secret_bindings:
-                  type: string
-              additionalProperties: true
+              type: string
+              format: binary
       responses:
         2XX:
           description: Successful response; exact status is selected by the handler.
@@ -328272,127 +328222,7 @@ paths:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       parameters:
-        - name: agentforce_transform
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: artifact_mode
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: async_scan
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: base_url
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: conversion_policy
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: correlation_mode
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: disable_salesforce
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
         - name: filename
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: http_version_mode
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: include_assertions
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: include_static_assets
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: infer_extractors
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: name
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: page_title_checks
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: parameterization_selections
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: parameterize
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: profile_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: recording_profile_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: redact_sensitive
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: resource_mode
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -328401,31 +328231,6 @@ paths:
         - name: response_format
           in: query
           description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
-          required: false
-          schema:
-            type: string
-        - name: retention_days
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: salesforce_native
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: salvage_truncated
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: secret_bindings
-          in: query
-          description: Handler-defined query parameter.
           required: false
           schema:
             type: string
@@ -352808,60 +352613,10 @@ paths:
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/octet-stream:
             schema:
-              type: object
-              properties:
-                agentforce_transform:
-                  type: string
-                artifact_mode:
-                  type: string
-                async_scan:
-                  type: string
-                base_url:
-                  type: string
-                conversion_policy:
-                  type: string
-                correlation_mode:
-                  type: string
-                disable_salesforce:
-                  type: string
-                file:
-                  type: string
-                  format: binary
-                http_version_mode:
-                  type: string
-                include_assertions:
-                  type: string
-                include_static_assets:
-                  type: string
-                infer_extractors:
-                  type: string
-                name:
-                  type: string
-                page_title_checks:
-                  type: string
-                parameterization_selections:
-                  type: string
-                parameterize:
-                  type: string
-                profile_id:
-                  type: string
-                recording_profile_id:
-                  type: string
-                redact_sensitive:
-                  type: string
-                resource_mode:
-                  type: string
-                retention_days:
-                  type: string
-                salesforce_native:
-                  type: string
-                salvage_truncated:
-                  type: string
-                secret_bindings:
-                  type: string
-              additionalProperties: true
+              type: string
+              format: binary
       responses:
         2XX:
           description: Successful response; exact status is selected by the handler.
@@ -352901,127 +352656,7 @@ paths:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       parameters:
-        - name: agentforce_transform
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: artifact_mode
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: async_scan
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: base_url
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: conversion_policy
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: correlation_mode
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: disable_salesforce
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
         - name: filename
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: http_version_mode
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: include_assertions
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: include_static_assets
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: infer_extractors
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: name
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: page_title_checks
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: parameterization_selections
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: parameterize
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: profile_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: recording_profile_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: redact_sensitive
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: resource_mode
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -353030,31 +352665,6 @@ paths:
         - name: response_format
           in: query
           description: 'Set exactly canonical-v1 for the controller''s compact import review: drafts occur in scripts and primary_script_index selects the primary. Omitted or unrecognized values retain legacy inline aliases. Archive collection members carry their own negotiated response; the collection envelope is unchanged. Saved recording conversions retain their required saved-script alias in either format.'
-          required: false
-          schema:
-            type: string
-        - name: retention_days
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: salesforce_native
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: salvage_truncated
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
-        - name: secret_bindings
-          in: query
-          description: Handler-defined query parameter.
           required: false
           schema:
             type: string
