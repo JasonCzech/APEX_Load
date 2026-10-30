@@ -16,7 +16,9 @@ import (
 // no producer (Chrome DevTools HAR exports drop Set-Cookie, which carries the
 // desktop __Host-ERIC_* token) or has one that could not be applied
 // automatically. sanitized names a sanitized export as the likely cause of a
-// missing producer; it does not apply when the capture has one.
+// missing producer; it does not apply when the capture has one. When the
+// token is read from the uncaptured bootstrap cookie instead, it notes that
+// the first replay confirms that inferred extractor.
 func auraTokenProvenanceWarning(script *dsl.Script, correlations []correlate.Correlation, sanitized bool) string {
 	refs, err := flattenRequestActionsChecked(script, false)
 	if err != nil {
@@ -44,11 +46,21 @@ func auraTokenProvenanceWarning(script *dsl.Script, correlations []correlate.Cor
 		literal++
 		values[token] = true
 	}
+	inferred := false
+	for _, corr := range correlations {
+		if corr.RuleID == correlate.RuleSalesforceAuraTokenUncapturedCookie {
+			inferred = true
+			break
+		}
+	}
 	if literal == 0 {
+		if inferred {
+			return "Aura requests send the aura.token read at replay from the __Host-ERIC_* Set-Cookie of /one/one.app. The capture holds no Set-Cookie to confirm it (likely a sanitized export), so the first replay confirms it: if that response does not set the cookie, every Aura request fails with an invalid token."
+		}
 		return ""
 	}
 	for _, corr := range correlations {
-		if values[corr.Value] {
+		if values[corr.Value] && corr.RuleID != correlate.RuleSalesforceAuraTokenUncapturedCookie {
 			return fmt.Sprintf("%d Aura request(s) send the recorded aura.token although the capture contains a producer for it; review the aura.token correlation before replay, or every one of these requests fails with a stale token.", literal)
 		}
 	}

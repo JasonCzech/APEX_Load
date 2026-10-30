@@ -41,7 +41,19 @@ type DiffReport struct {
 	StaticCandidates       int                  `json:"static_candidates"`
 	UnmatchedCandidates    int                  `json:"unmatched_candidates"`
 	Classifications        []DiffClassification `json:"classifications,omitempty"`
-	Warnings               []string             `json:"warnings,omitempty"`
+	// UnhandledInputs are request fields whose value changed between the
+	// recordings and that the generated script still sends as recorded; the
+	// import fills them in with ResolveUnhandledInputs once the script is final.
+	UnhandledInputs          []DiffRequestInput `json:"unhandled_inputs,omitempty"`
+	UnhandledInputsTruncated bool               `json:"unhandled_inputs_truncated,omitempty"`
+	Warnings                 []string           `json:"warnings,omitempty"`
+
+	// requestInputs are every request field whose value changed, before the
+	// script decides which of them are still sent as recorded.
+	requestInputs []DiffRequestInput
+	// requestInputsTruncated is set when the field comparison stopped at its
+	// change limit, so later requests were not compared.
+	requestInputsTruncated bool
 }
 
 type DiffClassification struct {
@@ -165,7 +177,7 @@ func diffPrepared(ctx context.Context, baseline *ConvertResult, comparison *Comp
 		comparisonByKey[correlationDiffKey(corr)] = corr
 	}
 	var baselineObservations []sample.HARSourceObservation
-	if baseline.Document != nil && len(baseline.Correlations) > 0 {
+	if baseline.Document != nil {
 		baselineObservations, _ = baseline.Document.SourceObservations(true)
 	}
 	aligner := newDiffAligner(baselineObservations, comparison.observations, baseline.Correlations, comparison.correlations)
@@ -225,6 +237,15 @@ func diffPrepared(ctx context.Context, baseline *ConvertResult, comparison *Comp
 		}
 		report.Classifications = append(report.Classifications, classification)
 	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, aligner, err
+	}
+	requestInputs, truncated, err := diffRequestInputs(ctx, baselineObservations, comparison.observations)
+	if err != nil {
+		return nil, aligner, err
+	}
+	report.requestInputs, report.requestInputsTruncated = requestInputs, truncated
 
 	sort.SliceStable(report.Classifications, func(i, j int) bool {
 		left := report.Classifications[i]

@@ -2620,6 +2620,7 @@ func detectCorrelationsWithEvidenceAndOptions(entries []harEntry, opts AnalyzeOp
 			correlations[index] = generic
 		}
 	}
+	truncated := false
 	for _, corr := range genericCorrelations {
 		if seenValues[corr.Value] {
 			continue
@@ -2628,7 +2629,20 @@ func detectCorrelationsWithEvidenceAndOptions(entries []harEntry, opts AnalyzeOp
 		correlations = append(correlations, corr)
 		if len(correlations) >= maxSalesforceShapeCorrelations {
 			warnings = append(warnings, fmt.Sprintf("combined Salesforce correlations were truncated at %d", maxSalesforceShapeCorrelations))
+			truncated = true
 			break
+		}
+	}
+	// Last, so a captured producer for aura.token always wins. A truncated
+	// list may have dropped that producer, so nothing is inferred then.
+	if !truncated {
+		tokenCorrelations, tokenErr := detectUncapturedAuraTokenCorrelations(observations, seenValues, budget, maxSalesforceShapeCorrelations-len(correlations))
+		correlations = append(correlations, tokenCorrelations...)
+		if tokenErr != nil {
+			if !errors.Is(tokenErr, correlate.ErrCorrelationWorkLimit) {
+				return nil, nil, omission, tokenErr
+			}
+			warnings = append(warnings, "Salesforce aura.token cookie analysis was truncated: "+tokenErr.Error())
 		}
 	}
 	if opts.CorrelationSettings != nil {

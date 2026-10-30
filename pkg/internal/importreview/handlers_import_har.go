@@ -2,7 +2,10 @@ package importreview
 
 import (
 	"fmt"
+
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -116,6 +119,98 @@ func HarImportReviewSections(result *har.ConvertResult) []ScriptImportReviewSect
 			Summary:  "Each correlation's extractor is re-run on the matching response of the second recording; when the second recording reuses the value, the correlation is labeled dynamic (the value changed) or static (it stayed the same). The labels are for review only: no correlation is added, removed or re-ranked because of them.",
 			Items:    items,
 		})
+	}
+	return sections
+}
+
+// maxHARPairUnhandledInputItems bounds the unhandled request inputs the pair
+// diff section lists.
+const maxHARPairUnhandledInputItems = 12
+
+// ResolveHARPairUnhandledInputs fills diff.UnhandledInputs from the final
+// script: a changed request value counts as unhandled while the script still
+// sends it as recorded and no automatic parameterization suggestion replaces
+// it.
+func ResolveHARPairUnhandledInputs(diff *har.DiffReport, script *dsl.Script, parameterization *paramize.Result) {
+	if diff == nil || !diff.Compared || script == nil || !diff.ChangedRequestInputs() {
+		return
+	}
+	sent := har.ScriptRequestValues(script)
+	replaced := map[string]bool{}
+	if parameterization != nil {
+		for _, suggestion := range parameterization.Suggestions {
+			if !suggestion.AutoApply {
+				continue
+			}
+			replaced[suggestion.LiteralValue] = true
+			for _, location := range suggestion.Locations {
+				replaced[location.SearchText] = true
+			}
+		}
+	}
+	diff.ResolveUnhandledInputs(func(value string) bool {
+		return sent[value] && !replaced[value]
+	})
+}
+
+// harPairActionableInput reports an unhandled input worth a warning: every
+// kind but a client counter, which replays harmlessly in most applications.
+func harPairActionableInput(input har.DiffRequestInput) bool {
+	return input.Kind != har.DiffInputCounter
+}
+
+// HARPairUnhandledInputsWarning summarizes the unhandled request inputs that
+// need attention, or returns "" when there are none.
+func HARPairUnhandledInputsWarning(diff *har.DiffReport) string {
+	if diff == nil {
+		return ""
+	}
+	fields := 0
+	for _, input := range diff.UnhandledInputs {
+		if harPairActionableInput(input) {
+			fields++
+		}
+	}
+	if fields == 0 {
+		return ""
+	}
+	more := ""
+	if diff.UnhandledInputsTruncated {
+		more = " (the list is incomplete: the comparison stopped at its limit)"
+	}
+	return fmt.Sprintf("%d request field(s)%s changed between the two recordings and are still sent as recorded in %d request(s); replay sends values from another session there. Review them in the two-recording diff.", fields, more, diff.UnhandledRequestCount(harPairActionableInput))
+}
+
+// AppendHARPairUnhandledInputs adds the unhandled request inputs to the
+// two-recording diff section, and raises it to a warning when any of them
+// needs attention (client counters alone do not).
+func AppendHARPairUnhandledInputs(sections []ScriptImportReviewSection, diff *har.DiffReport) []ScriptImportReviewSection {
+	if diff == nil || len(diff.UnhandledInputs) == 0 {
+		return sections
+	}
+	for index := range sections {
+		if sections[index].Key != "har_pair_diff" {
+			continue
+		}
+		section := &sections[index]
+		actionable := 0
+		for _, input := range diff.UnhandledInputs {
+			if harPairActionableInput(input) {
+				actionable++
+			}
+		}
+		if actionable > 0 {
+			section.Severity = "warning"
+		}
+		section.Summary += fmt.Sprintf(" The recordings were also compared request by request: %d request field(s) changed between them but are still sent as recorded.", len(diff.UnhandledInputs))
+		for itemIndex, input := range diff.UnhandledInputs {
+			if itemIndex >= maxHARPairUnhandledInputItems {
+				section.Items = append(section.Items, fmt.Sprintf("%d more changed field(s) are listed in har_diff.unhandled_inputs", len(diff.UnhandledInputs)-itemIndex))
+				break
+			}
+			section.Items = append(section.Items, fmt.Sprintf("%s: still sent as recorded in %d request(s) (%d distinct value(s)); %s", input.Field, input.Requests, input.DistinctValues, input.Reason))
+		}
+		break
 	}
 	return sections
 }

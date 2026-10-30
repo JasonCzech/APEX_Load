@@ -172,6 +172,15 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 	if !harImportStageOK(w, r) {
 		return
 	}
+	parameterization := buildImportParameterization(script, preApplied)
+	if result.Diff != nil && result.Diff.Compared {
+		// Judged on the final script, after every correlation and replacement.
+		importreview.ResolveHARPairUnhandledInputs(result.Diff, script, parameterization)
+		if warning := importreview.HARPairUnhandledInputsWarning(result.Diff); warning != "" {
+			result.Warnings = append(result.Warnings, warning)
+		}
+		augmented.Sections = importreview.AppendHARPairUnhandledInputs(augmented.Sections, result.Diff)
+	}
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                   result,
@@ -184,7 +193,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 		ReviewSections:           augmented.Sections,
 		SourceReview:             result.SourceReview,
 		Summary:                  summary,
-		Parameterization:         buildImportParameterization(script, preApplied),
+		Parameterization:         parameterization,
 		Preflight:                augmented.Preflight,
 		EffectiveSettings:        result.EffectiveSettings,
 		ProtectedRequirements:    protectedRequirements,

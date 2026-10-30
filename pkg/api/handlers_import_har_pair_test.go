@@ -27,6 +27,11 @@ type harPairImportResponse struct {
 			Compared          bool   `json:"compared"`
 			Reason            string `json:"reason"`
 			DynamicCandidates int    `json:"dynamic_candidates"`
+			UnhandledInputs   []struct {
+				Field    string `json:"field"`
+				Kind     string `json:"kind"`
+				Requests int    `json:"requests"`
+			} `json:"unhandled_inputs"`
 		} `json:"har_diff"`
 	} `json:"summary"`
 	ReviewSections []struct {
@@ -936,5 +941,41 @@ func TestHARImportProcessingOutlivesTheUploadGrantBehindTheActivityBuffer(t *tes
 	}
 	if !strings.Contains(string(text), "held for the test") {
 		t.Fatalf("body %.300s, want the baseline with the comparison's failure", text)
+	}
+}
+
+func unhandledInputPairHAR(token string) string {
+	return `{"log":{"entries":[{"startedDateTime":"2026-01-01T00:00:00Z","time":10,` +
+		`"request":{"method":"POST","url":"https://app.test/api/save","headers":[{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],` +
+		`"postData":{"mimeType":"application/x-www-form-urlencoded","text":"token=` + token + `"}},` +
+		`"response":{"status":200,"headers":[],"content":{"mimeType":"text/plain","text":"ok"}}}]}}`
+}
+
+// The import compares the pair request by request on the final script and
+// reports the request values that changed between the recordings but are
+// still sent as recorded, in har_diff, a warning and the pair diff section.
+func TestHARPairImportReportsUnhandledRequestInputs(t *testing.T) {
+	response, decoded := postHARPairJSON(t, "/api/v1/scripts/import/har", map[string]any{
+		"name":              "Pair",
+		"content":           unhandledInputPairHAR("Zq9vT0kenAAA"),
+		"secondary_content": unhandledInputPairHAR("Pp8uU1lfoBBB"),
+	})
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	diff := decoded.Summary.HARDiff
+	if diff == nil || !diff.Compared || len(diff.UnhandledInputs) != 1 || diff.UnhandledInputs[0].Field != "form:token" || diff.UnhandledInputs[0].Kind != har.DiffInputUnknown || diff.UnhandledInputs[0].Requests != 1 {
+		t.Fatalf("har_diff = %#v, want form:token as an unhandled input", diff)
+	}
+	if strings.Contains(response.Body.String(), "Pp8uU1lfoBBB") {
+		t.Fatal("the response discloses a comparison value")
+	}
+	if !hasHARPairWarning(decoded.Warnings, "changed between the two recordings and are still sent as recorded") {
+		t.Fatalf("warnings = %q, want the unhandled inputs summarized", decoded.Warnings)
+	}
+	for _, section := range decoded.ReviewSections {
+		if section.Key == "har_pair_diff" && section.Severity != "warning" {
+			t.Fatalf("pair diff section severity = %q, want warning", section.Severity)
+		}
 	}
 }
