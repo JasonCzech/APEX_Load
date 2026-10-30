@@ -662,6 +662,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			RedactSensitive            *bool                                 `json:"redact_sensitive,omitempty"`
 			SalvageTruncated           *bool                                 `json:"salvage_truncated,omitempty"`
 			AsyncScan                  *bool                                 `json:"async_scan,omitempty"`
+			StepTransactions           *bool                                 `json:"step_transactions,omitempty"`
 			HTTPVersionMode            string                                `json:"http_version_mode,omitempty"`
 			DisableSalesforce          *bool                                 `json:"disable_salesforce,omitempty"`
 			SalesforceNative           *bool                                 `json:"salesforce_native,omitempty"`
@@ -693,6 +694,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		req.Options.RedactSensitive = firstNonNilBool(req.RedactSensitive, req.Options.RedactSensitive, parseOptionalBool(upload.Value("redact_sensitive")))
 		req.Options.SalvageTruncated = firstNonNilBool(req.SalvageTruncated, req.Options.SalvageTruncated, parseOptionalBool(upload.Value("salvage_truncated")))
 		req.Options.AsyncScan = firstNonNilBool(req.AsyncScan, req.Options.AsyncScan, parseOptionalBool(upload.Value("async_scan")))
+		req.Options.StepTransactions = firstNonNilBool(req.StepTransactions, req.Options.StepTransactions, parseOptionalBool(upload.Value("step_transactions")))
 		req.Options.DisableSalesforce = firstNonNilBool(req.DisableSalesforce, req.Options.DisableSalesforce, parseOptionalBool(upload.Value("disable_salesforce")))
 		req.Options.SalesforceNative = firstNonNilBool(req.SalesforceNative, req.Options.SalesforceNative, parseOptionalBool(upload.Value("salesforce_native")))
 		req.Options.AgentforceTransform = firstNonNilBool(req.AgentforceTransform, req.Options.AgentforceTransform, parseOptionalBool(upload.Value("agentforce_transform")))
@@ -764,6 +766,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		PageTitleChecks:     parseOptionalBool(upload.Value("page_title_checks")),
 		SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
 		AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
+		StepTransactions:    parseOptionalBool(upload.Value("step_transactions")),
 		DisableSalesforce:   parseOptionalBool(upload.Value("disable_salesforce")),
 		SalesforceNative:    parseOptionalBool(upload.Value("salesforce_native")),
 		AgentforceTransform: parseOptionalBool(upload.Value("agentforce_transform")),

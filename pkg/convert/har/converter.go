@@ -58,6 +58,10 @@ type ConvertOptions struct {
 	// AsyncScan (default on) collapses requests a page repeated in the
 	// background into background conversations; off keeps them inline.
 	AsyncScan *bool `json:"async_scan,omitempty"`
+	// StepTransactions (default off) times each user step of a recording that
+	// marked no transactions as its own transaction: a step starts at a new
+	// page, a new Lightning page, or after a recorded pause.
+	StepTransactions *bool `json:"step_transactions,omitempty"`
 	// Profile is the project recording profile; it applies its filters,
 	// header drop list, think-time threshold and correlation settings and
 	// supplies the options above that are left unset.
@@ -156,6 +160,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			Transactions:               opts.Transactions,
 			Notes:                      opts.Notes,
 			AsyncScan:                  opts.AsyncScan,
+			StepTransactions:           opts.StepTransactions,
 			Profile:                    opts.Profile,
 			HighConfidenceOnly:         opts.HighConfidenceOnly,
 			ReviewOnlyCorrelations:     opts.ReviewOnlyCorrelations,

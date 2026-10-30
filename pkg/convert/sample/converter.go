@@ -88,6 +88,9 @@ type ConvertOptions struct {
 	// the background (poll, long-poll, push) into background conversations.
 	// Off keeps them as recorded steps.
 	AsyncScan *bool `json:"async_scan,omitempty"`
+	// StepTransactions (HAR input; default off) times each user step as a
+	// transaction when the recording marked none (stepTransactionWindows).
+	StepTransactions *bool `json:"step_transactions,omitempty"`
 	// Profile is the project recording profile (HAR input): its host and
 	// content-type filters, header drop list, think-time threshold and
 	// correlation settings apply.
@@ -393,6 +396,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	warnings = append(warnings, normalizationWarnings...)
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
+	}
+	if format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, false) {
+		req.Options.Transactions = stepTransactionWindows(exchanges, thinkThreshold(req.Options.Profile))
+		if len(req.Options.Transactions) == 0 {
+			warnings = append(warnings, "Step transactions were not added: some requests have no recorded start time, so the steps cannot be placed.")
+		}
 	}
 	// A recorded Salesforce Mobile SDK sign-in reads its credentials from a
 	// users file and is reviewed before correlation (salesforce_signin.go).

@@ -868,6 +868,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [baseURL, setBaseURL] = useState('')
   const [soapVersion, setSoapVersion] = useState('1.1')
   const [includeStaticAssets, setIncludeStaticAssets] = useState(false)
+  const [stepTransactions, setStepTransactions] = useState(false)
   const [salvageTruncatedHAR, setSalvageTruncatedHAR] = useState(false)
   const [harHTTPVersionMode, setHARHTTPVersionMode] = useState<HTTPVersionImportMode>('upgrade')
   const [redactSensitive, setRedactSensitive] = useState(true)
@@ -1147,6 +1148,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         if (kind === 'har') return guardResponse(api.importHAR(file, {
           ...options,
           include_static_assets: includeStaticAssets,
+          step_transactions: stepTransactions,
           salvage_truncated: salvageTruncatedHAR,
           http_version_mode: harHTTPVersionMode,
           secondary_file: secondaryHARFile || undefined,
@@ -2408,6 +2410,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               <label className="sample-toggle sample-import-span-2">
                 <input type="checkbox" checked={includeStaticAssets} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setIncludeStaticAssets(event.target.checked) }} />
                 Include static assets
+              </label>
+              <label className="sample-toggle sample-import-span-2" title="Split the recording into user steps at each recorded pause longer than the think-time threshold, and time each step as a transaction named for its page. A recording whose transactions were marked while recording keeps those.">
+                <input type="checkbox" checked={stepTransactions} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setStepTransactions(event.target.checked) }} />
+                Time each user step as a transaction
               </label>
               <label className="sample-toggle sample-import-span-2" title="Import the complete entries of a HAR file that was cut off partway through. The script ends where the capture was cut.">
                 <input type="checkbox" checked={salvageTruncatedHAR} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setSalvageTruncatedHAR(event.target.checked) }} />
