@@ -88,6 +88,13 @@ type ConvertOptions struct {
 	// the background (poll, long-poll, push) into background conversations.
 	// Off keeps them as recorded steps.
 	AsyncScan *bool `json:"async_scan,omitempty"`
+	// StepTransactions (HAR input; default off) times each user step as a
+	// transaction when the recording marked none (stepTransactionWindows).
+	StepTransactions *bool `json:"step_transactions,omitempty"`
+	// RecordedConcurrency (HAR input; default off) replays the requests the
+	// browser had in flight together as concurrent request groups
+	// (groupRecordedConcurrency).
+	RecordedConcurrency *bool `json:"recorded_concurrency,omitempty"`
 	// Profile is the project recording profile (HAR input): its host and
 	// content-type filters, header drop list, think-time threshold and
 	// correlation settings apply.
@@ -221,6 +228,9 @@ type exchange struct {
 	// validators were removed (see dropHARCacheValidators): replay asks for
 	// the full response.
 	CacheValidatorsDropped bool
+	// TelemetryBeaconOmitted marks an Aura instrumentation beacon whose body
+	// the HAR export dropped; the import leaves it out instead of gating it.
+	TelemetryBeaconOmitted bool
 	// ContentEncoding compresses the readable Body on the wire at replay
 	// (params.content_encoding): the request was a gzip or deflate upload.
 	ContentEncoding string
@@ -390,6 +400,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	warnings = append(warnings, normalizationWarnings...)
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
+	}
+	// Step transactions are placed once the requests are built (below), so
+	// they can leave out the background requests the recorded shape folds.
+	stepTransactions := format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, false)
+	if stepTransactions && exchangesCarryRecordedTransactions(exchanges) {
+		stepTransactions = false
+		warnings = append(warnings, "Step transactions were not added: the recording already marks its transactions, which the script keeps.")
 	}
 	// A recorded Salesforce Mobile SDK sign-in reads its credentials from a
 	// users file and is reviewed before correlation (salesforce_signin.go).
@@ -745,6 +762,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
+	if len(pageResources) > 0 && simulateBrowserCacheForPageResources(result.Script) {
+		diagnostics.Add(diag.Info, "HAR page resources", "HAR import", "Recorded static resources are attached to the pages that requested them, and browser cache simulation is on: each resource is fetched once per new user and then served from the virtual user's cache as its response headers allow, as a browser does. The cache applies to the script's own GET steps too, so a step whose response the server marks cacheable is also served from the cache while it is fresh. Turn off Simulate browser cache in Runtime Settings to fetch every resource and step every time.")
+	}
 	if signIn != nil {
 		if note := signIn.addUsersDataSource(result.Script); note != "" {
 			result.Warnings = append(result.Warnings, note)
@@ -775,11 +795,38 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		var shapeWarnings []string
 		var newIndex []int
 		var startedAt []time.Time
+		// stepStarts places late-listed requests inside the step they join,
+		// for the transaction markers only.
+		var stepStarts map[int]time.Time
+		if stepTransactions {
+			windows, member, reason := stepTransactionWindows(exchanges, thinkThreshold(req.Options.Profile), shapingFoldedExchanges(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns()), signIn.stepBoundary(exchanges))
+			if len(windows) == 0 {
+				if reason != "" {
+					result.Warnings = append(result.Warnings, "Step transactions were not added: "+reason+".")
+				}
+			} else {
+				tagStepTransactions(result.Script.Actions, windows, member)
+				req.Options.Transactions = windows
+				stepStarts = stepMarkerStarts(exchanges, windows, member)
+			}
+		}
 		sourceMappings, newIndex, startedAt, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, document, effectiveSettings.AsyncScan, req.Options.Profile.BackgroundRequestPatterns(), sourceMappings)
 		result.Warnings = append(result.Warnings, shapeWarnings...)
 		if len(req.Options.Transactions) > 0 {
 			if newIndex == nil {
 				startedAt = exchangeStartTimes(exchanges, len(result.Script.Actions))
+			}
+			for exchangeIndex, at := range stepStarts {
+				position := exchangeIndex
+				if newIndex != nil {
+					position = -1
+					if exchangeIndex < len(newIndex) {
+						position = newIndex[exchangeIndex]
+					}
+				}
+				if position >= 0 && position < len(startedAt) {
+					startedAt[position] = at
+				}
 			}
 			positions, note := insertTransactionMarkers(result.Script, startedAt, req.Options.Transactions)
 			if note != "" {
@@ -800,6 +847,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			newIndex, sourceMappings, moved, notMoved = signIn.moveToInit(result.Script, exchanges, newIndex, sourceMappings)
 			result.Warnings = append(result.Warnings, signIn.warnings(moved, notMoved)...)
 			signIn.restoreRecordedBodies(exchanges)
+		}
+		if convertutil.BoolOption(req.Options.RecordedConcurrency, false) {
+			var groups, refused int
+			sourceMappings, newIndex, groups, refused = groupRecordedConcurrency(result.Script, exchanges, newIndex, sourceMappings, thinkThreshold(req.Options.Profile))
+			if groups > 0 {
+				diagnostics.Add(diag.Info, "HAR concurrent requests", "HAR import", fmt.Sprintf("%d group(s) of requests the browser had in flight together replay concurrently, as the recording sent them; their requests are left out of the replay comparison baseline", groups))
+			}
+			if refused > 0 {
+				diagnostics.Add(diag.Info, "HAR concurrent requests", "HAR import", fmt.Sprintf("%d run(s) of requests the browser had in flight together replay one after another: they cannot form a valid concurrent group (a request uses another's extracted value, or the group exceeds the runtime's preparation limit)", refused))
+			}
 		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)
 	}
@@ -1157,4 +1214,37 @@ func forgetHTMLStepRequestValues(exchanges []exchange, steps map[int]map[string]
 			exchanges[i].URL = parsed.String()
 		}
 	}
+}
+
+// simulateBrowserCacheForPageResources turns browser cache simulation on for a
+// script whose pages carry their recorded resources (resource_mode in_step),
+// unless it is already set: without it, every page would fetch every
+// resource again on each visit, which no browser does. It reports whether it
+// turned the simulation on.
+func simulateBrowserCacheForPageResources(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	attached := false
+	for index := range script.Actions {
+		if _, ok := script.Actions[index].Params["resources"]; ok {
+			attached = true
+			break
+		}
+	}
+	if !attached {
+		return false
+	}
+	if script.Config.BrowserEmulation == nil {
+		script.Config.BrowserEmulation = &dsl.BrowserEmulationConfig{}
+	}
+	if script.Config.BrowserEmulation.Cache == nil {
+		script.Config.BrowserEmulation.Cache = &dsl.BrowserCacheSimulationConfig{}
+	}
+	if script.Config.BrowserEmulation.Cache.SimulateCache != nil {
+		return false
+	}
+	on := true
+	script.Config.BrowserEmulation.Cache.SimulateCache = &on
+	return true
 }

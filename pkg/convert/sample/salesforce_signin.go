@@ -474,3 +474,20 @@ func (s *salesforceSignIn) warnings(moved int, notMoved string) []string {
 	}
 	return out
 }
+
+// stepBoundary is where a step transaction must start so that none spans the
+// sign-in: the first exchange after the token exchange and the identity
+// requests that follow it, which move to init. Nil without a sign-in.
+func (s *salesforceSignIn) stepBoundary(exchanges []exchange) map[int]bool {
+	if s == nil || s.token < 0 || s.token >= len(exchanges) {
+		return nil
+	}
+	next := s.token + 1
+	for next < len(exchanges) && strings.EqualFold(exchanges[next].Method, "GET") && strings.Contains(urlPath(exchanges[next].URL), "/id/") {
+		next++
+	}
+	if next >= len(exchanges) {
+		return nil
+	}
+	return map[int]bool{next: true}
+}

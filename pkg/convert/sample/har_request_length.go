@@ -3,6 +3,7 @@ package sample
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -28,6 +29,12 @@ const HARRequestBodyNotExportedCode = "har_request_body_not_exported"
 func normalizeHARContentLength(ex *exchange, requestData map[string]any, diagnostics *diag.Collector, location string) {
 	recorded, ok := harRecordedContentLength(ex.HeaderList)
 	if !ok {
+		return
+	}
+	if recorded > 0 && harRequestBodyNotExported(ex, requestData) && isAuraTelemetryBeacon(ex.Method, ex.URL) {
+		// A telemetry beacon only reports the client's own instrumentation,
+		// so replay does not need it; the caller leaves it out and reports it.
+		ex.TelemetryBeaconOmitted = true
 		return
 	}
 	if recorded > 0 && harRequestBodyNotExported(ex, requestData) {
@@ -336,4 +343,57 @@ func setHARRequestMetadata(ex *exchange, key string, value any) {
 		ex.Metadata = map[string]any{}
 	}
 	ex.Metadata[key] = value
+}
+
+// auraTelemetryBeaconAction marks the Lightning instrumentation actions an
+// Aura beacon request names in its query: client telemetry the server only
+// records.
+const auraTelemetryBeaconAction = "InstrumentationBeacon"
+
+// isAuraTelemetryBeacon reports an Aura POST whose query names only
+// instrumentation beacon actions (besides the r sequence number), such as
+// ui-instrumentation-components-beacon.InstrumentationBeacon.sendData.
+func isAuraTelemetryBeacon(method, rawURL string) bool {
+	if !strings.EqualFold(strings.TrimSpace(method), "POST") {
+		return false
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if path != "/aura" && !strings.HasSuffix(path, "/aura") {
+		return false
+	}
+	actions := 0
+	for key := range parsed.Query() {
+		if key == "r" {
+			continue
+		}
+		if !strings.Contains(key, auraTelemetryBeaconAction) {
+			return false
+		}
+		actions++
+	}
+	return actions > 0
+}
+
+// harEntryOmittedTelemetryBeacon reports an entry the import leaves out as a
+// telemetry beacon whose body the export dropped, from the raw HAR request (as
+// normalizeHARContentLength decides it for the parsed exchange).
+func harEntryOmittedTelemetryBeacon(requestData map[string]any) bool {
+	method := stringValue(requestData["method"])
+	if !isAuraTelemetryBeacon(method, stringValue(requestData["url"])) {
+		return false
+	}
+	recorded, ok := harRecordedContentLength(harRequestHeaderList(requestData["headers"]))
+	if !ok || recorded <= 0 {
+		return false
+	}
+	postData, ok := requestData["postData"].(map[string]any)
+	if !ok {
+		return true
+	}
+	params, _ := postData["params"].([]any)
+	return bodyValue(postData["text"]) == "" && len(params) == 0
 }

@@ -49,17 +49,21 @@ const autoApplyConfidence = 0.8
 // surrounding context (e.g. `user_id=12345` or `"user_id": "12345"`) to make
 // the replacement unambiguous within the field.
 type Location struct {
-	Section           string                `json:"section"`      // "init", "actions", or "teardown"
-	ActionIndex       int                   `json:"action_index"` // 0-based index within the section
-	ActionName        string                `json:"action_name,omitempty"`
-	Field             string                `json:"field"` // "target", "body", "value", "headers.<Name>", or "body_multipart.<index>"
-	SearchText        string                `json:"search_text,omitempty"`
-	ReplaceText       string                `json:"replace_text"`
-	ActionPath        string                `json:"action_path,omitempty"`
-	AuraRoute         []aurapayload.Segment `json:"aura_route,omitempty"`
-	DecodedFieldPath  string                `json:"decoded_field_path,omitempty"`
-	EncodingLayers    []string              `json:"encoding_layers,omitempty"`
-	PayloadShape      string                `json:"payload_shape,omitempty"`
+	Section          string                `json:"section"`      // "init", "actions", or "teardown"
+	ActionIndex      int                   `json:"action_index"` // 0-based index within the section
+	ActionName       string                `json:"action_name,omitempty"`
+	Field            string                `json:"field"` // "target", "body", "value", "headers.<Name>", or "body_multipart.<index>"
+	SearchText       string                `json:"search_text,omitempty"`
+	ReplaceText      string                `json:"replace_text"`
+	ActionPath       string                `json:"action_path,omitempty"`
+	AuraRoute        []aurapayload.Segment `json:"aura_route,omitempty"`
+	DecodedFieldPath string                `json:"decoded_field_path,omitempty"`
+	EncodingLayers   []string              `json:"encoding_layers,omitempty"`
+	PayloadShape     string                `json:"payload_shape,omitempty"`
+	// RequestIndex places the location in a request of a concurrent request
+	// group: the index within the action's params.requests. Nil for the
+	// action itself.
+	RequestIndex      *int `json:"request_index,omitempty"`
 	auraExpectedShape string
 }
 
@@ -351,6 +355,10 @@ func suggestionID(s Suggestion) string {
 	appendLocation := func(location Location) {
 		appendSuggestionIDPart(location.Section)
 		appendSuggestionIDPart(strconv.Itoa(location.ActionIndex))
+		if location.RequestIndex != nil {
+			appendSuggestionIDPart("request")
+			appendSuggestionIDPart(strconv.Itoa(*location.RequestIndex))
+		}
 		appendSuggestionIDPart(location.ActionName)
 		appendSuggestionIDPart(location.Field)
 		appendSuggestionIDPart(location.ReplaceText)
@@ -505,22 +513,104 @@ func (r *nameRegistry) claim(base string) string {
 	}
 }
 
-// forEachAction visits the top-level actions of every section. Nested
+// forEachAction visits the top-level actions of every section, and the
+// requests of each concurrent request group (http_sequence) held as typed
+// actions, with request set to their index in params.requests. Nested
 // control-flow bodies (control_if / control_loop steps) are intentionally not
 // visited in this pass; their fields stay untouched by suggestions.
-func forEachAction(script *dsl.Script, visit func(section string, index int, action *dsl.Action)) {
+func forEachAction(script *dsl.Script, visit func(section string, index int, request *int, action *dsl.Action)) {
 	if script == nil {
 		return
 	}
-	for i := range script.Init {
-		visit("init", i, &script.Init[i])
+	visitSection := func(section string, actions []dsl.Action) {
+		for i := range actions {
+			children := groupRequests(&actions[i], false)
+			if len(children) == 0 {
+				visit(section, i, nil, &actions[i])
+			}
+			// A request group sends only its requests; its own target is a
+			// copy of the first request's, so it is not scanned.
+			for j := range children {
+				request := j
+				visit(section, i, &request, &children[j])
+			}
+		}
 	}
-	for i := range script.Actions {
-		visit("actions", i, &script.Actions[i])
+	visitSection("init", script.Init)
+	visitSection("actions", script.Actions)
+	visitSection("teardown", script.Teardown)
+}
+
+// requestKey spells a location's request index for dedup keys.
+func requestKey(request *int) string {
+	if request == nil {
+		return ""
 	}
-	for i := range script.Teardown {
-		visit("teardown", i, &script.Teardown[i])
+	return strconv.Itoa(*request)
+}
+
+// slotPath is the DSL path of an action or of a request of its concurrent
+// group, as dslwalk spells it.
+func slotPath(section string, index int, request *int) string {
+	path := fmt.Sprintf("%s[%d]", section, index)
+	if request != nil {
+		path += fmt.Sprintf(".params.requests[%d]", *request)
 	}
+	return path
+}
+
+// locationAction resolves a location to its action, or to the request of a
+// concurrent request group it names; nil when it does not resolve. typed
+// stores a group's JSON-shaped requests back as typed actions, so changes to
+// the returned request persist (ApplySuggestions passes it on its clone);
+// otherwise the request is a decoded copy, for reading only.
+func locationAction(script *dsl.Script, location Location, typed bool) *dsl.Action {
+	action := actionAt(script, location.Section, location.ActionIndex)
+	if action == nil || location.RequestIndex == nil {
+		return action
+	}
+	children := groupRequests(action, typed)
+	if *location.RequestIndex < 0 || *location.RequestIndex >= len(children) {
+		return nil
+	}
+	return &children[*location.RequestIndex]
+}
+
+// groupRequests is the requests of an http_sequence request group as typed
+// actions: its own []dsl.Action, or the decoded JSON-shaped requests a script
+// holds after a JSON round trip. store writes decoded requests back into the
+// action; otherwise they are copies. A request that does not decode, or any
+// other action, gives none.
+func groupRequests(action *dsl.Action, store bool) []dsl.Action {
+	if action == nil || action.Type != "http_sequence" || action.Params == nil {
+		return nil
+	}
+	switch requests := action.Params["requests"].(type) {
+	case []dsl.Action:
+		return requests
+	case []any:
+		return decodeGroupRequests(action, requests, store)
+	case []map[string]any:
+		// The LoadRunner archive importer builds its transaction groups so.
+		return decodeGroupRequests(action, requests, store)
+	}
+	return nil
+}
+
+// decodeGroupRequests decodes a group's JSON-shaped requests into typed
+// actions, storing them back into the action when store is set.
+func decodeGroupRequests[T any](action *dsl.Action, requests []T, store bool) []dsl.Action {
+	decoded := make([]dsl.Action, len(requests))
+	for index, request := range requests {
+		raw, err := json.Marshal(request)
+		if err != nil || json.Unmarshal(raw, &decoded[index]) != nil {
+			return nil
+		}
+	}
+	if store {
+		action.Params["requests"] = decoded
+	}
+	return decoded
 }
 
 func actionAt(script *dsl.Script, section string, index int) *dsl.Action {

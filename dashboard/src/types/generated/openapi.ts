@@ -108311,13 +108311,67 @@ export interface operations {
   "handleImportHAR": {
     parameters: {
       "query"?: {
+        "agentforce_transform"?: boolean;
+        "artifact_mode"?: string;
+        "async_scan"?: boolean;
+        "base_url"?: string;
+        "conversion_policy"?: string;
+        "correlation_mode"?: string;
+        "disable_salesforce"?: string;
         "filename"?: string;
+        "http_version_mode"?: string;
+        "include_assertions"?: string;
+        "include_static_assets"?: boolean;
+        "infer_extractors"?: string;
+        "name"?: string;
+        "page_title_checks"?: string;
+        "parameterization_selections"?: string;
+        "parameterize"?: string;
+        "profile_id"?: string;
+        "project_id"?: string;
+        "recorded_concurrency"?: string;
+        "recording_profile_id"?: string;
+        "redact_sensitive"?: boolean;
+        "resource_mode"?: string;
         "response_format"?: string;
+        "retention_days"?: number;
+        "salesforce_native"?: boolean;
+        "salvage_truncated"?: boolean;
+        "secret_bindings"?: string;
+        "step_transactions"?: string;
       };
     };
     requestBody: {
       content: {
-        "application/octet-stream": string;
+        "multipart/form-data": {
+          "agentforce_transform"?: string;
+          "artifact_mode"?: string;
+          "async_scan"?: string;
+          "base_url"?: string;
+          "conversion_policy"?: string;
+          "correlation_mode"?: string;
+          "disable_salesforce"?: string;
+          "file"?: string;
+          "http_version_mode"?: string;
+          "include_assertions"?: string;
+          "include_static_assets"?: string;
+          "infer_extractors"?: string;
+          "name"?: string;
+          "page_title_checks"?: string;
+          "parameterization_selections"?: string;
+          "parameterize"?: string;
+          "profile_id"?: string;
+          "recorded_concurrency"?: string;
+          "recording_profile_id"?: string;
+          "redact_sensitive"?: string;
+          "resource_mode"?: string;
+          "retention_days"?: string;
+          "salesforce_native"?: string;
+          "salvage_truncated"?: string;
+          "secret_bindings"?: string;
+          "step_transactions"?: string;
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -108670,13 +108724,67 @@ export interface operations {
   "handleImportSalesforce": {
     parameters: {
       "query"?: {
+        "agentforce_transform"?: boolean;
+        "artifact_mode"?: string;
+        "async_scan"?: boolean;
+        "base_url"?: string;
+        "conversion_policy"?: string;
+        "correlation_mode"?: string;
+        "disable_salesforce"?: string;
         "filename"?: string;
+        "http_version_mode"?: string;
+        "include_assertions"?: string;
+        "include_static_assets"?: boolean;
+        "infer_extractors"?: string;
+        "name"?: string;
+        "page_title_checks"?: string;
+        "parameterization_selections"?: string;
+        "parameterize"?: string;
+        "profile_id"?: string;
+        "project_id"?: string;
+        "recorded_concurrency"?: string;
+        "recording_profile_id"?: string;
+        "redact_sensitive"?: boolean;
+        "resource_mode"?: string;
         "response_format"?: string;
+        "retention_days"?: number;
+        "salesforce_native"?: boolean;
+        "salvage_truncated"?: boolean;
+        "secret_bindings"?: string;
+        "step_transactions"?: string;
       };
     };
     requestBody: {
       content: {
-        "application/octet-stream": string;
+        "multipart/form-data": {
+          "agentforce_transform"?: string;
+          "artifact_mode"?: string;
+          "async_scan"?: string;
+          "base_url"?: string;
+          "conversion_policy"?: string;
+          "correlation_mode"?: string;
+          "disable_salesforce"?: string;
+          "file"?: string;
+          "http_version_mode"?: string;
+          "include_assertions"?: string;
+          "include_static_assets"?: string;
+          "infer_extractors"?: string;
+          "name"?: string;
+          "page_title_checks"?: string;
+          "parameterization_selections"?: string;
+          "parameterize"?: string;
+          "profile_id"?: string;
+          "recorded_concurrency"?: string;
+          "recording_profile_id"?: string;
+          "redact_sensitive"?: string;
+          "resource_mode"?: string;
+          "retention_days"?: string;
+          "salesforce_native"?: string;
+          "salvage_truncated"?: string;
+          "secret_bindings"?: string;
+          "step_transactions"?: string;
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -108762,10 +108870,12 @@ export interface operations {
             "page_title_checks"?: (boolean) | null;
             "parameterization_selections"?: Array<Record<string, unknown>>;
             "parameterize"?: boolean;
+            "recorded_concurrency"?: (boolean) | null;
             "recording_profile_id"?: string;
             "resource_mode"?: string;
             "salesforce_native"?: (boolean) | null;
             "sanitize_sensitive"?: (boolean) | null;
+            "step_transactions"?: (boolean) | null;
           };
           "page_title_checks"?: (boolean) | null;
           "parameterization_selections"?: Array<Record<string, unknown>>;

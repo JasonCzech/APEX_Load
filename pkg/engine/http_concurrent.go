@@ -442,7 +442,7 @@ func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.A
 		vu.recordTransaction(name, duration, success, source)
 	}
 	group, err := vu.runConcurrentHTTP(ctx, action, errCfg)
-	aggregate := &protocol.Result{ActionName: action.Name, StartTime: group.started, Duration: group.completed.Sub(group.started), Success: err == nil, BusinessTransaction: true, Group: vu.Group, Extractions: cloneStringMap(group.extractions)}
+	aggregate := &protocol.Result{ActionName: action.Name, StartTime: group.started, Duration: group.completed.Sub(group.started), Success: err == nil, BusinessTransaction: dsl.HTTPSequenceRecordsTransaction(action), Group: vu.Group, Extractions: cloneStringMap(group.extractions)}
 	if err != nil {
 		aggregate.ErrorMessage = err.Error()
 	}

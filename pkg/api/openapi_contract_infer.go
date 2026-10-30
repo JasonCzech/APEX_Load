@@ -990,9 +990,16 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		}
 		// decodeImportUpload resolves these itself for every import route, off
 		// fields the AST walk cannot attribute back to r.URL.Query().
-		if callName == "decodeImportUpload" {
+		if isImportUploadDecoder(callName) {
 			analysis.queryNames["filename"] = true
 			analysis.queryNames["project_id"] = true
+		}
+		// The streaming decoder reads a multipart upload part by part
+		// (readImportMultipartStream) rather than through ParseMultipartForm
+		// and FormFile, so it documents the form and its "file" part itself.
+		if callName == "decodeImportUploadWithLimits" {
+			analysis.multipartRequest = true
+			analysis.formFiles["file"] = true
 		}
 		// bareArtifactName falls back to ?name= when the body is the artifact.
 		if callName == "bareArtifactName" {
@@ -1990,8 +1997,14 @@ func jsonErrorResponse(description string) oasResponse {
 	}
 }
 
+// isImportUploadDecoder reports a function that returns the importUpload an
+// import route reads its options from.
+func isImportUploadDecoder(name string) bool {
+	return name == "decodeImportUpload" || name == "decodeImportUploadWithLimits"
+}
+
 // findImportUploadVariables reports the local variables bound to the result of
-// decodeImportUpload. Import readers resolve their options through that value
+// decodeImportUpload (or decodeImportUploadWithLimits). Import readers resolve their options through that value
 // rather than touching r.URL.Query()/r.FormValue directly, so without this the
 // generator would document every import route as taking no options at all.
 func findImportUploadVariables(body *ast.BlockStmt) map[string]bool {
@@ -2003,7 +2016,7 @@ func findImportUploadVariables(body *ast.BlockStmt) map[string]bool {
 		}
 		for _, rhs := range assign.Rhs {
 			call, ok := rhs.(*ast.CallExpr)
-			if !ok || calledFunctionName(call.Fun) != "decodeImportUpload" {
+			if !ok || !isImportUploadDecoder(calledFunctionName(call.Fun)) {
 				continue
 			}
 			if len(assign.Lhs) > 0 {

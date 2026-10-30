@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -201,4 +202,48 @@ func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofil
 		kept = append(kept, ex)
 	}
 	return kept, filtered
+}
+
+// shapingFoldedExchanges is the set of exchanges the recorded shape would turn
+// into background conversations or other non-request steps, found by shaping
+// a copy of the script; nil when there are none.
+func shapingFoldedExchanges(script *dsl.Script, exchanges []exchange, document *HARDocument, asyncScan bool, background []string) map[int]bool {
+	if script == nil || len(script.Actions) != len(exchanges) {
+		return nil
+	}
+	// The shaping passes rewrite headers, bodies and extractors in place, so
+	// the trial needs its own copy of every action, not a shared one.
+	actions, ok := deepCloneActions(script.Actions)
+	if !ok {
+		return nil
+	}
+	trial := *script
+	trial.Actions = actions
+	_, newIndex, _, _ := shapeRecordedHAR(&trial, exchanges, document, asyncScan, background, nil)
+	var folded map[int]bool
+	for index, position := range newIndex {
+		// A conversation keeps its first request as its own (non-request)
+		// action and folds the rest.
+		if position < 0 || (position < len(trial.Actions) && trial.Actions[position].Type != "request") {
+			if folded == nil {
+				folded = map[int]bool{}
+			}
+			folded[index] = true
+		}
+	}
+	return folded
+}
+
+// deepCloneActions copies actions with nothing shared with the originals
+// (maps, slices, nested requests), through their JSON form.
+func deepCloneActions(actions []dsl.Action) ([]dsl.Action, bool) {
+	raw, err := json.Marshal(actions)
+	if err != nil {
+		return nil, false
+	}
+	var clone []dsl.Action
+	if err := json.Unmarshal(raw, &clone); err != nil || len(clone) != len(actions) {
+		return nil, false
+	}
+	return clone, true
 }

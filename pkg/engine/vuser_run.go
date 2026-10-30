@@ -828,7 +828,15 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 	}
 
 	if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
-		markerOwned := run.vu.activeSourceTransactionOwnsHTTPSequence(action)
+		if run.actionTxMode && !dsl.HTTPSequenceRecordsTransaction(action) {
+			// per_action times each action; a transparent group's requests
+			// were actions before the import grouped them, so each keeps its
+			// own transaction.
+			action = withPerRequestTransactions(action)
+		}
+		// A transparent group records no aggregate transaction, as one an
+		// open source transaction owns records none of its own.
+		markerOwned := run.vu.activeSourceTransactionOwnsHTTPSequence(action) || !dsl.HTTPSequenceRecordsTransaction(action)
 		if !markerOwned && !run.claimActionTransaction() {
 			return flowTeardown, false
 		}
@@ -868,7 +876,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 				}
 				run.vu.recordTransaction(action.Name, result.Duration, false, result)
 			}
-			if !markerOwned {
+			if !markerOwned || requestTransactions {
 				run.restoreIterationBoundary()
 			}
 			run.logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, run.vu.RedactionConfig))
@@ -884,7 +892,9 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 		if aggregateTransaction {
 			run.vu.recordTransaction(action.Name, result.Duration, result.Success, result)
 		}
-		if !markerOwned {
+		// Per-request claims move the boundary too, even for a group that
+		// claimed no slot of its own.
+		if !markerOwned || requestTransactions {
 			run.restoreIterationBoundary()
 		}
 		if !result.Success {

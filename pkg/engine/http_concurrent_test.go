@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/testlog"
@@ -1505,5 +1506,129 @@ func TestSensitiveExtractionObservedValuesProtectBufferedLogs(t *testing.T) {
 	logger.Error("later failure", "status", 200)
 	if strings.Contains(logs.String(), short) || strings.Contains(logs.String(), long[:128]) || !strings.Contains(logs.String(), redactedPayloadValue) || !strings.Contains(logs.String(), "status=200") || !strings.Contains(logs.String(), "omitted_records=2") {
 		t.Fatal("prior buffered classification epoch was not omitted before current safe error publication")
+	}
+}
+
+// A transparent group (an import replaying requests a browser had in flight
+// together) records no transaction of its own and claims no goal slot, so a
+// script that marks no transactions keeps its automatic iteration
+// transaction.
+func TestTransparentConcurrentHTTPGroupKeepsTheIterationTransaction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"value":"v"}`)
+	}))
+	defer server.Close()
+	runLogic := dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vu := newConcurrentVU(t, server.URL)
+	_, group, _ := concurrentActions()
+	group.Metadata = map[string]any{dsl.HTTPSequenceTransparentMetadataKey: true}
+	sink := &sequenceCaptureSink{}
+	vu.ResultSink = sink
+	vu.ExecutionGoals = NewExecutionGoalLimiter(runLogic, cancel)
+	vu.HardStopCtx = context.Background()
+	vu.ActionBoundaryCtx = ctx
+	vu.Script.Config.RunLogic = runLogic
+	vu.Script.Actions = []dsl.Action{group}
+	if scriptHasExplicitTransactions(vu.Script) {
+		t.Fatal("a transparent group counted as an explicit transaction")
+	}
+	vu.Run(ctx)
+	if len(sink.transactions) != 1 || sink.transactions[0].ActionName == group.Name {
+		names := make([]string, 0, len(sink.transactions))
+		for _, transaction := range sink.transactions {
+			names = append(names, transaction.ActionName)
+		}
+		t.Fatalf("transactions = %v, want only the iteration transaction", names)
+	}
+}
+
+// In per_action mode every action is a transaction; a transparent group's
+// requests were actions before the import grouped them, so each still
+// records its own.
+func TestTransparentConcurrentHTTPGroupRecordsEachRequestPerAction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"value":"v"}`)
+	}))
+	defer server.Close()
+	runLogic := dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vu := newConcurrentVU(t, server.URL)
+	_, group, _ := concurrentActions()
+	group.Metadata = map[string]any{dsl.HTTPSequenceTransparentMetadataKey: true}
+	children := group.Params["requests"].([]dsl.Action)
+	sink := &sequenceCaptureSink{}
+	vu.ResultSink = sink
+	vu.ExecutionGoals = NewExecutionGoalLimiter(runLogic, cancel)
+	vu.HardStopCtx = context.Background()
+	vu.ActionBoundaryCtx = ctx
+	vu.Script.Config.RunLogic = runLogic
+	vu.Script.Actions = []dsl.Action{group}
+	vu.Run(ctx)
+	var names []string
+	for _, transaction := range sink.transactions {
+		names = append(names, transaction.ActionName)
+	}
+	if len(names) != len(children) || names[0] != children[0].Name {
+		t.Fatalf("transactions = %v, want one per group request", names)
+	}
+}
+
+// Per-request claims of a transparent group restore the iteration boundary:
+// once they reach the transaction goal, the group's pause and the next group
+// stop instead of running on.
+func TestTransparentGroupPerActionClaimsStopAtTheGoal(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		io.WriteString(w, `{"value":"v"}`)
+	}))
+	defer server.Close()
+	runLogic := dsl.RunLogicConfig{Iterations: 3, AutoTransactions: "per_action", MaxTransactions: 2}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vu := newConcurrentVU(t, server.URL)
+	_, first, _ := concurrentActions()
+	first.Metadata = map[string]any{dsl.HTTPSequenceTransparentMetadataKey: true}
+	first.ThinkTimeAfter = true
+	first.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1500}
+	_, second, _ := concurrentActions()
+	second.Name = "Second group"
+	second.Metadata = map[string]any{dsl.HTTPSequenceTransparentMetadataKey: true}
+	vu.ResultSink = &sequenceCaptureSink{}
+	vu.ExecutionGoals = NewExecutionGoalLimiter(runLogic, cancel)
+	vu.HardStopCtx = context.Background()
+	vu.ActionBoundaryCtx = context.Background()
+	vu.Script.Config.RunLogic = runLogic
+	vu.Script.Actions = []dsl.Action{first, second}
+	started := time.Now()
+	vu.Run(ctx)
+	if elapsed := time.Since(started); elapsed > time.Second || hits.Load() != 2 {
+		t.Fatalf("elapsed = %s, requests = %d, want the run to stop at the goal after the first group", elapsed, hits.Load())
+	}
+}
+
+func TestPerRequestTransactionNamesAreValid(t *testing.T) {
+	long := strings.Repeat("é", dsl.MaxHTTPConcurrentRequestTransactionBytes)
+	if name := perRequestTransactionName("Group", 0, long); len(name) > dsl.MaxHTTPConcurrentRequestTransactionBytes || !utf8.ValidString(name) {
+		t.Fatalf("long name = %d bytes (valid %v)", len(name), utf8.ValidString(name))
+	}
+	if name := perRequestTransactionName("Group", 2, "   "); name != "Group_3" {
+		t.Fatalf("blank name = %q, want the group's name and position", name)
+	}
+}
+
+// A transparent group switched to sequential runs as an ordinary sequence and
+// records its aggregate transaction.
+func TestSequentialTransparentGroupRecordsItsAggregate(t *testing.T) {
+	group := dsl.Action{Name: "g", Type: "http_sequence", Params: map[string]any{"execution_mode": dsl.HTTPSequenceSequential, "requests": []dsl.Action{{Type: "GET", Target: "/a"}}}, Metadata: map[string]any{dsl.HTTPSequenceTransparentMetadataKey: true}}
+	if !dsl.HTTPSequenceRecordsTransaction(group) {
+		t.Fatal("a sequential group marked transparent records no transaction")
+	}
+	group.Params["execution_mode"] = dsl.HTTPSequenceConcurrent
+	if dsl.HTTPSequenceRecordsTransaction(group) {
+		t.Fatal("a transparent concurrent group records a transaction")
 	}
 }

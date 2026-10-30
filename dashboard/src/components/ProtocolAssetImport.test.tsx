@@ -1910,6 +1910,20 @@ describe('ProtocolAssetImport', () => {
     await act(async () => {
       salvageTruncated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    const stepTransactions = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Time each user step as a transaction')) as HTMLInputElement | undefined
+    expect(stepTransactions?.checked).toBe(false)
+    expect(stepTransactions).toBeTruthy()
+    if (!stepTransactions) return
+    await act(async () => {
+      stepTransactions.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const recordedConcurrency = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Replay parallel browser requests concurrently')) as HTMLInputElement | undefined
+    expect(recordedConcurrency?.checked).toBe(false)
+    expect(recordedConcurrency).toBeTruthy()
+    if (!recordedConcurrency) return
+    await act(async () => {
+      recordedConcurrency.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeTruthy()
@@ -1923,6 +1937,8 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.importHAR).toHaveBeenCalledWith(file, expect.objectContaining({
       project_id: 'project-1',
       include_static_assets: true,
+      step_transactions: true,
+      recorded_concurrency: true,
       salvage_truncated: true,
       http_version_mode: 'upgrade',
       secondary_file: comparisonFile,

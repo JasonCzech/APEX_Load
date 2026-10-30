@@ -92,6 +92,9 @@ func ApplySuggestions(script *dsl.Script, suggestions []Suggestion, selected map
 // all of its reviewed replacements, and that a secret/data replacement cannot
 // silently consume text owned by a correlation (or vice versa).
 func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Suggestion, selected map[string]bool) error {
+	// Locations read request groups' requests many times; decode JSON-shaped
+	// groups once, on a copy, instead of once per location.
+	script = scriptWithTypedGroups(script)
 	type source struct {
 		section     string
 		actionIndex int
@@ -99,6 +102,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 	type surface struct {
 		section     string
 		actionIndex int
+		request     string
 		field       string
 	}
 	type owner struct {
@@ -177,7 +181,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 			if strings.HasPrefix(strings.ToLower(field), "headers.") {
 				field = strings.ToLower(field)
 			}
-			key := surface{section: location.Section, actionIndex: location.ActionIndex, field: field}
+			key := surface{section: location.Section, actionIndex: location.ActionIndex, request: requestKey(location.RequestIndex), field: field}
 			current := owner{suggestionIndex: index, literal: literal, replacement: location.ReplaceText}
 			for _, existing := range owners[key] {
 				if existing.suggestionIndex == index {
@@ -210,7 +214,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 }
 
 func locationContainsOutsideTemplates(script *dsl.Script, location Location, literal string) bool {
-	action := actionAt(script, location.Section, location.ActionIndex)
+	action := locationAction(script, location, false)
 	if action == nil || literal == "" {
 		return false
 	}
@@ -276,7 +280,7 @@ func literalsPartiallyOverlapInLocation(script *dsl.Script, location Location, l
 }
 
 func locationStringValues(script *dsl.Script, location Location) []string {
-	action := actionAt(script, location.Section, location.ActionIndex)
+	action := locationAction(script, location, false)
 	if action == nil {
 		return nil
 	}
@@ -492,6 +496,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 	type fieldKey struct {
 		section     string
 		actionIndex int
+		request     string
 		field       string
 	}
 	type fieldReplacements struct {
@@ -507,7 +512,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 		if location.SearchText == "" {
 			continue
 		}
-		key := fieldKey{section: location.Section, actionIndex: location.ActionIndex, field: location.Field}
+		key := fieldKey{section: location.Section, actionIndex: location.ActionIndex, request: requestKey(location.RequestIndex), field: location.Field}
 		group, exists := groups[key]
 		if !exists {
 			group = &fieldReplacements{location: location, replacements: make(map[string]string)}
@@ -522,7 +527,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 	diffs := make([]Diff, 0, len(order))
 	for _, key := range order {
 		group := groups[key]
-		action := actionAt(script, group.location.Section, group.location.ActionIndex)
+		action := locationAction(script, group.location, true)
 		if action == nil {
 			continue
 		}
@@ -533,7 +538,7 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 		diffs = append(diffs, Diff{
 			SuggestionID: suggestion.ID,
 			Kind:         "value_replaced",
-			Path:         fmt.Sprintf("/%s/%d/%s", group.location.Section, group.location.ActionIndex, strings.ReplaceAll(group.location.Field, ".", "/")),
+			Path:         locationDiffPath(group.location),
 			Before:       truncateValue(before),
 			After:        truncateValue(after),
 		})
@@ -931,4 +936,46 @@ func multipartFieldValue(action *dsl.Action, field string) (*string, bool) {
 		return nil, false
 	}
 	return &part.Value, true
+}
+
+// locationDiffPath is a location's JSON-pointer-style diff path, through the
+// group request it names.
+func locationDiffPath(location Location) string {
+	prefix := fmt.Sprintf("/%s/%d", location.Section, location.ActionIndex)
+	if location.RequestIndex != nil {
+		prefix += fmt.Sprintf("/params/requests/%d", *location.RequestIndex)
+	}
+	return prefix + "/" + strings.ReplaceAll(location.Field, ".", "/")
+}
+
+// scriptWithTypedGroups is the script itself when every request group holds
+// typed requests, or a copy whose JSON-shaped groups were decoded once.
+func scriptWithTypedGroups(script *dsl.Script) *dsl.Script {
+	if script == nil {
+		return script
+	}
+	jsonShaped := false
+	for _, actions := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {
+		for index := range actions {
+			if actions[index].Type != "http_sequence" || actions[index].Params == nil {
+				continue
+			}
+			if _, typed := actions[index].Params["requests"].([]dsl.Action); !typed {
+				jsonShaped = true
+			}
+		}
+	}
+	if !jsonShaped {
+		return script
+	}
+	clone, err := cloneScript(script)
+	if err != nil {
+		return script
+	}
+	for _, actions := range [][]dsl.Action{clone.Init, clone.Actions, clone.Teardown} {
+		for index := range actions {
+			groupRequests(&actions[index], true)
+		}
+	}
+	return clone
 }

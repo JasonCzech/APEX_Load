@@ -1,6 +1,7 @@
 package paramize
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -473,5 +474,119 @@ func TestGeneratedHeaderReplacementTextsIndex(t *testing.T) {
 				t.Fatalf("texts=%v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// Lightning sends a random page-cache id in X-SFDC-Page-Cache, one per page
+// load and repeated by every request of that page. Each recorded page's id
+// becomes its own parameter generated every iteration, so a replayed page
+// gets a fresh id shared by its requests, as a browser's page load does.
+func TestGeneratedPageCacheIDIsOneParameterPerPage(t *testing.T) {
+	const firstPage, secondPage = "a1b2c3d4e5f60718", "0f1e2d3c4b5a6978"
+	request := func(name, pageCache string) dsl.Action {
+		return dsl.Action{Name: name, Type: "http_request", Method: "POST", Target: "/aura",
+			HeaderList: dsl.HeaderList{{Name: "X-SFDC-Page-Cache", Value: pageCache}}}
+	}
+	script := generatedScript(request("a", firstPage), request("b", firstPage), request("c", secondPage), request("d", secondPage))
+	suggestions := suggestGenerated(script)
+	if len(suggestions) != 2 {
+		t.Fatalf("suggestions = %+v, want one per page", suggestions)
+	}
+	for _, suggestion := range suggestions {
+		if !suggestion.AutoApply || len(suggestion.Locations) != 2 || suggestion.Parameter == nil || suggestion.Parameter.Update != "each_iteration" {
+			t.Fatalf("suggestion = %+v, want an automatic parameter generated each iteration for both requests of its page", suggestion)
+		}
+	}
+}
+
+// Requests a HAR import replays as a concurrent request group keep their
+// generated values: the suggestion locates each one by its index in the
+// group, and applying it rewrites that request.
+func TestGeneratedValuesInsideAConcurrentRequestGroup(t *testing.T) {
+	child := func(name, traceID string) dsl.Action {
+		return dsl.Action{Name: name, Type: "request", Method: "GET", Target: "/data",
+			HeaderList: dsl.HeaderList{{Name: "X-B3-TraceId", Value: traceID}}}
+	}
+	group := dsl.Action{Name: "group", Type: "http_sequence", Method: "SEQUENCE", Target: "/data",
+		Params: map[string]any{"execution_mode": dsl.HTTPSequenceConcurrent, "requests": []dsl.Action{child("a", testTraceID), child("b", testSpanID)}}}
+	script := generatedScript(group)
+	suggestions := suggestGenerated(script)
+	if len(suggestions) != 1 || len(suggestions[0].Locations) != 2 {
+		t.Fatalf("suggestions = %+v, want one each-use parameter for both group requests", suggestions)
+	}
+	for index, location := range suggestions[0].Locations {
+		if location.RequestIndex == nil || *location.RequestIndex != index || location.ActionIndex != 0 {
+			t.Fatalf("location %d = %+v, want group request %d", index, location, index)
+		}
+	}
+	applied, diffs, err := ApplySuggestions(script, suggestions, map[string]bool{suggestions[0].ID: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The apply clone decodes the group's requests, so they come back typed.
+	children := applied.Actions[0].Params["requests"].([]dsl.Action)
+	for _, request := range children {
+		if value := request.HeaderList[0].Value; !strings.HasPrefix(value, "{{var.") {
+			t.Fatalf("group request %q header = %q, want the parameter (diffs %+v)", request.Name, value, diffs)
+		}
+	}
+	if len(diffs) != 3 || !strings.Contains(diffs[0].Path, "/params/requests/0/") || !strings.Contains(diffs[1].Path, "/params/requests/1/") {
+		t.Fatalf("diffs = %+v, want a replacement per group request with its path, then the parameter", diffs)
+	}
+}
+
+// Only a page cache id or a cache buster is made up by the client; a cache
+// key, version or hash a server issued stays as recorded.
+func TestGeneratedCacheWordsNameOnlyClientIDs(t *testing.T) {
+	const value = "a1b2c3d4e5f60718"
+	for key, want := range map[string]bool{
+		"X-SFDC-Page-Cache": true,
+		"cacheBuster":       true,
+		"cache_bust":        true,
+		"cacheKey":          false,
+		"cacheVersion":      false,
+		"cache_hash":        false,
+		"X-Cache-Tag":       false,
+		"page-cache-key":    false,
+	} {
+		script := generatedScript(dsl.Action{Name: "a", Type: "http_request", Method: "GET", Target: "/data",
+			HeaderList: dsl.HeaderList{{Name: key, Value: value}}})
+		if got := len(suggestGenerated(script)) > 0; got != want {
+			t.Errorf("%s: suggested = %v, want %v", key, got, want)
+		}
+	}
+}
+
+// A request group's own target copies its first request's, and only the
+// requests are sent, so a query value of the first request is one location.
+func TestGeneratedValuesSkipTheRequestGroupsOwnTarget(t *testing.T) {
+	group := dsl.Action{Name: "group", Type: "http_sequence", Method: "SEQUENCE", Target: "/data?requestId=0123456789abcdef",
+		Params: map[string]any{"execution_mode": dsl.HTTPSequenceConcurrent, "requests": []map[string]any{
+			{"name": "a", "type": "request", "method": "GET", "target": "/data?requestId=0123456789abcdef"},
+			{"name": "b", "type": "request", "method": "GET", "target": "/data?requestId=fedcba9876543210"},
+		}}}
+	script := generatedScript(group)
+	suggestions := suggestGenerated(script)
+	if len(suggestions) != 1 || len(suggestions[0].Locations) != 2 {
+		t.Fatalf("suggestions = %+v, want one each-use parameter for both group requests", suggestions)
+	}
+	for _, location := range suggestions[0].Locations {
+		if location.RequestIndex == nil {
+			t.Fatalf("location %+v names the group's own target", location)
+		}
+	}
+	// The import response re-runs suggestions on the script's JSON form, where
+	// the requests decode as []any: the IDs must match.
+	raw, err := json.Marshal(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTripped dsl.Script
+	if err := json.Unmarshal(raw, &roundTripped); err != nil {
+		t.Fatal(err)
+	}
+	again := suggestGenerated(&roundTripped)
+	if len(again) != 1 || again[0].ID != suggestions[0].ID {
+		t.Fatalf("suggestion IDs differ after a JSON round trip: %+v vs %+v", suggestions, again)
 	}
 }

@@ -195,9 +195,13 @@ type ParameterizationCandidate struct {
 }
 
 type actionRef struct {
-	Phase       string
-	Index       int
-	Sequence    int
+	Phase    string
+	Index    int
+	Sequence int
+	// Rank orders the request for correlation: the requests of a concurrent
+	// group share one rank (they run at once), while Sequence numbers every
+	// request for display.
+	Rank        int
 	Action      *dsl.Action
 	URL         string
 	Method      string
@@ -365,6 +369,7 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		if warning := auraTokenProvenanceWarning(preview.Script, correlations, document.LooksSanitized()); warning != "" {
 			review.Warnings = append(review.Warnings, warning)
 		}
+		review.Blockers = append(review.Blockers, invalidConcurrentGroupBlockers(preview.Script)...)
 		if preview.CorrelationCoverage != nil && len(correlationWarnings) > 0 {
 			preview.referenceCatalog.base.Complete = false
 			preview.CorrelationCoverage.Complete = false
@@ -432,7 +437,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 		return nil, fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
 	}
 	refs := make([]actionRef, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
-	seq := 1
+	seq, rank := 1, 1
 	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction, actionPath string) {
 		method := strings.ToUpper(strings.TrimSpace(action.Method))
 		if method == "" {
@@ -449,6 +454,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 			ActionPath:  actionPath,
 			Index:       index,
 			Sequence:    seq,
+			Rank:        rank,
 			Action:      action,
 			URL:         resolved,
 			Method:      method,
@@ -459,6 +465,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 			Transaction: convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"), inheritedTransaction),
 		})
 		seq++
+		rank++
 	}
 	definitions := 0
 	var appendRefs func(string, []dsl.Action, string, int, string) error
@@ -485,7 +492,15 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 					// Preserve mutable child pointers inside the returned native script.
 					action.Params["requests"] = children
 				}
+				// A concurrent group's requests run at once, so they share one
+				// rank: none of them can use a value a sibling extracts (the
+				// engine merges a group's extractions only after it joins),
+				// while the steps after the group can.
+				groupRank, concurrent := rank, salesforceConcurrentSequence(*action)
 				for childIndex := range children {
+					if concurrent {
+						rank = groupRank
+					}
 					child := &children[childIndex]
 					if persistSequenceChildren {
 						if child.Metadata == nil {
@@ -500,6 +515,9 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 						childPath = fmt.Sprintf("%s.params.requests[%d]", actionPath, childIndex)
 					}
 					appendRef(phase, index, child, transaction, childPath)
+				}
+				if concurrent && rank > groupRank {
+					rank = groupRank + 1
 				}
 			} else {
 				appendRef(phase, index, action, transaction, actionPath)
@@ -1368,7 +1386,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 	for _, corr := range namedCorrelations {
 		foundRef := harIDToRef[corr.FoundInID]
 		automatic := !opts.ReviewOnlyCorrelations && (!highConfidenceOnly || correlate.HighConfidence(corr))
-		usage := correlationUsage(corr, harIDToRef, foundRef.Sequence)
+		usage := correlationUsage(corr, harIDToRef, foundRef.Rank)
 		value := correlationValue(corr)
 		queryEncoded := correlate.QueryEncodedFormOf(value)
 		encodedConvert, encodedConvertSupported := correlate.EncodedReuseExtractorConvert(corr.Convert)
@@ -1440,14 +1458,14 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		sourceExtractorCounts[plan.foundRef.Action] += requiredExtractors
 
 		if plan.rawMapped {
-			vars[plan.value] = append(vars[plan.value], nativeLiteralProducer{sequence: plan.foundRef.Sequence, template: "{{var." + corr.Name + "}}"})
+			vars[plan.value] = append(vars[plan.value], nativeLiteralProducer{sequence: plan.foundRef.Rank, template: "{{var." + corr.Name + "}}"})
 		}
 		if plan.encodedMapped {
 			plan.encodedName = corr.Name
 			if plan.rawMapped {
 				plan.encodedName = correlationNames.claim(corr.Name + "_encoded")
 			}
-			vars[plan.queryEncoded] = append(vars[plan.queryEncoded], nativeLiteralProducer{sequence: plan.foundRef.Sequence, template: "{{var." + plan.encodedName + "}}"})
+			vars[plan.queryEncoded] = append(vars[plan.queryEncoded], nativeLiteralProducer{sequence: plan.foundRef.Rank, template: "{{var." + plan.encodedName + "}}"})
 		}
 		applications[corr.Name] = status
 	}
@@ -1458,7 +1476,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 	landed := make(map[string]bool, len(vars))
 	for index := range cloneRefs {
 		action := cloneRefs[index].Action
-		actionVars := correlationVarsAvailableAfterSequence(vars, cloneRefs[index].Sequence)
+		actionVars := correlationVarsAvailableAfterSequence(vars, cloneRefs[index].Rank)
 		actionVars = withoutInnerVarsOfLiteralOuters(actionVars, containment, actionCorrelationSurfaces(action))
 		action.Target = correlate.ApplyVars(action.Target, actionVars)
 		action.Body = correlate.ApplyVars(action.Body, actionVars)
@@ -2159,7 +2177,7 @@ func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef, sourc
 	unsupportedEncoded := unsupportedCorrelationEncodings(value, queryEncoded)
 	for _, harID := range corr.UsedInIDs {
 		ref := refs[harID]
-		if ref == nil || ref.Action == nil || ref.Sequence <= sourceSequence {
+		if ref == nil || ref.Action == nil || ref.Rank <= sourceSequence {
 			continue
 		}
 		surfaces := actionCorrelationSurfaces(ref.Action)
@@ -2620,6 +2638,7 @@ func detectCorrelationsWithEvidenceAndOptions(entries []harEntry, opts AnalyzeOp
 			correlations[index] = generic
 		}
 	}
+	truncated := false
 	for _, corr := range genericCorrelations {
 		if seenValues[corr.Value] {
 			continue
@@ -2628,7 +2647,20 @@ func detectCorrelationsWithEvidenceAndOptions(entries []harEntry, opts AnalyzeOp
 		correlations = append(correlations, corr)
 		if len(correlations) >= maxSalesforceShapeCorrelations {
 			warnings = append(warnings, fmt.Sprintf("combined Salesforce correlations were truncated at %d", maxSalesforceShapeCorrelations))
+			truncated = true
 			break
+		}
+	}
+	// Last, so a captured producer for aura.token always wins. A truncated
+	// list may have dropped that producer, so nothing is inferred then.
+	if !truncated {
+		tokenCorrelations, tokenErr := detectUncapturedAuraTokenCorrelations(observations, seenValues, budget, maxSalesforceShapeCorrelations-len(correlations))
+		correlations = append(correlations, tokenCorrelations...)
+		if tokenErr != nil {
+			if !errors.Is(tokenErr, correlate.ErrCorrelationWorkLimit) {
+				return nil, nil, omission, tokenErr
+			}
+			warnings = append(warnings, "Salesforce aura.token cookie analysis was truncated: "+tokenErr.Error())
 		}
 	}
 	if opts.CorrelationSettings != nil {
@@ -3691,4 +3723,35 @@ func containsAny(value string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+// salesforceConcurrentSequence reports an http_sequence whose requests run
+// concurrently.
+func salesforceConcurrentSequence(action dsl.Action) bool {
+	mode, _, err := dsl.HTTPSequenceExecutionSettings(action)
+	return err == nil && mode == dsl.HTTPSequenceConcurrent
+}
+
+// invalidConcurrentGroupBlockers names the concurrent request groups of the
+// native script whose requests no longer run together, for example because a
+// correlation made one use a value a sibling extracts. Sequence numbering keeps
+// the native rewrite from doing that, so this is a backstop.
+func invalidConcurrentGroupBlockers(script *dsl.Script) []string {
+	if script == nil {
+		return nil
+	}
+	var blockers []string
+	for index, action := range script.Actions {
+		if !strings.EqualFold(action.Type, "http_sequence") || !salesforceConcurrentSequence(action) {
+			continue
+		}
+		children := salesforceSequenceChildren(action)
+		if len(children) == 0 {
+			continue
+		}
+		if err := dsl.ValidateHTTPConcurrentChildren(children); err != nil {
+			blockers = append(blockers, fmt.Sprintf("The concurrent request group actions[%d] %q cannot run as one group after the Salesforce rewrite (%v); replay it sequentially or re-import without recorded concurrency.", index, action.Name, err))
+		}
+	}
+	return blockers
 }

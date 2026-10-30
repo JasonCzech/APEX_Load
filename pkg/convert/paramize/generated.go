@@ -57,9 +57,13 @@ var generatedReferenceStems = []string{"conversation", "transaction", "event"}
 // requested does not.
 var generatedIdentifierSuffixes = map[string]bool{"": true, "s": true, "id": true, "ids": true, "uuid": true, "guid": true, "key": true, "parent": true, "state": true, "no": true, "num": true, "number": true}
 
-// generatedIdentifierWords and generatedReferenceWords match only as whole words.
+// generatedIdentifierWords and generatedReferenceWords match only as whole
+// words. A cache buster is made up per request; a page cache id is made up per
+// page load (Lightning's X-SFDC-Page-Cache) and is matched as the pair of
+// words in generatedCacheIdentifier, not by "cache" alone, which also names
+// server-issued cache keys, versions and hashes.
 var (
-	generatedIdentifierWords = map[string]bool{"req": true, "rqid": true}
+	generatedIdentifierWords = map[string]bool{"req": true, "rqid": true, "cachebuster": true, "cachebust": true}
 	generatedReferenceWords  = map[string]bool{"txn": true}
 )
 
@@ -88,10 +92,34 @@ func generatedStemWord(word string, stems []string) bool {
 	return false
 }
 
+// generatedCacheIdentifier reports a field named for a client-made cache id:
+// a page cache, or a cache buster written as two words. A field that also
+// names a key, version, hash, tag or digest holds a server's value instead.
+func generatedCacheIdentifier(words []string) bool {
+	cache, page, buster := false, false, false
+	for _, word := range words {
+		switch word {
+		case "cache":
+			cache = true
+		case "page":
+			page = true
+		case "buster", "bust":
+			buster = true
+		case "key", "keys", "version", "ver", "hash", "tag", "etag", "digest", "checksum":
+			return false
+		}
+	}
+	return cache && (page || buster)
+}
+
 func classifyGeneratedKey(key string) generatedKeyRole {
 	var role generatedKeyRole
 	timeWord := false
-	for _, word := range parameterNameWords(key) {
+	words := parameterNameWords(key)
+	if generatedCacheIdentifier(words) {
+		role.identifier = true
+	}
+	for _, word := range words {
 		switch {
 		case generatedSessionWords[word] || strings.HasPrefix(word, "session"):
 			role.session = true
@@ -273,7 +301,7 @@ func newGeneratedCollector(names *nameRegistry, claimed map[string]bool) *genera
 
 // add records one occurrence of value in field. place describes the field
 // for the rationale ("idp-trace-id header", "messageId body field").
-func (c *generatedCollector) add(rule, value, key, place, section string, index int, action *dsl.Action, field string, occurrences int) {
+func (c *generatedCollector) add(rule, value, key, place, section string, index int, request *int, action *dsl.Action, field string, occurrences int) {
 	for literal := range c.claimed {
 		// A value inside a correlated or secret literal belongs to that pass.
 		if strings.Contains(literal, value) {
@@ -298,13 +326,14 @@ func (c *generatedCollector) add(rule, value, key, place, section string, index 
 		// Even two occurrences in one field can have different roles.
 		group.confident = group.confident && confident
 	}
-	locationKey := fmt.Sprintf("%s|%s|%d|%s", value, section, index, field)
+	locationKey := fmt.Sprintf("%s|%s|%d|%s|%s", value, section, index, requestKey(request), field)
 	if c.seen[locationKey] {
 		return
 	}
 	c.seen[locationKey] = true
 	location := Location{
-		Section: section, ActionIndex: index, ActionName: action.Name, Field: field,
+		Section: section, ActionIndex: index,
+		RequestIndex: request, ActionName: action.Name, Field: field,
 		SearchText: value,
 	}
 	if group, ok := c.grouped[value]; ok {
@@ -379,7 +408,7 @@ func (c *generatedCollector) suggestions() []Suggestion {
 			continue
 		}
 		location := group.suggestion.Locations[0]
-		action := fmt.Sprintf("%s|%d", location.Section, location.ActionIndex)
+		action := slotPath(location.Section, location.ActionIndex, location.RequestIndex)
 		if seenInAction[key] == nil {
 			seenInAction[key] = map[string]int{}
 		}
@@ -540,7 +569,7 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 	// classifies a value unless the value names its part (a cookie's sid=).
 	// leave is the rest of the field, outside text, where a value must not
 	// also appear: a replacement rewrites the whole field.
-	scan := func(text, leave, headerName, kind, section string, index int, action *dsl.Action, field string, replacementTexts []string) {
+	scan := func(text, leave, headerName, kind, section string, index int, request *int, action *dsl.Action, field string, replacementTexts []string) {
 		if scanErr != nil {
 			return
 		}
@@ -589,10 +618,10 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 				}
 				counts[value] = count
 			}
-			collector.add(token.rule, value, key, place, section, index, action, field, count)
+			collector.add(token.rule, value, key, place, section, index, request, action, field, count)
 		}
 	}
-	forEachAction(script, func(section string, index int, action *dsl.Action) {
+	forEachAction(script, func(section string, index int, request *int, action *dsl.Action) {
 		headerFields := map[string]string{}
 		headerTexts := generatedHeaderReplacementTexts(action)
 		for _, header := range actionHeaders(action, nil) {
@@ -605,14 +634,14 @@ func generatedSuggestions(script *dsl.Script, names *nameRegistry, claimed map[s
 				field = "headers." + header.name
 				headerFields[name] = field
 			}
-			scan(header.value, "", header.name, "header", section, index, action, field, headerTexts[name])
+			scan(header.value, "", header.name, "header", section, index, request, action, field, headerTexts[name])
 		}
 		if query := strings.Index(action.Target, "?"); query >= 0 {
 			// Path segments name resources, so only the query is read, and a
 			// value the path also holds stays as recorded.
-			scan(action.Target[query:], action.Target[:query], "", "query", section, index, action, "target", nil)
+			scan(action.Target[query:], action.Target[:query], "", "query", section, index, request, action, "target", nil)
 		}
-		scan(action.Body, "", "", "body", section, index, action, "body", nil)
+		scan(action.Body, "", "", "body", section, index, request, action, "body", nil)
 	})
 	if scanErr != nil {
 		return nil, scanErr

@@ -43,8 +43,11 @@ const (
 	RuleSalesforceCompositeReference = "salesforce.composite_reference"
 	RuleSalesforceCometdClientID     = "salesforce.cometd_client_id"
 	RuleSalesforceAuraTokenCookie    = "salesforce.aura_token_cookie"
-	RuleSalesforceOAuthIdentityURL   = "salesforce.oauth_identity_url"
-	RuleSalesforceOAuthAuthorizePage = "salesforce.oauth_authorize_redirect"
+	// RuleSalesforceAuraTokenUncapturedCookie reads aura.token from the
+	// __Host-ERIC_* cookie at replay when the capture dropped the Set-Cookie.
+	RuleSalesforceAuraTokenUncapturedCookie = "salesforce.aura_token_uncaptured_cookie"
+	RuleSalesforceOAuthIdentityURL          = "salesforce.oauth_identity_url"
+	RuleSalesforceOAuthAuthorizePage        = "salesforce.oauth_authorize_redirect"
 )
 
 // ResponseFamily groups rules by the kind of response they inspect.
@@ -92,6 +95,7 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforceBulkQueryLocator, FamilyHeader, "Salesforce Bulk query locator", "Bulk API 2.0 query result pagination cursor returned in the Sforce-Locator response header and reused as the next locator query parameter.", 0.9},
 		{RuleSalesforceCompositeReference, FamilyForm, "Salesforce composite referenceId", "Server-assigned record ids from a /composite subrequest, addressed by referenceId, reused in later requests.", 0.85},
 		{RuleSalesforceAuraTokenCookie, FamilyCookie, "Salesforce aura.token cookie", "__Host-ERIC_* cookie set by the Lightning bootstrap whose value later /aura requests echo as the aura.token form field.", 0.95},
+		{RuleSalesforceAuraTokenUncapturedCookie, FamilyCookie, "Salesforce aura.token cookie (not captured)", "aura.token sent by /aura requests when the capture holds no Set-Cookie for it (a sanitized HAR export); it is read at replay from the __Host-ERIC_* cookie of the /one/one.app response.", 0.85},
 		{RuleSalesforceOAuthIdentityURL, FamilyForm, "Salesforce OAuth identity URL", "The id of a Salesforce OAuth token response, the signed-in user's identity URL, which a Mobile SDK app requests next.", 0.95},
 		{RuleSalesforceOAuthAuthorizePage, FamilyHeader, "Salesforce OAuth authorize redirect", "The source state of the approval-page redirect a Salesforce /services/oauth2/authorize returns; the sign-in requests that follow echo it.", 0.93},
 		{RuleSalesforceCometdClientID, FamilyForm, "Salesforce CometD clientId", "Bayeux clientId from a /cometd /meta/handshake response (a JSON array) reused in every later /meta/connect and /meta/subscribe request.", 0.95},
@@ -236,7 +240,7 @@ func FamilyForRule(ruleID string) ResponseFamily {
 	switch {
 	case ruleID == RuleSalesforceBulkQueryLocator, ruleID == RuleSalesforceOAuthAuthorizePage:
 		return FamilyHeader
-	case ruleID == RuleSalesforceAuraTokenCookie:
+	case ruleID == RuleSalesforceAuraTokenCookie, ruleID == RuleSalesforceAuraTokenUncapturedCookie:
 		return FamilyCookie
 	case strings.HasPrefix(ruleID, "json."):
 		return FamilyJSON

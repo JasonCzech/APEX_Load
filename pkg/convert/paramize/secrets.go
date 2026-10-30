@@ -102,7 +102,7 @@ func secretSuggestions(script *dsl.Script) ([]Suggestion, error) {
 	collector := newSecretCollector()
 	budget := &suggestionRegexBudget{}
 	var scanErr error
-	forEachAction(script, func(section string, index int, action *dsl.Action) {
+	forEachAction(script, func(section string, index int, request *int, action *dsl.Action) {
 		if scanErr != nil {
 			return
 		}
@@ -114,19 +114,20 @@ func secretSuggestions(script *dsl.Script) ([]Suggestion, error) {
 			envKey := EnvKey(headerKey)
 			replace := schemePreservingEnvTemplate(headerValue, envKey)
 			collector.add(headerKey, headerValue, "header", Location{
-				Section:     section,
-				ActionIndex: index,
-				ActionName:  action.Name,
-				Field:       "headers." + headerKey,
-				SearchText:  headerValue,
-				ReplaceText: replace,
+				Section:      section,
+				ActionIndex:  index,
+				RequestIndex: request,
+				ActionName:   action.Name,
+				Field:        "headers." + headerKey,
+				SearchText:   headerValue,
+				ReplaceText:  replace,
 			}, replace)
 		}
-		scanErr = collectBodySecrets(collector, budget, section, index, action)
+		scanErr = collectBodySecrets(collector, budget, section, index, request, action)
 		if scanErr != nil {
 			return
 		}
-		collectFillSecrets(collector, section, index, action)
+		collectFillSecrets(collector, section, index, request, action)
 	})
 	if scanErr != nil {
 		return nil, scanErr
@@ -134,7 +135,7 @@ func secretSuggestions(script *dsl.Script) ([]Suggestion, error) {
 	return collector.suggestions(), nil
 }
 
-func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudget, section string, index int, action *dsl.Action) error {
+func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudget, section string, index int, request *int, action *dsl.Action) error {
 	if strings.TrimSpace(action.Body) == "" {
 		return nil
 	}
@@ -149,12 +150,13 @@ func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudge
 		fieldName, value := match[2], match[3]
 		envKey := EnvKey(fieldName)
 		collector.add(fieldName, value, "body field", Location{
-			Section:     section,
-			ActionIndex: index,
-			ActionName:  action.Name,
-			Field:       "body",
-			SearchText:  match[0],
-			ReplaceText: match[1] + "{{env." + envKey + "}}" + match[4],
+			Section:      section,
+			ActionIndex:  index,
+			RequestIndex: request,
+			ActionName:   action.Name,
+			Field:        "body",
+			SearchText:   match[0],
+			ReplaceText:  match[1] + "{{env." + envKey + "}}" + match[4],
 		}, "{{env."+envKey+"}}")
 	}
 	numericMatches, err := budget.findAllSubmatches(jsonNumericSecretPattern, action.Body)
@@ -169,12 +171,13 @@ func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudge
 		envKey := EnvKey(fieldName)
 		replacement := "{{env." + envKey + "}}"
 		collector.add(fieldName, value, "body field", Location{
-			Section:     section,
-			ActionIndex: index,
-			ActionName:  action.Name,
-			Field:       "body",
-			SearchText:  match[0],
-			ReplaceText: match[1] + `"` + replacement + `"` + match[4],
+			Section:      section,
+			ActionIndex:  index,
+			RequestIndex: request,
+			ActionName:   action.Name,
+			Field:        "body",
+			SearchText:   match[0],
+			ReplaceText:  match[1] + `"` + replacement + `"` + match[4],
 		}, replacement)
 	}
 	if bodyLooksJSON(strings.TrimSpace(action.Body)) {
@@ -191,12 +194,13 @@ func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudge
 		fieldName, value := match[2], match[3]
 		envKey := EnvKey(fieldName)
 		collector.add(fieldName, value, "form field", Location{
-			Section:     section,
-			ActionIndex: index,
-			ActionName:  action.Name,
-			Field:       "body",
-			SearchText:  match[0],
-			ReplaceText: match[1] + "{{env." + envKey + "}}",
+			Section:      section,
+			ActionIndex:  index,
+			RequestIndex: request,
+			ActionName:   action.Name,
+			Field:        "body",
+			SearchText:   match[0],
+			ReplaceText:  match[1] + "{{env." + envKey + "}}",
 		}, "{{env."+envKey+"}}")
 	}
 	for _, rule := range quotedSecretRules {
@@ -214,12 +218,13 @@ func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudge
 			fieldName, value := match[2], match[3]
 			envKey := EnvKey(fieldName)
 			collector.add(fieldName, value, "form field", Location{
-				Section:     section,
-				ActionIndex: index,
-				ActionName:  action.Name,
-				Field:       "body",
-				SearchText:  match[0],
-				ReplaceText: match[1] + "{{env." + envKey + "}}" + match[4],
+				Section:      section,
+				ActionIndex:  index,
+				RequestIndex: request,
+				ActionName:   action.Name,
+				Field:        "body",
+				SearchText:   match[0],
+				ReplaceText:  match[1] + "{{env." + envKey + "}}" + match[4],
 			}, "{{env."+envKey+"}}")
 		}
 	}
@@ -235,7 +240,7 @@ func bodyLooksJSON(trimmed string) bool {
 }
 
 // collectFillSecrets flags browser fill actions targeting password-like inputs.
-func collectFillSecrets(collector *secretCollector, section string, index int, action *dsl.Action) {
+func collectFillSecrets(collector *secretCollector, section string, index int, request *int, action *dsl.Action) {
 	if action.Type != "browser_fill" || strings.TrimSpace(action.Value) == "" || isWholeSecretTemplate(action.Value) {
 		return
 	}
@@ -245,12 +250,13 @@ func collectFillSecrets(collector *secretCollector, section string, index int, a
 	}
 	envKey := EnvKey(hint)
 	collector.add(hint, action.Value, "browser fill", Location{
-		Section:     section,
-		ActionIndex: index,
-		ActionName:  action.Name,
-		Field:       "value",
-		SearchText:  action.Value,
-		ReplaceText: "{{env." + envKey + "}}",
+		Section:      section,
+		ActionIndex:  index,
+		RequestIndex: request,
+		ActionName:   action.Name,
+		Field:        "value",
+		SearchText:   action.Value,
+		ReplaceText:  "{{env." + envKey + "}}",
 	}, "{{env."+envKey+"}}")
 }
 

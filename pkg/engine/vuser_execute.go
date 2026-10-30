@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -417,8 +418,11 @@ func actionsHaveExplicitTransactions(actions []dsl.Action) bool {
 			// actually-open source transaction owns it at runtime. Treating only
 			// metadata-bearing sequences as explicit lets the default automatic
 			// iteration transaction consume the same goal slot first and either
-			// double-count or suppress the sequence aggregate.
-			return true
+			// double-count or suppress the sequence aggregate. A transparent
+			// group records none, so it leaves the iteration transaction alone.
+			if dsl.HTTPSequenceRecordsTransaction(action) {
+				return true
+			}
 		}
 		if action.Control != nil {
 			for _, branch := range action.Control.ActionBranches() {
@@ -492,7 +496,7 @@ func actionsMayRecordActionTransaction(actions []dsl.Action) bool {
 // even when auto_transactions is "none".
 func actionsMayRecordHTTPSequenceTransaction(actions []dsl.Action) bool {
 	for _, action := range actions {
-		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") && dsl.HTTPSequenceRecordsTransaction(action) {
 			return true
 		}
 		if action.Control != nil {
@@ -1453,4 +1457,51 @@ func (vu *VUser) handleSnapshot(result *protocol.Result, errCfg dsl.ErrorHandlin
 	if errCfg.SnapshotOnError && !result.Success && result.Snapshot != nil && vu.SnapshotStore != nil {
 		vu.SnapshotStore.Add(result.Snapshot)
 	}
+}
+
+// withPerRequestTransactions names a transaction for every request of a
+// concurrent group that does not name one (dsl.HTTPConcurrentRequestTransactionMetadataKey),
+// after the request, so the group records each request's own transaction.
+// The action is returned unchanged when its requests do not decode.
+func withPerRequestTransactions(action dsl.Action) dsl.Action {
+	children, err := httpSequenceChildActions(action)
+	if err != nil {
+		return action
+	}
+	for index := range children {
+		if name, _ := children[index].Metadata[dsl.HTTPConcurrentRequestTransactionMetadataKey].(string); strings.TrimSpace(name) != "" {
+			continue
+		}
+		metadata := make(map[string]any, len(children[index].Metadata)+1)
+		for key, value := range children[index].Metadata {
+			metadata[key] = value
+		}
+		metadata[dsl.HTTPConcurrentRequestTransactionMetadataKey] = perRequestTransactionName(action.Name, index, children[index].Name)
+		children[index].Metadata = metadata
+	}
+	params := make(map[string]any, len(action.Params))
+	for key, value := range action.Params {
+		params[key] = value
+	}
+	params["requests"] = children
+	action.Params = params
+	return action
+}
+
+// perRequestTransactionName is a request's transaction name: its own,
+// trimmed and cut to the DSL's limit on a rune boundary, or the group's name
+// with the request's position when it has none.
+func perRequestTransactionName(group string, index int, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = fmt.Sprintf("%s_%d", strings.TrimSpace(group), index+1)
+	}
+	if len(name) > dsl.MaxHTTPConcurrentRequestTransactionBytes {
+		cut := dsl.MaxHTTPConcurrentRequestTransactionBytes
+		for cut > 0 && !utf8.RuneStart(name[cut]) {
+			cut--
+		}
+		name = name[:cut]
+	}
+	return name
 }

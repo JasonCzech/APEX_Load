@@ -231,3 +231,97 @@ func itoa(value int) string {
 	data, _ := json.Marshal(value)
 	return string(data)
 }
+
+// A Lightning telemetry beacon whose body the export dropped only reported
+// client instrumentation, so the import leaves it out with an informational
+// note instead of gating the script. An Aura request that does work keeps its
+// gate, and a beacon with its body is imported as recorded.
+func TestHARTelemetryBeaconWithoutItsBodyIsLeftOut(t *testing.T) {
+	entry := func(query string, body bool) map[string]any {
+		request := map[string]any{
+			"method": "POST", "url": "https://acme.lightning.force.com/aura?r=7&" + query, "httpVersion": "HTTP/1.1",
+			"headers": []any{map[string]any{"name": "Content-Length", "value": "96719"}},
+		}
+		if body {
+			request["headers"] = []any{}
+			request["postData"] = map[string]any{"mimeType": "application/x-www-form-urlencoded", "text": "message=%7B%7D"}
+		}
+		return map[string]any{"request": request, "response": map[string]any{"status": 200, "httpVersion": "HTTP/1.1", "content": map[string]any{"text": "{}"}}}
+	}
+	data, err := json.Marshal(map[string]any{"log": map[string]any{"entries": []any{
+		entry("ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1", false),
+		entry("ui-force-components-controllers-platformStateManager.PlatformStateManager.getActionOverrides=1", false),
+		entry("ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1", true),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diagnostics diag.Collector
+	exchanges, _, _, skipped, err := parseHARWithMode(string(data), false, "upgrade", &diagnostics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exchanges) != 2 || skipped != 1 {
+		t.Fatalf("exchanges = %d, skipped = %d, want the body-less beacon left out", len(exchanges), skipped)
+	}
+	if !strings.Contains(exchanges[0].URL, "PlatformStateManager") || len(exchanges[0].ReviewFindings) == 0 || exchanges[0].ReviewFindings[0].Code != HARRequestBodyNotExportedCode {
+		t.Fatalf("functional request = %#v, want it kept with its gate", exchanges[0])
+	}
+	if !strings.Contains(exchanges[1].URL, "InstrumentationBeacon") || exchanges[1].Body == "" {
+		t.Fatalf("beacon with a body = %#v, want it imported as recorded", exchanges[1])
+	}
+	var note, blockers int
+	for _, item := range diagnostics.Items() {
+		switch {
+		case item.Element == "HAR telemetry beacon" && item.Severity == diag.Info && item.Location == "HAR entry 1":
+			note++
+		case item.Severity == diag.Blocker:
+			blockers++
+		}
+	}
+	if note != 1 || blockers != 1 {
+		t.Fatalf("diagnostics = %#v, want one telemetry note and the functional request's blocker", diagnostics.Items())
+	}
+}
+
+func TestIsAuraTelemetryBeacon(t *testing.T) {
+	for rawURL, want := range map[string]bool{
+		"https://a.lightning.force.com/aura?r=1&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1":                           true,
+		"https://a.my.site.com/s/sfsites/aura?r=2&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1":                         true,
+		"https://a.lightning.force.com/aura?r=3&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1&aura.ApexAction.execute=1": false,
+		"https://a.lightning.force.com/aura?r=4":                                                         false,
+		"https://a.lightning.force.com/other?ui-instrumentation-components-beacon.InstrumentationBeacon": false,
+	} {
+		if got := isAuraTelemetryBeacon("POST", rawURL); got != want {
+			t.Errorf("isAuraTelemetryBeacon(%q) = %v, want %v", rawURL, got, want)
+		}
+	}
+	if isAuraTelemetryBeacon("GET", "https://a.lightning.force.com/aura?ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1") {
+		t.Error("a GET was read as a beacon post")
+	}
+}
+
+// Resources recorded after an omitted telemetry beacon attach to the page
+// before it, not to the beacon that is no step.
+func TestInStepResourcesSkipAnOmittedTelemetryBeacon(t *testing.T) {
+	data, err := json.Marshal(map[string]any{"log": map[string]any{"entries": []any{
+		map[string]any{"request": map[string]any{"method": "GET", "url": "https://acme.lightning.force.com/one/one.app", "headers": []any{}},
+			"response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "text/html", "text": "<html></html>"}}},
+		map[string]any{"request": map[string]any{"method": "POST", "url": "https://acme.lightning.force.com/aura?r=1&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1",
+			"headers": []any{map[string]any{"name": "Content-Length", "value": "96719"}}},
+			"response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "application/json", "text": "{}"}}},
+		map[string]any{"request": map[string]any{"method": "GET", "url": "https://acme.lightning.force.com/app.js", "headers": []any{}},
+			"response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "application/javascript", "text": "x"}}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := ParseHARDocument(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := document.inStepResources()
+	if len(resources[1]) != 1 || len(resources[2]) != 0 {
+		t.Fatalf("resources = %#v, want app.js on the page (entry 1), not the omitted beacon (entry 2)", resources)
+	}
+}
