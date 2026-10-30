@@ -119,7 +119,7 @@ classification are kept.
 | Group | Field | Effect |
 | --- | --- | --- |
 | General | `http_script_level` | `url` (default) or `html` for the browser recorder's HTTP script |
-| General | `resource_mode` | `runtime` (default: resources are not recorded and are discovered at replay), `in_step` (attached to their page), or `separate` (their own steps) |
+| General | `resource_mode` | `runtime` (default: resources are not recorded; replay fetches a page's embedded resources only when **Download non-HTML resources** is on), `in_step` (attached to their page; a HAR import also turns on **Simulate browser cache** unless the script sets it, so each resource is fetched once per new user and then served from cache as its headers allow), or `separate` (their own steps) |
 | General | `think_time_threshold_ms` | The smallest recorded pause kept as think time (default 500 ms) |
 | Code generation | `page_title_checks` | A `<title>` check on each recorded HTML page (default on) |
 | Code generation | `async_scan` | Turns repeated background requests into polling, long-polling or push conversations, one for each run of them (default on). A request repeated more than 30 s apart stays as recorded |

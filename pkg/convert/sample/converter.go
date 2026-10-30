@@ -748,6 +748,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
+	if len(pageResources) > 0 && simulateBrowserCacheForPageResources(result.Script) {
+		diagnostics.Add(diag.Info, "HAR page resources", "HAR import", "Recorded static resources are attached to the pages that requested them, and browser cache simulation is on: each resource is fetched once per new user and then served from the virtual user's cache as its response headers allow, as a browser does. Turn off Simulate browser cache in Runtime Settings to fetch every resource on every page.")
+	}
 	if signIn != nil {
 		if note := signIn.addUsersDataSource(result.Script); note != "" {
 			result.Warnings = append(result.Warnings, note)
@@ -1160,4 +1163,37 @@ func forgetHTMLStepRequestValues(exchanges []exchange, steps map[int]map[string]
 			exchanges[i].URL = parsed.String()
 		}
 	}
+}
+
+// simulateBrowserCacheForPageResources turns browser cache simulation on for a
+// script whose pages carry their recorded resources (resource_mode in_step),
+// unless it is already set: without it, every page would fetch every
+// resource again on each visit, which no browser does. It reports whether it
+// turned the simulation on.
+func simulateBrowserCacheForPageResources(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	attached := false
+	for index := range script.Actions {
+		if _, ok := script.Actions[index].Params["resources"]; ok {
+			attached = true
+			break
+		}
+	}
+	if !attached {
+		return false
+	}
+	if script.Config.BrowserEmulation == nil {
+		script.Config.BrowserEmulation = &dsl.BrowserEmulationConfig{}
+	}
+	if script.Config.BrowserEmulation.Cache == nil {
+		script.Config.BrowserEmulation.Cache = &dsl.BrowserCacheSimulationConfig{}
+	}
+	if script.Config.BrowserEmulation.Cache.SimulateCache != nil {
+		return false
+	}
+	on := true
+	script.Config.BrowserEmulation.Cache.SimulateCache = &on
+	return true
 }
