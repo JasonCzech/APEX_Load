@@ -274,8 +274,10 @@ func TestExactHTTP3ManyIterationsLeakNothing(t *testing.T) {
 	if err := h.Teardown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	// A closed connection leaves the count from its context's AfterFunc, so
+	// wait for the counts as well as the goroutines.
 	deadline := time.Now().Add(3 * time.Second)
-	for runtime.NumGoroutine() > baseline && time.Now().Before(deadline) {
+	for (runtime.NumGoroutine() > baseline || transport.OpenConnections() != 0 || transport.OpenSockets() != 0) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if transport.OpenSockets() != 0 || transport.OpenConnections() != 0 {
