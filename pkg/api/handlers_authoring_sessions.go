@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -78,14 +79,19 @@ type authoringSessionApprovalResponse struct {
 // by script create/update. Executable credentials become structured binding
 // requirements, while non-executable import evidence is scrubbed before the
 // draft is stored or promoted.
-func prepareAuthoringSessionDraft(w http.ResponseWriter, draft, prior *dsl.Script) (*dsl.Script, bool) {
-	return prepareAuthoringSessionDraftWithImportTrust(w, draft, prior, false)
+func prepareAuthoringSessionDraft(
+	w http.ResponseWriter,
+	draft, prior *dsl.Script,
+	options importreview.PreservedImportEditOptions,
+) (*dsl.Script, bool) {
+	return prepareAuthoringSessionDraftWithImportTrust(w, draft, prior, false, options)
 }
 
 func prepareAuthoringSessionDraftWithImportTrust(
 	w http.ResponseWriter,
 	draft, prior *dsl.Script,
 	trustedImport bool,
+	options importreview.PreservedImportEditOptions,
 ) (*dsl.Script, bool) {
 	preserveImportedCredentials := trustedImport || isCredentialPreservingImport(prior)
 	if err := validateJavaVMParameterSafety(draft, preserveImportedCredentials); err != nil {
@@ -93,7 +99,7 @@ func prepareAuthoringSessionDraftWithImportTrust(
 		return nil, false
 	}
 	if isCredentialPreservingImport(prior) {
-		projected, err := preparePersistentLibraryScript(draft, prior)
+		projected, err := importreview.PreparePersistentLibraryScriptWithOptions(draft, prior, options)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return nil, false
@@ -217,6 +223,7 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		&req.Draft,
 		nil,
 		importAttestationClaim != nil,
+		s.runner.preservedImportEditOptions(),
 	)
 	if !ok {
 		return
@@ -432,6 +439,7 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		&req.Draft,
 		existing.Draft,
 		false,
+		s.runner.preservedImportEditOptions(),
 	)
 	if !ok {
 		return
@@ -546,6 +554,7 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		session.Draft,
 		session.Draft,
 		false,
+		s.runner.preservedImportEditOptions(),
 	)
 	if !ok {
 		return

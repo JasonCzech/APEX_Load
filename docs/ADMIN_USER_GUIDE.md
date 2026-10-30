@@ -419,19 +419,51 @@ deferred for later configuration.
 
 An imported script keeps the credentials from its source. Editors see them
 masked and cannot read them, but every run still sends them. To stop an editor
-from capturing a credential they cannot read, the proxy mode, proxy and TLS
-settings of such a script are locked once it is saved: a save that changes them
-is refused with "script changes the execution context for retained imported
-credentials". Choosing **No Proxy** and tuning timeouts or keep-alive are always
-allowed, because they cannot redirect a credential.
+from capturing a credential they cannot read, the settings that decide where
+and how it is sent are locked once such a script is saved: the base URL, the
+proxy mode and proxy settings, TLS, the HTTP version and QUIC, the redirect
+limit, default headers, HTTP authentication, WS-Security and the web runtime's
+additional attributes, plus the connection settings of the other protocols
+(WebSocket, gRPC, database, messaging, Java and the rest). A save that changes one of them is refused with "script
+changes the execution context for retained imported credentials", and the
+message says how to proceed.
+
+Other runtime settings still save: think time, pacing, logging, error handling,
+timeouts, connection limits and keep-alive, response checks and warnings,
+caching, cookies, DNS cache and IP version, the user agent and accept headers,
+browser emulation, network simulation and the other web runtime settings, and
+SOAP version and fault handling. Choosing **No Proxy** is also
+allowed, because it sends the credential straight to the host it already goes
+to; the exception is a script that keeps a `Proxy-Authorization` header, which
+would then go to that host. After No Proxy, the saved proxy settings can stay
+as they were or be blanked, but not be rewritten or extended, because a later
+switch back to a proxy would activate them.
 
 `system_settings.script_imports.allow_retained_credential_transport_edits`
-(Settings > Governance > Script imports) lifts that lock for the proxy mode,
-proxy URL and TLS settings. It defaults to `false` and only a system
-administrator can change it; changes are written to the audit log. Enable it
-only where every editor is already trusted with the imported credentials, such
-as a test environment. It does not unlock request targets, default headers or
-authentication, and a new credential must still be bound as a runtime secret.
+([Import credential policy](#/access?setting=imports), under Access) lifts that
+lock for the proxy mode, the proxy settings (URL, PAC URL and bypass list) and
+TLS. It defaults to `false` and
+only a system administrator can change it. Each change is written to the audit
+log (`retained_credential_transport_policy_changed`). Enable it only where every
+editor is already trusted with the imported credentials, such as a test
+environment.
+
+The setting applies to saving a script (including a library bundle import), to
+authoring-session drafts and to debugging or replaying an edited draft, so those
+accept the same edits. It does not unlock request targets, default headers or
+authentication, nor the browser proxy. A new credential must still be bound as a
+runtime secret. A script that keeps a proxy username, a proxy password or a
+`Proxy-Authorization` header keeps its proxy URL, PAC URL and bypass list
+locked (a proxy username or password can still be blanked with them), so the
+credential cannot follow a new proxy; a kept `Proxy-Authorization` header also
+locks the proxy mode and keeps the block exactly as it is. Bind the
+credential as a runtime secret first. GitHub sync, guided repairs and the runtime-override check
+at test start stay strict, because repository content can come from people who
+are not APEX editors.
+
+Turning the setting off does not undo edits already made. A proxy or TLS change
+that was saved while it was on becomes the script's baseline, and an edit staged
+in an authoring-session draft is not re-checked when the draft is approved.
 
 ### Distributed execution
 

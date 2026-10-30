@@ -80,9 +80,16 @@ var preparePersistentImportedLibraryScript = importreview.PreparePersistentImpor
 // system-admin retained-credential edit policy. It reads a lock-free mirror of
 // the setting because several durable writers call it while holding tr.mu.
 func (tr *TestRunner) prepareLibraryScript(script, prior *dsl.Script) (*dsl.Script, error) {
-	return importreview.PreparePersistentLibraryScriptWithOptions(script, prior, importreview.PreservedImportEditOptions{
+	return importreview.PreparePersistentLibraryScriptWithOptions(script, prior, tr.preservedImportEditOptions())
+}
+
+// preservedImportEditOptions is the system-admin policy every save, draft and
+// debug path applies to an imported script that keeps credentials, so they
+// accept and refuse the same edits.
+func (tr *TestRunner) preservedImportEditOptions() importreview.PreservedImportEditOptions {
+	return importreview.PreservedImportEditOptions{
 		AllowTransportRouteEdits: tr.allowRetainedCredentialTransportEdits.Load(),
-	})
+	}
 }
 
 var preparePersistentLibraryScriptWithImportTrust = importreview.PreparePersistentLibraryScriptWithImportTrust
@@ -258,7 +265,10 @@ func (tr *TestRunner) prepareGitHubScriptImportLocked(script *dsl.Script) (*dsl.
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, nil, err
 	}
-	projected, err := tr.prepareLibraryScript(script, current)
+	// Repository content is written by people who may not be APEX editors, so
+	// a GitHub import keeps the strict retained-credential check even when a
+	// system admin allows proxy and TLS edits for editors.
+	projected, err := preparePersistentLibraryScript(script, current)
 	if err != nil {
 		return nil, nil, err
 	}

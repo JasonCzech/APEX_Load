@@ -163,8 +163,9 @@ func (s *Server) processScriptRepair(w http.ResponseWriter, r *http.Request, app
 	trustedImport := isCredentialPreservingImport(stored.Script)
 	persisted := draft
 	if trustedImport {
-		// A save through PUT refuses any transport change while imported
-		// credentials are kept. The repair may change only what its own
+		// A save through PUT refuses a proxy or TLS change while imported
+		// credentials are kept, unless a system admin allows it; a repair stays
+		// strict either way. The repair may change only what its own
 		// operation owns; anything else, such as a consumer edit that moves a
 		// kept credential, is refused exactly as PUT would refuse it.
 		candidate, allowance := storedRepairCredentialComparison(stored.Script, draft, req.Operation.Type)
