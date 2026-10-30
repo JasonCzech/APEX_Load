@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,6 +12,21 @@ import (
 )
 
 const importMultipartMemoryBytes = 1 << 20
+
+// importMultipartValueBytes bounds the non-file fields of a streamed multipart
+// upload, matching what ParseMultipartForm keeps in memory for the
+// importMultipartMemoryBytes budget (that budget plus 10 MiB).
+const importMultipartValueBytes = importMultipartMemoryBytes + (10 << 20)
+
+// importMultipartMaxParts and importMultipartPartOverhead bound a streamed
+// multipart upload the way multipart.ReadForm does: at most 1000 parts, and
+// each part charged its field name and a fixed overhead against
+// importMultipartValueBytes, so a flood of empty fields cannot build an
+// unbounded value map.
+const (
+	importMultipartMaxParts     = 1000
+	importMultipartPartOverhead = 200
+)
 
 // readImportMultipartFile parses a multipart/form-data import upload and returns
 // the bytes and original filename of the "file" field. On any failure it writes
@@ -44,6 +61,210 @@ func readImportBody(w http.ResponseWriter, r *http.Request) (data []byte, ok boo
 		return nil, false
 	}
 	return data, true
+}
+
+// importUploadLimits bounds an upload whose route accepts more than one
+// artifact. Body is the route's whole envelope; File bounds each uploaded
+// artifact — the raw body, and every multipart file part kept. Files names
+// the multipart file fields kept besides "file", in priority order. Discard
+// names file fields the route reads but does not use: they are drained
+// without being kept and reported present with a nil value.
+type importUploadLimits struct {
+	Body    int64
+	File    int64
+	Files   []string
+	Discard []string
+}
+
+// importUploadTooLarge writes 413 for an upload over a body or artifact limit.
+func importUploadTooLarge(w http.ResponseWriter, what string, limit int64) {
+	size := fmt.Sprintf("%d MiB", limit>>20)
+	if limit%(1<<20) != 0 {
+		size = fmt.Sprintf("%d-byte", limit)
+	}
+	writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("request body too large: %s exceeds the %s import limit", what, size))
+}
+
+// writeImportReadError maps a failed upload read to 413 when the route's body
+// limit stopped it and to 400 otherwise.
+func writeImportReadError(w http.ResponseWriter, prefix string, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		importUploadTooLarge(w, "the request", tooLarge.Limit)
+		return
+	}
+	writeError(w, http.StatusBadRequest, prefix+": "+err.Error())
+}
+
+// readImportArtifact reads one artifact through a bounded reader. ok is false
+// with tooLarge set when it is larger than limit; the caller names it.
+func readImportArtifact(reader io.Reader, limit int64) (data []byte, tooLarge bool, err error) {
+	data, err = io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(data)) > limit {
+		return nil, true, nil
+	}
+	return data, false, nil
+}
+
+// decodeImportUploadWithLimits is decodeImportUpload for a route that bounds
+// each artifact separately from its envelope. A multipart upload is streamed
+// part by part instead of spooled through ParseMultipartForm: each kept file
+// part is read through a bounded reader, so an oversized artifact is refused
+// with 413 as soon as it passes the limit rather than after the whole body has
+// been copied to temporary files. Extra file parts named in limits.Files are
+// returned in files, and fields named in limits.Discard map to nil when
+// present; other file parts are discarded.
+func decodeImportUploadWithLimits(w http.ResponseWriter, r *http.Request, limits importUploadLimits) (upload *importUpload, files map[string][]byte, ok bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, limits.Body)
+	contentType := r.Header.Get("Content-Type")
+	query := r.URL.Query()
+
+	upload = &importUpload{query: query, values: query}
+	var filename string
+	switch {
+	case strings.HasPrefix(contentType, "application/json"):
+		upload.Transport = importTransportJSON
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeImportReadError(w, "failed to read request body", err)
+			return nil, nil, false
+		}
+		upload.Data = data
+		filename = query.Get("filename")
+	case strings.HasPrefix(contentType, "multipart/form-data"):
+		upload.Transport = importTransportMultipart
+		var values url.Values
+		upload.Data, filename, files, values, ok = readImportMultipartStream(w, r, limits)
+		if !ok {
+			return nil, nil, false
+		}
+		merged := url.Values{}
+		for key, value := range query {
+			merged[key] = value
+		}
+		for key, value := range values {
+			merged[key] = value
+		}
+		upload.values = merged
+	default:
+		upload.Transport = importTransportRaw
+		data, tooLarge, err := readImportArtifact(r.Body, limits.File)
+		switch {
+		case err != nil:
+			writeImportReadError(w, "failed to read request body", err)
+			return nil, nil, false
+		case tooLarge:
+			importUploadTooLarge(w, "the uploaded file", limits.File)
+			return nil, nil, false
+		}
+		upload.Data = data
+		filename = query.Get("filename")
+	}
+	upload.applyFilename(filename)
+	upload.resolveProjectID()
+	return upload, files, true
+}
+
+// readImportMultipartStream reads a multipart/form-data upload part by part:
+// the first "file" part is the artifact, the first part of each field in
+// limits.Files is kept, and scalar fields become option values (bounded like
+// ParseMultipartForm bounds them). As with r.FormFile, only parts that carry
+// a filename are files.
+func readImportMultipartStream(w http.ResponseWriter, r *http.Request, limits importUploadLimits) (data []byte, filename string, files map[string][]byte, values url.Values, ok bool) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+		return nil, "", nil, nil, false
+	}
+	kept := map[string]bool{"file": true}
+	for _, field := range limits.Files {
+		kept[field] = true
+	}
+	discarded := map[string]bool{}
+	for _, field := range limits.Discard {
+		discarded[field] = true
+	}
+	values = url.Values{}
+	files = map[string][]byte{}
+	haveFile := false
+	var valueBytes int64
+	for parts := 0; ; parts++ {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeImportReadError(w, "invalid multipart form", err)
+			return nil, "", nil, nil, false
+		}
+		if parts >= importMultipartMaxParts {
+			_ = part.Close()
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("request body too large: the multipart form has more than %d parts", importMultipartMaxParts))
+			return nil, "", nil, nil, false
+		}
+		name := part.FormName()
+		if name == "" {
+			_ = part.Close()
+			continue
+		}
+		valueBytes += int64(len(name)+len(part.FileName())) + importMultipartPartOverhead
+		if valueBytes > importMultipartValueBytes {
+			_ = part.Close()
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large: multipart form fields exceed their limit")
+			return nil, "", nil, nil, false
+		}
+		if part.FileName() == "" {
+			value, tooLarge, err := readImportArtifact(part, importMultipartValueBytes-valueBytes)
+			_ = part.Close()
+			switch {
+			case err != nil:
+				writeImportReadError(w, "invalid multipart form", err)
+				return nil, "", nil, nil, false
+			case tooLarge:
+				writeError(w, http.StatusRequestEntityTooLarge, "request body too large: multipart form fields exceed their limit")
+				return nil, "", nil, nil, false
+			}
+			valueBytes += int64(len(value))
+			values.Add(name, string(value))
+			continue
+		}
+		_, seen := files[name]
+		if !kept[name] || seen || (name == "file" && haveFile) {
+			// Unused file parts are drained, not kept; the envelope still bounds them.
+			if _, err := io.Copy(io.Discard, part); err != nil {
+				writeImportReadError(w, "invalid multipart form", err)
+				return nil, "", nil, nil, false
+			}
+			_ = part.Close()
+			if discarded[name] {
+				files[name] = nil
+			}
+			continue
+		}
+		content, tooLarge, err := readImportArtifact(part, limits.File)
+		_ = part.Close()
+		switch {
+		case err != nil:
+			writeImportReadError(w, "failed to read uploaded file", err)
+			return nil, "", nil, nil, false
+		case tooLarge:
+			importUploadTooLarge(w, fmt.Sprintf("the %q file", name), limits.File)
+			return nil, "", nil, nil, false
+		}
+		if name == "file" {
+			data, filename, haveFile = content, part.FileName(), true
+			continue
+		}
+		files[name] = content
+	}
+	if !haveFile {
+		writeError(w, http.StatusBadRequest, "file field is required")
+		return nil, "", nil, nil, false
+	}
+	return data, filename, files, values, true
 }
 
 // importUploadTransport names the wire shape an import arrived on.

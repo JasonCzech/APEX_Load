@@ -225,6 +225,7 @@ func (d *HARDocument) parse(includeStaticAssets bool, mode string, diagnostics *
 	if len(braceEntries) > 0 {
 		diagnostics.Add(diag.Info, "HAR URL braces", harEntryList(braceEntries), `these URLs hold a literal "{{" or "}}", which a script reads as a template, so their braces are sent as %7B and %7D; servers decode them to the same characters`)
 	}
+	warnings = addHARSanitizedExportWarning(items, diagnostics, warnings)
 	if len(exchanges) > 1 {
 		warnings = append(warnings, "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved")
 	}

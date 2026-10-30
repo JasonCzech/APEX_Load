@@ -2,9 +2,11 @@ package salesforce
 
 import (
 	"encoding/base64"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol/aura"
 	"golang.org/x/text/encoding/charmap"
@@ -16,6 +18,11 @@ const (
 	maxAuraOutcomeDetails = 2048
 	maxAuraIssueDetails   = 2048
 )
+
+// AuraRequestBodyNotCaptured replaces aura.MissingMessage for a request the
+// capture recorded with a body (a non-zero Content-Length) that its export
+// left out: the envelope was never captured rather than malformed.
+const AuraRequestBodyNotCaptured aura.Code = "request_body_not_captured"
 
 // AuraOutcomeReview contains only structural evidence. Complete describes
 // retained capture coverage, not a successful baseline or live replay.
@@ -53,6 +60,11 @@ type AuraOutcomeReview struct {
 	// recordedFailures holds each baselined batch's unsuccessful outcomes by
 	// action path, taken before detail retention.
 	recordedFailures map[string][]aura.RecordedOutcome
+	// bodyNotCaptured counts the invalid requests whose body the capture did
+	// not include; bodyNotCapturedEntries lists their HAR entry IDs, when
+	// matched.
+	bodyNotCaptured        int
+	bodyNotCapturedEntries []int
 }
 
 // RecordedFailures returns the unsuccessful recorded outcomes of each
@@ -62,6 +74,15 @@ func (review *AuraOutcomeReview) RecordedFailures() map[string][]aura.RecordedOu
 		return nil
 	}
 	return review.recordedFailures
+}
+
+// RequestBodyNotCaptured returns how many invalid Aura requests had no
+// captured body, and the HAR entry IDs of those matched to the capture.
+func (review *AuraOutcomeReview) RequestBodyNotCaptured() (int, []int) {
+	if review == nil {
+		return 0, nil
+	}
+	return review.bodyNotCaptured, review.bodyNotCapturedEntries
 }
 
 // RequestValid describes the imported executable request. Analysis compares the
@@ -195,6 +216,14 @@ func inspectAuraOutcomes(refs []actionRef, entries []harEntry) *AuraOutcomeRevie
 		review.InspectedBatches++
 		if !request.Success {
 			review.InvalidRequests++
+			if auraRequestBodyNotCaptured(ref.Action, entry, matched) {
+				request.Issues = auraBodyNotCapturedIssues(request.Issues)
+				analysis.Issues = auraBodyNotCapturedIssues(analysis.Issues)
+				review.bodyNotCaptured++
+				if matched {
+					review.bodyNotCapturedEntries = append(review.bodyNotCapturedEntries, ref.HARID)
+				}
+			}
 		}
 		if !analysis.HasResponse {
 			review.MissingResponses++
@@ -244,6 +273,58 @@ func inspectAuraOutcomes(refs []actionRef, entries []harEntry) *AuraOutcomeRevie
 	}
 	retainAuraReviewDetails(review)
 	return review
+}
+
+// auraRequestBodyNotCaptured reports an imported Aura request with no body
+// that the HAR importer found recorded with one: it gated the step as a body
+// the export did not include (sample.HARRequestBodyNotExportedCode) and kept
+// the recorded Content-Length, which outlives a cleared gate. The matched
+// observation cannot say so itself, because the importer drops that header.
+func auraRequestBodyNotCaptured(action *dsl.Action, entry harEntry, matched bool) bool {
+	if action.Body != "" || (matched && entry.RequestBody != "") {
+		return false
+	}
+	if auraMetadataHasCode(action.Metadata["execution_blockers"], sample.HARRequestBodyNotExportedCode) {
+		return true
+	}
+	switch length := action.Metadata["har.request.recorded_content_length"].(type) {
+	case int64:
+		return length > 0
+	case int:
+		return length > 0
+	case float64:
+		return length > 0
+	}
+	return false
+}
+
+// auraMetadataHasCode reads a metadata code list as built ([]string) or as
+// decoded from JSON ([]any).
+func auraMetadataHasCode(raw any, code string) bool {
+	switch codes := raw.(type) {
+	case []string:
+		return slices.Contains(codes, code)
+	case []any:
+		for _, item := range codes {
+			if item == code {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// auraBodyNotCapturedIssues names the missing message of an uncaptured body
+// for what it is.
+func auraBodyNotCapturedIssues(issues []aura.Issue) []aura.Issue {
+	out := make([]aura.Issue, len(issues))
+	for index, issue := range issues {
+		if issue.Code == aura.MissingMessage {
+			issue.Code = AuraRequestBodyNotCaptured
+		}
+		out[index] = issue
+	}
+	return out
 }
 
 // Full validation and aggregate counts precede detail retention. Failed
