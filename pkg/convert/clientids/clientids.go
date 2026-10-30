@@ -44,11 +44,8 @@ import (
 const MaxPerIterationParameters = 32
 
 var (
-	// uuidPattern has no boundaries of its own: consuming the separator would
-	// hide the second of two adjacent UUIDs ("a,b"). uuidSpans checks them.
-	uuidPattern = regexp.MustCompile(`[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}`)
-	jwtPattern  = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{6,}\.(eyJ[A-Za-z0-9_-]+)\.`)
-	keyPattern  = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.-]{0,63})\\*"?\s*[:=]\s*\\*"?$`)
+	jwtPattern = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{6,}\.(eyJ[A-Za-z0-9_-]+)\.`)
+	keyPattern = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.-]{0,63})\\*"?\s*[:=]\s*\\*"?$`)
 )
 
 // generatedWords mark a value created per session, request or event.
@@ -180,17 +177,63 @@ func collectUUIDs(found map[string]bool, text string) {
 	}
 }
 
+// uuidLength is the length of a UUID in its 8-4-4-4-12 hex form.
+const uuidLength = 36
+
 // uuidSpans returns the byte ranges of the UUIDs in text that are not part of
 // a longer run of hex digits.
 func uuidSpans(text string) [][2]int {
 	var spans [][2]int
-	for _, match := range uuidPattern.FindAllStringIndex(text, -1) {
-		if match[0] > 0 && isHex(text[match[0]-1]) || match[1] < len(text) && isHex(text[match[1]]) {
+	for match := nextUUID(text, 0); match >= 0; match = nextUUID(text, match+uuidLength) {
+		end := match + uuidLength
+		if match > 0 && isHex(text[match-1]) || end < len(text) && isHex(text[end]) {
 			continue
 		}
-		spans = append(spans, [2]int{match[0], match[1]})
+		spans = append(spans, [2]int{match, end})
 	}
 	return spans
+}
+
+// nextUUID returns the start of the leftmost 8-4-4-4-12 hex UUID in text at
+// or after from, or -1. It finds the matches of the regexp
+// [0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-...-[0-9A-Fa-f]{12} without running a regexp
+// machine at every byte: the shape is fixed, so every match has its first
+// dash 8 bytes after its start, and visiting the dashes in order visits the
+// candidate starts in order. The shape has no boundaries of its own:
+// consuming a separator would hide the second of two adjacent UUIDs ("a,b"),
+// so uuidSpans checks them.
+func nextUUID(text string, from int) int {
+	for dash := from + 8; dash < len(text); dash++ {
+		next := strings.IndexByte(text[dash:], '-')
+		if next < 0 {
+			return -1
+		}
+		dash += next
+		if start := dash - 8; isUUIDAt(text, start) {
+			return start
+		}
+	}
+	return -1
+}
+
+// isUUIDAt reports whether text holds an 8-4-4-4-12 hex UUID at start.
+func isUUIDAt(text string, start int) bool {
+	if start < 0 || len(text)-start < uuidLength {
+		return false
+	}
+	for i := 0; i < uuidLength; i++ {
+		switch b := text[start+i]; i {
+		case 8, 13, 18, 23:
+			if b != '-' {
+				return false
+			}
+		default:
+			if !isHex(b) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Parameter is one uuid parameter added to the script.

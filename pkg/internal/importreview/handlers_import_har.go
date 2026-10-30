@@ -82,7 +82,19 @@ func HarImportReviewSections(result *har.ConvertResult) []ScriptImportReviewSect
 			Items:    items,
 		})
 	}
-	if result.Diff != nil {
+	if result.Diff != nil && !result.Diff.Compared {
+		items := []string{}
+		if result.Diff.Reason != "" {
+			items = append(items, result.Diff.Reason)
+		}
+		sections = append(sections, ScriptImportReviewSection{
+			Key:      "har_pair_diff",
+			Title:    "Two-Recording Correlation Diff",
+			Severity: "warning",
+			Summary:  "The comparison HAR was not compared, so no correlation is labeled dynamic or static. The baseline recording was imported on its own.",
+			Items:    items,
+		})
+	} else if result.Diff != nil {
 		items := []string{
 			fmt.Sprintf("%d dynamic candidate(s)", result.Diff.DynamicCandidates),
 			fmt.Sprintf("%d static candidate(s)", result.Diff.StaticCandidates),
@@ -101,7 +113,7 @@ func HarImportReviewSections(result *har.ConvertResult) []ScriptImportReviewSect
 			Key:      "har_pair_diff",
 			Title:    "Two-Recording Correlation Diff",
 			Severity: "info",
-			Summary:  "Values that change between otherwise matching recordings are promoted as dynamic correlation candidates.",
+			Summary:  "Each correlation's extractor is re-run on the matching response of the second recording; when the second recording reuses the value, the correlation is labeled dynamic (the value changed) or static (it stayed the same). The labels are for review only: no correlation is added, removed or re-ranked because of them.",
 			Items:    items,
 		})
 	}

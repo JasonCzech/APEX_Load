@@ -333,8 +333,9 @@ func (s *Server) objectActivityMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), objectActivityContextKey{}, ctx)))
 			return
 		}
-		recorder := httptest.NewRecorder()
-		ctx := &activityRequest{startedAt: time.Now().UTC(), writer: recorder, before: map[string]activitySnapshot{}, recorded: map[string]bool{}}
+		buffered := &activityResponseRecorder{ResponseRecorder: httptest.NewRecorder(), conn: w}
+		recorder := buffered.ResponseRecorder
+		ctx := &activityRequest{startedAt: time.Now().UTC(), writer: buffered, before: map[string]activitySnapshot{}, recorded: map[string]bool{}}
 		if kind != "" && len(parts) > 1 {
 			if before, ok := s.activitySnapshot(kind, parts[1]); ok {
 				ctx.before[kind+":"+before.id] = before
@@ -347,7 +348,13 @@ func (s *Server) objectActivityMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-		next.ServeHTTP(recorder, r)
+		next.ServeHTTP(buffered, r)
+		if !buffered.wrote && errors.Is(r.Context().Err(), context.Canceled) {
+			// The client left before the handler answered (a canceled import):
+			// there is nothing to send, and replaying the recorder's default
+			// 200 would log the request as a success.
+			return
+		}
 		// Approval/recording/batch-import responses identify committed objects even
 		// when their specialized audit event targets a session or batch instead.
 		if mutation && recorder.Code < 400 && parts[len(parts)-1] != "archive" && parts[len(parts)-1] != "restore" {
@@ -367,6 +374,42 @@ func (s *Server) objectActivityMiddleware(next http.Handler) http.Handler {
 		_, _ = w.Write(recorder.Body.Bytes())
 	})
 }
+
+// activityResponseRecorder buffers a handler's response so
+// objectActivityMiddleware can record and enrich it before sending it. The
+// connection deadlines are still the real connection's, so a handler that
+// extends them for long work (the HAR imports) is not cut off by the server's
+// WriteTimeout behind the buffer, and wrote reports whether the handler
+// answered at all.
+type activityResponseRecorder struct {
+	*httptest.ResponseRecorder
+	conn  http.ResponseWriter
+	wrote bool
+}
+
+func (rec *activityResponseRecorder) WriteHeader(code int) {
+	rec.wrote = true
+	rec.ResponseRecorder.WriteHeader(code)
+}
+
+func (rec *activityResponseRecorder) Write(b []byte) (int, error) {
+	rec.wrote = true
+	return rec.ResponseRecorder.Write(b)
+}
+
+func (rec *activityResponseRecorder) WriteString(text string) (int, error) {
+	rec.wrote = true
+	return rec.ResponseRecorder.WriteString(text)
+}
+
+func (rec *activityResponseRecorder) SetReadDeadline(deadline time.Time) error {
+	return http.NewResponseController(rec.conn).SetReadDeadline(deadline)
+}
+
+func (rec *activityResponseRecorder) SetWriteDeadline(deadline time.Time) error {
+	return http.NewResponseController(rec.conn).SetWriteDeadline(deadline)
+}
+
 func (s *Server) recordReturnedActivity(r *http.Request, value any, hint string) {
 	switch v := value.(type) {
 	case []any:
