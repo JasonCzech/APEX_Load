@@ -563,7 +563,7 @@ export const overlayMetricMenuLabels: Record<OverlayMetricKey, string> = {
 }
 
 export function isOverlayMetricAvailable(chart: ChartConfig, key: OverlayMetricKey) {
-  if (isPrometheusChart(chart)) {
+  if (isPrometheusChart(chart) || isLoadImpactHeatmapChart(chart) || isImportedDashboardChart(chart)) {
     return false
   }
   if (isLoadImpactPercentilesChart(chart)) {
@@ -1411,6 +1411,43 @@ export function chartMetricKeys(
   const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
     .filter(key => !keys.includes(key))
   return overlays.length > 0 ? [...keys, ...overlays] : keys
+}
+
+// resolveVisibleChartMetricKeys determines which series keys are visible on a
+// chart given its currently available rows, any persisted per-chart filter, and
+// its enabled overlay metrics.
+//
+// Two invariants keep overlays from hiding underlying chart data or disappearing:
+// 1. Charts with defaultMetricKeys (such as Under Load graphs) append active
+//    overlay keys to their default visible set when no persisted filter overrides
+//    them.
+// 2. If a persisted filter matches no currently available primary (non-overlay)
+//    series — e.g. stale group, transaction, or route keys from another run,
+//    group selection, or route-latency mode, plus an active overlay key — we
+//    fall back to the default visible set rather than showing only the overlay.
+export function resolveVisibleChartMetricKeys(
+  chart: ChartConfig,
+  availableKeys: string[],
+  storedFilterKeys: string[] | undefined,
+  overlayKeys: OverlayMetricKey[] = [],
+): string[] {
+  const overlayKeySet = new Set<string>(overlayKeys)
+  const primaryAvailableKeys = availableKeys.filter(key => !overlayKeySet.has(key))
+  const defaultPrimaryKeys = chart.defaultMetricKeys?.filter(key => primaryAvailableKeys.includes(key)) ?? []
+  const fallbackPrimaryKeys = defaultPrimaryKeys.length > 0 ? defaultPrimaryKeys : primaryAvailableKeys
+  const activeOverlayKeys = overlayKeys.filter(key => availableKeys.includes(key) && !fallbackPrimaryKeys.includes(key))
+  const defaultVisibleKeys = activeOverlayKeys.length > 0
+    ? [...fallbackPrimaryKeys, ...activeOverlayKeys]
+    : fallbackPrimaryKeys
+
+  const storedKeys = storedFilterKeys?.filter(key => availableKeys.includes(key)) ?? []
+  if (storedKeys.length === 0) {
+    return defaultVisibleKeys
+  }
+  if (primaryAvailableKeys.length > 0 && !storedKeys.some(key => !overlayKeySet.has(key))) {
+    return defaultVisibleKeys
+  }
+  return storedKeys
 }
 
 export function chartMetricRows(
