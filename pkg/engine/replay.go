@@ -355,6 +355,21 @@ func replayStartupErrorText(opts ReplayOptions, err error, config *RedactionConf
 }
 
 func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (*ReplayReport, error) {
+	var debugSecretMask *RedactionConfig
+	report, err := replayScript(ctx, script, opts, &debugSecretMask)
+	if debugSecretMask == nil {
+		return report, err
+	}
+	report = maskDebugSecrets(debugSecretMask, report)
+	if err != nil {
+		if masked := scrubRuntimeSecretText(err.Error(), debugSecretMask); masked != err.Error() {
+			err = errors.New(masked)
+		}
+	}
+	return report, err
+}
+
+func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, debugSecretMaskOut **RedactionConfig) (*ReplayReport, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
@@ -392,6 +407,15 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	resolutionCancel()
 	if err != nil {
 		return nil, fmt.Errorf("inspect script secret references: %s", replayStartupErrorText(opts, err, nil))
+	}
+	// Unredacted debug still hides values resolved from the secret store.
+	var debugSecretMask *RedactionConfig
+	if opts.UnredactedDebug && opts.DebugController != nil {
+		debugSecretMask, err = newDebugSecretMask(secretValues)
+		if err != nil {
+			return nil, fmt.Errorf("prepare debugger secret masking: %w", err)
+		}
+		*debugSecretMaskOut = debugSecretMask
 	}
 	// One shared chokepoint with engine.New, NewMultiGroup, and shakeout; see
 	// script_sourced_run_evidence.go.
@@ -589,17 +613,18 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			remainingBytes: int(normalizedMessageDetailMaxTotalBytes(policy.MaxTotalBytes)),
 		}
 	}
-	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
+	publishReplayProgress(opts.OnProgress, maskDebugSecrets(debugSecretMask, ReplayProgressEvent{
 		EventID:    replaySessionEventID(replaySessionID, "started"),
 		SessionID:  replaySessionID,
 		Type:       ReplayProgressStarted,
 		Timestamp:  report.StartedAt,
 		EventIndex: -1,
 		Report:     cloneReplayReport(report),
-	})
+	}))
 
 	vu = &VUser{
 		unredactedDebug:              opts.UnredactedDebug && opts.DebugController != nil,
+		debugSecretMask:              debugSecretMask,
 		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: 1},
 		ID:                           0,
 		Group:                        groupName,
@@ -3212,6 +3237,9 @@ func (vu *VUser) guardedReplayProgress(report *ReplayReport, callback func(Repla
 			}
 		}
 		if callback != nil {
+			if vu.unredactedDebug {
+				event = maskDebugSecrets(vu.debugSecretMask, event)
+			}
 			callback(event)
 		}
 	}

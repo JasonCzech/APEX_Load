@@ -24,6 +24,8 @@ At narrow widths, use **Outline**, **Editor**, and **Context** (in Debug, **Insp
 
 With **Follow execution** on, a paused session selects and scrolls to the action about to run and shows its **Next request** with the values the session holds now; a reference with no value yet stays as written, and secrets stay hidden. Select an executed action to see its evidence. **Checks & readiness** remains available while inspecting an item and distinguishes static checks from runtime prerequisites and recorded replay evidence.
 
+Debug evidence shows runtime values as the protocol sent and received them (URLs, headers, bodies, typed values and variables), so you can see exactly what a step did. Values resolved from the project's secret store are the exception: they show as `[REDACTED]` everywhere in the session, its events, variables, final report and exports. A session whose script references a secret keeps no screenshots, which could show the value on the page.
+
 Selecting a parameter in Debug keeps its authored definition separate from runtime receipts. **Current paused state** shows whether the engine has prepared or actually resolved the parameter, its update policy, and its last actual-use receipt. Each-occurrence values describe the last resolution; they do not predict the next value or prove request acceptance. A seed or extracted variable with the same unqualified name is not parameter evidence. Historical values require an explicit history selection, and evidence from a different draft is labeled separately.
 
 ## Investigating a run

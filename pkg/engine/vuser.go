@@ -31,14 +31,16 @@ type VUser struct {
 	browserAuthored              *browserAuthoredIndex
 	currentAuthoredAction        *dsl.Action
 
-	LiveTableClient      livetable.Client
-	LiveTableClientID    string
-	LiveTableBindings    []LiveTableBinding
-	liveTables           *liveTableRuntime
-	liveTableLane        *liveTableLane
-	nativeServices       *nativeServices
-	replayRuntime        *replayRuntimeState
-	unredactedDebug      bool
+	LiveTableClient   livetable.Client
+	LiveTableClientID string
+	LiveTableBindings []LiveTableBinding
+	liveTables        *liveTableRuntime
+	liveTableLane     *liveTableLane
+	nativeServices    *nativeServices
+	replayRuntime     *replayRuntimeState
+	unredactedDebug   bool
+	// debugSecretMask hides secret-store values from unredacted debug output.
+	debugSecretMask      *RedactionConfig
 	debugRetryEvidence   *ReplayActionEvent
 	debugRetryError      error
 	debugRetryGroupCount int

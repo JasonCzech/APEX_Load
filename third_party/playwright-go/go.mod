@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/deckarep/golang-set/v2 v2.8.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-stack/stack v1.8.1
 	github.com/stretchr/testify v1.8.4
 )

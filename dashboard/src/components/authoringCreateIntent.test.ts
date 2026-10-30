@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import {
   AuthoringCreateNeedsNewIntent, forgetAuthoringCreateIntent, isAuthoringCreateIntent, nextAuthoringCreateIntent,
@@ -7,9 +7,15 @@ import {
   startingAuthoringCreateIntent, type AuthoringCreateIntent,
 } from './authoringCreateIntent'
 
-beforeEach(() => { window.localStorage.clear() })
-
 const now = Date.parse('2026-10-21T12:00:00Z')
+
+// Calls that take no clock read Date.now(); pin it to the fixture time so the
+// ledger's retention window does not expire as the calendar moves on.
+beforeEach(() => {
+  window.localStorage.clear()
+  vi.useFakeTimers({ toFake: ['Date'], now })
+})
+afterEach(() => { vi.useRealTimers() })
 
 describe('authoring create intents', () => {
   it('reuses a pending key for any payload and rotates a refused key only for a changed payload', () => {
