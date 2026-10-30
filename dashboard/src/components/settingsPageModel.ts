@@ -150,6 +150,7 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
   },
   script_imports: {
     allow_source_secret_migration: false,
+    allow_retained_credential_transport_edits: false,
   },
 }
 
@@ -902,6 +903,7 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       ...DEFAULT_SETTINGS.script_imports,
       ...settings.script_imports,
       allow_source_secret_migration: settings.script_imports?.allow_source_secret_migration === true,
+      allow_retained_credential_transport_edits: settings.script_imports?.allow_retained_credential_transport_edits === true,
     },
   }
 }

@@ -56,6 +56,12 @@ type SystemSettings struct {
 // ordinary imports still create portable {{secret.*}} bindings.
 type ScriptImportSettings struct {
 	AllowSourceSecretMigration bool `json:"allow_source_secret_migration"`
+	// AllowRetainedCredentialTransportEdits lets authors change the proxy and
+	// TLS settings of a script that keeps imported credentials. It is off by
+	// default: an editor who cannot read a retained credential could otherwise
+	// route it through a proxy they control. Enable it where every editor is
+	// trusted with the imported credentials (for example a test environment).
+	AllowRetainedCredentialTransportEdits bool `json:"allow_retained_credential_transport_edits"`
 }
 
 // GitHubSettings is the global (admin-owned) configuration for the GitHub script
@@ -1704,6 +1710,7 @@ func validateOptionalAuthURL(field string, value string) error {
 
 func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 	tr.settings = defaultSystemSettings(defaultMaxConcurrent)
+	tr.allowRetainedCredentialTransportEdits.Store(false)
 	defer tr.setNotificationSettings(tr.settings.Notifications)
 	if tr.settingsStore == nil {
 		tr.maxTests = tr.settings.General.MaxConcurrentTests
@@ -1743,6 +1750,7 @@ func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 		return
 	}
 	tr.settings = cloneSystemSettings(loaded)
+	tr.allowRetainedCredentialTransportEdits.Store(loaded.ScriptImports.AllowRetainedCredentialTransportEdits)
 	tr.maxTests = tr.settings.General.MaxConcurrentTests
 	tr.systemSettingsRaw = raw
 }
@@ -1908,6 +1916,7 @@ func (tr *TestRunner) refreshSystemSettingsFromStoreContextMode(ctx context.Cont
 				// are excluded.
 				reservationsDisabled = tr.settings.CapacityPlanning.PodReservationsEnabled && !loaded.CapacityPlanning.PodReservationsEnabled
 				tr.settings = loaded
+				tr.allowRetainedCredentialTransportEdits.Store(loaded.ScriptImports.AllowRetainedCredentialTransportEdits)
 				tr.maxTests = loaded.General.MaxConcurrentTests
 				tr.invalidateCapacityAdvisoryCacheLocked()
 				tr.publishRuntimeReadinessLocked(time.Now().UTC())
@@ -2151,6 +2160,7 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	}
 	tr.mu.Lock()
 	tr.settings = normalized
+	tr.allowRetainedCredentialTransportEdits.Store(normalized.ScriptImports.AllowRetainedCredentialTransportEdits)
 	tr.maxTests = normalized.General.MaxConcurrentTests
 	// Capacity advisories are derived from settings (generator specs, headroom,
 	// configured reservations), so a settings change must invalidate the cache.

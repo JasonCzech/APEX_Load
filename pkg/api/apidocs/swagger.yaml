@@ -390056,9 +390056,12 @@ paths:
                   script_imports:
                     type: object
                     properties:
+                      allow_retained_credential_transport_edits:
+                        type: boolean
                       allow_source_secret_migration:
                         type: boolean
                     required:
+                      - allow_retained_credential_transport_edits
                       - allow_source_secret_migration
                   thresholds:
                     type: object
@@ -390515,6 +390518,8 @@ paths:
                 script_imports:
                   type: object
                   properties:
+                    allow_retained_credential_transport_edits:
+                      type: boolean
                     allow_source_secret_migration:
                       type: boolean
                   additionalProperties: false
@@ -390954,9 +390959,12 @@ paths:
                   script_imports:
                     type: object
                     properties:
+                      allow_retained_credential_transport_edits:
+                        type: boolean
                       allow_source_secret_migration:
                         type: boolean
                     required:
+                      - allow_retained_credential_transport_edits
                       - allow_source_secret_migration
                   thresholds:
                     type: object

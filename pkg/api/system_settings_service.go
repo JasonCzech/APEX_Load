@@ -24,12 +24,17 @@ type systemSettingsService interface {
 type systemSettingsBeforeCommit func(systemSettingsUpdatePlan) error
 
 type systemSettingsUpdatePlan struct {
-	Previous                       SystemSettings
-	Candidate                      SystemSettings
-	PolicyChanged                  bool
-	NotificationCredentialsChanged bool
-	PreviousCredentialCount        int
-	CandidateCredentialCount       int
+	Previous  SystemSettings
+	Candidate SystemSettings
+	// PolicyChanged is true when any governed script-import policy changed; it
+	// requires a durable audit record before the commit. The two fields below
+	// say which policy moved.
+	PolicyChanged                      bool
+	SourceSecretMigrationChanged       bool
+	RetainedCredentialTransportChanged bool
+	NotificationCredentialsChanged     bool
+	PreviousCredentialCount            int
+	CandidateCredentialCount           int
 }
 
 type systemSettingsUpdateResult struct {
@@ -196,12 +201,14 @@ func (s *testRunnerSystemSettingsService) Update(requested SystemSettings, rawBo
 	candidateCredentialCount := systemSettingsNotificationCredentialCount(candidate.Notifications)
 
 	result := systemSettingsUpdateResult{systemSettingsUpdatePlan: systemSettingsUpdatePlan{
-		Previous:                       current,
-		Candidate:                      candidate,
-		PolicyChanged:                  current.ScriptImports.AllowSourceSecretMigration != candidate.ScriptImports.AllowSourceSecretMigration,
-		NotificationCredentialsChanged: systemSettingsNotificationCredentialsChanged(current.Notifications, candidate.Notifications),
-		PreviousCredentialCount:        previousCredentialCount,
-		CandidateCredentialCount:       candidateCredentialCount,
+		Previous:                           current,
+		Candidate:                          candidate,
+		PolicyChanged:                      current.ScriptImports != candidate.ScriptImports,
+		SourceSecretMigrationChanged:       current.ScriptImports.AllowSourceSecretMigration != candidate.ScriptImports.AllowSourceSecretMigration,
+		RetainedCredentialTransportChanged: current.ScriptImports.AllowRetainedCredentialTransportEdits != candidate.ScriptImports.AllowRetainedCredentialTransportEdits,
+		NotificationCredentialsChanged:     systemSettingsNotificationCredentialsChanged(current.Notifications, candidate.Notifications),
+		PreviousCredentialCount:            previousCredentialCount,
+		CandidateCredentialCount:           candidateCredentialCount,
 	}}
 	if beforeCommit != nil {
 		if err := beforeCommit(result.systemSettingsUpdatePlan); err != nil {

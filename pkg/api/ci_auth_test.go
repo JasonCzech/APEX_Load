@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/go-jose/go-jose/v3"
+	"github.com/go-jose/go-jose/v4"
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 	"github.com/jasonczech/apexload/pkg/storage"
 )

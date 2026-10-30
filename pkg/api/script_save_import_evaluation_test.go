@@ -14,6 +14,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	internalimportreview "github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -349,7 +350,7 @@ func TestSavedImportEditorSaveStampsMaskedMessagingReviewCodeWithoutPinningTheSt
 			// it accepts the same correction of the saved script.
 			draft := maskScriptSecrets(stamped)
 			draft.Actions[namedActionIndex(t, stamped, "summary")].Body = "{}"
-			if _, trusted, err := resolveStoredReplayImportScript(draft, stamped); err != nil || !trusted {
+			if _, trusted, err := resolveStoredReplayImportScript(draft, stamped, internalimportreview.PreservedImportEditOptions{}); err != nil || !trusted {
 				t.Fatalf("debug start of the corrected send: trusted=%v err=%v, want it resolved against the saved script", trusted, err)
 			}
 

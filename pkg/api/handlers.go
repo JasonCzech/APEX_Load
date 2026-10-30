@@ -1508,7 +1508,7 @@ func (s *Server) storedImportDraftForValidation(r *http.Request, scoped *dsl.Scr
 	if candidate.Name == "" {
 		candidate.Name = stored.Name
 	}
-	executed, trusted, err := resolveStoredReplayImportScript(candidate, stored.Script)
+	executed, trusted, err := resolveStoredReplayImportScript(candidate, stored.Script, s.runner.preservedImportEditOptions())
 	if err != nil || !trusted {
 		return nil, false
 	}
@@ -2047,11 +2047,13 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 			return nil
 		}
 		operationID, auditErr := s.beginRequiredAuditOperation(r, "system.settings.update", "system_settings", "global", "", map[string]any{
-			"allow_source_secret_migration":          plan.Candidate.ScriptImports.AllowSourceSecretMigration,
-			"source_secret_migration_policy_changed": plan.PolicyChanged,
-			"notification_credentials_changed":       plan.NotificationCredentialsChanged,
-			"notification_credential_count_before":   plan.PreviousCredentialCount,
-			"notification_credential_count_after":    plan.CandidateCredentialCount,
+			"allow_source_secret_migration":                plan.Candidate.ScriptImports.AllowSourceSecretMigration,
+			"allow_retained_credential_transport_edits":    plan.Candidate.ScriptImports.AllowRetainedCredentialTransportEdits,
+			"source_secret_migration_policy_changed":       plan.SourceSecretMigrationChanged,
+			"retained_credential_transport_policy_changed": plan.RetainedCredentialTransportChanged,
+			"notification_credentials_changed":             plan.NotificationCredentialsChanged,
+			"notification_credential_count_before":         plan.PreviousCredentialCount,
+			"notification_credential_count_after":          plan.CandidateCredentialCount,
 		})
 		if auditErr != nil {
 			return auditErr
@@ -2068,11 +2070,13 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		if requiredAuditOperationID != "" {
 			outcome := "update_failed"
 			auditDetails := map[string]any{
-				"allow_source_secret_migration":          result.Candidate.ScriptImports.AllowSourceSecretMigration,
-				"source_secret_migration_policy_changed": result.PolicyChanged,
-				"notification_credentials_changed":       result.NotificationCredentialsChanged,
-				"notification_credential_count_before":   result.PreviousCredentialCount,
-				"notification_credential_count_after":    result.CandidateCredentialCount,
+				"allow_source_secret_migration":                result.Candidate.ScriptImports.AllowSourceSecretMigration,
+				"allow_retained_credential_transport_edits":    result.Candidate.ScriptImports.AllowRetainedCredentialTransportEdits,
+				"source_secret_migration_policy_changed":       result.SourceSecretMigrationChanged,
+				"retained_credential_transport_policy_changed": result.RetainedCredentialTransportChanged,
+				"notification_credentials_changed":             result.NotificationCredentialsChanged,
+				"notification_credential_count_before":         result.PreviousCredentialCount,
+				"notification_credential_count_after":          result.CandidateCredentialCount,
 			}
 			if errors.Is(err, errSystemSettingsConflict) {
 				outcome = "conflict"
@@ -2097,12 +2101,14 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	auditDetails := map[string]any{
-		"auth_mode":                              result.Updated.Auth.Mode,
-		"allow_source_secret_migration":          result.Updated.ScriptImports.AllowSourceSecretMigration,
-		"source_secret_migration_policy_changed": result.PolicyChanged,
-		"notification_credentials_changed":       result.NotificationCredentialsChanged,
-		"notification_credential_count_before":   result.PreviousCredentialCount,
-		"notification_credential_count_after":    result.CandidateCredentialCount,
+		"auth_mode":                                    result.Updated.Auth.Mode,
+		"allow_source_secret_migration":                result.Updated.ScriptImports.AllowSourceSecretMigration,
+		"allow_retained_credential_transport_edits":    result.Updated.ScriptImports.AllowRetainedCredentialTransportEdits,
+		"source_secret_migration_policy_changed":       result.SourceSecretMigrationChanged,
+		"retained_credential_transport_policy_changed": result.RetainedCredentialTransportChanged,
+		"notification_credentials_changed":             result.NotificationCredentialsChanged,
+		"notification_credential_count_before":         result.PreviousCredentialCount,
+		"notification_credential_count_after":          result.CandidateCredentialCount,
 	}
 	if requiredAuditOperationID != "" {
 		if auditErr := s.completeRequiredAuditOperation(r, requiredAuditOperationID, "system.settings.update", "success", "updated", "system_settings", "global", "", auditDetails); auditErr != nil {

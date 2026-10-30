@@ -76,6 +76,22 @@ var preparePersistentLibraryScript = importreview.PreparePersistentLibraryScript
 // marker.
 var preparePersistentImportedLibraryScript = importreview.PreparePersistentImportedLibraryScript
 
+// prepareLibraryScript is preparePersistentLibraryScript under the runner's
+// system-admin retained-credential edit policy. It reads a lock-free mirror of
+// the setting because several durable writers call it while holding tr.mu.
+func (tr *TestRunner) prepareLibraryScript(script, prior *dsl.Script) (*dsl.Script, error) {
+	return importreview.PreparePersistentLibraryScriptWithOptions(script, prior, tr.preservedImportEditOptions())
+}
+
+// preservedImportEditOptions is the system-admin policy every save, draft and
+// debug path applies to an imported script that keeps credentials, so they
+// accept and refuse the same edits.
+func (tr *TestRunner) preservedImportEditOptions() importreview.PreservedImportEditOptions {
+	return importreview.PreservedImportEditOptions{
+		AllowTransportRouteEdits: tr.allowRetainedCredentialTransportEdits.Load(),
+	}
+}
+
 var preparePersistentLibraryScriptWithImportTrust = importreview.PreparePersistentLibraryScriptWithImportTrust
 
 var ensureCredentialPreservingImportMetadata = importreview.EnsureCredentialPreservingImportMetadata
@@ -249,6 +265,9 @@ func (tr *TestRunner) prepareGitHubScriptImportLocked(script *dsl.Script) (*dsl.
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, nil, err
 	}
+	// Repository content is written by people who may not be APEX editors, so
+	// a GitHub import keeps the strict retained-credential check even when a
+	// system admin allows proxy and TLS edits for editors.
 	projected, err := preparePersistentLibraryScript(script, current)
 	if err != nil {
 		return nil, nil, err
@@ -476,7 +495,7 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	if existing != nil {
 		prior = existing.Script
 	}
-	projected, err := preparePersistentLibraryScript(script, prior)
+	projected, err := tr.prepareLibraryScript(script, prior)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +605,7 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 					!current.UpdatedAt.Equal(existing.Script.UpdatedAt) {
 					return nil, errScriptConcurrentChange
 				}
-				projected, err := preparePersistentLibraryScript(script, current)
+				projected, err := tr.prepareLibraryScript(script, current)
 				if err != nil {
 					return nil, err
 				}
@@ -741,7 +760,7 @@ func (tr *TestRunner) createScriptDurableCompletingReceipt(
 	if trustedImport {
 		projected, err = preparePersistentImportedLibraryScript(script, nil, sourceProfile)
 	} else {
-		projected, err = preparePersistentLibraryScript(script, nil)
+		projected, err = tr.prepareLibraryScript(script, nil)
 	}
 	if err != nil {
 		return nil, false, err
@@ -944,7 +963,7 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
 		return nil, false, err
 	}
-	projected, err := preparePersistentLibraryScript(script, expected)
+	projected, err := tr.prepareLibraryScript(script, expected)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1329,7 +1348,7 @@ func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, ex
 		} else {
 			candidate := cloneScriptDefinition(current)
 			candidate.FolderID = cloneStringPtr(folderID)
-			candidate, err = preparePersistentLibraryScript(candidate, current)
+			candidate, err = tr.prepareLibraryScript(candidate, current)
 			if err != nil {
 				return false, err
 			}
@@ -1590,7 +1609,7 @@ func (tr *TestRunner) updateScriptDurableInProjectRefreshing(
 	if trustedImport {
 		projected, err = preparePersistentImportedLibraryScript(script, current, sourceProfile)
 	} else {
-		projected, err = preparePersistentLibraryScript(script, current)
+		projected, err = tr.prepareLibraryScript(script, current)
 	}
 	if err != nil {
 		return nil, false, err
