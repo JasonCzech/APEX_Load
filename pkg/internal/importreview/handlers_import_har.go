@@ -2,6 +2,7 @@ package importreview
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
@@ -160,7 +161,8 @@ func harPairActionableInput(input har.DiffRequestInput) bool {
 }
 
 // HARPairUnhandledInputsWarning summarizes the unhandled request inputs that
-// need attention, or returns "" when there are none.
+// need attention, and says when the request comparison stopped early, or
+// returns "" when there is nothing to say.
 func HARPairUnhandledInputsWarning(diff *har.DiffReport) string {
 	if diff == nil {
 		return ""
@@ -171,21 +173,29 @@ func HARPairUnhandledInputsWarning(diff *har.DiffReport) string {
 			fields++
 		}
 	}
-	if fields == 0 {
-		return ""
+	var parts []string
+	if fields > 0 {
+		more := ""
+		if diff.UnhandledInputsTruncated {
+			more = " or more (only the first " + fmt.Sprint(len(diff.UnhandledInputs)) + " changed fields are listed)"
+		}
+		parts = append(parts, fmt.Sprintf("%d request field(s)%s changed between the two recordings and are still sent as recorded in %d request(s); replay sends values from another session there. Review them in the two-recording diff.", fields, more, diff.UnhandledRequestCount(harPairActionableInput)))
 	}
-	more := ""
-	if diff.UnhandledInputsTruncated {
-		more = " (the list is incomplete: the comparison stopped at its limit)"
+	if diff.RequestComparisonTruncated {
+		parts = append(parts, harPairComparisonTruncatedNote)
 	}
-	return fmt.Sprintf("%d request field(s)%s changed between the two recordings and are still sent as recorded in %d request(s); replay sends values from another session there. Review them in the two-recording diff.", fields, more, diff.UnhandledRequestCount(harPairActionableInput))
+	return strings.Join(parts, " ")
 }
+
+// harPairComparisonTruncatedNote says the request comparison did not reach
+// every request.
+const harPairComparisonTruncatedNote = "The request-by-request comparison of the two recordings stopped at its limit of changed values, so later requests were not compared."
 
 // AppendHARPairUnhandledInputs adds the unhandled request inputs to the
 // two-recording diff section, and raises it to a warning when any of them
 // needs attention (client counters alone do not).
 func AppendHARPairUnhandledInputs(sections []ScriptImportReviewSection, diff *har.DiffReport) []ScriptImportReviewSection {
-	if diff == nil || len(diff.UnhandledInputs) == 0 {
+	if diff == nil || (len(diff.UnhandledInputs) == 0 && !diff.RequestComparisonTruncated) {
 		return sections
 	}
 	for index := range sections {
@@ -193,6 +203,13 @@ func AppendHARPairUnhandledInputs(sections []ScriptImportReviewSection, diff *ha
 			continue
 		}
 		section := &sections[index]
+		if diff.RequestComparisonTruncated {
+			section.Severity = "warning"
+			section.Items = append(section.Items, harPairComparisonTruncatedNote)
+		}
+		if len(diff.UnhandledInputs) == 0 {
+			break
+		}
 		actionable := 0
 		for _, input := range diff.UnhandledInputs {
 			if harPairActionableInput(input) {
@@ -202,7 +219,11 @@ func AppendHARPairUnhandledInputs(sections []ScriptImportReviewSection, diff *ha
 		if actionable > 0 {
 			section.Severity = "warning"
 		}
-		section.Summary += fmt.Sprintf(" The recordings were also compared request by request: %d request field(s) changed between them but are still sent as recorded.", len(diff.UnhandledInputs))
+		listed := fmt.Sprint(len(diff.UnhandledInputs))
+		if diff.UnhandledInputsTruncated {
+			listed += " or more"
+		}
+		section.Summary += fmt.Sprintf(" The recordings were also compared request by request: %s request field(s) changed between them but are still sent as recorded.", listed)
 		for itemIndex, input := range diff.UnhandledInputs {
 			if itemIndex >= maxHARPairUnhandledInputItems {
 				section.Items = append(section.Items, fmt.Sprintf("%d more changed field(s) are listed in har_diff.unhandled_inputs", len(diff.UnhandledInputs)-itemIndex))

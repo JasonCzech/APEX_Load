@@ -106,8 +106,7 @@ func (r *DiffReport) ResolveUnhandledInputs(sent func(value string) bool) {
 		return
 	}
 	r.UnhandledInputs = nil
-	// A comparison that stopped at its change limit lists only what it reached.
-	r.UnhandledInputsTruncated = r.requestInputsTruncated
+	r.UnhandledInputsTruncated = false
 	for _, input := range r.requestInputs {
 		kept := map[string]*diffInputValue{}
 		for value, recorded := range input.values {
@@ -507,14 +506,20 @@ func diffInputKind(baseline, other string, responses *diffResponseScan, index in
 	}
 }
 
-// diffSameShapeSmallNumbers reports values that differ only in numbers of at
-// most four digits, such as Aura action ids ("12;a" and "15;a").
+// diffSameShapeSmallNumbers reports values that differ only in short
+// numbers, such as Aura action ids ("12;a" and "15;a"): at most four digits,
+// or up to seven in a value too short to search for (a long session's
+// "12345;a").
 func diffSameShapeSmallNumbers(baseline, other string) bool {
 	if diffDigitRun.ReplaceAllString(baseline, "0") != diffDigitRun.ReplaceAllString(other, "0") {
 		return false
 	}
+	maxRun := 4
+	if len(baseline) < diffInputMinSearchBytes && len(other) < diffInputMinSearchBytes {
+		maxRun = 7
+	}
 	for _, run := range append(diffDigitRun.FindAllString(baseline, -1), diffDigitRun.FindAllString(other, -1)...) {
-		if len(run) > 4 {
+		if len(run) > maxRun {
 			return false
 		}
 	}
@@ -550,27 +555,44 @@ func diffInputReason(kind string) string {
 
 // diffResponseScan answers whether a value appears in a baseline response
 // before a given request. The application responses (static assets are left
-// out) are joined on first use, up to diffInputMaxResponseScanBytes; each
-// distinct value is searched once, for its first occurrence, within the same
-// total byte budget.
+// out) are read on first use, up to diffInputMaxResponseScanBytes in all; a
+// response that does not fit is skipped and remembered. Each response's
+// tokens (runs between quotes, spaces and URL or markup delimiters) are
+// indexed by the first response that holds them, so a value made of token
+// characters is answered by lookup; any other value is searched for once in
+// the joined text, within the same byte budget.
 type diffResponseScan struct {
 	observations []sample.HARSourceObservation
 	built        bool
 	joined       string
 	ends         []int // ends[i] is the end offset of response i in joined
-	// partial is set when any response was left out to fit the budget.
-	partial   bool
-	first     map[string]diffResponseHit
-	remaining int64
+	// firstSkipped is the first response left out to fit the budget, or
+	// len(observations) when none was.
+	firstSkipped int
+	// tokens maps each indexed token to the first response holding it;
+	// tokensComplete is false once the token limit stopped the index.
+	tokens         map[string]int
+	tokensComplete bool
+	first          map[string]diffResponseHit
+	remaining      int64
 }
 
+const (
+	// diffInputMaxResponseTokens bounds the response tokens indexed.
+	diffInputMaxResponseTokens = 1 << 21
+	// diffInputMaxTokenBytes bounds an indexed token; a longer value is
+	// searched for instead.
+	diffInputMaxTokenBytes = 512
+)
+
 type diffResponseHit struct {
-	index   int // -1 when not found
-	checked bool
+	index    int  // first response holding the value, -1 when none
+	searched bool // false when the search budget ran out first
 }
 
 // before reports whether value appears in a response earlier than request
-// index, and whether the search could tell.
+// index, and whether that could be told: a skipped response before index may
+// hold the value, and a search may run out of budget.
 func (s *diffResponseScan) before(index int, value string) (found, checked bool) {
 	if len(value) < diffInputMinSearchBytes {
 		return false, false
@@ -581,10 +603,13 @@ func (s *diffResponseScan) before(index int, value string) (found, checked bool)
 		hit = s.firstResponse(value)
 		s.first[value] = hit
 	}
-	if hit.index >= 0 {
-		return hit.index < index, true
+	if hit.index >= 0 && hit.index < index {
+		return true, true
 	}
-	return false, hit.checked
+	if !hit.searched {
+		return false, false
+	}
+	return false, s.firstSkipped >= index
 }
 
 func (s *diffResponseScan) build() {
@@ -594,6 +619,9 @@ func (s *diffResponseScan) build() {
 	s.built = true
 	s.first = map[string]diffResponseHit{}
 	s.remaining = diffInputMaxResponseScanBytes
+	s.firstSkipped = len(s.observations)
+	s.tokens = map[string]int{}
+	s.tokensComplete = true
 	var builder strings.Builder
 	s.ends = make([]int, len(s.observations))
 	for index, observation := range s.observations {
@@ -603,7 +631,7 @@ func (s *diffResponseScan) build() {
 				size += len(name) + len(value) + 3
 			}
 			if int64(builder.Len()+size) > diffInputMaxResponseScanBytes {
-				s.partial = true
+				s.firstSkipped = min(s.firstSkipped, index)
 			} else {
 				builder.WriteString(observation.ResponseBody)
 				for name, value := range observation.ResponseHeaders {
@@ -613,11 +641,63 @@ func (s *diffResponseScan) build() {
 					builder.WriteString(value)
 				}
 				builder.WriteString("\x00")
+				// Tokens are cut from the observation's own strings, not the
+				// growing builder, so they hold no superseded buffer alive.
+				s.indexTokens(observation.ResponseBody, index)
+				for _, value := range observation.ResponseHeaders {
+					s.indexTokens(value, index)
+				}
 			}
 		}
 		s.ends[index] = builder.Len()
 	}
 	s.joined = builder.String()
+}
+
+// diffTokenDelimiter reports a byte that ends a response token.
+func diffTokenDelimiter(c byte) bool {
+	switch c {
+	case ' ', '\t', '\r', '\n', '\x00', '"', '\'', '<', '>', '{', '}', '[', ']', '(', ')', ',', '=', '&', '?', '#', ':', ';', '\\':
+		return true
+	}
+	return false
+}
+
+func (s *diffResponseScan) indexTokens(text string, index int) {
+	for start := 0; start < len(text); {
+		for start < len(text) && diffTokenDelimiter(text[start]) {
+			start++
+		}
+		end := start
+		for end < len(text) && !diffTokenDelimiter(text[end]) {
+			end++
+		}
+		if length := end - start; length >= diffInputMinSearchBytes && length <= diffInputMaxTokenBytes {
+			token := text[start:end]
+			if _, seen := s.tokens[token]; !seen {
+				if len(s.tokens) >= diffInputMaxResponseTokens {
+					s.tokensComplete = false
+					return
+				}
+				s.tokens[token] = index
+			}
+		}
+		start = end
+	}
+}
+
+// diffTokenValue reports a value the token index can answer: no delimiter
+// bytes, and short enough to have been indexed.
+func diffTokenValue(value string) bool {
+	if len(value) > diffInputMaxTokenBytes {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		if diffTokenDelimiter(value[index]) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *diffResponseScan) firstResponse(value string) diffResponseHit {
@@ -628,23 +708,28 @@ func (s *diffResponseScan) firstResponse(value string) diffResponseHit {
 	if encoded := url.QueryEscape(value); encoded != value {
 		forms = append(forms, encoded)
 	}
-	offset := -1
+	best := -1
+	searched := true
 	for _, form := range forms {
+		if s.tokensComplete && diffTokenValue(form) {
+			if at, found := s.tokens[form]; found && (best < 0 || at < best) {
+				best = at
+			}
+			continue
+		}
 		s.remaining -= int64(len(s.joined))
 		if s.remaining < 0 {
-			if offset >= 0 {
-				break
+			searched = false
+			continue
+		}
+		if offset := strings.Index(s.joined, form); offset >= 0 {
+			at := sort.Search(len(s.ends), func(i int) bool { return s.ends[i] > offset })
+			if best < 0 || at < best {
+				best = at
 			}
-			return diffResponseHit{index: -1}
-		}
-		if at := strings.Index(s.joined, form); at >= 0 && (offset < 0 || at < offset) {
-			offset = at
 		}
 	}
-	if offset < 0 {
-		return diffResponseHit{index: -1, checked: !s.partial}
-	}
-	return diffResponseHit{index: sort.Search(len(s.ends), func(i int) bool { return s.ends[i] > offset }), checked: true}
+	return diffResponseHit{index: best, searched: searched || best >= 0}
 }
 
 // diffStaticResponse reports a script, style, image, font or media response:

@@ -46,14 +46,14 @@ type DiffReport struct {
 	// import fills them in with ResolveUnhandledInputs once the script is final.
 	UnhandledInputs          []DiffRequestInput `json:"unhandled_inputs,omitempty"`
 	UnhandledInputsTruncated bool               `json:"unhandled_inputs_truncated,omitempty"`
-	Warnings                 []string           `json:"warnings,omitempty"`
+	// RequestComparisonTruncated is set when the request-by-request
+	// comparison stopped at its limit, so later requests were not compared.
+	RequestComparisonTruncated bool     `json:"request_comparison_truncated,omitempty"`
+	Warnings                   []string `json:"warnings,omitempty"`
 
 	// requestInputs are every request field whose value changed, before the
 	// script decides which of them are still sent as recorded.
 	requestInputs []DiffRequestInput
-	// requestInputsTruncated is set when the field comparison stopped at its
-	// change limit, so later requests were not compared.
-	requestInputsTruncated bool
 }
 
 type DiffClassification struct {
@@ -245,7 +245,7 @@ func diffPrepared(ctx context.Context, baseline *ConvertResult, comparison *Comp
 	if err != nil {
 		return nil, aligner, err
 	}
-	report.requestInputs, report.requestInputsTruncated = requestInputs, truncated
+	report.requestInputs, report.RequestComparisonTruncated = requestInputs, truncated
 
 	sort.SliceStable(report.Classifications, func(i, j int) bool {
 		left := report.Classifications[i]

@@ -229,11 +229,16 @@ func TestDiffResponseScanSaysWhenItCouldNotLook(t *testing.T) {
 	if _, checked := scan.before(1, "short"); checked {
 		t.Fatal("a short value was searched for")
 	}
+	// A token-shaped value is answered by the token index, which costs no
+	// search budget; a value with delimiters is searched for, within budget.
 	scan.remaining = 0
-	if found, checked := scan.before(1, "another-missing-value"); found || checked {
-		t.Fatalf("past the budget = %v, %v, want not checked", found, checked)
+	if found, checked := scan.before(1, "another-missing-value"); found || !checked {
+		t.Fatalf("indexed lookup past the budget = %v, %v, want checked and not found", found, checked)
 	}
-	if kind := diffInputKind("another-missing-value", "other-missing-value!!", scan, 1); kind != DiffInputNotChecked {
+	if found, checked := scan.before(1, "another missing value"); found || checked {
+		t.Fatalf("search past the budget = %v, %v, want not checked", found, checked)
+	}
+	if kind := diffInputKind("another missing value", "other missing value!!", scan, 1); kind != DiffInputNotChecked {
 		t.Fatalf("kind = %q, want %q", kind, DiffInputNotChecked)
 	}
 }
@@ -312,10 +317,9 @@ func TestDiffIdentifierSegmentsKeepFieldNames(t *testing.T) {
 }
 
 // Inputs that need attention sort before counters, so a run of counter
-// fields cannot push them past the list limit; a comparison that stopped at
-// its change limit marks the list truncated.
+// fields cannot push them past the list limit.
 func TestDiffUnhandledInputsListActionableFirst(t *testing.T) {
-	report := &DiffReport{requestInputsTruncated: true}
+	report := &DiffReport{}
 	for index := 0; index < maxDiffUnhandledInputs; index++ {
 		report.requestInputs = append(report.requestInputs, DiffRequestInput{
 			Field:  "form:counter" + strconv.Itoa(index),
@@ -330,7 +334,37 @@ func TestDiffUnhandledInputsListActionableFirst(t *testing.T) {
 	if report.UnhandledInputs[0].Field != "form:token" {
 		t.Fatalf("first listed = %q, want the actionable form:token", report.UnhandledInputs[0].Field)
 	}
-	if !report.UnhandledInputsTruncated {
-		t.Fatal("a comparison stopped at its change limit did not mark the list truncated")
+	if !report.UnhandledInputsTruncated || len(report.UnhandledInputs) != maxDiffUnhandledInputs {
+		t.Fatalf("listed %d (truncated %v), want the list cut at %d", len(report.UnhandledInputs), report.UnhandledInputsTruncated, maxDiffUnhandledInputs)
+	}
+}
+
+// A response skipped to fit the budget may hold a value, so a value not found
+// before a request is "not checked" when a skipped response precedes it, and
+// checked when every skipped response comes after the request.
+func TestDiffResponseScanAccountsForSkippedResponses(t *testing.T) {
+	scan := &diffResponseScan{observations: []sample.HARSourceObservation{
+		{Observation: correlate.Observation{ID: 1, ResponseBody: "skipped holds value-in-skipped"}},
+		{Observation: correlate.Observation{ID: 2}},
+		{Observation: correlate.Observation{ID: 3, ResponseBody: "later value-in-skipped"}},
+		{Observation: correlate.Observation{ID: 4}},
+	}}
+	scan.build()
+	scan.firstSkipped = 0 // as if response 0 had not fit
+	if found, checked := scan.before(1, "never-returned-value"); found || checked {
+		t.Fatalf("value after a skipped response = %v, %v, want not checked", found, checked)
+	}
+	scan.firstSkipped = 3
+	if found, checked := scan.before(1, "never-returned-value"); found || !checked {
+		t.Fatalf("value before every skipped response = %v, %v, want checked", found, checked)
+	}
+}
+
+func TestDiffShortCounterValuesAllowLongerRuns(t *testing.T) {
+	if !diffSameShapeSmallNumbers("12345;a", "1234;a") {
+		t.Fatal("a long session's Aura action id was not read as a counter")
+	}
+	if diffSameShapeSmallNumbers("case-482913", "case-517204") {
+		t.Fatal("a long value with six-digit runs was read as a counter")
 	}
 }

@@ -109,3 +109,18 @@ func TestHARPairClientCountersAloneDoNotWarn(t *testing.T) {
 		}
 	}
 }
+
+// A comparison that stopped at its limit always says so, even when every input
+// it reached is handled.
+func TestHARPairTruncatedComparisonAlwaysSaysSo(t *testing.T) {
+	diff := &har.DiffReport{Compared: true, RequestComparisonTruncated: true}
+	if warning := HARPairUnhandledInputsWarning(diff); !strings.Contains(warning, "stopped at its limit") {
+		t.Fatalf("warning = %q, want the truncation noted", warning)
+	}
+	sections := AppendHARPairUnhandledInputs(HarImportReviewSections(&har.ConvertResult{Diff: diff}), diff)
+	for _, section := range sections {
+		if section.Key == "har_pair_diff" && (section.Severity != "warning" || !strings.Contains(strings.Join(section.Items, "\n"), "stopped at its limit")) {
+			t.Fatalf("section = %#v, want the truncation listed as a warning", section)
+		}
+	}
+}
