@@ -192,22 +192,25 @@ func (r *DiffReport) RequestInputValues() []string {
 	return values
 }
 
-// diffPreparePrefixBytes is the prefix Prepare matches candidates on; a
-// shorter value is left to Sends.
-const diffPreparePrefixBytes = 4
+// diffPrepareKeyBytes is the prefix Prepare files a candidate under; a
+// shorter candidate is filed under its first byte.
+const diffPrepareKeyBytes = 8
 
 // Prepare answers Sends for values in one pass over the opaque text, so the
 // values the token index cannot answer share a single search instead of
-// spending it once each.
+// spending it once each. The pass is charged the text once plus every
+// candidate comparison; when the budget runs out it stops, and the values it
+// did not find are left to Sends, which then answers yes.
 func (v ScriptValues) Prepare(values []string) {
 	if v.opaqueText == "" || v.answers == nil {
 		return
 	}
-	byPrefix := map[string][]string{}
+	byKey := map[string][]string{}
+	byFirst := map[byte][]string{}
 	owners := map[string][]string{}
 	var pending []string
 	for _, value := range values {
-		if _, done := v.answers[value]; done {
+		if _, done := v.answers[value]; done || value == "" {
 			continue
 		}
 		if v.fields[value] {
@@ -218,19 +221,13 @@ func (v ScriptValues) Prepare(values []string) {
 			v.answers[value] = true
 			continue
 		}
-		forms := diffSearchForms(value)
-		short := false
-		for _, form := range forms {
-			if len(form) < diffPreparePrefixBytes {
-				short = true
-			}
-		}
-		if short {
-			continue
-		}
-		for _, form := range forms {
+		for _, form := range diffSearchForms(value) {
 			if _, seen := owners[form]; !seen {
-				byPrefix[form[:diffPreparePrefixBytes]] = append(byPrefix[form[:diffPreparePrefixBytes]], form)
+				if len(form) >= diffPrepareKeyBytes {
+					byKey[form[:diffPrepareKeyBytes]] = append(byKey[form[:diffPrepareKeyBytes]], form)
+				} else {
+					byFirst[form[0]] = append(byFirst[form[0]], form)
+				}
 			}
 			owners[form] = append(owners[form], value)
 		}
@@ -245,13 +242,43 @@ func (v ScriptValues) Prepare(values []string) {
 		return
 	}
 	text := v.opaqueText
-	for at := 0; at+diffPreparePrefixBytes <= len(text); at++ {
-		candidates := byPrefix[text[at:at+diffPreparePrefixBytes]]
-		for _, form := range candidates {
-			if strings.HasPrefix(text[at:], form) {
-				for _, value := range owners[form] {
-					v.answers[value] = true
+	// match compares the candidates filed under one bucket at text[at:],
+	// charging each comparison, and drops a form once it is found.
+	match := func(at int, candidates []string) ([]string, bool) {
+		for index := 0; index < len(candidates); {
+			form := candidates[index]
+			*v.remaining -= int64(len(form))
+			if *v.remaining < 0 {
+				return candidates, false
+			}
+			if !strings.HasPrefix(text[at:], form) {
+				index++
+				continue
+			}
+			for _, value := range owners[form] {
+				v.answers[value] = true
+			}
+			candidates[index] = candidates[len(candidates)-1]
+			candidates = candidates[:len(candidates)-1]
+		}
+		return candidates, true
+	}
+	for at := 0; at < len(text); at++ {
+		if candidates := byFirst[text[at]]; len(candidates) > 0 {
+			remaining, ok := match(at, candidates)
+			if !ok {
+				return
+			}
+			byFirst[text[at]] = remaining
+		}
+		if at+diffPrepareKeyBytes <= len(text) {
+			key := text[at : at+diffPrepareKeyBytes]
+			if candidates := byKey[key]; len(candidates) > 0 {
+				remaining, ok := match(at, candidates)
+				if !ok {
+					return
 				}
+				byKey[key] = remaining
 			}
 		}
 	}

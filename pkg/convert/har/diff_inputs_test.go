@@ -479,7 +479,8 @@ func TestScriptValuesPrepareSharesOneSearch(t *testing.T) {
 		{Name: "b", Type: "request", Method: "POST", Target: "/b", Body: `{"broken": {{var.y}} "tail":"zzInsideTokenValuezz"`},
 	}}
 	values := ScriptRequestValues(script)
-	*values.remaining = int64(len(values.opaqueText)) + 1
+	// Room for the pass and its comparisons, not for a search per value.
+	*values.remaining = 2 * int64(len(values.opaqueText))
 	candidates := []string{"InsideTokenValue", "TemplatedAway01", "TemplatedAway02", "TemplatedAway03"}
 	values.Prepare(candidates)
 	if !values.Sends("InsideTokenValue") {
@@ -499,5 +500,39 @@ func TestDiffTokenIndexDecodesRepeatedPercentEncoding(t *testing.T) {
 	index.add("payload=%257B%2522id%2522%253A%2522DoubleEncoded1%2522%257D", 1)
 	if found, _ := index.lookup("DoubleEncoded1"); !found {
 		t.Fatal("a value inside double-encoded text was not indexed")
+	}
+}
+
+// Prepare charges every candidate comparison, so values sharing a prefix that
+// the text repeats cannot run the pass past the budget; once it is spent the
+// values not found count as sent.
+func TestScriptValuesPrepareChargesItsComparisons(t *testing.T) {
+	body := `{"broken": {{var.y}} "tail":"` + strings.Repeat("t=17618491;", 2000) + `"`
+	values := ScriptRequestValues(&dsl.Script{Actions: []dsl.Action{{Name: "b", Type: "request", Method: "POST", Target: "/b", Body: body}}})
+	*values.remaining = int64(len(values.opaqueText)) + 1000
+	var candidates []string
+	for index := 0; index < 200; index++ {
+		candidates = append(candidates, "17618491"+strconv.Itoa(100000+index))
+	}
+	values.Prepare(candidates)
+	if *values.remaining >= 0 {
+		t.Fatalf("remaining = %d, want the comparisons charged past the budget", *values.remaining)
+	}
+	if !values.Sends(candidates[0]) {
+		t.Fatal("a value the spent pass did not reach was taken for handled")
+	}
+}
+
+// Values shorter than the key are answered in the same pass, so they do not
+// each spend another search of the text.
+func TestScriptValuesPrepareAnswersShortValues(t *testing.T) {
+	values := ScriptRequestValues(&dsl.Script{Actions: []dsl.Action{{Name: "b", Type: "request", Method: "POST", Target: "/b", Body: `{"broken": {{var.y}} "tail":"xx ab; yy"`}}})
+	*values.remaining = int64(len(values.opaqueText)) + 64
+	values.Prepare([]string{"ab;", "zq!", "LongerAbsentValue"})
+	if !values.Sends("ab;") {
+		t.Fatal("a short value the text holds was taken for handled")
+	}
+	if values.Sends("zq!") || values.Sends("LongerAbsentValue") {
+		t.Fatal("a value the text does not hold was reported as sent")
 	}
 }
