@@ -156,10 +156,10 @@ func (vu *VUser) replayBeforeBoundary(ctx context.Context, controller ReplayDebu
 		if snapshot.State != "unavailable" {
 			action = snapshot.Location
 		}
-		return extended.BeforeActionWithRuntimeState(ctx, action, snapshot)
+		return extended.BeforeActionWithRuntimeState(ctx, vu.maskDebugSecrets(action), maskDebugSecrets(vu.debugSecretMask, snapshot))
 	}
 	if controller != nil {
-		return controller.BeforeAction(ctx, action)
+		return controller.BeforeAction(ctx, vu.maskDebugSecrets(action))
 	}
 	return nil
 }
@@ -169,10 +169,10 @@ func (vu *VUser) replayAfterBoundary(ctx context.Context, controller ReplayDebug
 		if snapshot.State != "unavailable" {
 			action = snapshot.Location
 		}
-		return extended.AfterActionWithRuntimeState(ctx, action, event, snapshot)
+		return extended.AfterActionWithRuntimeState(ctx, vu.maskDebugSecrets(action), maskDebugSecrets(vu.debugSecretMask, event), maskDebugSecrets(vu.debugSecretMask, snapshot))
 	}
 	if legacy, ok := controller.(ReplayDebugControllerAfter); ok {
-		return legacy.AfterAction(ctx, action, event)
+		return legacy.AfterAction(ctx, vu.maskDebugSecrets(action), maskDebugSecrets(vu.debugSecretMask, event))
 	}
 	return nil
 }
