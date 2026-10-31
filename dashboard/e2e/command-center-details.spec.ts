@@ -620,3 +620,110 @@ test('live network phase graphs connect sparse samples without extending into em
   await expectConnectedPaths('.recharts-line-curve[stroke-width="4"]', 1)
   await chart.screenshot({ path: testInfo.outputPath('continuous-network-phases.png') })
 })
+
+test('right-clicking live Command Center graphs to overlay VUsers or ART preserves underlying series across tabs', async ({ page, seedLiveRun }, testInfo) => {
+  test.setTimeout(150_000)
+  const run = await seedLiveRun({ label: 'command-overlay-vusers' })
+  const sampleStart = Date.now() - 5000
+  const history = Array.from({ length: 6 }, (_, index) => ({
+    timestamp: new Date(sampleStart + index * 1000).toISOString(),
+    active_vusers: 1200 + index * 300,
+    tps: 14 + index * 2,
+    target_tps: 28,
+    request_rate: 14 + index * 2,
+    total_transactions: (index + 1) * 16,
+    total_errors: index > 2 ? 1 : 0,
+    avg_response_ms: 85 + index * 8,
+    error_pct: index > 2 ? 0.4 : 0.1,
+    p50_ms: 60 + index * 5,
+    p90_ms: 95 + index * 7,
+    p95_ms: 115 + index * 9,
+    p99_ms: 145 + index * 11,
+    resources: {
+      cpu_process_pct: 32 + index * 2,
+      cpu_free_pct: 58 - index * 2,
+      mem_process_mb: 480 + index * 10,
+      mem_free_mb: 1568 - index * 10,
+      net_sent_kbps: 140 + index * 12,
+      net_recv_kbps: 260 + index * 15,
+      disk_read_kbps: 12,
+      disk_write_kbps: 18,
+      container_cpu_usage_pct: 34 + index * 2,
+      container_cpu_throttled_seconds_rate: 0.2,
+      container_memory_usage_pct: 41 + index,
+      gc_pause_ms: 3.5 + index * 0.4,
+      net_drop_in_per_sec: 0,
+      net_error_in_per_sec: 0,
+      tcp_retransmits_per_sec: 1,
+      disk_io_time_pct: 7,
+    },
+  }))
+  await page.route(url => url.pathname === `/api/v1/tests/${run.testId}`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({ response, json: { ...payload, history, live_metrics: history[history.length - 1] } })
+  })
+  await page.routeWebSocket(url => url.pathname === `/api/v1/tests/${run.testId}/stream`, socket => {
+    socket.onMessage(() => undefined)
+  })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`/#/command-center/${run.testId}`)
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      'apexload.commandCenter.grafana.chartMetricFilters',
+      JSON.stringify({
+        tps: ['StaleGroup_tps'],
+        latency: ['vusers'],
+        errors: ['transaction:StaleTx:errorPct'],
+        load_impact_p95: ['StaleGroup__loadImpactAverage'],
+      }),
+    )
+  })
+  await page.reload()
+
+  const cockpit = page.locator('.command-center-page')
+  await cockpit.getByRole('button', { name: 'Graph Wall', exact: true }).click()
+
+  const countNonEmptyLines = async (chartId: string) => {
+    const card = cockpit.locator(`[data-chart-id="${chartId}"]`)
+    await expect(card).toBeVisible()
+    return card.locator('path.recharts-line-curve').evaluateAll(paths => (
+      paths.filter(path => {
+        const d = path.getAttribute('d') || ''
+        return d.includes('M') && (path as SVGPathElement).getTotalLength() > 0
+      }).length
+    ))
+  }
+
+  for (const chartId of ['tps', 'latency', 'errors']) {
+    const card = cockpit.locator(`[data-chart-id="${chartId}"]`)
+    await expect.poll(() => countNonEmptyLines(chartId)).toBeGreaterThan(0)
+    const beforeCount = await countNonEmptyLines(chartId)
+    await card.click({ button: 'right', position: { x: 140, y: 90 } })
+    await page.getByRole('menuitem', { name: 'Overlay VUsers', exact: true }).click()
+    await expect(card.locator('.chart-title')).toContainText('+ VUsers')
+    await expect.poll(() => countNonEmptyLines(chartId)).toBe(beforeCount + 1)
+  }
+
+  await cockpit.getByRole('tab', { name: /^Infrastructure/ }).click()
+  const impactCard = cockpit.locator('[data-chart-id="generator_impact"]')
+  await expect.poll(() => countNonEmptyLines('generator_impact')).toBeGreaterThan(0)
+  const impactBefore = await countNonEmptyLines('generator_impact')
+  await impactCard.click({ button: 'right', position: { x: 140, y: 90 } })
+  await page.getByRole('menuitem', { name: 'Overlay VUsers', exact: true }).click()
+  await expect(impactCard.locator('.chart-title')).toContainText('+ VUsers')
+  // Overlay VUsers must add strictly one curve on the right axis, not duplicate onto the left axis.
+  await expect.poll(() => countNonEmptyLines('generator_impact')).toBe(impactBefore + 1)
+
+  await cockpit.getByRole('tab', { name: /^Under Load/ }).click()
+  const p95UnderLoad = cockpit.locator('[data-chart-id="load_impact_p95"]')
+  await expect.poll(() => countNonEmptyLines('load_impact_p95')).toBe(1)
+  await p95UnderLoad.click({ button: 'right', position: { x: 140, y: 90 } })
+  await page.getByRole('menuitem', { name: 'Overlay ART', exact: true }).click()
+  await expect(p95UnderLoad.locator('.chart-title')).toContainText('+ ART')
+  await expect.poll(() => countNonEmptyLines('load_impact_p95')).toBe(2)
+
+  await cockpit.getByRole('tab', { name: /^Live Metrics/ }).click()
+  await cockpit.locator('[data-chart-id="tps"]').screenshot({ path: testInfo.outputPath('command-center-tps-overlay-vusers.png') })
+})

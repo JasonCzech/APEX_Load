@@ -98,6 +98,7 @@ import {
   sortMetricTableRows,
   rawGraphMetricKey,
   resolveSharedCursorTime,
+  resolveVisibleChartMetricKeys,
   shouldRenderArtStdDevBands,
   smoothingRadiusForGraphDensity,
   smoothedGraphMetricKey,
@@ -1482,7 +1483,12 @@ export default function TestExecutionCharts({
       }
       if (!storedKeys?.includes(key)) return next
       const nextKeys = storedKeys.filter(storedKey => storedKey !== key)
-      return nextKeys.length > 0 ? { ...next, [filterKey]: nextKeys } : next
+      if (nextKeys.length > 0) {
+        return { ...next, [filterKey]: nextKeys }
+      }
+      const rest = { ...next }
+      delete rest[filterKey]
+      return rest
     }, prev))
   }
 
@@ -1534,12 +1540,14 @@ export default function TestExecutionCharts({
     return groupColor ? { ...row, color: groupColor } : row
   })
 
-  const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
-    const availableKeys = rows.map(row => row.key)
-    const storedKeys = chartMetricFilters[metricFilterKeyForChart(chart)]?.filter(key => availableKeys.includes(key)) ?? []
-    const defaultKeys = chart.defaultMetricKeys?.filter(key => availableKeys.includes(key)) ?? []
-    return storedKeys.length > 0 ? storedKeys : defaultKeys.length > 0 ? defaultKeys : availableKeys
-  }
+  const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart), filters = chartMetricFilters) => (
+    resolveVisibleChartMetricKeys(
+      chart,
+      rows.map(row => row.key),
+      filters[metricFilterKeyForChart(chart)],
+      overlayMetricKeysForChart(chart),
+    )
+  )
 
   const visibleOverlayMetricKeys = (chart: ChartConfig, visibleMetricKeys: string[]) => {
     const overlayKeys = overlayMetricKeysForChart(chart)
@@ -1555,14 +1563,16 @@ export default function TestExecutionCharts({
 
   const toggleMetricRow = (chart: ChartConfig, rows: ChartMetricRow[], key: string) => {
     const availableKeys = rows.map(row => row.key)
-    const defaultKeys = chart.defaultMetricKeys?.filter(candidate => availableKeys.includes(candidate)) ?? []
+    const overlayKeySet = new Set<string>(overlayMetricKeysForChart(chart))
+    const hasPrimarySeries = availableKeys.some(candidate => !overlayKeySet.has(candidate))
     const filterKey = metricFilterKeyForChart(chart)
     setChartMetricFilters(prev => {
-      const currentKeys = prev[filterKey]?.filter(candidate => availableKeys.includes(candidate)) ?? (defaultKeys.length > 0 ? defaultKeys : availableKeys)
+      const currentKeys = visibleMetricKeysForChart(chart, rows, prev)
       const nextKeys = currentKeys.includes(key)
         ? currentKeys.filter(candidate => candidate !== key)
         : [...currentKeys, key]
       if (nextKeys.length === 0) return prev
+      if (hasPrimarySeries && !nextKeys.some(candidate => !overlayKeySet.has(candidate))) return prev
       return { ...prev, [filterKey]: nextKeys }
     })
   }
@@ -2343,10 +2353,16 @@ export default function TestExecutionCharts({
     if (!selectedKey || !visibleMetricKeys.includes(selectedKey)) return null
     const row = metricRows.find(candidate => candidate.key === selectedKey)
     if (!row) return null
+    const visibleOverlayKeys = visibleOverlayMetricKeys(chart, visibleMetricKeys)
+    const resolvedYAxisId = visibleOverlayKeys.includes(selectedKey as OverlayMetricKey)
+      ? (selectedKey === 'vusers' ? 'vusers' : 'rateOverlay')
+      : chart.id === 'network_latency' && routeLatencyMode === 'stability' && selectedKey === routeLatencySuccessRateKey
+        ? 'successRate'
+        : yAxisId
     const presentation = chartMetricLinePresentation(row)
     return (
       <Line
-        yAxisId={yAxisId}
+        yAxisId={resolvedYAxisId}
         type="monotone"
         dataKey={displayMetricKey(selectedKey)}
         stroke={row.color}
@@ -2475,6 +2491,8 @@ export default function TestExecutionCharts({
     }
     const canFilter = rows.length > 1
     const allVisible = visibleMetricKeys.length === rows.length
+    const overlayKeySet = new Set<string>(overlayMetricKeysForChart(chart))
+    const visiblePrimaryCount = visibleMetricKeys.filter(key => !overlayKeySet.has(key)).length
     const sort = tableSortByChart[chart.id]
     const sortedRows = sortMetricTableRows(rows, summaries, sort)
     const selectedKey = selectedMetricByChart[chart.id] ?? null
@@ -2516,6 +2534,7 @@ export default function TestExecutionCharts({
             {sortedRows.map(row => {
               const summary = summaries[row.key] ?? { samples: 0 }
               const visible = visibleMetricKeys.includes(row.key)
+              const isLastVisiblePrimary = !overlayKeySet.has(row.key) && visiblePrimaryCount <= 1
               const selected = selectedKey === row.key
               return (
                 <tr
@@ -2527,7 +2546,7 @@ export default function TestExecutionCharts({
                       <input
                         type="checkbox"
                         checked={visible}
-                        disabled={visible && visibleMetricKeys.length === 1}
+                        disabled={visible && (visibleMetricKeys.length === 1 || isLastVisiblePrimary)}
                         aria-label={`Show ${row.label}`}
                         onChange={() => toggleMetricRow(chart, rows, row.key)}
                       />
@@ -2928,6 +2947,9 @@ export default function TestExecutionCharts({
               expanded: expandedChart === chart.id,
             }
             const includeArtStdDevBand = shouldRenderArtStdDevBands(chart, visibleMetricKeys, artStdDevBandsEnabled)
+            const showTargetTpsLine = surface === 'command-center'
+              && chart.id === 'tps'
+              && chartData.some(point => typeof point.targetTps === 'number' && Number.isFinite(point.targetTps))
             // The downsample/std-dev-band/smoothing pipeline is the expensive part of this map body.
             // Recompute it only when this chart's actual inputs change; reuse the cached result on
             // unrelated re-renders (hover, ticks that leave this chart's data untouched).
@@ -2942,6 +2964,7 @@ export default function TestExecutionCharts({
               overlayKeys: visibleOverlayKeysForTitle,
               smoothedMetricKeys,
               includeArtStdDevBand,
+              showTargetTpsLine,
             })
             const cachedDerived = derivedSeriesCacheRef.current.get(chart.id)
             let downsampledChartData: MetricsHistoryPoint[]
@@ -2959,7 +2982,7 @@ export default function TestExecutionCharts({
               downsampledChartData = downsampleDenseCharts
                 ? downsampleGraphData(
                     chartData,
-                    [...visibleMetricKeys, ...visibleOverlayKeysForTitle, 'targetTps'],
+                    [...visibleMetricKeys, ...visibleOverlayKeysForTitle, ...(showTargetTpsLine ? ['targetTps'] : [])],
                     downsampleTargetPointsForGraphDensity(density),
                   )
                 : chartData
@@ -3001,7 +3024,10 @@ export default function TestExecutionCharts({
             // the plotted values are the `__smoothed` keys, whose peaks are lower than
             // the raw samples -- scaling to the raw peak leaves a transient spike
             // stretching the axis while the drawn line stays flattened near the x-axis.
-            const displayMetricKeysForDomain = primaryMetricKeysForDomain.map(displayMetricKey)
+            const displayMetricKeysForDomain = [
+              ...primaryMetricKeysForDomain.map(displayMetricKey),
+              ...(showTargetTpsLine ? ['targetTps'] : []),
+            ]
             const metricAxisDomain = visibleMetricDomain(
               displayChartData,
               includeArtStdDevBand ? [...displayMetricKeysForDomain, ART_STD_DEV_BAND_KEY] : displayMetricKeysForDomain,
@@ -3176,7 +3202,7 @@ export default function TestExecutionCharts({
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
-                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                  <ReferenceArea yAxisId={metricAxisIdForChart} x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : chart.type === 'line-load-impact' ? (
@@ -3218,6 +3244,7 @@ export default function TestExecutionCharts({
                     )
                   })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
               </ComposedChart>
             ) : chart.type === 'line-load-impact-percentiles' ? (
               <ComposedChart
@@ -3255,6 +3282,7 @@ export default function TestExecutionCharts({
                     )
                   })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
+                {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
               </ComposedChart>
             ) : chart.type === 'line-prometheus' ? (
               <ComposedChart
@@ -3323,13 +3351,13 @@ export default function TestExecutionCharts({
                       />
                     )
                   })}
-                {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
+                {showTargetTpsLine && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--text-secondary)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" connectNulls isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
-                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                  <ReferenceArea yAxisId={metricAxisIdForChart} x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : chart.type === 'line-latency' ? (
@@ -3395,7 +3423,7 @@ export default function TestExecutionCharts({
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
-                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                  <ReferenceArea yAxisId={metricAxisIdForChart} x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : chart.type === 'area-multi' || chart.type === 'area-stacked' ? (
@@ -3421,7 +3449,7 @@ export default function TestExecutionCharts({
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
-                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                  <ReferenceArea yAxisId={metricAxisIdForChart} x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : chart.type === 'line-impact' ? (
@@ -3441,7 +3469,9 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
-                {metricRows.map((row) => showMetric(row.key) && (
+                {metricRows
+                  .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
+                  .map((row) => showMetric(row.key) && (
                   <Line
                     key={row.key}
                     yAxisId={metricAxisIdForChart}
@@ -3458,7 +3488,7 @@ export default function TestExecutionCharts({
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
-                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                  <ReferenceArea yAxisId={metricAxisIdForChart} x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : chart.type === 'line-network' ? (
@@ -3480,7 +3510,9 @@ export default function TestExecutionCharts({
                 <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
-                {metricRows.map((row) => showMetric(row.key) && (
+                {metricRows
+                  .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
+                  .map((row) => showMetric(row.key) && (
                     <Line
                       key={row.key}
                       yAxisId={row.key === routeLatencySuccessRateKey ? 'successRate' : metricAxisIdForChart}
@@ -3497,7 +3529,7 @@ export default function TestExecutionCharts({
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
-                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                  <ReferenceArea yAxisId={metricAxisIdForChart} x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             ) : (
@@ -3525,7 +3557,7 @@ export default function TestExecutionCharts({
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
-                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                  <ReferenceArea yAxisId={metricAxisIdForChart} x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </ComposedChart>
             )}

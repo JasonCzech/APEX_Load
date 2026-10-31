@@ -38,6 +38,7 @@ import {
   prometheusChartData,
   rawGraphMetricKey,
   resolveSharedCursorTime,
+  resolveVisibleChartMetricKeys,
   responsePercentileChartId,
   RESPONSE_PERCENTILE_KEYS,
   responseTimeDataWithoutNetworkLatency,
@@ -990,4 +991,100 @@ it('counts selection provenance in the live CSV column limit', () => {
  const keys = ['avgMs', ...groups.map(name => `${name}_avgMs`)]
  expect(() => graphCsvForChart(chart, [], groups, [], false, [], 'total', undefined, [], { visibleKeys: keys, context: { run_id: 'run' } })).toThrow('column limit')
  expect(() => graphCsvForChart(chart, [], groups.slice(1), [], false, [], 'total', undefined, [], { visibleKeys: keys, context: { run_id: 'run' } })).not.toThrow()
+})
+
+describe('resolveVisibleChartMetricKeys and overlay availability', () => {
+  const tpsChart: ChartConfig = { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' }
+  const loadImpactP95Chart: ChartConfig = {
+    id: 'load_impact_p95',
+    title: 'P95 Under Load',
+    type: 'line-load-impact',
+    defaultMetricKeys: ['average'],
+    loadImpactMetric: { id: 'p95', key: 'p95', label: 'P95', unit: 'ms', category: 'performance' },
+  }
+
+  it.each([
+    {
+      name: 'returns all available keys when no filter or defaultMetricKeys exist',
+      chart: tpsChart,
+      availableKeys: ['tps', 'Browse_tps', 'vusers'],
+      storedFilterKeys: undefined,
+      overlayKeys: ['vusers' as const],
+      expected: ['tps', 'Browse_tps', 'vusers'],
+    },
+    {
+      name: 'appends active overlay keys to defaultMetricKeys on Under Load charts without enabling min/max',
+      chart: loadImpactP95Chart,
+      availableKeys: ['average', 'min', 'max', 'avgMs', 'tps'],
+      storedFilterKeys: undefined,
+      overlayKeys: ['avgMs' as const, 'tps' as const],
+      expected: ['average', 'avgMs', 'tps'],
+    },
+    {
+      name: 'falls back to underlying primary series plus active overlay when stored filter contains only stale primary keys',
+      chart: tpsChart,
+      availableKeys: ['tps', 'Browse_tps', 'vusers'],
+      storedFilterKeys: ['Checkout_tps', 'vusers'],
+      overlayKeys: ['vusers' as const],
+      expected: ['tps', 'Browse_tps', 'vusers'],
+    },
+    {
+      name: 'falls back to underlying primary series plus active overlay when stored filter has stranded overlay-only key',
+      chart: tpsChart,
+      availableKeys: ['tps', 'Browse_tps', 'vusers'],
+      storedFilterKeys: ['vusers'],
+      overlayKeys: ['vusers' as const],
+      expected: ['tps', 'Browse_tps', 'vusers'],
+    },
+    {
+      name: 'falls back to defaultMetricKeys plus active overlay when Under Load stored filter has only stale group keys',
+      chart: { ...loadImpactP95Chart, defaultMetricKeys: ['average'] },
+      availableKeys: ['average', 'min', 'max', 'avgMs'],
+      storedFilterKeys: ['Checkout__loadImpactAverage', 'avgMs'],
+      overlayKeys: ['avgMs' as const],
+      expected: ['average', 'avgMs'],
+    },
+    {
+      name: 'preserves valid primary filter choices alongside active overlay',
+      chart: tpsChart,
+      availableKeys: ['tps', 'Checkout_tps', 'Browse_tps', 'vusers'],
+      storedFilterKeys: ['tps', 'Browse_tps', 'vusers'],
+      overlayKeys: ['vusers' as const],
+      expected: ['tps', 'Browse_tps', 'vusers'],
+    },
+    {
+      name: 'respects explicitly unchecked overlay row when at least one valid primary series remains visible',
+      chart: tpsChart,
+      availableKeys: ['tps', 'Checkout_tps', 'Browse_tps', 'vusers'],
+      storedFilterKeys: ['tps', 'Browse_tps'],
+      overlayKeys: ['vusers' as const],
+      expected: ['tps', 'Browse_tps'],
+    },
+    {
+      name: 'returns empty list when chart has no available keys',
+      chart: loadImpactHeatmapChart,
+      availableKeys: [],
+      storedFilterKeys: ['vusers'],
+      overlayKeys: ['vusers' as const],
+      expected: [],
+    },
+  ])('$name', ({ chart, availableKeys, storedFilterKeys, overlayKeys, expected }) => {
+    expect(resolveVisibleChartMetricKeys(chart, availableKeys, storedFilterKeys, overlayKeys)).toEqual(expected)
+  })
+
+  it('disables overlays on heatmaps and imported dashboard panels', () => {
+    expect(isOverlayMetricAvailable(loadImpactHeatmapChart, 'vusers')).toBe(false)
+    expect(isOverlayMetricAvailable(loadImpactHeatmapChart, 'avgMs')).toBe(false)
+    expect(isOverlayMetricAvailable(loadImpactHeatmapChart, 'tps')).toBe(false)
+
+    const importedStatTile: ChartConfig = {
+      id: 'gdash_1_2',
+      title: 'Requests',
+      type: 'stat-tile',
+      importedPanel: { dashboardId: '1', dashboardTitle: 'Ops', panelId: 2, kind: 'single_value' },
+    }
+    expect(isOverlayMetricAvailable(importedStatTile, 'vusers')).toBe(false)
+    expect(isOverlayMetricAvailable(importedStatTile, 'avgMs')).toBe(false)
+    expect(isOverlayMetricAvailable(importedStatTile, 'tps')).toBe(false)
+  })
 })

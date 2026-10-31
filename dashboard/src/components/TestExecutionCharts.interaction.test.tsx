@@ -130,7 +130,9 @@ vi.mock('recharts', () => {
     ReferenceLine: ({ x, yAxisId }: { x?: string | number; yAxisId?: string | number }) => (
       <path data-testid="mock-reference-line" data-x={String(x ?? '')} data-y-axis-id={String(yAxisId ?? '')} />
     ),
-    ReferenceArea: Mock,
+    ReferenceArea: ({ x1, x2, yAxisId }: { x1?: string | number; x2?: string | number; yAxisId?: string | number }) => (
+      <rect data-testid="mock-reference-area" data-x1={String(x1 ?? '')} data-x2={String(x2 ?? '')} data-y-axis-id={String(yAxisId ?? '')} />
+    ),
     ResponsiveContainer: ({ children, height }: { children?: ReactNode; height?: number }) => <div data-testid="mock-responsive-container" data-height={String(height ?? '')}>{children}</div>,
     Tooltip: MockTooltip,
     XAxis: ({ dataKey, label }: { dataKey?: string; label?: string | { value?: string; position?: string } }) => (
@@ -2835,6 +2837,201 @@ describe('TestExecutionCharts context menu', () => {
     const remountedSelect = await openGranularityDrawer()
     expect(remountedSelect?.value).toBe('15')
     expect(window.localStorage.getItem('apexload.execution.chartGranularity')).toBe('15')
+  })
+
+  it('preserves underlying Command Center chart series when Overlay VUsers is toggled over stale or stranded metric filters', async () => {
+    window.localStorage.setItem(
+      'apexload.commandCenter.grafana.chartMetricFilters',
+      JSON.stringify({
+        tps: ['Checkout_tps'],
+        latency: ['vusers'],
+        errors: ['transaction:OldCheckout:errorPct'],
+      }),
+    )
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', timestampMs: 0, vusers: 50, tps: 12, targetTps: 20, Browse_tps: 12, avgMs: 110, Browse_avgMs: 110, errorPct: 0.4, Browse_errorPct: 0.4, p50: 80, p90: 100, p95: 115, p99: 130 },
+            { time: '10:00:01', timestampMs: 1_000, vusers: 100, tps: 18, targetTps: 20, Browse_tps: 18, avgMs: 120, Browse_avgMs: 120, errorPct: 0.5, Browse_errorPct: 0.5, p50: 85, p90: 105, p95: 118, p99: 135 },
+          ]}
+          expandedChart="tps"
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea
+          refAreaLeft="10:00:00"
+          refAreaEnd="10:00:01"
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup
+          groupNames={['Browse']}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+          surface="command-center"
+          storageScope="apexload.commandCenter.grafana"
+          defaultDensity="command_center"
+        />,
+      )
+    })
+
+    const cardById = (id: string) => container.querySelector<HTMLElement>(`[data-chart-id="${id}"]`)
+
+    // Target TPS belongs only on the TPS chart, never on Error Rate or Response Percentile charts.
+    expect(cardById('tps')?.querySelector('path[data-testid="mock-line"][data-name="Target"]')).not.toBeNull()
+    expect(cardById('errors')?.querySelector('path[data-testid="mock-line"][data-name="Target"]')).toBeNull()
+    expect(cardById('latency_p95')?.querySelector('path[data-testid="mock-line"][data-name="Target"]')).toBeNull()
+
+    for (const chartId of ['tps', 'latency', 'errors']) {
+      const card = cardById(chartId)!
+      await act(async () => {
+        card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
+      })
+      await act(async () => {
+        menuButton('Overlay VUsers')?.click()
+      })
+    }
+
+    const tpsCard = cardById('tps')!
+    expect(tpsCard.querySelector('path[data-testid="mock-line"][data-name="Total"]')).not.toBeNull()
+    expect(tpsCard.querySelector('path[data-testid="mock-line"][data-name="Browse"]')).not.toBeNull()
+    expect(tpsCard.querySelector('path[data-testid="mock-line"][data-name="Target"]')).not.toBeNull()
+    expect(tpsCard.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]')?.getAttribute('data-y-axis-id')).toBe('vusers')
+    expect(tpsCard.querySelector('rect[data-testid="mock-reference-area"]')?.getAttribute('data-y-axis-id')).toBe('metric')
+
+    const latencyCard = cardById('latency')!
+    expect(latencyCard.querySelector('path[data-testid="mock-line"][data-name="Total"]')).not.toBeNull()
+    expect(latencyCard.querySelector('path[data-testid="mock-line"][data-name="Browse"]')).not.toBeNull()
+    expect(latencyCard.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]')?.getAttribute('data-y-axis-id')).toBe('vusers')
+
+    const errorsCard = cardById('errors')!
+    expect(errorsCard.querySelector('path[data-testid="mock-line"][data-name="Total"]')).not.toBeNull()
+    expect(errorsCard.querySelector('path[data-testid="mock-line"][data-name="Browse"]')).not.toBeNull()
+    expect(errorsCard.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]')?.getAttribute('data-y-axis-id')).toBe('vusers')
+
+    // Unchecking one of two primary series keeps the last primary series locked so the
+    // chart can never be left showing only the VUsers overlay.
+    const hideTotal = tpsCard.querySelector<HTMLInputElement>('input[aria-label="Show Total"]')!
+    const showBrowse = tpsCard.querySelector<HTMLInputElement>('input[aria-label="Show Browse"]')!
+    const showVusers = tpsCard.querySelector<HTMLInputElement>('input[aria-label="Show Active VUsers"]')!
+    expect(hideTotal.disabled).toBe(false)
+    await act(async () => {
+      hideTotal.click()
+    })
+    expect(tpsCard.querySelector('path[data-testid="mock-line"][data-name="Total"]')).toBeNull()
+    expect(tpsCard.querySelector('path[data-testid="mock-line"][data-name="Browse"]')).not.toBeNull()
+    expect(showBrowse.disabled).toBe(true)
+    expect(showVusers.disabled).toBe(false)
+
+    // Hiding the VUsers overlay on latency removes the stranded ['vusers'] filter entry cleanly.
+    await act(async () => {
+      latencyCard.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 160 }))
+    })
+    await act(async () => {
+      menuButton('Hide VUsers Overlay')?.click()
+    })
+    const persistedFilters = JSON.parse(window.localStorage.getItem('apexload.commandCenter.grafana.chartMetricFilters') ?? '{}') as Record<string, string[]>
+    expect(persistedFilters.latency).toBeUndefined()
+  })
+
+  it('keeps overlays off the primary Y-axis on Generator Impact, Route Latency, and selected-series highlights, and renders overlays on Under Load graphs', async () => {
+    await renderGraphSourceState({
+      activeGraphGroupTab: 'infrastructure',
+      expandedChart: 'generator_impact',
+      filteredData: [
+        {
+          time: '10:00:00',
+          timestampMs: 0,
+          vusers: 2500,
+          tps: 80,
+          avgMs: 110,
+          errorPct: 0,
+          p50: 80,
+          p90: 100,
+          p95: 120,
+          p99: 150,
+          containerCPUUsagePct: 42,
+          gcPauseMs: 4,
+          latency_api_443: 6,
+          latency_api_443__jitter: 1.2,
+          latency_api_443__successRate: 99.5,
+        },
+        {
+          time: '10:00:01',
+          timestampMs: 1_000,
+          vusers: 3000,
+          tps: 95,
+          avgMs: 125,
+          errorPct: 0,
+          p50: 85,
+          p90: 105,
+          p95: 130,
+          p99: 165,
+          containerCPUUsagePct: 48,
+          gcPauseMs: 5,
+          latency_api_443: 7,
+          latency_api_443__jitter: 1.5,
+          latency_api_443__successRate: 99.8,
+        },
+      ],
+    })
+
+    const impactCard = container.querySelector<HTMLElement>('[data-chart-id="generator_impact"]')!
+    await act(async () => {
+      impactCard.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    })
+    await act(async () => {
+      menuButton('Overlay VUsers')!.click()
+    })
+
+    const impactVuserLines = Array.from(impactCard.querySelectorAll('path[data-testid="mock-line"][data-name="Active VUsers"]'))
+    expect(impactVuserLines).toHaveLength(1)
+    expect(impactVuserLines[0]?.getAttribute('data-y-axis-id')).toBe('vusers')
+    expect(impactCard.querySelector('path[data-testid="mock-line"][data-name="Container CPU"]')?.getAttribute('data-y-axis-id')).toBe('metric')
+
+    // Highlighting Active VUsers in Measurements must bind the bold emphasis line to the 'vusers' axis, not 'metric'.
+    const highlightVusers = Array.from(impactCard.querySelectorAll<HTMLButtonElement>('button.chart-metric-name'))
+      .find(button => button.textContent?.includes('Active VUsers'))!
+    await act(async () => {
+      highlightVusers.click()
+    })
+    const vuserKeyLines = Array.from(impactCard.querySelectorAll('path[data-testid="mock-line"][data-key="vusers"]'))
+    expect(vuserKeyLines).toHaveLength(2)
+    expect(vuserKeyLines.every(line => line.getAttribute('data-y-axis-id') === 'vusers')).toBe(true)
+
+    const networkCard = container.querySelector<HTMLElement>('[data-chart-id="network_latency"]')!
+    await act(async () => {
+      networkCard.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    })
+    await act(async () => {
+      menuButton('Overlay VUsers')!.click()
+    })
+    const networkVuserLines = Array.from(networkCard.querySelectorAll('path[data-testid="mock-line"][data-name="Active VUsers"]'))
+    expect(networkVuserLines).toHaveLength(1)
+    expect(networkVuserLines[0]?.getAttribute('data-y-axis-id')).toBe('vusers')
+    expect(networkCard.querySelector('path[data-testid="mock-line"][data-key="latency_api_443__smoothed"]')?.getAttribute('data-y-axis-id')).toBe('metric')
+
+    // Switch to Under Load graphs and verify Overlay ART renders alongside defaultMetricKeys ('average').
+    await renderGraphSourceState({
+      activeGraphGroupTab: 'under_load',
+      filteredData: [
+        { time: '10:00:00', timestampMs: 0, vusers: 10, tps: 20, avgMs: 95, errorPct: 0, p50: 70, p90: 90, p95: 110, p99: 140 },
+        { time: '10:00:01', timestampMs: 1_000, vusers: 50, tps: 80, avgMs: 140, errorPct: 0.2, p50: 95, p90: 130, p95: 165, p99: 210 },
+      ],
+    })
+    const p95UnderLoad = container.querySelector<HTMLElement>('[data-chart-id="load_impact_p95"]')!
+    expect(p95UnderLoad.querySelector('path[data-testid="mock-line"][data-name="Average"]')).not.toBeNull()
+    await act(async () => {
+      p95UnderLoad.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    })
+    await act(async () => {
+      menuButton('Overlay ART')!.click()
+    })
+    expect(p95UnderLoad.querySelector('path[data-testid="mock-line"][data-name="Average"]')?.getAttribute('data-y-axis-id')).toBe('metric')
+    expect(p95UnderLoad.querySelector('path[data-testid="mock-line"][data-name="ART"]')?.getAttribute('data-y-axis-id')).toBe('rateOverlay')
   })
 
   function menuActionTexts() {
