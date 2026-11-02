@@ -3,7 +3,9 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -14,11 +16,15 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-func TestHARImportValidateOnlyIsStateless(t *testing.T) {
+// TestHARImportValidateOnlySkipsSourceSecretSession pins what validate_only
+// still keeps: the draft save attestation, so the reviewed draft can be saved,
+// while the source-secret session is skipped.
+func TestHARImportValidateOnlySkipsSourceSecretSession(t *testing.T) {
 	server, _, _, projectID := newProjectSecretAPIServer(t)
 	settings := server.runner.GetSystemSettings()
 	settings.ScriptImports.AllowSourceSecretMigration = true
@@ -44,9 +50,10 @@ func TestHARImportValidateOnlyIsStateless(t *testing.T) {
 		}
 	}`
 
-	// 1. validate_only=true makes zero draft-attestation or source-secret session mutations.
+	// 1. validate_only=true (JSON body only) allocates no source-secret
+	// session, yet still issues the attestation that saves the draft.
 	inspectPayload, err := json.Marshal(map[string]any{
-		"name":          "Stateless Inspect",
+		"name":          "Validate Only Inspect",
 		"project_id":    projectID,
 		"content":       harJSON,
 		"validate_only": true,
@@ -54,7 +61,7 @@ func TestHARImportValidateOnlyIsStateless(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspectReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har?validate_only=true&project_id="+projectID, bytes.NewReader(inspectPayload))
+	inspectReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har?project_id="+projectID, bytes.NewReader(inspectPayload))
 	inspectReq.Header.Set("Content-Type", "application/json")
 	inspectResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(inspectResp, inspectReq)
@@ -109,6 +116,116 @@ func TestHARImportValidateOnlyIsStateless(t *testing.T) {
 	}
 	if sid, _ := fullBody["source_secret_session_id"].(string); strings.TrimSpace(sid) == "" {
 		t.Fatalf("full convert did not allocate source_secret_session_id: %#v", fullBody)
+	}
+}
+
+// TestHARImportValidateOnlySkipsSourceFullTextOnEveryChannel covers the
+// retention validate_only still skips, the full text of a source file cut at
+// the review preview limit, on each channel that carries the flag: the JSON
+// body, the query string of a JSON upload, and a multipart field.
+func TestHARImportValidateOnlySkipsSourceFullTextOnEveryChannel(t *testing.T) {
+	const projectID = "validate-only-source-text"
+	server := sourceReviewTextTestServer(t, projectID)
+	// One request whose response body pushes the capture past the preview
+	// limit, so a full import keeps the whole text beside the review.
+	harJSON := `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/catalog","headers":[]},` +
+		`"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/plain"}],` +
+		`"content":{"mimeType":"text/plain","text":"` + strings.Repeat("catalog-row ", sourceview.MaxFileChars/8) + `"}}}]}}`
+	if len(harJSON) <= sourceview.MaxFileChars {
+		t.Fatalf("fixture is %d bytes, want more than the %d-character preview", len(harJSON), sourceview.MaxFileChars)
+	}
+
+	postJSON := func(t *testing.T, query string, fields map[string]any) *httptest.ResponseRecorder {
+		t.Helper()
+		fields["project_id"] = projectID
+		fields["content"] = harJSON
+		payload, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har?filename=catalog.har&project_id="+projectID+query, bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+	postMultipart := func(t *testing.T, validateOnly bool) *httptest.ResponseRecorder {
+		t.Helper()
+		var body bytes.Buffer
+		mw := multipart.NewWriter(&body)
+		_ = mw.WriteField("project_id", projectID)
+		if validateOnly {
+			_ = mw.WriteField("validate_only", "true")
+		}
+		file, err := mw.CreateFormFile("file", "catalog.har")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = file.Write([]byte(harJSON))
+		_ = mw.Close()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", &body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+	fullTextDigests := func(t *testing.T, resp *httptest.ResponseRecorder) []string {
+		t.Helper()
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", resp.Code, resp.Body.String())
+		}
+		var decoded struct {
+			SourceReview *sourceview.Review `json:"source_review"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.SourceReview == nil || len(decoded.SourceReview.SourceFiles) == 0 {
+			t.Fatalf("response has no source review: %s", resp.Body.String())
+		}
+		var digests []string
+		truncated := false
+		for _, file := range decoded.SourceReview.SourceFiles {
+			truncated = truncated || file.Truncated
+			if file.FullSHA256 != "" {
+				digests = append(digests, file.FullSHA256)
+			}
+		}
+		if !truncated {
+			t.Fatalf("source review kept the whole capture in its preview; the fixture must exceed it")
+		}
+		return digests
+	}
+
+	// The controls: without the flag each channel keeps the full text, so the
+	// validate_only cases below fail if the flag stops being read.
+	if digests := fullTextDigests(t, postJSON(t, "", map[string]any{"name": "Full JSON"})); len(digests) == 0 {
+		t.Fatal("a full JSON import kept no source full text; the validate_only cases would prove nothing")
+	}
+	if digests := fullTextDigests(t, postMultipart(t, false)); len(digests) == 0 {
+		t.Fatal("a full multipart import kept no source full text; the validate_only case would prove nothing")
+	}
+
+	cases := []struct {
+		name string
+		post func(t *testing.T) *httptest.ResponseRecorder
+	}{
+		{"json body", func(t *testing.T) *httptest.ResponseRecorder {
+			return postJSON(t, "", map[string]any{"name": "Body Flag", "validate_only": true})
+		}},
+		{"json query", func(t *testing.T) *httptest.ResponseRecorder {
+			return postJSON(t, "&validate_only=true", map[string]any{"name": "Query Flag"})
+		}},
+		{"multipart field", func(t *testing.T) *httptest.ResponseRecorder {
+			return postMultipart(t, true)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if digests := fullTextDigests(t, tc.post(t)); len(digests) != 0 {
+				t.Fatalf("validate_only kept source full text %v", digests)
+			}
+		})
 	}
 }
 
@@ -175,12 +292,66 @@ func TestHARPairDuplicateCaptureSkipsDiffWithActionableReason(t *testing.T) {
 			t.Fatalf("har_diff = %#v, want compared=false for zipped identical secondary_file", decoded.Summary.HARDiff)
 		}
 	})
+
+	// The baseline is salvaged before the import compares it, so the raw
+	// comparison never equals it byte for byte; the comparison job salvages
+	// its copy the same way and must still see one capture, not diff it
+	// against itself.
+	t.Run("same truncated capture salvaged on both sides", func(t *testing.T) {
+		truncated := truncatedSalvageHAR()
+		resp, decoded := postHARPairJSON(t, "/api/v1/scripts/import/har", map[string]any{
+			"name":              "Duplicate Truncated Pair",
+			"content":           truncated,
+			"secondary_content": truncated,
+			"salvage_truncated": true,
+		})
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", resp.Code, resp.Body.String())
+		}
+		if decoded.Summary.HARDiff == nil || decoded.Summary.HARDiff.Compared || !strings.Contains(decoded.Summary.HARDiff.Reason, "identical captures") {
+			t.Fatalf("har_diff = %#v, want compared=false with identical captures reason", decoded.Summary.HARDiff)
+		}
+	})
+}
+
+// TestPrepareHARComparisonInflatesOnlyInsideTheJob pins that a zipped
+// comparison is unwrapped by the comparison job alone: one that turns out to be
+// the baseline stops before conversion, and a bad archive fails only the
+// comparison, with the archive's own error.
+func TestPrepareHARComparisonInflatesOnlyInsideTheJob(t *testing.T) {
+	capture := apiCredentialCorrelationHAR("zipped-duplicate-token-1234567890")
+	zipped := func(names ...string) []byte {
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		for _, name := range names {
+			entry, err := zw.Create(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = entry.Write([]byte(capture))
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	if identicalHARComparisonPayload([]byte(capture), zipped("run.har")) {
+		t.Fatal("identicalHARComparisonPayload inflated a zipped comparison; only the comparison job may")
+	}
+	prepared, _, err := prepareHARComparison(context.Background(), zipped("run.har"), []byte(capture), har.ConvertOptions{})
+	if !errors.Is(err, errIdenticalHARComparison) || prepared != nil {
+		t.Fatalf("prepareHARComparison(zipped baseline) = %v, %v; want errIdenticalHARComparison and no conversion", prepared, err)
+	}
+	_, _, err = prepareHARComparison(context.Background(), zipped("one.har", "two.har"), []byte(capture), har.ConvertOptions{})
+	if err == nil || !strings.Contains(err.Error(), "2 .har files") {
+		t.Fatalf("prepareHARComparison(two-capture archive) err = %v, want the archive error", err)
+	}
 }
 
 func TestHARImportBaseURLValidation(t *testing.T) {
 	capture := `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/ping"},"response":{"status":200,"content":{"text":"ok"}}}]}}`
 
-	for _, bad := range []string{"acme.my.salesforce.com", "ftp://acme.my.salesforce.com"} {
+	for _, bad := range []string{"acme.my.salesforce.com", "ftp://acme.my.salesforce.com", "ftp://files{{x}}", "javascript:{{x}}", "not a url {{"} {
 		resp, _ := postHARPairJSON(t, "/api/v1/scripts/import/har", map[string]any{
 			"name":    "Bad BaseURL",
 			"content": capture,
@@ -199,6 +370,31 @@ func TestHARImportBaseURLValidation(t *testing.T) {
 		})
 		if resp.Code != http.StatusOK {
 			t.Fatalf("base_url %q status = %d, want 200: %s", good, resp.Code, resp.Body.String())
+		}
+	}
+}
+
+func TestHARImportBaseURLTemplatesMustBeWellFormed(t *testing.T) {
+	for value, want := range map[string]bool{
+		"":                                  true,
+		"https://acme.my.salesforce.com":    true,
+		"{{param.base_url}}":                true,
+		"{{BaseURL}}/app":                   true,
+		"https://{{env}}.example.test":      true,
+		"http://api.example.test/{{ver}}":   true,
+		"https://{{host}}:{{port}}/app":     true,
+		"https://api.example.test:{{port}}": true,
+		"ftp://files{{x}}":                  false,
+		"javascript:{{x}}":                  false,
+		"not a url {{":                      false,
+		"{{unclosed":                        false,
+		"{{}}":                              false,
+		"https://api.example.test/}}":       false,
+		"{{a}} {{b}}":                       false,
+		"api.example.test/{{path}}":         false,
+	} {
+		if got := harImportBaseURLAccepted(value); got != want {
+			t.Errorf("harImportBaseURLAccepted(%q) = %v, want %v", value, got, want)
 		}
 	}
 }
@@ -717,7 +913,23 @@ func TestSyntheticSalesforceHARPairEndToEndWorkflow(t *testing.T) {
 	}
 	blocked := countBlocked(decoded.Script.Init) + countBlocked(decoded.Script.Actions) + countBlocked(decoded.Script.Teardown)
 	if blocked != 1 {
-		t.Fatalf("blocked unexported-body actions = %d, want 1 (telemetry beacon should be filtered)", blocked)
+		t.Fatalf("blocked unexported-body actions = %d, want 1 (the bodiless r=4 POST)", blocked)
+	}
+	// The beacon carries a body, so the blocked count above cannot see it;
+	// default telemetry filtering is pinned by the stats and the script.
+	if decoded.Stats.FilteredTelemetry < 1 {
+		t.Fatalf("stats.filtered_telemetry = %d, want the InstrumentationBeaconController POST filtered by default", decoded.Stats.FilteredTelemetry)
+	}
+	// Only the steps: the preserved source review still shows the capture.
+	stepsJSON, err := json.Marshal([][]dsl.Action{decoded.Script.Init, decoded.Script.Actions, decoded.Script.Teardown})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stepsJSON), "InstrumentationBeaconController") {
+		t.Fatal("telemetry beacon InstrumentationBeaconController survived as a step; default filtering should drop it")
+	}
+	if decoded.Preflight.Valid {
+		t.Fatal("import preflight valid = true, want false while the unexported-body POST blocks replay")
 	}
 
 	// Stage 2: Exclude the unexported-body action via POST /api/v1/scripts/import/exclude-actions,
@@ -944,7 +1156,7 @@ func stripBlockedJSONActions(raw any) []any {
 }
 
 func TestHARConverterFixesTelemetryDefaultAuraNamesAndCountRecount(t *testing.T) {
-	// 1. Default telemetry filtering + TotalEntries / FilteredTelemetry stats + numbered Aura step naming.
+	// 1. Default telemetry filtering + TotalRequests / FilteredTelemetry stats + numbered Aura step naming.
 	harJSON := `{
 		"log": {
 			"entries": [
@@ -1017,7 +1229,6 @@ func TestHARConverterFixesTelemetryDefaultAuraNamesAndCountRecount(t *testing.T)
 		Script dsl.Script `json:"script"`
 		Stats  struct {
 			TotalRequests     int `json:"total_requests"`
-			TotalEntries      int `json:"total_entries"`
 			FilteredAssets    int `json:"filtered_assets"`
 			FilteredTelemetry int `json:"filtered_telemetry"`
 			ConvertedActions  int `json:"converted_actions"`
@@ -1027,8 +1238,8 @@ func TestHARConverterFixesTelemetryDefaultAuraNamesAndCountRecount(t *testing.T)
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Stats.TotalEntries != 3 {
-		t.Fatalf("stats.total_entries = %d, want 3", body.Stats.TotalEntries)
+	if body.Stats.TotalRequests != 3 {
+		t.Fatalf("stats.total_requests = %d, want 3", body.Stats.TotalRequests)
 	}
 	if body.Stats.FilteredTelemetry != 1 {
 		t.Fatalf("stats.filtered_telemetry = %d, want 1 (telemetry filtering defaults on)", body.Stats.FilteredTelemetry)
@@ -1047,4 +1258,3 @@ func TestHARConverterFixesTelemetryDefaultAuraNamesAndCountRecount(t *testing.T)
 		t.Fatalf("expected numbered sfsites Aura action name to be enriched with SelectableListDataProviderController.getItems, got: %s", string(rawScript))
 	}
 }
-

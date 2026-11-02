@@ -28,8 +28,8 @@ type ScheduleClockChange struct {
 }
 
 const (
-	maxScheduleClockChanges       = 6
-	maxScheduleClockChangeTimes   = 3
+	maxScheduleClockChanges     = 6
+	maxScheduleClockChangeTimes = 3
 	maxScheduleClockTransitions = 64
 	// Two consecutive Nth-weekday-of-month DST transitions can be 53 weeks
 	// (371 days + 1 hour) apart, e.g. First Sunday of November 2026-11-01 to

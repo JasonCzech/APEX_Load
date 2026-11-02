@@ -317,3 +317,42 @@ func TestDiffReuseIndexHandlesEmptyAndShortText(t *testing.T) {
 		}
 	}
 }
+
+// Narrowing a group of Aura batches to each producer's action signature
+// decodes each batch envelope once, however many signatures the group is
+// narrowed to.
+func TestDiffNarrowDecodesEachAuraBatchOnce(t *testing.T) {
+	const n = 40
+	auraBatch := func(id int) sample.HARSourceObservation {
+		message := url.QueryEscape(fmt.Sprintf(`{"actions":[{"id":"%d;a","descriptor":"apex://Ctrl%d/ACTION$run","params":{}}]}`, id, id))
+		return sample.HARSourceObservation{
+			Method: "POST",
+			Observation: correlate.Observation{
+				ID:          id,
+				RequestURL:  fmt.Sprintf("https://acme.lightning.force.com/aura?r=%d", id),
+				RequestBody: "message=" + message + "&aura.token=t",
+			},
+		}
+	}
+	baseline := make([]sample.HARSourceObservation, 0, n)
+	comparison := make([]sample.HARSourceObservation, 0, n)
+	for id := 1; id <= n; id++ {
+		baseline = append(baseline, auraBatch(id))
+		comparison = append(comparison, auraBatch(id))
+	}
+	aligner := newDiffAligner(baseline, comparison, nil, nil)
+	group := diffRequestKey(baseline[0])
+	for _, producer := range baseline {
+		narrowKey := aligner.observationNarrowKey(false, producer)
+		if !strings.Contains(narrowKey, "#aura:") {
+			t.Fatalf("narrow key %q carries no Aura signature", narrowKey)
+		}
+		if got := aligner.narrow(diffNarrowKey{comparison: true, group: group, queryKeys: narrowKey}, comparison); len(got) != 1 || got[0].ID != producer.ID {
+			t.Fatalf("comparison narrowed to %d requests for producer %d", len(got), producer.ID)
+		}
+		aligner.narrow(diffNarrowKey{group: group, queryKeys: narrowKey}, baseline)
+	}
+	if limit := 2 * n; aligner.narrowKeyComputations > limit {
+		t.Fatalf("narrow keys computed = %d, want at most %d (one per observation)", aligner.narrowKeyComputations, limit)
+	}
+}

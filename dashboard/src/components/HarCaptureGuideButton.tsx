@@ -129,7 +129,7 @@ export default function HarCaptureGuideButton({
           <h4>3. Shrinking an already-recorded large HAR by 85–95%</h4>
           <ul className="har-capture-guide-steps">
             <li>
-              <strong>Zero-CLI option — upload as <code>.zip</code>:</strong> Both HAR dropzones accept <code>.zip</code> archives directly (up to 300 MB per capture). Compressing a raw JSON HAR typically reduces file size by <strong>80–90%</strong> (for example, 170 MB → ~18 MB) with zero loss of request or response data.
+              <strong>Zero-CLI option — upload as <code>.zip</code>:</strong> Both HAR dropzones accept <code>.zip</code> archives directly. The 300 MB limit applies to the decompressed HAR, so zipping speeds up the upload but does not admit a larger capture. Compressing a raw JSON HAR typically reduces file size by <strong>80–90%</strong> (for example, 170 MB → ~18 MB) with zero loss of request or response data.
             </li>
             <li>
               <strong>Optional CLI slimming (<code>jq</code>):</strong> Strip response body text <em>only</em> from static asset entries (<code>script</code>, <code>stylesheet</code>, <code>image</code>, <code>font</code>, <code>media</code>) while keeping every HTML document (<code>auraConfig</code>, login redirects), XHR/Fetch request and response body, cookie, header, and timing intact:

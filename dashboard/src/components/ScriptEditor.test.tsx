@@ -2807,6 +2807,19 @@ describe('ScriptEditor', () => {
     expect(lifecycleRows().some(row => row.textContent?.includes('Cleanup_B'))).toBe(true)
   })
 
+  it('tells the author which masked credentials a duplicated step goes without', async () => {
+    const maskedScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Sign in', type: 'POST', method: 'POST', target: '/login', body: 'un=alice&pw=[REDACTED]', header_list: [{ name: 'Authorization', value: 'Bearer [REDACTED]' }] } as unknown as ScriptDefinition['actions'][number]],
+    } as ScriptDefinition
+    await act(async () => { root.render(<ScriptEditor initialScript={maskedScript} />) })
+    const signIn = () => Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).find(row => row.textContent?.includes('Sign in') && !row.textContent?.includes('(copy)'))
+    await act(async () => {
+      signIn()?.querySelector<HTMLButtonElement>('[aria-label="Duplicate init action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.editor-toast.warning')?.textContent).toContain('The copy of Sign in has no value for 2 masked credentials (body, header Authorization)')
+  })
+
   it('remaps lifecycle breakpoints when lifecycle actions move and delete', async () => {
     const lifecycleScript: ScriptDefinition = {
       ...initialScript,
@@ -13768,9 +13781,12 @@ describe('ScriptEditor', () => {
       await act(async () => { problemsTab.click() })
       await flushReact()
 
-      const problemButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-problem-list button')).find(btn => btn.textContent?.includes('Supply or remove unexported HAR request body'))
-      expect(problemButton).toBeTruthy()
-      await act(async () => { problemButton!.click() })
+      const blockerGroup = container.querySelector<HTMLElement>('.debugger-problem-group')!
+      expect(blockerGroup.querySelector('h4')?.textContent).toBe('Blocking replay (1)')
+      expect(blockerGroup.textContent).toContain('Supply or remove unexported HAR request body')
+      // The blocker is listed once, in its group.
+      expect(Array.from(container.querySelectorAll('.debugger-problem-list .debugger-problem-row')).filter(row => row.textContent?.includes('Supply or remove unexported HAR request body'))).toHaveLength(1)
+      await act(async () => { findButtonByText(blockerGroup, 'Select in Author')!.click() })
       await flushReact()
 
       const repairPanel = container.querySelector<HTMLElement>('[data-blocker-repair]')
@@ -13782,6 +13798,41 @@ describe('ScriptEditor', () => {
 
       expect(topbarDebug().textContent).toBe('Debug one iteration')
       expect(topbarDebug().disabled).toBe(false)
+    })
+
+    it('deletes a blocked step from Debug Problems, keeping its sequence and breakpoints valid', async () => {
+      const blockedSequenceDraft: ScriptDefinition = {
+        ...initialScript,
+        actions: [
+          { name: 'Lightning Home', type: 'GET', method: 'GET', target: '/lightning/page/home' },
+          {
+            name: 'Concurrent requests',
+            type: 'http_sequence',
+            params: { requests: [
+              { name: 'Beacon', type: 'POST', method: 'POST', target: '/aura?r=1', metadata: { execution_blockers: ['har_request_body_not_exported'], review_required: true } },
+              { name: 'Load record', type: 'POST', method: 'POST', target: '/aura?r=2', body: 'message=%7B%7D' },
+            ] },
+          } as unknown as ScriptDefinition['actions'][number],
+        ],
+      }
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={blockedSequenceDraft} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      const problemsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+      await act(async () => { problemsTab.click() })
+      await flushReact()
+      const blockerGroup = container.querySelector<HTMLElement>('.debugger-problem-group')!
+      expect(blockerGroup.querySelector('h4')?.textContent).toBe('Blocking replay (1)')
+      await act(async () => { findButtonByText(blockerGroup, 'Delete blocked action')!.click() })
+      await flushReact()
+
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(container.querySelector('.debugger-problem-group')).toBeNull()
+      // Only the blocked request went; the sequence keeps its other request.
+      expect(debugOutlineRow(container, 'Concurrent requests')).toBeDefined()
+      expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Removed the blocked step')
     })
 
     it('disables Debug and surfaces an inline alert when Session Variables JSON is malformed', async () => {
@@ -13814,6 +13865,35 @@ describe('ScriptEditor', () => {
       })
       await flushReact()
       expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('active')
+    })
+
+    it('toggles the breakpoint of the selected init step with F9 and Cmd/Ctrl+B, not the first step', async () => {
+      const lifecycleScript: ScriptDefinition = {
+        ...initialScript,
+        init: [
+          { name: 'Warmup_A', type: 'GET', method: 'GET', target: '/a' },
+          { name: 'Warmup_B', type: 'GET', method: 'GET', target: '/b' },
+        ],
+      } as ScriptDefinition
+      await act(async () => { root.render(<KeyboardShortcutProvider>{withTopbar(<ScriptEditor initialScript={lifecycleScript} projectId="project-1" />)}</KeyboardShortcutProvider>) })
+      await flushReact()
+      const warmupB = Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).find(row => row.textContent?.includes('Warmup_B'))!
+      await act(async () => { warmupB.click() })
+      await flushReact()
+      await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9', bubbles: true, cancelable: true })) })
+      await flushReact()
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      expect(debugOutlineGutter(container, 'Warmup_B')?.className).toContain('active')
+      expect(debugOutlineGutter(container, 'Warmup_A')?.className).toContain('none')
+
+      // In Debug, Cmd/Ctrl+B on a focused outline row toggles that row alone.
+      const mainStep = debugOutlineRow(container, initialScript.actions[0].name)!
+      await act(async () => { mainStep.focus(); mainStep.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })) })
+      await flushReact()
+      expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('active')
+      expect(debugOutlineGutter(container, 'Warmup_A')?.className).toContain('none')
+      expect(debugOutlineGutter(container, 'Warmup_B')?.className).toContain('active')
     })
   })
 })

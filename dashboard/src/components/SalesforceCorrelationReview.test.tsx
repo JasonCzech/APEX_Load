@@ -26,7 +26,10 @@ describe('captured correlation source review', () => {
     expect(container.textContent).toContain('Original import path: actions[3]')
     expect(container.textContent).toContain('Native path at import: actions[0].params.actions[1]')
     expect(container.textContent).toContain('Draft replacement does not validate login, session freshness, or replay')
-    for (const value of ['private-name', 'private-source', 'private-value']) expect(container.innerHTML).not.toContain(value)
+    // The variable name is secret-free metadata; the source and extractor
+    // expression stay in the editor.
+    expect(container.querySelector('article h5')?.textContent).toBe('Correlation 1: private-name')
+    for (const value of ['private-source', 'private-value']) expect(container.innerHTML).not.toContain(value)
     act(() => { button('View producer source mapping').click(); button('View consumer 1 source mapping').click() })
     expect(navigate.mock.calls).toEqual([[mapping], [mapping]])
   })
@@ -128,4 +131,21 @@ describe('captured correlation source review', () => {
     expect(container.textContent).toContain('Detailed evidence incomplete')
   })
 
+
+  it('names each correlation with its rule, confidence, review action and reasons', () => {
+    render({ ...preview, correlations: [{ ...preview.correlations![0], name: 'corr_salesforce_aura_fwuid', rule_id: 'salesforce.aura_context_fwuid', confidence: 0.99, review_action: 'keep_extracted', reasons: ['fwuid in aura.context', 'same_day_release_coupled: constant across paired same-day captures'], classification: 'static', diff_confidence: 0.9 }] })
+    const row = container.querySelector('article')!
+    expect(row.querySelector('h5')?.textContent).toBe('Correlation 1: corr_salesforce_aura_fwuid')
+    expect(row.textContent).toContain('Review action: keep_extracted.')
+    expect(row.textContent).toContain('Rule salesforce.aura_context_fwuid · Confidence 99% · Two-HAR static (90%)')
+    expect(Array.from(row.querySelectorAll('[aria-label="Correlation reasons"] li')).map(item => item.textContent)).toEqual(['fwuid in aura.context', 'same_day_release_coupled: constant across paired same-day captures'])
+    expect(container.textContent).not.toContain('Correlation details are malformed')
+  })
+
+  it('drops malformed metadata fields and reports the row as malformed', () => {
+    render({ ...preview, correlations: [{ ...preview.correlations![0], name: 'corr_ok', confidence: 7, reasons: 'not-a-list' } as unknown as NonNullable<SalesforceNativePreview['correlations']>[number]] })
+    expect(container.querySelector('article h5')?.textContent).toBe('Correlation 1: corr_ok')
+    expect(container.textContent).not.toContain('Confidence')
+    expect(container.textContent).toContain('Correlation details are malformed or unavailable')
+  })
 })

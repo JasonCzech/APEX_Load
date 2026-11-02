@@ -27,6 +27,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -54,17 +55,24 @@ type projectionContext struct {
 	parameter           bool
 	dataSource          bool
 	metadata            bool
-	javaVMArgument      bool
-	untypedMap          bool
-	schemaScalar        bool
-	action              bool
-	actionList          bool
-	sequenceParams      bool
-	scriptMetadata      bool
-	importMetadata      bool
-	scriptName          bool
-	extractor           bool
-	extractorList       bool
+	// sentMetadataFamily is set on the metadata map of a Kafka or JMS send
+	// step, which delivers each top-level string entry its family does not
+	// treat as provenance as a record header or message property.
+	sentMetadataFamily string
+	// sentMetadataEntry marks such a delivered entry: an executable value,
+	// never a provenance identifier, whatever its key.
+	sentMetadataEntry bool
+	javaVMArgument    bool
+	untypedMap        bool
+	schemaScalar      bool
+	action            bool
+	actionList        bool
+	sequenceParams    bool
+	scriptMetadata    bool
+	importMetadata    bool
+	scriptName        bool
+	extractor         bool
+	extractorList     bool
 	// browserTarget is set for a browser step's target that is a locator or
 	// script, which is never read as a URL.
 	browserTarget dsl.BrowserTargetKind
@@ -220,7 +228,9 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				out[key] = child
 				continue
 			}
-			if ctx.metadata &&
+			sentEntry := ctx.sentMetadataFamily != "" &&
+				!messaging.MetadataKeyIsProvenance(ctx.sentMetadataFamily, key)
+			if ctx.metadata && !sentEntry &&
 				key == dsl.ImportActionUIDMetadataKey &&
 				dsl.IsValidImportActionUID(child) {
 				out[key] = child
@@ -302,7 +312,11 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 			}
 			if ctx.action && !ctx.metadata {
 				childContext.browserTarget = nonURLBrowserTarget(typed, key)
+				if normalized == "metadata" {
+					childContext.sentMetadataFamily = messagingSendMetadataFamily(stringValue(typed["type"]))
+				}
 			}
+			childContext.sentMetadataEntry = sentEntry
 			if ctx.transactionParams && (key == "args" || key == "call_args") {
 				childContext.transactionFunction, _ = typed["function"].(string)
 			}
@@ -506,7 +520,7 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 	if ctx.javaVMArgument && javarunner.ContainsSensitiveVMParameterValue(value) {
 		return credential.Redacted
 	}
-	if ctx.metadata && isPortableProvenanceIdentifier(ctx.key, value) {
+	if ctx.metadata && !ctx.sentMetadataEntry && isPortableProvenanceIdentifier(ctx.key, value) {
 		return p.replaceKnown(scrub.ValueURL(value, scrub.Policy{}))
 	}
 	if isSecretReferenceKey(ctx.key) && isNamedReference(value) {
@@ -1304,6 +1318,19 @@ func isReviewEvidenceKey(key string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// messagingSendMetadataFamily returns the messaging family of a step type that
+// sends its metadata (kafka.buildRecord, jms.buildMessage), or "".
+func messagingSendMetadataFamily(actionType string) string {
+	switch strings.ToLower(strings.TrimSpace(actionType)) {
+	case "kafka_produce", "kafka_request_reply":
+		return messaging.FamilyKafka
+	case "jms_publish", "jms_request_reply":
+		return messaging.FamilyJMS
+	default:
+		return ""
 	}
 }
 

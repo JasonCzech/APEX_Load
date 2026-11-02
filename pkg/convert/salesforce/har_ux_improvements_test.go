@@ -3,6 +3,7 @@ package salesforce
 import (
 	"encoding/json"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -54,13 +55,28 @@ func TestAuraTokenEikoocnekotConfirmationAndRedirectScope(t *testing.T) {
 				t.Fatalf("expected eikoocnekot confirmation for %s in correlation reasons: %#v", cookieName, review.NativePreview.Correlations)
 			}
 			var hasRedirectScope bool
+			expression := ""
 			for _, ext := range review.NativePreview.Script.Actions[0].Extractors {
 				if ext.Name == "corr_salesforce_aura_token" && ext.Scope != nil && ext.Scope.Redirects == "include" {
 					hasRedirectScope = true
+					expression = ext.Expression
 				}
 			}
 			if !hasRedirectScope {
 				t.Fatalf("expected Scope.Redirects=include on corr_salesforce_aura_token: %#v", review.NativePreview.Script.Actions[0].Extractors)
+			}
+			// Redirect hops are searched first and the first match wins, so the
+			// confirmed name must pin the extractor to exactly that cookie.
+			headers := "Set-Cookie: __Host-ERIC_PROD-1111111111111111111=hop-token; Path=/; Secure\r\n" +
+				"Set-Cookie: " + cookieName + "=confirmed-token; Path=/; Secure\r\n"
+			match := regexp.MustCompile(expression).FindStringSubmatch(headers)
+			if len(match) < 2 || match[1] != "confirmed-token" {
+				t.Fatalf("extractor %q matched %q, want only the confirmed %s cookie", expression, match, cookieName)
+			}
+			// Secret masking keeps only the generated Set-Cookie extractor's
+			// cookie name; any other spelling redacts the long ERIC name.
+			if name, generated := correlate.GeneratedSetCookieExtractor(expression); !generated || name != cookieName {
+				t.Fatalf("extractor %q is not the generated Set-Cookie form for %s (masking would redact the name)", expression, cookieName)
 			}
 		})
 	}

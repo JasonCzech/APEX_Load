@@ -70,7 +70,7 @@ describe('ActionBodyWorkspace', () => {
     const onUpdate = vi.fn()
     act(() => root.render(<ActionBodyWorkspace action={action} index={0} path="script.actions[0]" parameters={[]} onUpdate={onUpdate} onParameterize={vi.fn()} />))
     expect(container.querySelector('[aria-label="Aura envelope"]')).not.toBeNull()
-    expect(container.textContent).toContain('Apex · SearchCtrl.find')
+    expect(container.textContent).toContain('SearchCtrl.find')
 
     const rawBtn = Array.from(container.querySelectorAll('button')).find(btn => btn.textContent === 'Raw form body')!
     act(() => rawBtn.click())

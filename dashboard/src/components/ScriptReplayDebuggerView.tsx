@@ -208,6 +208,12 @@ export interface ScriptReplayDebuggerViewProps {
   onSelectProblemAction: (row: ScriptPhaseActionRow) => void
   additionalIssues?: IssueDetail[]
   onSelectAdditionalIssue?: (issue: IssueDetail) => void
+  /**
+   * The steps whose execution blockers refuse a run, listed first under
+   * "Blocking replay (N)", each opened in Author (onSelectAdditionalIssue) or
+   * deleted from the draft. Their rows are left out of additionalIssues' list.
+   */
+  replayBlockers?: Array<IssueDetail & { onDelete: () => void }>
   problemCount: number
   projectId?: string
   replayActivity: ReplayActivityItem[]
@@ -306,6 +312,7 @@ export function ScriptReplayDebuggerView({
   onSelectProblemAction,
   additionalIssues = [],
   onSelectAdditionalIssue,
+  replayBlockers = [],
   problemCount,
   projectId,
   replayActivity,
@@ -1342,6 +1349,25 @@ export function ScriptReplayDebuggerView({
                         <div className="debugger-empty">No validation warnings or authoring issues are currently reported.</div>
                       ) : (
                         <div className="debugger-problem-list">
+                          {replayBlockers.length > 0 && (
+                            <section className="debugger-problem-group" aria-label={`Blocking replay (${replayBlockers.length})`}>
+                              <h4>Blocking replay ({replayBlockers.length})</h4>
+                              {replayBlockers.map(issue => (
+                                <div key={issue.id} className="debugger-problem-row error replay-blocker">
+                                  <span>Blocker</span>
+                                  <strong>{issue.title}</strong>
+                                  {issue.source && <small>{issue.source}</small>}
+                                  {issue.description && <small>{issue.description}</small>}
+                                  <div className="debugger-problem-actions">
+                                    {issue.onSelect && onSelectAdditionalIssue && (
+                                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => onSelectAdditionalIssue(issue)}>Select in Author</button>
+                                    )}
+                                    <button type="button" className="btn btn-sm btn-ghost" onClick={issue.onDelete}>Delete blocked action</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </section>
+                          )}
                           {jsonParseMessage && (
                             <div className="debugger-problem-row error">
                               <span>JSON</span>
@@ -1381,7 +1407,7 @@ export function ScriptReplayDebuggerView({
                             </button>
                           ))}
                           {additionalIssues
-                            .filter(issue => issue.id !== 'json-parse-error' && issue.id !== 'current-error' && !issue.id.startsWith('runtime-warning-'))
+                            .filter(issue => issue.id !== 'json-parse-error' && issue.id !== 'current-error' && !issue.id.startsWith('runtime-warning-') && !replayBlockers.some(blocker => blocker.id === issue.id))
                             .map(issue => {
                               const severityClass = issue.severity === 'blocker' ? 'error' : issue.severity
                               const badgeLabel = issue.severity === 'blocker' ? 'Blocker' : issue.source || issue.severity

@@ -1,7 +1,8 @@
-import { Fragment, useId, useMemo, useState } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { HARDiffClassification, HARDiffReport, HARImportStats, SalesforceReview } from '../types/scriptImports'
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import { formatUpTo } from '../utils/numberFormat'
+import { admitNativeCorrelationEvidence, type AdmittedCorrelationMetadata } from './correlationEvidenceAdmission'
 import { findBlockedUnexportedBodyActions, flattenScriptActions } from './harCorrelationStudioModel'
 import './HarCorrelationStudio.css'
 
@@ -15,11 +16,22 @@ export interface HarCorrelationStudioProps {
   duplicateFileWarning?: string
   busy?: boolean
   onExcludeBlockedActions?: (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => void
+  /** Where Recording Studio opens, to re-record what the HAR export left out. */
+  recordingStudioHref?: string
 }
 
 type StudioFilter = 'all' | 'dynamic' | 'wired' | 'review' | 'release_static'
 
-type LifecycleStageId = 'stage1_init' | 'stage2_aura_context' | 'stage3_business' | 'stage4_teardown' | 'generic'
+// Salesforce HARs group by the four lifecycle stages a Lightning session goes
+// through; any other HAR groups by where its values come from.
+type LifecycleStageId =
+  | 'sf_identity'
+  | 'sf_bootstrap'
+  | 'sf_aura'
+  | 'sf_client'
+  | 'generic_auth'
+  | 'generic_app'
+  | 'generic_client'
 
 interface StudioRow {
   key: string
@@ -40,44 +52,70 @@ interface StudioRow {
 
 const DEFAULT_VISIBLE_ROWS = 15
 
-function classifySalesforceStage(
-  varName: string,
-  producerSection: 'Init' | 'Actions' | 'Teardown' | null,
+// Correlation rules (pkg/convert/correlate/rules.go) by the lifecycle stage
+// whose responses issue their values.
+const IDENTITY_RULES = new Set([
+  'salesforce.frontdoor_sid',
+  'salesforce.cshc',
+  'salesforce.confirmation_token',
+  'salesforce.oauth_identity_url',
+  'salesforce.oauth_authorize_redirect',
+])
+const BOOTSTRAP_RULES = new Set([
+  'salesforce.aura_context_fwuid',
+  'salesforce.aura_loaded',
+  'salesforce.aura_app_descriptor',
+  'salesforce.aura_page_uri',
+  'salesforce.aura_token',
+  'salesforce.aura_token_cookie',
+  'salesforce.aura_token_uncaptured_cookie',
+])
+const RELEASE_COUPLED_RULES = new Set(['salesforce.aura_context_fwuid', 'salesforce.aura_loaded'])
+const UNCAPTURED_COOKIE_RULE = 'salesforce.aura_token_uncaptured_cookie'
+const RELEASE_COUPLED_REASON = 'same_day_release_coupled'
+
+function isReleaseCoupled(metadata: AdmittedCorrelationMetadata | undefined): boolean {
+  if (!metadata) return false
+  return RELEASE_COUPLED_RULES.has(metadata.ruleId || '') || metadata.reasons.some(reason => reason.startsWith(RELEASE_COUPLED_REASON))
+}
+
+// The stage comes from the server's rule and from where the producing request
+// sits in the script, never from the variable's name.
+function lifecycleStage(
   isSalesforce: boolean,
+  ruleId: string | undefined,
+  producerSection: 'Init' | 'Actions' | 'Teardown' | null,
+  hasServerProducer: boolean,
+  cookieSource = false,
 ): LifecycleStageId {
-  if (!isSalesforce) return 'generic'
-  const lower = varName.toLowerCase()
-  if (producerSection === 'Teardown' || lower.includes('logout')) return 'stage4_teardown'
-  if (lower.includes('fwuid') || lower.includes('aura_context') || lower.includes('loaded')) return 'stage2_aura_context'
-  if (
-    producerSection === 'Init'
-    || lower.includes('aura_token')
-    || lower.includes('sid')
-    || lower.includes('cshc')
-    || lower.includes('frontdoor')
-    || lower.includes('contentdoor')
-    || lower.includes('recsession')
-    || lower.includes('salesforce_users')
-  ) {
-    return 'stage1_init'
+  if (isSalesforce) {
+    if (ruleId && IDENTITY_RULES.has(ruleId)) return 'sf_identity'
+    if (ruleId && BOOTSTRAP_RULES.has(ruleId)) return 'sf_bootstrap'
+    if (producerSection === 'Init' || producerSection === 'Teardown') return 'sf_identity'
+    return hasServerProducer ? 'sf_aura' : 'sf_client'
   }
-  return 'stage3_business'
+  if (producerSection === 'Init' || producerSection === 'Teardown' || cookieSource) return 'generic_auth'
+  return hasServerProducer ? 'generic_app' : 'generic_client'
 }
 
 const STAGE_TITLES: Record<LifecycleStageId, string> = {
-  stage1_init: 'Stage 1 · Desktop sign-in & session bootstrap (Init)',
-  stage2_aura_context: 'Stage 2 · Release-coupled Aura framework context',
-  stage3_business: 'Stage 3 · Business record & dynamic action correlations',
-  stage4_teardown: 'Stage 4 · Logout & session cleanup (Teardown)',
-  generic: 'Captured correlations & comparison findings',
+  sf_identity: 'Lifecycle stage 1: Identity & Frontdoor SSO',
+  sf_bootstrap: 'Lifecycle stage 2: Lightning bootstrap (/one/one.app)',
+  sf_aura: 'Lifecycle stage 3: Aura & Apex actions (Controller$method)',
+  sf_client: 'Lifecycle stage 4: Client counters & per-request IDs',
+  generic_auth: 'Authentication & session',
+  generic_app: 'Application endpoints',
+  generic_client: 'Client-generated inputs',
 }
 
 const STAGE_ORDER: LifecycleStageId[] = [
-  'stage1_init',
-  'stage2_aura_context',
-  'stage3_business',
-  'stage4_teardown',
-  'generic',
+  'sf_identity',
+  'sf_bootstrap',
+  'sf_aura',
+  'sf_client',
+  'generic_auth',
+  'generic_app',
+  'generic_client',
 ]
 
 function actionConsumesVariable(action: ScriptActionDefinition, varName: string): boolean {
@@ -107,59 +145,56 @@ export default function HarCorrelationStudio({
   duplicateFileWarning,
   busy = false,
   onExcludeBlockedActions,
+  recordingStudioHref,
 }: HarCorrelationStudioProps) {
   const headingId = useId()
+  const blockerIdPrefix = useId()
   const [filter, setFilter] = useState<StudioFilter>('all')
   const [expanded, setExpanded] = useState(false)
 
   const flattened = useMemo(() => flattenScriptActions(script), [script])
   const blockedActions = useMemo(() => findBlockedUnexportedBodyActions(script), [script])
   const isSalesforce = Boolean(salesforceReview?.detected)
+  // The analyzer's rule and evidence for each correlation, by variable name.
+  const correlationMetadata = useMemo(() => {
+    const byName = new Map<string, AdmittedCorrelationMetadata>()
+    for (const row of admitNativeCorrelationEvidence(salesforceReview?.native_preview).rows) {
+      if (row.name && !byName.has(row.name)) byName.set(row.name, row)
+    }
+    return byName
+  }, [salesforceReview?.native_preview])
+  const uncapturedCookieTokens = useMemo(
+    () => Array.from(correlationMetadata.values()).filter(row => row.ruleId === UNCAPTURED_COOKIE_RULE),
+    [correlationMetadata],
+  )
 
   const phaseCounts = useMemo(() => {
     let init = 0
     let actions = 0
     let teardown = 0
+    let extractors = 0
+    const transactions = new Set<string>()
     for (const item of flattened) {
       if (item.section === 'Init') init += 1
       else if (item.section === 'Teardown') teardown += 1
       else actions += 1
+      if (Array.isArray(item.action.extractors)) extractors += item.action.extractors.filter(ext => typeof ext?.name === 'string' && ext.name.trim()).length
+      const transaction = item.action.metadata?.source_transaction
+      if (typeof transaction === 'string' && transaction.trim()) transactions.add(transaction.trim())
     }
-    return { init, actions, teardown, total: init + actions + teardown }
+    return { init, actions, teardown, total: init + actions + teardown, extractors, transactions: transactions.size }
   }, [flattened])
 
+  // The server's total_requests counts every HAR entry it read, and its
+  // filtered_assets already includes filtered_telemetry.
   const funnel = useMemo(() => {
-    const hasServerTotalRequests = typeof stats?.total_requests === 'number' && stats.total_requests > 0
-    const filteredTelemetry = typeof stats?.filtered_telemetry === 'number' ? stats.filtered_telemetry : 0
-    if (hasServerTotalRequests) {
-      const filteredTotal = typeof stats?.filtered_assets === 'number' ? stats.filtered_assets : filteredTelemetry
-      const filteredStatic = Math.max(0, filteredTotal - filteredTelemetry)
-      const totalEntries = typeof stats?.total_entries === 'number' && stats.total_entries > 0
-        ? stats.total_entries
-        : (stats.total_requests ?? 0)
-      const totalHttp = typeof stats?.converted_actions === 'number' && stats.converted_actions > 0
-        ? stats.converted_actions
-        : phaseCounts.total
-      return {
-        totalEntries,
-        filteredTotal,
-        filteredStatic,
-        filteredTelemetry,
-        totalHttp,
-      }
-    }
-    const totalHttp = phaseCounts.total
-    const filteredStatic = typeof stats?.filtered_assets === 'number' ? stats.filtered_assets : 0
-    const totalEntries = typeof stats?.total_entries === 'number' && stats.total_entries > 0
-      ? stats.total_entries
-      : totalHttp + filteredStatic + filteredTelemetry
-    return {
-      totalEntries,
-      filteredTotal: filteredStatic + filteredTelemetry,
-      filteredStatic,
-      filteredTelemetry,
-      totalHttp,
-    }
+    const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0
+    const filteredTelemetry = count(stats?.filtered_telemetry)
+    const filteredTotal = Math.max(count(stats?.filtered_assets), filteredTelemetry)
+    const filteredStatic = filteredTotal - filteredTelemetry
+    const converted = count(stats?.converted_actions) || phaseCounts.total
+    const totalEntries = count(stats?.total_requests) || converted + filteredTotal + count(stats?.skipped_requests)
+    return { totalEntries, filteredTotal, filteredStatic, filteredTelemetry }
   }, [phaseCounts.total, stats])
 
   const rows = useMemo<StudioRow[]>(() => {
@@ -175,7 +210,7 @@ export default function HarCorrelationStudio({
         byName.set('data.salesforce_users', {
           key: 'data.salesforce_users',
           variableName: 'salesforce_users (username, password)',
-          stage: 'stage1_init',
+          stage: 'sf_identity',
           statusKind: 'wired',
           statusLabel: 'Data pool wired (unique/VUser)',
           diffStatus: harDiff?.compared ? 'Per-VUser credential pool' : 'Single-HAR pool',
@@ -199,11 +234,10 @@ export default function HarCorrelationStudio({
         if (!varName || byName.has(varName)) continue
         const consumers = flattened.filter(candidate => candidate.seq > entry.seq && actionConsumesVariable(candidate.action, varName))
         const diff = diffByName.get(varName)
-        const isUncapturedAuraToken = varName.includes('aura_token')
-          && typeof ext.expression === 'string'
-          && ext.expression.includes('ERIC_')
-        const isAuraContextRelease = varName.toLowerCase().includes('fwuid') || varName.toLowerCase().includes('aura_context')
-        const stage = classifySalesforceStage(varName, entry.section, isSalesforce)
+        const metadata = correlationMetadata.get(varName)
+        const isUncapturedAuraToken = metadata?.ruleId === UNCAPTURED_COOKIE_RULE
+        const isAuraContextRelease = isReleaseCoupled(metadata)
+        const stage = lifecycleStage(isSalesforce, metadata?.ruleId, entry.section, true, ext.source === 'cookie')
         const isDynamic = diff?.classification === 'dynamic' || (!diff && !isAuraContextRelease)
         const scopeRedirectNote = ext.scope && (ext.scope as { redirects?: string }).redirects === 'include'
           ? ' (incl. 302 redirect hops)'
@@ -224,6 +258,7 @@ export default function HarCorrelationStudio({
           statusLabel = 'Release-coupled'
           guidance = 'Same-day captures share fwuid/app hashes; extractor refreshes automatically after Salesforce seasonal or cache updates.'
         }
+        if (metadata?.confidence !== undefined && !diff) guidance = `${guidance} Rule confidence ${Math.round(metadata.confidence * 100)}%.`
 
         const diffStatus = diff
           ? `${diff.classification} (${Math.round((diff.diff_confidence || 0) * 100)}%)`
@@ -257,11 +292,10 @@ export default function HarCorrelationStudio({
       const varName = item?.name?.trim()
       if (!varName || byName.has(varName)) continue
       const isStatic = item.classification === 'static'
-      const isAuraContext = varName.toLowerCase().includes('fwuid') || varName.toLowerCase().includes('aura.context') || varName.toLowerCase().includes('loaded')
-      const stage = isAuraContext && isSalesforce
-        ? 'stage2_aura_context'
-        : classifySalesforceStage(varName, null, isSalesforce)
+      const metadata = correlationMetadata.get(varName)
+      const isAuraContext = isReleaseCoupled(metadata)
       const hasKnownProducer = item.producer_found === true || (typeof item.found_in_step === 'number' && item.found_in_step > 0)
+      const stage = lifecycleStage(isSalesforce, metadata?.ruleId, null, hasKnownProducer)
       const statusKind: StudioRow['statusKind'] = isStatic ? 'static' : 'review'
       const statusLabel = isStatic
         ? (isAuraContext ? 'Static same-day (release-coupled)' : 'Static across pair')
@@ -294,11 +328,11 @@ export default function HarCorrelationStudio({
     }
 
     // 4. If Salesforce logout steps were hoisted to Teardown, include a lifecycle confirmation row
-    if (isSalesforce && phaseCounts.teardown > 0 && !Array.from(byName.values()).some(r => r.stage === 'stage4_teardown')) {
+    if (isSalesforce && phaseCounts.teardown > 0) {
       byName.set('lifecycle.teardown.logout', {
         key: 'lifecycle.teardown.logout',
         variableName: 'secur/logout.jsp',
-        stage: 'stage4_teardown',
+        stage: 'sf_identity',
         statusKind: 'wired',
         statusLabel: 'Hoisted to Teardown',
         diffStatus: 'Lifecycle step',
@@ -314,7 +348,7 @@ export default function HarCorrelationStudio({
     }
 
     return Array.from(byName.values())
-  }, [flattened, harDiff, isSalesforce, phaseCounts.teardown, script.data_sources])
+  }, [correlationMetadata, flattened, harDiff, isSalesforce, phaseCounts.teardown, script.data_sources])
 
   const filterCounts = useMemo(() => ({
     all: rows.length,
@@ -350,9 +384,40 @@ export default function HarCorrelationStudio({
     return groups
   }, [visibleRows])
 
+  // Excluding a request removes its row and the focused button with it. Keep
+  // keyboard users in the list and say what changed.
+  const excludeRequestRef = useRef<{ index: number; before: number } | null>(null)
+  const blockerButtonRefs = useRef(new Map<number, HTMLButtonElement>())
+  const studioHeadingRef = useRef<HTMLHeadingElement>(null)
+  const [exclusionStatus, setExclusionStatus] = useState('')
+  useEffect(() => {
+    const request = excludeRequestRef.current
+    if (!request) return
+    if (blockedActions.length < request.before) {
+      excludeRequestRef.current = null
+      const removed = request.before - blockedActions.length
+      setExclusionStatus(`Excluded ${removed} blocked request${removed === 1 ? '' : 's'} from the draft. ${blockedActions.length} remain${blockedActions.length === 1 ? 's' : ''}.`)
+      const next = blockerButtonRefs.current.get(Math.min(request.index, blockedActions.length - 1))
+      if (next && !next.disabled) next.focus()
+      else studioHeadingRef.current?.focus()
+    } else if (!busy) {
+      // The exclusion failed or was refused; the row and its focus remain.
+      excludeRequestRef.current = null
+    }
+  }, [blockedActions, busy])
+  const requestExclusion = (index: number, options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => {
+    excludeRequestRef.current = { index, before: blockedActions.length }
+    setExclusionStatus('')
+    onExcludeBlockedActions?.(options)
+  }
+  const recordingStudioLink = recordingStudioHref
+    ? <a className="btn btn-secondary btn-sm" href={recordingStudioHref}>Record in Recording Studio</a>
+    : null
+
   return (
     <section className="har-correlation-studio" aria-labelledby={headingId}>
-      <h4 id={headingId}>Correlation studio &amp; capture funnel</h4>
+      <h4 id={headingId} ref={studioHeadingRef} tabIndex={-1}>Correlation studio &amp; capture funnel</h4>
+      <p className="sr-only" role="status">{exclusionStatus}</p>
 
       <div className="har-capture-funnel" role="group" aria-label="HAR capture conversion funnel">
         <div className="har-funnel-step">
@@ -368,15 +433,22 @@ export default function HarCorrelationStudio({
           </span>
         </div>
         <div className="har-funnel-step">
-          <span className="har-funnel-label">HTTP requests converted</span>
-          <span className="har-funnel-value">{formatInteger(funnel.totalHttp)}</span>
-          <span className="har-funnel-detail">Executable protocol requests</span>
+          <span className="har-funnel-label">Generated actions</span>
+          <span className="har-funnel-value">{formatInteger(phaseCounts.total)}</span>
+          <span className="har-funnel-detail">
+            Init {formatInteger(phaseCounts.init)} · Main {formatInteger(phaseCounts.actions)} · Teardown {formatInteger(phaseCounts.teardown)} · {formatInteger(phaseCounts.transactions)} transaction{phaseCounts.transactions === 1 ? '' : 's'}
+          </span>
         </div>
         <div className="har-funnel-step">
-          <span className="har-funnel-label">DSL lifecycle placement</span>
-          <span className="har-funnel-value">{formatInteger(phaseCounts.total)} steps</span>
+          <span className="har-funnel-label">Wired extractors</span>
+          <span className="har-funnel-value">{formatInteger(phaseCounts.extractors)}</span>
+          <span className="har-funnel-detail">Values extracted at replay</span>
+        </div>
+        <div className="har-funnel-step">
+          <span className="har-funnel-label">Engineer decisions</span>
+          <span className="har-funnel-value">{formatInteger(filterCounts.review + blockedActions.length)}</span>
           <span className="har-funnel-detail">
-            Init {formatInteger(phaseCounts.init)} · Actions {formatInteger(phaseCounts.actions)} · Teardown {formatInteger(phaseCounts.teardown)}
+            {formatInteger(filterCounts.review)} to review · {formatInteger(blockedActions.length)} blocked request{blockedActions.length === 1 ? '' : 's'}
           </span>
         </div>
       </div>
@@ -393,30 +465,43 @@ export default function HarCorrelationStudio({
         </div>
       )}
 
+      {uncapturedCookieTokens.length > 0 && (
+        <div className="har-capture-callout" role="note" aria-label="Cookies missing from the HAR export">
+          <strong>The browser removed session cookies from this HAR export.</strong>
+          <p>
+            Chrome and Edge (v130+) leave Set-Cookie headers out of exported HARs, so the __Host-ERIC_* cookie that issues aura.token is not in the capture. The draft extracts it at live replay instead. Record the flow in Recording Studio to capture cookies and full request bodies.
+          </p>
+          {recordingStudioLink}
+        </div>
+      )}
+
       {blockedActions.length > 0 && (
         <div className="har-blocker-banner" role="region" aria-label="Requests missing exported bodies">
           <div className="har-blocker-banner-header">
             <h5 className="har-blocker-banner-title">
               {blockedActions.length} request{blockedActions.length === 1 ? '' : 's'} omitted request body in HAR export (blocks replay)
             </h5>
-            {onExcludeBlockedActions && (blockedActions.length > 1 || blockedActions.some(item => !item.uid)) && (
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={busy}
-                onClick={() => onExcludeBlockedActions({ excludeUnexportedBodies: true })}
-              >
-                Exclude all {blockedActions.length} blocked {blockedActions.length === 1 ? 'request' : 'requests'} from draft
-              </button>
-            )}
+            <div className="har-blocker-banner-actions">
+              {onExcludeBlockedActions && (blockedActions.length > 1 || blockedActions.some(item => !item.uid)) && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={busy}
+                  onClick={() => requestExclusion(0, { excludeUnexportedBodies: true })}
+                >
+                  Exclude all {blockedActions.length} blocked {blockedActions.length === 1 ? 'request' : 'requests'} from draft
+                </button>
+              )}
+              {recordingStudioLink}
+            </div>
           </div>
           <p className="har-blocker-guidance">
             Browser HAR exports often omit large POST bodies (or client telemetry payloads). Exclude non-essential requests below to unblock replay immediately, or re-export from Chrome DevTools using <strong>Export HAR (with sensitive data)</strong> / record with APEX Recording Studio if the request carries required business state.
           </p>
           <ul className="har-blocker-list">
-            {blockedActions.map(item => (
+            {blockedActions.map((item, index) => (
               <li key={item.uid || item.path} className="har-blocker-item">
-                <div className="har-blocker-meta">
+                <div className="har-blocker-meta" id={`${blockerIdPrefix}-${index}`}>
                   <strong>{item.section} · {item.name}</strong>
                   <span className="har-funnel-detail">
                     Path: <code>{item.path}</code>
@@ -427,10 +512,16 @@ export default function HarCorrelationStudio({
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
+                    ref={element => {
+                      if (element) blockerButtonRefs.current.set(index, element)
+                      else blockerButtonRefs.current.delete(index)
+                    }}
+                    aria-label={`Exclude action from draft: ${item.name}`}
+                    aria-describedby={`${blockerIdPrefix}-${index}`}
                     disabled={busy || !item.uid}
                     title={!item.uid ? 'Action lacks an individual import UID; use bulk exclude above.' : undefined}
                     onClick={() => {
-                      if (item.uid) onExcludeBlockedActions({ actionUids: [item.uid] })
+                      if (item.uid) requestExclusion(index, { actionUids: [item.uid] })
                     }}
                   >
                     Exclude action from draft
@@ -484,11 +575,9 @@ export default function HarCorrelationStudio({
               <tbody>
                 {groupedVisibleRows.map(group => (
                   <Fragment key={group.stage}>
-                    {isSalesforce && (
-                      <tr className="har-studio-stage-row">
-                        <th colSpan={6} scope="colgroup">{STAGE_TITLES[group.stage]}</th>
-                      </tr>
-                    )}
+                    <tr className="har-studio-stage-row">
+                      <th colSpan={6} scope="colgroup">{STAGE_TITLES[group.stage]}</th>
+                    </tr>
                     {group.items.map(row => (
                       <tr key={row.key}>
                         <th scope="row"><code>{row.variableName}</code></th>

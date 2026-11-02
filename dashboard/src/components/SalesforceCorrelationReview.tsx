@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { SourceReview, SourceReviewMapping } from '../types/scripts'
 import type { SalesforceNativePreview, SalesforceNativeRequestReference } from '../types/scriptImports'
 import './SalesforceCorrelationReview.css'
-import { admitNativeCorrelationEvidence } from './correlationEvidenceAdmission'
+import { admitNativeCorrelationEvidence, type AdmittedCorrelationMetadata } from './correlationEvidenceAdmission'
 import { useEvidencePage } from './useEvidencePage'
 
 const PAGE_SIZE = 20
@@ -45,6 +45,24 @@ function Consumers({ references, omitted, review, nativeFinal, onViewSource }: {
   </>
 }
 
+const percent = (value: number) => `${Math.round(value * 100)}%`
+
+// Rule, confidence and the analyzer's reasons for one correlation. The
+// extractor expression is not shown: the editor is where it is reviewed.
+function CorrelationMetadata({ correlation }: { correlation: AdmittedCorrelationMetadata }) {
+  const facts = [
+    correlation.ruleId ? `Rule ${correlation.ruleId}` : '',
+    correlation.confidence !== undefined ? `Confidence ${percent(correlation.confidence)}` : '',
+    correlation.classification ? `Two-HAR ${correlation.classification}${correlation.diffConfidence !== undefined ? ` (${percent(correlation.diffConfidence)})` : ''}` : '',
+  ].filter(Boolean)
+  if (!facts.length && !correlation.reasons.length) return null
+  return <div className="salesforce-correlation-metadata">
+    {facts.length > 0 && <p>{facts.join(' · ')}</p>}
+    {correlation.reasons.length > 0 && <ul aria-label="Correlation reasons">{correlation.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>}
+    {correlation.reasonsOmitted > 0 && <p>{correlation.reasonsOmitted} more reasons not shown.</p>}
+  </div>
+}
+
 export default function SalesforceCorrelationReview({ preview, sourceReview, onViewSource }: { preview?: SalesforceNativePreview; sourceReview?: SourceReview; onViewSource?: (mapping: SourceReviewMapping) => void }) {
   const evidence = useMemo(() => admitNativeCorrelationEvidence(preview), [preview])
   const [page, setPage] = useEvidencePage(preview)
@@ -75,8 +93,9 @@ export default function SalesforceCorrelationReview({ preview, sourceReview, onV
     </> : <p>Reference coverage was not retained for this import. Sequence numbers alone cannot establish a source link.</p>}
     {rows.length > 0 && <details><summary>Review captured correlations ({rows.length})</summary>
       {rows.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE).map(correlation => <article key={correlation.ordinal} aria-label={`Captured correlation ${correlation.ordinal}`} className="salesforce-correlation-row">
-        <h5>Correlation {correlation.ordinal}</h5>
-        <p>{correlation.preApplied ? 'Draft replacement applied.' : 'Manual review required.'}</p>
+        <h5>Correlation {correlation.ordinal}{correlation.name ? <>: <code>{correlation.name}</code></> : null}</h5>
+        <p>{correlation.preApplied ? 'Draft replacement applied.' : 'Manual review required.'}{correlation.reviewAction ? ` Review action: ${correlation.reviewAction}.` : ''}</p>
+        <CorrelationMetadata correlation={correlation} />
         <Reference reference={correlation.producer} label="Producer" review={sourceReview} nativeFinal={nativeFinal} onViewSource={onViewSource} />
         <Consumers references={correlation.consumers} omitted={correlation.consumersOmitted} review={sourceReview} nativeFinal={nativeFinal} onViewSource={onViewSource} />
       </article>)}

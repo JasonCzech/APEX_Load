@@ -580,7 +580,7 @@ func holdBaselineFailureWhileComparisonConverts(t *testing.T) bool {
 	ended := make(chan struct{})
 	var once sync.Once
 	previous, previousSlots := harComparisonPreparer, harComparisonSlots
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		defer once.Do(func() { close(ended) })
 		started <- ctx
 		<-hold
@@ -758,12 +758,12 @@ func TestHARComparisonWaitingForASlotEndsWithItsImport(t *testing.T) {
 	harComparisonSlots = make(chan struct{}, 1)
 	harComparisonSlots <- struct{}{}
 	prepared := make(chan struct{}, 1)
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		prepared <- struct{}{}
 		return nil, nil, nil
 	}
 
-	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), har.ConvertOptions{})
+	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), nil, har.ConvertOptions{})
 	select {
 	case <-job.done:
 		t.Fatal("the comparison ran without a slot")
@@ -786,7 +786,7 @@ func TestHARComparisonWaitingForASlotEndsWithItsImport(t *testing.T) {
 
 	// Once the slot frees, the next comparison runs and gives it back.
 	<-harComparisonSlots
-	next := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), har.ConvertOptions{})
+	next := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), nil, har.ConvertOptions{})
 	defer next.release()
 	select {
 	case <-next.done:
@@ -869,7 +869,7 @@ func TestHARComparisonGivenUpOnDoesNotTakeAFreedSlot(t *testing.T) {
 	harComparisonSlots = make(chan struct{}, 1)
 	harComparisonSlots <- struct{}{} // held, as by another import's comparison
 	converted := make(chan struct{}, 1)
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		converted <- struct{}{}
 		return nil, nil, nil
 	}
@@ -878,7 +878,7 @@ func TestHARComparisonGivenUpOnDoesNotTakeAFreedSlot(t *testing.T) {
 	// to keep time for its later stages.
 	importCtx, cancelImport := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancelImport()
-	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), har.ConvertOptions{})
+	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), nil, har.ConvertOptions{})
 	if job.wait(importCtx, time.Millisecond) {
 		t.Fatal("a comparison queued for a slot was reported finished")
 	}
@@ -911,7 +911,7 @@ func TestHARImportProcessingOutlivesTheUploadGrantBehindTheActivityBuffer(t *tes
 	previousRead, previousWrite, previousWindow, previousGrace := apiServerReadTimeout, apiServerWriteTimeout, largeUploadReadWindow, largeUploadWriteGrace
 	previousPreparer := harComparisonPreparer
 	apiServerReadTimeout, apiServerWriteTimeout, largeUploadReadWindow, largeUploadWriteGrace = 300*time.Millisecond, 300*time.Millisecond, 300*time.Millisecond, 100*time.Millisecond
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		time.Sleep(1500 * time.Millisecond)
 		return nil, nil, errors.New("comparison HAR: held for the test")
 	}

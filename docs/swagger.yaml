@@ -330024,6 +330024,11 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  parameterization:
+                    type: object
+                    description: 'Go type: paramize.Result'
+                    additionalProperties: true
+                    nullable: true
                   preflight:
                     type: object
                     properties:
@@ -332136,11 +332141,12 @@ paths:
                         - path
                         - script_index
                         - suggested_name
-                  warnings:
+                  validation_issues:
                     type: array
                     items:
                       type: string
                 required:
+                  - parameterization
                   - removed_count
                   - script
                   - secret_binding_requirements
@@ -332361,7 +332367,7 @@ paths:
                   type: boolean
                 validate_only:
                   type: boolean
-                  description: When true, runs stateless inspection without retaining source texts or allocating a source-secret session.
+                  description: When true, inspects the capture without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation (import_draft_expires_at).
               additionalProperties: true
           application/octet-stream:
             schema:
@@ -332445,7 +332451,7 @@ paths:
                   type: string
                 validate_only:
                   type: string
-                  description: Boolean flag ('true'/'false') for stateless Stage 1/2 inspection without retaining source texts or allocating a source-secret session.
+                  description: Boolean flag ('true'/'false') for Stage 1/2 inspection without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation.
               additionalProperties: true
       responses:
         2XX:
@@ -332663,7 +332669,7 @@ paths:
             type: string
         - name: validate_only
           in: query
-          description: When true, inspects and converts the capture without retaining source texts or allocating a source-secret session.
+          description: When true, inspects and converts the capture without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation (import_draft_expires_at), so the reviewed draft can be saved without a second upload.
           required: false
           schema:
             type: boolean
@@ -357112,7 +357118,7 @@ paths:
                   type: boolean
                 validate_only:
                   type: boolean
-                  description: When true, runs stateless inspection without retaining source texts or allocating a source-secret session.
+                  description: When true, inspects the capture without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation (import_draft_expires_at).
               additionalProperties: true
           application/octet-stream:
             schema:
@@ -357184,7 +357190,7 @@ paths:
                   type: string
                 validate_only:
                   type: string
-                  description: Boolean flag ('true'/'false') for stateless Stage 1/2 inspection without retaining source texts or allocating a source-secret session.
+                  description: Boolean flag ('true'/'false') for Stage 1/2 inspection without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation.
               additionalProperties: true
       responses:
         2XX:
@@ -357402,7 +357408,7 @@ paths:
             type: string
         - name: validate_only
           in: query
-          description: When true, inspects and converts the capture without retaining source texts or allocating a source-secret session.
+          description: When true, inspects and converts the capture without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation (import_draft_expires_at), so the reviewed draft can be saved without a second upload.
           required: false
           schema:
             type: boolean

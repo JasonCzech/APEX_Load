@@ -345,9 +345,12 @@ func (r *Report) addOutcome(ordinal int, state State) {
 type action struct {
 	id    string
 	state State
-	// descriptor and apex name a request action when names are read.
+	// descriptor and apex name a request action when names are read, and
+	// params holds the action's retained params namespace, classname and
+	// method (nothing else in params is kept).
 	descriptor string
 	apex       string
+	params     map[string]any
 }
 
 func parseRequest(body []byte) ([]action, []Issue) {
@@ -451,7 +454,8 @@ func parseEnvelopeWith(body []byte, request bool, names bool) ([]action, []Issue
 			}
 			if names {
 				current.descriptor = descriptor
-				current.apex = apexName(descriptor, object["params"])
+				current.params, _ = object["params"].(map[string]any)
+				current.apex = apexName(descriptor, current.params)
 			}
 		} else {
 			state, ok := object["state"].(string)
@@ -768,18 +772,24 @@ func RequestActions(body []byte) ([]RequestAction, error) {
 }
 
 // apexName is namespace.Class.method for an Apex call, or "".
-func apexName(descriptor string, params any) string {
+func apexName(descriptor string, params map[string]any) string {
 	if descriptor != apexDescriptor {
 		return ""
 	}
-	fields, _ := params.(map[string]any)
-	class, _ := fields["classname"].(string)
-	method, _ := fields["method"].(string)
+	namespace, _ := params["namespace"].(string)
+	class, _ := params["classname"].(string)
+	method, _ := params["method"].(string)
+	return apexTarget(namespace, class, method)
+}
+
+// apexTarget is [namespace.]Class.method, or "" unless both class and method
+// are set: the one Apex naming rule for runtime validation and import review.
+func apexTarget(namespace, class, method string) string {
 	if strings.TrimSpace(class) == "" || strings.TrimSpace(method) == "" {
 		return ""
 	}
 	name := class + "." + method
-	if namespace, _ := fields["namespace"].(string); strings.TrimSpace(namespace) != "" {
+	if strings.TrimSpace(namespace) != "" {
 		name = namespace + "." + name
 	}
 	return name

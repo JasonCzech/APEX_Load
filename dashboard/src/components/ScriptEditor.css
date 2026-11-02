@@ -7341,6 +7341,23 @@ details.replay-code-block > summary,
 .debugger-problem-row.error {
   border-color: rgba(var(--danger-rgb), 0.32);
 }
+.debugger-problem-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.debugger-problem-group h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.debugger-problem-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 button.debugger-problem-row {
   cursor: pointer;
 }

@@ -144,6 +144,21 @@ func TestRedactAssociatesStructuredSensitiveNamesWithShortValues(t *testing.T) {
 			input:  `"text": "<form><input type=\"hidden\" name=\"sid\" id=\"sid\" value=\"00Daa0000012345!AQEAQHiddenFormSession1234567890\" /></form>"`,
 			secret: "00Daa0000012345!AQEAQHiddenFormSession1234567890",
 		},
+		{
+			name:   "Salesforce percent-encoded frontdoor sid in a retURL",
+			input:  `"value": "https://org.my.salesforce.com/?retURL=%2Fsecur%2Ffrontdoor.jsp%3Fsid%3D00Daa0000012345%21AQEAQEncodedSessionToken1234567890%26cshc%3Dx"`,
+			secret: "AQEAQEncodedSessionToken1234567890",
+		},
+		{
+			name:   "Salesforce double-encoded session id",
+			input:  `next=%252Fsecur%252Ffrontdoor.jsp%253Fx%253D00Daa0000012345%2521AQEAQDoubleEncodedToken1234567890`,
+			secret: "AQEAQDoubleEncodedToken1234567890",
+		},
+		{
+			name:   "Salesforce Aura token cookie in HAR cookies[]",
+			input:  "{\n  \"name\": \"__Host-ERIC_PROD-2876452450001777317\",\n  \"value\": \"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig\"\n}",
+			secret: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -1927,8 +1927,11 @@ describe('ProtocolAssetImport', () => {
     await act(async () => {
       recordedConcurrency.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    // The converter keeps every request, beacons included, once static assets
+    // are: the filter shows off and is not requested.
     const filterTelemetry = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Filter client telemetry beacons')) as HTMLInputElement | undefined
-    expect(filterTelemetry?.checked).toBe(true)
+    expect(filterTelemetry?.checked).toBe(false)
+    expect(filterTelemetry?.disabled).toBe(true)
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeTruthy()
@@ -1944,7 +1947,7 @@ describe('ProtocolAssetImport', () => {
       include_static_assets: true,
       step_transactions: true,
       recorded_concurrency: true,
-      filter_client_telemetry: true,
+      filter_client_telemetry: false,
       validate_only: false,
       salvage_truncated: true,
       http_version_mode: 'upgrade',
@@ -4881,7 +4884,7 @@ describe('ProtocolAssetImport', () => {
     }
     apiMock.importHAR.mockResolvedValueOnce({
       script: blockedDraft,
-      stats: { total_entries: 246, filtered_assets: 179, filtered_telemetry: 2, converted_actions: 65 },
+      stats: { total_requests: 246, filtered_assets: 179, filtered_telemetry: 2, converted_actions: 65 },
       preflight: { valid: false, status: 'fail', execution_blockers: 1, checks: [] },
       summary: {
         artifact_mode: 'design_har_pair',
@@ -4960,6 +4963,215 @@ describe('ProtocolAssetImport', () => {
       exclude_unexported_bodies: false,
     }))
     expect(container.textContent).not.toContain('94 - POST aura')
+    // The response carried the name the draft had when the request started;
+    // the review keeps the reviewed name.
+    expect((container.querySelector('input[aria-label="Reviewed script name"]') as HTMLInputElement).value).toBe('Salesforce Login Suite')
+    apiMock.commitGenericImportBatch.mockClear()
+    await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('.har-stage2-toolbar button')).find(button => button.textContent === 'Save draft')!.click() })
+    await flushPromises()
+    expect(apiMock.commitGenericImportBatch.mock.calls[0]?.[0]?.scripts?.[0]?.name).toBe('Salesforce Login Suite')
+  })
+
+  describe('HAR Stage 2 review', () => {
+    const harDraft = (extra: Record<string, unknown> = {}) => ({
+      name: 'Salesforce Flow',
+      version: '1.0.0',
+      protocol: 'http',
+      project_id: 'project-1',
+      config: { base_url: 'https://org.my.salesforce.com' },
+      actions: [
+        { name: 'GET /one/one.app', type: 'request', method: 'GET', target: '/one/one.app', metadata: { source_transaction: 'Home' } },
+        {
+          name: 'Concurrent requests 1 (2 requests)', type: 'http_sequence', method: 'SEQUENCE', target: '/aura',
+          metadata: { recorded_concurrent_group: 1 },
+          params: { execution_mode: 'concurrent', requests: [
+            { name: '17 - POST aura', type: 'request', method: 'POST', target: '/aura?r=1', metadata: { import_action_uid: 'har-entry-17' } },
+            { name: '94 - POST aura', type: 'request', method: 'POST', target: '/aura?r=2', metadata: { import_action_uid: 'har-entry-94', execution_blockers: ['har_request_body_not_exported'] } },
+          ] },
+        },
+      ],
+      ...extra,
+    })
+    const harResult = (script = harDraft(), extra: Record<string, unknown> = {}) => ({
+      script,
+      scripts: [],
+      warnings: [],
+      unsupported_elements: [],
+      review_sections: [],
+      stats: { format: 'har', total_requests: 120, converted_actions: 3, filtered_assets: 117, assertions: 0, extractors: 0, correlations_detected: 0 },
+      summary: { artifact_mode: 'design_har', salesforce_review: { detected: true, har_match_coverage: { har_provided: true, imported_requests: 3, matched_requests: 3, coverage_pct: 100 } } },
+      ...extra,
+    })
+    const buttonNamed = (label: string) => Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === label)
+    const click = async (label: string) => {
+      const button = buttonNamed(label)
+      expect(button, label).toBeTruthy()
+      await act(async () => { button!.click() })
+      await flushPromises()
+    }
+    const checkbox = (label: string) => Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes(label))!
+    const inspect = async (ui = <ProtocolAssetImport kind="har" projectId="project-1" />) => {
+      await act(async () => { root.render(ui) })
+      const input = container.querySelector<HTMLInputElement>('input[type="file"]')!
+      await act(async () => {
+        Object.defineProperty(input, 'files', { configurable: true, value: [new File(['{"log":{"entries":[]}}'], 'salesforce.har', { type: 'application/json' })] })
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await click('Inspect & review')
+    }
+
+    it('stages option changes behind Re-inspect HARs instead of discarding the review', async () => {
+      apiMock.importHAR.mockResolvedValue(harResult())
+      await inspect()
+      expect(apiMock.importHAR).toHaveBeenCalledTimes(1)
+      await act(async () => { checkbox('Recover the complete entries').click() })
+      // The review stays; nothing re-converts until the user asks.
+      expect(container.textContent).toContain('Correlation studio & capture funnel')
+      expect(apiMock.importHAR).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('Conversion options changed.')
+      const reinspect = Array.from(container.querySelectorAll('button')).filter(button => button.textContent === 'Re-inspect HARs')
+      expect(reinspect.length).toBeGreaterThan(0)
+      await click('Re-inspect HARs')
+      expect(apiMock.importHAR).toHaveBeenCalledTimes(2)
+      expect(apiMock.importHAR).toHaveBeenLastCalledWith(expect.any(File), expect.objectContaining({ salvage_truncated: true }))
+      expect(container.textContent).not.toContain('Conversion options changed.')
+    })
+
+    it('asks before a profile switch or re-inspection replaces the reviewed draft', async () => {
+      apiMock.importHAR.mockResolvedValue(harResult())
+      await inspect(<NavigationGuardProvider><ProtocolAssetImport kind="har" projectId="project-1" /></NavigationGuardProvider>)
+      const toolbar = container.querySelector('[aria-label="Import review toolbar"]')!
+      const generic = Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Generic HAR')!
+      expect(generic.getAttribute('aria-pressed')).toBe('false')
+      await act(async () => { generic.click() })
+      expect(document.body.textContent).toContain('Import review has work that is not saved yet')
+      expect(apiMock.importHAR).toHaveBeenCalledTimes(1)
+      await click('Keep editing')
+      expect(apiMock.importHAR).toHaveBeenCalledTimes(1)
+      await act(async () => { generic.click() })
+      await click('Discard changes')
+      expect(apiMock.importHAR).toHaveBeenCalledTimes(2)
+      expect(apiMock.importHAR).toHaveBeenLastCalledWith(expect.any(File), expect.objectContaining({ salesforce_native: false }))
+    })
+
+    it('shows the step transactions and concurrency the server applied', async () => {
+      await act(async () => { root.render(<ProtocolAssetImport kind="har" projectId="project-1" />) })
+      // Before an inspection the server decides: neither box claims a state.
+      expect(checkbox('Time each user step').indeterminate).toBe(true)
+      expect(checkbox('Replay parallel browser requests').indeterminate).toBe(true)
+
+      apiMock.importHAR.mockResolvedValueOnce(harResult())
+      await inspect()
+      expect(checkbox('Time each user step').checked).toBe(true)
+      expect(checkbox('Time each user step').indeterminate).toBe(false)
+      expect(checkbox('Replay parallel browser requests').checked).toBe(true)
+
+      // A Generic draft keeps step transactions but has no concurrent groups;
+      // a recording with its own transactions gets no step transactions.
+      apiMock.importHAR.mockResolvedValueOnce(harResult(harDraft({ actions: [harDraft().actions[0]] }), { warnings: ['Step transactions were not added: the recording already marks its transactions, which the script keeps.'] }))
+      await click('Force Generic HAR')
+      expect(checkbox('Time each user step').checked).toBe(false)
+      expect(checkbox('Replay parallel browser requests').checked).toBe(false)
+    })
+
+    it('offers name, profile and save in a compact sticky toolbar', async () => {
+      apiMock.importHAR.mockResolvedValue(harResult())
+      apiMock.commitGenericImportBatch.mockClear()
+      await inspect()
+      const toolbar = container.querySelector<HTMLElement>('.har-stage2-toolbar')!
+      expect(toolbar.getAttribute('aria-label')).toBe('Import review toolbar')
+      expect(toolbar.querySelector('input[aria-label="Reviewed script name"]')).not.toBeNull()
+      expect(Array.from(toolbar.querySelectorAll('button')).map(button => button.textContent)).toEqual(['Salesforce-aware HTTP (Recommended)', 'Generic HAR', 'Save draft'])
+      await act(async () => { Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save draft')!.click() })
+      await flushPromises()
+      expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(1)
+    })
+
+    it('sends credential choices through the review save step', async () => {
+      apiMock.importHAR.mockResolvedValue(harResult(harDraft(), {
+        secret_binding_requirements: [{ id: 'req-1', path: '/init/0/body', label: 'Password', context: 'body', suggested_name: 'SF_PASSWORD' }],
+      }))
+      await inspect()
+      const toolbar = container.querySelector<HTMLElement>('.har-stage2-toolbar')!
+      expect(Array.from(toolbar.querySelectorAll('button')).some(button => button.textContent === 'Save draft')).toBe(false)
+      await act(async () => { Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Choose credentials to save')!.click() })
+      expect(document.activeElement?.classList.contains('script-import-review-header')).toBe(true)
+    })
+
+    it('locks the reviewed name while an exclusion is in flight', async () => {
+      apiMock.importHAR.mockResolvedValue(harResult())
+      let settle!: (value: unknown) => void
+      apiMock.excludeImportDraftActions.mockImplementationOnce(() => new Promise(resolve => { settle = resolve }))
+      await inspect()
+      const nameInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Reviewed script name"]')!
+      expect(nameInput().disabled).toBe(false)
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Exclude action from draft')!.click() })
+      expect(nameInput().disabled).toBe(true)
+      expect(container.querySelector<HTMLInputElement>('input[placeholder="Imported HAR Script"]')!.disabled).toBe(true)
+      await act(async () => { settle({ script: harDraft(), removed_count: 1, secret_binding_requirements: [] }) })
+      await flushPromises()
+      expect(nameInput().disabled).toBe(false)
+    })
+
+    it('stays guarded while a save is in flight', async () => {
+      apiMock.importHAR.mockResolvedValue(harResult())
+      let finishSave!: (error: Error) => void
+      apiMock.commitGenericImportBatch.mockImplementationOnce(() => new Promise((_resolve, reject) => { finishSave = reject }))
+      const leave = vi.fn()
+      function Leave() {
+        const runner = useNavigationGuardRunner()
+        return <button type="button" onClick={() => runner.runGuarded(leave)}>Leave import</button>
+      }
+      await inspect(<NavigationGuardProvider><Leave /><ProtocolAssetImport kind="har" projectId="project-1" /></NavigationGuardProvider>)
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('.har-stage2-toolbar button')).find(button => button.textContent === 'Save draft')!.click() })
+      await click('Leave import')
+      expect(leave).not.toHaveBeenCalled()
+      expect(document.body.textContent).toContain('Import review has work that is not saved yet')
+      await click('Keep editing')
+      await act(async () => { finishSave(new Error('import_draft_attestation_invalid')) })
+      await flushPromises()
+      expect(container.textContent).toContain('Correlation studio & capture funnel')
+    })
+
+    it('compares equal-size captures chunk by chunk without reading whole files', async () => {
+      const primary = new File(['{"log":{"entries":[1]}}'], 'a.har', { type: 'application/json' })
+      const same = new File(['{"log":{"entries":[1]}}'], 'b.har', { type: 'application/json' })
+      const whole = vi.spyOn(File.prototype, 'arrayBuffer')
+      apiMock.importHAR.mockResolvedValue(harResult())
+      await act(async () => { root.render(<ProtocolAssetImport kind="har" projectId="project-1" />) })
+      const input = container.querySelector<HTMLInputElement>('input[type="file"]')!
+      await act(async () => {
+        Object.defineProperty(input, 'files', { configurable: true, value: [primary, same] })
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await vi.waitFor(() => expect(container.textContent).toContain('Primary and comparison HAR files have identical byte content'))
+      await click('Inspect & review')
+      await vi.waitFor(() => expect(container.textContent).toContain('Identical comparison HAR detected'))
+      expect(whole).not.toHaveBeenCalled()
+      whole.mockRestore()
+    })
+
+    it('checks a handed-off comparison file before it fills the comparison slot', async () => {
+      await act(async () => {
+        root.render(<ProtocolAssetImport kind="har" projectId="project-1" initialFile={new File(['{}'], 'capture.har')} initialComparisonFile={new File(['notes'], 'notes.docx')} />)
+      })
+      await flushPromises()
+      expect(container.textContent).toContain('notes.docx is not a supported')
+      expect(container.textContent).not.toContain('notes.docx</')
+    })
+
+    it('explains what a saved HAR validation draft lacks', async () => {
+      apiMock.importHAR.mockResolvedValue(harResult())
+      await act(async () => { root.render(<ProtocolAssetImport kind="har" projectId="project-1" />) })
+      const input = container.querySelector<HTMLInputElement>('input[type="file"]')!
+      await act(async () => {
+        Object.defineProperty(input, 'files', { configurable: true, value: [new File(['{}'], 'salesforce.har', { type: 'application/json' })] })
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await click('Validate Only')
+      expect(container.textContent).toContain('A saved validation draft keeps no full source text and cannot move recorded credentials into project secrets')
+      expect(container.textContent).not.toContain('You can still save the reviewed script')
+    })
   })
 })
 

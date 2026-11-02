@@ -1,3 +1,4 @@
+import type { ScriptDebugBreakpoint } from '../types/replay'
 import type {
   ScriptActionDefinition,
   ScriptDefinition,
@@ -369,66 +370,192 @@ export function updateNestedAction(root: ScriptActionDefinition, stepPath: strin
   return clone
 }
 
+type StepList = { key: 'requests' | 'steps' | 'else' | 'default' | 'case' | 'branch'; group?: number }
+
+function stepListOf(parsed: ParsedActionStepSegment): StepList {
+  if (parsed.name === 'parallel') return { key: 'branch', group: parsed.branchIndex }
+  if (parsed.name === 'case') return { key: 'case', group: parsed.caseIndex }
+  if (parsed.name === 'then' || parsed.name === 'loop') return { key: 'steps' }
+  return { key: parsed.name }
+}
+
+const sameStepList = (a: StepList, b: StepList) => a.key === b.key && a.group === b.group
+
+function readStepList(action: ScriptActionDefinition, list: StepList): ScriptActionDefinition[] | undefined {
+  if (list.key === 'requests') return Array.isArray(action.params?.requests) ? action.params!.requests as ScriptActionDefinition[] : undefined
+  if (list.key === 'case') return action.control?.cases?.[list.group!]?.steps
+  if (list.key === 'branch') return action.control?.branches?.[list.group!]?.steps
+  return action.control?.[list.key]
+}
+
+function writeStepList(action: ScriptActionDefinition, list: StepList, items: ScriptActionDefinition[]) {
+  if (list.key === 'requests') {
+    action.params = { ...(action.params || {}), requests: items }
+  } else if (list.key === 'case') {
+    const cases = [...(action.control?.cases || [])]
+    cases[list.group!] = { ...cases[list.group!], steps: items }
+    action.control = { ...action.control, cases }
+  } else if (list.key === 'branch') {
+    const branches = [...(action.control?.branches || [])]
+    branches[list.group!] = { ...branches[list.group!], steps: items }
+    action.control = { ...action.control, branches }
+  } else {
+    action.control = { ...action.control, [list.key]: items }
+  }
+}
+
+function stepSegmentAt(parsed: ParsedActionStepSegment, index: number, group?: number): string {
+  if (parsed.name === 'parallel') return `branches[${group ?? parsed.branchIndex}].steps[${index}]`
+  if (parsed.name === 'case') return `case[${group ?? parsed.caseIndex}][${index}]`
+  return `${parsed.name}[${index}]`
+}
+
 /**
- * Remove a selected leaf inside a container (`http_sequence`, `control_parallel`,
- * `control_if`, `control_loop`, `control_switch`). Returns `null` when the
- * removal targets `root` itself or empties a container that cannot exist with
- * zero child steps.
+ * Where a step path of the root action before a removal now points: an index
+ * into the removal's replacement actions and the step path inside that action,
+ * or null when the step was removed (or was a container that collapsed).
  */
-export function removeNestedAction(root: ScriptActionDefinition, stepPath: string[] | undefined): ScriptActionDefinition | null {
-  if (!stepPath?.length) return null
-  if (!resolveNestedAction(root, stepPath)) return root
-  const clone = structuredClone(root)
-  const parent = stepPath.length === 1 ? clone : resolveNestedAction(clone, stepPath.slice(0, -1))
-  const last = parseActionStepSegment(stepPath[stepPath.length - 1])
-  if (!parent || !last) return root
+export type NestedStepRelocation = (stepPath: readonly string[]) => { index: number; stepPath: string[] } | null
 
-  if (last.name === 'requests') {
-    const requests = Array.isArray(parent.params?.requests) ? [...(parent.params!.requests as ScriptActionDefinition[])] : []
-    if (last.index < 0 || last.index >= requests.length) return root
-    requests.splice(last.index, 1)
-    if (requests.length === 0 && stepPath.length === 1 && clone.type === 'http_sequence') return null
-    parent.params = { ...(parent.params || {}), requests }
-    return clone
-  }
+export interface NestedActionRemoval {
+  /**
+   * What takes the root action's place in its phase: nothing when the removal
+   * left it empty, or the steps of a parallel block left with one branch.
+   */
+  replacement: ScriptActionDefinition[]
+  relocate: NestedStepRelocation
+}
 
-  if (last.name === 'parallel') {
-    const branches = parent.control?.branches ? [...parent.control.branches] : []
-    const branch = branches[last.branchIndex]
-    if (!branch?.steps || last.index < 0 || last.index >= branch.steps.length) return root
-    const nextSteps = branch.steps.filter((_, idx) => idx !== last.index)
-    if (nextSteps.length === 0) {
-      branches.splice(last.branchIndex, 1)
-    } else {
-      branches[last.branchIndex] = { ...branch, steps: nextSteps }
+interface StepRemovalOutcome { actions: ScriptActionDefinition[]; relocate: NestedStepRelocation }
+
+const REMOVED_STEP: StepRemovalOutcome = { actions: [], relocate: () => null }
+
+// A container the DSL validator would reject once a step leaves it is removed
+// too (an http_sequence with no request, a loop with no step, an if with
+// neither branch, a switch with no case), or unwrapped (a parallel block with
+// a single branch runs that branch's steps in place). An emptied case or
+// parallel branch is dropped first, as neither may be empty.
+function normalizeAfterStepRemoval(container: ScriptActionDefinition, list: StepList, relocate: NestedStepRelocation): StepRemovalOutcome {
+  const kept: StepRemovalOutcome = { actions: [container], relocate }
+  if ((readStepList(container, list) || []).length > 0) return kept
+  switch (list.key) {
+    case 'requests':
+      return REMOVED_STEP
+    case 'steps':
+      if (container.type === 'control_if') return container.control?.else?.length ? kept : REMOVED_STEP
+      return container.type === 'control_loop' || container.type === 'ws_on_message' ? REMOVED_STEP : kept
+    case 'else':
+      return container.type === 'control_if' && !container.control?.steps?.length ? REMOVED_STEP : kept
+    case 'default':
+      return kept
+    case 'case': {
+      const group = list.group!
+      const cases = (container.control?.cases || []).filter((_, index) => index !== group)
+      if (cases.length === 0) return REMOVED_STEP
+      container.control = { ...container.control, cases }
+      return {
+        actions: [container],
+        relocate: path => {
+          const moved = relocate(path)
+          const parsed = moved?.stepPath.length ? parseActionStepSegment(moved.stepPath[0]) : null
+          if (!moved || parsed?.name !== 'case' || parsed.caseIndex < group) return moved
+          if (parsed.caseIndex === group) return null
+          return { index: moved.index, stepPath: [stepSegmentAt(parsed, parsed.index, parsed.caseIndex - 1), ...moved.stepPath.slice(1)] }
+        },
+      }
     }
-    if (branches.length === 0 && stepPath.length === 1) return null
-    if (branches.length === 1 && branches[0].steps?.length === 1 && stepPath.length === 1 && clone.type === 'control_parallel') {
-      return branches[0].steps[0]
+    case 'branch': {
+      const group = list.group!
+      const branches = (container.control?.branches || []).filter((_, index) => index !== group)
+      if (branches.length === 0) return REMOVED_STEP
+      const shifted: NestedStepRelocation = path => {
+        const moved = relocate(path)
+        const parsed = moved?.stepPath.length ? parseActionStepSegment(moved.stepPath[0]) : null
+        if (!moved || parsed?.name !== 'parallel' || parsed.branchIndex < group) return moved
+        if (parsed.branchIndex === group) return null
+        return { index: moved.index, stepPath: [stepSegmentAt(parsed, parsed.index, parsed.branchIndex - 1), ...moved.stepPath.slice(1)] }
+      }
+      if (branches.length > 1 || container.type !== 'control_parallel') {
+        container.control = { ...container.control, branches }
+        return { actions: [container], relocate: shifted }
+      }
+      return {
+        actions: branches[0].steps || [],
+        relocate: path => {
+          const moved = shifted(path)
+          const parsed = moved?.stepPath.length ? parseActionStepSegment(moved.stepPath[0]) : null
+          if (!moved || parsed?.name !== 'parallel') return null
+          return { index: parsed.index, stepPath: moved.stepPath.slice(1) }
+        },
+      }
     }
-    parent.control = { ...(parent.control || {}), branches }
-    return clone
   }
+}
 
-  if (!parent.control) return root
-  if (last.name === 'case') {
-    const cases = parent.control.cases ? [...parent.control.cases] : []
-    const targetCase = cases[last.caseIndex]
-    if (!targetCase?.steps || last.index < 0 || last.index >= targetCase.steps.length) return root
-    cases[last.caseIndex] = { ...targetCase, steps: targetCase.steps.filter((_, idx) => idx !== last.index) }
-    parent.control = { ...parent.control, cases }
-    return clone
+function removeStepIn(container: ScriptActionDefinition, stepPath: readonly string[]): StepRemovalOutcome | null {
+  const parsed = parseActionStepSegment(stepPath[0])
+  if (!parsed) return null
+  const list = stepListOf(parsed)
+  const items = readStepList(container, list)
+  const at = parsed.index
+  if (!items || at < 0 || at >= items.length) return null
+  const inner = stepPath.length === 1 ? REMOVED_STEP : removeStepIn(items[at], stepPath.slice(1))
+  if (!inner) return null
+  writeStepList(container, list, [...items.slice(0, at), ...inner.actions, ...items.slice(at + 1)])
+  const shift = inner.actions.length - 1
+  const relocate: NestedStepRelocation = path => {
+    const segment = path.length ? parseActionStepSegment(path[0]) : null
+    if (!segment || !sameStepList(stepListOf(segment), list) || segment.index < at) return { index: 0, stepPath: [...path] }
+    if (segment.index > at) return { index: 0, stepPath: [stepSegmentAt(segment, segment.index + shift), ...path.slice(1)] }
+    const moved = inner.relocate(path.slice(1))
+    return moved ? { index: 0, stepPath: [stepSegmentAt(segment, at + moved.index), ...moved.stepPath] } : null
   }
+  return normalizeAfterStepRemoval(container, list, relocate)
+}
 
-  const listKey: 'else' | 'default' | 'steps' = last.name === 'else' ? 'else' : last.name === 'default' ? 'default' : 'steps'
-  const items = parent.control[listKey] ? [...(parent.control[listKey] || [])] : []
-  if (last.index < 0 || last.index >= items.length) return root
-  items.splice(last.index, 1)
-  if (items.length === 0 && stepPath.length === 1 && listKey === 'steps' && !parent.control.else?.length && !parent.control.cases?.length) {
-    return null
-  }
-  parent.control = { ...parent.control, [listKey]: items }
-  return clone
+/**
+ * Remove a selected step inside a container (`http_sequence`,
+ * `control_parallel`, `control_if`, `control_loop`, `control_switch`), at any
+ * depth, keeping every container on the way a valid one (see
+ * normalizeAfterStepRemoval). An empty step path removes `root` itself.
+ * Returns null when the path does not name a step of `root`.
+ */
+export function removeNestedAction(root: ScriptActionDefinition, stepPath: string[] | undefined): NestedActionRemoval | null {
+  if (!stepPath?.length) return { replacement: [], relocate: () => null }
+  if (!resolveNestedAction(root, stepPath)) return null
+  const outcome = removeStepIn(structuredClone(root), stepPath)
+  return outcome ? { replacement: outcome.actions, relocate: outcome.relocate } : null
+}
+
+/**
+ * Breakpoints after `removeNestedAction` replaced the root action at
+ * `actionIndex`: one on the removed step (or a container that went with it)
+ * is dropped, one on a later sibling follows it to its new index, and later
+ * actions of the phase shift when a parallel block unwrapped into its steps.
+ * A breakpoint on one request of a top-level sequence keeps its
+ * `request_index` form.
+ */
+export function remapBreakpointsAfterNestedRemoval(
+  breakpoints: ScriptDebugBreakpoint[],
+  phase: string,
+  actionIndex: number,
+  removal: NestedActionRemoval,
+): ScriptDebugBreakpoint[] {
+  const offset = removal.replacement.length - 1
+  return breakpoints.flatMap(bp => {
+    if (bp.phase !== phase || bp.action_index < actionIndex) return [bp]
+    if (bp.action_index > actionIndex) return [{ ...bp, action_index: bp.action_index + offset }]
+    const path = bp.step_path?.length ? bp.step_path : bp.request_index != null ? [`requests[${bp.request_index}]`] : []
+    const moved = removal.relocate(path)
+    if (!moved) return []
+    const next: ScriptDebugBreakpoint = { ...bp, action_index: actionIndex + moved.index }
+    delete next.request_index
+    delete next.step_path
+    const request = moved.stepPath.length === 1 ? /^requests\[(\d+)\]$/.exec(moved.stepPath[0]) : null
+    if (request) next.request_index = Number(request[1])
+    else if (moved.stepPath.length) next.step_path = moved.stepPath
+    return [next]
+  })
 }
 
 /**
@@ -448,11 +575,22 @@ export function clearUnexportedHarBodyBlockerOnAction(action: ScriptActionDefini
   }
   delete nextMeta.har_request_body_not_exported
   if (nextMeta.import_review && typeof nextMeta.import_review === 'object' && !Array.isArray(nextMeta.import_review)) {
+    // Importers record the review's reasons in reason_codes (one per gating
+    // finding), with the first finding's source and resolution.
     const review = { ...(nextMeta.import_review as Record<string, unknown>) }
-    if (Array.isArray(review.findings)) {
-      review.findings = review.findings.filter(code => code !== 'har_request_body_not_exported')
+    const reasonCodes = Array.isArray(review.reason_codes) ? review.reason_codes : []
+    const remainingReasons = reasonCodes.filter(code => code !== 'har_request_body_not_exported')
+    if (reasonCodes.length > 0 && remainingReasons.length === 0) {
+      delete nextMeta.import_review
+    } else {
+      if (reasonCodes.length > 0) review.reason_codes = remainingReasons
+      if (Array.isArray(review.findings)) {
+        review.findings = review.findings.filter(code => code !== 'har_request_body_not_exported')
+      }
+      // A re-capture was this blocker's repair, not one the remaining reasons ask for.
+      if (review.resolution === 'recapture_body') review.resolution = 'replace_behavior_and_remove_gate'
+      nextMeta.import_review = review
     }
-    nextMeta.import_review = review
   }
   const hasOtherBlockers = (Array.isArray(nextMeta.execution_blockers) && nextMeta.execution_blockers.length > 0)
     || typeof nextMeta.execution_blocker === 'string'

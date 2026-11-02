@@ -14,11 +14,13 @@ import {
   clampDebuggerPaneSize,
   codePathForDebugRow,
   resolveDebugRowForEvent,
+  shortcutBreakpointTarget,
   actionTransactionMarker,
   actionTransactionName,
   computeTransactionBands,
   defaultCenterTabsState,
   duplicateActionInList,
+  duplicateActionInListWithReport,
   filterScriptPhaseActionRows,
   findParameterReferencesInJson,
   moveActionStep,
@@ -411,6 +413,23 @@ describe('filterScriptPhaseActionRows', () => {
     })
   })
 
+  describe('shortcutBreakpointTarget', () => {
+    const firstRow = { phase: 'init', actionIndex: 0 }
+    it('targets the selected init, teardown or nested step, not the first row', () => {
+      expect(shortcutBreakpointTarget({ workspaceTab: 'author', focus: { phase: 'init', actionIndex: 10 }, activeAction: null, firstRow })).toEqual({ phase: 'init', actionIndex: 10 })
+      expect(shortcutBreakpointTarget({ workspaceTab: 'author', focus: { phase: 'teardown', actionIndex: 1 }, activeAction: null, firstRow })).toEqual({ phase: 'teardown', actionIndex: 1 })
+      expect(shortcutBreakpointTarget({ workspaceTab: 'author', focus: { phase: 'action', actionIndex: 3, stepPath: ['requests[2]'] }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3, requestIndex: 2 })
+      expect(shortcutBreakpointTarget({ workspaceTab: 'debug', focus: { phase: 'action', actionIndex: 3, stepPath: ['then[0]', 'requests[1]'] }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3, stepPath: ['then[0]', 'requests[1]'] })
+    })
+    it('prefers the open replay event in Debug, then the active action, then the first row', () => {
+      const selectedEvent = { phase: 'action', action_index: 4, request_index: 1 }
+      expect(shortcutBreakpointTarget({ workspaceTab: 'debug', selectedEvent, focus: { phase: 'init', actionIndex: 2 }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 4, requestIndex: 1 })
+      expect(shortcutBreakpointTarget({ workspaceTab: 'author', selectedEvent, activeAction: 5, firstRow })).toEqual({ phase: 'action', actionIndex: 5 })
+      expect(shortcutBreakpointTarget({ workspaceTab: 'debug', selectedEvent: null, activeAction: null, firstRow })).toEqual(firstRow)
+      expect(shortcutBreakpointTarget({ workspaceTab: 'author', activeAction: null, firstRow: null })).toBeNull()
+    })
+  })
+
   describe('duplicateActionInList', () => {
     const list = (): ScriptActionDefinition[] => ([
       { name: 'Login', type: 'POST', target: '/login', params: { mask: 'x' } },
@@ -497,10 +516,11 @@ describe('filterScriptPhaseActionRows', () => {
                   import_credential_targets: ['headers.Authorization'],
                   import_header_fidelity: { redacted: true },
                   import_multipart_fidelity: { parts: 1 },
-                  script_projection_response_gate_v1: true,
+                  script_projection_response_gate_v1: { version: 1 },
                   restored_body_protected: true,
-                  import_review: { source: 'script_projection', findings: ['redacted'] },
-                  replay_blockers: ['import_review_required', 'keep_blocker'],
+                  import_review: { version: 1, source: 'script_projection', reason_codes: ['script_projection_unprojectable_body'], resolution: 'replace_behavior_and_remove_gate' },
+                  execution_blocker: 'import_review_required',
+                  execution_blockers: ['import_review_required', 'keep_blocker'],
                   note: 'keep-child',
                 },
               },
@@ -533,7 +553,9 @@ describe('filterScriptPhaseActionRows', () => {
       expect(origSeqChild.metadata?.import_action_uid).toBe('har-entry-10')
       // Cloned http_sequence child has provenance and [REDACTED] values stripped.
       const clonedSeqChild = ((afterSeqDup[1].params as { requests: ScriptActionDefinition[] }).requests)[0]
-      expect(clonedSeqChild.metadata).toEqual({ note: 'keep-child', replay_blockers: ['keep_blocker'] })
+      // The read projection's transient gate goes with its marker, as the
+      // server's WithoutTransientScriptProjectionGate drops it; other blockers stay.
+      expect(clonedSeqChild.metadata).toEqual({ note: 'keep-child', execution_blockers: ['keep_blocker'] })
       expect(clonedSeqChild.target).toBe('https://example.test/login?pw=')
       expect(clonedSeqChild.headers).toEqual({ Accept: 'application/json' })
       expect((clonedSeqChild as unknown as { header_list?: unknown }).header_list).toEqual([{ name: 'Accept', value: 'application/json' }])
@@ -545,6 +567,52 @@ describe('filterScriptPhaseActionRows', () => {
       expect(clonedAsyncChild.metadata).toBeUndefined()
       expect(clonedAsyncChild.headers).toEqual([{ name: 'Accept', value: '*/*' }])
       expect(clonedAsyncChild.body).toBe('')
+    })
+
+    it('strips steps nested in control_parallel branches and masked HAR metadata', () => {
+      const parallel = [{
+        name: 'Parallel login',
+        type: 'control_parallel',
+        metadata: { 'har.request.query_string': [{ name: 'pw', value: '[REDACTED]' }, { name: 'q', value: 'shoes' }], import_action_uid: 'har-entry-4' },
+        control: {
+          branches: [
+            { name: 'A', steps: [{ name: 'Login', type: 'POST', target: '/login', body: 'pw=[REDACTED]', headers: [{ name: 'Authorization', value: '[REDACTED]' }], metadata: { import_action_uid: 'har-entry-5', import_credential_targets: ['body'], import_header_fidelity: { omitted: 1 } } }] },
+            { name: 'B', steps: [{ name: 'Search', type: 'GET', target: '/search', metadata: { import_action_uid: 'har-entry-6', note: 'keep' } }] },
+          ],
+        },
+      }] as unknown as ScriptActionDefinition[]
+      const { actions, removedMaskedValues } = duplicateActionInListWithReport(parallel, 0)
+      const branches = (actions[1].control as { branches: Array<{ steps: ScriptActionDefinition[] }> }).branches
+      expect(branches[0].steps[0].metadata).toBeUndefined()
+      expect(branches[0].steps[0].body).toBe('pw=')
+      expect(branches[0].steps[0].headers).toEqual([])
+      expect(branches[1].steps[0].metadata).toEqual({ note: 'keep' })
+      expect(actions[1].metadata).toEqual({ 'har.request.query_string': [{ name: 'pw', value: '' }, { name: 'q', value: 'shoes' }] })
+      expect(removedMaskedValues).toEqual(['body', 'header Authorization'])
+      // The source keeps its provenance.
+      expect((parallel[0].control as { branches: Array<{ steps: ScriptActionDefinition[] }> }).branches[0].steps[0].metadata?.import_action_uid).toBe('har-entry-5')
+    })
+
+    it('reports the masked values a copy leaves out and keeps unmasked cookies', () => {
+      const login = [{
+        name: 'Login',
+        type: 'POST',
+        target: '/login',
+        body: 'un=alice&pw=[REDACTED]',
+        header_list: [
+          { name: 'Authorization', value: 'Bearer [REDACTED]' },
+          { name: 'Cookie', value: 'sid=[REDACTED]; theme=dark' },
+          { name: 'Accept', value: '*/*' },
+        ],
+      }] as unknown as ScriptActionDefinition[]
+      const { actions, removedMaskedValues } = duplicateActionInListWithReport(login, 0)
+      expect((actions[1] as unknown as { header_list: unknown }).header_list).toEqual([
+        { name: 'Cookie', value: 'theme=dark' },
+        { name: 'Accept', value: '*/*' },
+      ])
+      expect(actions[1].body).toBe('un=alice&pw=')
+      expect(removedMaskedValues).toEqual(['body', 'cookie sid', 'header Authorization'])
+      expect(duplicateActionInListWithReport([{ name: 'Plain', type: 'GET', target: '/' }] as ScriptActionDefinition[], 0).removedMaskedValues).toEqual([])
     })
   })
 

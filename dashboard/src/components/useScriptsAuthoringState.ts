@@ -157,12 +157,13 @@ export const RECORDING_STUDIO_RETURN_TARGET: AuthoringReturnTarget = { subView: 
 
 // A script saved from a draft the builder or the recorder opened closes back
 // there, as the draft would have, through every later save of it too. An
-// archive review stays mounted across a save with later edits, so its return
-// must survive the transition from a draft to the saved script's editor.
+// archive or protocol import review stays mounted across the save, so its
+// return must survive the transition from a draft to the saved script's editor.
 function savedScriptReturnTarget(previous: AuthoringState, savedScriptId: string): AuthoringReturnTarget | null {
   const sameEditor = previous.subView === 'create' || (previous.subView === 'edit' && previous.editingId === savedScriptId)
   const returnTarget = sameEditor ? previous.draftReturnTarget : null
-  return returnTarget && (returnTarget.subView === 'create-options' || returnTarget.subView === 'recorder' || (returnTarget.subView === 'import' && Boolean(returnTarget.retainedGuardIds?.length))) ? returnTarget : null
+  const retainedReview = (returnTarget?.subView === 'import' || returnTarget?.subView === 'protocol-import') && Boolean(returnTarget.retainedGuardIds?.length)
+  return returnTarget && (returnTarget.subView === 'create-options' || returnTarget.subView === 'recorder' || retainedReview) ? returnTarget : null
 }
 
 function normalizeAuthoringReturnTarget(returnTarget?: AuthoringReturnTarget | null): AuthoringReturnTarget | null {

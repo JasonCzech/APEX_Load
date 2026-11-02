@@ -2174,6 +2174,27 @@ func reconcileProjectedJSONWithContext(
 				return nil, fmt.Errorf("%s changed while containing redacted credentials; bind secret references before modifying or reordering it", path)
 			}
 		}
+		if projectedOK && IsActionCollectionTraversalPath(path) && !hasActionMatches &&
+			!reflect.DeepEqual(typed, projectedSlice) && actionCollectionHasProjectionResponseGate(typed) {
+			// A step whose credential body this read replaced with a whole-body
+			// sentinel (the transient script_projection gate) can only be
+			// restored from the stored step it was matched to. Reconciling it by
+			// position after the collection changed would persist the sentinel
+			// body and the response-only gate as durable state.
+			return nil, fmt.Errorf("%s changed while containing redacted credentials; bind secret references before modifying or reordering it", path)
+		}
+		if hasActionMatches {
+			if index, carried := unmatchedStepCarriesProjectedValue(typed, projectedSlice, rawSlice, actionMatches); carried {
+				// The step no longer matches the stored step whose projected
+				// value it carries, so that value cannot be restored and saving
+				// would replace the stored value with the read's placeholder.
+				return nil, fmt.Errorf(
+					"%s[%d] changes a step that holds stored values this read shows as placeholders; keep the step's type, method and target, or bind secret references before changing them",
+					path,
+					index,
+				)
+			}
+		}
 		out := make([]any, len(typed))
 		for i, child := range typed {
 			priorIdx := i
@@ -2657,12 +2678,119 @@ func actionCarriesProtectedMaskedMaterial(
 	if JsonValueContainsExecutableMaskedSecretWithContext(action, elementJSONPath, allowRedactedRuntimeData, ctx) {
 		return true
 	}
+	// The executable-sentinel scan skips review-gated steps, but the transient
+	// script_projection gate marks a step whose credential body this read
+	// replaced with a whole-body sentinel. Only its matched stored step can
+	// restore that body.
+	if HasScriptProjectionResponseGate(action) {
+		return true
+	}
 	if metadata, ok := action["metadata"].(map[string]any); ok && metadata != nil {
 		if _, hasHeaderFidelity := metadata[dsl.ImportHeaderFidelityMetadataKey]; hasHeaderFidelity {
 			return true
 		}
 		if _, hasMultipartFidelity := metadata[dsl.ImportMultipartFidelityMetadataKey]; hasMultipartFidelity {
 			return true
+		}
+	}
+	return false
+}
+
+// actionCollectionHasProjectionResponseGate reports whether any step of an
+// action collection carries the transient script_projection response gate.
+func actionCollectionHasProjectionResponseGate(actions []any) bool {
+	for _, item := range actions {
+		if action, ok := item.(map[string]any); ok && HasScriptProjectionResponseGate(action) {
+			return true
+		}
+	}
+	return false
+}
+
+// unmatchedStepCarriesProjectedValue reports the first incoming step that
+// matched no stored step yet carries a sentinel-free projected value (such as
+// a redacted <messageId> shown as {{fn.uuid()}}) of a stored step that no
+// incoming step matched either: the edited step itself, whose stored value
+// reconciliation can no longer restore. A copy of a step that still matches
+// keeps the placeholder, since the stored value survives on the original.
+// Values carrying the [REDACTED] sentinel are governed by the protected
+// material and orphan-sentinel rules instead.
+func unmatchedStepCarriesProjectedValue(incoming, projected, raw []any, matches []int) (int, bool) {
+	matchedPrior := make([]bool, len(projected))
+	hasUnmatched := false
+	for _, priorIdx := range matches {
+		if priorIdx >= 0 && priorIdx < len(projected) {
+			matchedPrior[priorIdx] = true
+		} else {
+			hasUnmatched = true
+		}
+	}
+	if !hasUnmatched {
+		return -1, false
+	}
+	placeholders := make(map[string]struct{})
+	for index := range projected {
+		if matchedPrior[index] || index >= len(raw) {
+			continue
+		}
+		collectSentinelFreeProjectedStrings(projected[index], raw[index], placeholders)
+	}
+	if len(placeholders) == 0 {
+		return -1, false
+	}
+	for index, priorIdx := range matches {
+		if priorIdx >= 0 || index >= len(incoming) {
+			continue
+		}
+		if jsonValueContainsAnyString(incoming[index], placeholders) {
+			return index, true
+		}
+	}
+	return -1, false
+}
+
+// collectSentinelFreeProjectedStrings adds every string leaf of projected that
+// replaces a different stored string at the same location without carrying
+// the [REDACTED] sentinel.
+func collectSentinelFreeProjectedStrings(projected, raw any, out map[string]struct{}) {
+	switch typed := projected.(type) {
+	case string:
+		if stored, ok := raw.(string); ok && stored != typed && !strings.Contains(typed, MaskedScriptSecret) {
+			out[typed] = struct{}{}
+		}
+	case map[string]any:
+		rawMap, _ := raw.(map[string]any)
+		for key, child := range typed {
+			collectSentinelFreeProjectedStrings(child, rawMap[key], out)
+		}
+	case []any:
+		rawSlice, _ := raw.([]any)
+		for index, child := range typed {
+			var rawChild any
+			if index < len(rawSlice) {
+				rawChild = rawSlice[index]
+			}
+			collectSentinelFreeProjectedStrings(child, rawChild, out)
+		}
+	}
+}
+
+func jsonValueContainsAnyString(value any, texts map[string]struct{}) bool {
+	switch typed := value.(type) {
+	case string:
+		_, found := texts[typed]
+		return found
+	case map[string]any:
+		for _, child := range typed {
+			if jsonValueContainsAnyString(child, texts) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if jsonValueContainsAnyString(child, texts) {
+				return true
+			}
 		}
 	}
 	return false

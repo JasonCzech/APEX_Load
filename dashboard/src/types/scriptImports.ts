@@ -724,6 +724,8 @@ export interface SalesforceCorrelationCandidate {
   rule_id?: string
   confidence?: number
   reasons?: string[]
+  classification?: string
+  diff_confidence?: number
 }
 
 export interface SalesforceNativePreview {
@@ -757,7 +759,8 @@ export interface AuraBatchAnalysis {
   request_actions: number
   response_actions: number
   matched_actions: number
-  outcomes?: { ordinal: number; state: AuraActionState }[]
+  // descriptor, when the report carries one, names the action (Controller$method).
+  outcomes?: { ordinal: number; state: AuraActionState; descriptor?: string }[]
   issues?: { code: string; ordinal?: number }[]
   outcomes_omitted?: number
   issues_omitted?: number
@@ -991,11 +994,13 @@ export interface JMeterScenarioDraft {
 
 export interface SampleImportStats {
   format: string
-  total_entries?: number
+  // Every HAR entry the importer read: converted, filtered and skipped.
   total_requests: number
   converted_actions: number
+  // Every request a filter left out, including filtered_telemetry.
   filtered_assets?: number
   filtered_telemetry?: number
+  skipped_requests?: number
   assertions: number
   extractors: number
   correlations_detected: number

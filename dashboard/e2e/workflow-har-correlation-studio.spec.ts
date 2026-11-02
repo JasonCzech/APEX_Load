@@ -318,15 +318,20 @@ test('HAR capture guide, 2-HAR Salesforce Correlation Studio, draft exclusion, a
   const importPayload = await json(importResp)
   expect((importPayload.summary as { har_diff?: { compared?: boolean } })?.har_diff?.compared).toBe(true)
 
+  // Desktop sign-in is hoisted into init[] and logout into teardown[]; the
+  // funnel reports those counts, so check the numbers, not the labels.
+  const importedScript = importPayload.script as { init?: unknown[]; teardown?: unknown[] } | undefined
+  expect(importedScript?.init?.length ?? 0).toBeGreaterThan(0)
+  expect(importedScript?.teardown?.length ?? 0).toBeGreaterThan(0)
   const studio = controls.getByRole('region', { name: 'Correlation studio & capture funnel', exact: true })
   await expect(studio).toBeVisible()
-  await expect(studio).toContainText('Init')
-  await expect(studio).toContainText('Teardown')
+  const funnel = studio.getByRole('group', { name: 'HAR capture conversion funnel', exact: true })
+  await expect(funnel).toContainText(/Init [1-9]\d* · Main \d+ · Teardown [1-9]\d*/)
 
   const blockerBanner = studio.getByRole('region', { name: 'Requests missing exported bodies', exact: true })
   await expect(blockerBanner).toBeVisible()
   const excluded = mutation(page, 'POST', '/api/v1/scripts/import/exclude-actions')
-  await blockerBanner.getByRole('button', { name: 'Exclude action from draft', exact: true }).click()
+  await blockerBanner.getByRole('button', { name: /^Exclude action from draft: / }).click()
   const excludeResp = await excluded
   expect(excludeResp.ok(), await excludeResp.text()).toBeTruthy()
   await expect(blockerBanner).toBeHidden()
@@ -354,7 +359,8 @@ test('HAR capture guide, 2-HAR Salesforce Correlation Studio, draft exclusion, a
 
   // 5. Save to Script Library, open in Editor, verify decoded Aura envelope & ready Debug gate
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/commit-batch')
-  await controls.getByRole('button', { name: /^(Save to script library|Save draft)$/ }).click()
+  // The review's own Save step; the sticky toolbar repeats it.
+  await controls.locator('.script-import-review-actions').getByRole('button', { name: /^(Save to script library|Save draft)$/ }).click()
   const savedResp = await saved
   expect(savedResp.ok(), await savedResp.text()).toBeTruthy()
 

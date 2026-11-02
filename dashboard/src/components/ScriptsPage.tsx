@@ -578,7 +578,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     acceptSavedScript(...args)
     const options = args[3]
     const source = args[4] === undefined ? authoringState.draftReturnTarget : args[4]
-    const keepAuthoringOpen = options?.laterEdits || options?.configureSecrets || options?.keepAuthoringOpen || source?.subView === 'import'
+    const keepAuthoringOpen = options?.laterEdits || options?.configureSecrets || options?.keepAuthoringOpen || source?.subView === 'import' || source?.subView === 'protocol-import'
     if (keepAuthoringOpen) onScriptSaved?.(args[0], { keepAuthoringOpen: true })
     else onScriptSaved?.(args[0])
   }, [acceptSavedScript, authoringState.draftReturnTarget, onScriptSaved])
@@ -624,8 +624,13 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const handleLibraryFileDrop = useCallback((files: File[]) => {
     const usable = files.filter(Boolean)
     if (usable.length === 0) return
-    const allHar = usable.every(candidate => candidate.name.toLowerCase().endsWith('.har'))
-    if (allHar && usable.length > 2) {
+    const harFiles = usable.filter(candidate => candidate.name.toLowerCase().endsWith('.har'))
+    if (harFiles.length > 0 && harFiles.length < usable.length) {
+      const others = usable.filter(candidate => !harFiles.includes(candidate)).map(candidate => candidate.name)
+      setLibraryNotice(`Drop HAR captures on their own: ${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} not ${others.length === 1 ? 'a HAR file' : 'HAR files'}.`)
+      return
+    }
+    if (harFiles.length > 2) {
       setLibraryNotice('Drop at most two HAR captures (primary and comparison) at once.')
       return
     }
@@ -636,7 +641,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       .then(request => {
         if (!isCurrent(requestID)) return
         if (!request) {
-          setLibraryNotice(`${usable[0]?.name || 'Dropped file'} is not a supported script import format.`)
+          setLibraryNotice(`${usable.length === 1 ? usable[0].name : `${usable.length} dropped files`} ${usable.length === 1 ? 'is' : 'are'} not a supported script import format.`)
           return
         }
         openImportFiles(request.launcher, request.files, request.mode)

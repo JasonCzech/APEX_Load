@@ -3245,8 +3245,11 @@ func TestBuildNativePreviewDoesNotCountNonExecutableQueryMetadataAsCorrelationUs
 				Type:   "GET",
 				Method: "GET",
 				Target: target,
+				// har.request.query_string is the decoded query the HAR importer
+				// keeps beside the wire target. It is display metadata, not a
+				// replayed surface, so its raw value must not count as usage.
 				Metadata: map[string]any{
-					"salesforce_query": []any{
+					"har.request.query_string": []any{
 						map[string]any{"name": "access_token", "value": rawValue},
 					},
 				},
@@ -3282,8 +3285,10 @@ func TestBuildNativePreviewDoesNotCountNonExecutableQueryMetadataAsCorrelationUs
 	if len(preview.Script.Actions[0].Extractors) != 0 {
 		t.Fatalf("source extractors = %#v, want none when only non-executable metadata matched", preview.Script.Actions[0].Extractors)
 	}
-	if len(preview.Correlations) != 1 || preview.Correlations[0].PreApplied {
-		t.Fatalf("correlations = %#v, want PreApplied=false when wire target still carries recorded value", preview.Correlations)
+	if len(preview.Correlations) != 1 || preview.Correlations[0].PreApplied || preview.Correlations[0].ReviewAction != "manual_value_replacement_required" {
+		t.Fatalf("correlations = %#v, want PreApplied=false and manual_value_replacement_required when wire target still carries recorded value", preview.Correlations)
+	}
+	if raw, _ := json.Marshal(preview.Script.Actions[1].Metadata["har.request.query_string"]); strings.Contains(string(raw), "{{var.") {
+		t.Fatalf("har.request.query_string = %s, want the recorded value kept when the wire target was not rewritten", raw)
 	}
 }
-

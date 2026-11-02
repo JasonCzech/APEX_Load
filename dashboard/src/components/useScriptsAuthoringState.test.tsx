@@ -57,6 +57,7 @@ function AuthoringStateHarness({ api, initialMode, initialImport, initialEditId,
       <button data-testid="draft-edit-parameter-data-focused" onClick={() => model.handleDraftEdit({ name: 'Parameter Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data' })}>draft-edit-parameter-data-focused</button>
       <button data-testid="draft-edit-data-source-focused" onClick={() => model.handleDraftEdit({ name: 'Data Source Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data', targetDataSource: 'login_users' })}>draft-edit-data-source-focused</button>
       <button data-testid="draft-edit-with-return" onClick={() => model.handleDraftEdit({ name: 'Review Draft', protocol: 'http', config: {}, actions: [] } as never, undefined, { subView: 'import', label: 'Back to Converted Script', importLauncher: 'enterprise_archive' })}>draft-edit-with-return</button>
+      <button data-testid="draft-edit-protocol-review" onClick={() => model.handleDraftEdit({ name: 'HAR Draft', protocol: 'http', config: {}, actions: [] } as never, undefined, { subView: 'protocol-import', label: 'Back to import review', importLauncher: 'traffic_har', importMode: 'auto_detect', retainedGuardIds: ['ProtocolAssetImport'] })}>draft-edit-protocol-review</button>
       <button data-testid="return-draft-source" onClick={model.returnToDraftSource}>return-draft-source</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
       <button data-testid="save-script" onClick={() => model.handleSavedScript({ id: 'saved-script-1', name: 'Saved Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' })}>save-script</button>
@@ -265,6 +266,18 @@ describe('useScriptsAuthoringState', () => {
     await click('save-script-with-payload')
     expect(readTestId('subview')).toBe('edit')
     expect(readTestId('draft-return-subview')).toBe('none')
+
+    // A protocol import review kept mounted behind the editor is, through
+    // every later save of the draft.
+    await click('draft-edit-protocol-review')
+    await click('save-script-with-payload')
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('draft-return-subview')).toBe('protocol-import')
+    expect(readTestId('draft-return-label')).toBe('Back to import review')
+    await click('save-script-with-payload')
+    expect(readTestId('draft-return-subview')).toBe('protocol-import')
+    await click('return-draft-source')
+    expect(readTestId('subview')).toBe('protocol-import')
   })
 
   it('keeps the return when a saved builder draft reopens by id', async () => {

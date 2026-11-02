@@ -78,8 +78,8 @@ describe('AuraEnvelopeEditor', () => {
     const parsed = parseAuraFormEnvelope(body)
     expect(parsed).not.toBeNull()
     expect(parsed!.actions).toHaveLength(2)
-    expect(formatAuraActionTitle(parsed!.actions[0], 0)).toBe('Apex · InteractionController.searchCustomers')
-    expect(formatAuraActionTitle(parsed!.actions[1], 1)).toBe('RecordGvp.getRecord')
+    expect(formatAuraActionTitle(parsed!.actions[0], 0)).toBe('InteractionController.searchCustomers')
+    expect(formatAuraActionTitle(parsed!.actions[1], 1)).toBe('RecordGvpController.getRecord')
     expect(parsed!.token).toBe('{{var.aura_token}}')
     expect(parsed!.pageURI).toBe('/lightning/r/Interaction__c/view')
 
@@ -99,13 +99,41 @@ describe('AuraEnvelopeEditor', () => {
     expect(parseAuraFormEnvelope(`${unquotedBody}&message=%7B%22actions%22%3A%5B%5D%7D`)).toBeNull()
   })
 
+  it('titles sub-actions as the importer names steps (aura.ActionDescriptor.ShortTitle)', () => {
+    const title = (descriptor: string, params?: Record<string, unknown>) => formatAuraActionTitle({ descriptor, params }, 0)
+    expect(title('aura://ApexActionController/ACTION$execute', { namespace: 'ns', classname: 'Ctrl', method: 'run' })).toBe('ns.Ctrl.run')
+    expect(title('apex://BWC_InteractionController/ACTION$getVisibility')).toBe('BWC_InteractionController.getVisibility')
+    expect(title('apex://ns.Ctrl/ACTION$m')).toBe('ns.Ctrl.m')
+    expect(title('aura://RecordUiController/ACTION$getRecordWithFields')).toBe('RecordUiController.getRecordWithFields')
+    // Apex parameters on another controller do not make it an Apex call.
+    expect(title('aura://HostConfigController/ACTION$getConfigData', { classname: 'X', method: 'y' })).toBe('HostConfigController.getConfigData')
+    expect(title('aura://ApexActionController/ACTION$execute')).toBe('ApexActionController.execute')
+    expect(formatAuraActionTitle({}, 2)).toBe('Action 3')
+  })
+
+  it('keeps recorded fields byte-for-byte and encoded {{...}} literal text encoded when another field changes', () => {
+    const message = '%7B%22actions%22%3A%5B%7B%22id%22%3A%221%22%2C%22descriptor%22%3A%22aura%3A%2F%2FEmailController%2FACTION%24save%22%2C%22params%22%3A%7B%22htmlValue%22%3A%22Hi%20%7B%7B%7BRecipient.FirstName%7D%7D%7D%22%7D%7D%5D%7D'
+    const body = `message=${message}&aura.pageURI=%2Fs%2Fhome&aura.token=old`
+    const parsed = parseAuraFormEnvelope(body)!
+    expect((parsed.actions[0].params as Record<string, unknown>).htmlValue).toBe('Hi {{{Recipient.FirstName}}}')
+    const tokenEdited = serializeAuraFormEnvelope({ ...parsed, token: 'new' })
+    expect(tokenEdited).toBe(`message=${message}&aura.pageURI=%2Fs%2Fhome&aura.token=new`)
+
+    // Editing the message re-encodes it, and the literal braces stay encoded.
+    const actions = [{ ...parsed.actions[0], params: { htmlValue: 'Hi {{{Recipient.FirstName}}}', subject: '{{var.subject}}' } }]
+    const messageEdited = serializeAuraFormEnvelope({ ...parsed, actions })
+    expect(messageEdited).toContain('%7B%7B%7BRecipient.FirstName%7D%7D%7D')
+    expect(messageEdited).not.toContain('{{Recipient.FirstName}}')
+    expect(messageEdited).toContain('{{var.subject}}')
+  })
+
   it('edits sub-action JSON parameters and validates malformed JSON', () => {
     const parsed = parseAuraFormEnvelope(buildSampleAuraBody())!
     const onChangeBody = vi.fn()
     act(() => root.render(<AuraEnvelopeEditor envelope={parsed} onChangeBody={onChangeBody} />))
 
     const textarea = container.querySelector(
-      'textarea[aria-label="Parameters (JSON) for Apex · InteractionController.searchCustomers"]',
+      'textarea[aria-label="Parameters (JSON) for InteractionController.searchCustomers"]',
     ) as HTMLTextAreaElement
     expect(textarea.value).toContain('"InteractionController"')
 

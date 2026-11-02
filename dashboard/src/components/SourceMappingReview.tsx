@@ -208,8 +208,12 @@ const TRUNCATED_PREVIEW_MARKER = '\n\n[truncated for source review]'
 
 /** Lines of source a review file's text holds, as the code view counts them. */
 function sourceTextLineCount(text: string, truncated?: boolean) {
-  const source = truncated && text.endsWith(TRUNCATED_PREVIEW_MARKER) ? text.slice(0, -TRUNCATED_PREVIEW_MARKER.length) : text
-  return source.split(/\r\n|\r|\n/).length
+  return withoutPreviewMarker(text, truncated).split(/\r\n|\r|\n/).length
+}
+
+/** A review file's text without the preview marker: only the source it holds. */
+function withoutPreviewMarker(text: string, truncated?: boolean) {
+  return truncated && text.endsWith(TRUNCATED_PREVIEW_MARKER) ? text.slice(0, -TRUNCATED_PREVIEW_MARKER.length) : text
 }
 
 // Files larger than this are never kept in full (sourceview.MaxFullTextBytes).
@@ -234,6 +238,16 @@ function sourceTextLimitNote(
   if (file.full_sha256 && !hasProject) return `${past}. The full file is stored with its project, which this view does not name.`
   if ((file.original_bytes || 0) > MAX_FULL_TEXT_BYTES) return `${past}. The file is too large to keep in full (over 16 MB); inspect it in the original source.`
   return `${past}. This import kept only the preview; inspect the line in the original source.`
+}
+
+/** Why "Copy" can only copy a truncated file's preview, as the pane's note words it. */
+function retainedPreviewCopyTitle(file: SourceReviewFile, fullText: SourceReviewFullText, hasProject: boolean) {
+  const copies = 'copies the retained preview.'
+  if (fullText.status === 'loading') return `The full file is still loading; ${copies}`
+  if (fullText.status === 'unavailable') return `The full file could not be loaded (${fullText.message}); ${copies}`
+  if (file.full_sha256 && !hasProject) return `The full file is stored with its project, which this view does not name; ${copies}`
+  if ((file.original_bytes || 0) > MAX_FULL_TEXT_BYTES) return `Full source file exceeds the 16 MiB review retention limit; ${copies}`
+  return `This import kept only a preview of the file; ${copies}`
 }
 
 function excerptFromText(text: string, startLine?: number, endLine?: number) {
@@ -1090,8 +1104,8 @@ export default function SourceMappingReview({
                 type="button"
                 className="btn btn-sm btn-ghost"
                 disabled={!copySupported || !selectedFile}
-                title={selectedFile?.truncated && fullText.status !== 'ready' ? 'Full source file exceeds the 16 MiB review retention limit; copies the retained preview.' : undefined}
-                onClick={() => void copyValue('source-full', sourceText)}
+                title={selectedFile?.truncated && fullText.status !== 'ready' ? retainedPreviewCopyTitle(selectedFile, fullText, Boolean(projectId)) : undefined}
+                onClick={() => void copyValue('source-full', fullText.status === 'ready' ? sourceText : withoutPreviewMarker(sourceText, selectedFile?.truncated))}
               >
                 {copied === 'source-full'
                   ? 'Copied'

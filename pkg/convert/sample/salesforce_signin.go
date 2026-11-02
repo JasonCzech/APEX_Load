@@ -177,6 +177,7 @@ func findDesktopSalesforceSignIn(exchanges []exchange) *salesforceSignIn {
 	}
 	end := frontdoorIdx
 	reachedOneApp200 := false
+chain:
 	for next := frontdoorIdx + 1; next < len(exchanges); next++ {
 		ex := exchanges[next]
 		p := strings.ToLower(strings.TrimRight(urlPath(ex.URL), "/"))
@@ -206,6 +207,16 @@ func findDesktopSalesforceSignIn(exchanges []exchange) *salesforceSignIn {
 		case ex.Response != nil && ex.Response.Status >= 300 && ex.Response.Status < 400:
 			// Intermediate redirect hops inside the login/session handoff chain.
 			continue
+		case isSalesforceSignInStaticAsset(ex):
+			// A script or image a sign-in page loads (kept when static assets
+			// are included) is not a business step.
+			continue
+		default:
+			// Any other page is the first business step (a Classic or
+			// Visualforce-only capture never reaches /aura): the chain ends
+			// here, so a later home.jsp or session handoff cannot pull the
+			// business flow into init.
+			break chain
 		}
 	}
 	signIn := &salesforceSignIn{
@@ -216,6 +227,32 @@ func findDesktopSalesforceSignIn(exchanges []exchange) *salesforceSignIn {
 	}
 	populateSalesforceSignInForms(signIn, exchanges, signedIn+1)
 	return signIn
+}
+
+func isSalesforceSignInStaticAsset(ex exchange) bool {
+	if method := strings.ToUpper(strings.TrimSpace(ex.Method)); method != "GET" && method != "HEAD" {
+		return false
+	}
+	if ex.Response != nil && isStaticMIMEType(headerLookup(ex.Response.Headers, "Content-Type")) {
+		return true
+	}
+	return isStaticURL(ex.URL)
+}
+
+// isSalesforceSessionHopExtractor reports whether an extractor carries a
+// desktop sign-in hop: a redirect Location or a session handoff value (sid,
+// cshc, lm) that the next hop of the chain sends.
+func isSalesforceSessionHopExtractor(extractor dsl.Extractor) bool {
+	if strings.EqualFold(extractor.Source, "header") && strings.EqualFold(strings.TrimSpace(extractor.Expression), "Location") {
+		return true
+	}
+	for _, token := range strings.Split(strings.ToLower(extractor.Name), "_") {
+		switch token {
+		case "location", "sid", "cshc", "lm":
+			return true
+		}
+	}
+	return false
 }
 
 func findDesktopSalesforceLogoutStart(exchanges []exchange, signInEnd int) int {
@@ -493,11 +530,17 @@ func (s *salesforceSignIn) moveToInit(script *dsl.Script, exchanges []exchange, 
 	script.Init = append([]dsl.Action(nil), script.Actions[:boundary]...)
 	script.Actions = append([]dsl.Action(nil), script.Actions[boundary:]...)
 	if s.desktop {
-		// Authentication and session-bootstrap extractors in a desktop sign-in
-		// chain must fail fast when a sign-in step fails instead of replaying a
-		// recorded user's stale Location or sid fallback.
-		for i := range script.Init {
+		// The Location and session-ID hops of a desktop sign-in chain must
+		// fail fast when a sign-in step fails instead of replaying a recorded
+		// user's stale redirect or sid. Other extractors, and the steps an
+		// open transaction carried into init, keep their own miss policy: a
+		// less certain correlation on served content still falls back to its
+		// recorded value.
+		for i := 0; i <= end && i < len(script.Init); i++ {
 			for j := range script.Init[i].Extractors {
+				if !isSalesforceSessionHopExtractor(script.Init[i].Extractors[j]) {
+					continue
+				}
 				script.Init[i].Extractors[j].OnMiss = "fail"
 				script.Init[i].Extractors[j].DefaultValue = nil
 			}

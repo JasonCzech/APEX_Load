@@ -273,6 +273,13 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
         case ' ':
           activate(row)
           return true
+        case 'b':
+        case 'B':
+          // Cmd/Ctrl+B is F9's twin: both toggle the focused row's breakpoint.
+          if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return false
+          if (!debug?.breakpoint(row)) return false
+          debug.onToggleBreakpoint(row)
+          return true
         case 'F9':
           if (!debug?.breakpoint(row)) return false
           debug.onToggleBreakpoint(row)

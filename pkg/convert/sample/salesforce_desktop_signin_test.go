@@ -35,8 +35,8 @@ func TestDesktopSalesforceSignInHoistsThroughOneAppAndMovesLogoutToTeardown(t *t
 			"startedDateTime": "2026-01-01T00:00:02.100Z",
 			"time":            40,
 			"request": map[string]any{
-				"method": "GET",
-				"url":    myDomainHost + "/secur/frontdoor.jsp?sid=" + strings.ReplaceAll(frontdoorSID, "!", "%21") + "&cshc=" + cshcVal,
+				"method":  "GET",
+				"url":     myDomainHost + "/secur/frontdoor.jsp?sid=" + strings.ReplaceAll(frontdoorSID, "!", "%21") + "&cshc=" + cshcVal,
 				"headers": []any{},
 				"queryString": []any{
 					map[string]any{"name": "sid", "value": frontdoorSID},
@@ -125,14 +125,20 @@ func TestDesktopSalesforceSignInHoistsThroughOneAppAndMovesLogoutToTeardown(t *t
 		t.Fatalf("unexpected salesforce_users data source: %+v", users)
 	}
 
-	// Verify all init extractors use OnMiss: "fail" with nil DefaultValue, and
-	// frontdoor.jsp har.request.query_string has correlated templates instead of raw sid.
+	// Verify the Location and sid hop extractors use OnMiss: "fail" with nil
+	// DefaultValue, and frontdoor.jsp har.request.query_string has correlated
+	// templates instead of raw sid.
 	foundOneAppInInit := false
 	foundFrontdoorInInit := false
+	hopExtractors := 0
 	for _, act := range res.Script.Init {
 		for _, ext := range act.Extractors {
+			if !isSalesforceSessionHopExtractor(ext) {
+				continue
+			}
+			hopExtractors++
 			if ext.OnMiss != "fail" || ext.DefaultValue != nil {
-				t.Fatalf("init extractor %q has on_miss=%q default=%v, want fail/nil", ext.Name, ext.OnMiss, ext.DefaultValue)
+				t.Fatalf("init hop extractor %q has on_miss=%q default=%v, want fail/nil", ext.Name, ext.OnMiss, ext.DefaultValue)
 			}
 		}
 		if strings.Contains(act.Target, "/one/one.app") {
@@ -145,6 +151,9 @@ func TestDesktopSalesforceSignInHoistsThroughOneAppAndMovesLogoutToTeardown(t *t
 				t.Fatalf("har.request.query_string retained raw correlated frontdoor sid: %s", string(qsRaw))
 			}
 		}
+	}
+	if hopExtractors == 0 {
+		t.Fatalf("expected Location/sid hop extractors in Init")
 	}
 	if !foundOneAppInInit || !foundFrontdoorInInit {
 		t.Fatalf("expected frontdoor.jsp and /one/one.app in Init (frontdoor=%v, oneApp=%v)", foundFrontdoorInInit, foundOneAppInInit)
@@ -211,5 +220,101 @@ func TestDesktopSalesforceSignInHoistsThroughOneAppAndMovesLogoutToTeardown(t *t
 	}
 	if !hasInitMap || !hasActionMap || !hasTeardownMap {
 		t.Fatalf("expected remapped SourceReview paths across init/actions/teardown (init=%v action=%v teardown=%v)", hasInitMap, hasActionMap, hasTeardownMap)
+	}
+}
+
+// A Classic (or Visualforce-only) capture never reaches /aura. The sign-in
+// chain ends at the first business page, so a later Home tab visit or
+// session handoff does not pull the business flow into init.
+func TestDesktopSalesforceSignInChainStopsAtTheFirstBusinessPage(t *testing.T) {
+	const host = "https://acme.my.salesforce.com"
+	ok := func(method, path string) exchange {
+		return exchange{Method: method, URL: host + path, Response: &response{Status: 200}}
+	}
+	exchanges := []exchange{
+		ok("GET", "/"),
+		{
+			Method: "POST", URL: host + "/", Body: "un=a%40example.test&pw=secret",
+			Response: &response{Status: 302, Headers: map[string]string{"Location": host + "/secur/frontdoor.jsp?sid=x"}},
+		},
+		ok("GET", "/secur/frontdoor.jsp?sid=x"),
+		ok("GET", "/home/home.jsp"),
+		ok("GET", "/001/o"),
+		ok("GET", "/001000000000001"),
+		ok("GET", "/home/home.jsp"),
+		ok("GET", "/001/o"),
+		ok("GET", "/secur/logout.jsp"),
+	}
+	signIn := findDesktopSalesforceSignIn(exchanges)
+	if signIn == nil {
+		t.Fatal("desktop sign-in not found")
+	}
+	if signIn.token != 3 {
+		t.Fatalf("sign-in ends at exchange %d, want 3 (the first home.jsp)", signIn.token)
+	}
+	if signIn.logoutStart != 8 {
+		t.Fatalf("logoutStart = %d, want 8", signIn.logoutStart)
+	}
+
+	// The scripts and images a login-flow page loads (kept when static assets
+	// are included) do not end the chain before the flow's own hops.
+	flow := []exchange{
+		exchanges[0], exchanges[1], exchanges[2],
+		ok("GET", "/apex/CustomLoginFlow"),
+		ok("GET", "/resource/1700000000000/flowjs/app.js"),
+		{Method: "GET", URL: host + "/img/logo", Response: &response{Status: 200, Headers: map[string]string{"Content-Type": "image/png"}}},
+		{Method: "POST", URL: host + "/apex/CustomLoginFlow", Response: &response{Status: 302, Headers: map[string]string{"Location": host + "/home/home.jsp"}}},
+		ok("GET", "/home/home.jsp"),
+		ok("GET", "/001/o"),
+	}
+	signIn = findDesktopSalesforceSignIn(flow)
+	if signIn == nil || signIn.token != 7 {
+		t.Fatalf("login-flow sign-in = %+v, want it to end at exchange 7 (home.jsp)", signIn)
+	}
+}
+
+// Only the Location and session-ID hops of a desktop sign-in are forced to
+// fail on a miss. A less certain correlation on served content keeps its
+// recorded fallback, and so does a step an open transaction carried into init.
+func TestDesktopSalesforceSignInForcesFailOnlyOnSessionHops(t *testing.T) {
+	recorded := "recorded"
+	soft := func(name, source, expression string) dsl.Extractor {
+		value := recorded
+		return dsl.Extractor{Name: name, Source: source, Type: "regex", Expression: expression, OnMiss: "default", DefaultValue: &value}
+	}
+	marker := func(function string) dsl.Action {
+		return dsl.Action{Type: "source_transaction", Params: map[string]any{"function": function, "args": []any{"Login"}}}
+	}
+	script := &dsl.Script{Actions: []dsl.Action{
+		{Type: "http", Method: "GET", Target: "/promos.html", Extractors: []dsl.Extractor{
+			soft("corr_banner_id", "body", `id="(\w+)"`),
+			{Name: "corr_location", Source: "header", Type: "header", Expression: "Location", OnMiss: "default", DefaultValue: &recorded},
+		}},
+		marker("lr_start_transaction"),
+		{Type: "http", Method: "GET", Target: "/secur/frontdoor.jsp", Extractors: []dsl.Extractor{soft("corr_sid", "body", `name="sid" value="([^"]+)"`)}},
+		{Type: "http", Method: "GET", Target: "/001/o", Extractors: []dsl.Extractor{soft("corr_sid_2", "body", `sid=([^&]+)`)}},
+		marker("lr_end_transaction"),
+		{Type: "http", Method: "GET", Target: "/002/o"},
+	}}
+	exchanges := []exchange{{Method: "GET"}, {Method: "GET"}, {Method: "GET"}, {Method: "GET"}}
+	signIn := &salesforceSignIn{token: 1, desktop: true}
+	_, _, boundary, why := signIn.moveToInit(script, exchanges, []int{0, 2, 3, 5}, nil)
+	if why != "" || boundary != 5 {
+		t.Fatalf("boundary = %d, why = %q; want 5 and no reason", boundary, why)
+	}
+	got := map[string]string{}
+	for _, action := range script.Init {
+		for _, extractor := range action.Extractors {
+			got[extractor.Name] = extractor.OnMiss
+			if extractor.OnMiss == "fail" && extractor.DefaultValue != nil {
+				t.Fatalf("%s fails on a miss but keeps a default", extractor.Name)
+			}
+		}
+	}
+	want := map[string]string{"corr_banner_id": "default", "corr_location": "fail", "corr_sid": "fail", "corr_sid_2": "default"}
+	for name, policy := range want {
+		if got[name] != policy {
+			t.Fatalf("%s on_miss = %q, want %q (all: %v)", name, got[name], policy, got)
+		}
 	}
 }

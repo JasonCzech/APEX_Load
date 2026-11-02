@@ -93,7 +93,7 @@ func applyHARImportUploadContract(route discoveredRoute, contract *inferredRoute
 	})
 	upsertQuery(oasParameter{
 		Name: "validate_only", In: "query", Schema: oasParamSchema{Type: "boolean"},
-		Description: "When true, inspects and converts the capture without retaining source texts or allocating a source-secret session.",
+		Description: "When true, inspects and converts the capture without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation (import_draft_expires_at), so the reviewed draft can be saved without a second upload.",
 	})
 	upsertQuery(oasParameter{
 		Name: "filename", In: "query", Schema: oasParamSchema{Type: "string"},
@@ -112,7 +112,7 @@ func applyHARImportUploadContract(route discoveredRoute, contract *inferredRoute
 			media.Schema.Properties = map[string]oasSchema{}
 		}
 		media.Schema.Properties["project_id"] = oasSchema{Type: "string", Description: "Project scope for recording profiles and secret capability checks."}
-		media.Schema.Properties["validate_only"] = oasSchema{Type: "string", Description: "Boolean flag ('true'/'false') for stateless Stage 1/2 inspection without retaining source texts or allocating a source-secret session."}
+		media.Schema.Properties["validate_only"] = oasSchema{Type: "string", Description: "Boolean flag ('true'/'false') for Stage 1/2 inspection without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation."}
 		media.Schema.Properties["filter_client_telemetry"] = oasSchema{Type: "string", Description: "Boolean flag ('true'/'false') controlling default filtering of pure client-telemetry beacons."}
 		if allowComparison {
 			media.Schema.Properties["secondary_file"] = oasSchema{Type: "string", Format: "binary", Description: "Optional second HAR (.har or .zip) from an independent session used to classify dynamic vs static values."}
@@ -127,7 +127,7 @@ func applyHARImportUploadContract(route discoveredRoute, contract *inferredRoute
 		"name":                        {Type: "string"},
 		"project_id":                  {Type: "string"},
 		"content":                     {Type: "string", Description: "Raw HAR JSON payload."},
-		"validate_only":               {Type: "boolean", Description: "When true, runs stateless inspection without retaining source texts or allocating a source-secret session."},
+		"validate_only":               {Type: "boolean", Description: "When true, inspects the capture without retaining full source texts or allocating a source-secret session. A credential-preserving draft still receives a short-lived draft save attestation (import_draft_expires_at)."},
 		"recording_profile_id":        {Type: "string"},
 		"profile_id":                  {Type: "string"},
 		"conversion_policy":           {Type: "string"},

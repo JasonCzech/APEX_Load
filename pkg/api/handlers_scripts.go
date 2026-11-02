@@ -75,8 +75,10 @@ type harImportRequest struct {
 	Salvage *har.TruncationSalvage
 	// SecretBindings applies reviewed secret bindings to the draft.
 	SecretBindings []importreview.SecretBindingSelection
-	// ValidateOnly inspects and converts the capture without retaining source
-	// texts, issuing a draft save attestation, or allocating a source-secret session.
+	// ValidateOnly inspects and converts the capture without retaining full
+	// source texts or allocating a source-secret session. A credential-preserving
+	// draft still gets its short-lived save attestation, so the reviewed draft
+	// can be saved without uploading the capture again.
 	ValidateOnly bool
 }
 

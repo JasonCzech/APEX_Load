@@ -65915,6 +65915,7 @@ export interface operations {
         content: {
           "application/json": {
             "import_draft_expires_at"?: (string) | null;
+            "parameterization": (Record<string, unknown>) | null;
             "preflight"?: ({
               "action_count": number;
               "blocking_variables"?: Array<string>;
@@ -66685,7 +66686,7 @@ export interface operations {
               "unresolved_source_variable"?: boolean;
               "value_group_id"?: string;
             }>;
-            "warnings"?: Array<string>;
+            "validation_issues"?: Array<string>;
           };
         };
       };

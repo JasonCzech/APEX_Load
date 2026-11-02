@@ -10,6 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 	"regexp"
 	"sort"
 	"strconv"
@@ -75,9 +76,14 @@ type SecretBindingSelection struct {
 type RedactionTraversalContext struct {
 	httpProtocol        bool
 	nonWireMetadataPath string
-	actionName          string
-	actionType          string
-	headerName          string
+	// sentMetadataPath is the metadata path of a Kafka or JMS send step, whose
+	// top-level string entries go on the wire as record headers or message
+	// properties unless sentMetadataFamily marks the key as provenance.
+	sentMetadataPath   string
+	sentMetadataFamily string
+	actionName         string
+	actionType         string
+	headerName         string
 }
 
 type InternalSecretBindingRequirement struct {
@@ -391,6 +397,12 @@ func RedactionContextForMap(value map[string]any, path string, prior RedactionTr
 	prior.actionType = actionType
 	prior.headerName = ""
 	prior.nonWireMetadataPath = ""
+	prior.sentMetadataPath = ""
+	prior.sentMetadataFamily = ""
+	if family := messagingSendMetadataFamily(actionType); family != "" {
+		prior.sentMetadataPath = path + "/metadata"
+		prior.sentMetadataFamily = family
+	}
 	if HttpProvenanceActionPathPattern.MatchString(path) {
 		switch canonical := strings.ToLower(strings.TrimSpace(dsl.CanonicalActionType(actionType))); {
 		case prior.httpProtocol && IsHTTPProvenanceActionType(canonical):
@@ -500,7 +512,33 @@ func IsImportProvenanceMetadataPath(path string) bool {
 	return false
 }
 
+// messagingSendMetadataFamily returns the messaging family of a step type that
+// sends its metadata (kafka.buildRecord, jms.buildMessage), or "".
+func messagingSendMetadataFamily(actionType string) string {
+	switch strings.ToLower(strings.TrimSpace(actionType)) {
+	case "kafka_produce", "kafka_request_reply":
+		return messaging.FamilyKafka
+	case "jms_publish", "jms_request_reply":
+		return messaging.FamilyJMS
+	default:
+		return ""
+	}
+}
+
 func IsImportProvenanceMetadataPathForContext(path string, ctx RedactionTraversalContext) bool {
+	// A Kafka or JMS send delivers every top-level string metadata entry its
+	// family does not treat as provenance, including protocol-agnostic import
+	// keys such as source_transaction and import_action_uid. Such an entry is
+	// an executable value, not provenance, whatever its name.
+	if ctx.sentMetadataPath != "" && strings.HasPrefix(path, ctx.sentMetadataPath+"/") {
+		key := strings.TrimPrefix(path, ctx.sentMetadataPath+"/")
+		if !strings.Contains(key, "/") {
+			key = strings.ReplaceAll(strings.ReplaceAll(key, "~1", "/"), "~0", "~")
+			if !messaging.MetadataKeyIsProvenance(ctx.sentMetadataFamily, key) {
+				return false
+			}
+		}
+	}
 	if IsImportProvenanceMetadataPath(path) {
 		return true
 	}

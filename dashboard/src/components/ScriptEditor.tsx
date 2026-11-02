@@ -180,6 +180,7 @@ import {
   debugStepPathKey,
   filterScriptPhaseActionRows,
   duplicateActionInList,
+  duplicateActionInListWithReport,
   actionTransactionName,
   actionTransactionMarker,
   computeTransactionBands,
@@ -191,6 +192,7 @@ import {
   formatDebugPhaseLabel,
   readCenterTabsState,
   scriptActionsForPhase,
+  shortcutBreakpointTarget,
   type CenterTabsState,
   type CenterWorkbenchTabId,
   type ScriptActionPhase,
@@ -226,6 +228,7 @@ import {
   parseScriptJsonDraft,
   phaseActionsForScript,
   clearUnexportedHarBodyBlockerOnAction,
+  remapBreakpointsAfterNestedRemoval,
   removeNestedAction,
   resolveAuthorJsonScope,
   resolveAuthorJsonScopeByKey,
@@ -2904,6 +2907,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
 
   const duplicatePhaseAction = (phase: ScriptActionPhase, idx: number) => {
+    // A masked credential has no stored value behind it in a new step, so the
+    // copy goes without it; the author is told which to enter.
+    const source = phaseActionsForScript(script, phase)[idx]
+    const { removedMaskedValues } = duplicateActionInListWithReport(phaseActionsForScript(script, phase), idx)
     updatePhaseActionList(phase, actions => duplicateActionInList(actions, idx))
     // A copy is inserted at idx+1, so every index after it shifts down by one.
     // Bump breakpoints AND the active selection / JSON focus so they keep pointing
@@ -2916,6 +2923,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
     setAuthorCodeFocus(prev => (prev && prev.phase === phase && prev.actionIndex > idx ? { ...prev, actionIndex: prev.actionIndex + 1 } : prev))
     selectAuthorPhaseIndex(phase, idx + 1)
+    if (removedMaskedValues.length > 0) {
+      const count = removedMaskedValues.length
+      setWarnings(previous => [...previous, `The copy of ${source?.name || 'this step'} has no value for ${count === 1 ? 'a masked credential' : `${count} masked credentials`} (${removedMaskedValues.join(', ')}): enter ${count === 1 ? 'it' : 'them'} in the copy before running it.`])
+    }
   }
 
   const updatePhaseActionObject = (phase: ScriptActionPhase, idx: number, updater: (action: Action) => Action) => {
@@ -4601,6 +4612,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
 
   const replayGateKind = replayGate.kind
+  // F9, Cmd/Ctrl+B and the toolbar's breakpoint button toggle the breakpoint
+  // of one step, which shortcutBreakpointTarget chooses: the open replay
+  // event's step in Debug, else the selected step at any phase and depth. A
+  // Debug outline row with keyboard focus handles both keys for itself.
+  const toggleShortcutBreakpoint = useCallback(() => {
+    if (workspaceTab === 'debug' && typeof document !== 'undefined' && document.activeElement?.closest('.script-outline-tree [role="treeitem"]')) {
+      return
+    }
+    const focus = authorCodeFocus && resolveNestedAction(phaseActionsForScript(script, authorCodeFocus.phase)[authorCodeFocus.actionIndex], authorCodeFocus.stepPath) ? authorCodeFocus : null
+    const target = shortcutBreakpointTarget({ workspaceTab, selectedEvent: selectedReplayEvent, focus, activeAction, firstRow: debugActionRows[0] })
+    if (!target) return
+    if ('stepPath' in target) void toggleStepPathBreakpoint(target.phase, target.actionIndex, target.stepPath)
+    else void toggleDebugBreakpoint(target.phase, target.actionIndex, target.requestIndex)
+  }, [activeAction, authorCodeFocus, debugActionRows, script, selectedReplayEvent, toggleDebugBreakpoint, toggleStepPathBreakpoint, workspaceTab])
   const scriptEditorShortcuts = useMemo(() => [
     {
       id: 'script.escape',
@@ -4689,14 +4714,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       group: 'Script Editor',
       disabled: debugActionRows.length === 0 && activeAction === null,
       priority: 850,
-      onTrigger: () => {
-        const row = workspaceTab === 'debug'
-          ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
-          : activeAction !== null
-            ? { phase: 'action' as const, actionIndex: activeAction, action: script.actions[activeAction] }
-            : debugActionRows[0]
-        if (row) void toggleDebugBreakpoint(row.phase, row.actionIndex)
-      },
+      onTrigger: toggleShortcutBreakpoint,
     },
     {
       id: 'script.debug.breakpoint_f9',
@@ -4705,17 +4723,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       group: 'Script Editor',
       disabled: debugActionRows.length === 0 && activeAction === null,
       priority: 850,
-      onTrigger: () => {
-        if (workspaceTab === 'debug' && typeof document !== 'undefined' && document.activeElement?.closest('.script-outline-tree [role="treeitem"]')) {
-          return
-        }
-        const row = workspaceTab === 'debug'
-          ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
-          : activeAction !== null
-            ? { phase: 'action' as const, actionIndex: activeAction, action: script.actions[activeAction] }
-            : debugActionRows[0]
-        if (row) void toggleDebugBreakpoint(row.phase, row.actionIndex)
-      },
+      onTrigger: toggleShortcutBreakpoint,
     },
   ], [
     activateWorkspaceTab,
@@ -4730,12 +4738,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     replayGateKind,
     replaying,
     saveScriptDisabled,
-    script.actions,
-    selectedReplayEvent,
-    selectedDebugRow,
     setDebuggerSettingsOpen,
     debuggerSettingsBtnRef,
-    toggleDebugBreakpoint,
+    toggleShortcutBreakpoint,
     workspaceTab,
   ])
   useKeyboardShortcuts(scriptEditorShortcuts)
@@ -6178,23 +6183,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setAuthorCodeFocus(opening)
     setShowFullScriptJson(true)
   }, [actionProblemRows, authorCodeFocus, readinessIssues, script, scriptPhaseActionRows, setActiveAction, setAuthorCodeFocus, setShowFullScriptJson])
-  const toggleSelectedBreakpoint = () => {
-    const authorSelectedAction = authorCodeFocus && !authorCodeFocus.stepPath?.length
-      ? {
-        phase: authorCodeFocus.phase,
-        actionIndex: authorCodeFocus.actionIndex,
-        action: phaseActionsForScript(script, authorCodeFocus.phase)[authorCodeFocus.actionIndex],
-      }
-      : activeAction !== null
-        ? { phase: 'action' as const, actionIndex: activeAction, action: script.actions[activeAction] }
-        : null
-    const selectedRow = workspaceTab === 'debug'
-      ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
-      : authorSelectedAction?.action
-        ? authorSelectedAction
-        : debugActionRows[0]
-    if (selectedRow) void toggleDebugBreakpoint(selectedRow.phase, selectedRow.actionIndex)
-  }
+  const toggleSelectedBreakpoint = toggleShortcutBreakpoint
 
   const convergenceItems = [
     {
@@ -6578,35 +6567,47 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     registerInsertTarget: insert => { referenceInsertTarget.current = insert },
     releaseInsertTarget: insert => { if (referenceInsertTarget.current === insert) referenceInsertTarget.current = null },
   }
+  // Removes a blocked step: a top-level action, or a step inside a block,
+  // keeping each block around it valid (removeNestedAction) and the
+  // breakpoints on the steps they were set on.
+  const deleteBlockedStep = (phase: ScriptActionPhase, actionIndex: number, stepPath?: string[]) => {
+    const currentRoot = phaseActionsForScript(script, phase)[actionIndex]
+    if (!currentRoot) return
+    const removal = stepPath?.length ? removeNestedAction(currentRoot, stepPath) : null
+    if (stepPath?.length && !removal) return
+    if (!removal || removal.replacement.length === 0) {
+      removePhaseAction(phase, actionIndex)
+    } else {
+      updatePhaseActionList(phase, actions => {
+        const root = actions[actionIndex]
+        const next = root ? removeNestedAction(root, stepPath) : null
+        if (!next) return actions
+        actions.splice(actionIndex, 1, ...next.replacement)
+        return actions
+      })
+      setDebugBreakpoints(previous => remapBreakpointsAfterNestedRemoval(previous, phase, actionIndex, removal))
+      const shift = removal.replacement.length - 1
+      if (shift !== 0 && phase === 'action') setActiveAction(previous => previous !== null && previous > actionIndex ? previous + shift : previous)
+      setAuthorCodeFocus({ phase, actionIndex })
+    }
+    setSuccess('Removed the blocked step from the draft. Save the script to persist this change.')
+    setError('')
+  }
   const deleteBlockedInspectorStep = () => {
     if (!activeInspectorScope) return
     const { phase, actionIndex } = activeInspectorScope
-    const stepPath = activeInspectorScope.subAction ? authorCodeFocus?.stepPath : undefined
-    if (!stepPath?.length) {
-      removePhaseAction(phase, actionIndex)
-    } else {
-      const currentRoot = phaseActionsForScript(script, phase)[actionIndex]
-      if (!currentRoot) return
-      const previewNextRoot = removeNestedAction(currentRoot, stepPath)
-      if (previewNextRoot === null) {
-        removePhaseAction(phase, actionIndex)
-      } else {
-        updatePhaseActionList(phase, actions => {
-          const root = actions[actionIndex]
-          if (!root) return actions
-          const nextRoot = removeNestedAction(root, stepPath)
-          if (nextRoot === null) {
-            return actions.filter((_, i) => i !== actionIndex)
-          }
-          actions[actionIndex] = nextRoot
-          return actions
-        })
-        setAuthorCodeFocus({ phase, actionIndex })
-      }
-    }
-    setSuccess('Removed unexported HAR body step from the draft. Save the script to persist this change.')
-    setError('')
+    deleteBlockedStep(phase, actionIndex, activeInspectorScope.subAction ? authorCodeFocus?.stepPath : undefined)
   }
+
+  // Debug's Problems drawer lists the steps whose execution blockers refuse a
+  // run under "Blocking replay (N)": each opens on its repair in Author (the
+  // problem's own destination) or deletes the blocked step.
+  const debugReplayBlockers = readinessIssues.flatMap(issue => {
+    const location = issue.location
+    const listed = railAdditionalIssues.find(candidate => candidate.id === issue.id)
+    if (issue.severity !== 'blocker' || !issue.codes?.length || !location || !listed) return []
+    return [{ ...listed, onDelete: () => deleteBlockedStep(location.phase, location.actionIndex, location.stepPath) }]
+  })
 
   const clearBlockedInspectorUnexportedHarBody = () => {
     if (!activeInspectorScope) return
@@ -8167,6 +8168,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               selectAuthorPhaseAction(row)
             }}
             additionalIssues={railAdditionalIssues}
+            replayBlockers={debugReplayBlockers}
             onSelectAdditionalIssue={issue => {
               if (!issue.onSelect) return
               activateWorkspaceTab('author')

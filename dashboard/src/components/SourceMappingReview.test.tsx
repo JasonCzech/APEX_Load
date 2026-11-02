@@ -1538,8 +1538,9 @@ describe('SourceMappingReview', () => {
       source_files: [{
         path: 'capture.har',
         language: 'json',
-        content: '{\n  "log": {}\n}',
+        content: '{\n  "log": {}\n}\n\n[truncated for source review]',
         truncated: true,
+        original_bytes: 173 << 20,
       }],
       mappings: [{
         id: 'map-trunc-1',
@@ -1559,6 +1560,17 @@ describe('SourceMappingReview', () => {
       actions: [{ name: 'Open Lightning', type: 'GET', method: 'GET', target: '/one/one.app' }],
     }
 
+    // The copy holds the preview's source, not the marker the preview ends with.
+    let copiedText = ''
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => {
+      copiedText = Array.from(document.querySelectorAll('textarea')).pop()?.value || ''
+      return true
+    }) })
+    onTestFinished(() => {
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
     await act(async () => {
       root.render(<SourceMappingReview sourceReview={truncatedReview} script={simpleScript} />)
     })
@@ -1575,8 +1587,26 @@ describe('SourceMappingReview', () => {
     expect(panelButtons[1]?.textContent).toBe('Copy retained source preview')
     expect(panelButtons[1]?.getAttribute('title')).toContain('16 MiB review retention limit')
 
+    await act(async () => { panelButtons[1]!.click() })
+    await flushPromises()
+    expect(copiedText).toBe('{\n  "log": {}\n}')
+
     await act(async () => { toggleBtn.click() })
     expect(toggleBtn.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('says why a small truncated file copies its preview, without claiming the retention limit', async () => {
+    const review = {
+      source_files: [{ path: 'small.har', language: 'json', content: '{\n  "log": {}\n}\n\n[truncated for source review]', truncated: true, original_bytes: 3 << 20 }],
+      mappings: [{ id: 'map-small', source_file: 'small.har', start_line: 1, end_line: 3, function: 'GET /', target_path: 'actions[0]', status: 'converted' as const, support_mode: 'executable' as const }],
+    }
+    const simpleScript = { ...script, name: 'Small_HAR', version: '1.0.0', actions: [{ name: 'Open', type: 'GET', method: 'GET', target: '/' }] }
+    await act(async () => { root.render(<SourceMappingReview sourceReview={review} script={simpleScript} />) })
+    await flushPromises()
+    const copyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))[1]
+    expect(copyButton?.textContent).toBe('Copy retained source preview')
+    expect(copyButton?.getAttribute('title')).not.toContain('16 MiB')
+    expect(copyButton?.getAttribute('title')).toContain('kept only a preview')
   })
 
 })

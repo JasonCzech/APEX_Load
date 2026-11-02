@@ -9,6 +9,9 @@ import { importScenarioName, useImportScenario } from './useImportScenario'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
+import { carrySourceValueAvailability, filesHaveIdenticalBytes, harShapingApplied } from './ProtocolAssetImportModel'
+import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
+import './ProtocolAssetImport.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
@@ -781,7 +784,19 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   }, [])
   useEffect(() => abortConversionRequest, [abortConversionRequest])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
-  const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  const { savedResult, publish: publishSaveOutcome, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  const reviewScopeRef = useRef(reviewScope)
+  reviewScopeRef.current = reviewScope
+  // The review scope whose draft was just saved. The leave guard reads it live,
+  // so a save that navigates in the same turn is not asked about.
+  const cleanReviewScopeRef = useRef<string | null>(null)
+  const publishSaved = (saved: ImportedSaveResult, destination?: ImportSaveDestination) => {
+    if (saved.scripts.length > 0 && reviewScopeRef.current === reviewScope) {
+      cleanReviewScopeRef.current = reviewScope
+      navigationGuard.markClean('ProtocolAssetImport')
+    }
+    publishSaveOutcome(saved, destination)
+  }
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [selectedScriptIndex, setSelectedScriptIndex] = useState(0)
@@ -885,6 +900,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   const [redactSensitive, setRedactSensitive] = useState(true)
   const [agentforceReplayReady, setAgentforceReplayReady] = useState(false)
   const [harSalesforceNative, setHARSalesforceNative] = useState(initialMode !== 'force_generic')
+  // Conversion options changed after an inspection wait for Re-inspect HARs,
+  // so a toggle never silently discards a reviewed draft.
+  const [harOptionsStaged, setHAROptionsStaged] = useState(false)
   const [retentionDays, setRetentionDays] = useState(7)
   const [messageError, setMessageError] = useState('')
   const [conversionNotice, setConversionNotice] = useState('')
@@ -973,6 +991,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     convertTask.pending && source ? describeWorking(reviewMode === 'validation' ? 'Validating' : 'Inspecting', source.name) : undefined
   )
   const saveTargetLocked = sourceMutationLocked || internalReviewBusy
+  // A rename commits to the reviewed draft, which an in-flight review request
+  // (exclusion, credential binding) is about to replace.
+  const scriptNameLocked = sourceMutationLocked || internalReviewBusy
   const projectScopeRequired = kind === 'har' && (!projectId || projectId === 'unassigned')
   // A credential action can await several API calls before onSave runs. Freeze
   // the replace target at the moment that action becomes busy so the eventual
@@ -1027,13 +1048,26 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     setShowAllCloudTestScenarios(false)
     setShowAllMulesoftDetails(false)
     setShowAllAgentforceDetails(false)
+    setHAROptionsStaged(false)
   }, [abortConversionRequest, advanceReviewGeneration, resetAsyncAPISavedScripts, resetConvertTask, resetSaveTask, sourceSecretSessions])
+  // A HAR conversion option changed while a review is open waits for Re-inspect
+  // HARs; with nothing reviewed yet (or the review saved) it simply resets.
+  const stageConversionOptionChange = () => {
+    if (kind === 'har' && latestResultRef.current && !savedResult) {
+      setHAROptionsStaged(true)
+      return
+    }
+    invalidateConversionSource()
+  }
   // The converted draft lives only in this review until it is saved.
+  // It stays dirty while a save is in flight: a save that then fails leaves
+  // the review as the only copy of the draft.
   useUnsavedWorkGuard(
     'ProtocolAssetImport',
     'Import review',
-    Boolean(result) && !savedResult && !persistenceInProgress && !saveTask.pending && !saveAllPreparing,
+    Boolean(result) && !savedResult,
     () => invalidateConversionSource(),
+    () => Boolean(latestResultRef.current) && cleanReviewScopeRef.current !== reviewScopeRef.current,
   )
   // Cancel returns the importer to its idle state at once. Invalidation aborts
   // the request and advances the review generation, so a response that still
@@ -1071,6 +1105,14 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   useEffect(() => {
     if (!initialFile && !initialComparisonFile) return
     invalidateConversionSource()
+    // Handed-off files skip the dropzone, so they get its checks here.
+    const rejection = (initialFile && validateImportFile(kind, initialFile))
+      || (kind === 'har' && initialComparisonFile && validateImportFile('har', initialComparisonFile))
+      || null
+    if (rejection) {
+      setMessageError(rejection)
+      return
+    }
     if (initialFile) setFile(initialFile)
     if (kind === 'har' && initialComparisonFile) setSecondaryHARFile(initialComparisonFile)
   }, [initialComparisonFile, initialFile, invalidateConversionSource, kind])
@@ -1083,25 +1125,17 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     let cancelled = false
     void (async () => {
       try {
-        if (!globalThis.crypto?.subtle || typeof file.arrayBuffer !== 'function' || typeof secondaryHARFile.arrayBuffer !== 'function') {
-          if (!cancelled && file.name === secondaryHARFile.name && file.lastModified === secondaryHARFile.lastModified) {
+        if (typeof file.slice !== 'function' || typeof secondaryHARFile.slice !== 'function') {
+          if (file.name === secondaryHARFile.name && file.lastModified === secondaryHARFile.lastModified) {
             setDuplicateHARWarning('Primary and comparison HAR files appear to be the exact same capture. Upload a second independent recording to detect dynamic session values.')
           }
           return
         }
-        const [bufA, bufB] = await Promise.all([file.arrayBuffer(), secondaryHARFile.arrayBuffer()])
-        if (cancelled) return
-        const [hashA, hashB] = await Promise.all([
-          globalThis.crypto.subtle.digest('SHA-256', bufA),
-          globalThis.crypto.subtle.digest('SHA-256', bufB),
-        ])
-        if (cancelled) return
-        const hex = (buf: ArrayBuffer) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
-        if (hex(hashA) === hex(hashB)) {
-          setDuplicateHARWarning('Primary and comparison HAR files have identical SHA-256 byte content. Upload two separate browser recordings so dynamic tokens can be differentiated from static values.')
-        } else {
-          setDuplicateHARWarning('')
-        }
+        const identical = await filesHaveIdenticalBytes(file, secondaryHARFile, () => cancelled)
+        if (identical === null || cancelled) return
+        setDuplicateHARWarning(identical
+          ? 'Primary and comparison HAR files have identical byte content. Upload two separate browser recordings so dynamic tokens can be differentiated from static values.'
+          : '')
       } catch {
         if (!cancelled) setDuplicateHARWarning('')
       }
@@ -1171,6 +1205,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     }
     resetAsyncAPISavedScripts()
     abortConversionRequest()
+    setHAROptionsStaged(false)
     const abortController = new AbortController()
     conversionAbortRef.current = abortController
     const sourceGeneration = advanceReviewGeneration()
@@ -1218,7 +1253,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
           include_static_assets: includeStaticAssets,
           step_transactions: stepTransactions,
           recorded_concurrency: recordedConcurrency,
-          filter_client_telemetry: filterClientTelemetry,
+          // The converter keeps every request when static assets are
+          // included, telemetry beacons among them.
+          filter_client_telemetry: filterClientTelemetry && !includeStaticAssets,
           validate_only: mode === 'validation',
           salvage_truncated: salvageTruncatedHAR,
           http_version_mode: harHTTPVersionMode,
@@ -1274,6 +1311,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     setHARSalesforceNative(salesforceNative)
     await handleConvert('conversion', { salesforceNative })
   }
+  // Re-converting replaces the reviewed draft, so it asks first, as leaving does.
+  const switchHARProfile = (salesforceNative: boolean) => {
+    navigationGuard.runGuarded(() => { void handleHARSalesforceNativeConvert(salesforceNative) })
+  }
+  const reinspectHARs = () => {
+    navigationGuard.runGuarded(() => { void handleConvert('conversion') })
+  }
 
   const handleExcludeBlockedActions = async (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => {
     const currentResult = latestResultRef.current
@@ -1305,9 +1349,16 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
       })
       if (!requestIsCurrent()) return
       advanceReviewGeneration()
+      // The review is the authority for its draft's name; the request carried
+      // the name it had when it started.
+      const latest = latestResultRef.current
+      const latestScripts = latest?.scripts?.length ? latest.scripts : latest?.script ? [latest.script] : sourceScripts
+      const latestName = latestScripts[sourceScriptIndex]?.name?.trim()
+      const excludedScript = latestName ? { ...response.script, name: latestName } : response.script
       const nextScripts = sourceScripts.length
-        ? sourceScripts.map((entry, idx) => idx === sourceScriptIndex ? response.script : entry)
-        : [response.script]
+        ? sourceScripts.map((entry, idx) => idx === sourceScriptIndex ? excludedScript : entry)
+        : [excludedScript]
+
       const nextResult = {
         ...currentResult,
         script: nextScripts[0],
@@ -1318,7 +1369,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
           currentResult.secret_binding_requirements,
           sourceScriptIndex,
           currentReviewed,
-          response.secret_binding_requirements || [],
+          carrySourceValueAvailability(
+            currentResult.secret_binding_requirements,
+            response.secret_binding_requirements || [],
+            currentResult.source_secret_session_id,
+          ),
         ),
         ...(response.import_draft_expires_at ? { import_draft_expires_at: response.import_draft_expires_at } : {}),
       } as ProtocolImportResult
@@ -1454,6 +1509,25 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
   const cloudTestResult = kind === 'cloudtest' ? result as CloudTestImportResult | null | undefined : undefined
   const harDiff = harSummary?.har_diff
+  const harShaping = harShapingApplied(kind === 'har' ? reviewedScript : null, result?.warnings)
+  const toolbarSaveDisabled = operationBusy || settingsEditing || importDraftExpired
+  const reviewResultRef = useRef<HTMLDivElement>(null)
+  // The review's own Save step prepares credentials before it saves.
+  const focusReviewSaveStep = () => {
+    const header = reviewResultRef.current?.querySelector<HTMLElement>('.script-import-review-header')
+    header?.scrollIntoView({ block: 'start' })
+    header?.focus()
+  }
+  // Recording Studio in the current workspace; the route change asks before
+  // it leaves this review.
+  const currentWorkspace = typeof window === 'undefined' ? null : parseAppViewFromHash(window.location.hash)
+  const recordingStudioHref = viewToLocationHash({
+    page: 'scripts',
+    mode: 'record',
+    projectId: currentWorkspace?.projectId || projectId,
+    applicationId: currentWorkspace?.applicationId,
+    releaseId: currentWorkspace?.releaseId,
+  })
   const selectedReplayPreflight = reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined
   const replayPreflight = (generatedScripts.length > 1 ? selectedReplayPreflight : result?.preflight || selectedReplayPreflight) || null
   const openAPICorrelations: OpenAPICorrelation[] = kind === 'openapi' ? ((result as OpenAPIImportResult | null | undefined)?.correlations || []) : []
@@ -2426,7 +2500,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
       <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
 
       <details className="import-source-setup" open={!result}>
-        <summary>Source & conversion options — changing these requires a new review</summary>
+        <summary>{kind === 'har' ? 'Source & conversion options — option changes wait for Re-inspect HARs' : 'Source & conversion options — changing these requires a new review'}</summary>
       <div className="sample-import-card" aria-busy={convertTask.pending || undefined}>
         <div className="sample-import-grid">
           <div className="sample-import-field sample-import-span-2">
@@ -2483,13 +2557,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
           {supportsScriptName && (
             <label className="sample-import-field">
               <span>Script Name</span>
-              <input value={name} disabled={sourceMutationLocked} onChange={event => handleScriptNameChange(event.target.value, true)} placeholder={scriptNamePlaceholder(kind)} />
+              <input value={name} disabled={scriptNameLocked} onChange={event => handleScriptNameChange(event.target.value, true)} placeholder={scriptNamePlaceholder(kind)} />
             </label>
           )}
           {supportsBaseURL && (
             <label className="sample-import-field">
               <span>Base URL Override</span>
-              <input value={baseURL} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setBaseURL(event.target.value) }} placeholder="https://api.example.com" />
+              <input value={baseURL} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setBaseURL(event.target.value) }} placeholder="https://api.example.com" />
             </label>
           )}
           {kind === 'asyncapi' && (
@@ -2560,48 +2634,58 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                   workingLabel={sourceWorkingLabel(secondaryHARFile)}
                 />
                 <small>Optional second recording for correlation diff — drop both HARs onto the primary dropzone at once, or open the <strong style={{ fontWeight: 600 }}>HAR capture guide</strong> above for DevTools settings that keep captures small and complete.</small>
+                {/* Said before the upload, so the duplicate is not sent twice. */}
+                {duplicateHARWarning && !result && <p className="sample-import-warning" role="status">{duplicateHARWarning}</p>}
               </div>
               <label className="sample-import-field">
                 <span>Retention Days</span>
-                <input type="number" min={1} value={retentionDays} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setRetentionDays(Math.max(1, Number(event.target.value) || 1)) }} />
+                <input type="number" min={1} value={retentionDays} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRetentionDays(Math.max(1, Number(event.target.value) || 1)) }} />
               </label>
               <label className="sample-toggle">
-                <input type="checkbox" checked={redactSensitive} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setRedactSensitive(event.target.checked) }} />
+                <input type="checkbox" checked={redactSensitive} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRedactSensitive(event.target.checked) }} />
                 Scrub sensitive fields
               </label>
               <label className="sample-toggle sample-import-span-2">
-                <input type="checkbox" checked={includeStaticAssets} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setIncludeStaticAssets(event.target.checked) }} />
+                <input type="checkbox" checked={includeStaticAssets} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setIncludeStaticAssets(event.target.checked) }} />
                 Include static assets
               </label>
               <label className="sample-toggle sample-import-span-2" title="Split the recording into user steps at each recorded pause longer than the think-time threshold, and time each step as a transaction named for its page. Enabled automatically for multi-step Salesforce recordings, or explicitly when toggled.">
-                <input type="checkbox" checked={stepTransactions ?? (Boolean(salesforceReview?.detected) && harSalesforceNative)} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setStepTransactions(event.target.checked) }} />
-                Time each user step as a transaction
+                <input type="checkbox" ref={element => { if (element) element.indeterminate = stepTransactions === undefined && !result }} checked={stepTransactions ?? harShaping.stepTransactions} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setStepTransactions(event.target.checked) }} />
+                Time each user step as a transaction{stepTransactions === undefined && !result ? ' (automatic for Salesforce recordings)' : ''}
               </label>
               <label className="sample-toggle sample-import-span-2" title="Group consecutive requests the browser had in flight at the same time and replay each group concurrently, as the recording sent them, instead of one after another. Enabled automatically for multi-step Salesforce recordings, or explicitly when toggled.">
-                <input type="checkbox" checked={recordedConcurrency ?? (Boolean(salesforceReview?.detected) && harSalesforceNative)} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setRecordedConcurrency(event.target.checked) }} />
-                Replay parallel browser requests concurrently
+                <input type="checkbox" ref={element => { if (element) element.indeterminate = recordedConcurrency === undefined && !result }} checked={recordedConcurrency ?? harShaping.recordedConcurrency} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRecordedConcurrency(event.target.checked) }} />
+                Replay parallel browser requests concurrently{recordedConcurrency === undefined && !result ? ' (automatic for Salesforce-aware recordings)' : ''}
               </label>
-              <label className="sample-toggle sample-import-span-2" title="Exclude browser telemetry beacons such as Salesforce Aura InstrumentationBeacon and o11y client-monitoring POSTs that add noise and unexported-body replay blockers.">
-                <input type="checkbox" checked={filterClientTelemetry} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setFilterClientTelemetry(event.target.checked) }} />
-                Filter client telemetry beacons
+              <label className="sample-toggle sample-import-span-2" title={includeStaticAssets
+                ? 'Including static assets keeps every recorded request, telemetry beacons among them. Clear Include static assets to filter beacons.'
+                : 'Exclude browser telemetry beacons such as Salesforce Aura InstrumentationBeacon and o11y client-monitoring POSTs that add noise and unexported-body replay blockers.'}>
+                <input type="checkbox" checked={filterClientTelemetry && !includeStaticAssets} disabled={sourceMutationLocked || includeStaticAssets} onChange={event => { stageConversionOptionChange(); setFilterClientTelemetry(event.target.checked) }} />
+                Filter client telemetry beacons{includeStaticAssets ? ' (off while static assets are included)' : ''}
               </label>
               <label className="sample-toggle sample-import-span-2" title="Import the complete entries of a HAR file that was cut off partway through. The script ends where the capture was cut.">
-                <input type="checkbox" checked={salvageTruncatedHAR} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setSalvageTruncatedHAR(event.target.checked) }} />
+                <input type="checkbox" checked={salvageTruncatedHAR} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setSalvageTruncatedHAR(event.target.checked) }} />
                 Recover the complete entries of a truncated HAR
               </label>
               <HTTPVersionModeField className="sample-import-field sample-import-span-2" value={harHTTPVersionMode} disabled={sourceMutationLocked}
-                onChange={mode => { invalidateConversionSource(); setHARHTTPVersionMode(mode) }} />
+                onChange={mode => { stageConversionOptionChange(); setHARHTTPVersionMode(mode) }} />
             </>
           )}
           {supportsAgentforceTransform && file && (
             <label className="sample-toggle sample-import-span-2" title="If an Agentforce Agent API conversation is detected, rewrite the script to acquire an OAuth2 token, correlate the session id, consume SSE, and end the session.">
-              <input type="checkbox" checked={agentforceReplayReady} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setAgentforceReplayReady(event.target.checked) }} />
+              <input type="checkbox" checked={agentforceReplayReady} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setAgentforceReplayReady(event.target.checked) }} />
               Make Agentforce replay-ready (if an Agent API flow is detected)
             </label>
           )}
         </div>
       </div>
 
+      {harOptionsStaged && result && (
+        <div className="sample-import-warning har-options-staged" role="status">
+          <span>Conversion options changed. The review below still reflects the previous options until you re-inspect.</span>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={reinspectHARs} disabled={operationBusy || !file || projectScopeRequired}>Re-inspect HARs</button>
+        </div>
+      )}
       <div className="sample-import-actions">
         {projectScopeRequired && <p id="har-project-scope-required" className="sample-import-error" role="status">Select a project from the workspace context before inspecting HAR traffic.</p>}
         {kind !== 'asyncapi' && (
@@ -2631,30 +2715,49 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
 
 
       {result && reviewedScript && (
-        <div className="sample-import-result">
+        <div className={`sample-import-result${kind === 'har' ? ' har-stage2-scope' : ''}`} ref={reviewResultRef}>
           {kind === 'har' && (
-            <div className="sample-import-review-block" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.625rem 0.875rem', marginBottom: '0.75rem' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 260px', margin: 0 }}>
-                <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>Reviewed script name</span>
+            <div className="har-stage2-toolbar" role="group" aria-label="Import review toolbar">
+              <label className="har-stage2-name">
+                <span>Script name</span>
                 <input
                   aria-label="Reviewed script name"
                   value={name}
-                  disabled={sourceMutationLocked || Boolean(savedResult)}
+                  disabled={scriptNameLocked || Boolean(savedResult)}
                   onChange={event => handleScriptNameChange(event.target.value, false)}
                   placeholder={reviewedScript.name || scriptNamePlaceholder(kind)}
-                  style={{ flex: '1 1 180px', minWidth: '160px' }}
                 />
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <span className="tag-chip">
-                  {salesforceReview?.detected
-                    ? (harSalesforceNative ? 'Profile: Salesforce-aware HTTP' : 'Profile: Generic HAR')
-                    : 'Profile: Standard HTTP HAR'}
-                </span>
-                {secondaryHARFile && (
-                  <span className="tag-chip">2-HAR comparison: {secondaryHARFile.name}</span>
-                )}
-              </div>
+              {salesforceReview?.detected ? (
+                <div className="har-stage2-profile" role="group" aria-label="Conversion profile">
+                  <button type="button" className="btn btn-sm" aria-pressed={harSalesforceNative} disabled={harSalesforceNative || operationBusy || !file || Boolean(savedResult)} onClick={() => switchHARProfile(true)}>Salesforce-aware HTTP (Recommended)</button>
+                  <button type="button" className="btn btn-sm" aria-pressed={!harSalesforceNative} disabled={!harSalesforceNative || operationBusy || !file || Boolean(savedResult)} onClick={() => switchHARProfile(false)}>Generic HAR</button>
+                </div>
+              ) : (
+                <span className="tag-chip">Profile: Standard HTTP HAR</span>
+              )}
+              {secondaryHARFile && <span className="tag-chip har-stage2-chip" title={secondaryHARFile.name}>2-HAR: {secondaryHARFile.name}</span>}
+              {harOptionsStaged && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={reinspectHARs} disabled={operationBusy || !file || projectScopeRequired} title="Conversion options changed since this review. Re-inspecting replaces the review.">Re-inspect HARs</button>
+              )}
+              {!savedResult && (
+                <div className="har-stage2-save" role="group" aria-label="Save reviewed draft">
+                  {secretBindingRequirements.length > 0 ? (
+                    <button type="button" className="btn btn-primary btn-sm" onClick={focusReviewSaveStep}>Choose credentials to save</button>
+                  ) : (
+                    <>
+                      {onEdit && generatedScripts.length === 1 && (
+                        <button type="button" className="btn btn-secondary btn-sm" disabled={toolbarSaveDisabled} onClick={handleEditReviewedScript}>
+                          {editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}
+                        </button>
+                      )}
+                      <button type="button" className="btn btn-primary btn-sm" disabled={toolbarSaveDisabled} onClick={() => { void handleSave() }}>
+                        {saveTask.pending || persistenceInProgress ? 'Saving…' : 'Save draft'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <ScriptImportReview
@@ -2731,7 +2834,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
             )} </>}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
-            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${countLabel(actionCount, 'action')} generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
+            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${countLabel(actionCount, 'action')} generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ` This preview came from a dry-run validation; nothing has been saved.${kind === 'har' ? ' A saved validation draft keeps no full source text and cannot move recorded credentials into project secrets; use Inspect & review to save with both.' : ' You can still save the reviewed script if the output looks correct.'}` : ''}`}
             saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to script library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace script' : 'Save draft')}
             script={reviewedScript}
             warnings={result.warnings}
@@ -3032,6 +3135,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 duplicateFileWarning={duplicateHARWarning}
                 busy={operationBusy}
                 onExcludeBlockedActions={savedResult ? undefined : handleExcludeBlockedActions}
+                recordingStudioHref={recordingStudioHref}
               />
             )}
             {kind === 'har' && harSummary && (
@@ -3063,7 +3167,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      onClick={() => handleHARSalesforceNativeConvert(false)}
+                      onClick={() => switchHARProfile(false)}
                       disabled={convertTask.pending || !file || !harSalesforceNative}
                     >
                       {convertTask.pending && harSalesforceNative ? 'Converting…' : 'Force Generic HAR'}
@@ -3071,7 +3175,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      onClick={() => handleHARSalesforceNativeConvert(true)}
+                      onClick={() => switchHARProfile(true)}
                       disabled={convertTask.pending || !file || harSalesforceNative}
                     >
                       {convertTask.pending && !harSalesforceNative ? 'Converting…' : 'Use Native Salesforce Draft'}

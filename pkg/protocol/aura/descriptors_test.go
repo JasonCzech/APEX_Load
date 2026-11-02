@@ -1,6 +1,8 @@
 package aura
 
 import (
+	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +59,63 @@ func TestParseEnvelopeActionsTokens(t *testing.T) {
 	}
 	if got := acts[1].ShortTitle(); got != "RecordUiController.getRecordWithFields" {
 		t.Errorf("acts[1].ShortTitle() = %q, want RecordUiController.getRecordWithFields", got)
+	}
+}
+
+func TestApexSchemeDescriptorTitlesAndTokens(t *testing.T) {
+	tests := []struct {
+		descriptor string
+		title      string
+		token      string
+	}{
+		{descriptor: "apex://BWC_InteractionController/ACTION$getVisibility", title: "BWC_InteractionController.getVisibility", token: "BWC_InteractionController.getVisibility"},
+		{descriptor: "apex://ns.Ctrl/ACTION$m", title: "ns.Ctrl.m", token: "ns.Ctrl.m"},
+		{descriptor: "serviceComponent://ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController/ACTION$getRecord", title: "RecordGvpController.getRecord", token: "ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController.getRecord"},
+	}
+	for _, tc := range tests {
+		d := ActionDescriptor{Descriptor: tc.descriptor}
+		if got := d.ShortTitle(); got != tc.title {
+			t.Errorf("ShortTitle(%q) = %q, want %q", tc.descriptor, got, tc.title)
+		}
+		if got := d.DiffToken(); got != tc.token {
+			t.Errorf("DiffToken(%q) = %q, want %q", tc.descriptor, got, tc.token)
+		}
+	}
+}
+
+func TestParseEnvelopeActionsMatchesRequestActions(t *testing.T) {
+	message := url.QueryEscape(`{"actions":[{"id":"1;a","descriptor":"aura://ApexActionController/ACTION$execute","params":{"namespace":"ns","classname":"Ctrl","method":"run"}}]}`)
+	other := url.QueryEscape(`{"actions":[{"id":"1;a","descriptor":"aura://Other/ACTION$x"}]}`)
+	duplicate := "message=" + message + "&message=" + other
+	if _, err := RequestActions([]byte(duplicate)); err == nil {
+		t.Fatal("RequestActions accepted a duplicate message field")
+	}
+	if got := ParseEnvelopeActions(duplicate, 0); got != nil {
+		t.Fatalf("ParseEnvelopeActions(duplicate message) = %#v, want nil", got)
+	}
+	tooManyFields := "message=" + message + strings.Repeat("&x=1", MaxFormFields)
+	if got := ParseEnvelopeActions(tooManyFields, 0); got != nil {
+		t.Fatalf("ParseEnvelopeActions(over MaxFormFields) = %#v, want nil", got)
+	}
+	single := "message=" + message + "&aura.token=tok"
+	if got := ParseEnvelopeActions(single, len(single)-1); got != nil {
+		t.Fatalf("ParseEnvelopeActions over maxBytes = %#v, want nil", got)
+	}
+	acts := ParseEnvelopeActions(single, 0)
+	names, err := RequestActions([]byte(single))
+	if err != nil || len(acts) != 1 || len(names) != 1 {
+		t.Fatalf("acts = %#v names = %#v err = %v", acts, names, err)
+	}
+	if acts[0].QualifiedApexTarget() != names[0].Apex || acts[0].Descriptor != names[0].Descriptor {
+		t.Fatalf("ParseEnvelopeActions %#v disagrees with RequestActions %#v", acts[0], names[0])
+	}
+
+	// A class without a method is no Apex name for either parser.
+	classOnly := ParseEnvelopeActions(`{"actions":[{"id":"1;a","descriptor":"aura://ApexActionController/ACTION$execute","params":{"classname":"Ctrl"}}]}`, 0)
+	if len(classOnly) != 1 || classOnly[0].IsApexExecute() || classOnly[0].QualifiedApexTarget() != "" {
+		t.Fatalf("class-only Apex action = %#v, want no Apex target", classOnly)
+	}
+	if got := classOnly[0].DiffToken(); got != "ApexActionController.execute" {
+		t.Fatalf("class-only DiffToken = %q, want ApexActionController.execute", got)
 	}
 }

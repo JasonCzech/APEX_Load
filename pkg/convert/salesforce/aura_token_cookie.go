@@ -112,9 +112,10 @@ func detectUncapturedAuraTokenCorrelations(observations []correlate.Observation,
 			return correlations, err
 		} else if cookieName != "" {
 			reasons = append(reasons, "confirmed auraConfig.eikoocnekot ("+cookieName+") in "+auraTokenCookieBootstrapPath+" bootstrap HTML")
-			if !strings.Contains(cookieName, "ERIC_") {
-				expression = customOrERICAuraTokenCookieExtractor(cookieName)
-			}
+			// The extractor scope includes redirect hops and the first match
+			// wins, so the generic ERIC_* pattern could take another ERIC
+			// cookie a hop sets. The confirmed name pins the exact cookie.
+			expression = namedAuraTokenCookieExtractor(cookieName)
 		}
 		correlations = append(correlations, correlate.Correlation{
 			Name:        name,
@@ -213,8 +214,16 @@ func auraBootstrapTokenCookieName(responseBody string, budget *salesforceCorrela
 	return strings.TrimSpace(match[1]), nil
 }
 
-func customOrERICAuraTokenCookieExtractor(cookieName string) string {
-	return `(?m)^(?i:Set-Cookie):[ \t]*(?:` + regexp.QuoteMeta(cookieName) + `|(?:__Host-)?ERIC_[!#$%&'*+.^_` + "`" + `|~0-9A-Za-z-]*)=[ \t]*"?([^";\s,]+)"?(?:[ \t]*;|[ \t]*\r?$)`
+// namedAuraTokenCookieExtractor reads the aura.token from the Set-Cookie line
+// of exactly the cookie auraConfig.eikoocnekot names. It is byte for byte the
+// Set-Cookie extractor correlate generates for a captured cookie, so
+// correlate.GeneratedSetCookieExtractor recognizes it and secret masking keeps
+// the long __Host-ERIC_PROD<digits> name instead of redacting it (a masked
+// name breaks the regex and every Aura request then sends a stale token).
+// Like that extractor it needs an attribute after the value on a
+// CRLF-terminated header line, which Salesforce's Path and Secure always give.
+func namedAuraTokenCookieExtractor(cookieName string) string {
+	return `(?m)^(?i:Set-Cookie):[ \t]*` + regexp.QuoteMeta(cookieName) + `=[ \t]*"?([^";\s,]+)"?(?:[ \t]*;|[ \t]*$)`
 }
 
 // auraTokenHeader is a header's value, matched case-insensitively.

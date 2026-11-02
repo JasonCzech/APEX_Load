@@ -151,6 +151,20 @@ export function nativeImportTargetForFileName(fileName: string): NativeImportTar
   return { launcher: 'openapi' }
 }
 
+// The extensions some script importer reads. nativeImportTargetForFileName
+// routes any other name to the OpenAPI importer as a last resort, so a drop
+// checks this first instead of opening an importer that will refuse the file.
+const SUPPORTED_IMPORT_EXTENSIONS = [
+  '.bru', '.bruno.zip', '.bruno.tar', '.bruno.tar.gz', '.zip', '.usz', '.jmx', '.har',
+  '.json', '.wsdl', '.xml', '.raml', '.yaml', '.yml', '.avro', '.mqsc', '.properties',
+  '.js', '.ts', '.http', '.curl', '.sh', '.txt',
+]
+
+export function isSupportedNativeImportFileName(fileName: string): boolean {
+  const name = fileName.toLowerCase()
+  return SUPPORTED_IMPORT_EXTENSIONS.some(extension => name.endsWith(extension))
+}
+
 export function hasBrunoSourceMarkers(content: string): boolean {
   const aliases = ['http', 'graphql', 'graphql-request', 'grpc', 'grpc-request', 'ws', 'ws-request', 'websocket', 'websocket-request', 'app', 'bruno-app']
   if (/^\s*opencollection\s*:/im.test(content)) return true
@@ -263,8 +277,17 @@ export async function resolveNativeImportRequest(
     }
   }))
   if (!isCurrent(requestID)) return null
-  const target = targets.find(candidate => candidate.launcher === 'bruno' && candidate.mode === 'native_requests')
-    || targets.find(candidate => candidate.launcher === 'bruno')
-    || targets[0]
-  return { id: requestID, files: usable, ...target }
+  // Incidental files (a folder's .DS_Store) may ride along with a supported
+  // one, but a drop with no supported file opens no importer.
+  const supported = targets.filter((_target, index) => isSupportedNativeImportFileName(usable[index].name) || isOpenCollectionFileName(usable[index]))
+  const target = supported.find(candidate => candidate.launcher === 'bruno' && candidate.mode === 'native_requests')
+    || supported.find(candidate => candidate.launcher === 'bruno')
+    || supported[0]
+  if (!target) return null
+  // The HAR importer reads a primary and a comparison capture: only HAR files
+  // may fill those slots.
+  const requestFiles = target.launcher === 'traffic_har'
+    ? usable.filter((_file, index) => targets[index].launcher === 'traffic_har')
+    : usable
+  return { id: requestID, files: requestFiles, ...target }
 }

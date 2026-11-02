@@ -24,10 +24,31 @@ func resolveSampleSourceFileName(format string, override string) string {
 		normalized := strings.ReplaceAll(trimmed, "\\", "/")
 		base := strings.TrimSpace(filepath.Base(normalized))
 		if base != "" && base != "." && base != "/" {
-			return base
+			return textSourceFileName(format, base)
 		}
 	}
 	return sampleSourceFileName(format)
+}
+
+// textSourceFileName keeps an upload's name for the text the converter read,
+// unless that name is an archive or other opaque container (a zipped HAR the
+// importer unwrapped before conversion). Source review leaves opaque names
+// out, so "attone.har.zip" becomes "attone.har" and "capture.zip" becomes
+// "capture.har".
+func textSourceFileName(format, base string) string {
+	stripped := false
+	for sourceview.IsOpaqueAsset(base, "") {
+		ext := filepath.Ext(base)
+		stem := strings.TrimSpace(strings.TrimSuffix(base, ext))
+		if ext == "" || stem == "" || filepath.Ext(stem) == stem {
+			return sampleSourceFileName(format)
+		}
+		base, stripped = stem, true
+	}
+	if stripped && filepath.Ext(base) == "" {
+		return base + filepath.Ext(sampleSourceFileName(format))
+	}
+	return base
 }
 
 func sampleSourceFiles(format string, content string, responseContent string, sourceFileOverride ...string) map[string]string {

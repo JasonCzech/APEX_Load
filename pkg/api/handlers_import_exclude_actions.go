@@ -1,13 +1,16 @@
 package api
 
 import (
-	"encoding/json"
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 )
 
 const maxImportExcludeActionUIDs = 10000
@@ -19,20 +22,30 @@ type importExcludeActionsRequest struct {
 }
 
 type importExcludeActionsResponse struct {
-	Script                    *dsl.Script                `json:"script"`
-	RemovedCount              int                        `json:"removed_count"`
-	Preflight                 *ReplayPreflight           `json:"preflight,omitempty"`
+	Script       *dsl.Script      `json:"script"`
+	RemovedCount int              `json:"removed_count"`
+	Preflight    *ReplayPreflight `json:"preflight,omitempty"`
+	// SecretBindingRequirements replaces the script's whole requirement list:
+	// discovered from the masked projection like the import response, with the
+	// protected credential descriptors that still match merged in.
 	SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
-	Warnings                  []string                   `json:"warnings,omitempty"`
-	ImportDraftExpiresAt      *time.Time                 `json:"import_draft_expires_at,omitempty"`
+	// Parameterization is re-derived from the edited draft. Suggestion IDs
+	// encode action positions, so the import's list goes stale once an action
+	// before them is removed. Converter-applied correlations are not repeated.
+	Parameterization *paramize.Result `json:"parameterization"`
+	// ValidationIssues is the edited draft's static validation. It is not the
+	// import's converter warnings, which the exclusion leaves unchanged.
+	ValidationIssues     []string   `json:"validation_issues,omitempty"`
+	ImportDraftExpiresAt *time.Time `json:"import_draft_expires_at,omitempty"`
 }
 
 // handleExcludeImportDraftActions handles
 // POST /api/v1/scripts/import/exclude-actions: removes execution-blocked
 // imported requests (such as Chrome HAR requests whose bodies were not
 // exported, including sub-requests inside http_sequence concurrency groups)
-// from an import draft, refreshes replay_preflight and secret bindings, and
-// rotates any credential-preserving draft attestation on the server.
+// from an import draft, remaps what refers to actions by position, refreshes
+// replay_preflight, secret bindings and parameterization, and rotates any
+// credential-preserving draft attestation on the server.
 //
 // OpenAPI-Responses: 400, 409, 422, 503
 func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.Request) {
@@ -102,8 +115,8 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 	}
 	priorSnapshot := cloneScriptDefinition(applyTarget)
 
-	removedCount := excludeBlockedImportActionsFromScript(applyTarget, uidSet, req.ExcludeUnexportedBodies)
-	if removedCount == 0 {
+	exclusion := excludeBlockedImportActionsFromScript(applyTarget, uidSet, req.ExcludeUnexportedBodies)
+	if exclusion.removed == 0 {
 		writeError(w, http.StatusUnprocessableEntity, "no matching execution-blocked actions were found in the draft")
 		return
 	}
@@ -111,13 +124,24 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusUnprocessableEntity, "script must retain at least one executable action in actions[]")
 		return
 	}
+	// Source mappings and protected credential locations name actions by
+	// position, so every action after a removed one moved.
+	remapExcludedSourceReviewMappings(applyTarget, exclusion)
+	if err := importreview.RefreshProtectedImportCredentialLocations(applyTarget); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "cannot refresh protected credential locations after excluding actions")
+		return
+	}
 
 	resolver := s.runner.secretResolverForProject(applyTarget.ProjectID)
-	_, requirements, _, _, evalErr := evaluateRepairedScript(applyTarget, resolver)
-	if evalErr != nil {
+	if _, _, _, _, evalErr := evaluateRepairedScript(applyTarget, resolver); evalErr != nil {
 		writeError(w, http.StatusUnprocessableEntity, "cannot evaluate draft readiness after excluding actions")
 		return
 	}
+	// evaluateRepairedScript writes a fidelity report, which launch admission
+	// treats as a promotion gate. A draft imported without one (every HAR and
+	// Salesforce draft) must not gain one here: no later HAR review edit or
+	// import commit refreshes it, so it would go stale and could hold a run.
+	dropAddedImportFidelityReport(applyTarget, priorSnapshot)
 	preflight := repairReplayPreflight(applyTarget, priorSnapshot, resolver)
 	attachImportReplayPreflight(applyTarget, profile, preflight)
 
@@ -126,7 +150,12 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "failed to project the edited script")
 		return
 	}
-	warnings := validateScript(projected)
+	validationIssues := validateScript(projected)
+	requirements := importreview.EditedImportDraftSecretBindingRequirements(applyTarget, mutationClaim != nil)
+	parameterization := filterTrustedImportParameterization(
+		buildImportParameterization(cloneScriptDefinition(applyTarget), nil),
+		[]*dsl.Script{cloneScriptDefinition(applyTarget)},
+	)
 
 	responseScript := projected
 	var importDraftExpiresAt *time.Time
@@ -148,51 +177,115 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 	}
 
 	s.recordAuditEvent(r, "script.import.exclude_actions", "success", "script", projected.Name, projected.ProjectID, map[string]any{
-		"removed_count":             removedCount,
+		"removed_count":             exclusion.removed,
 		"exclude_unexported_bodies": req.ExcludeUnexportedBodies,
 	})
 	writeJSON(w, http.StatusOK, importExcludeActionsResponse{
 		Script:                    responseScript,
-		RemovedCount:              removedCount,
+		RemovedCount:              exclusion.removed,
 		Preflight:                 preflight,
 		SecretBindingRequirements: requirements,
-		Warnings:                  warnings,
+		Parameterization:          parameterization,
+		ValidationIssues:          validationIssues,
 		ImportDraftExpiresAt:      importDraftExpiresAt,
 	})
 }
 
-func excludeBlockedImportActionsFromScript(script *dsl.Script, uidSet map[string]struct{}, excludeUnexportedBodies bool) int {
-	if script == nil {
-		return 0
+// dropAddedImportFidelityReport removes the fidelity report a readiness
+// evaluation added to draft when prior, the draft before the edit, had none,
+// along with any import metadata the evaluation created only to hold it.
+func dropAddedImportFidelityReport(draft, prior *dsl.Script) {
+	if draft == nil || draft.Metadata == nil || draft.Metadata.Import == nil {
+		return
 	}
-	removed := 0
-	var r int
-	script.Init, r = filterBlockedActionSlice(script.Init, uidSet, excludeUnexportedBodies)
-	removed += r
-	script.Actions, r = filterBlockedActionSlice(script.Actions, uidSet, excludeUnexportedBodies)
-	removed += r
-	script.Teardown, r = filterBlockedActionSlice(script.Teardown, uidSet, excludeUnexportedBodies)
-	removed += r
-	return removed
+	if prior != nil && prior.Metadata != nil && prior.Metadata.Import != nil {
+		if _, had := prior.Metadata.Import.Preserved["fidelity_report"]; had {
+			return
+		}
+	}
+	delete(draft.Metadata.Import.Preserved, "fidelity_report")
+	switch {
+	case prior == nil || prior.Metadata == nil:
+		if len(draft.Metadata.Import.Preserved) == 0 {
+			draft.Metadata.Import = nil
+		}
+	case prior.Metadata.Import == nil:
+		if len(draft.Metadata.Import.Preserved) == 0 {
+			draft.Metadata.Import = nil
+		}
+	case prior.Metadata.Import.Preserved == nil && len(draft.Metadata.Import.Preserved) == 0:
+		draft.Metadata.Import.Preserved = nil
+	}
 }
 
-func filterBlockedActionSlice(actions []dsl.Action, uidSet map[string]struct{}, excludeUnexportedBodies bool) ([]dsl.Action, int) {
-	if len(actions) == 0 {
-		return actions, 0
+// importActionExclusion removes execution-blocked actions from a draft and
+// records where every surviving action moved.
+type importActionExclusion struct {
+	uids             map[string]struct{}
+	unexportedBodies bool
+	removed          int
+	// paths maps the old path of each visited action ("actions[5]",
+	// "actions[2].params.requests[1]") to its new path, or to "" when it
+	// was removed, so position-keyed references can follow it.
+	paths map[string]string
+}
+
+// excludedActionNode is a surviving action: its index before the exclusion
+// and the nested lists it holds, whose own positions may have changed.
+type excludedActionNode struct {
+	oldIndex int
+	lists    []excludedActionList
+}
+
+// excludedActionList is a nested action list of a surviving action, by its
+// path relative to that action before and after the exclusion (a control
+// case can move when an emptied case before it is dropped).
+type excludedActionList struct {
+	oldPath, newPath string
+	kept             []excludedActionNode
+}
+
+func excludeBlockedImportActionsFromScript(script *dsl.Script, uidSet map[string]struct{}, excludeUnexportedBodies bool) *importActionExclusion {
+	exclusion := &importActionExclusion{uids: uidSet, unexportedBodies: excludeUnexportedBodies, paths: map[string]string{}}
+	if script == nil {
+		return exclusion
 	}
-	removed := 0
+	for _, section := range []struct {
+		name    string
+		actions *[]dsl.Action
+	}{{"init", &script.Init}, {"actions", &script.Actions}, {"teardown", &script.Teardown}} {
+		var kept []excludedActionNode
+		*section.actions, kept = exclusion.filterActions(*section.actions, section.name)
+		exclusion.assignPaths(section.name, section.name, kept)
+	}
+	return exclusion
+}
+
+// filterActions drops the excluded actions of one list, whose path before the
+// exclusion is listPath, and returns the survivors with their old positions.
+// A container is dropped only when the exclusion emptied it, never because it
+// was empty already.
+func (x *importActionExclusion) filterActions(actions []dsl.Action, listPath string) ([]dsl.Action, []excludedActionNode) {
+	if len(actions) == 0 {
+		return actions, nil
+	}
+	removedBefore := x.removed
 	out := make([]dsl.Action, 0, len(actions))
-	for _, action := range actions {
-		if shouldExcludeBlockedMetadata(action.Metadata, uidSet, excludeUnexportedBodies) {
-			removed++
+	nodes := make([]excludedActionNode, 0, len(actions))
+	for index, action := range actions {
+		path := fmt.Sprintf("%s[%d]", listPath, index)
+		if x.excludes(action.Metadata) {
+			x.exclude(path)
 			continue
 		}
+		node := excludedActionNode{oldIndex: index}
+		actionRemovedBefore := x.removed
 		if action.Params != nil {
 			if rawReqs, hasReqs := action.Params["requests"]; hasReqs {
-				filteredReqs, subRemoved, remainingCount, handled := filterBlockedSequenceRequests(rawReqs, uidSet, excludeUnexportedBodies)
-				if handled {
-					removed += subRemoved
-					if remainingCount == 0 {
+				filteredReqs, kept, handled := x.filterSequenceRequests(rawReqs, path+".params.requests")
+				if handled && x.removed > actionRemovedBefore {
+					if len(kept) == 0 {
+						x.drop(path)
 						continue
 					}
 					paramsCopy := make(map[string]any, len(action.Params))
@@ -202,70 +295,105 @@ func filterBlockedActionSlice(actions []dsl.Action, uidSet map[string]struct{}, 
 					paramsCopy["requests"] = filteredReqs
 					action.Params = paramsCopy
 				}
+				if handled {
+					node.lists = append(node.lists, excludedActionList{oldPath: "params.requests", newPath: "params.requests", kept: kept})
+				}
 			}
 		}
 		if action.Control != nil {
 			ctrl := *action.Control
-			var r int
-			ctrl.Steps, r = filterBlockedActionSlice(ctrl.Steps, uidSet, excludeUnexportedBodies)
-			removed += r
-			ctrl.Else, r = filterBlockedActionSlice(ctrl.Else, uidSet, excludeUnexportedBodies)
-			removed += r
-			ctrl.Default, r = filterBlockedActionSlice(ctrl.Default, uidSet, excludeUnexportedBodies)
-			removed += r
+			controlRemovedBefore := x.removed
+			for _, branch := range []struct {
+				name    string
+				actions *[]dsl.Action
+			}{{"steps", &ctrl.Steps}, {"else", &ctrl.Else}, {"default", &ctrl.Default}} {
+				var kept []excludedActionNode
+				*branch.actions, kept = x.filterActions(*branch.actions, path+".control."+branch.name)
+				node.lists = append(node.lists, excludedActionList{oldPath: "control." + branch.name, newPath: "control." + branch.name, kept: kept})
+			}
 			if len(ctrl.Cases) > 0 {
 				cases := make([]dsl.SwitchCase, 0, len(ctrl.Cases))
-				for _, branch := range ctrl.Cases {
-					var cr int
-					branch.Steps, cr = filterBlockedActionSlice(branch.Steps, uidSet, excludeUnexportedBodies)
-					removed += cr
-					if len(branch.Steps) > 0 {
-						cases = append(cases, branch)
+				for caseIndex, switchCase := range ctrl.Cases {
+					oldPath := fmt.Sprintf("control.cases[%d].steps", caseIndex)
+					caseRemovedBefore := x.removed
+					var kept []excludedActionNode
+					switchCase.Steps, kept = x.filterActions(switchCase.Steps, path+"."+oldPath)
+					if len(switchCase.Steps) == 0 && x.removed > caseRemovedBefore {
+						continue
 					}
+					node.lists = append(node.lists, excludedActionList{oldPath: oldPath, newPath: fmt.Sprintf("control.cases[%d].steps", len(cases)), kept: kept})
+					cases = append(cases, switchCase)
 				}
 				ctrl.Cases = cases
 			}
-			action.Control = &ctrl
-			switch strings.ToLower(strings.TrimSpace(action.Type)) {
-			case "control_if", "control_loop":
-				if len(ctrl.Steps) == 0 && len(ctrl.Else) == 0 {
-					continue
+			if len(ctrl.Branches) > 0 {
+				branches := make([]dsl.ParallelBranch, 0, len(ctrl.Branches))
+				for branchIndex, branch := range ctrl.Branches {
+					oldPath := fmt.Sprintf("control.branches[%d].steps", branchIndex)
+					branchRemovedBefore := x.removed
+					var kept []excludedActionNode
+					branch.Steps, kept = x.filterActions(branch.Steps, path+"."+oldPath)
+					if len(branch.Steps) == 0 && x.removed > branchRemovedBefore {
+						continue
+					}
+					node.lists = append(node.lists, excludedActionList{oldPath: oldPath, newPath: fmt.Sprintf("control.branches[%d].steps", len(branches)), kept: kept})
+					branches = append(branches, branch)
 				}
-			case "control_switch":
-				if len(ctrl.Cases) == 0 && len(ctrl.Default) == 0 {
+				ctrl.Branches = branches
+			}
+			action.Control = &ctrl
+			if x.removed > controlRemovedBefore {
+				emptied := false
+				switch strings.ToLower(strings.TrimSpace(action.Type)) {
+				case "control_if", "control_loop":
+					emptied = len(ctrl.Steps) == 0 && len(ctrl.Else) == 0
+				case "control_switch":
+					emptied = len(ctrl.Cases) == 0 && len(ctrl.Default) == 0
+				case "control_parallel":
+					emptied = len(ctrl.Branches) == 0
+				}
+				if emptied {
+					x.drop(path)
 					continue
 				}
 			}
 		}
 		out = append(out, action)
+		nodes = append(nodes, node)
 	}
-	if removed > 0 {
-		out = pruneEmptyTransactionMarkers(out)
+	if x.removed > removedBefore {
+		out, nodes = x.pruneEmptyTransactionMarkers(out, nodes, listPath)
 	}
-	return out, removed
+	return out, nodes
 }
 
-func pruneEmptyTransactionMarkers(actions []dsl.Action) []dsl.Action {
+// pruneEmptyTransactionMarkers drops start/end transaction marker pairs the
+// exclusion left with nothing between them.
+func (x *importActionExclusion) pruneEmptyTransactionMarkers(actions []dsl.Action, nodes []excludedActionNode, listPath string) ([]dsl.Action, []excludedActionNode) {
 	for len(actions) >= 2 {
 		changed := false
 		next := make([]dsl.Action, 0, len(actions))
+		nextNodes := make([]excludedActionNode, 0, len(nodes))
 		for i := 0; i < len(actions); i++ {
 			if i+1 < len(actions) &&
 				isTransactionMarkerFunc(actions[i], "lr_start_transaction") &&
 				isTransactionMarkerFunc(actions[i+1], "lr_end_transaction") &&
 				dsl.TransactionMarkerName(actions[i]) == dsl.TransactionMarkerName(actions[i+1]) {
 				changed = true
+				x.drop(fmt.Sprintf("%s[%d]", listPath, nodes[i].oldIndex))
+				x.drop(fmt.Sprintf("%s[%d]", listPath, nodes[i+1].oldIndex))
 				i++
 				continue
 			}
 			next = append(next, actions[i])
+			nextNodes = append(nextNodes, nodes[i])
 		}
-		actions = next
+		actions, nodes = next, nextNodes
 		if !changed {
 			break
 		}
 	}
-	return actions
+	return actions, nodes
 }
 
 func isTransactionMarkerFunc(action dsl.Action, fn string) bool {
@@ -285,66 +413,64 @@ func hasNonMarkerAction(actions []dsl.Action) bool {
 	return false
 }
 
-func filterBlockedSequenceRequests(raw any, uidSet map[string]struct{}, excludeUnexportedBodies bool) (any, int, int, bool) {
+// filterSequenceRequests filters an http_sequence's requests, in whichever
+// shape the draft holds them. handled is false for a shape it cannot read,
+// which it leaves untouched.
+func (x *importActionExclusion) filterSequenceRequests(raw any, listPath string) (filtered any, kept []excludedActionNode, handled bool) {
 	switch typed := raw.(type) {
 	case []dsl.Action:
-		filtered, removed := filterBlockedActionSlice(typed, uidSet, excludeUnexportedBodies)
-		return filtered, removed, len(filtered), true
+		filtered, kept := x.filterActions(typed, listPath)
+		return filtered, kept, true
 	case []map[string]any:
-		removed := 0
 		out := make([]map[string]any, 0, len(typed))
-		for _, item := range typed {
+		for index, item := range typed {
 			meta, _ := item["metadata"].(map[string]any)
-			if shouldExcludeBlockedMetadata(meta, uidSet, excludeUnexportedBodies) {
-				removed++
+			if x.excludes(meta) {
+				x.exclude(fmt.Sprintf("%s[%d]", listPath, index))
 				continue
 			}
 			out = append(out, item)
+			kept = append(kept, excludedActionNode{oldIndex: index})
 		}
-		return out, removed, len(out), true
+		return out, kept, true
 	case []any:
-		removed := 0
 		out := make([]any, 0, len(typed))
-		for _, elem := range typed {
+		for index, elem := range typed {
+			var meta map[string]any
 			switch item := elem.(type) {
 			case dsl.Action:
-				if shouldExcludeBlockedMetadata(item.Metadata, uidSet, excludeUnexportedBodies) {
-					removed++
-					continue
-				}
-				out = append(out, item)
+				meta = item.Metadata
 			case map[string]any:
-				meta, _ := item["metadata"].(map[string]any)
-				if shouldExcludeBlockedMetadata(meta, uidSet, excludeUnexportedBodies) {
-					removed++
-					continue
-				}
-				out = append(out, item)
-			default:
-				out = append(out, elem)
+				meta, _ = item["metadata"].(map[string]any)
 			}
+			if x.excludes(meta) {
+				x.exclude(fmt.Sprintf("%s[%d]", listPath, index))
+				continue
+			}
+			out = append(out, elem)
+			kept = append(kept, excludedActionNode{oldIndex: index})
 		}
-		return out, removed, len(out), true
+		return out, kept, true
 	default:
-		return raw, 0, 0, false
+		return raw, nil, false
 	}
 }
 
-func shouldExcludeBlockedMetadata(meta map[string]any, uidSet map[string]struct{}, excludeUnexportedBodies bool) bool {
-	if len(meta) == 0 {
+// excludes reports whether an action is removed: it carries an execution
+// blocker (the plural execution_blockers or the legacy singular
+// execution_blocker, as readiness reads them) and is either named by UID or,
+// when unexported bodies are excluded, gated for its missing body.
+func (x *importActionExclusion) excludes(meta map[string]any) bool {
+	codes := executionReviewBlockerCodes(meta)
+	if len(codes) == 0 {
 		return false
 	}
-	hasUnexportedBody := metadataHasExecutionBlocker(meta, sample.HARRequestBodyNotExportedCode)
-	hasAnyBlocker := hasUnexportedBody || metadataHasAnyExecutionBlocker(meta)
-	if !hasAnyBlocker {
-		return false
-	}
-	if excludeUnexportedBodies && hasUnexportedBody {
+	if x.unexportedBodies && slices.Contains(codes, sample.HARRequestBodyNotExportedCode) {
 		return true
 	}
-	if len(uidSet) > 0 {
+	if len(x.uids) > 0 {
 		if uid, ok := meta["import_action_uid"].(string); ok {
-			if _, matched := uidSet[strings.TrimSpace(uid)]; matched {
+			if _, matched := x.uids[strings.TrimSpace(uid)]; matched {
 				return true
 			}
 		}
@@ -352,37 +478,104 @@ func shouldExcludeBlockedMetadata(meta map[string]any, uidSet map[string]struct{
 	return false
 }
 
-func metadataHasExecutionBlocker(meta map[string]any, code string) bool {
-	if len(meta) == 0 {
-		return false
-	}
-	raw, err := json.Marshal(meta["execution_blockers"])
-	if err == nil && strings.Contains(string(raw), code) {
-		return true
-	}
-	rawFindings, err := json.Marshal(meta["import_review_findings"])
-	return err == nil && strings.Contains(string(rawFindings), code)
+// drop records that the action at path (its path before the exclusion) is
+// gone, whether excluded or pruned as an emptied container or marker pair.
+func (x *importActionExclusion) drop(path string) {
+	x.paths[path] = ""
 }
 
-func metadataHasAnyExecutionBlocker(meta map[string]any) bool {
-	if len(meta) == 0 {
-		return false
-	}
-	switch blockers := meta["execution_blockers"].(type) {
-	case []string:
-		if len(blockers) > 0 {
-			return true
-		}
-	case []any:
-		if len(blockers) > 0 {
-			return true
-		}
-	}
-	if rawFindings, ok := meta["import_review_findings"]; ok && rawFindings != nil {
-		raw, err := json.Marshal(rawFindings)
-		if err == nil && strings.Contains(string(raw), `"gate":"execution"`) {
-			return true
+// exclude counts and records an excluded action.
+func (x *importActionExclusion) exclude(path string) {
+	x.removed++
+	x.drop(path)
+}
+
+// assignPaths records the new path of every surviving action under a list
+// whose path is oldList before the exclusion and newList after it.
+func (x *importActionExclusion) assignPaths(oldList, newList string, nodes []excludedActionNode) {
+	for position, node := range nodes {
+		oldPath := fmt.Sprintf("%s[%d]", oldList, node.oldIndex)
+		newPath := fmt.Sprintf("%s[%d]", newList, position)
+		x.paths[oldPath] = newPath
+		for _, list := range node.lists {
+			x.assignPaths(oldPath+"."+list.oldPath, newPath+"."+list.newPath, list.kept)
 		}
 	}
-	return false
+}
+
+// remapPath returns where path (a target path such as
+// "actions[7].extractors[0]") points after the exclusion, and whether what
+// it named was removed. A path outside every visited action is unchanged.
+func (x *importActionExclusion) remapPath(path string) (string, bool) {
+	for end := len(path) - 1; end >= 0; end-- {
+		if path[end] != ']' {
+			continue
+		}
+		if end+1 < len(path) && path[end+1] != '.' && path[end+1] != '[' {
+			continue
+		}
+		moved, visited := x.paths[path[:end+1]]
+		if !visited {
+			continue
+		}
+		if moved == "" {
+			return "", true
+		}
+		return moved + path[end+1:], false
+	}
+	return path, false
+}
+
+// excludedSourceMappingNote explains a source mapping whose generated action
+// the exclusion removed.
+const excludedSourceMappingNote = "The generated action was excluded from the import draft."
+
+// remapExcludedSourceReviewMappings points the draft's source mappings at
+// where their actions moved. A mapping whose action was removed keeps its
+// source range but no longer targets the draft.
+func remapExcludedSourceReviewMappings(script *dsl.Script, exclusion *importActionExclusion) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return
+	}
+	remap := func(targetPath string) (string, bool, bool) {
+		if strings.TrimSpace(targetPath) == "" {
+			return targetPath, false, false
+		}
+		moved, removed := exclusion.remapPath(strings.TrimSpace(targetPath))
+		return moved, removed, removed || moved != strings.TrimSpace(targetPath)
+	}
+	if review := scriptSourceReviewForUpdate(script); review != nil {
+		for index := range review.Mappings {
+			mapping := &review.Mappings[index]
+			moved, removed, changed := remap(mapping.TargetPath)
+			if !changed {
+				continue
+			}
+			mapping.TargetPath = moved
+			if removed {
+				mapping.TargetKind = ""
+				mapping.Status = "review_only"
+				mapping.Notes = excludedSourceMappingNote
+			}
+		}
+		return
+	}
+	review, _ := script.Metadata.Import.Preserved["source_review"].(map[string]any)
+	mappings, _ := review["mappings"].([]any)
+	for _, raw := range mappings {
+		mapping, _ := raw.(map[string]any)
+		targetPath, _ := mapping["target_path"].(string)
+		moved, removed, changed := remap(targetPath)
+		if !changed {
+			continue
+		}
+		if removed {
+			delete(mapping, "target_path")
+			delete(mapping, "target_kind")
+			mapping["status"] = "review_only"
+			mapping["notes"] = excludedSourceMappingNote
+			continue
+		}
+		mapping["target_path"] = moved
+	}
 }

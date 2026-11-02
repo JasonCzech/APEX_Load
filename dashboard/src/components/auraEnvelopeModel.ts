@@ -22,6 +22,18 @@ export interface ParsedAuraEnvelope {
   token: string
   fieldOrder: Array<{ key: string; rawKey: string; rawValue: string }>
   unquotedTemplates: Map<string, string>
+  /**
+   * Each envelope field's value as parsed, re-serialized: a field still equal
+   * to it is written back with its recorded bytes, so an edit to one field
+   * never re-encodes another.
+   */
+  baselineValues?: Map<string, string>
+  /**
+   * Per field, the template-shaped text (`{{x}}`) the recording sent with
+   * encoded braces (`%7B%7Bx%7D%7D`): literal text, which stays encoded when
+   * the field is re-encoded rather than becoming a live template.
+   */
+  literalTemplates?: Map<string, string[]>
 }
 
 export interface AuraResponseActionSummary {
@@ -51,19 +63,50 @@ function safeDecodeURIComponent(segment: string): string {
   }
 }
 
+const isTemplateToken = (part: string) => part.startsWith('{{') && part.endsWith('}}')
+
 export function decodeFormValuePreservingTemplates(raw: string): string {
-  return raw
-    .split(TEMPLATE_TOKEN_PATTERN)
-    .map(part => (part.startsWith('{{') && part.endsWith('}}') ? part : safeDecodeURIComponent(part)))
-    .join('')
+  return decodeFormValueWithLiteralTemplates(raw).value
 }
 
-export function encodeFormValuePreservingTemplates(value: string): string {
+/**
+ * Decodes a form value, keeping raw `{{x}}` templates as they are, and lists
+ * the template-shaped text that only decoding produced (encoded braces on the
+ * wire), which is literal text and not a template.
+ */
+export function decodeFormValueWithLiteralTemplates(raw: string): { value: string; literalTemplates: string[] } {
+  const literalTemplates: string[] = []
+  const value = raw
+    .split(TEMPLATE_TOKEN_PATTERN)
+    .map(part => {
+      if (isTemplateToken(part)) return part
+      const decoded = safeDecodeURIComponent(part)
+      for (const token of decoded.match(TEMPLATE_TOKEN_PATTERN) || []) literalTemplates.push(token)
+      return decoded
+    })
+    .join('')
+  return { value, literalTemplates }
+}
+
+const encodeFormSegment = (part: string) => encodeURIComponent(part).replace(/%20/g, '+')
+
+/**
+ * Encodes a form value, writing `{{x}}` templates raw so they stay live. The
+ * occurrences listed in literalTemplates (in order, by text) were literal
+ * text in the recording, so they are encoded like any other text.
+ */
+export function encodeFormValuePreservingTemplates(value: string, literalTemplates: readonly string[] = []): string {
+  const literalBudget = new Map<string, number>()
+  for (const token of literalTemplates) literalBudget.set(token, (literalBudget.get(token) || 0) + 1)
   return value
     .split(TEMPLATE_TOKEN_PATTERN)
-    .map(part => (part.startsWith('{{') && part.endsWith('}}')
-      ? part
-      : encodeURIComponent(part).replace(/%20/g, '+')))
+    .map(part => {
+      if (!isTemplateToken(part)) return encodeFormSegment(part)
+      const literal = literalBudget.get(part) || 0
+      if (literal === 0) return part
+      literalBudget.set(part, literal - 1)
+      return encodeFormSegment(part)
+    })
     .join('')
 }
 
@@ -169,7 +212,13 @@ export function parseAuraFormEnvelope(body?: string): ParsedAuraEnvelope | null 
   const messageEntry = fieldOrder.find(entry => entry.key === 'message')
   if (!messageEntry) return null
   const unquotedTemplates = new Map<string, string>()
-  const decodedMessage = decodeFormValuePreservingTemplates(messageEntry.rawValue)
+  const literalTemplates = new Map<string, string[]>()
+  const decodeField = (entry: { key: string; rawValue: string }) => {
+    const decoded = decodeFormValueWithLiteralTemplates(entry.rawValue)
+    if (decoded.literalTemplates.length > 0) literalTemplates.set(entry.key, decoded.literalTemplates)
+    return decoded.value
+  }
+  const decodedMessage = decodeField(messageEntry)
   const messageObject = parseJsonObjectWithTemplates(decodedMessage, unquotedTemplates)
   if (!messageObject || !Array.isArray(messageObject.actions)) return null
   const actions = messageObject.actions.filter(
@@ -178,24 +227,27 @@ export function parseAuraFormEnvelope(body?: string): ParsedAuraEnvelope | null 
   if (actions.length !== messageObject.actions.length) return null
 
   const contextEntry = fieldOrder.find(entry => entry.key === 'aura.context')
-  const contextRaw = contextEntry ? decodeFormValuePreservingTemplates(contextEntry.rawValue) : ''
+  const contextRaw = contextEntry ? decodeField(contextEntry) : ''
   const contextObject = contextRaw ? parseJsonObjectWithTemplates(contextRaw, unquotedTemplates) : null
   const pageEntry = fieldOrder.find(entry => entry.key === 'aura.pageURI')
   const tokenEntry = fieldOrder.find(entry => entry.key === 'aura.token')
 
-  return {
+  const envelope: ParsedAuraEnvelope = {
     actions,
     messageObject,
     contextObject,
     contextRaw,
-    pageURI: pageEntry ? decodeFormValuePreservingTemplates(pageEntry.rawValue) : '',
-    token: tokenEntry ? decodeFormValuePreservingTemplates(tokenEntry.rawValue) : '',
+    pageURI: pageEntry ? decodeField(pageEntry) : '',
+    token: tokenEntry ? decodeField(tokenEntry) : '',
     fieldOrder,
     unquotedTemplates,
+    literalTemplates,
   }
+  envelope.baselineValues = auraEnvelopeFieldValues(envelope)
+  return envelope
 }
 
-export function serializeAuraFormEnvelope(envelope: ParsedAuraEnvelope): string {
+function auraEnvelopeFieldValues(envelope: ParsedAuraEnvelope): Map<string, string> {
   const nextMessageJson = restoreUnquotedTemplates(
     JSON.stringify({ ...envelope.messageObject, actions: envelope.actions }),
     envelope.unquotedTemplates,
@@ -204,7 +256,7 @@ export function serializeAuraFormEnvelope(envelope: ParsedAuraEnvelope): string 
     ? restoreUnquotedTemplates(JSON.stringify(envelope.contextObject), envelope.unquotedTemplates)
     : envelope.contextRaw
 
-  const updatedValues = new Map<string, string>([
+  return new Map<string, string>([
     ['message', nextMessageJson],
     ...(nextContextJson ? [['aura.context', nextContextJson] as const] : []),
     ...(envelope.pageURI || envelope.fieldOrder.some(f => f.key === 'aura.pageURI')
@@ -214,6 +266,10 @@ export function serializeAuraFormEnvelope(envelope: ParsedAuraEnvelope): string 
       ? [['aura.token', envelope.token] as const]
       : []),
   ])
+}
+
+export function serializeAuraFormEnvelope(envelope: ParsedAuraEnvelope): string {
+  const updatedValues = auraEnvelopeFieldValues(envelope)
 
   const seen = new Set<string>()
   const parts: string[] = []
@@ -221,7 +277,12 @@ export function serializeAuraFormEnvelope(envelope: ParsedAuraEnvelope): string 
     if (updatedValues.has(field.key)) {
       seen.add(field.key)
       const val = updatedValues.get(field.key) ?? ''
-      parts.push(`${field.rawKey}=${encodeFormValuePreservingTemplates(val)}`)
+      // An unchanged field keeps the bytes it was recorded with.
+      if (envelope.baselineValues?.get(field.key) === val) {
+        parts.push(`${field.rawKey}=${field.rawValue}`)
+      } else {
+        parts.push(`${field.rawKey}=${encodeFormValuePreservingTemplates(val, envelope.literalTemplates?.get(field.key))}`)
+      }
     } else {
       parts.push(`${field.rawKey}=${field.rawValue}`)
     }
@@ -234,6 +295,25 @@ export function serializeAuraFormEnvelope(envelope: ParsedAuraEnvelope): string 
   return parts.join('&')
 }
 
+const APEX_EXECUTE_DESCRIPTOR = 'aura://ApexActionController/ACTION$execute'
+const DESCRIPTOR_SCHEMES = ['aura://', 'serviceComponent://', 'apex://']
+
+function stripDescriptorScheme(descriptor: string): { rest: string; apex: boolean } {
+  for (const scheme of DESCRIPTOR_SCHEMES) {
+    if (descriptor.slice(0, scheme.length).toLowerCase() === scheme.toLowerCase()) {
+      return { rest: descriptor.slice(scheme.length), apex: scheme === 'apex://' }
+    }
+  }
+  return { rest: descriptor, apex: false }
+}
+
+/**
+ * A sub-action's short title, as the importer's step names give it
+ * (aura.ActionDescriptor.ShortTitle): an ApexActionController call is
+ * `[namespace.]classname.method`; an `apex://[namespace.]Class/ACTION$method`
+ * descriptor is `[namespace.]Class.method`; any other descriptor is its
+ * controller's last name and the method (`RecordUiController.getRecordWithFields`).
+ */
 export function formatAuraActionTitle(subAction: AuraSubAction, fallbackIndex = 0): string {
   const descriptor = typeof subAction.descriptor === 'string' ? subAction.descriptor.trim() : ''
   const params = subAction.params && typeof subAction.params === 'object' && !Array.isArray(subAction.params)
@@ -242,20 +322,19 @@ export function formatAuraActionTitle(subAction: AuraSubAction, fallbackIndex = 
   const className = typeof params?.classname === 'string' ? params.classname.trim() : ''
   const methodName = typeof params?.method === 'string' ? params.method.trim() : ''
   const namespace = typeof params?.namespace === 'string' ? params.namespace.trim() : ''
-  if (className && methodName) {
-    const qualified = namespace ? `${namespace}.${className}.${methodName}` : `${className}.${methodName}`
-    return `Apex · ${qualified}`
+  if (descriptor === APEX_EXECUTE_DESCRIPTOR && className && methodName) {
+    return namespace ? `${namespace}.${className}.${methodName}` : `${className}.${methodName}`
   }
-  if (descriptor) {
-    const actionSplit = /(?:\/|\.)([^/.$]+)\/ACTION\$([A-Za-z0-9_]+)$/.exec(descriptor)
-    if (actionSplit) {
-      const controller = actionSplit[1].replace(/Controller$/, '')
-      return `${controller}.${actionSplit[2]}`
-    }
-    const lastSlash = descriptor.split('/').pop()
-    return lastSlash || descriptor
-  }
-  return `Action ${fallbackIndex + 1}`
+  const { rest, apex } = stripDescriptorScheme(descriptor)
+  if (!rest) return `Action ${fallbackIndex + 1}`
+  const actionAt = rest.indexOf('/ACTION$')
+  let controller = actionAt >= 0 ? rest.slice(0, actionAt) : rest
+  const method = actionAt >= 0 ? rest.slice(actionAt + '/ACTION$'.length) : ''
+  // An apex:// controller is [namespace.]Class, kept whole; other
+  // controllers drop their package path.
+  const lastDot = controller.lastIndexOf('.')
+  if (!apex && lastDot >= 0 && lastDot + 1 < controller.length) controller = controller.slice(lastDot + 1)
+  return method ? `${controller}.${method}` : controller
 }
 
 export function parseAuraResponseEnvelope(rawBody?: string): ParsedAuraResponse | null {

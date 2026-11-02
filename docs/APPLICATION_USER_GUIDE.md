@@ -541,7 +541,7 @@ The replay debugger gives you:
 - **Breakpoints** on a phase and action index, including structured control-flow leaves
   such as `loop[0]`, `then[0]`, or `requests[1]`. Debug's left sidebar is the Author
   outline with a breakpoint dot in each step's gutter: click the dot, double-click the
-  step, or press `F9` (or `Cmd/Ctrl` + `B`) on it. An open sequence starts with **All requests**, which sets or
+  step, or press `F9` (or `Cmd/Ctrl` + `B`) on the focused step. An open sequence starts with **All requests**, which sets or
   clears a breakpoint on every request. Each step shows whether it passed, failed or is
   running, and the bottom dock's **Timeline** lists every execution, loop passes included.
   The **Parameters** section below the outline opens a parameter's uses and captured values.
@@ -560,7 +560,14 @@ The replay debugger gives you:
 
 Script Editor keys: `Cmd/Ctrl` + `S` saves, `F5` starts or resumes replay,
 `Shift` + `F5` stops, `F10` steps into, `F11` steps over a block, `Shift` + `F11` finishes the current loop,
-`F9` or `Cmd/Ctrl` + `B` toggles a breakpoint, and `Escape` closes the panel.
+`F9` or `Cmd/Ctrl` + `B` toggles a breakpoint, and `Escape` closes the panel. The breakpoint goes on
+the outline row with keyboard focus; otherwise on the step whose evidence is open in Debug, or the
+step selected in the outline (in any phase, or a request or step inside a block).
+
+Before a run, Debug's **Problems** tab lists what refuses one under **Blocking replay (N)**: each
+blocked step offers **Select in Author**, which opens it on its repair, and **Delete blocked action**,
+which removes the step from the draft (a step inside a sequence or block is removed on its own;
+`Cmd/Ctrl` + `Z` restores it).
 
 Validate first, replay second, then promote the script into a scenario.
 
@@ -879,9 +886,11 @@ Keep two browser DevTools caveats in mind:
 To shrink an already-recorded large HAR by 85–95% without losing correlation evidence:
 
 - **Upload as `.zip`:** Both primary and comparison HAR dropzones accept `.zip`
-  archives directly (up to 300 MB per capture), typically reducing raw JSON HAR size by
-  80–90% with zero data loss. You can drag two `.har` or `.zip` files onto the dropzone
-  at once to populate both primary and comparison slots together.
+  archives directly, typically reducing the upload by 80–90% with zero data loss. The
+  300 MB import limit applies to the HAR itself, decompressed from the `.zip`, so zipping
+  speeds up the upload but does not admit a capture over 300 MB; slim it (below) first.
+  You can drag two `.har` or `.zip` files onto the dropzone at once to populate both
+  primary and comparison slots together.
 - **Optional CLI slimming (`jq`):** Strip response body text *only* from static asset
   entries (`script`, `stylesheet`, `image`, `font`, `media`) while preserving every HTML
   document (`auraConfig`, sign-in redirects), XHR/Fetch request and response body,

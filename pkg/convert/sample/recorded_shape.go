@@ -234,9 +234,13 @@ func auraExchangeDescriptors(ex exchange) []string {
 			}
 		}
 	}
+	// Without a readable body the query names the batch's actions (besides
+	// the r sequence number). Every one counts, aura.* business actions
+	// included, so a batch that carries a business action alongside a
+	// telemetry beacon or an excluded descriptor is never taken for one.
 	var queryDescs []string
 	for key := range parsed.Query() {
-		if key == "r" || strings.HasPrefix(key, "aura.") && key != "aura.ApexAction.execute" {
+		if key == "r" {
 			continue
 		}
 		queryDescs = append(queryDescs, key)

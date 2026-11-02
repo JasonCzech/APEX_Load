@@ -49,18 +49,18 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 	importReq.Opts.RecordingProfileID = strings.TrimSpace(importReq.RecordingProfileID)
 	importReq.Opts.EntryPoint = sample.EntryPointImportHAR
 	importReq.Opts.StampActionProvenance = true
-	if secTrimmed := bytes.TrimSpace(importReq.SecondaryData); len(secTrimmed) >= 4 && bytes.HasPrefix(secTrimmed, []byte("PK\x03\x04")) {
-		if unwrapped, err := unwrapHARArchive(importReq.SecondaryData); err == nil {
-			importReq.SecondaryData = unwrapped
-		}
-	}
+	// Byte-identical uploads are caught here without a slot. A zipped or
+	// truncated copy of the baseline is caught by the comparison job once it
+	// has unwrapped and salvaged the comparison the way the baseline was
+	// (prepareHARComparison), before it converts anything.
 	identicalComparison := len(importReq.SecondaryData) > 0 && identicalHARComparisonPayload(importReq.Data, importReq.SecondaryData)
 	// The comparison HAR converts while the baseline does; it reads its own
-	// bytes and a copy of the options, whose shared pointers (Profile and the
-	// option flags) conversion only reads.
+	// bytes, the baseline bytes (only to compare them) and a copy of the
+	// options, whose shared pointers (Profile and the option flags) conversion
+	// only reads.
 	var comparison *harComparisonJob
 	if !identicalComparison {
-		comparison = startHARComparison(r.Context(), importReq.SecondaryData, importReq.Opts)
+		comparison = startHARComparison(r.Context(), importReq.SecondaryData, importReq.Data, importReq.Opts)
 	}
 	// Every return cancels the comparison. Only the success path waits for it
 	// (below): an error response must not wait for a conversion nobody will
@@ -82,7 +82,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 		return
 	}
 	if identicalComparison {
-		recordUncomparedHARPair(result, "the baseline and comparison HAR uploads are identical captures; record two separate sessions to compare dynamic values")
+		recordUncomparedHARPair(result, identicalHARComparisonReason)
 	} else if comparison != nil {
 		finished := comparison.wait(r.Context(), baselineConversion)
 		if !harImportStageOK(w, r) {
@@ -395,10 +395,11 @@ type harComparisonJob struct {
 }
 
 // startHARComparison begins preparing the comparison HAR, or returns nil when
-// the import has none. opts is the caller's copy; conversion only reads the
-// pointers it shares with the baseline (Profile and the option flags). The
-// job ends with ctx or stop, whichever comes first.
-func startHARComparison(ctx context.Context, data []byte, opts har.ConvertOptions) *harComparisonJob {
+// the import has none. baseline is the unwrapped (and, when opted in, salvaged)
+// baseline capture, which the job only reads. opts is the caller's copy;
+// conversion only reads the pointers it shares with the baseline (Profile and
+// the option flags). The job ends with ctx or stop, whichever comes first.
+func startHARComparison(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) *harComparisonJob {
 	if len(data) == 0 {
 		return nil
 	}
@@ -431,7 +432,7 @@ func startHARComparison(ctx context.Context, data []byte, opts har.ConvertOption
 				job.prepared, job.err = nil, errors.New("comparison HAR: conversion failed unexpectedly")
 			}
 		}()
-		job.prepared, job.salvage, job.err = harComparisonPreparer(ctx, data, opts)
+		job.prepared, job.salvage, job.err = harComparisonPreparer(ctx, data, baseline, opts)
 	}()
 	return job
 }
@@ -446,8 +447,10 @@ var harComparisonSlots = make(chan struct{}, 2)
 var harComparisonPreparer = prepareHARComparison
 
 // prepareHARComparison unwraps, salvages (under the same salvage_truncated
-// opt-in as the baseline) and converts a comparison HAR.
-func prepareHARComparison(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+// opt-in as the baseline) and converts a comparison HAR. A comparison that is
+// then the same capture as baseline, which was unwrapped and salvaged the same
+// way, is not converted: it returns errIdenticalHARComparison.
+func prepareHARComparison(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 	data, err := unwrapHARArchive(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("comparison HAR upload: %w", err)
@@ -458,6 +461,9 @@ func prepareHARComparison(ctx context.Context, data []byte, opts har.ConvertOpti
 			return nil, nil, errors.New("comparison HAR: " + report.Hint())
 		}
 		data, salvage = salvaged, &report
+	}
+	if identicalHARComparisonPayload(baseline, data) {
+		return nil, nil, errIdenticalHARComparison
 	}
 	prepared, err := har.PrepareComparisonContext(ctx, data, opts)
 	if err != nil {
@@ -525,6 +531,11 @@ func (job *harComparisonJob) wait(ctx context.Context, baselineConversion time.D
 // har_diff that says why nothing was compared. The diff stops with ctx.
 func (job *harComparisonJob) attach(ctx context.Context, result *har.ConvertResult) {
 	err := job.err
+	if errors.Is(err, errIdenticalHARComparison) {
+		job.prepared = nil
+		recordUncomparedHARPair(result, identicalHARComparisonReason)
+		return
+	}
 	var diff *har.DiffReport
 	if err == nil {
 		diff, err = har.DiffPreparedContext(ctx, result, job.prepared)
@@ -861,34 +872,89 @@ func validHARImportPolicyOptions(w http.ResponseWriter, opts har.ConvertOptions)
 }
 
 func validHARImportBaseURL(w http.ResponseWriter, raw string) bool {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" || strings.Contains(trimmed, "{{") {
-		return true
-	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed == nil || strings.TrimSpace(parsed.Host) == "" ||
-		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
+	if !harImportBaseURLAccepted(raw) {
 		writeError(w, http.StatusBadRequest, "invalid base_url: must be an http:// or https:// URL or a {{...}} template")
 		return false
 	}
 	return true
 }
 
+// harImportBaseURLAccepted reports whether a base_url is empty, an http(s)
+// URL, or a {{...}} template. A value may start with a template that stands
+// for the whole origin ("{{BaseURL}}/app"); any other template must sit inside
+// an http(s) URL ("https://{{env}}.example.test"). Every template must close
+// and name something, so text that merely contains "{{" is not accepted.
+func harImportBaseURLAccepted(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return true
+	}
+	if strings.ContainsAny(trimmed, " \t\r\n") {
+		return false
+	}
+	substituted, ok := substituteHARImportBaseURLTemplates(trimmed)
+	if !ok {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "{{") {
+		// The leading template is the origin; what follows it is a path,
+		// query or port suffix the template completes.
+		return true
+	}
+	parsed, err := url.Parse(substituted)
+	return err == nil && parsed != nil && strings.TrimSpace(parsed.Host) != "" &&
+		(strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https"))
+}
+
+// substituteHARImportBaseURLTemplates replaces each {{name}} in value with a
+// placeholder that is valid as a host label, a port and a path segment alike
+// ("https://{{host}}:{{port}}"). It reports false for an unclosed template, an
+// empty name, or a stray "}}".
+func substituteHARImportBaseURLTemplates(value string) (string, bool) {
+	var out strings.Builder
+	rest := value
+	for {
+		start := strings.Index(rest, "{{")
+		if start < 0 {
+			if strings.Contains(rest, "}}") {
+				return "", false
+			}
+			out.WriteString(rest)
+			return out.String(), true
+		}
+		if strings.Contains(rest[:start], "}}") {
+			return "", false
+		}
+		end := strings.Index(rest[start+2:], "}}")
+		if end < 0 {
+			return "", false
+		}
+		name := strings.TrimSpace(rest[start+2 : start+2+end])
+		if name == "" || strings.ContainsAny(name, "{}") {
+			return "", false
+		}
+		out.WriteString(rest[:start])
+		out.WriteString("0")
+		rest = rest[start+2+end+2:]
+	}
+}
+
+// identicalHARComparisonReason is why a pair whose two captures are the same
+// recording is not compared.
+const identicalHARComparisonReason = "the baseline and comparison HAR uploads are identical captures; record two separate sessions to compare dynamic values"
+
+// errIdenticalHARComparison is a comparison job that found the comparison to
+// be the baseline capture once both were unwrapped and salvaged alike.
+var errIdenticalHARComparison = errors.New("comparison HAR is the baseline capture")
+
+// identicalHARComparisonPayload reports whether two captures hold the same
+// bytes, ignoring surrounding whitespace. It never decompresses: callers
+// compare captures already unwrapped and salvaged the same way, or accept
+// that a zipped copy is caught later, by prepareHARComparison.
 func identicalHARComparisonPayload(baseline, secondary []byte) bool {
 	baseTrimmed := bytes.TrimSpace(baseline)
 	secTrimmed := bytes.TrimSpace(secondary)
-	if len(baseTrimmed) == 0 || len(secTrimmed) == 0 {
-		return false
-	}
-	if bytes.Equal(baseTrimmed, secTrimmed) {
-		return true
-	}
-	if len(secTrimmed) >= 4 && bytes.HasPrefix(secTrimmed, []byte("PK\x03\x04")) {
-		if unwrapped, err := unwrapHARArchive(secondary); err == nil {
-			return bytes.Equal(baseTrimmed, bytes.TrimSpace(unwrapped))
-		}
-	}
-	return false
+	return len(baseTrimmed) > 0 && len(secTrimmed) > 0 && bytes.Equal(baseTrimmed, secTrimmed)
 }
 
 func normalizeHARArtifactMode(value string, hasComparison bool) string {

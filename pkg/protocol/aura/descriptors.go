@@ -1,9 +1,7 @@
 package aura
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"unicode"
 )
@@ -17,104 +15,49 @@ type ActionDescriptor struct {
 	ApexMethod    string
 }
 
-// ExtractMessageJSON extracts the raw JSON object string for an Aura request's
-// "message" payload from either a direct JSON body or an
-// application/x-www-form-urlencoded body containing "message=...".
-func ExtractMessageJSON(body string, maxBytes int) string {
-	if maxBytes <= 0 {
+// ParseEnvelopeActions parses the ordered sub-action descriptors and Apex
+// target parameters from an Aura POST body (the form Aura posts, or a JSON
+// envelope). It shares RequestActions' parser, so a body runtime validation
+// rejects (a duplicate or missing message field, too many form fields,
+// invalid UTF-8, a malformed envelope, or one over the size, token or action
+// bounds) names no actions here either. maxBytes further caps the body when
+// it is positive and below MaxEnvelopeBytes.
+func ParseEnvelopeActions(body string, maxBytes int) []ActionDescriptor {
+	if maxBytes <= 0 || maxBytes > MaxEnvelopeBytes {
 		maxBytes = MaxEnvelopeBytes
 	}
 	if body == "" || len(body) > maxBytes {
-		return ""
-	}
-	trimmed := strings.TrimSpace(body)
-	if strings.HasPrefix(trimmed, "{") {
-		return trimmed
-	}
-	for rest := body; rest != ""; {
-		var part string
-		part, rest, _ = strings.Cut(rest, "&")
-		if strings.HasPrefix(part, "message=") {
-			decoded, err := url.QueryUnescape(part[len("message="):])
-			if err != nil {
-				return ""
-			}
-			rawMessage := strings.TrimSpace(decoded)
-			if strings.HasPrefix(rawMessage, "{") {
-				return rawMessage
-			}
-			return ""
-		}
-	}
-	return ""
-}
-
-// ParseEnvelopeActions parses the ordered sub-action descriptors and Apex
-// target parameters from an Aura POST body.
-func ParseEnvelopeActions(body string, maxBytes int) []ActionDescriptor {
-	rawMessage := ExtractMessageJSON(body, maxBytes)
-	if rawMessage == "" {
 		return nil
 	}
-	var envelope struct {
-		Actions []struct {
-			Descriptor string          `json:"descriptor"`
-			Params     json.RawMessage `json:"params"`
-		} `json:"actions"`
-	}
-	if err := json.Unmarshal([]byte(rawMessage), &envelope); err != nil || len(envelope.Actions) == 0 {
+	actions, issues := parseRequestEnvelope([]byte(body), true)
+	if len(issues) > 0 || len(actions) == 0 {
 		return nil
 	}
-	out := make([]ActionDescriptor, 0, len(envelope.Actions))
-	for _, action := range envelope.Actions {
-		desc := strings.TrimSpace(action.Descriptor)
-		item := ActionDescriptor{Descriptor: desc}
-		if len(action.Params) > 0 {
-			var apexParams struct {
-				Namespace string `json:"namespace"`
-				Classname string `json:"classname"`
-				Method    string `json:"method"`
-			}
-			if json.Unmarshal(action.Params, &apexParams) == nil {
-				item.ApexNamespace = strings.TrimSpace(apexParams.Namespace)
-				item.ApexClassname = strings.TrimSpace(apexParams.Classname)
-				item.ApexMethod = strings.TrimSpace(apexParams.Method)
-			}
-		}
-		if item.Descriptor != "" || item.ApexClassname != "" || item.ApexMethod != "" {
-			out = append(out, item)
-		}
+	out := make([]ActionDescriptor, 0, len(actions))
+	for _, action := range actions {
+		namespace, _ := action.params["namespace"].(string)
+		class, _ := action.params["classname"].(string)
+		method, _ := action.params["method"].(string)
+		out = append(out, ActionDescriptor{
+			Descriptor:    boundName(strings.TrimSpace(action.descriptor)),
+			ApexNamespace: boundName(strings.TrimSpace(namespace)),
+			ApexClassname: boundName(strings.TrimSpace(class)),
+			ApexMethod:    boundName(strings.TrimSpace(method)),
+		})
 	}
 	return out
 }
 
-// IsApexExecute reports whether the descriptor invokes ApexActionController
-// (or aura.ApexAction.execute) with an explicit Apex class or method.
+// IsApexExecute reports whether the action is an ApexActionController call
+// that names both its Apex class and method, the rule RequestActions uses.
 func (d ActionDescriptor) IsApexExecute() bool {
-	if d.ApexClassname == "" && d.ApexMethod == "" {
-		return false
-	}
-	lower := strings.ToLower(d.Descriptor)
-	return strings.Contains(lower, "apexactioncontroller/action$execute") ||
-		strings.HasSuffix(lower, "apexaction.execute")
+	return d.Descriptor == apexDescriptor && d.QualifiedApexTarget() != ""
 }
 
-// QualifiedApexTarget formats [namespace.]classname[.method] when Apex target
-// parameters are present.
+// QualifiedApexTarget formats [namespace.]classname.method when both the Apex
+// class and method are present, else "".
 func (d ActionDescriptor) QualifiedApexTarget() string {
-	if d.ApexClassname == "" && d.ApexMethod == "" {
-		return ""
-	}
-	qualified := d.ApexClassname
-	if d.ApexNamespace != "" && d.ApexClassname != "" {
-		qualified = d.ApexNamespace + "." + d.ApexClassname
-	} else if d.ApexNamespace != "" {
-		qualified = d.ApexNamespace
-	}
-	if qualified != "" && d.ApexMethod != "" {
-		return qualified + "." + d.ApexMethod
-	}
-	return qualified + d.ApexMethod
+	return apexTarget(d.ApexNamespace, d.ApexClassname, d.ApexMethod)
 }
 
 // ShortTitle formats a concise human-readable sub-action label such as
@@ -126,12 +69,14 @@ func (d ActionDescriptor) ShortTitle() string {
 			return target
 		}
 	}
-	desc := stripDescriptorScheme(d.Descriptor)
+	desc, apex := stripDescriptorScheme(d.Descriptor)
 	if desc == "" {
 		return ""
 	}
 	controller, method, hasAction := strings.Cut(desc, "/ACTION$")
-	if idx := strings.LastIndex(controller, "."); idx >= 0 && idx+1 < len(controller) {
+	// An apex:// controller is [namespace.]Class, kept whole; other
+	// controllers drop their package path.
+	if idx := strings.LastIndex(controller, "."); !apex && idx >= 0 && idx+1 < len(controller) {
 		controller = controller[idx+1:]
 	}
 	if hasAction && method != "" {
@@ -147,7 +92,7 @@ func (d ActionDescriptor) DiffToken() string {
 			return "Apex:" + target
 		}
 	}
-	desc := stripDescriptorScheme(d.Descriptor)
+	desc, _ := stripDescriptorScheme(d.Descriptor)
 	if desc == "" {
 		return ""
 	}
@@ -164,14 +109,17 @@ func (d ActionDescriptor) FilterToken() string {
 	return desc
 }
 
-func stripDescriptorScheme(desc string) string {
+// stripDescriptorScheme drops a descriptor's aura://, serviceComponent:// or
+// apex:// scheme and reports whether it was apex:// (a direct @AuraEnabled
+// Apex call, whose controller is [namespace.]Class).
+func stripDescriptorScheme(desc string) (string, bool) {
 	desc = strings.TrimSpace(desc)
-	for _, prefix := range []string{"aura://", "serviceComponent://"} {
+	for _, prefix := range []string{"aura://", "serviceComponent://", "apex://"} {
 		if len(desc) >= len(prefix) && strings.EqualFold(desc[:len(prefix)], prefix) {
-			return desc[len(prefix):]
+			return desc[len(prefix):], prefix == "apex://"
 		}
 	}
-	return desc
+	return desc, false
 }
 
 // IsGenericAuraActionName reports whether currentName is a default un-enriched

@@ -84,7 +84,16 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 		return fmt.Errorf("inspect durable import credential locators: %w", err)
 	}
 
-	alignedDisplayPaths := buildAlignedCandidateToPriorDisplayPaths(candidate, prior)
+	alignedDisplayPaths, err := buildAlignedCandidateToPriorDisplayPaths(candidate, prior)
+	if err != nil {
+		// Without an alignment there is no safe way to tell which candidate
+		// surface a durable locator belongs to: restoring by array position
+		// after a deletion or insertion would strip a retained credential's
+		// locator, and the next masked read would show that credential.
+		if len(priorTargetsByPath) > 0 {
+			return fmt.Errorf("restore durable import credential locators: %w", err)
+		}
+	}
 	seenCandidateUIDs := make(map[string]int)
 
 	if err := dslwalk.Walk(candidate, func(ref dslwalk.SurfaceRef) error {
@@ -109,8 +118,6 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 			}
 		} else if alignedPriorPath, aligned := alignedDisplayPaths[ref.Path]; aligned {
 			matched, exists = priorTargetsByPath[alignedPriorPath]
-		} else if len(alignedDisplayPaths) == 0 {
-			matched, exists = priorTargetsByPath[ref.Path]
 		}
 
 		if !exists {
@@ -170,21 +177,31 @@ func remapRestoredCredentialTargetPaths(cloned any, priorPath, currentPath strin
 	return items
 }
 
-func buildAlignedCandidateToPriorDisplayPaths(candidate, prior *dsl.Script) map[string]string {
-	safeCandidate, err := ScriptAsJSONValue(MaskScriptSecrets(candidate))
+// buildAlignedCandidateToPriorDisplayPaths maps each candidate surface's
+// display path to the prior surface it was reconciled from. It compares the
+// executable scripts: reconciliation has already restored every stored value
+// into the step it matched, so a matched step's identity equals its stored
+// step's. Projecting the candidate instead would read its client-supplied
+// credential locators, which are about to be replaced: a dropped locator
+// changes how a located identity field projects, and one the engine cannot
+// resolve fails the projection. It fails rather than leave the caller to fall
+// back to positional alignment.
+func buildAlignedCandidateToPriorDisplayPaths(candidate, prior *dsl.Script) (map[string]string, error) {
+	candidateValue, err := ScriptAsJSONValue(candidate)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	safePrior, err := ScriptAsJSONValue(MaskScriptSecrets(prior))
+	priorValue, err := ScriptAsJSONValue(prior)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	candidateMap, ok1 := safeCandidate.(map[string]any)
-	priorMap, ok2 := safePrior.(map[string]any)
+	candidateMap, ok1 := candidateValue.(map[string]any)
+	priorMap, ok2 := priorValue.(map[string]any)
 	if !ok1 || !ok2 {
-		return nil
+		return nil, fmt.Errorf("could not align the script's steps with the stored version")
 	}
 	aligned := make(map[string]string)
+	unmatchedCollection := ""
 	var walk func(candVal, priorVal any, candPath, priorPath string)
 	walk = func(candVal, priorVal any, candPath, priorPath string) {
 		switch typed := candVal.(type) {
@@ -215,6 +232,9 @@ func buildAlignedCandidateToPriorDisplayPaths(candidate, prior *dsl.Script) map[
 			if IsActionCollectionContextPath(candPath) {
 				matches, ok := MatchCredentialPreservingActionCollection(typed, pSlice)
 				if !ok {
+					if unmatchedCollection == "" {
+						unmatchedCollection = ImportContextDisplayPath(candPath)
+					}
 					return
 				}
 				for i, child := range typed {
@@ -245,7 +265,10 @@ func buildAlignedCandidateToPriorDisplayPaths(candidate, prior *dsl.Script) map[
 		}
 	}
 	walk(candidateMap, priorMap, "", "")
-	return aligned
+	if unmatchedCollection != "" {
+		return nil, fmt.Errorf("could not match the steps of %s with the stored version", unmatchedCollection)
+	}
+	return aligned, nil
 }
 
 func CloneImportSecurityMetadata(value any) (any, error) {

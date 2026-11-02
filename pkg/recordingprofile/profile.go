@@ -161,7 +161,7 @@ func (p Profile) validate(label string) error {
 	for name, list := range map[string][]string{
 		"record_headers": p.RecordHeaders, "drop_headers": p.DropHeaders, "include_hosts": p.IncludeHosts,
 		"exclude_hosts": p.ExcludeHosts, "exclude_content_types": p.ExcludeContentTypes,
-		"excluded_aura_descriptors": p.ExcludedAuraDescriptors,
+		"excluded_aura_descriptors":  p.ExcludedAuraDescriptors,
 		"correlation.disabled_rules": p.Correlation.DisabledRules, "correlation.excluded_values": p.Correlation.ExcludedValues,
 		"correlation.excluded_content_types": p.Correlation.ExcludedContentTypes,
 	} {

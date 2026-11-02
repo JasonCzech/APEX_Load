@@ -8,6 +8,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 type harLengthCase struct {
@@ -298,6 +299,28 @@ func TestIsAuraTelemetryBeacon(t *testing.T) {
 	}
 	if isAuraTelemetryBeacon("GET", "https://a.lightning.force.com/aura?ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1") {
 		t.Error("a GET was read as a beacon post")
+	}
+}
+
+// A batch whose body the export dropped is read from its query. An aura.*
+// business action riding with a beacon caboose keeps the batch: it is neither
+// telemetry nor wholly excluded by a profile that excludes the beacon.
+func TestAuraQueryFallbackKeepsBusinessActionsInMixedBatches(t *testing.T) {
+	mixed := exchange{Method: "POST", URL: "https://a.lightning.force.com/aura?r=40&aura.RecordUi.executeGraphQL=1&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1"}
+	if isClientTelemetryExchange(mixed) {
+		t.Fatal("a mixed business + beacon batch without a body was dropped as telemetry")
+	}
+	profile := &recordingprofile.Profile{ExcludedAuraDescriptors: []string{"InstrumentationBeacon"}}
+	if exchangeAllAuraActionsExcluded(mixed, profile) {
+		t.Fatal("a profile excluding the beacon dropped the business action with it")
+	}
+	beacon := exchange{Method: "POST", URL: "https://a.lightning.force.com/aura?r=41&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1"}
+	if !isClientTelemetryExchange(beacon) {
+		t.Fatal("a pure beacon batch was kept")
+	}
+	apex := exchange{Method: "POST", URL: "https://a.lightning.force.com/aura?r=42&aura.ApexAction.execute=1"}
+	if got := auraExchangeDescriptors(apex); len(got) != 1 || got[0] != "aura.ApexAction.execute" {
+		t.Fatalf("auraExchangeDescriptors(apex) = %v", got)
 	}
 }
 

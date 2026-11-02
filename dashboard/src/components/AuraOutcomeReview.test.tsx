@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuraOutcomeBatch, AuraOutcomeReport } from '../types/scriptImports'
+import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import AuraOutcomeReview from './AuraOutcomeReview'
 
 let container: HTMLDivElement
@@ -139,4 +140,47 @@ describe('AuraOutcomeReview', () => {
     expect(onViewSource).not.toHaveBeenCalled()
   })
 
+
+  it('labels a POST body the browser HAR export left out', () => {
+    render(report({ issue_counts: { request_body_not_captured: 1 }, batches: [batch(1, { request_valid: false, request_issues: [{ code: 'request_body_not_captured', ordinal: 1 }] })] }))
+    expect(container.textContent).toContain('POST body omitted by browser HAR export (1)')
+    expect(container.textContent).toContain('POST body omitted by browser HAR export at action 1')
+    expect(container.textContent).not.toContain('Unrecognized inspection diagnostic')
+  })
+
+  const auraRequest = (entry: number, name: string, actions: unknown[], metadata: Record<string, unknown> = {}): ScriptActionDefinition => ({
+    name, type: 'request', method: 'POST', target: '/aura',
+    body: `message=${encodeURIComponent(JSON.stringify({ actions }))}&aura.token=t`,
+    metadata: { 'har.entry_index': entry, ...metadata },
+  })
+  const auraScript = (actions: ScriptActionDefinition[]): ScriptDefinition => ({ name: 'Salesforce', version: '1', protocol: 'http', config: { base_url: 'https://org.my.salesforce.com' }, actions })
+
+  it('names each failing sub-action by its Controller$method or Apex class and method', () => {
+    const script = auraScript([auraRequest(225, '53 - POST aura', [
+      { id: '1;a', descriptor: 'serviceComponent://ui.force.components.controllers.userProfileCard.UserProfileCardController/ACTION$isDataSpaceSwitcherEnabled', params: {} },
+      { id: '2;a', descriptor: 'aura://ApexActionController/ACTION$execute', params: { namespace: 'vlocity', classname: 'VisibilityControlUtils', method: 'getVcForLoginUserNewFramework' } },
+    ])])
+    const failed = batch(1, { action_path: 'actions[0]', har_entry_id: 225, analysis: { success: false, complete: true, has_response: true, request_actions: 2, response_actions: 2, matched_actions: 2, outcomes: [{ ordinal: 1, state: 'ERROR' }, { ordinal: 2, state: 'SUCCESS' }] } })
+    act(() => { root.render(<AuraOutcomeReview report={report({ batches: [failed] })} script={script} />) })
+    const outcomes = Array.from(container.querySelectorAll('.aura-outcome-actions li')).map(item => item.textContent)
+    expect(outcomes).toEqual(['Action 1 (UserProfileCardController$isDataSpaceSwitcherEnabled): ERROR', 'Action 2 (vlocity.VisibilityControlUtils.getVcForLoginUserNewFramework): SUCCESS'])
+  })
+
+  it('resolves a batch by its HAR entry after earlier requests were excluded from the draft', () => {
+    // The report was built when entry 40 sat at actions[2]; two earlier
+    // requests were excluded since, so actions[2] is now entry 60.
+    const script = auraScript([
+      auraRequest(10, '10 - POST aura', [{ id: '1', descriptor: 'aura://A/ACTION$first' }]),
+      auraRequest(40, '40 - POST aura', [{ id: '1', descriptor: 'aura://B/ACTION$second' }], { execution_blockers: ['har_request_body_not_exported'] }),
+      auraRequest(60, '60 - POST aura', [{ id: '1', descriptor: 'aura://C/ACTION$third' }]),
+    ])
+    const shifted = batch(3, { action_path: 'actions[2]', har_entry_id: 40 })
+    const excluded = batch(5, { action_path: 'actions[4]', har_entry_id: 90 })
+    act(() => { root.render(<AuraOutcomeReview report={report({ batches: [shifted, excluded] })} script={script} />) })
+    act(() => { findButton('Only batches requiring review (0)')?.click() })
+    const headings = Array.from(container.querySelectorAll('.aura-outcome-batch-heading')).map(item => item.textContent)
+    expect(headings[0]).toBe('Request 3 — 40 - POST auraCaptured success · Body not exported')
+    // The excluded request's batch names no draft request at all.
+    expect(headings[1]).toBe('Request 5Captured success')
+  })
 })

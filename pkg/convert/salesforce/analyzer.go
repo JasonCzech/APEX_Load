@@ -114,10 +114,14 @@ type Review struct {
 	NativePreview         *NativePreview              `json:"native_preview,omitempty"`
 }
 
+// DomainObservation counts one Salesforce host. Count is the imported
+// requests the script sends there; HARCount is every raw HAR entry on that
+// host, including the static assets and telemetry the import filtered out.
 type DomainObservation struct {
-	Host  string `json:"host"`
-	Kind  string `json:"kind"`
-	Count int    `json:"count"`
+	Host     string `json:"host"`
+	Kind     string `json:"kind"`
+	Count    int    `json:"count"`
+	HARCount int    `json:"har_count,omitempty"`
 }
 
 type EndpointObservation struct {
@@ -464,7 +468,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 		}
 		resolved := resolveActionURL(script.Config.BaseURL, action.Target)
 		evidence := salesforceActionEvidence(action, resolved)
-		descriptor := extractAuraDescriptor(evidence)
+		descriptor := extractAuraDescriptor(action.Body, evidence)
 		refs = append(refs, actionRef{
 			Phase:       phase,
 			ActionPath:  actionPath,
@@ -777,6 +781,7 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 	}
 
 	used := make(map[int]bool)
+	templated := templatedHARIndex{}
 	for refIndex, ref := range refs {
 		if entryID := harEntryIndexFromActionMetadata(ref.Action); entryID > 0 && !used[entryID] {
 			if candidateIdx, ok := byEntryID[entryID]; ok && strings.EqualFold(ref.Method, candidates[candidateIdx].entry.Method) {
@@ -817,7 +822,8 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 			}
 		}
 		if bestID == 0 && urlContainsTemplatePlaceholder(ref.URL) {
-			for _, candidate := range candidates {
+			for _, index := range templated.bucket(refURL, candidates) {
+				candidate := candidates[index]
 				if used[candidate.entry.ID] || !strings.EqualFold(ref.Method, candidate.entry.Method) {
 					continue
 				}
@@ -855,6 +861,60 @@ func harEntryIndexFromActionMetadata(action *dsl.Action) int {
 
 func urlContainsTemplatePlaceholder(raw string) bool {
 	return strings.Contains(raw, "{{") || strings.Contains(raw, "%7B%7B") || strings.Contains(raw, "%7b%7b")
+}
+
+// templatedHARIndex buckets HAR candidates for the templated-URL fallback so
+// a templated ref scans only the entries that can match it rather than every
+// entry. A ref's placeholder segment positions form its mask; per distinct
+// mask (a handful per script), each candidate is keyed once by scheme, host,
+// and path with the masked segments blanked, so a ref's bucket holds exactly
+// the same-shape entries whose literal segments equal its own. Buckets keep
+// document order, which preserves the first-best tie-break.
+type templatedHARIndex map[string]map[string][]int
+
+func (t templatedHARIndex) bucket(refURL normalizedURL, candidates []harCandidate) []int {
+	if !refURL.parsed {
+		return nil
+	}
+	refSegs := strings.Split(refURL.path, "/")
+	masked := make(map[int]bool)
+	var mask strings.Builder
+	mask.WriteString(strconv.Itoa(len(refSegs)))
+	for i, seg := range refSegs {
+		if urlContainsTemplatePlaceholder(seg) {
+			masked[i] = true
+			mask.WriteByte(',')
+			mask.WriteString(strconv.Itoa(i))
+		}
+	}
+	signature := mask.String()
+	index, built := t[signature]
+	if !built {
+		index = make(map[string][]int)
+		for candidateIndex, candidate := range candidates {
+			if !candidate.url.parsed || strings.Count(candidate.url.path, "/")+1 != len(refSegs) {
+				continue
+			}
+			key := templatedHARKey(candidate.url, strings.Split(candidate.url.path, "/"), masked)
+			index[key] = append(index[key], candidateIndex)
+		}
+		t[signature] = index
+	}
+	return index[templatedHARKey(refURL, refSegs, masked)]
+}
+
+func templatedHARKey(u normalizedURL, segs []string, masked map[int]bool) string {
+	var key strings.Builder
+	key.WriteString(u.scheme)
+	key.WriteByte(0)
+	key.WriteString(u.host)
+	for i, seg := range segs {
+		key.WriteByte(0)
+		if !masked[i] {
+			key.WriteString(seg)
+		}
+	}
+	return key.String()
 }
 
 func equivalentTemplatedNormalizedURL(refURL, candURL normalizedURL) bool {
@@ -1093,8 +1153,11 @@ func salesforceActionEvidence(action *dsl.Action, rawURL string) string {
 	return joined
 }
 
-func extractAuraDescriptor(evidence string) string {
-	if actions := aura.ParseEnvelopeActions(evidence, aura.MaxEnvelopeBytes); len(actions) > 0 && actions[0].Descriptor != "" {
+// extractAuraDescriptor names the first Aura action of body with the shared
+// envelope parser. The joined evidence is only a fallback for shapes the parser
+// rejects: its URL-first, space-joined form never parses as an envelope.
+func extractAuraDescriptor(body, evidence string) string {
+	if actions := aura.ParseEnvelopeActions(body, aura.MaxEnvelopeBytes); len(actions) > 0 && actions[0].Descriptor != "" {
 		return actions[0].Descriptor
 	}
 	match := auraDescriptorPattern.FindStringSubmatch(evidence)
@@ -1195,48 +1258,54 @@ func salesforceHost(host string) string {
 }
 
 func domainObservations(refs []actionRef, entries []harEntry) []DomainObservation {
-	counts := map[string]map[string]int{}
-	add := func(rawURL string) {
+	type domainCounts struct {
+		kind     string
+		count    int
+		harCount int
+	}
+	counts := map[string]*domainCounts{}
+	at := func(rawURL string) *domainCounts {
 		host := hostOf(rawURL)
 		kind := salesforceHost(host)
 		if host == "" || kind == "" {
-			return
+			return nil
 		}
 		if counts[host] == nil {
-			counts[host] = map[string]int{"count": 0}
-			counts[host]["kind:"+kind] = 1
+			counts[host] = &domainCounts{kind: kind}
 		}
-		counts[host]["count"]++
+		return counts[host]
 	}
-	matchedHARIDs := make(map[int]bool, len(refs))
-	for _, ref := range refs {
-		add(ref.URL)
-		if ref.HARID > 0 {
-			matchedHARIDs[ref.HARID] = true
-		}
-	}
+	entryURL := make(map[int]string, len(entries))
 	for _, entry := range entries {
-		if matchedHARIDs[entry.ID] {
-			continue
+		entryURL[entry.ID] = entry.URL
+		if domain := at(entry.URL); domain != nil {
+			domain.harCount++
 		}
-		add(entry.URL)
+	}
+	for _, ref := range refs {
+		domain := at(ref.URL)
+		if domain == nil && hostOf(ref.URL) == "" && ref.HARID > 0 {
+			// A ref whose URL names no host (an unparseable or host-less
+			// target) is still one imported request; its matched entry
+			// says where it went.
+			domain = at(entryURL[ref.HARID])
+		}
+		if domain != nil {
+			domain.count++
+		}
 	}
 	out := make([]DomainObservation, 0, len(counts))
 	for host, values := range counts {
-		kind := ""
-		for key := range values {
-			if strings.HasPrefix(key, "kind:") {
-				kind = strings.TrimPrefix(key, "kind:")
-				break
-			}
-		}
-		out = append(out, DomainObservation{Host: host, Kind: kind, Count: values["count"]})
+		out = append(out, DomainObservation{Host: host, Kind: values.kind, Count: values.count, HARCount: values.harCount})
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Count == out[j].Count {
-			return out[i].Host < out[j].Host
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
 		}
-		return out[i].Count > out[j].Count
+		if out[i].HARCount != out[j].HARCount {
+			return out[i].HARCount > out[j].HARCount
+		}
+		return out[i].Host < out[j].Host
 	})
 	return out
 }
@@ -1344,10 +1413,14 @@ func transactionCandidates(refs []actionRef) []TransactionCandidate {
 
 type correlationNameRegistry struct {
 	used map[string]bool
+	// encodedReuse names correlations renamed to an existing producer
+	// extractor that yields the url_encode spelling rather than the
+	// correlation's own raw spelling, so raw consumers need their own variable.
+	encodedReuse map[string]bool
 }
 
 func newCorrelationNameRegistry() *correlationNameRegistry {
-	return &correlationNameRegistry{used: map[string]bool{}}
+	return &correlationNameRegistry{used: map[string]bool{}, encodedReuse: map[string]bool{}}
 }
 
 func (registry *correlationNameRegistry) reserve(name string) {
@@ -1411,9 +1484,12 @@ func prepareCorrelationNamesWithProducers(correlations []correlate.Correlation, 
 		corr := out[index]
 		if harIDToRef != nil && strings.TrimSpace(corr.Expression) != "" {
 			if foundRef := harIDToRef[corr.FoundInID]; foundRef != nil && foundRef.Action != nil {
-				if existing := findEquivalentProducerExtractor(foundRef.Action.Extractors, corr, reusedNames); existing != "" {
+				if existing, encoded := findEquivalentProducerExtractor(foundRef.Action.Extractors, corr, reusedNames); existing != "" {
 					reusedNames[existing] = true
 					out[index].Name = existing
+					if encoded {
+						registry.encodedReuse[existing] = true
+					}
 					continue
 				}
 			}
@@ -1423,7 +1499,11 @@ func prepareCorrelationNamesWithProducers(correlations []correlate.Correlation, 
 	return out, registry
 }
 
-func findEquivalentProducerExtractor(extractors []dsl.Extractor, corr correlate.Correlation, reused map[string]bool) string {
+// findEquivalentProducerExtractor returns an existing producer extractor that
+// reads the same span as corr, and whether it yields the encoded-sibling
+// spelling (url_encode of corr's own) rather than corr's raw spelling. The
+// native plan must bind only that spelling's consumers to the reused name.
+func findEquivalentProducerExtractor(extractors []dsl.Extractor, corr correlate.Correlation, reused map[string]bool) (string, bool) {
 	normSource := func(s string) string {
 		s = strings.ToLower(strings.TrimSpace(s))
 		if s == "" {
@@ -1454,11 +1534,14 @@ func findEquivalentProducerExtractor(extractors []dsl.Extractor, corr correlate.
 		extConv := strings.ToLower(strings.TrimSpace(ext.Convert))
 		corrConv := strings.ToLower(strings.TrimSpace(corr.Convert))
 		encConv := strings.ToLower(strings.TrimSpace(encodedConvert))
-		if extConv == corrConv || (encConv != "" && extConv == encConv) {
-			return ext.Name
+		if extConv == corrConv {
+			return ext.Name, false
+		}
+		if encConv != "" && extConv == encConv {
+			return ext.Name, true
 		}
 	}
-	return ""
+	return "", false
 }
 
 func actionHasExtractorNamed(action *dsl.Action, name string) bool {
@@ -1639,15 +1722,19 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		status := applications[corr.Name]
 		plan.rawMapped = plan.automatic && plan.usage.raw && plan.value != "" && !ambiguousLiterals[plan.value]
 		plan.encodedMapped = plan.automatic && plan.usage.encoded && plan.encodedSupported && plan.queryEncoded != "" && !ambiguousLiterals[plan.queryEncoded]
+		// A reused producer extractor yields exactly one spelling: the raw one,
+		// or (encodedReuse) the url_encode sibling. Only consumers of that
+		// spelling may bind to its name; the other spelling needs its own
+		// extractor, never a Convert change to the shared one.
+		existing := plan.foundRef != nil && actionHasExtractorNamed(plan.foundRef.Action, corr.Name)
+		plan.existingEncoded = existing && correlationNames.encodedReuse[corr.Name]
+		existingRaw := existing && !plan.existingEncoded
 		requiredExtractors := 0
-		if plan.rawMapped || plan.encodedMapped {
-			requiredExtractors = 1
-		}
-		if plan.rawMapped && plan.encodedMapped {
+		if plan.rawMapped && !existingRaw {
 			requiredExtractors++
 		}
-		if requiredExtractors > 0 && plan.foundRef != nil && actionHasExtractorNamed(plan.foundRef.Action, corr.Name) {
-			requiredExtractors--
+		if plan.encodedMapped && !plan.existingEncoded {
+			requiredExtractors++
 		}
 		if plan.foundRef == nil || plan.foundRef.Action == nil || sourceExtractorCounts[plan.foundRef.Action]+requiredExtractors > dsl.MaxActionExtractors {
 			plan.rawMapped = false
@@ -1660,12 +1747,16 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		}
 		sourceExtractorCounts[plan.foundRef.Action] += requiredExtractors
 
+		plan.rawName = corr.Name
 		if plan.rawMapped {
-			vars[plan.value] = append(vars[plan.value], nativeLiteralProducer{sequence: plan.foundRef.Rank, template: "{{var." + corr.Name + "}}"})
+			if plan.existingEncoded {
+				plan.rawName = correlationNames.claim(corr.Name + "_raw")
+			}
+			vars[plan.value] = append(vars[plan.value], nativeLiteralProducer{sequence: plan.foundRef.Rank, template: "{{var." + plan.rawName + "}}"})
 		}
 		if plan.encodedMapped {
 			plan.encodedName = corr.Name
-			if plan.rawMapped {
+			if !plan.existingEncoded && (plan.rawMapped || existingRaw) {
 				plan.encodedName = correlationNames.claim(corr.Name + "_encoded")
 			}
 			vars[plan.queryEncoded] = append(vars[plan.queryEncoded], nativeLiteralProducer{sequence: plan.foundRef.Rank, template: "{{var." + plan.encodedName + "}}"})
@@ -1724,15 +1815,20 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 			OnMiss:     "fail",
 		}
 		status := applications[corr.Name]
-		rawLanded := plan.rawMapped && landed["{{var."+corr.Name+"}}"]
+		rawLanded := plan.rawMapped && landed["{{var."+plan.rawName+"}}"]
 		encodedLanded := plan.encodedMapped && landed["{{var."+plan.encodedName+"}}"]
 		preExistingLanded := foundRef != nil && actionHasExtractorNamed(foundRef.Action, corr.Name) && templateReferencedAfterRank(cloneRefs, foundRef.Rank, "{{var."+corr.Name+"}}")
-		if rawLanded || preExistingLanded {
+		if rawLanded || (preExistingLanded && !plan.existingEncoded) {
 			// Raw reuse remains executable even when another consumer uses an
 			// encoding that requires manual replacement.
-			addExtractorIfMissing(foundRef.Action, base)
+			rawExtractor := base
+			rawExtractor.Name = plan.rawName
+			addExtractorIfMissing(foundRef.Action, rawExtractor)
 		}
 		switch {
+		case plan.existingEncoded:
+			// The reused producer extractor already yields the encoded
+			// spelling its encoded consumers are bound to.
 		case encodedLanded && plan.encodedName == corr.Name:
 			// Value is only ever reused percent-encoded (e.g. aura.token inside a
 			// form-urlencoded /aura body): extract it pre-encoded and substitute the
@@ -2178,7 +2274,12 @@ type nativeCorrelationPlan struct {
 	encodedSupported bool
 	rawMapped        bool
 	encodedMapped    bool
-	encodedName      string
+	// rawName and encodedName are the variables the raw and percent-encoded
+	// spellings bind to; existingEncoded marks corr.Name as a reused producer
+	// extractor that yields the encoded spelling.
+	rawName         string
+	encodedName     string
+	existingEncoded bool
 }
 
 type correlationApplicationStatus struct {
@@ -2964,6 +3065,21 @@ func applyDiffCorrelationEvidence(correlations []correlate.Correlation, evidence
 		expr = strings.TrimSpace(expr)
 		return strings.TrimPrefix(expr, "$.")
 	}
+	classOf := func(item DiffCorrelationEvidence) string {
+		return strings.ToLower(strings.TrimSpace(item.Classification))
+	}
+	// Each item is graded by how specifically it names this correlation;
+	// the most specific grade wins regardless of slice order, so an
+	// earlier item whose 80-char truncated sample merely collides cannot
+	// preempt the correlation's own expression or exact-value item.
+	const (
+		gradeNone = iota
+		gradeUnplacedValue
+		gradeName
+		gradeTruncatedValue
+		gradeExactValue
+		gradeExpression
+	)
 	for index := range correlations {
 		corr := &correlations[index]
 		if corr.FoundInID <= 0 || corr.RuleID == correlate.RuleSalesforceAuraTokenUncapturedCookie {
@@ -2971,28 +3087,33 @@ func applyDiffCorrelationEvidence(correlations []correlate.Correlation, evidence
 		}
 		corrVal := correlationValue(*corr)
 		corrExpr := normExpr(corr.Expression)
-		matchedClass := ""
+		matchedClass, bestGrade := "", gradeNone
 		for _, item := range evidence {
-			if item.BaselineEntry <= 0 || item.BaselineEntry != corr.FoundInID {
-				continue
-			}
-			sameSource := item.Source == "" || corr.Source == "" || strings.EqualFold(strings.TrimSpace(item.Source), strings.TrimSpace(corr.Source))
-			if sameSource && corrExpr != "" && normExpr(item.Expression) == corrExpr {
-				matchedClass = strings.ToLower(strings.TrimSpace(item.Classification))
-				break
-			}
-			if item.BaselineValue != "" && (item.BaselineValue == corrVal || item.BaselineValue == corr.SampleValue) {
-				matchedClass = strings.ToLower(strings.TrimSpace(item.Classification))
-				break
-			}
-		}
-		if matchedClass == "" {
-			for _, item := range evidence {
-				if item.BaselineEntry > 0 && item.BaselineEntry == corr.FoundInID &&
-					strings.EqualFold(strings.TrimSpace(item.Name), strings.TrimSpace(corr.Name)) {
-					matchedClass = strings.ToLower(strings.TrimSpace(item.Classification))
-					break
+			grade := gradeNone
+			switch {
+			case item.BaselineEntry == corr.FoundInID:
+				sameSource := item.Source == "" || corr.Source == "" || strings.EqualFold(strings.TrimSpace(item.Source), strings.TrimSpace(corr.Source))
+				switch {
+				case sameSource && corrExpr != "" && normExpr(item.Expression) == corrExpr:
+					grade = gradeExpression
+				case item.BaselineValue != "" && item.BaselineValue == corrVal:
+					grade = gradeExactValue
+				case item.BaselineValue != "" && item.BaselineValue == corr.SampleValue:
+					grade = gradeTruncatedValue
+				case strings.EqualFold(strings.TrimSpace(item.Name), strings.TrimSpace(corr.Name)):
+					grade = gradeName
 				}
+			case item.BaselineEntry <= 0:
+				// A name-paired diff classification whose extractor could not be
+				// re-evaluated offline carries no producer entry. Only the full
+				// recorded value (never a truncated sample) ties it to this
+				// correlation.
+				if item.BaselineValue != "" && item.BaselineValue == corrVal {
+					grade = gradeUnplacedValue
+				}
+			}
+			if grade > bestGrade {
+				matchedClass, bestGrade = classOf(item), grade
 			}
 		}
 		switch matchedClass {

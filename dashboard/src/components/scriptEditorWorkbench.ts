@@ -173,6 +173,45 @@ export function resolveDebugRowForEvent(
   return rows.find((r) => r.phase === phase && r.actionIndex === actionIndex) ?? null
 }
 
+/** Where a keyboard breakpoint goes: an action, one request of a sequence, or a nested step. */
+export type ShortcutBreakpointTarget =
+  | { phase: string; actionIndex: number; requestIndex?: number }
+  | { phase: string; actionIndex: number; stepPath: string[] }
+
+export interface ShortcutBreakpointContext {
+  workspaceTab: string
+  /** The replay event whose evidence is open in Debug. */
+  selectedEvent?: { phase?: string; action_index?: number; request_index?: number; step_path?: string[] } | null
+  /** The step selected in the outline (Author's, which Debug's outline shows too), at any phase and depth. */
+  focus?: { phase: string; actionIndex: number; stepPath?: string[] } | null
+  activeAction: number | null
+  firstRow?: { phase: string; actionIndex: number } | null
+}
+
+function shortcutBreakpointLocation(phase: string, actionIndex: number, stepPath?: readonly string[]): ShortcutBreakpointTarget {
+  if (!stepPath?.length) return { phase, actionIndex }
+  // One request of a top-level sequence is addressed by its index, as the outline's own toggle does.
+  const request = stepPath.length === 1 ? /^requests\[(\d+)\]$/.exec(stepPath[0]) : null
+  return request ? { phase, actionIndex, requestIndex: Number(request[1]) } : { phase, actionIndex, stepPath: [...stepPath] }
+}
+
+/**
+ * The step F9 and Cmd/Ctrl+B toggle a breakpoint on, when no outline row has
+ * keyboard focus (the outline handles both keys for its focused row): in Debug
+ * the open replay event's step; otherwise the selected step, which may be in
+ * init or teardown or nested in a block; then the active action; then the
+ * script's first step.
+ */
+export function shortcutBreakpointTarget({ workspaceTab, selectedEvent, focus, activeAction, firstRow }: ShortcutBreakpointContext): ShortcutBreakpointTarget | null {
+  if (workspaceTab === 'debug' && selectedEvent && typeof selectedEvent.action_index === 'number') {
+    const phase = selectedEvent.phase || 'action'
+    return shortcutBreakpointLocation(phase, selectedEvent.action_index, selectedEvent.request_index != null ? [`requests[${selectedEvent.request_index}]`] : selectedEvent.step_path)
+  }
+  if (focus) return shortcutBreakpointLocation(focus.phase, focus.actionIndex, focus.stepPath)
+  if (activeAction !== null) return { phase: 'action', actionIndex: activeAction }
+  return firstRow ? { phase: firstRow.phase, actionIndex: firstRow.actionIndex } : null
+}
+
 export function scriptActionsForPhase(script: ScriptDefinition, phase: ScriptActionPhase): ScriptActionDefinition[] {
   if (phase === 'init') return script.init || []
   if (phase === 'teardown') return script.teardown || []
@@ -376,13 +415,21 @@ export function uniqueActionName(base: string, existing: string[]): string {
   return candidate
 }
 
-function scrubRedactedStringsInPlace(node: unknown, skipKeys?: ReadonlySet<string>): unknown {
+const MASKED_VALUE = '[REDACTED]'
+
+// Where a clone lost a masked value, in the words the duplicate notice uses:
+// `body`, `target`, `header Authorization`, `cookie sid`, `assertions`.
+type MaskedValueRemovals = Set<string>
+
+function scrubRedactedStringsInPlace(node: unknown, removals: MaskedValueRemovals, label: string, skipKeys?: ReadonlySet<string>): unknown {
   if (typeof node === 'string') {
-    return node.includes('[REDACTED]') ? node.split('[REDACTED]').join('') : node
+    if (!node.includes(MASKED_VALUE)) return node
+    removals.add(label)
+    return node.split(MASKED_VALUE).join('')
   }
   if (Array.isArray(node)) {
     for (let i = 0; i < node.length; i++) {
-      node[i] = scrubRedactedStringsInPlace(node[i])
+      node[i] = scrubRedactedStringsInPlace(node[i], removals, label)
     }
     return node
   }
@@ -390,13 +437,67 @@ function scrubRedactedStringsInPlace(node: unknown, skipKeys?: ReadonlySet<strin
     const record = node as Record<string, unknown>
     for (const key of Object.keys(record)) {
       if (skipKeys?.has(key)) continue
-      record[key] = scrubRedactedStringsInPlace(record[key])
+      record[key] = scrubRedactedStringsInPlace(record[key], removals, label)
     }
   }
   return node
 }
 
-function stripClonedActionImportProvenance(action: ScriptActionDefinition): void {
+// A Cookie header keeps its unmasked cookies: only the pairs whose value was
+// masked go (`sid=[REDACTED]; theme=dark` keeps `theme=dark`).
+function withoutMaskedCookies(value: string, removals: MaskedValueRemovals): string {
+  return value.split(';').map(pair => pair.trim()).filter(pair => {
+    if (!pair.includes(MASKED_VALUE)) return pair !== ''
+    removals.add(`cookie ${pair.split('=')[0].trim() || 'value'}`)
+    return false
+  }).join('; ')
+}
+
+// A header whose value was masked is left out of the clone (an empty
+// credential header only fails differently), except a Cookie header, which
+// keeps the cookies that were not masked.
+function withoutMaskedHeader(name: string, value: string, removals: MaskedValueRemovals): string | null {
+  if (name.includes(MASKED_VALUE)) {
+    removals.add('header')
+    return null
+  }
+  if (!value.includes(MASKED_VALUE)) return value
+  if (name.trim().toLowerCase() === 'cookie') {
+    const kept = withoutMaskedCookies(value, removals)
+    return kept || null
+  }
+  removals.add(`header ${name}`)
+  return null
+}
+
+function forEachNestedStep(action: ScriptActionDefinition, visit: (child: ScriptActionDefinition) => void) {
+  const ctrl = action.control as unknown as Record<string, unknown> | undefined
+  if (ctrl && typeof ctrl === 'object') {
+    for (const key of ['steps', 'else', 'default'] as const) {
+      if (Array.isArray(ctrl[key])) for (const child of ctrl[key] as ScriptActionDefinition[]) visit(child)
+    }
+    // Switch cases and parallel branches each hold their own steps.
+    for (const key of ['cases', 'branches'] as const) {
+      if (!Array.isArray(ctrl[key])) continue
+      for (const group of ctrl[key] as Array<{ steps?: ScriptActionDefinition[] }>) {
+        if (Array.isArray(group?.steps)) for (const child of group.steps) visit(child)
+      }
+    }
+  }
+  if (action.params && typeof action.params === 'object') {
+    const params = action.params as Record<string, unknown>
+    if (Array.isArray(params.requests)) {
+      for (const child of params.requests as ScriptActionDefinition[]) {
+        if (child && typeof child === 'object') visit(child)
+      }
+    }
+    if (params.request && typeof params.request === 'object' && !Array.isArray(params.request)) {
+      visit(params.request as ScriptActionDefinition)
+    }
+  }
+}
+
+function stripClonedActionImportProvenance(action: ScriptActionDefinition, removals: MaskedValueRemovals): void {
   if (action.metadata && typeof action.metadata === 'object') {
     const meta = action.metadata as Record<string, unknown>
     delete meta.import_action_uid
@@ -404,18 +505,29 @@ function stripClonedActionImportProvenance(action: ScriptActionDefinition): void
     delete meta.import_credential_target_keys
     delete meta.import_header_fidelity
     delete meta.import_multipart_fidelity
-    delete meta.script_projection_response_gate_v1
     delete meta.restored_body_protected
-    if (meta.import_review && typeof meta.import_review === 'object' && !Array.isArray(meta.import_review)) {
-      const review = meta.import_review as Record<string, unknown>
-      if (review.source === 'script_projection') {
-        delete meta.import_review
-        if (Array.isArray(meta.replay_blockers)) {
-          const filtered = meta.replay_blockers.filter(entry => entry !== 'import_review_required')
-          if (filtered.length > 0) meta.replay_blockers = filtered
-          else delete meta.replay_blockers
-        }
+    // A read projection's fail-closed gate (ApplyScriptProjectionResponseGate)
+    // belongs to the response copy, not the behavior: the server drops it the
+    // same way (WithoutTransientScriptProjectionGate) — the marker, the
+    // projection's import_review and the import_review_required blocker.
+    const review = meta.import_review && typeof meta.import_review === 'object' && !Array.isArray(meta.import_review)
+      ? meta.import_review as Record<string, unknown>
+      : null
+    const projectionGate = Boolean(meta.script_projection_response_gate_v1) || review?.source === 'script_projection'
+    delete meta.script_projection_response_gate_v1
+    if (projectionGate) {
+      if (review?.source === 'script_projection') delete meta.import_review
+      if (meta.execution_blocker === 'import_review_required') delete meta.execution_blocker
+      if (Array.isArray(meta.execution_blockers)) {
+        const filtered = meta.execution_blockers.filter(entry => entry !== 'import_review_required')
+        if (filtered.length > 0) meta.execution_blockers = filtered
+        else delete meta.execution_blockers
       }
+    }
+    // HAR evidence (har.request.query_string, har.response.cookies) carries the
+    // masked values the disclosure projection put there.
+    for (const key of Object.keys(meta)) {
+      if (key.startsWith('har.')) meta[key] = scrubRedactedStringsInPlace(meta[key], new Set(), '')
     }
     if (Object.keys(meta).length === 0) {
       delete action.metadata
@@ -424,69 +536,51 @@ function stripClonedActionImportProvenance(action: ScriptActionDefinition): void
   const anyAction = action as unknown as Record<string, unknown>
   if (Array.isArray(action.headers)) {
     const rawHeaders = action.headers as Array<{ name?: string; value?: string }>
-    ;(action as unknown as { headers?: unknown }).headers = rawHeaders.filter(
-      header => !header?.name?.includes('[REDACTED]') && !header?.value?.includes('[REDACTED]'),
-    )
+    ;(action as unknown as { headers?: unknown }).headers = rawHeaders.flatMap(header => {
+      const value = withoutMaskedHeader(header?.name || '', header?.value || '', removals)
+      return value === null ? [] : [value === header?.value ? header : { ...header, value }]
+    })
   } else if (action.headers && typeof action.headers === 'object') {
     const record = action.headers as Record<string, string>
     for (const key of Object.keys(record)) {
-      if (key.includes('[REDACTED]') || record[key]?.includes('[REDACTED]')) {
-        delete record[key]
-      }
+      const value = withoutMaskedHeader(key, record[key] || '', removals)
+      if (value === null) delete record[key]
+      else record[key] = value
     }
   }
   if (Array.isArray(anyAction.header_list)) {
     const rawHeaderList = anyAction.header_list as Array<{ name?: string; value?: string }>
-    const filteredHeaderList = rawHeaderList.filter(
-      header => !header?.name?.includes('[REDACTED]') && !header?.value?.includes('[REDACTED]'),
-    )
+    const filteredHeaderList = rawHeaderList.flatMap(header => {
+      const value = withoutMaskedHeader(header?.name || '', header?.value || '', removals)
+      return value === null ? [] : [value === header?.value ? header : { ...header, value }]
+    })
     if (filteredHeaderList.length > 0) {
       anyAction.header_list = filteredHeaderList
     } else {
       delete anyAction.header_list
     }
   }
-  if (action.control && typeof action.control === 'object') {
-    const ctrl = action.control as unknown as Record<string, unknown>
-    if (Array.isArray(ctrl.steps)) {
-      for (const child of ctrl.steps as ScriptActionDefinition[]) stripClonedActionImportProvenance(child)
+  forEachNestedStep(action, child => stripClonedActionImportProvenance(child, removals))
+  // Nested steps were scrubbed by their own pass, under their own names.
+  const nested = new Set(['metadata', 'control', 'requests', 'request'])
+  for (const key of Object.keys(anyAction)) {
+    if (nested.has(key)) continue
+    if (key === 'params' && anyAction.params && typeof anyAction.params === 'object' && !Array.isArray(anyAction.params)) {
+      scrubRedactedStringsInPlace(anyAction.params, removals, 'params', nested)
+      continue
     }
-    if (Array.isArray(ctrl.else)) {
-      for (const child of ctrl.else as ScriptActionDefinition[]) stripClonedActionImportProvenance(child)
-    }
-    if (Array.isArray(ctrl.default)) {
-      for (const child of ctrl.default as ScriptActionDefinition[]) stripClonedActionImportProvenance(child)
-    }
-    if (Array.isArray(ctrl.cases)) {
-      for (const branch of ctrl.cases as Array<{ steps?: ScriptActionDefinition[] }>) {
-        if (Array.isArray(branch?.steps)) {
-          for (const child of branch.steps) stripClonedActionImportProvenance(child)
-        }
-      }
-    }
+    anyAction[key] = scrubRedactedStringsInPlace(anyAction[key], removals, key)
   }
-  if (action.params && typeof action.params === 'object') {
-    const params = action.params as Record<string, unknown>
-    if (Array.isArray(params.requests)) {
-      for (const child of params.requests as ScriptActionDefinition[]) {
-        if (child && typeof child === 'object') stripClonedActionImportProvenance(child)
-      }
-    }
-    if (params.request && typeof params.request === 'object' && !Array.isArray(params.request)) {
-      stripClonedActionImportProvenance(params.request as ScriptActionDefinition)
-    }
-  }
-  if (Array.isArray(anyAction.branches)) {
-    for (const branch of anyAction.branches as Array<{ steps?: ScriptActionDefinition[]; actions?: ScriptActionDefinition[] }>) {
-      if (Array.isArray(branch?.steps)) {
-        for (const child of branch.steps) stripClonedActionImportProvenance(child)
-      }
-      if (Array.isArray(branch?.actions)) {
-        for (const child of branch.actions) stripClonedActionImportProvenance(child)
-      }
-    }
-  }
-  scrubRedactedStringsInPlace(action, new Set(['metadata', 'control']))
+}
+
+export interface DuplicatedActionList {
+  actions: ScriptActionDefinition[]
+  /**
+   * The masked credential values the copy could not carry (`body`,
+   * `header Authorization`, `cookie sid`), so the author can supply them: a
+   * masked value has no stored value to back it in a new step.
+   */
+  removedMaskedValues: string[]
 }
 
 /**
@@ -495,18 +589,30 @@ function stripClonedActionImportProvenance(action: ScriptActionDefinition): void
  * nested control steps) so editing it never mutates the original. Imported
  * single-action provenance IDs (`import_action_uid`) and redacted credential
  * preservation markers are stripped from the clone so saving never rejects the
- * copy as a duplicate provenance UID or unbacked `[REDACTED]` placeholder.
+ * copy as a duplicate provenance UID or unbacked `[REDACTED]` placeholder; the
+ * values those placeholders stood for are reported, as the copy runs without them.
  */
+export function duplicateActionInListWithReport(
+  actions: ScriptActionDefinition[],
+  index: number,
+): DuplicatedActionList {
+  const source = actions[index]
+  if (!source) return { actions, removedMaskedValues: [] }
+  const clone = JSON.parse(JSON.stringify(source)) as ScriptActionDefinition
+  const removals: MaskedValueRemovals = new Set()
+  stripClonedActionImportProvenance(clone, removals)
+  clone.name = uniqueActionName(source.name || source.type || 'action', actions.map(a => a.name || ''))
+  return {
+    actions: [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)],
+    removedMaskedValues: [...removals].sort(),
+  }
+}
+
 export function duplicateActionInList(
   actions: ScriptActionDefinition[],
   index: number,
 ): ScriptActionDefinition[] {
-  const source = actions[index]
-  if (!source) return actions
-  const clone = JSON.parse(JSON.stringify(source)) as ScriptActionDefinition
-  stripClonedActionImportProvenance(clone)
-  clone.name = uniqueActionName(source.name || source.type || 'action', actions.map(a => a.name || ''))
-  return [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)]
+  return duplicateActionInListWithReport(actions, index).actions
 }
 
 // --- Transactions ----------------------------------------------------------

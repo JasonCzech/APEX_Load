@@ -39,9 +39,11 @@ type ConvertOptions struct {
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
-	// FilterClientTelemetry (default true when static assets are excluded) omits
-	// browser telemetry beacons such as Salesforce Aura InstrumentationBeacon
-	// and o11y requests from the generated load script.
+	// FilterClientTelemetry omits browser telemetry beacons such as Salesforce
+	// Aura InstrumentationBeacon and o11y requests from the generated load
+	// script. It defaults to true when static assets are excluded and the
+	// entry point is the HAR or Salesforce importer (the default here), and to
+	// false for the recorder and browser-HTTP entry points.
 	FilterClientTelemetry *bool `json:"filter_client_telemetry,omitempty"`
 	// StampActionProvenance attaches har.entry_index and import_action_uid
 	// metadata to converted HAR request actions for interactive API import review.
@@ -66,12 +68,16 @@ type ConvertOptions struct {
 	// AsyncScan (default on) collapses requests a page repeated in the
 	// background into background conversations; off keeps them inline.
 	AsyncScan *bool `json:"async_scan,omitempty"`
-	// StepTransactions (default off) times each user step of a recording that
-	// marked no transactions as its own transaction: a step starts at a new
-	// page, a new Lightning page, or after a recorded pause.
+	// StepTransactions times each user step of a recording that marked no
+	// transactions as its own transaction: a step starts at a new page, a new
+	// Lightning page, or after a recorded pause. Unset, it is on for a HAR or
+	// Salesforce import of a Salesforce application capture with real
+	// timestamps (unless Salesforce handling is disabled) and off otherwise.
 	StepTransactions *bool `json:"step_transactions,omitempty"`
-	// RecordedConcurrency (default off) replays the requests the browser had
-	// in flight together as concurrent request groups.
+	// RecordedConcurrency replays the requests the browser had in flight
+	// together as concurrent request groups. Unset, it follows the
+	// StepTransactions default when Salesforce-native replay is on (the HAR
+	// import default) and is off otherwise.
 	RecordedConcurrency *bool `json:"recorded_concurrency,omitempty"`
 	// Profile is the project recording profile; it applies its filters,
 	// header drop list, think-time threshold and correlation settings and

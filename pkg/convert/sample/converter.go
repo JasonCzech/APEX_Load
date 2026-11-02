@@ -130,7 +130,8 @@ type ConvertOptions struct {
 	RedactSourceReview *bool `json:"redact_source_review,omitempty"`
 	// FilterClientTelemetry omits pure client-telemetry Aura beacon POSTs
 	// (InstrumentationBeacon / o11y) from executable actions when true and
-	// static assets are not included.
+	// static assets are not included. Unset, it defaults to true for the HAR
+	// and Salesforce import entry points and false for every other caller.
 	FilterClientTelemetry *bool `json:"filter_client_telemetry,omitempty"`
 	// StampActionProvenance attaches har.entry_index and import_action_uid
 	// metadata to converted HAR request actions for interactive API import
@@ -140,16 +141,21 @@ type ConvertOptions struct {
 }
 
 type ConvertStats struct {
-	Format               string `json:"format"`
-	TotalRequests        int    `json:"total_requests"`
-	TotalEntries         int    `json:"total_entries,omitempty"`
-	ConvertedActions     int    `json:"converted_actions"`
-	FilteredAssets       int    `json:"filtered_assets,omitempty"`
-	FilteredTelemetry    int    `json:"filtered_telemetry,omitempty"`
-	SkippedRequests      int    `json:"skipped_requests,omitempty"`
-	Assertions           int    `json:"assertions"`
-	Extractors           int    `json:"extractors"`
-	CorrelationsDetected int    `json:"correlations_detected"`
+	Format        string `json:"format"`
+	TotalRequests int    `json:"total_requests"`
+	// ConvertedActions counts the request actions in the generated script.
+	ConvertedActions int `json:"converted_actions"`
+	// FilteredAssets counts every request the import left out by filter:
+	// static assets, client-telemetry beacons and recording-profile
+	// exclusions. It therefore includes FilteredTelemetry.
+	FilteredAssets int `json:"filtered_assets,omitempty"`
+	// FilteredTelemetry is the subset of FilteredAssets that were
+	// client-telemetry Aura beacons (InstrumentationBeacon / o11y).
+	FilteredTelemetry    int `json:"filtered_telemetry,omitempty"`
+	SkippedRequests      int `json:"skipped_requests,omitempty"`
+	Assertions           int `json:"assertions"`
+	Extractors           int `json:"extractors"`
+	CorrelationsDetected int `json:"correlations_detected"`
 }
 
 type Correlation struct {
@@ -389,7 +395,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			break
 		}
 		exchanges, warnings, filtered, skipped, err = document.parse(includeStatic, httpVersionMode, &diagnostics)
-		if err == nil && !includeStatic && convertutil.BoolOption(req.Options.FilterClientTelemetry, true) {
+		// The HAR and Salesforce importers leave client-telemetry beacons out
+		// by default; recorder, browser-HTTP and sample conversions keep the
+		// traffic the browser sent unless a caller asks for the filter.
+		filterTelemetryDefault := entryPoint == EntryPointImportHAR || entryPoint == EntryPointImportSalesforce
+		if err == nil && !includeStatic && convertutil.BoolOption(req.Options.FilterClientTelemetry, filterTelemetryDefault) {
 			exchanges, telemetryFiltered = filterClientTelemetryExchanges(exchanges)
 			filtered += telemetryFiltered
 			if telemetryFiltered > 0 {
@@ -554,7 +564,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		Stats: ConvertStats{
 			Format:            format,
 			TotalRequests:     len(exchanges) + filtered + skipped,
-			TotalEntries:      len(exchanges) + filtered + skipped,
 			FilteredAssets:    filtered,
 			FilteredTelemetry: telemetryFiltered,
 			SkippedRequests:   skipped,
@@ -944,10 +953,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				sf := &result.SourceReview.SourceFiles[i]
 				if origLen, ok := originalLengths[sf.Path]; ok {
 					sf.OriginalBytes = origLen
+					// A file over the retention limit keeps only its redacted
+					// preview, even when redaction shrank that preview under
+					// the display limit. A smaller file redaction shrank to
+					// the display limit is whole, so its Truncated flag stays
+					// as Build set it.
 					if origLen > sourceview.MaxFullTextBytes {
 						sf.FullText = ""
-					}
-					if origLen > sourceview.MaxFileChars {
 						sf.Truncated = true
 					}
 				}
@@ -1070,24 +1082,30 @@ func exchangesHaveTimestampProgression(exchanges []exchange) bool {
 	return hasProgression
 }
 
+// isSalesforceImportTraffic reports a capture of a Salesforce application:
+// Lightning (Aura, one.app) or sign-in (frontdoor.jsp) traffic, or a capture
+// that is mostly Salesforce hosts (Classic). A single request to a Salesforce
+// host from another site, such as a Web-to-Lead form post or an Embedded
+// Service config load, does not make it one.
 func isSalesforceImportTraffic(exchanges []exchange) bool {
+	salesforceHosts := 0
 	for _, ex := range exchanges {
 		parsed, err := url.Parse(ex.URL)
 		if err != nil {
 			continue
 		}
-		host := strings.ToLower(parsed.Hostname())
-		if strings.HasSuffix(host, ".salesforce.com") ||
-			strings.HasSuffix(host, ".force.com") ||
-			strings.HasSuffix(host, ".salesforce-setup.com") {
-			return true
-		}
 		p := strings.ToLower(strings.TrimRight(parsed.Path, "/"))
 		if p == "/aura" || strings.HasSuffix(p, "/aura") || p == "/one/one.app" || strings.HasSuffix(p, "/secur/frontdoor.jsp") {
 			return true
 		}
+		host := strings.ToLower(parsed.Hostname())
+		if strings.HasSuffix(host, ".salesforce.com") ||
+			strings.HasSuffix(host, ".force.com") ||
+			strings.HasSuffix(host, ".salesforce-setup.com") {
+			salesforceHosts++
+		}
 	}
-	return false
+	return salesforceHosts > 0 && salesforceHosts*2 > len(exchanges)
 }
 
 func isGenericAuraPostExchange(ex exchange) bool {
