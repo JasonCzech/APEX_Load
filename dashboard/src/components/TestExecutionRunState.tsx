@@ -22,6 +22,7 @@ function lifecycleLabel(test: TestSummary): string {
   if (test.status === 'RUNNING') return 'Running'
   if (test.status === 'PAUSED') return 'Paused'
   if (test.status === 'STOPPING') return 'Stopping'
+  if (test.status === 'COMPLETE') return test.stopped_by_subject ? 'Stopped by operator' : 'Complete'
   return test.status.replace(/_/g, ' ')
 }
 
@@ -47,7 +48,7 @@ export default function TestExecutionRunState({ test, groupMetrics, remainingSec
           <h3>Run state</h3>
           <p>Observed behavior against the planned workload. Make run changes in Command Center.</p>
         </div>
-        <span className={`advanced-state-badge ${test.status.toLowerCase()}`}>{lifecycleLabel(test)}</span>
+        <span className={`advanced-state-badge ${test.status === 'COMPLETE' && test.stopped_by_subject ? 'stopped' : test.status.toLowerCase()}`}>{lifecycleLabel(test)}</span>
       </header>
       <dl className="advanced-fact-grid">
         <div><dt>Planned load</dt><dd>{test.total_vusers} VUsers</dd></div>

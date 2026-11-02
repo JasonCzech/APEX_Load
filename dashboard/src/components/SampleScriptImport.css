@@ -517,6 +517,7 @@
 }
 
 .sample-import-asset-status.ready {
+  background: var(--success-bg);
   color: var(--success-text);
 }
 

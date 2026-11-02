@@ -133,6 +133,9 @@ function resultSourceStatusTone(status?: string) {
   switch ((status || '').toLowerCase()) {
     case 'complete':
     case 'completed':
+    case 'passed':
+    case 'pass':
+    case 'finished':
     case 'success':
     case 'succeeded':
       return 'healthy'

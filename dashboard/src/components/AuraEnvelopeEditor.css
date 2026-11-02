@@ -116,6 +116,6 @@
   font-weight: 600;
   border: 1px solid var(--border-subtle);
 }
-.aura-state-badge--success { color: var(--success-text); }
+.aura-state-badge--success { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
 .aura-state-badge--error { color: var(--danger-text); }
 .aura-state-badge--incomplete { color: var(--warning-text); }

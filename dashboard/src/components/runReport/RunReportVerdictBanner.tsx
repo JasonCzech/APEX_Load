@@ -30,7 +30,7 @@ function verdictProvenance(annotations: ReportAnnotations | null): string {
 
 function verdictTone(verdict: ReturnType<typeof effectiveReportVerdict>) {
   if (verdict.failed) return 'fail'
-  if (verdict.status !== 'Pass') return 'conditional'
+  if (!/^(pass|passed|complete|completed|finished)$/i.test((verdict.status || '').trim())) return 'conditional'
   return 'pass'
 }
 

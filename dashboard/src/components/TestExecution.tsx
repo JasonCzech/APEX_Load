@@ -414,7 +414,7 @@ export default function TestExecution({
     ? 'danger'
     : isPaused
       ? 'warning'
-      : isRunning
+      : isRunning || (test?.status === 'COMPLETE' && !test?.stopped_by_subject)
         ? 'success'
         : test?.status === 'FAILED' || test?.status === 'ABORTED'
           ? 'danger'

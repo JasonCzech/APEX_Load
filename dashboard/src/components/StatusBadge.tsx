@@ -11,6 +11,14 @@ const STATUS_STYLES: Record<string, string> = {
   RUNNING: 'status-running',
   STOPPING: 'status-stopping',
   COMPLETE: 'status-complete',
+  PASSED: 'status-complete',
+  PASS: 'status-complete',
+  FINISHED: 'status-complete',
+  SUCCEEDED: 'status-complete',
+  SUCCESS: 'status-complete',
+  READY: 'status-complete',
+  HEALTHY: 'status-complete',
+  STOPPED: 'status-stopped',
   FAILED: 'status-failed',
   ABORTED: 'status-aborted',
   PAUSED: 'status-paused',
@@ -23,10 +31,11 @@ interface Props {
 
 export default function StatusBadge({ status, stoppedByOperator }: Props) {
   const normalizedStatus = normalizeTestStatus(status)
+  const outcomeStatus = testOutcomeStatus(status, stoppedByOperator)
   return (
-    <span className={`status-badge ${STATUS_STYLES[normalizedStatus] || ''}`}>
+    <span className={`status-badge ${STATUS_STYLES[outcomeStatus] || STATUS_STYLES[normalizedStatus] || ''}`}>
       <span className="status-badge-label">
-        {testOutcomeStatus(status, stoppedByOperator) === 'STOPPED' ? 'Stopped by operator' : normalizedStatus || 'UNKNOWN'}
+        {outcomeStatus === 'STOPPED' ? 'Stopped by operator' : normalizedStatus || 'UNKNOWN'}
       </span>
     </span>
   )

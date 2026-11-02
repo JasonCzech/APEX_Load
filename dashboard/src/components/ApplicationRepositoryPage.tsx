@@ -216,7 +216,7 @@ function formatCompactDate(value?: string) {
 function statusTone(status?: string) {
   const value = (status || '').toLowerCase()
   if (/(failed|aborted|blocked|error|danger)/.test(value)) return 'danger'
-  if (/(running|complete|active|ready|passed|healthy)/.test(value)) return 'healthy'
+  if (/(running|complete|active|ready|passed|pass|finished|succeeded|success|healthy)/.test(value)) return 'healthy'
   if (/(queued|pending|paused|warning|review|archived|shakeout)/.test(value)) return 'warning'
   return 'neutral'
 }

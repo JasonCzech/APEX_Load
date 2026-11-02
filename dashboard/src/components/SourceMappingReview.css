@@ -123,6 +123,7 @@
 }
 
 .source-map-status.converted {
+  background: var(--success-bg);
   color: var(--success-text);
   border-color: color-mix(in srgb, var(--success) 35%, var(--border));
 }

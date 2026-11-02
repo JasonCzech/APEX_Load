@@ -29,9 +29,15 @@
   color: var(--warning-text);
 }
 
-.status-complete {
-  background: rgba(var(--accent-rgb), 0.15);
-  color: var(--text-primary);
+.status-complete,
+.status-badge.success {
+  background: rgba(var(--success-rgb), 0.15);
+  color: var(--success-text);
+}
+
+.status-stopped {
+  background: rgba(107, 112, 128, 0.15);
+  color: var(--text-secondary);
 }
 
 .status-failed {

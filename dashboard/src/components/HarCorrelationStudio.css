@@ -120,7 +120,7 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.har-status-pill--wired { border-color: var(--success, #16a34a); }
+.har-status-pill--wired { background: var(--success-bg); border-color: var(--success-border, var(--success, #16a34a)); color: var(--success-text); }
 .har-status-pill--warn { border-color: var(--warning, #d97706); }
 .har-status-pill--review { border-color: var(--accent); }
 .har-blocker-banner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }

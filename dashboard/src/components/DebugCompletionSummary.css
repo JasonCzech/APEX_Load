@@ -24,8 +24,9 @@
 .debug-transaction-table small { display: block; font-weight: 400; color: var(--text-secondary); margin-top: 4px; }
 .debug-transaction-name { display: flex; align-items: baseline; gap: 4px; }
 .debug-transaction-name button { flex-shrink: 0; padding: 2px 5px; }
-.debug-transaction-status.passed { color: var(--success-text, var(--success)); }
-.debug-transaction-status.failed { color: var(--danger-text, var(--danger)); }
-.debug-transaction-status.muted { color: var(--text-secondary); }
+.debug-transaction-status { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.debug-transaction-status.passed { background: var(--success-bg); color: var(--success-text, var(--success)); }
+.debug-transaction-status.failed { background: var(--danger-bg); color: var(--danger-text, var(--danger)); }
+.debug-transaction-status.muted { background: var(--subtle-fill); color: var(--text-secondary); }
 
 .debug-transaction-table td.debug-transaction-breakdown { font-size: 12px; color: var(--text-secondary); background: var(--bg-secondary); }

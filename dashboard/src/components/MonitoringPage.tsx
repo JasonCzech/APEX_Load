@@ -2998,7 +2998,7 @@ function isActiveServiceStatus(status: string): boolean {
 
 function serviceStatusClass(status: string): string {
   const normalized = status.trim().toLowerCase()
-  if (['running', 'healthy', 'ok', 'connected', 'ready', 'active'].includes(normalized)) return 'status-running'
+  if (['running', 'healthy', 'ok', 'connected', 'ready', 'active', 'complete', 'completed', 'passed', 'pass', 'finished'].includes(normalized)) return 'status-running'
   if (['idle', 'paused'].includes(normalized)) return 'status-idle'
   if (['stopping', 'draining', 'degraded', 'cordoned'].includes(normalized)) return 'status-stopping'
   if (['failed', 'unhealthy', 'unreachable', 'unavailable'].includes(normalized)) return 'status-failed'

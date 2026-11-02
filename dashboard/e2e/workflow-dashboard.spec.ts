@@ -140,7 +140,10 @@ test('recent completed runs fit their rows and use the available viewport while 
   await table.scrollIntoViewIfNeeded()
   await page.locator('.main-content').evaluate(element => { element.scrollTop += 250 })
   const geometry = () => table.evaluate(element => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom, height: element.clientHeight, content: element.scrollHeight, viewport: window.innerHeight }))
-  await expect.poll(async () => (await geometry()).bottom).toBeLessThanOrEqual(1000)
+  await expect.poll(async () => {
+    const current = await geometry()
+    return current.bottom <= 1000 && current.viewport - current.bottom < 55
+  }).toBe(true)
   const many = await geometry()
   expect(many.content).toBeGreaterThan(many.height)
   expect(many.viewport - many.bottom).toBeLessThan(55)
@@ -148,4 +151,12 @@ test('recent completed runs fit their rows and use the available viewport while 
   await expect.poll(async () => (await geometry()).height).toBeGreaterThan(many.height)
   const taller = await geometry()
   expect(taller.viewport - taller.bottom).toBeLessThan(55)
+
+  const completeBadge = table.locator('.status-badge.status-complete').first()
+  await expect(completeBadge).toBeVisible()
+  const badgeBg = await completeBadge.evaluate(el => getComputedStyle(el).backgroundColor)
+  const channels = badgeBg.match(/\d+/g)?.map(Number) || []
+  expect(channels.length).toBeGreaterThanOrEqual(3)
+  expect(channels[1]).toBeGreaterThan(channels[0])
+  expect(channels[1]).toBeGreaterThan(channels[2])
 })

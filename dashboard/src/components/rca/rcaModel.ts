@@ -104,7 +104,10 @@ export function rcaTone(value: string): RcaTone {
     case 'valid':
     case 'high':
     case 'complete':
+    case 'completed':
     case 'passed':
+    case 'pass':
+    case 'finished':
       return 'success'
     case 'invalid':
     case 'missing':

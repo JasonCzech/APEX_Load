@@ -8656,8 +8656,8 @@ col.results-actions-col {
   text-decoration-color: currentColor;
 }
 
-.transaction-sla-status-pass { background: color-mix(in srgb, var(--success-color, var(--success)) 18%, transparent); color: var(--success-color, #15803d); }
-.transaction-sla-status-fail { background: color-mix(in srgb, var(--error-color, var(--danger)) 18%, transparent); color: var(--error-color, var(--danger-text)); }
+.transaction-sla-status-pass { background: var(--success-bg); color: var(--success-text); }
+.transaction-sla-status-fail { background: var(--danger-bg); color: var(--danger-text); }
 .transaction-sla-status-not_evaluated { background: color-mix(in srgb, var(--text-secondary) 15%, transparent); color: var(--text-secondary); }
 
 /* Access administration: keep identity, scope and remediation visible. */

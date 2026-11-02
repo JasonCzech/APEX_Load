@@ -13,6 +13,14 @@ export function libraryStatusTone(status?: string) {
   switch ((status || '').toLowerCase()) {
     case 'synced':
     case 'healthy':
+    case 'complete':
+    case 'completed':
+    case 'passed':
+    case 'pass':
+    case 'finished':
+    case 'ready':
+    case 'success':
+    case 'succeeded':
       return 'healthy'
     case 'conflict':
     case 'unreachable':

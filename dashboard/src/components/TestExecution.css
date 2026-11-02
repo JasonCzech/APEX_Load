@@ -4269,7 +4269,8 @@
   padding: 5px 9px;
 }
 
-.advanced-state-badge.running { border-color: var(--success); color: var(--success-text); }
+.advanced-state-badge.running,
+.advanced-state-badge.complete { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
 .advanced-state-badge.paused { border-color: var(--warning); color: var(--warning-text); }
 .advanced-state-badge.stopping { border-color: var(--danger); color: var(--danger-text); }
 
