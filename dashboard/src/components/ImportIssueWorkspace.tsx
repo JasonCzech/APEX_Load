@@ -41,11 +41,11 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
   const notes = grouped.filter(issue => issue.severity === 'info').length
   const reviewedCount = grouped.filter(issue => reviewed.has(issue.id)).length
   const categoryLabel = (issue: typeof grouped[number]) => issue.targetTab === 'credentials' ? 'Credentials'
-    : issue.targetTab === 'data' ? 'Data and parameters'
+    : issue.targetTab === 'data' ? 'Data & parameters'
     : issue.targetTab === 'runtime' ? 'Runtime settings'
     : issue.targetTab === 'source' ? 'Source mapping'
     : 'Conversion findings'
-  const orderedVisible = ['Credentials', 'Data and parameters', 'Runtime settings', 'Source mapping', 'Conversion findings']
+  const orderedVisible = ['Credentials', 'Data & parameters', 'Runtime settings', 'Source mapping', 'Conversion findings']
     .flatMap(category => visible.filter(issue => categoryLabel(issue) === category))
   const selected = orderedVisible.find(issue => issue.id === selectedId) || orderedVisible[0]
   const categoryCounts = new Map<string, number>()
@@ -55,7 +55,9 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
   const selectedVersion = selected ? `${selected.id}:${selected.occurrences.length}:${selected.occurrences[0]?.description || ''}` : ''
   useEffect(() => {
     setEvidencePage(0)
-    if (selectedVersion) detailHeadingRef.current?.focus()
+    if (selectedVersion && (typeof document === 'undefined' || !document.activeElement?.closest('.shared-import-issue-list'))) {
+      detailHeadingRef.current?.focus()
+    }
   }, [selectedVersion])
 
   if (grouped.length === 0) return null

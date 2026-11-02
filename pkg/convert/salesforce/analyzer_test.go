@@ -3229,3 +3229,61 @@ func TestAnalyzeDetectionOnlyDoesNotAssessOrGenerateReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildNativePreviewDoesNotCountNonExecutableQueryMetadataAsCorrelationUsage(t *testing.T) {
+	const rawValue = "tok +/== recorded"
+	unsupportedSpelling := url.PathEscape(rawValue)
+	target := "/callback?access_token=" + unsupportedSpelling
+	script := &dsl.Script{
+		Name:     "SF query metadata non-executable surface",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Bootstrap", Type: "GET", Method: "GET", Target: "/bootstrap"},
+			{
+				Name:   "Use token",
+				Type:   "GET",
+				Method: "GET",
+				Target: target,
+				Metadata: map[string]any{
+					"salesforce_query": []any{
+						map[string]any{"name": "access_token", "value": rawValue},
+					},
+				},
+			},
+		},
+	}
+	preview, err := buildNativePreview(
+		script,
+		flattenRequestActions(script),
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap"},
+			{ID: 2, Method: "GET", URL: "https://acme.my.salesforce.com" + target},
+		},
+		map[int]int{0: 1, 1: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_access_token",
+			Source:      "body",
+			Expression:  "$.access_token",
+			ExtractType: "jsonpath",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       rawValue,
+			Confidence:  0.95,
+		}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[1].Target; got != target {
+		t.Fatalf("target = %q, want %q", got, target)
+	}
+	if len(preview.Script.Actions[0].Extractors) != 0 {
+		t.Fatalf("source extractors = %#v, want none when only non-executable metadata matched", preview.Script.Actions[0].Extractors)
+	}
+	if len(preview.Correlations) != 1 || preview.Correlations[0].PreApplied {
+		t.Fatalf("correlations = %#v, want PreApplied=false when wire target still carries recorded value", preview.Correlations)
+	}
+}
+

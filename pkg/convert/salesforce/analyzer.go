@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"reflect"
 	"regexp"
@@ -62,6 +63,21 @@ type AnalyzeOptions struct {
 	// ReviewOnlyCorrelations retains detected correlations for review without
 	// automatically attaching extractors or rewriting consumer requests.
 	ReviewOnlyCorrelations bool
+	// DiffEvidence supplies two-HAR comparison classifications so dynamic
+	// server-produced identifiers (such as Salesforce 18-char record IDs) receive
+	// a confidence boost while static org/app/user IDs stay unapplied.
+	DiffEvidence []DiffCorrelationEvidence
+}
+
+// DiffCorrelationEvidence summarizes how one baseline correlation classified
+// across a paired comparison HAR recording.
+type DiffCorrelationEvidence struct {
+	Name           string
+	Source         string
+	Expression     string
+	BaselineValue  string
+	BaselineEntry  int
+	Classification string
 }
 
 // NativePreviewError reports that the review succeeded but its native preview
@@ -746,6 +762,7 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 
 	candidates := make([]harCandidate, len(entries))
 	byURL := make(map[string][]int, len(entries))
+	byEntryID := make(map[int]int, len(entries))
 	for index, entry := range entries {
 		candidate := harCandidate{
 			entry: entry,
@@ -754,12 +771,20 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 			kind:  classifyHARRequest(entry),
 		}
 		candidates[index] = candidate
+		byEntryID[entry.ID] = index
 		key := candidate.url.bucketKey()
 		byURL[key] = append(byURL[key], index)
 	}
 
 	used := make(map[int]bool)
 	for refIndex, ref := range refs {
+		if entryID := harEntryIndexFromActionMetadata(ref.Action); entryID > 0 && !used[entryID] {
+			if candidateIdx, ok := byEntryID[entryID]; ok && strings.EqualFold(ref.Method, candidates[candidateIdx].entry.Method) {
+				matches[refIndex] = entryID
+				used[entryID] = true
+				continue
+			}
+		}
 		refURL := parseNormalizedURL(ref.URL)
 		actionBody := ""
 		if ref.Action != nil {
@@ -791,12 +816,92 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 				bestID = candidate.entry.ID
 			}
 		}
+		if bestID == 0 && urlContainsTemplatePlaceholder(ref.URL) {
+			for _, candidate := range candidates {
+				if used[candidate.entry.ID] || !strings.EqualFold(ref.Method, candidate.entry.Method) {
+					continue
+				}
+				if !equivalentTemplatedNormalizedURL(refURL, candidate.url) {
+					continue
+				}
+				if score := harMatchScore(refBody, descriptor, ref.Kind, candidate); score > bestScore {
+					bestScore = score
+					bestID = candidate.entry.ID
+				}
+			}
+		}
 		if bestID != 0 {
 			matches[refIndex] = bestID
 			used[bestID] = true
 		}
 	}
 	return matches
+}
+
+func harEntryIndexFromActionMetadata(action *dsl.Action) int {
+	if action == nil || len(action.Metadata) == 0 {
+		return 0
+	}
+	switch v := action.Metadata["har.entry_index"].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	}
+	return 0
+}
+
+func urlContainsTemplatePlaceholder(raw string) bool {
+	return strings.Contains(raw, "{{") || strings.Contains(raw, "%7B%7B") || strings.Contains(raw, "%7b%7b")
+}
+
+func equivalentTemplatedNormalizedURL(refURL, candURL normalizedURL) bool {
+	if !refURL.parsed || !candURL.parsed {
+		return false
+	}
+	if refURL.scheme != candURL.scheme || refURL.host != candURL.host {
+		return false
+	}
+	if refURL.path != candURL.path {
+		refSegs := strings.Split(refURL.path, "/")
+		candSegs := strings.Split(candURL.path, "/")
+		if len(refSegs) != len(candSegs) {
+			return false
+		}
+		for i := range refSegs {
+			if refSegs[i] == candSegs[i] {
+				continue
+			}
+			if !urlContainsTemplatePlaceholder(refSegs[i]) || candSegs[i] == "" {
+				return false
+			}
+		}
+	}
+	if refURL.query == candURL.query {
+		return true
+	}
+	refQuery, err1 := url.ParseQuery(refURL.query)
+	candQuery, err2 := url.ParseQuery(candURL.query)
+	if err1 != nil || err2 != nil || len(refQuery) != len(candQuery) {
+		return false
+	}
+	for k, refVals := range refQuery {
+		candVals, exists := candQuery[k]
+		if !exists || len(refVals) != len(candVals) {
+			return false
+		}
+		for i := range refVals {
+			if refVals[i] == candVals[i] {
+				continue
+			}
+			if !urlContainsTemplatePlaceholder(refVals[i]) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // harMatchScore ranks one candidate entry against a ref whose body/descriptor have
@@ -989,6 +1094,9 @@ func salesforceActionEvidence(action *dsl.Action, rawURL string) string {
 }
 
 func extractAuraDescriptor(evidence string) string {
+	if actions := aura.ParseEnvelopeActions(evidence, aura.MaxEnvelopeBytes); len(actions) > 0 && actions[0].Descriptor != "" {
+		return actions[0].Descriptor
+	}
 	match := auraDescriptorPattern.FindStringSubmatch(evidence)
 	if len(match) >= 2 {
 		return strings.TrimSpace(match[1])
@@ -1100,10 +1208,17 @@ func domainObservations(refs []actionRef, entries []harEntry) []DomainObservatio
 		}
 		counts[host]["count"]++
 	}
+	matchedHARIDs := make(map[int]bool, len(refs))
 	for _, ref := range refs {
 		add(ref.URL)
+		if ref.HARID > 0 {
+			matchedHARIDs[ref.HARID] = true
+		}
 	}
 	for _, entry := range entries {
+		if matchedHARIDs[entry.ID] {
+			continue
+		}
 		add(entry.URL)
 	}
 	out := make([]DomainObservation, 0, len(counts))
@@ -1277,6 +1392,10 @@ func correlationsWithMappedSources(correlations []correlate.Correlation, refs ma
 // live so derived names (notably the mixed-use _encoded sibling) cannot collide
 // with either a real correlation or an existing extractor.
 func prepareCorrelationNames(correlations []correlate.Correlation, refs []actionRef) ([]correlate.Correlation, *correlationNameRegistry) {
+	return prepareCorrelationNamesWithProducers(correlations, refs, nil)
+}
+
+func prepareCorrelationNamesWithProducers(correlations []correlate.Correlation, refs []actionRef, harIDToRef map[int]*actionRef) ([]correlate.Correlation, *correlationNameRegistry) {
 	registry := newCorrelationNameRegistry()
 	for _, ref := range refs {
 		if ref.Action == nil {
@@ -1286,11 +1405,89 @@ func prepareCorrelationNames(correlations []correlate.Correlation, refs []action
 			registry.reserve(extractor.Name)
 		}
 	}
+	reusedNames := make(map[string]bool)
 	out := append([]correlate.Correlation(nil), correlations...)
 	for index := range out {
+		corr := out[index]
+		if harIDToRef != nil && strings.TrimSpace(corr.Expression) != "" {
+			if foundRef := harIDToRef[corr.FoundInID]; foundRef != nil && foundRef.Action != nil {
+				if existing := findEquivalentProducerExtractor(foundRef.Action.Extractors, corr, reusedNames); existing != "" {
+					reusedNames[existing] = true
+					out[index].Name = existing
+					continue
+				}
+			}
+		}
 		out[index].Name = registry.claim(out[index].Name)
 	}
 	return out, registry
+}
+
+func findEquivalentProducerExtractor(extractors []dsl.Extractor, corr correlate.Correlation, reused map[string]bool) string {
+	normSource := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			return "body"
+		}
+		return s
+	}
+	normType := func(t string) string {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "json_path" {
+			return "jsonpath"
+		}
+		return t
+	}
+	wantSource := normSource(corr.Source)
+	wantType := normType(corr.ExtractType)
+	encodedConvert, _ := correlate.EncodedReuseExtractorConvert(corr.Convert)
+	for _, ext := range extractors {
+		if ext.Name == "" || reused[ext.Name] {
+			continue
+		}
+		if normSource(ext.Source) != wantSource || normType(ext.Type) != wantType {
+			continue
+		}
+		if ext.Expression != corr.Expression || ext.SaveOffset != corr.SaveOffset || ext.SaveLength != corr.SaveLength {
+			continue
+		}
+		extConv := strings.ToLower(strings.TrimSpace(ext.Convert))
+		corrConv := strings.ToLower(strings.TrimSpace(corr.Convert))
+		encConv := strings.ToLower(strings.TrimSpace(encodedConvert))
+		if extConv == corrConv || (encConv != "" && extConv == encConv) {
+			return ext.Name
+		}
+	}
+	return ""
+}
+
+func actionHasExtractorNamed(action *dsl.Action, name string) bool {
+	if action == nil || name == "" {
+		return false
+	}
+	for _, ext := range action.Extractors {
+		if ext.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeExecutionBlockersSlice(metadata map[string]any) {
+	if len(metadata) == 0 {
+		return
+	}
+	raw, ok := metadata["execution_blockers"].([]any)
+	if !ok {
+		return
+	}
+	codes := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if code, ok := item.(string); ok && code != "" {
+			codes = append(codes, code)
+		}
+	}
+	metadata["execution_blockers"] = codes
 }
 
 // A native rewrite retains the actual input provenance. Archive imports carry
@@ -1347,6 +1544,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 			"har_match_id":    ref.HARID,
 		}
 		if isAuraBatch(*ref) {
+			ref.Action.Name = enrichAuraBatchActionName(ref.Action.Name, ref.Action.Body)
 			if validateAuraActionRequest(ref.Action).Success {
 				// Replace the legacy generated substring guards with validation of
 				// the actual outgoing request IDs and every response action.
@@ -1356,6 +1554,8 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 					assertion.Expected = aura.Baseline{Recorded: recorded}
 				}
 				addAssertionIfMissing(ref.Action, assertion)
+			} else if auraMetadataHasCode(ref.Action.Metadata["execution_blockers"], sample.HARRequestBodyNotExportedCode) {
+				normalizeExecutionBlockersSlice(ref.Action.Metadata)
 			} else {
 				const code = "salesforce_aura_request_requires_review"
 				importreview.ApplyToAction(ref.Action, []importreview.Finding{{
@@ -1373,7 +1573,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 	// correlations whose source maps to a native action, then give every variable
 	// a globally unique name (also avoiding extractors already in the script).
 	mappedCorrelations := correlationsWithMappedSources(correlations, harIDToRef)
-	namedCorrelations, correlationNames := prepareCorrelationNames(mappedCorrelations, cloneRefs)
+	namedCorrelations, correlationNames := prepareCorrelationNamesWithProducers(mappedCorrelations, cloneRefs, harIDToRef)
 	// Only high-confidence, source-mapped correlations participate in the rewrite
 	// map. Lower-confidence candidates still participate in collision ownership:
 	// otherwise a shorter automatic literal could rewrite part of a longer value
@@ -1446,6 +1646,9 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		if plan.rawMapped && plan.encodedMapped {
 			requiredExtractors++
 		}
+		if requiredExtractors > 0 && plan.foundRef != nil && actionHasExtractorNamed(plan.foundRef.Action, corr.Name) {
+			requiredExtractors--
+		}
 		if plan.foundRef == nil || plan.foundRef.Action == nil || sourceExtractorCounts[plan.foundRef.Action]+requiredExtractors > dsl.MaxActionExtractors {
 			plan.rawMapped = false
 			plan.encodedMapped = false
@@ -1482,6 +1685,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		action.Body = correlate.ApplyVars(action.Body, actionVars)
 		action.Headers = correlate.ApplyVarsToHeaders(action.Headers, actionVars)
 		action.HeaderList = applyCorrelationVarsToHeaderList(action.HeaderList, actionVars)
+		rewriteSalesforceActionQueryMetadata(action, actionVars)
 		if len(actionVars) == 0 {
 			continue
 		}
@@ -1504,11 +1708,16 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		plan := &plans[index]
 		corr := plan.correlation
 		foundRef := plan.foundRef
+		var scope *dsl.ExtractorScope
+		if corr.RuleID == correlate.RuleSalesforceAuraTokenUncapturedCookie {
+			scope = &dsl.ExtractorScope{Redirects: "include"}
+		}
 		base := dsl.Extractor{
 			Name:       corr.Name,
 			Source:     corr.Source,
 			Type:       corr.ExtractType,
 			Expression: corr.Expression,
+			Scope:      scope,
 			SaveOffset: corr.SaveOffset,
 			SaveLength: corr.SaveLength,
 			Convert:    corr.Convert,
@@ -1517,7 +1726,8 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		status := applications[corr.Name]
 		rawLanded := plan.rawMapped && landed["{{var."+corr.Name+"}}"]
 		encodedLanded := plan.encodedMapped && landed["{{var."+plan.encodedName+"}}"]
-		if rawLanded {
+		preExistingLanded := foundRef != nil && actionHasExtractorNamed(foundRef.Action, corr.Name) && templateReferencedAfterRank(cloneRefs, foundRef.Rank, "{{var."+corr.Name+"}}")
+		if rawLanded || preExistingLanded {
 			// Raw reuse remains executable even when another consumer uses an
 			// encoding that requires manual replacement.
 			addExtractorIfMissing(foundRef.Action, base)
@@ -1538,13 +1748,14 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 				Source:     corr.Source,
 				Type:       corr.ExtractType,
 				Expression: corr.Expression,
+				Scope:      scope,
 				SaveOffset: corr.SaveOffset,
 				SaveLength: corr.SaveLength,
 				Convert:    plan.encodedConvert,
 				OnMiss:     "fail",
 			})
 		}
-		status.preApplied = rawLanded || encodedLanded
+		status.preApplied = rawLanded || encodedLanded || preExistingLanded
 		if !status.preApplied && status.reviewAction == "" && nativePlanLiteralRemains(*plan, remaining) {
 			status.reviewAction = "manual_value_replacement_required"
 		}
@@ -2294,6 +2505,70 @@ func actionCorrelationSurfaces(action *dsl.Action) []string {
 	return surfaces
 }
 
+func rewriteSalesforceActionQueryMetadata(action *dsl.Action, vars map[string]string) {
+	if action == nil || len(action.Metadata) == 0 || len(vars) == 0 {
+		return
+	}
+	raw, exists := action.Metadata["har.request.query_string"]
+	if !exists || raw == nil {
+		return
+	}
+	rewriteVal := func(val string) string {
+		if val == "" {
+			return val
+		}
+		if updated := correlate.ApplyVars(val, vars); updated != val {
+			return updated
+		}
+		if escaped := url.QueryEscape(val); escaped != val {
+			if tmpl, ok := vars[escaped]; ok {
+				return tmpl
+			}
+			if updated := correlate.ApplyVars(escaped, vars); updated != escaped && strings.Contains(updated, "{{var.") {
+				return updated
+			}
+		}
+		return val
+	}
+	switch items := raw.(type) {
+	case []map[string]any:
+		for index := range items {
+			if val, ok := items[index]["value"].(string); ok {
+				items[index]["value"] = rewriteVal(val)
+			}
+		}
+	case []any:
+		for _, elem := range items {
+			if m, ok := elem.(map[string]any); ok {
+				if val, ok := m["value"].(string); ok {
+					m["value"] = rewriteVal(val)
+				}
+			}
+		}
+	}
+}
+
+func templateReferencedAfterRank(refs []actionRef, producerRank int, template string) bool {
+	if template == "" {
+		return false
+	}
+	for index := range refs {
+		if refs[index].Rank <= producerRank {
+			continue
+		}
+		for _, surface := range actionCorrelationSurfaces(refs[index].Action) {
+			if strings.Contains(surface, template) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func enrichAuraBatchActionName(currentName, body string) string {
+	return aura.EnrichBatchActionName(currentName, body)
+}
+
 func applyCorrelationVarsToHeaderList(headers dsl.HeaderList, vars map[string]string) dsl.HeaderList {
 	for index := range headers {
 		if correlate.HeaderCorrelatable(headers[index].Name) {
@@ -2666,6 +2941,9 @@ func detectCorrelationsWithEvidenceAndOptions(entries []harEntry, opts AnalyzeOp
 	if opts.CorrelationSettings != nil {
 		correlations = opts.CorrelationSettings.ApplyCorrelation(observations, correlations)
 	}
+	if len(opts.DiffEvidence) > 0 {
+		applyDiffCorrelationEvidence(correlations, opts.DiffEvidence)
+	}
 	sort.SliceStable(correlations, func(i, j int) bool {
 		if correlations[i].Confidence != correlations[j].Confidence {
 			return correlations[i].Confidence > correlations[j].Confidence
@@ -2676,6 +2954,62 @@ func detectCorrelationsWithEvidenceAndOptions(entries []harEntry, opts AnalyzeOp
 		return correlations[i].FoundInID < correlations[j].FoundInID
 	})
 	return correlations, warnings, omission, nil
+}
+
+func applyDiffCorrelationEvidence(correlations []correlate.Correlation, evidence []DiffCorrelationEvidence) {
+	if len(correlations) == 0 || len(evidence) == 0 {
+		return
+	}
+	normExpr := func(expr string) string {
+		expr = strings.TrimSpace(expr)
+		return strings.TrimPrefix(expr, "$.")
+	}
+	for index := range correlations {
+		corr := &correlations[index]
+		if corr.FoundInID <= 0 || corr.RuleID == correlate.RuleSalesforceAuraTokenUncapturedCookie {
+			continue
+		}
+		corrVal := correlationValue(*corr)
+		corrExpr := normExpr(corr.Expression)
+		matchedClass := ""
+		for _, item := range evidence {
+			if item.BaselineEntry <= 0 || item.BaselineEntry != corr.FoundInID {
+				continue
+			}
+			sameSource := item.Source == "" || corr.Source == "" || strings.EqualFold(strings.TrimSpace(item.Source), strings.TrimSpace(corr.Source))
+			if sameSource && corrExpr != "" && normExpr(item.Expression) == corrExpr {
+				matchedClass = strings.ToLower(strings.TrimSpace(item.Classification))
+				break
+			}
+			if item.BaselineValue != "" && (item.BaselineValue == corrVal || item.BaselineValue == corr.SampleValue) {
+				matchedClass = strings.ToLower(strings.TrimSpace(item.Classification))
+				break
+			}
+		}
+		if matchedClass == "" {
+			for _, item := range evidence {
+				if item.BaselineEntry > 0 && item.BaselineEntry == corr.FoundInID &&
+					strings.EqualFold(strings.TrimSpace(item.Name), strings.TrimSpace(corr.Name)) {
+					matchedClass = strings.ToLower(strings.TrimSpace(item.Classification))
+					break
+				}
+			}
+		}
+		switch matchedClass {
+		case "dynamic":
+			boosted := math.Round((corr.Confidence+0.20)*100) / 100
+			if boosted > 0.99 {
+				boosted = 0.99
+			}
+			corr.Confidence = boosted
+			corr.Reasons = append(corr.Reasons, "confirmed dynamic across paired HAR recordings")
+		case "static":
+			lowerName := strings.ToLower(corr.Name)
+			if corr.RuleID == correlate.RuleSalesforceAuraContextFWUID || corr.RuleID == correlate.RuleSalesforceAuraLoaded || strings.Contains(lowerName, "aura_fwuid") || strings.Contains(lowerName, "aura_loaded") {
+				corr.Reasons = append(corr.Reasons, "same_day_release_coupled: constant across paired same-day captures, kept extracted for Salesforce release resilience")
+			}
+		}
+	}
 }
 
 // detectCometdCorrelations finds the Bayeux clientId returned by a CometD
@@ -3677,6 +4011,9 @@ func addExtractorIfMissing(action *dsl.Action, extractor dsl.Extractor) {
 			}
 			if extractor.SaveLength != 0 && action.Extractors[index].SaveLength == 0 {
 				action.Extractors[index].SaveLength = extractor.SaveLength
+			}
+			if extractor.Scope != nil && action.Extractors[index].Scope == nil {
+				action.Extractors[index].Scope = extractor.Scope
 			}
 			return
 		}

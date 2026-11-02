@@ -27,6 +27,7 @@ const (
 
 type ConvertOptions struct {
 	ScriptName          string `json:"script_name,omitempty"`
+	SourceFileName      string `json:"source_file_name,omitempty"`
 	BaseURL             string `json:"base_url,omitempty"`
 	RecordingProfileID  string `json:"recording_profile_id,omitempty"`
 	ConversionPolicy    string `json:"conversion_policy,omitempty"`
@@ -38,6 +39,13 @@ type ConvertOptions struct {
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
+	// FilterClientTelemetry (default true when static assets are excluded) omits
+	// browser telemetry beacons such as Salesforce Aura InstrumentationBeacon
+	// and o11y requests from the generated load script.
+	FilterClientTelemetry *bool `json:"filter_client_telemetry,omitempty"`
+	// StampActionProvenance attaches har.entry_index and import_action_uid
+	// metadata to converted HAR request actions for interactive API import review.
+	StampActionProvenance bool `json:"stamp_action_provenance,omitempty"`
 	// PageTitleChecks adds a check on each HTML page's recorded <title>
 	// (default on); ResourceMode is runtime (default), in_step or separate.
 	PageTitleChecks    *bool  `json:"page_title_checks,omitempty"`
@@ -135,9 +143,12 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
-	redactionEnabled := false
+	redactionEnabled := convertutil.BoolOption(opts.RedactSensitive, convertutil.BoolOption(opts.SanitizeSensitive, false))
 	governanceWarnings := []string{}
 	sensitivity := scrub.SensitivityRaw
+	if redactionEnabled {
+		sensitivity = scrub.SensitivityScrubbed
+	}
 	entryPoint := opts.EntryPoint
 	if entryPoint == "" {
 		entryPoint = sample.EntryPointImportHAR
@@ -150,13 +161,17 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		Content: string(data),
 		Options: sample.ConvertOptions{
 			BaseURL:                    opts.BaseURL,
+			SourceFileName:             opts.SourceFileName,
 			RecordingProfileID:         opts.RecordingProfileID,
 			ConversionPolicy:           opts.ConversionPolicy,
 			CorrelationMode:            opts.CorrelationMode,
 			IncludeAssertions:          opts.IncludeAssertions,
 			InferExtractors:            opts.InferExtractors,
 			SanitizeSensitive:          boolPointer(false),
+			RedactSourceReview:         &redactionEnabled,
 			IncludeStaticAssets:        opts.IncludeStaticAssets,
+			FilterClientTelemetry:      opts.FilterClientTelemetry,
+			StampActionProvenance:      opts.StampActionProvenance,
 			PageTitleChecks:            opts.PageTitleChecks,
 			ResourceMode:               opts.ResourceMode,
 			HTMLSteps:                  opts.HTMLSteps,

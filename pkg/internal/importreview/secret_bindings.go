@@ -482,26 +482,41 @@ func IsDurablyImportReviewGatedAction(value map[string]any) bool {
 }
 
 func IsImportProvenanceMetadataPath(path string) bool {
-	segments := strings.Split(path, "/")
-	if len(segments) < 2 {
+	tokens, err := SplitJSONPointer(path)
+	if err != nil {
+		segments := strings.Split(path, "/")
+		for index := 0; index+1 < len(segments); index++ {
+			if segments[index] == "metadata" && IsImportProvenanceMetadataKey(segments[index+1]) {
+				return true
+			}
+		}
 		return false
 	}
-	if segments[len(segments)-2] != "metadata" {
-		return false
+	for index := 0; index+1 < len(tokens); index++ {
+		if tokens[index] == "metadata" && IsImportProvenanceMetadataKey(tokens[index+1]) {
+			return true
+		}
 	}
-	return IsImportProvenanceMetadataKey(segments[len(segments)-1])
+	return false
 }
 
 func IsImportProvenanceMetadataPathForContext(path string, ctx RedactionTraversalContext) bool {
 	if IsImportProvenanceMetadataPath(path) {
 		return true
 	}
-	separator := strings.LastIndexByte(path, '/')
-	if separator < 0 || ctx.nonWireMetadataPath == "" || path[:separator] != ctx.nonWireMetadataPath {
+	if ctx.nonWireMetadataPath == "" {
 		return false
 	}
-	_, ok := HttpImportProvenanceEvidenceKeys[NormalizeImportProvenanceKey(path[separator+1:])]
-	return ok
+	prefix := ctx.nonWireMetadataPath + "/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+		rest = rest[:slash]
+	}
+	rest = strings.ReplaceAll(strings.ReplaceAll(rest, "~1", "/"), "~0", "~")
+	return IsHTTPImportProvenanceMetadataKey(rest)
 }
 
 func IsNonExecutableRedactionSubtree(parent map[string]any, key string, path string) bool {

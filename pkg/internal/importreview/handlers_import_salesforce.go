@@ -4,6 +4,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
@@ -58,6 +59,20 @@ func augmentHARImportWithSalesforceProfile(result *har.ConvertResult, data []byt
 		analyzeOpts.InferExtractors = &infer
 		analyzeOpts.HighConfidenceOnly = &highConf
 		analyzeOpts.ReviewOnlyCorrelations = result.EffectiveSettings.ReviewOnlyCorrelations
+	}
+	if result.Diff != nil && result.Diff.Compared && len(result.Diff.Classifications) > 0 {
+		evidence := make([]salesforce.DiffCorrelationEvidence, 0, len(result.Diff.Classifications))
+		for _, item := range result.Diff.Classifications {
+			evidence = append(evidence, salesforce.DiffCorrelationEvidence{
+				Name:           item.Name,
+				Source:         item.Source,
+				Expression:     item.Expression,
+				BaselineValue:  item.BaselineValue,
+				BaselineEntry:  item.BaselineEntry,
+				Classification: item.Classification,
+			})
+		}
+		analyzeOpts.DiffEvidence = evidence
 	}
 	// Optional review callers stop before matching or correlation when detection
 	// is negative. A detected capture is analyzed only once, including its native
@@ -115,6 +130,13 @@ func augmentHARImportWithSalesforceProfile(result *har.ConvertResult, data []byt
 	// Advertise the native generation mode only when a native script was actually
 	// emitted, so a detected-but-not-rebuilt import is not mislabeled as native.
 	if nativeApplied {
+		extractors, assertions := countScriptExtractorsAndAssertions(augmentation.Script)
+		result.Stats.Extractors = extractors
+		result.Stats.Assertions = assertions
+		if review != nil && review.NativePreview != nil {
+			result.Stats.CorrelationsDetected = len(review.NativePreview.Correlations)
+		}
+		augmentation.Summary = HarImportSummary(result)
 		result.SourceReview = OriginalImportSourceReview(result.SourceReview)
 		augmentation.Summary["generation_mode"] = "salesforce_native_http"
 		augmentation.Summary["protocol_scope"] = "salesforce_http_family"
@@ -158,4 +180,38 @@ func SalesforceReviewForResponse(review *salesforce.Review) *salesforce.Review {
 		clone.NativePreview = &nativePreview
 	}
 	return &clone
+}
+
+func countScriptExtractorsAndAssertions(script *dsl.Script) (extractors int, assertions int) {
+	if script == nil {
+		return 0, 0
+	}
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action != nil {
+			extractors += len(ref.Action.Extractors)
+			assertions += len(ref.Action.Assertions)
+			return nil
+		}
+		if ref.Request != nil {
+			extractors += countUntypedSlice(ref.Request["extractors"])
+			assertions += countUntypedSlice(ref.Request["assertions"])
+		}
+		return nil
+	})
+	return extractors, assertions
+}
+
+func countUntypedSlice(raw any) int {
+	switch items := raw.(type) {
+	case []dsl.Extractor:
+		return len(items)
+	case []dsl.Assertion:
+		return len(items)
+	case []any:
+		return len(items)
+	case []map[string]any:
+		return len(items)
+	default:
+		return 0
+	}
 }

@@ -121,13 +121,31 @@ type ConvertOptions struct {
 	AgentforceTransform        *bool                `json:"agentforce_transform,omitempty"`
 	Parameterize               bool                 `json:"parameterize,omitempty"`
 	ParameterizationSelections []paramize.Selection `json:"parameterization_selections,omitempty"`
+	// SourceFileName overrides the default synthetic filename ("sample.har")
+	// recorded in SourceReview when non-empty.
+	SourceFileName string `json:"source_file_name,omitempty"`
+	// RedactSourceReview scrubs sensitive literals from SourceReview without
+	// redacting executable action headers or bodies; defaults to
+	// SanitizeSensitive when nil.
+	RedactSourceReview *bool `json:"redact_source_review,omitempty"`
+	// FilterClientTelemetry omits pure client-telemetry Aura beacon POSTs
+	// (InstrumentationBeacon / o11y) from executable actions when true and
+	// static assets are not included.
+	FilterClientTelemetry *bool `json:"filter_client_telemetry,omitempty"`
+	// StampActionProvenance attaches har.entry_index and import_action_uid
+	// metadata to converted HAR request actions for interactive API import
+	// review and surgical action exclusion. Defaults to false so library
+	// converter contracts stay invariant.
+	StampActionProvenance bool `json:"stamp_action_provenance,omitempty"`
 }
 
 type ConvertStats struct {
 	Format               string `json:"format"`
 	TotalRequests        int    `json:"total_requests"`
+	TotalEntries         int    `json:"total_entries,omitempty"`
 	ConvertedActions     int    `json:"converted_actions"`
 	FilteredAssets       int    `json:"filtered_assets,omitempty"`
+	FilteredTelemetry    int    `json:"filtered_telemetry,omitempty"`
 	SkippedRequests      int    `json:"skipped_requests,omitempty"`
 	Assertions           int    `json:"assertions"`
 	Extractors           int    `json:"extractors"`
@@ -346,11 +364,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var (
-		exchanges   []exchange
-		warnings    []string
-		diagnostics diag.Collector
-		filtered    int
-		skipped     int
+		exchanges         []exchange
+		warnings          []string
+		diagnostics       diag.Collector
+		filtered          int
+		telemetryFiltered int
+		skipped           int
 	)
 
 	httpVersionMode := effectiveSettings.HTTPVersionMode
@@ -370,6 +389,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			break
 		}
 		exchanges, warnings, filtered, skipped, err = document.parse(includeStatic, httpVersionMode, &diagnostics)
+		if err == nil && !includeStatic && convertutil.BoolOption(req.Options.FilterClientTelemetry, true) {
+			exchanges, telemetryFiltered = filterClientTelemetryExchanges(exchanges)
+			filtered += telemetryFiltered
+			if telemetryFiltered > 0 {
+				diagnostics.Add(diag.Info, "HAR telemetry beacon", "HAR import", fmt.Sprintf("%d client-telemetry Aura beacon request(s) were omitted from the executable script", telemetryFiltered))
+			}
+		}
 		if err == nil && !includeStatic && strings.EqualFold(effectiveSettings.ResourceMode, "in_step") {
 			pageResources = document.inStepResources()
 		}
@@ -403,7 +429,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	// Step transactions are placed once the requests are built (below), so
 	// they can leave out the background requests the recorded shape folds.
-	stepTransactions := format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, false)
+	isHARImportFlow := format == "har" && (entryPoint == EntryPointImportHAR || entryPoint == EntryPointImportSalesforce)
+	defaultSalesforceShaping := isHARImportFlow && !effectiveSettings.DisableSalesforce && isSalesforceImportTraffic(exchanges) && exchangesHaveTimestampProgression(exchanges)
+	stepTransactions := format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, defaultSalesforceShaping)
+	recordedConcurrency := format == "har" && convertutil.BoolOption(req.Options.RecordedConcurrency, defaultSalesforceShaping && effectiveSettings.SalesforceNative)
 	if stepTransactions && exchangesCarryRecordedTransactions(exchanges) {
 		stepTransactions = false
 		warnings = append(warnings, "Step transactions were not added: the recording already marks its transactions, which the script keeps.")
@@ -523,10 +552,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		Warnings:     warnings,
 		Correlations: correlations,
 		Stats: ConvertStats{
-			Format:          format,
-			TotalRequests:   len(exchanges) + filtered + skipped,
-			FilteredAssets:  filtered,
-			SkippedRequests: skipped,
+			Format:            format,
+			TotalRequests:     len(exchanges) + filtered + skipped,
+			TotalEntries:      len(exchanges) + filtered + skipped,
+			FilteredAssets:    filtered,
+			FilteredTelemetry: telemetryFiltered,
+			SkippedRequests:   skipped,
 		},
 	}
 	if warning := requestimport.ApplyIntegratedAuth(result.Script, integratedAuthHosts(exchanges)); warning != "" {
@@ -546,8 +577,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	var sourceFiles map[string]string
 	var sourceLocations []sampleSourceLocation
 	if !req.Options.OmitSourceReview {
-		sourceFiles = sampleSourceFiles(format, req.Content, req.ResponseContent)
-		sourceLocations = sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
+		sourceFiles = sampleSourceFiles(format, req.Content, req.ResponseContent, req.Options.SourceFileName)
+		sourceLocations = sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges, req.Options.SourceFileName)
 	}
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 	finalizationReports := make([]requestimport.Report, 0, len(exchanges))
@@ -595,6 +626,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			BodyEncoding: ex.BodyEncoding,
 			Metadata:     cloneMetadata(ex.Metadata),
 		}
+		if format == "har" && req.Options.StampActionProvenance && ex.SourceEntryID > 0 {
+			if action.Metadata == nil {
+				action.Metadata = map[string]any{}
+			}
+			action.Metadata["har.entry_index"] = ex.SourceEntryID
+			if existingUID, _ := action.Metadata[dsl.ImportActionUIDMetadataKey].(string); !dsl.IsValidImportActionUID(existingUID) {
+				action.Metadata[dsl.ImportActionUIDMetadataKey] = fmt.Sprintf("har-entry-%d", ex.SourceEntryID)
+			}
+		}
+		applyCorrelationVarsToHARQueryMetadata(action.Metadata, stepVars)
 		if ex.ContentEncoding != "" {
 			if action.Params == nil {
 				action.Params = map[string]any{}
@@ -679,6 +720,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			if pageTitleChecks {
 				if title := requestimport.RecordedPageTitle(responseHeaderValue(ex.Response, "Content-Type"), ex.Response.Status, ex.Response.Body, correlationValues(correlations)); title != "" {
 					action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_contains", Value: title})
+					result.Stats.Assertions++
+				}
+			}
+			// In generic HAR mode (Salesforce native rewrite off, Salesforce not
+			// disabled), guard /aura POSTs against HTTP-200 Aura envelope errors.
+			if includeAssertions && format == "har" && !effectiveSettings.SalesforceNative && !effectiveSettings.DisableSalesforce && isGenericAuraPostExchange(ex) {
+				if !strings.Contains(ex.Response.Body, "/*ERROR*/") {
+					action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_not_contains", Value: "/*ERROR*/"})
 					result.Stats.Assertions++
 				}
 			}
@@ -804,7 +853,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				if reason != "" {
 					result.Warnings = append(result.Warnings, "Step transactions were not added: "+reason+".")
 				}
-			} else {
+			} else if req.Options.StepTransactions != nil || len(windows) >= 2 || signIn != nil {
 				tagStepTransactions(result.Script.Actions, windows, member)
 				req.Options.Transactions = windows
 				stepStarts = stepMarkerStarts(exchanges, windows, member)
@@ -846,9 +895,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			var notMoved string
 			newIndex, sourceMappings, moved, notMoved = signIn.moveToInit(result.Script, exchanges, newIndex, sourceMappings)
 			result.Warnings = append(result.Warnings, signIn.warnings(moved, notMoved)...)
+			if moved > 0 {
+				var teardownMoved int
+				newIndex, sourceMappings, teardownMoved = signIn.moveLogoutToTeardown(result.Script, exchanges, newIndex, sourceMappings)
+				if teardownMoved > 0 {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("The Salesforce sign-out runs in teardown (%d steps), so each virtual user signs out once after its final iteration.", teardownMoved))
+				}
+			}
 			signIn.restoreRecordedBodies(exchanges)
 		}
-		if convertutil.BoolOption(req.Options.RecordedConcurrency, false) {
+		if recordedConcurrency {
 			var groups, refused int
 			sourceMappings, newIndex, groups, refused = groupRecordedConcurrency(result.Script, exchanges, newIndex, sourceMappings, thinkThreshold(req.Options.Profile))
 			if groups > 0 {
@@ -859,6 +915,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)
+	}
+	if format == "har" && !effectiveSettings.SalesforceNative && !effectiveSettings.DisableSalesforce && scriptHasUncorrelatedAuraToken(result.Script) {
+		result.Warnings = append(result.Warnings, "Generic HAR mode left one or more aura.token values literal in /aura requests; enable Salesforce native authoring or extract __Host-ERIC_* Set-Cookie from /one/one.app before replay.")
 	}
 	for index := range result.Correlations {
 		corr := &result.Correlations[index]
@@ -874,7 +933,29 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	result.Stats.CorrelationsDetected = len(correlations)
 	if !req.Options.OmitSourceReview {
+		var redactedFiles map[string]bool
+		var originalLengths map[string]int
+		if convertutil.BoolOption(req.Options.RedactSourceReview, convertutil.BoolOption(req.Options.SanitizeSensitive, false)) {
+			redactedFiles, originalLengths = redactSourceReviewSecrets(sourceFiles, exchanges)
+		}
 		result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+		if result.SourceReview != nil && len(originalLengths) > 0 {
+			for i := range result.SourceReview.SourceFiles {
+				sf := &result.SourceReview.SourceFiles[i]
+				if origLen, ok := originalLengths[sf.Path]; ok {
+					sf.OriginalBytes = origLen
+					if origLen > sourceview.MaxFullTextBytes {
+						sf.FullText = ""
+					}
+					if origLen > sourceview.MaxFileChars {
+						sf.Truncated = true
+					}
+				}
+				if redactedFiles[sf.Path] {
+					sf.Redacted = true
+				}
+			}
+		}
 	}
 	result.EffectiveSettings = effectiveSettings
 	return result, nil
@@ -968,6 +1049,126 @@ func isExplicitRedirectStep(ex exchange) bool {
 		return false
 	}
 	return headerLookup(ex.Response.Headers, "Location") != ""
+}
+
+func exchangesHaveTimestampProgression(exchanges []exchange) bool {
+	if len(exchanges) < 2 {
+		return false
+	}
+	var first time.Time
+	hasProgression := false
+	for i, ex := range exchanges {
+		if !ex.HasStartedAt {
+			return false
+		}
+		if i == 0 {
+			first = ex.StartedAt
+		} else if !ex.StartedAt.Equal(first) {
+			hasProgression = true
+		}
+	}
+	return hasProgression
+}
+
+func isSalesforceImportTraffic(exchanges []exchange) bool {
+	for _, ex := range exchanges {
+		parsed, err := url.Parse(ex.URL)
+		if err != nil {
+			continue
+		}
+		host := strings.ToLower(parsed.Hostname())
+		if strings.HasSuffix(host, ".salesforce.com") ||
+			strings.HasSuffix(host, ".force.com") ||
+			strings.HasSuffix(host, ".salesforce-setup.com") {
+			return true
+		}
+		p := strings.ToLower(strings.TrimRight(parsed.Path, "/"))
+		if p == "/aura" || strings.HasSuffix(p, "/aura") || p == "/one/one.app" || strings.HasSuffix(p, "/secur/frontdoor.jsp") {
+			return true
+		}
+	}
+	return false
+}
+
+func isGenericAuraPostExchange(ex exchange) bool {
+	if !strings.EqualFold(ex.Method, "POST") {
+		return false
+	}
+	p := strings.ToLower(strings.TrimRight(urlPath(ex.URL), "/"))
+	return p == "/aura" || strings.HasSuffix(p, "/aura")
+}
+
+func scriptHasUncorrelatedAuraToken(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	check := func(actions []dsl.Action) bool {
+		for _, a := range actions {
+			if !strings.EqualFold(a.Method, "POST") || !strings.Contains(a.Body, "aura.token=") {
+				continue
+			}
+			for _, field := range strings.Split(a.Body, "&") {
+				k, v, ok := strings.Cut(field, "=")
+				if !ok || k != "aura.token" {
+					continue
+				}
+				v = strings.TrimSpace(v)
+				if v != "" && v != "null" && v != "undefined" && !strings.Contains(v, "{{") && !strings.Contains(v, "%7B%7B") && !strings.Contains(v, "%7b%7b") {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return check(script.Init) || check(script.Actions) || check(script.Teardown)
+}
+
+func rewriteHARQueryParamValue(val string, vars map[string]string) string {
+	if replaced := applyCorrelationVars(val, vars); replaced != val {
+		return replaced
+	}
+	if escaped := url.QueryEscape(val); escaped != val {
+		if replaced := applyCorrelationVars(escaped, vars); replaced != escaped {
+			return replaced
+		}
+	}
+	return val
+}
+
+func applyCorrelationVarsToHARQueryMetadata(metadata map[string]any, vars map[string]string) {
+	if len(metadata) == 0 || len(vars) == 0 {
+		return
+	}
+	raw, ok := metadata["har.request.query_string"]
+	if !ok || raw == nil {
+		return
+	}
+	switch items := raw.(type) {
+	case []map[string]any:
+		cloned := make([]map[string]any, len(items))
+		for i, item := range items {
+			entry := cloneMetadata(item)
+			if val, ok := entry["value"].(string); ok && val != "" {
+				entry["value"] = rewriteHARQueryParamValue(val, vars)
+			}
+			cloned[i] = entry
+		}
+		metadata["har.request.query_string"] = cloned
+	case []any:
+		cloned := make([]any, len(items))
+		for i, rawItem := range items {
+			if item, ok := rawItem.(map[string]any); ok {
+				entry := cloneMetadata(item)
+				if val, ok := entry["value"].(string); ok && val != "" {
+					entry["value"] = rewriteHARQueryParamValue(val, vars)
+				}
+				cloned[i] = entry
+			} else {
+				cloned[i] = rawItem
+			}
+		}
+		metadata["har.request.query_string"] = cloned
+	}
 }
 
 func mergeFileAssets(script *dsl.Script, assets []dsl.DataSource) {

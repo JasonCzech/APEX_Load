@@ -3,6 +3,7 @@ package sample
 // sourceview.go — split from converter.go (same package, behavior-preserving).
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
@@ -17,9 +18,25 @@ type sampleSourceLocation struct {
 	ResponseEndLine   int
 }
 
-func sampleSourceFiles(format string, content string, responseContent string) map[string]string {
+func resolveSampleSourceFileName(format string, override string) string {
+	trimmed := strings.TrimSpace(override)
+	if trimmed != "" {
+		normalized := strings.ReplaceAll(trimmed, "\\", "/")
+		base := strings.TrimSpace(filepath.Base(normalized))
+		if base != "" && base != "." && base != "/" {
+			return base
+		}
+	}
+	return sampleSourceFileName(format)
+}
+
+func sampleSourceFiles(format string, content string, responseContent string, sourceFileOverride ...string) map[string]string {
+	override := ""
+	if len(sourceFileOverride) > 0 {
+		override = sourceFileOverride[0]
+	}
 	files := map[string]string{
-		sampleSourceFileName(format): content,
+		resolveSampleSourceFileName(format, override): content,
 	}
 	if strings.TrimSpace(responseContent) != "" {
 		files[sampleResponseFileName(format)] = responseContent
@@ -68,8 +85,12 @@ func sampleSourceFunction(format string) string {
 	}
 }
 
-func sampleSourceLocations(format string, content string, responseContent string, exchanges []exchange) []sampleSourceLocation {
-	sourceFile := sampleSourceFileName(format)
+func sampleSourceLocations(format string, content string, responseContent string, exchanges []exchange, sourceFileOverride ...string) []sampleSourceLocation {
+	override := ""
+	if len(sourceFileOverride) > 0 {
+		override = sourceFileOverride[0]
+	}
+	sourceFile := resolveSampleSourceFileName(format, override)
 	responseFile := ""
 	if strings.TrimSpace(responseContent) != "" {
 		responseFile = sampleResponseFileName(format)

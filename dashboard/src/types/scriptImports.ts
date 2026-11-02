@@ -179,6 +179,21 @@ export interface ApplyImportTransportResponse {
   import_draft_expires_at?: string
 }
 
+export interface ExcludeImportDraftActionsRequest {
+  script: ScriptDefinition
+  action_uids?: string[]
+  exclude_unexported_bodies?: boolean
+}
+
+export interface ExcludeImportDraftActionsResponse {
+  script: ScriptDefinition
+  removed_count: number
+  preflight?: ReplayPreflight
+  secret_binding_requirements: SecretBindingRequirement[]
+  warnings?: string[]
+  import_draft_expires_at?: string
+}
+
 export interface ApplyParameterizationResponse {
   script: ScriptDefinition
   diffs: ParameterizationDiff[]
@@ -976,9 +991,11 @@ export interface JMeterScenarioDraft {
 
 export interface SampleImportStats {
   format: string
+  total_entries?: number
   total_requests: number
   converted_actions: number
   filtered_assets?: number
+  filtered_telemetry?: number
   assertions: number
   extractors: number
   correlations_detected: number
@@ -1019,6 +1036,8 @@ export interface HARDiffClassification {
   comparison_value?: string
   found_in_step?: number
   used_in_steps?: number[]
+  producer_found?: boolean
+  matched_descriptor?: string
   classification: 'dynamic' | 'static' | 'candidate' | string
   diff_confidence: number
   reason: string
@@ -1027,6 +1046,7 @@ export interface HARDiffClassification {
 export interface HARDiffReport {
   artifact_mode: HARArtifactMode | string
   compared: boolean
+  reason?: string
   baseline_correlations: number
   comparison_correlations: number
   dynamic_candidates: number

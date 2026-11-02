@@ -118,6 +118,10 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 				// Structural field names such as "/password" are locators, not
 				// credential values.
 				continue
+			case ctx.metadata &&
+				key == dsl.ImportActionUIDMetadataKey &&
+				dsl.IsValidImportActionUID(child):
+				continue
 			case ctx.secretBindings:
 				c.addNode(child)
 			case normalizeName(ctx.key) == "proxy" && normalized == "username":

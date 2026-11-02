@@ -103,10 +103,23 @@ func detectUncapturedAuraTokenCorrelations(observations []correlate.Observation,
 		if len(correlations) > 0 {
 			name += "_" + strconv.Itoa(len(correlations)+1)
 		}
+		expression := auraTokenCookieExtractor
+		reasons := []string{
+			"aura.token is sent by later Aura requests but no captured response issues it",
+			"Lightning sets it in the __Host-ERIC_* Set-Cookie of " + auraTokenCookieBootstrapPath + ", which the capture does not include",
+		}
+		if cookieName, err := auraBootstrapTokenCookieName(observations[producer].ResponseBody, budget); err != nil {
+			return correlations, err
+		} else if cookieName != "" {
+			reasons = append(reasons, "confirmed auraConfig.eikoocnekot ("+cookieName+") in "+auraTokenCookieBootstrapPath+" bootstrap HTML")
+			if !strings.Contains(cookieName, "ERIC_") {
+				expression = customOrERICAuraTokenCookieExtractor(cookieName)
+			}
+		}
 		correlations = append(correlations, correlate.Correlation{
 			Name:        name,
 			Source:      "header",
-			Expression:  auraTokenCookieExtractor,
+			Expression:  expression,
 			ExtractType: "regex",
 			FoundInID:   observations[producer].ID,
 			UsedInIDs:   usedIn,
@@ -114,10 +127,7 @@ func detectUncapturedAuraTokenCorrelations(observations []correlate.Observation,
 			SampleValue: correlate.Truncate(token, 80),
 			RuleID:      correlate.RuleSalesforceAuraTokenUncapturedCookie,
 			Confidence:  auraTokenUncapturedCookieConfidence,
-			Reasons: []string{
-				"aura.token is sent by later Aura requests but no captured response issues it",
-				"Lightning sets it in the __Host-ERIC_* Set-Cookie of " + auraTokenCookieBootstrapPath + ", which the capture does not include",
-			},
+			Reasons:     reasons,
 		})
 	}
 	return correlations, nil
@@ -179,7 +189,33 @@ func auraTokenCookieEvidenceAgainst(bootstrap correlate.Observation, firstERICSe
 	return sent && first <= producer
 }
 
-var auraTokenCookiePattern = regexp.MustCompile(auraTokenCookieExtractor)
+var (
+	auraTokenCookiePattern = regexp.MustCompile(auraTokenCookieExtractor)
+	eikoocnekotHTMLPattern = regexp.MustCompile(`"eikoocnekot"\s*:\s*"([!#$%&'*+.^_` + "`" + `|~0-9A-Za-z-]+)"`)
+)
+
+func auraBootstrapTokenCookieName(responseBody string, budget *salesforceCorrelationBudget) (string, error) {
+	if responseBody == "" || !strings.Contains(responseBody, "eikoocnekot") {
+		return "", nil
+	}
+	scan := responseBody
+	const maxBootstrapScanBytes = 2 << 20
+	if len(scan) > maxBootstrapScanBytes {
+		scan = scan[:maxBootstrapScanBytes]
+	}
+	if err := budget.chargeSearchBytes(int64(len(scan))); err != nil {
+		return "", err
+	}
+	match := eikoocnekotHTMLPattern.FindStringSubmatch(scan)
+	if len(match) < 2 {
+		return "", nil
+	}
+	return strings.TrimSpace(match[1]), nil
+}
+
+func customOrERICAuraTokenCookieExtractor(cookieName string) string {
+	return `(?m)^(?i:Set-Cookie):[ \t]*(?:` + regexp.QuoteMeta(cookieName) + `|(?:__Host-)?ERIC_[!#$%&'*+.^_` + "`" + `|~0-9A-Za-z-]*)=[ \t]*"?([^";\s,]+)"?(?:[ \t]*;|[ \t]*\r?$)`
+}
 
 // auraTokenHeader is a header's value, matched case-insensitively.
 func auraTokenHeader(headers map[string]string, name string) string {

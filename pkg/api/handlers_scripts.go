@@ -75,6 +75,9 @@ type harImportRequest struct {
 	Salvage *har.TruncationSalvage
 	// SecretBindings applies reviewed secret bindings to the draft.
 	SecretBindings []importreview.SecretBindingSelection
+	// ValidateOnly inspects and converts the capture without retaining source
+	// texts, issuing a draft save attestation, or allocating a source-secret session.
+	ValidateOnly bool
 }
 
 // applyClientGeneratedUUIDs gives UUIDs the recorded client made up (no

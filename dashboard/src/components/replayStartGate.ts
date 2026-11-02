@@ -184,6 +184,8 @@ export interface ReplayStartGateInput {
   hasName: boolean
   actionCount: number
   jsonInvalid: boolean
+  /** Malformed debugger session options (Session Variables JSON, Run identity, or live-table seeds). */
+  optionsError?: string
   /** Whether the project secrets the draft needs have a known status. */
   secretStatus: 'known' | 'checking' | 'unavailable'
   blockers: readonly ReplayBlocker[]
@@ -208,6 +210,7 @@ export function replayStartGate(input: ReplayStartGateInput): ReplayStartGate {
   if (input.saving) return { kind: 'waiting', cause: 'busy', reason: 'Wait for the save to finish before debugging.' }
   if (!input.hasName || input.actionCount === 0) return { kind: 'waiting', cause: 'incomplete', reason: 'Name the script and add a step before debugging.' }
   if (input.jsonInvalid) return { kind: 'waiting', cause: 'json', reason: 'Fix the Script JSON before debugging.' }
+  if (input.optionsError) return { kind: 'waiting', cause: 'json', reason: input.optionsError }
   if (input.secretStatus !== 'known') {
     return {
       kind: 'waiting',

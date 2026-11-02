@@ -316,3 +316,14 @@ func TestStepTransactionWindowsKeepALateForcedBoundaryDisjoint(t *testing.T) {
 		t.Fatalf("marker starts = %v, want the late request placed in its step", starts)
 	}
 }
+
+func TestExchangesHaveTimestampProgressionRequiresDistinctTimestamps(t *testing.T) {
+	same := []exchange{stepAt(0, 10), stepAt(0, 10)}
+	if exchangesHaveTimestampProgression(same) {
+		t.Fatal("expected identical placeholder timestamps not to report progression")
+	}
+	distinct := []exchange{stepAt(0, 10), stepAt(150, 10)}
+	if !exchangesHaveTimestampProgression(distinct) {
+		t.Fatal("expected distinct timestamps to report progression")
+	}
+}

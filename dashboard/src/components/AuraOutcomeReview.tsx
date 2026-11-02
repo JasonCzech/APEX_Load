@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SourceReview, SourceReviewMapping } from '../types/scripts'
+import type { ScriptActionDefinition, ScriptDefinition, SourceReview, SourceReviewMapping } from '../types/scripts'
 import type { AuraActionState, AuraOutcomeBatch, AuraOutcomeReport } from '../types/scriptImports'
 import { ImportEvidenceFacts } from './ImportConversionDetails'
 import './AuraOutcomeReview.css'
@@ -62,7 +62,50 @@ function requiresReview(batch: AuraOutcomeBatch): boolean {
   return batch.request_valid !== true || batch.analysis.has_response !== true || batch.analysis.complete !== true || batch.analysis.success !== true
 }
 
-export default function AuraOutcomeReview({ report, sourceReview, onViewSource }: { report?: AuraOutcomeReport; sourceReview?: SourceReview; onViewSource?: (mapping: SourceReviewMapping) => void }) {
+function hasUnexportedBodyBlocker(meta: Record<string, unknown> | undefined): boolean {
+  if (!meta) return false
+  if (meta.har_request_body_not_exported === true) return true
+  if (Array.isArray(meta.execution_blockers) && meta.execution_blockers.includes('har_request_body_not_exported')) return true
+  if (Array.isArray(meta.import_review_findings) && meta.import_review_findings.some(f => f && typeof f === 'object' && (f as Record<string, unknown>).code === 'har_request_body_not_exported')) return true
+  return false
+}
+
+function resolveActionByPath(script: ScriptDefinition | null | undefined, actionPath: string | undefined): { name?: string; bodyNotExported: boolean } | null {
+  if (!script || !actionPath) return null
+  const direct = /^(init|actions|teardown)\[(\d+)\](?:\.params\.requests\[(\d+)\])?$/.exec(actionPath.trim())
+  if (!direct) return null
+  const section = direct[1] === 'init' ? script.init : direct[1] === 'teardown' ? script.teardown : script.actions
+  const actionIndex = Number(direct[2])
+  const action: ScriptActionDefinition | undefined = Array.isArray(section) ? section[actionIndex] : undefined
+  if (!action) return null
+  if (direct[3] !== undefined) {
+    const subIndex = Number(direct[3])
+    const requests = Array.isArray(action.params?.requests) ? (action.params?.requests as Array<Record<string, unknown>>) : []
+    const sub = requests[subIndex]
+    if (!sub || typeof sub !== 'object') return null
+    const subMeta = (sub.metadata && typeof sub.metadata === 'object' ? sub.metadata : undefined) as Record<string, unknown> | undefined
+    return {
+      name: typeof sub.name === 'string' && sub.name.trim() ? sub.name.trim() : undefined,
+      bodyNotExported: hasUnexportedBodyBlocker(subMeta),
+    }
+  }
+  return {
+    name: typeof action.name === 'string' && action.name.trim() ? action.name.trim() : undefined,
+    bodyNotExported: hasUnexportedBodyBlocker(action.metadata as Record<string, unknown> | undefined),
+  }
+}
+
+export default function AuraOutcomeReview({
+  report,
+  script,
+  sourceReview,
+  onViewSource,
+}: {
+  report?: AuraOutcomeReport
+  script?: ScriptDefinition | null
+  sourceReview?: SourceReview
+  onViewSource?: (mapping: SourceReviewMapping) => void
+}) {
   const [onlyReview, setOnlyReview] = useState(true)
   const [page, setPage] = useState(0)
   if (!report) return null
@@ -116,8 +159,12 @@ export default function AuraOutcomeReview({ report, sourceReview, onViewSource }
       <p className="aura-outcome-source-hint">HAR entry numbers identify the original capture order. Imported action positions may differ after filtering or conversion. {sourceReview?.mappings?.length ? 'Source Mapping contains available request mappings.' : 'Source mappings are unavailable for this review.'}</p>
       {visible.map((batch, index) => {
         const mapping = sourceMapping(batch, sourceReview)
+        const resolvedAction = resolveActionByPath(script, batch.action_path)
         return <div className="aura-outcome-batch" key={currentPage * PAGE_SIZE + index}>
-        <div className="aura-outcome-batch-heading"><strong>Request {ordinal(batch.action_sequence)}</strong><span>{batchStatus(batch)}</span></div>
+        <div className="aura-outcome-batch-heading">
+          <strong>Request {ordinal(batch.action_sequence)}{resolvedAction?.name ? ` — ${resolvedAction.name}` : ''}</strong>
+          <span>{resolvedAction?.bodyNotExported ? `${batchStatus(batch)} · Body not exported` : batchStatus(batch)}</span>
+        </div>
         {mapping && onViewSource && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onViewSource(mapping)}>View request {ordinal(batch.action_sequence)} source mapping</button>}
         <p>{batch.har_entry_id ? `HAR entry ${ordinal(batch.har_entry_id)} · ` : ''}{batch.request_valid === true ? 'Imported request structure valid' : 'Imported request structure needs review'} · {count(batch.analysis.matched_actions)} matched / {count(batch.analysis.request_actions)} requested / {count(batch.analysis.response_actions)} returned actions</p>
         {(count(batch.analysis.outcomes_omitted) > 0 || count(batch.analysis.issues_omitted) > 0) && <p>{count(batch.analysis.outcomes_omitted)} action outcomes · {count(batch.analysis.issues_omitted)} captured findings omitted from this batch’s retained details.</p>}

@@ -1,10 +1,16 @@
 package importreview
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/dsl"
+	"reflect"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 var (
@@ -131,6 +137,7 @@ func preparePersistentLibraryScript(
 			if err := ValidatePreservedImportCredentialEditsWithOptions(preserved, prior, options); err != nil {
 				return nil, err
 			}
+			maybeGraduateCredentialPreservingImport(preserved, prior)
 		}
 		return preserved, nil
 	}
@@ -173,4 +180,195 @@ func preparePersistentLibraryScript(
 		}
 	}
 	return script, nil
+}
+
+// EnsureScriptImportActionUIDs stamps a deterministic, unique import_action_uid
+// on every action and nested sequence request that does not already carry one.
+func EnsureScriptImportActionUIDs(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	seen := make(map[string]struct{})
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		meta := ref.Metadata()
+		if existing, ok := meta[dsl.ImportActionUIDMetadataKey]; ok && dsl.IsValidImportActionUID(existing) {
+			uid := existing.(string)
+			if _, dup := seen[uid]; !dup {
+				seen[uid] = struct{}{}
+				return nil
+			}
+		}
+		sum := sha256.Sum256([]byte(script.Name + "\x00" + ref.Path + "\x00" + ref.Name()))
+		uid := "act-" + hex.EncodeToString(sum[:8])
+		for attempt := 2; ; attempt++ {
+			if _, dup := seen[uid]; !dup {
+				break
+			}
+			uid = fmt.Sprintf("act-%s-%d", hex.EncodeToString(sum[:8]), attempt)
+		}
+		seen[uid] = struct{}{}
+		if meta == nil {
+			meta = make(map[string]any)
+		}
+		meta[dsl.ImportActionUIDMetadataKey] = uid
+		ref.SetMetadata(meta)
+		return nil
+	})
+}
+
+// maybeGraduateCredentialPreservingImport transitions an edited imported script
+// out of credential-preserving mode once all retained credentials present in
+// prior have been bound to runtime {{secret.*}} references (or removed), no
+// opaque source credential envelopes remain, no runtime or disclosure
+// credential values are retained, and the script validates cleanly under
+// ordinary library rules.
+func maybeGraduateCredentialPreservingImport(script, prior *dsl.Script) {
+	if script == nil || prior == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return
+	}
+	if ScriptRequiresJavaVuserAuthoringApproval(script) || ScriptRequiresJavaVuserAuthoringApproval(prior) {
+		return
+	}
+	if !scriptRetainsGraduableCredentialState(prior) {
+		return
+	}
+	preservedMap := script.Metadata.Import.Preserved
+	for _, opaqueKey := range []string{
+		dsl.ImportPreservedRuntimeArtifactKey,
+		dsl.ImportPreservedCredentialParameterNamesKey,
+		dsl.ImportPreservedCredentialTargetsMetadataKey,
+		"recorded_resource_urls",
+		"jsr223_sources",
+		"k6_gated_source",
+		"postman_event_sources",
+		"credential_traversal_source_snapshot_base64",
+		"devweb_gated_source",
+		dsl.ImportPreservedJMeterJDBCSourcesKey,
+		dsl.ImportPreservedEnterpriseUnsupportedProxySourceKey,
+		dsl.ImportPreservedIgnoredProxyCredentialsKey,
+		dsl.ImportPreservedEnterpriseJavaVMSourceKey,
+		dsl.ImportPreservedEnterpriseJavaJDBCSourceKey,
+		"recorded_input_secret_columns",
+	} {
+		if val, exists := preservedMap[opaqueKey]; exists && !isEmptyGraduationMetadataValue(val) {
+			return
+		}
+	}
+	if ValidateJavaVMParameterSafety(script, false) != nil {
+		return
+	}
+	if retained, err := engine.ImportedCredentialValues(script); err != nil || len(retained) > 0 {
+		return
+	}
+	projected := MaskScriptSecrets(script)
+	if projected == nil || len(DiscoverSecretBindingRequirements(projected, 0)) > 0 {
+		return
+	}
+	if !scriptsEqualExceptImportGraduationMetadata(script, projected) {
+		return
+	}
+	// Check whether ordinary validation (without ImportPreservedCredentialPolicyPreserve,
+	// which SAP GUI and preserved Java VM argv rely on) passes cleanly.
+	trial := CloneScriptDefinition(script)
+	if trial == nil || trial.Metadata == nil || trial.Metadata.Import == nil || trial.Metadata.Import.Preserved == nil {
+		return
+	}
+	trial.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] = "secret_reference"
+	_ = dslwalk.Walk(trial, func(ref dslwalk.SurfaceRef) error {
+		if meta := ref.Metadata(); meta != nil {
+			delete(meta, dsl.ImportPreservedCredentialTargetsMetadataKey)
+			if len(meta) == 0 {
+				meta = nil
+			}
+			ref.SetMetadata(meta)
+		}
+		return nil
+	})
+	if len(dsl.ValidateScriptIssues(trial)) > 0 {
+		return
+	}
+	preservedMap[dsl.ImportPreservedCredentialPolicyKey] = "secret_reference"
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if meta := ref.Metadata(); meta != nil {
+			delete(meta, dsl.ImportPreservedCredentialTargetsMetadataKey)
+			if len(meta) == 0 {
+				meta = nil
+			}
+			ref.SetMetadata(meta)
+		}
+		return nil
+	})
+}
+
+func scriptRetainsGraduableCredentialState(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	if retained, err := engine.ImportedCredentialValues(script); err != nil || len(retained) > 0 {
+		return true
+	}
+	hasActionCredentialTargets := false
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if meta := ref.Metadata(); meta != nil {
+			if val, exists := meta[dsl.ImportPreservedCredentialTargetsMetadataKey]; exists && !isEmptyGraduationMetadataValue(val) {
+				hasActionCredentialTargets = true
+			}
+		}
+		return nil
+	})
+	if hasActionCredentialTargets {
+		return true
+	}
+	projected := MaskScriptSecrets(script)
+	if projected == nil {
+		return true
+	}
+	return !scriptsEqualExceptImportGraduationMetadata(script, projected)
+}
+
+func scriptsEqualExceptImportGraduationMetadata(rawScript, projectedScript *dsl.Script) bool {
+	clean := func(in *dsl.Script) (any, bool) {
+		cloned := CloneScriptDefinition(in)
+		if cloned == nil {
+			return nil, false
+		}
+		if cloned.Metadata != nil {
+			cloned.Metadata.Import = nil
+		}
+		_ = dslwalk.Walk(cloned, func(ref dslwalk.SurfaceRef) error {
+			if meta := ref.Metadata(); meta != nil {
+				delete(meta, dsl.ImportPreservedCredentialTargetsMetadataKey)
+				ref.SetMetadata(meta)
+			}
+			return nil
+		})
+		val, err := ScriptAsJSONValue(cloned)
+		if err != nil {
+			return nil, false
+		}
+		return val, true
+	}
+	rawVal, ok1 := clean(rawScript)
+	projVal, ok2 := clean(projectedScript)
+	return ok1 && ok2 && reflect.DeepEqual(rawVal, projVal)
+}
+
+func isEmptyGraduationMetadataValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []string:
+		return len(typed) == 0
+	case []any:
+		return len(typed) == 0
+	case map[string]any:
+		return len(typed) == 0
+	case map[string]string:
+		return len(typed) == 0
+	default:
+		return false
+	}
 }

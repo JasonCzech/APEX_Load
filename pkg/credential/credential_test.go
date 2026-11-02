@@ -13,6 +13,10 @@ func TestSensitiveNamePreservesNormalizedVocabulary(t *testing.T) {
 		want bool
 	}{
 		{"password", true},
+		{"pw", true},
+		{"user_pw", true},
+		{"pw_mode", false},
+		{"power", false},
 		{"clientSecret", true},
 		{"apiToken", true},
 		{"api_token", true},

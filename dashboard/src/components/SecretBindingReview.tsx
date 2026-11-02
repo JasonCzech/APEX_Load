@@ -1593,7 +1593,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
             ? 'Checking project secret store…'
             : scopedProbeState === 'unavailable'
               ? 'Credential status unavailable'
-              : `${providerLabel}${scopedStoreWritable ? '' : ' · read-only'}`}
+              : scopedProbeState === 'idle'
+                ? providerLabel
+                : `${providerLabel}${scopedStoreWritable ? '' : ' · read-only'}`}
         </span>
       </div>
 
@@ -1840,7 +1842,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                 {pendingReuse === group.key && <div role="alert">
                   <p>This will replace the selected reference name and optional value in {reuseSetSize} groups. Inspect the affected locations below. Only continue if these locations intentionally share one credential.</p>
                   <AffectedPathsDisclosure id={`${inputId}-reuse-scope`} paths={reuseSet.map(member => `${member.requirements[0]?.label || member.suggestedName}: ${member.requirements.map(requirement => requirement.path).join(', ')}`)} hasAffectedSourcePaths={false} />
-                  <button type="button" onClick={() => setPendingReuse(null)}>Cancel reuse</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPendingReuse(null)}>Cancel reuse</button>
                 </div>}
                 {canUseProjectSecret && reuseSetSize > 1 && (
                   <button

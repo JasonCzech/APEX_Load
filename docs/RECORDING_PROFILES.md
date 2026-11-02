@@ -127,6 +127,7 @@ classification are kept.
 | HTTP properties | `record_headers`, `drop_headers` | Headers always kept, overriding the recorder's default drop list, and headers never recorded |
 | Recording filters | `include_hosts`, `exclude_hosts` | Hosts recorded (`*.domain` matches subdomains); excluded hosts win |
 | Recording filters | `exclude_content_types` | Response media types (`image/*` wildcards allowed) not recorded as steps |
+| Recording filters | `excluded_aura_descriptors` | Salesforce Aura sub-action descriptors or Apex `classname.method` targets (case-insensitive substring match, such as `ComponentLogger.saveComponentLogEntries`) omitted when every sub-action in an `/aura` POST matches |
 | Recording filters | `body_capture_limit_bytes`, `capture_cookies` | Proxy capture limit, and whether recorded `Cookie` headers are kept instead of being left to the cookie jar |
 | Correlations: configuration | `correlation.disabled` | Turns the automatic correlation scan off |
 | Correlations: configuration | `correlation.disabled_rules` | Rule IDs from the catalog, or whole families (`json`, `html`, `xml`, `header`, `cookie`, `form`, `messaging`), that the scan skips |

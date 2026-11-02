@@ -220,6 +220,12 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				out[key] = child
 				continue
 			}
+			if ctx.metadata &&
+				key == dsl.ImportActionUIDMetadataKey &&
+				dsl.IsValidImportActionUID(child) {
+				out[key] = child
+				continue
+			}
 			if normalized == normalizeName(dsl.ImportHeaderFidelityPreservedNameBase64Key) ||
 				normalized == normalizeName(dsl.ImportHeaderFidelityPreservedValueBase64Key) {
 				out[key] = base64.StdEncoding.EncodeToString([]byte(credential.Redacted))
@@ -1305,6 +1311,8 @@ func isPortableProvenanceIdentifier(key, value string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "source_path", "source_step_id", "source_profile", "source_uid":
 		return true
+	case dsl.ImportActionUIDMetadataKey:
+		return dsl.IsValidImportActionUID(value)
 	case "diagnostic_ids", "finding_ids":
 		const prefix = "bruno-native-"
 		if !strings.HasPrefix(value, prefix) || len(value) != len(prefix)+24 {

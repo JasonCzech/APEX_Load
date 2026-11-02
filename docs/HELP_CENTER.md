@@ -34,7 +34,7 @@ Save as sample_target.py and run `python3 sample_target.py`. Keep it running unt
 
 ### Create and prove the script
 
-Open [Scripts](#/scripts), choose **Script builder** › **Create** › **Blank & assisted editors**, open the **API Visual Editor**, and paste the example below into the editor's **DSL** tab. The editor accepts the wrapped form shown here (`{"script": {...}}`, the shape API requests use) or the bare script object. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
+Open [Scripts](#/scripts), choose **Create script** › **Blank & assisted editors**, open the **API Visual Editor**, and paste the example below into the editor's **DSL** tab. The editor accepts the wrapped form shown here (`{"script": {...}}`, the shape API requests use) or the bare script object. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
 
 ```json
 {
@@ -120,6 +120,7 @@ Use the [import fidelity reference](IMPORT_FIDELITY_AND_REPAIRS.md) to distingui
 ### Current references
 
 - [DSL action reference](DSL_ACTION_REFERENCE.md)
+- [Capturing optimal HAR files for comparison and DSL conversion](APPLICATION_USER_GUIDE.md#capturing-optimal-har-files-for-comparison-and-dsl-conversion)
 - [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support)
 - [Browser & mobile support](PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation)
 - [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md)

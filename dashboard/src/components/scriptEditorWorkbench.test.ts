@@ -434,6 +434,118 @@ describe('filterScriptPhaseActionRows', () => {
       const original = list()
       expect(duplicateActionInList(original, 9)).toBe(original)
     })
+
+    it('strips import_action_uid, import_credential_targets, and [REDACTED] placeholders recursively from clones', () => {
+      const imported: ScriptActionDefinition[] = [{
+        name: 'Auth Block',
+        type: 'control_if',
+        headers: { Authorization: '[REDACTED]', Accept: 'application/json' },
+        body: '[REDACTED]',
+        metadata: {
+          import_action_uid: 'har-act-0001',
+          import_credential_targets: ['headers.Authorization'],
+          source_transaction: 'Login',
+        },
+        control: {
+          condition: '{{var.ok}} == true',
+          steps: [{
+            name: 'Nested Post',
+            type: 'http_request',
+            headers: [{ name: 'X-Api-Key', value: '[REDACTED]' }, { name: 'Content-Type', value: 'application/json' }] as unknown as Record<string, string>,
+            metadata: {
+              import_action_uid: 'har-act-0002',
+              import_credential_targets: ['headers.X-Api-Key'],
+            },
+          }],
+        },
+      } as unknown as ScriptActionDefinition]
+
+      const next = duplicateActionInList(imported, 0)
+      expect(next).toHaveLength(2)
+      // Source retains its provenance untouched.
+      expect(next[0].metadata?.import_action_uid).toBe('har-act-0001')
+      // Clone loses import_action_uid, import_credential_targets, and [REDACTED] values while keeping user metadata.
+      expect(next[1].metadata).toEqual({ source_transaction: 'Login' })
+      expect(next[1].headers).toEqual({ Accept: 'application/json' })
+      expect(next[1].body).toBe('')
+      const nestedClone = (next[1].control as { steps: ScriptActionDefinition[] }).steps[0]
+      expect(nestedClone.metadata).toBeUndefined()
+      expect(nestedClone.headers).toEqual([{ name: 'Content-Type', value: 'application/json' }])
+    })
+
+    it('strips provenance and [REDACTED] values from http_sequence params.requests and http_async_start params.request', () => {
+      const imported: ScriptActionDefinition[] = [
+        {
+          name: 'Parallel Aura Sequence',
+          type: 'http_sequence',
+          metadata: { import_action_uid: 'seq-0001' },
+          params: {
+            concurrent: true,
+            requests: [
+              {
+                name: 'Aura Child 1',
+                type: 'request',
+                target: 'https://example.test/login?pw=[REDACTED]',
+                headers: { Authorization: '[REDACTED]', Accept: 'application/json' },
+                header_list: [
+                  { name: 'Authorization', value: 'Bearer [REDACTED]' },
+                  { name: 'Accept', value: 'application/json' },
+                ],
+                body: 'un=alice&pw=[REDACTED]',
+                metadata: {
+                  import_action_uid: 'har-entry-10',
+                  import_credential_targets: ['headers.Authorization'],
+                  import_header_fidelity: { redacted: true },
+                  import_multipart_fidelity: { parts: 1 },
+                  script_projection_response_gate_v1: true,
+                  restored_body_protected: true,
+                  import_review: { source: 'script_projection', findings: ['redacted'] },
+                  replay_blockers: ['import_review_required', 'keep_blocker'],
+                  note: 'keep-child',
+                },
+              },
+            ],
+          },
+        } as unknown as ScriptActionDefinition,
+        {
+          name: 'Async Poll Start',
+          type: 'http_async_start',
+          metadata: { import_action_uid: 'async-0001' },
+          params: {
+            request: {
+              name: 'Async Inner Request',
+              type: 'request',
+              headers: [{ name: 'Authorization', value: '[REDACTED]' }, { name: 'Accept', value: '*/*' }],
+              body: '[REDACTED]',
+              metadata: {
+                import_action_uid: 'har-entry-20',
+                import_credential_targets: ['headers[0]'],
+              },
+            },
+          },
+        } as unknown as ScriptActionDefinition,
+      ]
+
+      const afterSeqDup = duplicateActionInList(imported, 0)
+      expect(afterSeqDup).toHaveLength(3)
+      // Original http_sequence child keeps its provenance untouched.
+      const origSeqChild = ((afterSeqDup[0].params as { requests: ScriptActionDefinition[] }).requests)[0]
+      expect(origSeqChild.metadata?.import_action_uid).toBe('har-entry-10')
+      // Cloned http_sequence child has provenance and [REDACTED] values stripped.
+      const clonedSeqChild = ((afterSeqDup[1].params as { requests: ScriptActionDefinition[] }).requests)[0]
+      expect(clonedSeqChild.metadata).toEqual({ note: 'keep-child', replay_blockers: ['keep_blocker'] })
+      expect(clonedSeqChild.target).toBe('https://example.test/login?pw=')
+      expect(clonedSeqChild.headers).toEqual({ Accept: 'application/json' })
+      expect((clonedSeqChild as unknown as { header_list?: unknown }).header_list).toEqual([{ name: 'Accept', value: 'application/json' }])
+      expect(clonedSeqChild.body).toBe('un=alice&pw=')
+
+      const afterAsyncDup = duplicateActionInList(afterSeqDup, 2)
+      expect(afterAsyncDup).toHaveLength(4)
+      const clonedAsyncChild = (afterAsyncDup[3].params as { request: ScriptActionDefinition }).request
+      expect(clonedAsyncChild.metadata).toBeUndefined()
+      expect(clonedAsyncChild.headers).toEqual([{ name: 'Accept', value: '*/*' }])
+      expect(clonedAsyncChild.body).toBe('')
+    })
   })
 
   describe('transactions', () => {

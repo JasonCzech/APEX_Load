@@ -129,6 +129,21 @@ func TestRedactAssociatesStructuredSensitiveNamesWithShortValues(t *testing.T) {
 			input:  `input[data-token="brief"]`,
 			secret: "brief",
 		},
+		{
+			name:   "Salesforce HAR postData params pw",
+			input:  "{\n  \"name\": \"pw\",\n  \"value\": \"SandboxPass!99\"\n}",
+			secret: "SandboxPass!99",
+		},
+		{
+			name:   "Salesforce HAR form text pw and frontdoor sid",
+			input:  `"text": "un=perf%40example.test&pw=SandboxPass%2199", "url": "https://org.my.salesforce.com/secur/frontdoor.jsp?sid=00Daa0000012345!AQEAQFakeSessionTokenValue1234567890&cshc=x"`,
+			secret: "SandboxPass%2199",
+		},
+		{
+			name:   "Salesforce JSON-escaped hidden sid input",
+			input:  `"text": "<form><input type=\"hidden\" name=\"sid\" id=\"sid\" value=\"00Daa0000012345!AQEAQHiddenFormSession1234567890\" /></form>"`,
+			secret: "00Daa0000012345!AQEAQHiddenFormSession1234567890",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -137,6 +152,11 @@ func TestRedactAssociatesStructuredSensitiveNamesWithShortValues(t *testing.T) {
 				t.Fatalf("Redact(%q) = %q, changed=%t", test.input, got, changed)
 			}
 		})
+	}
+	// Minified JS identifiers such as "const pw=a" must not be false-positived.
+	jsBundle := `function f(a){const pw=a+1;var Pw=2;return pw+Pw;}`
+	if got, changed := Redact(jsBundle); changed || got != jsBundle {
+		t.Fatalf("minified JS unexpectedly redacted: %q", got)
 	}
 }
 

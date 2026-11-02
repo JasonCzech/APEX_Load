@@ -376,10 +376,126 @@ export function uniqueActionName(base: string, existing: string[]): string {
   return candidate
 }
 
+function scrubRedactedStringsInPlace(node: unknown, skipKeys?: ReadonlySet<string>): unknown {
+  if (typeof node === 'string') {
+    return node.includes('[REDACTED]') ? node.split('[REDACTED]').join('') : node
+  }
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      node[i] = scrubRedactedStringsInPlace(node[i])
+    }
+    return node
+  }
+  if (node && typeof node === 'object') {
+    const record = node as Record<string, unknown>
+    for (const key of Object.keys(record)) {
+      if (skipKeys?.has(key)) continue
+      record[key] = scrubRedactedStringsInPlace(record[key])
+    }
+  }
+  return node
+}
+
+function stripClonedActionImportProvenance(action: ScriptActionDefinition): void {
+  if (action.metadata && typeof action.metadata === 'object') {
+    const meta = action.metadata as Record<string, unknown>
+    delete meta.import_action_uid
+    delete meta.import_credential_targets
+    delete meta.import_credential_target_keys
+    delete meta.import_header_fidelity
+    delete meta.import_multipart_fidelity
+    delete meta.script_projection_response_gate_v1
+    delete meta.restored_body_protected
+    if (meta.import_review && typeof meta.import_review === 'object' && !Array.isArray(meta.import_review)) {
+      const review = meta.import_review as Record<string, unknown>
+      if (review.source === 'script_projection') {
+        delete meta.import_review
+        if (Array.isArray(meta.replay_blockers)) {
+          const filtered = meta.replay_blockers.filter(entry => entry !== 'import_review_required')
+          if (filtered.length > 0) meta.replay_blockers = filtered
+          else delete meta.replay_blockers
+        }
+      }
+    }
+    if (Object.keys(meta).length === 0) {
+      delete action.metadata
+    }
+  }
+  const anyAction = action as unknown as Record<string, unknown>
+  if (Array.isArray(action.headers)) {
+    const rawHeaders = action.headers as Array<{ name?: string; value?: string }>
+    ;(action as unknown as { headers?: unknown }).headers = rawHeaders.filter(
+      header => !header?.name?.includes('[REDACTED]') && !header?.value?.includes('[REDACTED]'),
+    )
+  } else if (action.headers && typeof action.headers === 'object') {
+    const record = action.headers as Record<string, string>
+    for (const key of Object.keys(record)) {
+      if (key.includes('[REDACTED]') || record[key]?.includes('[REDACTED]')) {
+        delete record[key]
+      }
+    }
+  }
+  if (Array.isArray(anyAction.header_list)) {
+    const rawHeaderList = anyAction.header_list as Array<{ name?: string; value?: string }>
+    const filteredHeaderList = rawHeaderList.filter(
+      header => !header?.name?.includes('[REDACTED]') && !header?.value?.includes('[REDACTED]'),
+    )
+    if (filteredHeaderList.length > 0) {
+      anyAction.header_list = filteredHeaderList
+    } else {
+      delete anyAction.header_list
+    }
+  }
+  if (action.control && typeof action.control === 'object') {
+    const ctrl = action.control as unknown as Record<string, unknown>
+    if (Array.isArray(ctrl.steps)) {
+      for (const child of ctrl.steps as ScriptActionDefinition[]) stripClonedActionImportProvenance(child)
+    }
+    if (Array.isArray(ctrl.else)) {
+      for (const child of ctrl.else as ScriptActionDefinition[]) stripClonedActionImportProvenance(child)
+    }
+    if (Array.isArray(ctrl.default)) {
+      for (const child of ctrl.default as ScriptActionDefinition[]) stripClonedActionImportProvenance(child)
+    }
+    if (Array.isArray(ctrl.cases)) {
+      for (const branch of ctrl.cases as Array<{ steps?: ScriptActionDefinition[] }>) {
+        if (Array.isArray(branch?.steps)) {
+          for (const child of branch.steps) stripClonedActionImportProvenance(child)
+        }
+      }
+    }
+  }
+  if (action.params && typeof action.params === 'object') {
+    const params = action.params as Record<string, unknown>
+    if (Array.isArray(params.requests)) {
+      for (const child of params.requests as ScriptActionDefinition[]) {
+        if (child && typeof child === 'object') stripClonedActionImportProvenance(child)
+      }
+    }
+    if (params.request && typeof params.request === 'object' && !Array.isArray(params.request)) {
+      stripClonedActionImportProvenance(params.request as ScriptActionDefinition)
+    }
+  }
+  if (Array.isArray(anyAction.branches)) {
+    for (const branch of anyAction.branches as Array<{ steps?: ScriptActionDefinition[]; actions?: ScriptActionDefinition[] }>) {
+      if (Array.isArray(branch?.steps)) {
+        for (const child of branch.steps) stripClonedActionImportProvenance(child)
+      }
+      if (Array.isArray(branch?.actions)) {
+        for (const child of branch.actions) stripClonedActionImportProvenance(child)
+      }
+    }
+  }
+  scrubRedactedStringsInPlace(action, new Set(['metadata', 'control']))
+}
+
 /**
  * Insert a deep copy of the action at `index` directly after it, with a unique
  * name. The clone is a full deep copy (all keys, incl. unknown/params.*, and
- * nested control steps) so editing it never mutates the original.
+ * nested control steps) so editing it never mutates the original. Imported
+ * single-action provenance IDs (`import_action_uid`) and redacted credential
+ * preservation markers are stripped from the clone so saving never rejects the
+ * copy as a duplicate provenance UID or unbacked `[REDACTED]` placeholder.
  */
 export function duplicateActionInList(
   actions: ScriptActionDefinition[],
@@ -388,6 +504,7 @@ export function duplicateActionInList(
   const source = actions[index]
   if (!source) return actions
   const clone = JSON.parse(JSON.stringify(source)) as ScriptActionDefinition
+  stripClonedActionImportProvenance(clone)
   clone.name = uniqueActionName(source.name || source.type || 'action', actions.map(a => a.name || ''))
   return [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)]
 }

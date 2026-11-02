@@ -319,8 +319,18 @@ func (g *importReferenceGuard) scopes() (*importReferenceScope, *importReference
 // requestChanged reports whether what the request at actionPath resolves
 // through differs between the candidate and the prior script.
 func (g *importReferenceGuard) requestChanged(actionPath string) bool {
+	return g.requestChangedBetween(actionPath, actionPath)
+}
+
+// requestChangedBetween reports whether what the candidate request at
+// candidateActionPath resolves through differs from what its matched prior
+// request at priorActionPath resolved through.
+func (g *importReferenceGuard) requestChangedBetween(candidateActionPath, priorActionPath string) bool {
+	if candidateActionPath == "" || priorActionPath == "" {
+		return true
+	}
 	candidate, prior := g.scopes()
-	return g.unreadable || candidate.dependencies(actionPath) != prior.dependencies(actionPath)
+	return g.unreadable || candidate.dependencies(candidateActionPath) != prior.dependencies(priorActionPath)
 }
 
 // scriptChanged reports whether what any request resolves through differs, for

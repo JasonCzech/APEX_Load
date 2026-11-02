@@ -1477,4 +1477,106 @@ describe('SourceMappingReview', () => {
     expect(container.textContent).toContain('Original import path: actions[0]')
   })
 
+  it('tracks independent copy feedback per button and displays lifecycle section badges', async () => {
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => true) })
+    onTestFinished(() => {
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
+
+    const lifecycleScript = {
+      ...script,
+      init: [{ name: 'Sign In', type: 'request', method: 'POST', target: '/login' }],
+      teardown: [{ name: 'Logout', type: 'request', method: 'GET', target: '/secur/logout.jsp' }],
+    }
+    const lifecycleReview = {
+      source_files: sourceReview.source_files,
+      mappings: [
+        {
+          id: 'signin',
+          source_file: 'Action.c',
+          start_line: 3,
+          end_line: 3,
+          function: 'web_submit_data',
+          target_path: 'init[0]',
+          target_name: 'Sign In',
+          target_kind: 'action',
+          status: 'converted',
+          support_mode: 'executable',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={lifecycleReview} script={lifecycleScript} />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('.source-map-section-badge')?.textContent).toBe('Init')
+
+    const panelButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))
+    const wholeSourceBtn = () => panelButtons()[1]
+    const mappedSourceBtn = () => panelButtons()[0]
+    const mappedDslBtn = () => panelButtons()[3]
+    const wholeDslBtn = () => panelButtons()[4]
+
+    await act(async () => { wholeSourceBtn().click() })
+    await flushPromises()
+    expect(wholeSourceBtn().textContent).toBe('Copied')
+    expect(mappedSourceBtn().textContent).toBe('Copy mapped source')
+
+    await act(async () => { wholeDslBtn().click() })
+    await flushPromises()
+    expect(wholeDslBtn().textContent).toBe('Copied')
+    expect(mappedDslBtn().textContent).toBe('Copy mapped destination')
+    expect(wholeSourceBtn().textContent).toBe('Copy whole source file')
+  })
+
+  it('relabels copy whole source file as copy retained source preview when truncated beyond retention and sets aria-expanded on mapping toggle', async () => {
+    const truncatedReview = {
+      source_files: [{
+        path: 'capture.har',
+        language: 'json',
+        content: '{\n  "log": {}\n}',
+        truncated: true,
+      }],
+      mappings: [{
+        id: 'map-trunc-1',
+        source_file: 'capture.har',
+        start_line: 1,
+        end_line: 3,
+        function: 'GET /one/one.app',
+        target_path: 'actions[0]',
+        status: 'converted' as const,
+        support_mode: 'executable' as const,
+      }],
+    }
+    const simpleScript = {
+      ...script,
+      name: 'Truncated_HAR',
+      version: '1.0.0',
+      actions: [{ name: 'Open Lightning', type: 'GET', method: 'GET', target: '/one/one.app' }],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={truncatedReview} script={simpleScript} />)
+    })
+    await flushPromises()
+
+    const toggleBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      button => button.textContent?.startsWith('Show mappings') || button.textContent === 'Hide mappings',
+    )!
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('false')
+    expect(toggleBtn.getAttribute('aria-controls')).toBe('source-mapping-table-region')
+    expect(container.querySelector('#source-mapping-table-region')).not.toBeNull()
+
+    const panelButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))
+    expect(panelButtons[1]?.textContent).toBe('Copy retained source preview')
+    expect(panelButtons[1]?.getAttribute('title')).toContain('16 MiB review retention limit')
+
+    await act(async () => { toggleBtn.click() })
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('true')
+  })
+
 })

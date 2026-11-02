@@ -1945,8 +1945,8 @@ describe('ScriptEditor', () => {
     const gridHeaderRule = cssRule(editorCss, '.parameter-grid thead th')
     const formFocusRule = cssRule(editorCss, '.script-editor :where(input, select, textarea):focus-visible')
 
-    expect(backdropRule).toContain('z-index: 220;')
-    expect(dialogRule).toContain('width: min(1440px, calc(100vw - 48px));')
+    expect(backdropRule).toContain('z-index: var(--z-modal, 220);')
+    expect(dialogRule).toContain('width: min(1440px, calc(100% - 48px));')
     expect(documentDialogRule).toContain('width: 100%;')
     expect(documentDialogRule).toContain('max-width: none;')
     expect(documentDialogRule).toContain('align-self: stretch;')
@@ -13741,6 +13741,79 @@ describe('ScriptEditor', () => {
       const tab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
       expect(tab.textContent).toBe('Problems 1 · 1 failed')
       expect(tab.getAttribute('aria-label')).toBe('Problems: 1 script issue, 1 failed execution')
+    })
+
+    it('renders readiness blockers in Debugger Problems, jumps to Author, and clears unexported HAR body via Delete step', async () => {
+      const blockedHarDraft: ScriptDefinition = {
+        ...initialScript,
+        actions: [
+          { name: 'Lightning Home', type: 'GET', method: 'GET', target: '/lightning/page/home' },
+          {
+            name: 'Unexported Beacon',
+            type: 'POST',
+            method: 'POST',
+            target: '/aura?r=94',
+            metadata: { execution_blockers: ['har_request_body_not_exported'], review_required: true },
+          },
+        ],
+      }
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={blockedHarDraft} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      const problemsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+      expect(problemsTab.textContent).toBe('Problems 1')
+      await act(async () => { problemsTab.click() })
+      await flushReact()
+
+      const problemButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-problem-list button')).find(btn => btn.textContent?.includes('Supply or remove unexported HAR request body'))
+      expect(problemButton).toBeTruthy()
+      await act(async () => { problemButton!.click() })
+      await flushReact()
+
+      const repairPanel = container.querySelector<HTMLElement>('[data-blocker-repair]')
+      expect(repairPanel).toBeTruthy()
+      const deleteStepBtn = findButtonByText(repairPanel!, 'Delete step')
+      expect(deleteStepBtn).toBeTruthy()
+      await act(async () => { deleteStepBtn!.click() })
+      await flushReact()
+
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+    })
+
+    it('disables Debug and surfaces an inline alert when Session Variables JSON is malformed', async () => {
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={initialScript} projectId="project-1" />)) })
+      await flushReact()
+      await setSessionVariables('{malformed')
+      expect(container.querySelector('#debug-variables-error')?.textContent).toBeTruthy()
+      expect(topbarDebug().disabled).toBe(true)
+    })
+
+    it('supports keyboard resizing on author rail separators and F9 breakpoint toggling', async () => {
+      await act(async () => { root.render(<KeyboardShortcutProvider>{withTopbar(<ScriptEditor initialScript={initialScript} projectId="project-1" />)}</KeyboardShortcutProvider>) })
+      await flushReact()
+
+      const outlineSeparator = container.querySelector<HTMLElement>('.author-rail-resize[aria-controls="script-outline-panel"]')
+      expect(outlineSeparator).toBeTruthy()
+      expect(outlineSeparator?.getAttribute('tabindex')).toBe('0')
+      const beforeWidth = Number(outlineSeparator?.getAttribute('aria-valuenow'))
+      await act(async () => {
+        outlineSeparator!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+      })
+      const afterWidth = Number(outlineSeparator?.getAttribute('aria-valuenow'))
+      expect(afterWidth).toBeGreaterThan(beforeWidth)
+
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('none')
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9', bubbles: true, cancelable: true }))
+      })
+      await flushReact()
+      expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('active')
     })
   })
 })

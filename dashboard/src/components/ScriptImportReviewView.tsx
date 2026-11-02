@@ -47,6 +47,7 @@ function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
     apexCodeMirrorTheme,
     ...(wrapLines ? [EditorView.lineWrapping] : []),
     EditorView.editable.of(false),
+    EditorView.contentAttributes.of({ 'aria-label': 'Imported metadata JSON' }),
   ], [wrapLines])
 
   return (
@@ -72,6 +73,10 @@ function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
           theme="none"
           readOnly
           editable={false}
+          onCreateEditor={view => {
+            view.scrollDOM.setAttribute('tabindex', '0')
+            view.scrollDOM.setAttribute('aria-label', 'Imported metadata JSON')
+          }}
           basicSetup={{
             lineNumbers: true,
             foldGutter: true,
@@ -317,7 +322,7 @@ export function ImportedMetadataUtilityPanel({
             {controller.importedParameterFileMappings.map(({ section, sourceName }) => (
               <li key={`${section.file}:${section.name}:metadata`} className="utility-list-item">
                 <button type="button" className="utility-link-button" onClick={() => onOpenMappedDataSource(sourceName)}>
-                  {section.file}: {section.name}{sourceName ? ` -> ${sourceName}` : ''}
+                  {section.file}: {section.name}{sourceName ? ` → ${sourceName}` : ''}
                 </button>
               </li>
             ))}
@@ -516,6 +521,7 @@ export function SourceMappingReviewDocument({
   script: ScriptDefinition
 }) {
   const { importSummary, sourceReview, trueClientPromotionReview } = controller
+  const [showAllTrueClientWarnings, setShowAllTrueClientWarnings] = useState(false)
   return (
     <section id="imported-metadata-section" className="center-document import-metadata-panel config-panel imported-metadata-section open" aria-label="Source Mapping">
       <div className="import-metadata-body">
@@ -556,9 +562,18 @@ export function SourceMappingReviewDocument({
             </div>
             {(trueClientPromotionReview.gates.importWarnings.length > 0 || trueClientPromotionReview.gates.replayWarnings.length > 0 || trueClientPromotionReview.nextActions.length > 0) && (
               <div className="import-correlation-list">
-                {trueClientPromotionReview.gates.importWarnings.slice(0, 4).map((warning, index) => <div key={`trueclient-import-warning-${index}`} className="import-correlation-card"><strong>Import Warning</strong><span>{warning}</span></div>)}
-                {trueClientPromotionReview.gates.replayWarnings.slice(0, 4).map((warning, index) => <div key={`trueclient-replay-warning-${index}`} className="import-correlation-card"><strong>Replay Warning</strong><span>{warning}</span></div>)}
+                {(showAllTrueClientWarnings ? trueClientPromotionReview.gates.importWarnings : trueClientPromotionReview.gates.importWarnings.slice(0, 4)).map((warning, index) => <div key={`trueclient-import-warning-${index}`} className="import-correlation-card"><strong>Import Warning</strong><span>{warning}</span></div>)}
+                {(showAllTrueClientWarnings ? trueClientPromotionReview.gates.replayWarnings : trueClientPromotionReview.gates.replayWarnings.slice(0, 4)).map((warning, index) => <div key={`trueclient-replay-warning-${index}`} className="import-correlation-card"><strong>Replay Warning</strong><span>{warning}</span></div>)}
                 {trueClientPromotionReview.nextActions.map((action, index) => <div key={`trueclient-next-action-${index}`} className="import-correlation-card"><strong>Next Action</strong><span>{action}</span></div>)}
+                {(trueClientPromotionReview.gates.importWarnings.length > 4 || trueClientPromotionReview.gates.replayWarnings.length > 4) && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowAllTrueClientWarnings(current => !current)}
+                  >
+                    {showAllTrueClientWarnings ? 'Show fewer TruClient warnings' : 'Show all TruClient warnings'}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -614,6 +629,7 @@ export function ImportReviewCommitPanel({
   script: ScriptDefinition
 }) {
   const { draftDiffSummary, importMetadata, importSummary, reviewBaselineScript } = controller
+  const [expandedUsesByCorrelation, setExpandedUsesByCorrelation] = useState<Record<string, boolean>>({})
   return (
     <>
       {importMetadata && (
@@ -648,8 +664,8 @@ export function ImportReviewCommitPanel({
         <div className="utility-card">
           <div className="utility-card-header"><strong>Draft Diff Review</strong><span>{draftDiffSummary.changed ? 'Changed' : 'No changes'}</span></div>
           <div className="utility-metric-row">
-            <span className="metric-badge">{draftDiffSummary.actionChanges} action</span>
-            <span className="metric-badge">{draftDiffSummary.parameterChanges} parameter</span>
+            <span className="metric-badge">{draftDiffSummary.actionChanges} action{draftDiffSummary.actionChanges === 1 ? '' : 's'}</span>
+            <span className="metric-badge">{draftDiffSummary.parameterChanges} parameter{draftDiffSummary.parameterChanges === 1 ? '' : 's'}</span>
             <span className="metric-badge">{draftDiffSummary.dataSourceChanges} data</span>
           </div>
           {draftDiffSummary.details.length > 0 ? <ul className="utility-list">{draftDiffSummary.details.map((detail, index) => <li key={`imported-diff-${index}`} className="utility-list-item">{detail}</li>)}</ul> : <div className="utility-empty-state">Current draft still matches the review baseline.</div>}
@@ -661,16 +677,30 @@ export function ImportReviewCommitPanel({
         <div className="utility-card">
           <div className="utility-card-header"><strong>Correlation Inspector</strong><span>{importSummary.correlationSuggestions.length} mappings</span></div>
           <div className="utility-stack">
-            {controller.importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtTargets }) => (
-              <div key={`${correlation.name}:${correlation.found_at}`} className="utility-suggestion-card">
+            {controller.importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtTargets }) => {
+              const correlationKey = `${correlation.name}:${correlation.found_at}`
+              const usesExpanded = Boolean(expandedUsesByCorrelation[correlationKey])
+              const visibleUseTargets = usesExpanded ? usedAtTargets : usedAtTargets.slice(0, 2)
+              return (
+              <div key={correlationKey} className="utility-suggestion-card">
                 <strong>{correlation.name}</strong>
-                <p>{foundAtLabel}{usedAtTargets.length > 0 ? ` -> ${usedAtTargets.map(target => target.label).join(', ')}` : ''}</p>
+                <p>{foundAtLabel}{usedAtTargets.length > 0 ? ` → ${usedAtTargets.map(target => target.label).join(', ')}` : ''}</p>
                 <div className="utility-inline-actions">
                   {foundAtActionIndex !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectAction(foundAtActionIndex)}>Open source</button>}
-                  {usedAtTargets.slice(0, 2).map(target => <button key={`${correlation.name}:${target.location}`} type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectAction(target.actionIndex)}>Open use</button>)}
+                  {visibleUseTargets.map(target => <button key={`${correlation.name}:${target.location}`} type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectAction(target.actionIndex)}>Open use</button>)}
+                  {usedAtTargets.length > 2 && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => setExpandedUsesByCorrelation(current => ({ ...current, [correlationKey]: !current[correlationKey] }))}
+                    >
+                      {usesExpanded ? 'Show fewer uses' : `+${usedAtTargets.length - 2} more use${usedAtTargets.length - 2 === 1 ? '' : 's'}`}
+                    </button>
+                  )}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

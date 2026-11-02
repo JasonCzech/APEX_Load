@@ -47,9 +47,13 @@ type Profile struct {
 	// Filters (Recording filters, content types): requests to excluded hosts
 	// or whose responses have an excluded content type are not recorded as
 	// steps; IncludeHosts, when set, records only those hosts.
-	IncludeHosts        []string `json:"include_hosts,omitempty"`
-	ExcludeHosts        []string `json:"exclude_hosts,omitempty"`
-	ExcludeContentTypes []string `json:"exclude_content_types,omitempty"`
+	// ExcludedAuraDescriptors drops Aura POST batches whose sub-action
+	// descriptors (or Apex classname.method targets) all match one of the
+	// listed patterns (case-insensitive substring or exact match).
+	IncludeHosts            []string `json:"include_hosts,omitempty"`
+	ExcludeHosts            []string `json:"exclude_hosts,omitempty"`
+	ExcludeContentTypes     []string `json:"exclude_content_types,omitempty"`
+	ExcludedAuraDescriptors []string `json:"excluded_aura_descriptors,omitempty"`
 
 	// ThinkTimeThresholdMs is the smallest recorded pause kept as think time
 	// (VuGen: think time threshold). Zero means the default, 500 ms.
@@ -157,6 +161,7 @@ func (p Profile) validate(label string) error {
 	for name, list := range map[string][]string{
 		"record_headers": p.RecordHeaders, "drop_headers": p.DropHeaders, "include_hosts": p.IncludeHosts,
 		"exclude_hosts": p.ExcludeHosts, "exclude_content_types": p.ExcludeContentTypes,
+		"excluded_aura_descriptors": p.ExcludedAuraDescriptors,
 		"correlation.disabled_rules": p.Correlation.DisabledRules, "correlation.excluded_values": p.Correlation.ExcludedValues,
 		"correlation.excluded_content_types": p.Correlation.ExcludedContentTypes,
 	} {
@@ -368,6 +373,25 @@ func (p Profile) RecordsHost(host string) bool {
 // recorded as a step.
 func (p Profile) RecordsContentType(contentType string) bool {
 	return !contentTypeListed(contentType, p.ExcludeContentTypes)
+}
+
+// ExcludesAuraDescriptor reports whether an Aura sub-action descriptor or
+// Apex [namespace.]classname.method target matches ExcludedAuraDescriptors.
+func (p Profile) ExcludesAuraDescriptor(descriptor string) bool {
+	if len(p.ExcludedAuraDescriptors) == 0 {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(descriptor))
+	if lower == "" {
+		return false
+	}
+	for _, pattern := range p.ExcludedAuraDescriptors {
+		needle := strings.ToLower(strings.TrimSpace(pattern))
+		if needle != "" && strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // hostMatches matches a host against "host" or "*.domain".

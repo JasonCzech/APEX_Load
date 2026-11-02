@@ -50,6 +50,7 @@ const apiMock = {
   getBrokerConfigSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   applySecretBindings: vi.fn(),
   applyImportParameterization: vi.fn(),
+  excludeImportDraftActions: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
@@ -828,8 +829,10 @@ describe('ProtocolAssetImport', () => {
     })
     const nameInput = Array.from(container.querySelectorAll<HTMLInputElement>('.sample-import-grid input'))
       .find(input => input.type === 'text')
+    expect(nameInput?.disabled).toBe(true)
+    const nextFile = new File(['export default function updated() {}'], 'load-v2.js', { type: 'application/javascript' })
     await act(async () => {
-      if (nameInput) setInputValue(nameInput, 'Changed while converting')
+      root.render(<ProtocolAssetImport kind="k6" initialFile={nextFile} projectId="project-1" />)
     })
     await act(async () => {
       resolveImport?.({
@@ -1924,6 +1927,8 @@ describe('ProtocolAssetImport', () => {
     await act(async () => {
       recordedConcurrency.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    const filterTelemetry = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Filter client telemetry beacons')) as HTMLInputElement | undefined
+    expect(filterTelemetry?.checked).toBe(true)
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeTruthy()
@@ -1939,6 +1944,8 @@ describe('ProtocolAssetImport', () => {
       include_static_assets: true,
       step_transactions: true,
       recorded_concurrency: true,
+      filter_client_telemetry: true,
+      validate_only: false,
       salvage_truncated: true,
       http_version_mode: 'upgrade',
       secondary_file: comparisonFile,
@@ -2117,9 +2124,9 @@ describe('ProtocolAssetImport', () => {
       const first = holdHARImport()
       await startInspection()
       const comparisonInput = container.querySelectorAll<HTMLInputElement>('input[type="file"]')[1]
+      expect(comparisonInput?.disabled).toBe(true)
       await act(async () => {
-        Object.defineProperty(comparisonInput, 'files', { configurable: true, value: [new File(['{}'], 'comparison.har', { type: 'application/json' })] })
-        comparisonInput.dispatchEvent(new Event('change', { bubbles: true }))
+        root.render(<ProtocolAssetImport kind="har" projectId="project-1" initialComparisonFile={new File(['{}'], 'comparison.har', { type: 'application/json' })} />)
       })
       await flushPromises()
       expect(first.signal?.aborted).toBe(true)
@@ -4796,6 +4803,163 @@ describe('ProtocolAssetImport', () => {
       await clickButton('Validate Only')
       expect(zones().map(zoneStatus)).toEqual(['Validating collection.json…', 'Validating qa.postman_environment.json…'])
     })
+  })
+
+  it('opens the embedded HAR capture guide popup with optimal browser DevTools settings', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
+    })
+    const guideButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'HAR capture guide')
+    expect(guideButton).toBeTruthy()
+    await act(async () => {
+      guideButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const dialog = document.body.querySelector('[role="dialog"]')
+    expect(dialog).toBeTruthy()
+    expect(dialog?.textContent).toContain('Optimal browser HAR capture settings')
+    expect(dialog?.textContent).toContain('Preserve log')
+    expect(dialog?.textContent).toContain('Allow to generate HAR (with sensitive data)')
+    expect(dialog?.textContent).toContain('Disable cache')
+    expect(dialog?.textContent).toContain('Copy all listed as HAR')
+    expect(dialog?.textContent).toContain('.zip')
+    expect(dialog?.textContent).toContain('jq')
+
+    const closeButton = Array.from(document.body.querySelectorAll('button')).find(button => button.textContent === 'Close')
+    expect(closeButton).toBeTruthy()
+    await act(async () => {
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('accepts two HAR files dropped together, validates base URL override, supports non-destructive rename, and excludes unexported-body sub-requests in Stage 2', async () => {
+    const blockedDraft = {
+      name: 'Salesforce Login',
+      version: '1.0.0',
+      protocol: 'http',
+      project_id: 'project-1',
+      config: { base_url: 'https://org.my.salesforce.com' },
+      actions: [
+        {
+          name: 'Parallel Aura batch',
+          type: 'http_sequence',
+          params: {
+            concurrent: true,
+            requests: [
+              {
+                name: '17 - Aura Context.getCurrentApp',
+                method: 'POST',
+                url: '/aura?r=1',
+                metadata: { import_action_uid: 'har_uid_00017' },
+              },
+              {
+                name: '94 - POST aura',
+                method: 'POST',
+                url: '/aura?r=28',
+                metadata: {
+                  import_action_uid: 'har_uid_00094',
+                  execution_blockers: ['har_request_body_not_exported'],
+                  'har.request.recorded_content_length': 1024,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const cleanedDraft = {
+      ...blockedDraft,
+      actions: [
+        {
+          ...blockedDraft.actions[0],
+          params: {
+            concurrent: true,
+            requests: [blockedDraft.actions[0].params.requests[0]],
+          },
+        },
+      ],
+    }
+    apiMock.importHAR.mockResolvedValueOnce({
+      script: blockedDraft,
+      stats: { total_entries: 246, filtered_assets: 179, filtered_telemetry: 2, converted_actions: 65 },
+      preflight: { valid: false, status: 'fail', execution_blockers: 1, checks: [] },
+      summary: {
+        artifact_mode: 'design_har_pair',
+        har_diff: {
+          baseline_entries: 65,
+          comparison_entries: 65,
+          matched_entries: 65,
+          dynamic_candidates: 4,
+          static_candidates: 1,
+          classifications: [
+            { name: 'corr_salesforce_sid', classification: 'dynamic', diff_confidence: 0.96, producer_found: true, found_in_step: 2, used_in_steps: [3, 5] },
+          ],
+        },
+      },
+    })
+    apiMock.excludeImportDraftActions.mockResolvedValueOnce({
+      script: cleanedDraft,
+      removed_count: 1,
+      preflight: { valid: true, status: 'pass', execution_blockers: 0, checks: [] },
+      secret_binding_requirements: [],
+      warnings: [],
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
+    })
+
+    const primaryInput = container.querySelectorAll<HTMLInputElement>('input[type="file"]')[0]
+    const harA = new File(['{"log":{"entries":[{"a":1}]}}'], 'login-1.har', { type: 'application/json' })
+    const harB = new File(['{"log":{"entries":[{"a":2}]}}'], 'login-2.har', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(primaryInput, 'files', { configurable: true, value: [harA, harB] })
+      primaryInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('login-1.har')
+    expect(container.textContent).toContain('login-2.har')
+
+    const baseInput = container.querySelector('input[placeholder="https://api.example.com"]') as HTMLInputElement
+    await act(async () => {
+      setInputValue(baseInput, 'not-a-valid-url')
+    })
+    const inspectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))!
+    await act(async () => {
+      inspectButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Base URL override must start with http://, https://, or a {{...}} template variable.')
+    expect(apiMock.importHAR).not.toHaveBeenCalled()
+
+    await act(async () => {
+      setInputValue(baseInput, '')
+    })
+    await act(async () => {
+      inspectButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.importHAR).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Correlation studio & capture funnel')
+    expect(container.textContent).toContain('94 - POST aura')
+
+    // Editing Script Name in Stage 2 updates the draft name in place without discarding the review!
+    const nameInput = container.querySelector('input[placeholder="Imported HAR Script"]') as HTMLInputElement
+    await act(async () => {
+      setInputValue(nameInput, 'Salesforce Login Suite')
+    })
+    expect(container.textContent).toContain('Correlation studio & capture funnel')
+
+    // Clicking "Exclude action from draft" removes har_uid_00094 via excludeImportDraftActions!
+    const excludeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Exclude action from draft'))
+    expect(excludeButton).toBeTruthy()
+    await act(async () => {
+      excludeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.excludeImportDraftActions).toHaveBeenCalledWith(expect.objectContaining({
+      action_uids: ['har_uid_00094'],
+      exclude_unexported_bodies: false,
+    }))
+    expect(container.textContent).not.toContain('94 - POST aura')
   })
 })
 

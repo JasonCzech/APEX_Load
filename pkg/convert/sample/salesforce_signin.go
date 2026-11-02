@@ -35,8 +35,16 @@ const (
 )
 
 type salesforceSignIn struct {
-	// token is the exchange that traded the authorization code for tokens.
+	// token is the exchange that traded the authorization code for tokens (or,
+	// when desktop is true, the last exchange of the browser sign-in bootstrap
+	// chain through /one/one.app or /home/home.jsp).
 	token int
+	// desktop marks a browser form -> frontdoor.jsp sign-in chain rather than
+	// a Mobile SDK OAuth token exchange.
+	desktop bool
+	// logoutStart is the first exchange of a trailing /secur/logout.jsp chain
+	// that moves to teardown when sign-in moves to init, or -1.
+	logoutStart int
 	// logins are the login form posts (un and pw) before it; signedIn the one
 	// that signed in (a redirect), or -1. usernames are the identity-first
 	// posts (un alone) to the same login page.
@@ -58,14 +66,18 @@ type salesforceSignIn struct {
 	carried  int
 }
 
-// findSalesforceSignIn finds a Mobile SDK OAuth sign-in: a token exchange
-// with grant_type hybrid_auth_code, or authorization_code for an app-scheme
-// redirect_uri.
+// findSalesforceSignIn finds a Mobile SDK OAuth sign-in (a token exchange with
+// grant_type hybrid_auth_code, or authorization_code for an app-scheme
+// redirect_uri) or a desktop Salesforce browser sign-in chain (login form POST
+// with un+pw redirecting to /secur/frontdoor.jsp, followed by session handoff
+// through /one/one.app or /home/home.jsp).
 func findSalesforceSignIn(exchanges []exchange) *salesforceSignIn {
+	hasOAuthTokenExchange := false
 	for index, ex := range exchanges {
 		if !strings.EqualFold(ex.Method, "POST") || !strings.HasSuffix(urlPath(ex.URL), "/services/oauth2/token") || ex.BodyEncoding != "" {
 			continue
 		}
+		hasOAuthTokenExchange = true
 		form, err := url.ParseQuery(ex.Body)
 		if err != nil {
 			continue
@@ -80,43 +92,160 @@ func findSalesforceSignIn(exchanges []exchange) *salesforceSignIn {
 		default:
 			continue
 		}
-		signIn := &salesforceSignIn{token: index, signedIn: -1}
-		// One pass reads the form posts before the exchange: login posts carry
-		// un and pw, identity-first posts un alone to the same login page.
-		type usernamePost struct {
-			index int
-			path  string
-		}
-		var usernamePosts []usernamePost
-		loginPaths := map[string]bool{}
-		for login := 0; login < index; login++ {
-			ex := exchanges[login]
-			if !strings.EqualFold(ex.Method, "POST") || ex.BodyEncoding != "" || !strings.Contains(ex.Body, "un=") {
-				continue
-			}
-			form, err := url.ParseQuery(ex.Body)
-			if err != nil || !form.Has("un") {
-				continue
-			}
-			path := urlPath(ex.URL)
-			if !form.Has("pw") {
-				usernamePosts = append(usernamePosts, usernamePost{index: login, path: path})
-				continue
-			}
-			signIn.logins = append(signIn.logins, login)
-			loginPaths[path] = true
-			if response := ex.Response; response != nil && response.Status >= 300 && response.Status < 400 {
-				signIn.signedIn = login
-			}
-		}
-		for _, post := range usernamePosts {
-			if loginPaths[post.path] {
-				signIn.usernames = append(signIn.usernames, post.index)
-			}
-		}
+		signIn := &salesforceSignIn{token: index, signedIn: -1, logoutStart: -1}
+		populateSalesforceSignInForms(signIn, exchanges, index)
 		return signIn
 	}
-	return nil
+	if hasOAuthTokenExchange {
+		return nil
+	}
+	return findDesktopSalesforceSignIn(exchanges)
+}
+
+func populateSalesforceSignInForms(signIn *salesforceSignIn, exchanges []exchange, limit int) {
+	// One pass reads the form posts before limit: login posts carry un and pw,
+	// identity-first posts un alone to the same login page.
+	type usernamePost struct {
+		index int
+		path  string
+	}
+	var usernamePosts []usernamePost
+	loginPaths := map[string]bool{}
+	for login := 0; login < limit; login++ {
+		ex := exchanges[login]
+		if !strings.EqualFold(ex.Method, "POST") || ex.BodyEncoding != "" || !strings.Contains(ex.Body, "un=") {
+			continue
+		}
+		form, err := url.ParseQuery(ex.Body)
+		if err != nil || !form.Has("un") {
+			continue
+		}
+		path := urlPath(ex.URL)
+		if !form.Has("pw") {
+			usernamePosts = append(usernamePosts, usernamePost{index: login, path: path})
+			continue
+		}
+		signIn.logins = append(signIn.logins, login)
+		loginPaths[path] = true
+		if response := ex.Response; response != nil && response.Status >= 300 && response.Status < 400 {
+			signIn.signedIn = login
+		}
+	}
+	for _, post := range usernamePosts {
+		if loginPaths[post.path] {
+			signIn.usernames = append(signIn.usernames, post.index)
+		}
+	}
+}
+
+func findDesktopSalesforceSignIn(exchanges []exchange) *salesforceSignIn {
+	signedIn := -1
+	frontdoorIdx := -1
+	for index, ex := range exchanges {
+		if !strings.EqualFold(ex.Method, "POST") || ex.BodyEncoding != "" || !strings.Contains(ex.Body, "un=") || !strings.Contains(ex.Body, "pw=") {
+			continue
+		}
+		if ex.Response == nil || ex.Response.Status < 300 || ex.Response.Status >= 400 {
+			continue
+		}
+		form, err := url.ParseQuery(ex.Body)
+		if err != nil || !form.Has("un") || !form.Has("pw") {
+			continue
+		}
+		loc := headerLookup(ex.Response.Headers, "Location")
+		if !strings.HasSuffix(strings.ToLower(urlPath(loc)), "/secur/frontdoor.jsp") {
+			continue
+		}
+		// Require an actual GET /secur/frontdoor.jsp follow-up in the capture so
+		// external web-app OAuth redirects are never misclassified as desktop sessions.
+		fd := -1
+		for next := index + 1; next < len(exchanges) && next <= index+8; next++ {
+			if strings.HasSuffix(strings.ToLower(urlPath(exchanges[next].URL)), "/secur/frontdoor.jsp") {
+				fd = next
+				break
+			}
+		}
+		if fd < 0 {
+			continue
+		}
+		signedIn = index
+		frontdoorIdx = fd
+		break
+	}
+	if signedIn < 0 || frontdoorIdx < 0 {
+		return nil
+	}
+	end := frontdoorIdx
+	reachedOneApp200 := false
+	for next := frontdoorIdx + 1; next < len(exchanges); next++ {
+		ex := exchanges[next]
+		p := strings.ToLower(strings.TrimRight(urlPath(ex.URL), "/"))
+		if p == "/aura" || strings.HasSuffix(p, "/aura") || strings.HasPrefix(p, "/services/") || strings.HasSuffix(p, "/secur/logout.jsp") {
+			break
+		}
+		if reachedOneApp200 {
+			if p == "/one/one.app" {
+				end = next
+				continue
+			}
+			break
+		}
+		switch {
+		case strings.HasSuffix(p, "/secur/frontdoor.jsp"),
+			strings.HasSuffix(p, "/secur/contentdoor"),
+			strings.HasSuffix(p, "/visualforce/session"),
+			strings.HasSuffix(p, "/visualforce/recsession"),
+			strings.Contains(p, "/apex/") && strings.Contains(p, "loginflow"),
+			strings.HasSuffix(p, "/home/home.jsp"):
+			end = next
+		case p == "/one/one.app":
+			end = next
+			if ex.Response != nil && ex.Response.Status >= 200 && ex.Response.Status < 300 {
+				reachedOneApp200 = true
+			}
+		case ex.Response != nil && ex.Response.Status >= 300 && ex.Response.Status < 400:
+			// Intermediate redirect hops inside the login/session handoff chain.
+			continue
+		}
+	}
+	signIn := &salesforceSignIn{
+		token:       end,
+		desktop:     true,
+		signedIn:    signedIn,
+		logoutStart: findDesktopSalesforceLogoutStart(exchanges, end),
+	}
+	populateSalesforceSignInForms(signIn, exchanges, signedIn+1)
+	return signIn
+}
+
+func findDesktopSalesforceLogoutStart(exchanges []exchange, signInEnd int) int {
+	for index := signInEnd + 1; index < len(exchanges); index++ {
+		p := strings.ToLower(strings.TrimRight(urlPath(exchanges[index].URL), "/"))
+		if !strings.HasSuffix(p, "/secur/logout.jsp") {
+			continue
+		}
+		// Must leave at least one application step between sign-in and sign-out.
+		if index <= signInEnd+1 {
+			continue
+		}
+		onlyPostLogout := true
+		for tail := index + 1; tail < len(exchanges); tail++ {
+			tp := strings.ToLower(strings.TrimRight(urlPath(exchanges[tail].URL), "/"))
+			if tp == "/aura" || strings.HasSuffix(tp, "/aura") ||
+				strings.HasPrefix(tp, "/services/") ||
+				tp == "/one/one.app" ||
+				strings.HasPrefix(tp, "/lightning") ||
+				strings.Contains(tp, "/visualforce/") ||
+				strings.Contains(tp, "/apex/") {
+				onlyPostLogout = false
+				break
+			}
+		}
+		if onlyPostLogout {
+			return index
+		}
+	}
+	return -1
 }
 
 func urlPath(raw string) string {
@@ -312,12 +441,17 @@ func (s *salesforceSignIn) moveToInit(script *dsl.Script, exchanges []exchange, 
 	}
 	end := position(s.token)
 	if end < 0 {
+		if s.desktop {
+			return newIndex, mappings, 0, "the sign-in bootstrap step was folded into a background conversation"
+		}
 		return newIndex, mappings, 0, "the token exchange was folded into a background conversation"
 	}
-	// The app reads the signed-in user's identity right after the exchange.
-	for next := s.token + 1; next < len(exchanges) && strings.EqualFold(exchanges[next].Method, "GET") && strings.Contains(urlPath(exchanges[next].URL), "/id/"); next++ {
-		if p := position(next); p > end {
-			end = p
+	if !s.desktop {
+		// The app reads the signed-in user's identity right after the exchange.
+		for next := s.token + 1; next < len(exchanges) && strings.EqualFold(exchanges[next].Method, "GET") && strings.Contains(urlPath(exchanges[next].URL), "/id/"); next++ {
+			if p := position(next); p > end {
+				end = p
+			}
 		}
 	}
 	boundary, ok := extendPastOpenTransactions(script.Actions, end+1)
@@ -358,6 +492,17 @@ func (s *salesforceSignIn) moveToInit(script *dsl.Script, exchanges []exchange, 
 	}
 	script.Init = append([]dsl.Action(nil), script.Actions[:boundary]...)
 	script.Actions = append([]dsl.Action(nil), script.Actions[boundary:]...)
+	if s.desktop {
+		// Authentication and session-bootstrap extractors in a desktop sign-in
+		// chain must fail fast when a sign-in step fails instead of replaying a
+		// recorded user's stale Location or sid fallback.
+		for i := range script.Init {
+			for j := range script.Init[i].Extractors {
+				script.Init[i].Extractors[j].OnMiss = "fail"
+				script.Init[i].Extractors[j].DefaultValue = nil
+			}
+		}
+	}
 	moved := make([]int, len(exchanges))
 	for index := range exchanges {
 		p := position(index)
@@ -446,12 +591,89 @@ func moveActionPath(path string, boundary int) string {
 	return fmt.Sprintf("actions[%d]%s", index-boundary, rest)
 }
 
+// moveTeardownPath rewrites an actions[i] path after actions[startPos:] moved
+// to teardown.
+func moveTeardownPath(path string, startPos int) string {
+	match := actionPathIndex.FindStringSubmatch(path)
+	if match == nil {
+		return path
+	}
+	index, err := strconv.Atoi(match[1])
+	if err != nil || index < startPos {
+		return path
+	}
+	rest := path[len(match[0]):]
+	return fmt.Sprintf("teardown[%d]%s", index-startPos, rest)
+}
+
+// moveLogoutToTeardown moves a trailing desktop /secur/logout.jsp chain into
+// teardown after sign-in moved to init, so multi-iteration runs do not sign
+// out on iteration 1.
+func (s *salesforceSignIn) moveLogoutToTeardown(script *dsl.Script, exchanges []exchange, newIndex []int, mappings []sourceview.Mapping) ([]int, []sourceview.Mapping, int) {
+	if s == nil || s.logoutStart < 0 || s.logoutStart >= len(exchanges) || script == nil || len(script.Init) == 0 || len(script.Teardown) > 0 {
+		return newIndex, mappings, 0
+	}
+	if newIndex == nil || s.logoutStart >= len(newIndex) {
+		return newIndex, mappings, 0
+	}
+	startPos := newIndex[s.logoutStart]
+	if startPos <= 0 || startPos >= len(script.Actions) {
+		return newIndex, mappings, 0
+	}
+	// Include any transaction start markers immediately preceding startPos so a
+	// step transaction wrapping logout moves whole into teardown.
+	for startPos > 0 && script.Actions[startPos-1].Type == "source_transaction" && !transactionMarkerEnds(script.Actions[startPos-1]) {
+		startPos--
+	}
+	if startPos <= 0 || len(openTransactionNames(script.Actions[:startPos])) > 0 {
+		return newIndex, mappings, 0
+	}
+	// Do not split an async background conversation across actions and teardown.
+	startedBefore := map[string]bool{}
+	for _, action := range script.Actions[:startPos] {
+		switch action.Type {
+		case "http_async_start":
+			if pattern, _ := action.Params["pattern"].(string); pattern != "once" {
+				id, _ := action.Params["id"].(string)
+				startedBefore[id] = true
+			}
+		case "http_async_stop":
+			id, _ := action.Params["id"].(string)
+			delete(startedBefore, id)
+		}
+	}
+	if len(startedBefore) > 0 {
+		return newIndex, mappings, 0
+	}
+	movedCount := len(script.Actions) - startPos
+	script.Teardown = append([]dsl.Action(nil), script.Actions[startPos:]...)
+	script.Actions = append([]dsl.Action(nil), script.Actions[:startPos]...)
+	updated := make([]int, len(newIndex))
+	for i, pos := range newIndex {
+		if pos >= startPos {
+			updated[i] = -1
+		} else {
+			updated[i] = pos
+		}
+	}
+	remapped := make([]sourceview.Mapping, 0, len(mappings))
+	for _, mapping := range mappings {
+		mapping.TargetPath = moveTeardownPath(mapping.TargetPath, startPos)
+		remapped = append(remapped, mapping)
+	}
+	return updated, remapped, movedCount
+}
+
 // warnings explains the sign-in shaping to the tester.
 func (s *salesforceSignIn) warnings(moved int, notMoved string) []string {
 	var out []string
 	switch {
 	case moved > 0:
-		out = append(out, fmt.Sprintf("The Salesforce sign-in runs in init (%d steps), so each virtual user signs in once and every iteration reuses its Bearer token.", moved))
+		if s.desktop {
+			out = append(out, fmt.Sprintf("The Salesforce sign-in runs in init (%d steps), so each virtual user signs in once and every iteration reuses its session.", moved))
+		} else {
+			out = append(out, fmt.Sprintf("The Salesforce sign-in runs in init (%d steps), so each virtual user signs in once and every iteration reuses its Bearer token.", moved))
+		}
 		if s.carried > 0 {
 			quoted := make([]string, len(s.spanning))
 			for index, name := range s.spanning {
@@ -476,18 +698,25 @@ func (s *salesforceSignIn) warnings(moved int, notMoved string) []string {
 }
 
 // stepBoundary is where a step transaction must start so that none spans the
-// sign-in: the first exchange after the token exchange and the identity
-// requests that follow it, which move to init. Nil without a sign-in.
+// sign-in (or trailing sign-out): the first exchange after the sign-in chain,
+// and the first exchange of a trailing /secur/logout.jsp chain. Nil without a
+// sign-in.
 func (s *salesforceSignIn) stepBoundary(exchanges []exchange) map[int]bool {
 	if s == nil || s.token < 0 || s.token >= len(exchanges) {
 		return nil
 	}
 	next := s.token + 1
-	for next < len(exchanges) && strings.EqualFold(exchanges[next].Method, "GET") && strings.Contains(urlPath(exchanges[next].URL), "/id/") {
-		next++
+	if !s.desktop {
+		for next < len(exchanges) && strings.EqualFold(exchanges[next].Method, "GET") && strings.Contains(urlPath(exchanges[next].URL), "/id/") {
+			next++
+		}
 	}
 	if next >= len(exchanges) {
 		return nil
 	}
-	return map[int]bool{next: true}
+	boundaries := map[int]bool{next: true}
+	if s.logoutStart > next && s.logoutStart < len(exchanges) {
+		boundaries[s.logoutStart] = true
+	}
+	return boundaries
 }

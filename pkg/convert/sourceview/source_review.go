@@ -268,6 +268,9 @@ func unquoteJSONString(value string) string {
 }
 
 func reviewSensitiveName(name string) bool {
+	if strings.EqualFold(strings.TrimSpace(name), "sid") {
+		return true
+	}
 	return scrub.SensitiveName(name) || (scrub.Policy{}).SensitiveHeader(name)
 }
 
@@ -401,9 +404,13 @@ type sourceRedactor struct {
 
 var sourceRedactors = []sourceRedactor{
 	{regexp.MustCompile(`(?i)(lr_unmask\(\s*")([^"]+)("\s*\))`), `${1}[REDACTED]${3}`},
-	{regexp.MustCompile(`(?i)("(?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret|authorization|cookie|set-cookie)"\s*:\s*")([^"]+)(")`), `${1}[REDACTED]${3}`},
-	{regexp.MustCompile(`(?i)("Name=(?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret)"\s*,\s*"Value=)([^"]+)(")`), `${1}[REDACTED]${3}`},
+	{regexp.MustCompile(`(?i)("(?:password|passwd|pwd|pw|sid|token|access_token|refresh_token|id_token|api[_-]?key|secret|authorization|cookie|set-cookie)"\s*:\s*")([^"]+)(")`), `${1}[REDACTED]${3}`},
+	{regexp.MustCompile(`(?i)("Name=(?:password|passwd|pwd|pw|sid|token|access_token|refresh_token|id_token|api[_-]?key|secret)"\s*,\s*"Value=)([^"]+)(")`), `${1}[REDACTED]${3}`},
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret)\s*=\s*)([^&\s",;]+)`), `${1}[REDACTED]`},
+	{regexp.MustCompile(`(?i)((?:^|[?&"]|\\u0026)(?:pw|sid)=)([^&\s",;\\]+)`), `${1}[REDACTED]`},
+	{regexp.MustCompile(`(?is)(<input\b[^>]{0,240}?\bname=\\?"(?:password|passwd|pwd|pw|sid|token|secret)\\?"[^>]{0,240}?\bvalue=\\?")([^"\\]+)(\\?")`), `${1}[REDACTED]${3}`},
+	{regexp.MustCompile(`(?is)(<input\b[^>]{0,240}?\bvalue=\\?")([^"\\]+)(\\?"[^>]{0,240}?\bname=\\?"(?:password|passwd|pwd|pw|sid|token|secret)\\?")`), `${1}[REDACTED]${3}`},
+	{regexp.MustCompile(`\b00D[A-Za-z0-9]{12,18}(?:!|%21)[A-Za-z0-9._%]{20,}`), `[REDACTED]`},
 	{regexp.MustCompile(`(?i)((?:Authorization|Cookie|Set-Cookie)\s*[:=]\s*)([^\r\n"]+)`), `${1}[REDACTED]`},
 	{regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}`), `${1}[REDACTED]`},
 }

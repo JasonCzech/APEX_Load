@@ -392,4 +392,43 @@ describe('ScriptBlockerRepairPanel', () => {
     expect(panel().querySelector('[aria-label="Repair operation"]')).toBeNull()
     expect(panel().textContent).toContain('Load and review the current version of the script before repairing it.')
   })
+
+  it('offers 1-click Delete step and explicit Mark body supplied & clear blocker for unexported HAR request bodies', async () => {
+    const unexportedStep: ScriptActionDefinition = {
+      name: 'Beacon POST',
+      type: 'POST',
+      method: 'POST',
+      target: '/aura?r=99',
+      metadata: { execution_blockers: ['har_request_body_not_exported'], review_required: true },
+    }
+    const onDeleteStep = vi.fn()
+    const onOpenBody = vi.fn()
+    const onClearUnexportedHarBodyBlocker = vi.fn()
+    await render({
+      action: unexportedStep,
+      actionPath: 'actions[0]',
+      onDeleteStep,
+      onOpenBody,
+      onClearUnexportedHarBodyBlocker,
+    })
+    expect(Array.from(panel().querySelectorAll('.script-blocker-repair-reasons strong')).map(el => el.textContent)).toEqual([
+      'Supply or remove unexported HAR request body',
+    ])
+    expect(button('Mark body supplied & clear blocker')?.disabled).toBe(true)
+    await click('Open request body')
+    expect(onOpenBody).toHaveBeenCalledTimes(1)
+    await click('Delete step')
+    expect(onDeleteStep).toHaveBeenCalledTimes(1)
+
+    await render({
+      action: { ...unexportedStep, body: 'message=%7B%22actions%22%3A%5B%5D%7D' },
+      actionPath: 'actions[0]',
+      onDeleteStep,
+      onOpenBody,
+      onClearUnexportedHarBodyBlocker,
+    })
+    expect(button('Mark body supplied & clear blocker')?.disabled).toBe(false)
+    await click('Mark body supplied & clear blocker')
+    expect(onClearUnexportedHarBodyBlocker).toHaveBeenCalledTimes(1)
+  })
 })

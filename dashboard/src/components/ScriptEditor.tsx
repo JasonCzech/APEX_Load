@@ -3,7 +3,7 @@ import { appliedReplayExtractions } from './replayExtractionValues'
 import { captureDebugTransactionDefinitions } from './debugTransactionModel'
 import { useDebugCompletionSummary } from './debugCompletionModel'
 import { downloadBlob } from '../utils/fileUtils'
-import { parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
+import { liveTableSandboxError, parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { nativeJavaScriptTemplate } from './nativeServicesModel'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import type { ScriptApprovalQueued, ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
@@ -38,7 +38,7 @@ import { withMappingReviewState } from './sourceMappingReviewState'
 import { persistScriptAuthoringDraft } from './scriptAuthoringWorkflow'
 import { AuthoringCreateNeedsNewIntent, forgetAuthoringCreateIntent, type AuthoringCreateIntent } from './authoringCreateIntent'
 import { ActionBodyWorkspace } from './ActionBodyWorkspace'
-import { debugContinuesAfterFailure, debugRunIdError, parameterUsageLabel } from './scriptSidebarModel'
+import { debugContinuesAfterFailure, debugRunIdError, parameterUsageLabel, sessionVariablesError } from './scriptSidebarModel'
 import { DatasetChangeReview, type DatasetChange } from './DatasetChangeReview'
 import { parameterUsages, renameScriptParameter, renameDatasetColumn, validateDatasetReplacement } from './parameterIntegrity'
 import TabList from './ux/TabList'
@@ -225,6 +225,8 @@ import {
   normalizeOccurrenceIndex,
   parseScriptJsonDraft,
   phaseActionsForScript,
+  clearUnexportedHarBodyBlockerOnAction,
+  removeNestedAction,
   resolveAuthorJsonScope,
   resolveAuthorJsonScopeByKey,
   resolveNestedAction,
@@ -1267,6 +1269,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   )
   const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
+  const [showAllHttpConversionCandidates, setShowAllHttpConversionCandidates] = useState(false)
   const [httpConversionError, setHttpConversionError] = useState('')
 	const httpConversionRequestRef = useRef(0)
 	const httpConversionBlockingFindings = useMemo(() => {
@@ -4338,13 +4341,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const replayStartButtonLabel = replayOptions.startPaused
     ? (isBrowserScript ? 'Start Browser Step Through' : 'Start Step Through')
     : (isBrowserScript ? 'Run Browser Replay' : 'Run Replay')
+  const debugOptionsError = sessionVariablesError(replayOptions.variablesText) || debugRunIdError(replayOptions.runId) || liveTableSandboxError(replayOptions.liveTableSeedsText)
   const replayRunButtonTitle = replayBlockedByUnknownSecretStatus
     ? (projectProbeIsUnavailable
         ? 'Project secret status is temporarily unavailable. Retry the credential check before running.'
         : 'Checking project secret configuration before running…')
     : replayBlockedByMissingSecrets
       ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecretLabels.join(', ')}.`
-      : replayStartButtonLabel
+      : debugOptionsError || replayStartButtonLabel
   const debugActionRows = scriptPhaseActionRows
   // What the server refuses a debug start for, and so what every start
   // control follows (decision f): readiness blockers and current server
@@ -4393,6 +4397,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     hasName: Boolean(currentDraftScript.name),
     actionCount: (currentDraftScript.actions || []).length,
     jsonInvalid: Boolean(jsonParseMessage),
+    optionsError: debugOptionsError || undefined,
     secretStatus: !replayBlockedByUnknownSecretStatus ? 'known' : replaySecretStatusState === 'unavailable' ? 'unavailable' : 'checking',
     secretStatusReason: replayBlockedByUnknownSecretStatus ? replayRunButtonTitle : undefined,
     blockers: replayBlockerList,
@@ -4486,13 +4491,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
   const startAuthorRailDrag = (event: React.PointerEvent<HTMLElement>) => {
     const startX = event.clientX
-    const startW = authorRailRef.current?.offsetWidth ?? authorRailWidth ?? 240
+    const startW = authorRailWidth ?? (authorRailRef.current?.offsetWidth || 240)
     const started = startPointerDrag(event, {
       cursor: 'col-resize',
       onMove: ev => setAuthorRailWidth(clampAuthorRail(startW + (ev.clientX - startX))),
       onEnd: () => setAuthorRailResizing(false),
     })
     if (started) setAuthorRailResizing(true)
+  }
+
+  const handleAuthorRailResizeKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const width = authorRailWidth ?? (authorRailRef.current?.offsetWidth || 280)
+    const step = event.shiftKey ? 48 : 24
+    let next: number
+    if (event.key === 'ArrowRight') next = width + step
+    else if (event.key === 'ArrowLeft') next = width - step
+    else if (event.key === 'Home') next = 200
+    else if (event.key === 'End') next = 620
+    else return
+    event.preventDefault()
+    setAuthorRailWidth(clampAuthorRail(next))
   }
 
   const authorUtilityMaximum = () => {
@@ -4672,6 +4690,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       disabled: debugActionRows.length === 0 && activeAction === null,
       priority: 850,
       onTrigger: () => {
+        const row = workspaceTab === 'debug'
+          ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
+          : activeAction !== null
+            ? { phase: 'action' as const, actionIndex: activeAction, action: script.actions[activeAction] }
+            : debugActionRows[0]
+        if (row) void toggleDebugBreakpoint(row.phase, row.actionIndex)
+      },
+    },
+    {
+      id: 'script.debug.breakpoint_f9',
+      label: 'Toggle breakpoint (F9)',
+      keys: 'F9',
+      group: 'Script Editor',
+      disabled: debugActionRows.length === 0 && activeAction === null,
+      priority: 850,
+      onTrigger: () => {
+        if (workspaceTab === 'debug' && typeof document !== 'undefined' && document.activeElement?.closest('.script-outline-tree [role="treeitem"]')) {
+          return
+        }
         const row = workspaceTab === 'debug'
           ? (selectedReplayEvent ? selectedDebugRow : debugActionRows[0])
           : activeAction !== null
@@ -6214,9 +6251,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       <input
         className="topbar-title-input"
         aria-label="Script name"
+        aria-invalid={!script.name.trim() || undefined}
         placeholder="Name this script"
         value={script.name}
-        title={duplicateScriptName ? duplicateScriptNameNotice : script.name}
+        title={!script.name.trim() ? 'Script name is required before saving or debugging.' : duplicateScriptName ? duplicateScriptNameNotice : script.name}
         onChange={event => renameScriptRef.current(event.target.value)}
       />
     ),
@@ -6540,6 +6578,67 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     registerInsertTarget: insert => { referenceInsertTarget.current = insert },
     releaseInsertTarget: insert => { if (referenceInsertTarget.current === insert) referenceInsertTarget.current = null },
   }
+  const deleteBlockedInspectorStep = () => {
+    if (!activeInspectorScope) return
+    const { phase, actionIndex } = activeInspectorScope
+    const stepPath = activeInspectorScope.subAction ? authorCodeFocus?.stepPath : undefined
+    if (!stepPath?.length) {
+      removePhaseAction(phase, actionIndex)
+    } else {
+      const currentRoot = phaseActionsForScript(script, phase)[actionIndex]
+      if (!currentRoot) return
+      const previewNextRoot = removeNestedAction(currentRoot, stepPath)
+      if (previewNextRoot === null) {
+        removePhaseAction(phase, actionIndex)
+      } else {
+        updatePhaseActionList(phase, actions => {
+          const root = actions[actionIndex]
+          if (!root) return actions
+          const nextRoot = removeNestedAction(root, stepPath)
+          if (nextRoot === null) {
+            return actions.filter((_, i) => i !== actionIndex)
+          }
+          actions[actionIndex] = nextRoot
+          return actions
+        })
+        setAuthorCodeFocus({ phase, actionIndex })
+      }
+    }
+    setSuccess('Removed unexported HAR body step from the draft. Save the script to persist this change.')
+    setError('')
+  }
+
+  const clearBlockedInspectorUnexportedHarBody = () => {
+    if (!activeInspectorScope) return
+    const { phase, actionIndex } = activeInspectorScope
+    const stepPath = activeInspectorScope.subAction ? authorCodeFocus?.stepPath : undefined
+    const targetPath = activeInspectorScope.path.replace(/^script\./, '')
+    let nextScript = updateStep(script, { phase, actionIndex, stepPath }, clearUnexportedHarBodyBlockerOnAction)
+    const importMeta = nextScript.metadata?.import && typeof nextScript.metadata.import === 'object' && !Array.isArray(nextScript.metadata.import)
+      ? { ...(nextScript.metadata.import as Record<string, unknown>) }
+      : null
+    if (importMeta) {
+      const stripFidelityBlockers = (container: Record<string, unknown>) => {
+        if (!container.fidelity_report || typeof container.fidelity_report !== 'object' || Array.isArray(container.fidelity_report)) return
+        const report = { ...(container.fidelity_report as Record<string, unknown>) }
+        if (Array.isArray(report.blockers)) {
+          report.blockers = report.blockers.filter(entry => !(typeof entry === 'string' && entry.includes('har_request_body_not_exported') && entry.includes(targetPath)))
+        }
+        container.fidelity_report = report
+      }
+      stripFidelityBlockers(importMeta)
+      if (importMeta.preserved && typeof importMeta.preserved === 'object' && !Array.isArray(importMeta.preserved)) {
+        const preserved = { ...(importMeta.preserved as Record<string, unknown>) }
+        stripFidelityBlockers(preserved)
+        importMeta.preserved = preserved
+      }
+      nextScript = { ...nextScript, metadata: { ...(nextScript.metadata || {}), import: importMeta } }
+    }
+    replaceScriptWithHistory(nextScript)
+    setSuccess('Cleared unexported HAR body blocker on this step. Save the script to persist this change.')
+    setError('')
+  }
+
   const renderActionInspectorContent = (): ReactNode => (
     activeInspectorScope ? (
       <ReferenceFieldContext.Provider value={referenceFieldContext}>
@@ -6580,7 +6679,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             blockedReason={scriptId && authoringRevisionState !== 'ready' ? authoringRevisionState === 'loading' ? 'Loading the saved script. Its repairs are available once it has loaded.' : 'Load and review the current version of the script before repairing it.' : undefined}
             script={script} bodySource={protectedBodySource} action={activeInspectorScope.action} actionPath={activeInspectorScope.path.replace(/^script\./, '')}
             dirty={scriptEditorDirty} saving={saving} onSaveFirst={() => { void saveScript({ keepAuthoringOpen: true }) }}
-            onApplied={response => scriptRepairAppliedRef.current(response)} onReconcile={handleScriptRepairReconcile} />}
+            onApplied={response => scriptRepairAppliedRef.current(response)} onReconcile={handleScriptRepairReconcile}
+            onDeleteStep={deleteBlockedInspectorStep}
+            onOpenBody={() => { openCenterTab('request-body'); setNarrowAuthorPane('editor') }}
+            onClearUnexportedHarBodyBlocker={clearBlockedInspectorUnexportedHarBody} />}
         />
         </CatalogFieldDraftContext.Provider>
       </ReferenceFieldContext.Provider>
@@ -7240,12 +7342,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       />
     )
   }
+  const scriptNameDescribedBy = [!script.name.trim() ? 'script-name-required' : '', duplicateScriptName ? 'script-name-duplicate' : ''].filter(Boolean).join(' ') || undefined
   const scriptNameField = (
     <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
       <label className="script-name-field">
         <span>Script name</span>
-        <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" aria-describedby={duplicateScriptName ? 'script-name-duplicate' : undefined} />
+        <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" aria-invalid={!script.name.trim() || undefined} aria-describedby={scriptNameDescribedBy} />
       </label>
+      {!script.name.trim() && <small id="script-name-required" className="script-name-duplicate">Script name is required before saving or debugging.</small>}
       {duplicateScriptName && <small id="script-name-duplicate" className="script-name-duplicate">{duplicateScriptNameNotice}</small>}
     </div>
   )
@@ -7993,7 +8097,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             {replayStartNotice.kind === 'blocked' && <button type="button" className="btn btn-sm btn-secondary" onClick={goToReplayBlocker}>Resolve</button>}
             {replayStartNotice.kind === 'save-first' && <button type="button" className="btn btn-sm btn-secondary" disabled={saving || Boolean(replaySaveUnavailableReason)} title={replaySaveUnavailableReason} onClick={() => { void saveAndReplay() }}>Save and debug</button>}
           </div>}
-          {error && <div className="editor-toast error">
+          {error && <div className="editor-toast error" role="alert">
             {error}
             {createNeedsNewIntent && !scriptId && (
               <button type="button" className="btn btn-sm btn-secondary" disabled={saving} onClick={() => {
@@ -8007,13 +8111,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             )}
           </div>}
           {warnings.length > 0 && (
-            <div className="editor-toast warning">
+            <div className="editor-toast warning" role="status">
               {warnings.map((warning, index) => (
                 <div key={`${warning}-${index}`}>{warning}</div>
               ))}
             </div>
           )}
-          {success && <div className="editor-toast success">{success}</div>}
+          {success && <div className="editor-toast success" role="status">{success}</div>}
         </div>
       )}
 
@@ -8061,6 +8165,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               activateWorkspaceTab('author')
               openCenterTab(ACTION_LIST_TAB_ID)
               selectAuthorPhaseAction(row)
+            }}
+            additionalIssues={railAdditionalIssues}
+            onSelectAdditionalIssue={issue => {
+              if (!issue.onSelect) return
+              activateWorkspaceTab('author')
+              issue.onSelect()
             }}
             problemCount={problemCount}
             projectId={projectId}
@@ -8257,19 +8367,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 					  </div>
 					)}
                     <div className="import-correlation-list">
-                      {(httpConversionPreview.review.correlation_candidates || []).slice(0, 4).map((candidate, index) => (
+                      {(showAllHttpConversionCandidates ? (httpConversionPreview.review.correlation_candidates || []) : (httpConversionPreview.review.correlation_candidates || []).slice(0, 4)).map((candidate, index) => (
                         <div key={`http-correlation-${candidate.name}-${candidate.source}-${index}`} className="import-correlation-card">
                           <strong>Correlation · {candidate.name}</strong>
                           <span>{candidate.evidence || candidate.source}</span>
                         </div>
                       ))}
-                      {(httpConversionPreview.review.data_source_candidates || []).slice(0, 4).map((candidate, index) => (
+                      {(showAllHttpConversionCandidates ? (httpConversionPreview.review.data_source_candidates || []) : (httpConversionPreview.review.data_source_candidates || []).slice(0, 4)).map((candidate, index) => (
                         <div key={`http-data-${candidate.name}-${candidate.value}-${index}`} className="import-correlation-card">
                           <strong>Data Source · {candidate.name}</strong>
                           <span>{candidate.evidence || candidate.source}</span>
                           {candidate.value && <code>{candidate.value}</code>}
                         </div>
                       ))}
+                      {((httpConversionPreview.review.correlation_candidates?.length || 0) > 4 || (httpConversionPreview.review.data_source_candidates?.length || 0) > 4) && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setShowAllHttpConversionCandidates(current => !current)}
+                        >
+                          {showAllHttpConversionCandidates ? 'Show fewer candidates' : 'Show all conversion candidates'}
+                        </button>
+                      )}
                     </div>
                     <div className="import-correlation-card">
                       <strong>{httpConversionPreview.scenario_template.name}</strong>
@@ -8340,10 +8459,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 <div
                   className={`author-rail-resize ${authorRailResizing ? 'resizing' : ''}`}
                   role="separator"
+                  tabIndex={0}
                   aria-orientation="vertical"
+                  aria-controls="script-outline-panel"
+                  aria-valuemin={200}
+                  aria-valuemax={620}
+                  aria-valuenow={clampAuthorRail(authorRailWidth ?? (authorRailRef.current?.offsetWidth || 280))}
                   aria-label="Resize outline panel (double-click to fit content)"
                   title="Drag to resize · double-click to fit content"
                   onPointerDown={startAuthorRailDrag}
+                  onKeyDownCapture={handleAuthorRailResizeKey}
                   onDoubleClick={fitAuthorRailToContent}
                 />
               )}
@@ -8414,7 +8539,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 aria-controls="script-details-panel"
                 aria-valuemin={220}
                 aria-valuemax={authorUtilityMaxWidth}
-                aria-valuenow={authorUtilityActualWidth ?? authorUtilityWidth ?? 320}
+                aria-valuenow={Math.min(authorUtilityMaxWidth, Math.max(220, authorUtilityActualWidth ?? authorUtilityWidth ?? 320))}
                 title="Drag to resize the right sidebar"
                 onPointerDown={startAuthorUtilityDrag}
                 onKeyDownCapture={handleAuthorUtilityResizeKey}

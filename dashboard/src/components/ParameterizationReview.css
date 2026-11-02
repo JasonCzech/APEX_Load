@@ -258,3 +258,21 @@
 .paramize-aura-coverage .paramize-coverage-warning {
   color: var(--warning-text);
 }
+
+.paramize-browser-headers {
+  margin: 0 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.paramize-group .paramize-browser-headers > summary {
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.paramize-browser-headers > .paramize-list {
+  padding-top: 2px;
+}

@@ -158,7 +158,7 @@ func recognizeLegacyCredentialPreservingImport(script *dsl.Script) {
 	if script.Metadata.Import.Preserved == nil {
 		script.Metadata.Import.Preserved = make(map[string]any)
 	}
-	if policy, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string); strings.EqualFold(strings.TrimSpace(policy), dsl.ImportPreservedCredentialPolicyPreserve) {
+	if policy, exists := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string); exists && strings.TrimSpace(policy) != "" {
 		return
 	}
 	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] =

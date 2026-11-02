@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/recordedshape"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
@@ -180,7 +182,8 @@ func webSocketHARDiagnostic(item map[string]any) string {
 }
 
 // applyRecordingProfileFilters drops the exchanges a recording profile does
-// not record (host or response content type) and the headers it drops.
+// not record (host, response content type, or excluded Aura descriptors) and
+// the headers it drops.
 func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofile.Profile) ([]exchange, int) {
 	kept := exchanges[:0:0]
 	filtered := 0
@@ -189,7 +192,7 @@ func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofil
 		if ex.Response != nil {
 			contentType = responseHeaderValue(ex.Response, "Content-Type")
 		}
-		if !profile.RecordsHost(exchangeHost(ex.URL)) || !profile.RecordsContentType(contentType) {
+		if !profile.RecordsHost(exchangeHost(ex.URL)) || !profile.RecordsContentType(contentType) || exchangeAllAuraActionsExcluded(ex, profile) {
 			filtered++
 			continue
 		}
@@ -198,6 +201,92 @@ func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofil
 				ex.Headers = headersWithoutFold(ex.Headers, name)
 				ex.HeaderList = headerListWithoutFold(ex.HeaderList, name)
 			}
+		}
+		kept = append(kept, ex)
+	}
+	return kept, filtered
+}
+
+// auraExchangeDescriptors extracts sub-action descriptors (including Apex
+// [namespace.]classname.method suffixes) from an Aura POST body or query.
+func auraExchangeDescriptors(ex exchange) []string {
+	if !strings.EqualFold(strings.TrimSpace(ex.Method), "POST") {
+		return nil
+	}
+	parsed, err := url.Parse(ex.URL)
+	if err != nil {
+		return nil
+	}
+	trimmedPath := strings.TrimRight(parsed.Path, "/")
+	if trimmedPath != "/aura" && !strings.HasSuffix(trimmedPath, "/aura") {
+		return nil
+	}
+	if ex.BodyEncoding == "" && ex.Body != "" {
+		if actions := aura.ParseEnvelopeActions(ex.Body, aura.MaxEnvelopeBytes); len(actions) > 0 {
+			out := make([]string, 0, len(actions))
+			for _, act := range actions {
+				if tok := act.FilterToken(); tok != "" {
+					out = append(out, tok)
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		}
+	}
+	var queryDescs []string
+	for key := range parsed.Query() {
+		if key == "r" || strings.HasPrefix(key, "aura.") && key != "aura.ApexAction.execute" {
+			continue
+		}
+		queryDescs = append(queryDescs, key)
+	}
+	return queryDescs
+}
+
+func exchangeAllAuraActionsExcluded(ex exchange, profile *recordingprofile.Profile) bool {
+	if profile == nil || len(profile.ExcludedAuraDescriptors) == 0 {
+		return false
+	}
+	descs := auraExchangeDescriptors(ex)
+	if len(descs) == 0 {
+		return false
+	}
+	for _, d := range descs {
+		if !profile.ExcludesAuraDescriptor(d) {
+			return false
+		}
+	}
+	return true
+}
+
+// isClientTelemetryExchange reports a pure client-telemetry Aura beacon POST
+// (InstrumentationBeacon / o11y) even when the HAR export kept its body. Mixed
+// batches that also carry business sub-actions are never dropped.
+func isClientTelemetryExchange(ex exchange) bool {
+	if isAuraTelemetryBeacon(ex.Method, ex.URL) {
+		return true
+	}
+	descs := auraExchangeDescriptors(ex)
+	if len(descs) == 0 {
+		return false
+	}
+	for _, d := range descs {
+		lower := strings.ToLower(d)
+		if !strings.Contains(lower, "instrumentationbeacon") && !strings.Contains(lower, "o11y") {
+			return false
+		}
+	}
+	return true
+}
+
+func filterClientTelemetryExchanges(exchanges []exchange) ([]exchange, int) {
+	kept := exchanges[:0:0]
+	filtered := 0
+	for _, ex := range exchanges {
+		if isClientTelemetryExchange(ex) {
+			filtered++
+			continue
 		}
 		kept = append(kept, ex)
 	}

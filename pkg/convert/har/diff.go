@@ -432,9 +432,15 @@ func (a *diffAligner) reextract(corr sample.Correlation, baselineValue string, n
 	}
 	candidates := group
 	queryKeys := diffQueryKeySet(producer.RequestURL)
-	if narrowed := a.narrow(diffNarrowKey{comparison: true, template: template, group: key, queryKeys: queryKeys}, candidates); len(narrowed) > 0 {
+	narrowKey := diffObservationNarrowKey(producer)
+	if narrowed := a.narrow(diffNarrowKey{comparison: true, template: template, group: key, queryKeys: narrowKey}, candidates); len(narrowed) > 0 {
 		candidates = narrowed
-		peers = a.narrow(diffNarrowKey{template: template, group: key, queryKeys: queryKeys}, peers)
+		peers = a.narrow(diffNarrowKey{template: template, group: key, queryKeys: narrowKey}, peers)
+	} else if narrowKey != queryKeys {
+		if narrowed := a.narrow(diffNarrowKey{comparison: true, template: template, group: key, queryKeys: queryKeys}, candidates); len(narrowed) > 0 {
+			candidates = narrowed
+			peers = a.narrow(diffNarrowKey{template: template, group: key, queryKeys: queryKeys}, peers)
+		}
 	}
 	ordinal := 0
 	for index, peer := range peers {
@@ -803,8 +809,15 @@ func diffQueryKeySet(rawURL string) string {
 
 func observationsWithQueryKeySet(observations []sample.HARSourceObservation, keySet string) []sample.HARSourceObservation {
 	var out []sample.HARSourceObservation
+	useNarrowKey := strings.Contains(keySet, "#aura:")
 	for _, observation := range observations {
-		if diffQueryKeySet(observation.RequestURL) == keySet {
+		candidateKey := ""
+		if useNarrowKey {
+			candidateKey = diffObservationNarrowKey(observation)
+		} else {
+			candidateKey = diffQueryKeySet(observation.RequestURL)
+		}
+		if candidateKey == keySet {
 			out = append(out, observation)
 		}
 	}

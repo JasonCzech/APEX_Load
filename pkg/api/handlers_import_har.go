@@ -5,12 +5,14 @@ import "github.com/jasonczech/apexload/pkg/internal/importreview"
 // handlers_import_har — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,10 +48,20 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 	importReq.Opts.Profile = profile
 	importReq.Opts.RecordingProfileID = strings.TrimSpace(importReq.RecordingProfileID)
 	importReq.Opts.EntryPoint = sample.EntryPointImportHAR
+	importReq.Opts.StampActionProvenance = true
+	if secTrimmed := bytes.TrimSpace(importReq.SecondaryData); len(secTrimmed) >= 4 && bytes.HasPrefix(secTrimmed, []byte("PK\x03\x04")) {
+		if unwrapped, err := unwrapHARArchive(importReq.SecondaryData); err == nil {
+			importReq.SecondaryData = unwrapped
+		}
+	}
+	identicalComparison := len(importReq.SecondaryData) > 0 && identicalHARComparisonPayload(importReq.Data, importReq.SecondaryData)
 	// The comparison HAR converts while the baseline does; it reads its own
 	// bytes and a copy of the options, whose shared pointers (Profile and the
 	// option flags) conversion only reads.
-	comparison := startHARComparison(r.Context(), importReq.SecondaryData, importReq.Opts)
+	var comparison *harComparisonJob
+	if !identicalComparison {
+		comparison = startHARComparison(r.Context(), importReq.SecondaryData, importReq.Opts)
+	}
 	// Every return cancels the comparison. Only the success path waits for it
 	// (below): an error response must not wait for a conversion nobody will
 	// use. A canceled comparison ends at its next stage and drops its result.
@@ -69,7 +81,9 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 	if !harImportStageOK(w, r) {
 		return
 	}
-	if comparison != nil {
+	if identicalComparison {
+		recordUncomparedHARPair(result, "the baseline and comparison HAR uploads are identical captures; record two separate sessions to compare dynamic values")
+	} else if comparison != nil {
 		finished := comparison.wait(r.Context(), baselineConversion)
 		if !harImportStageOK(w, r) {
 			return
@@ -160,6 +174,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 				}
 			}
 			sample.AttachEffectiveSettings(s, result.EffectiveSettings)
+			importreview.EnsureScriptImportActionUIDs(s)
 			return nil
 		},
 	}
@@ -199,6 +214,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 		ProtectedRequirements:    protectedRequirements,
 		PreparedCredentialReview: preparedCredentialReview,
 		CredentialReviewPrepared: credentialReviewPrepared,
+		ValidateOnly:             importReq.ValidateOnly,
 	})
 }
 
@@ -668,6 +684,8 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			DisableSalesforce          *bool                                 `json:"disable_salesforce,omitempty"`
 			SalesforceNative           *bool                                 `json:"salesforce_native,omitempty"`
 			AgentforceTransform        *bool                                 `json:"agentforce_transform,omitempty"`
+			FilterClientTelemetry      *bool                                 `json:"filter_client_telemetry,omitempty"`
+			ValidateOnly               *bool                                 `json:"validate_only,omitempty"`
 			Parameterize               *bool                                 `json:"parameterize,omitempty"`
 			ParameterizationSelections []paramize.Selection                  `json:"parameterization_selections,omitempty"`
 			SecretBindings             []importreview.SecretBindingSelection `json:"secret_bindings,omitempty"`
@@ -700,6 +718,9 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		req.Options.DisableSalesforce = firstNonNilBool(req.DisableSalesforce, req.Options.DisableSalesforce, parseOptionalBool(upload.Value("disable_salesforce")))
 		req.Options.SalesforceNative = firstNonNilBool(req.SalesforceNative, req.Options.SalesforceNative, parseOptionalBool(upload.Value("salesforce_native")))
 		req.Options.AgentforceTransform = firstNonNilBool(req.AgentforceTransform, req.Options.AgentforceTransform, parseOptionalBool(upload.Value("agentforce_transform")))
+		req.Options.FilterClientTelemetry = firstNonNilBool(req.FilterClientTelemetry, req.Options.FilterClientTelemetry, parseOptionalBool(upload.Value("filter_client_telemetry")))
+		req.Options.SourceFileName = firstNonEmpty(req.Options.SourceFileName, upload.Filename)
+		req.Options.BaseURL = strings.TrimSpace(firstNonEmpty(req.Options.BaseURL, upload.Value("base_url")))
 		if param := firstNonNilBool(req.Parameterize, parseOptionalBool(upload.Value("parameterize"))); param != nil {
 			req.Options.Parameterize = *param
 		}
@@ -729,6 +750,10 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			return nil, false, false
 		}
 		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
+		validateOnly := false
+		if v := firstNonNilBool(req.ValidateOnly, parseOptionalBool(upload.Value("validate_only"))); v != nil {
+			validateOnly = *v
+		}
 		return &harImportRequest{
 			Data:               []byte(req.Content),
 			SecondaryData:      []byte(secondary),
@@ -736,6 +761,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			Opts:               req.Options,
 			RecordingProfileID: profileID,
 			SecretBindings:     req.SecretBindings,
+			ValidateOnly:       validateOnly,
 		}, comparisonSent, true
 	}
 
@@ -753,28 +779,30 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 	httpVersionMode := strings.TrimSpace(upload.Value("http_version_mode"))
 	profileID := strings.TrimSpace(firstNonEmpty(upload.Value("recording_profile_id"), upload.Value("profile_id")))
 	opts := har.ConvertOptions{
-		ScriptName:          firstNonEmpty(upload.Value("name"), upload.Name),
-		BaseURL:             upload.Value("base_url"),
-		RecordingProfileID:  profileID,
-		ConversionPolicy:    strings.TrimSpace(upload.Value("conversion_policy")),
-		CorrelationMode:     strings.TrimSpace(upload.Value("correlation_mode")),
-		ResourceMode:        strings.TrimSpace(upload.Value("resource_mode")),
-		ArtifactMode:        normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
-		RetentionDays:       parseOptionalIntDefault(upload.Value("retention_days"), 0),
-		RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
-		IncludeAssertions:   parseOptionalBool(upload.Value("include_assertions")),
-		InferExtractors:     parseOptionalBool(upload.Value("infer_extractors")),
-		IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
-		PageTitleChecks:     parseOptionalBool(upload.Value("page_title_checks")),
-		SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
-		AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
-		StepTransactions:    parseOptionalBool(upload.Value("step_transactions")),
-		RecordedConcurrency: parseOptionalBool(upload.Value("recorded_concurrency")),
-		DisableSalesforce:   parseOptionalBool(upload.Value("disable_salesforce")),
-		SalesforceNative:    parseOptionalBool(upload.Value("salesforce_native")),
-		AgentforceTransform: parseOptionalBool(upload.Value("agentforce_transform")),
-		Parameterize:        parseBoolDefault(upload.Value("parameterize"), false),
-		HTTPVersionMode:     httpVersionMode,
+		ScriptName:            firstNonEmpty(upload.Value("name"), upload.Name),
+		SourceFileName:        upload.Filename,
+		BaseURL:               strings.TrimSpace(upload.Value("base_url")),
+		RecordingProfileID:    profileID,
+		ConversionPolicy:      strings.TrimSpace(upload.Value("conversion_policy")),
+		CorrelationMode:       strings.TrimSpace(upload.Value("correlation_mode")),
+		ResourceMode:          strings.TrimSpace(upload.Value("resource_mode")),
+		ArtifactMode:          normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
+		RetentionDays:         parseOptionalIntDefault(upload.Value("retention_days"), 0),
+		RedactSensitive:       parseOptionalBool(upload.Value("redact_sensitive")),
+		IncludeAssertions:     parseOptionalBool(upload.Value("include_assertions")),
+		InferExtractors:       parseOptionalBool(upload.Value("infer_extractors")),
+		IncludeStaticAssets:   parseOptionalBool(upload.Value("include_static_assets")),
+		PageTitleChecks:       parseOptionalBool(upload.Value("page_title_checks")),
+		SalvageTruncated:      parseOptionalBool(upload.Value("salvage_truncated")),
+		AsyncScan:             parseOptionalBool(upload.Value("async_scan")),
+		StepTransactions:      parseOptionalBool(upload.Value("step_transactions")),
+		RecordedConcurrency:   parseOptionalBool(upload.Value("recorded_concurrency")),
+		DisableSalesforce:     parseOptionalBool(upload.Value("disable_salesforce")),
+		SalesforceNative:      parseOptionalBool(upload.Value("salesforce_native")),
+		AgentforceTransform:   parseOptionalBool(upload.Value("agentforce_transform")),
+		FilterClientTelemetry: parseOptionalBool(upload.Value("filter_client_telemetry")),
+		Parameterize:          parseBoolDefault(upload.Value("parameterize"), false),
+		HTTPVersionMode:       httpVersionMode,
 	}
 	if !validHTTPVersionMode(w, httpVersionMode) || !validHARImportPolicyOptions(w, opts) {
 		return nil, false, false
@@ -799,6 +827,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		RecordingProfileID: profileID,
 		Opts:               opts,
 		SecretBindings:     secretBindings,
+		ValidateOnly:       parseBoolDefault(upload.Value("validate_only"), false),
 	}, comparisonSent, true
 }
 
@@ -813,6 +842,9 @@ func firstNonNilBool(values ...*bool) *bool {
 }
 
 func validHARImportPolicyOptions(w http.ResponseWriter, opts har.ConvertOptions) bool {
+	if !validHARImportBaseURL(w, opts.BaseURL) {
+		return false
+	}
 	if _, err := sample.ValidateConversionPolicy(opts.ConversionPolicy); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return false
@@ -826,6 +858,37 @@ func validHARImportPolicyOptions(w http.ResponseWriter, opts har.ConvertOptions)
 		return false
 	}
 	return true
+}
+
+func validHARImportBaseURL(w http.ResponseWriter, raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || strings.Contains(trimmed, "{{") {
+		return true
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed == nil || strings.TrimSpace(parsed.Host) == "" ||
+		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
+		writeError(w, http.StatusBadRequest, "invalid base_url: must be an http:// or https:// URL or a {{...}} template")
+		return false
+	}
+	return true
+}
+
+func identicalHARComparisonPayload(baseline, secondary []byte) bool {
+	baseTrimmed := bytes.TrimSpace(baseline)
+	secTrimmed := bytes.TrimSpace(secondary)
+	if len(baseTrimmed) == 0 || len(secTrimmed) == 0 {
+		return false
+	}
+	if bytes.Equal(baseTrimmed, secTrimmed) {
+		return true
+	}
+	if len(secTrimmed) >= 4 && bytes.HasPrefix(secTrimmed, []byte("PK\x03\x04")) {
+		if unwrapped, err := unwrapHARArchive(secondary); err == nil {
+			return bytes.Equal(baseTrimmed, bytes.TrimSpace(unwrapped))
+		}
+	}
+	return false
 }
 
 func normalizeHARArtifactMode(value string, hasComparison bool) string {

@@ -69,9 +69,108 @@ func applyCanonicalImportContract(route discoveredRoute, contract *inferredRoute
 	if !found {
 		contract.QueryParameters = append(contract.QueryParameters, parameter)
 	}
+	if route.Path == "/api/v1/scripts/import/har" || route.Path == "/api/v1/scripts/import/salesforce" {
+		applyHARImportUploadContract(route, contract)
+	}
 	sort.Slice(contract.QueryParameters, func(i, j int) bool {
 		return contract.QueryParameters[i].Name < contract.QueryParameters[j].Name
 	})
+}
+
+func applyHARImportUploadContract(route discoveredRoute, contract *inferredRouteContract) {
+	upsertQuery := func(param oasParameter) {
+		for i := range contract.QueryParameters {
+			if contract.QueryParameters[i].Name == param.Name && contract.QueryParameters[i].In == param.In {
+				contract.QueryParameters[i] = param
+				return
+			}
+		}
+		contract.QueryParameters = append(contract.QueryParameters, param)
+	}
+	upsertQuery(oasParameter{
+		Name: "project_id", In: "query", Schema: oasParamSchema{Type: "string"},
+		Description: "Project scope for recording profiles, secret capability checks, and existing-script matching.",
+	})
+	upsertQuery(oasParameter{
+		Name: "validate_only", In: "query", Schema: oasParamSchema{Type: "boolean"},
+		Description: "When true, inspects and converts the capture without retaining source texts or allocating a source-secret session.",
+	})
+	upsertQuery(oasParameter{
+		Name: "filename", In: "query", Schema: oasParamSchema{Type: "string"},
+		Description: "Logical filename of the baseline HAR or ZIP upload when sent as application/json or application/octet-stream.",
+	})
+
+	allowComparison := route.Path == "/api/v1/scripts/import/har"
+	if contract.RequestBody == nil {
+		contract.RequestBody = &oasRequestBody{Required: true, Content: map[string]oasMediaType{}}
+	}
+	if contract.RequestBody.Content == nil {
+		contract.RequestBody.Content = map[string]oasMediaType{}
+	}
+	if media, ok := contract.RequestBody.Content["multipart/form-data"]; ok {
+		if media.Schema.Properties == nil {
+			media.Schema.Properties = map[string]oasSchema{}
+		}
+		media.Schema.Properties["project_id"] = oasSchema{Type: "string", Description: "Project scope for recording profiles and secret capability checks."}
+		media.Schema.Properties["validate_only"] = oasSchema{Type: "string", Description: "Boolean flag ('true'/'false') for stateless Stage 1/2 inspection without retaining source texts or allocating a source-secret session."}
+		media.Schema.Properties["filter_client_telemetry"] = oasSchema{Type: "string", Description: "Boolean flag ('true'/'false') controlling default filtering of pure client-telemetry beacons."}
+		if allowComparison {
+			media.Schema.Properties["secondary_file"] = oasSchema{Type: "string", Format: "binary", Description: "Optional second HAR (.har or .zip) from an independent session used to classify dynamic vs static values."}
+			media.Schema.Properties["comparison_file"] = oasSchema{Type: "string", Format: "binary", Description: "Alias of secondary_file."}
+			media.Schema.Properties["file_b"] = oasSchema{Type: "string", Format: "binary", Description: "Alias of secondary_file."}
+		}
+		contract.RequestBody.Content["multipart/form-data"] = media
+	}
+
+	object := oasSchema{Type: "object", AdditionalProperties: boolPointer(true)}
+	jsonProps := map[string]oasSchema{
+		"name":                        {Type: "string"},
+		"project_id":                  {Type: "string"},
+		"content":                     {Type: "string", Description: "Raw HAR JSON payload."},
+		"validate_only":               {Type: "boolean", Description: "When true, runs stateless inspection without retaining source texts or allocating a source-secret session."},
+		"recording_profile_id":        {Type: "string"},
+		"profile_id":                  {Type: "string"},
+		"conversion_policy":           {Type: "string"},
+		"correlation_mode":            {Type: "string"},
+		"resource_mode":               {Type: "string"},
+		"http_version_mode":           {Type: "string"},
+		"page_title_checks":           {Type: "boolean"},
+		"include_assertions":          {Type: "boolean"},
+		"infer_extractors":            {Type: "boolean"},
+		"include_static_assets":       {Type: "boolean"},
+		"redact_sensitive":            {Type: "boolean"},
+		"salvage_truncated":           {Type: "boolean"},
+		"async_scan":                  {Type: "boolean"},
+		"step_transactions":           {Type: "boolean"},
+		"recorded_concurrency":        {Type: "boolean"},
+		"disable_salesforce":          {Type: "boolean"},
+		"salesforce_native":           {Type: "boolean"},
+		"agentforce_transform":        {Type: "boolean"},
+		"filter_client_telemetry":     {Type: "boolean"},
+		"parameterize":                {Type: "boolean"},
+		"parameterization_selections": {Type: "array", Items: &object},
+		"secret_bindings":             {Type: "array", Items: &object},
+		"options":                     object,
+	}
+	if allowComparison {
+		jsonProps["secondary_content"] = oasSchema{Type: "string", Description: "Optional second HAR JSON payload from an independent session for paired correlation classification."}
+		jsonProps["comparison_content"] = oasSchema{Type: "string", Description: "Alias of secondary_content."}
+		jsonProps["content_b"] = oasSchema{Type: "string", Description: "Alias of secondary_content."}
+	}
+	contract.RequestBody.Content["application/json"] = oasMediaType{
+		Schema: oasSchema{
+			Type:                 "object",
+			Properties:           jsonProps,
+			AdditionalProperties: boolPointer(true),
+		},
+	}
+	contract.RequestBody.Content["application/octet-stream"] = oasMediaType{
+		Schema: oasSchema{
+			Type:        "string",
+			Format:      "binary",
+			Description: "Raw HAR JSON or single-HAR ZIP archive. Pass filename, project_id, validate_only, and conversion flags as query parameters.",
+		},
+	}
 }
 
 func negotiatedImportResponseComponent(path string) string {

@@ -86,7 +86,32 @@ const (
 	// ImportAuraTemplateContractMetadataKey binds retained form-wire template
 	// occurrences to value-free typed consumer and token fingerprints.
 	ImportAuraTemplateContractMetadataKey = "body_aura_template_contract"
+	// ImportActionUIDMetadataKey assigns a stable, server-authored non-secret
+	// identifier to imported actions and nested sequence requests so
+	// credential-preserving updates can align retained credentials across
+	// action deletions without positional index shifting.
+	ImportActionUIDMetadataKey = "import_action_uid"
 )
+
+// IsValidImportActionUID reports whether value is a bounded, disclosure-safe
+// scalar action UID suitable for server-authored provenance alignment.
+func IsValidImportActionUID(value any) bool {
+	text, ok := value.(string)
+	if !ok || len(text) == 0 || len(text) > 128 {
+		return false
+	}
+	if strings.Contains(strings.ToUpper(text), "REDACTED") {
+		return false
+	}
+	for i := 0; i < len(text); i++ {
+		ch := text[i]
+		isAlphaNum := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
+		if !isAlphaNum && ch != '-' && ch != '_' && ch != '.' && ch != ':' {
+			return false
+		}
+	}
+	return true
+}
 
 type Script struct {
 	ArchivedAt    *time.Time      `json:"archived_at,omitempty"`

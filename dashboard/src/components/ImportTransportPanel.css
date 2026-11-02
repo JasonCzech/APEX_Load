@@ -1,4 +1,6 @@
 .import-transport-panel {
+  container: import-transport-panel / inline-size;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -79,8 +81,55 @@
   gap: 8px;
 }
 
-/* Narrow layouts stack each origin row as a labeled card. */
-@media (max-width: 720px) {
+/* Narrow layouts (including 768px tablet and 200% zoomed containers) stack each origin row as a labeled card. */
+@container import-transport-panel (max-width: 760px) {
+  .import-transport-table thead {
+    display: none;
+  }
+
+  .import-transport-table,
+  .import-transport-table tbody {
+    display: block;
+  }
+
+  .import-transport-table th > *,
+  .import-transport-table td > * {
+    min-width: 0;
+  }
+
+  .import-transport-table tbody th code {
+    overflow-wrap: anywhere;
+  }
+
+  .import-transport-table tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .import-transport-table th,
+  .import-transport-table td {
+    display: grid;
+    grid-template-columns: minmax(96px, 35%) minmax(0, 1fr);
+    gap: 8px;
+    border-bottom: none;
+    padding: 3px 0;
+  }
+
+  .import-transport-table select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .import-transport-table th::before,
+  .import-transport-table td::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+}
+
+@media (max-width: 820px) {
   .import-transport-table thead {
     display: none;
   }

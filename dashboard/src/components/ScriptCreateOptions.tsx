@@ -940,7 +940,10 @@ export default function ScriptCreateOptions({
                       <tbody>
                         {templates.map(template => {
                           const familyTemplate = isSalesforceFamilyTemplate(template)
-                          const runtimeRefs = familyTemplate ? templateRuntimeReferences(template).slice(0, 6) : []
+                          const allRuntimeRefs = familyTemplate ? templateRuntimeReferences(template) : []
+                          const runtimeRefs = allRuntimeRefs.slice(0, 6)
+                          const visibleTagLimit = familyTemplate ? 2 : 3
+                          const extraTagCount = Math.max(0, (template.tags?.length || 0) - visibleTagLimit)
                           return (
                             <tr key={template.id}>
                               <td><span className="script-create-type-badge inline">{template.protocol.toUpperCase()}</span></td>
@@ -949,7 +952,7 @@ export default function ScriptCreateOptions({
                                 <div className="script-create-table-description">{template.description}</div>
                                 {runtimeRefs.length > 0 && (
                                   <div className="script-create-table-description cell-muted">
-                                    Required values: {runtimeRefs.join(', ')}
+                                    Required values: {runtimeRefs.join(', ')}{allRuntimeRefs.length > 6 ? ` (+${allRuntimeRefs.length - 6} more)` : ''}
                                   </div>
                                 )}
                               </td>
@@ -957,9 +960,10 @@ export default function ScriptCreateOptions({
                               <td>
                                 <div className="script-create-template-tags compact">
                                   {familyTemplate && <span className="tag-chip use-case">Salesforce family</span>}
-                                  {template.tags?.slice(0, familyTemplate ? 2 : 3).map(tag => (
+                                  {template.tags?.slice(0, visibleTagLimit).map(tag => (
                                     <span key={tag} className={`tag-chip ${['agentforce', 'salesforce', 'sse', 'oauth2'].includes(tag.toLowerCase()) ? 'use-case' : ''}`}>{tag}</span>
                                   ))}
+                                  {extraTagCount > 0 && <span className="tag-chip" title={template.tags?.slice(visibleTagLimit).join(', ')}>+{extraTagCount}</span>}
                                   {!template.tags?.length && <span className="cell-muted">No tags</span>}
                                 </div>
                               </td>
@@ -1043,6 +1047,7 @@ export default function ScriptCreateOptions({
                             <td>
                               <div className="script-create-template-tags compact">
                                 {component.tags?.slice(0, 3).map(tag => <span key={tag} className="tag-chip">{tag}</span>)}
+                                {(component.tags?.length || 0) > 3 && <span className="tag-chip" title={component.tags?.slice(3).join(', ')}>+{component.tags!.length - 3}</span>}
                                 {!component.tags?.length && <span className="cell-muted">No tags</span>}
                               </div>
                             </td>

@@ -292,7 +292,7 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 
 	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
 	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
-	if len(requirements) == 0 || s == nil || r == nil || !projectMatches {
+	if opts.ValidateOnly || len(requirements) == 0 || s == nil || r == nil || !projectMatches {
 		return response
 	}
 

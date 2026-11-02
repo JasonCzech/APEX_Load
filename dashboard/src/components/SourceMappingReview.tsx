@@ -195,6 +195,14 @@ function formatSourceRange(mapping?: SourceReviewMapping | null) {
   return `${mapping.source_file}:${mapping.start_line}`
 }
 
+function targetSectionLabel(targetPath?: string): 'Init' | 'Actions' | 'Teardown' | null {
+  const trimmed = (targetPath || '').trim()
+  if (/^init(?:\[|\.|$)/.test(trimmed)) return 'Init'
+  if (/^actions(?:\[|\.|$)/.test(trimmed)) return 'Actions'
+  if (/^teardown(?:\[|\.|$)/.test(trimmed)) return 'Teardown'
+  return null
+}
+
 // A truncated preview ends with this marker, which is not source.
 const TRUNCATED_PREVIEW_MARKER = '\n\n[truncated for source review]'
 
@@ -310,7 +318,7 @@ export default function SourceMappingReview({
   const [categoryFilter, setCategoryFilter] = useState<MappingCategory | ''>('')
   const [sortField, setSortField] = useState<SortField>('source')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
+  const [copied, setCopied] = useState<'source-excerpt' | 'source-full' | 'dsl-excerpt' | 'dsl-full' | ''>('')
   const [exportError, setExportError] = useState('')
   const [isTableCollapsed, setIsTableCollapsed] = useState(true)
   const [storedMaximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
@@ -809,9 +817,15 @@ export default function SourceMappingReview({
     setSortDirection('asc')
   }
 
-  const copyValue = async (kind: 'source' | 'dsl', value: string) => {
+  const copyValue = async (kind: 'source-excerpt' | 'source-full' | 'dsl-excerpt' | 'dsl-full', value: string) => {
     if (!value || !copySupported) return
+    if (new TextEncoder().encode(value).byteLength > MAX_FULL_TEXT_BYTES) {
+      setCopied('')
+      setExportError('Selection exceeds the 16 MB clipboard limit. Download or inspect the file directly.')
+      return
+    }
     const ok = await copyTextToClipboard(value)
+    if (ok) setExportError('')
     setCopied(ok ? kind : '')
   }
 
@@ -943,13 +957,15 @@ export default function SourceMappingReview({
         </label>
         <label>
           <span>Filter Mappings</span>
-          <input value={filter} onChange={event => { setFilter(event.target.value); setIsTableCollapsed(false) }} placeholder="Function, target, status..." />
+          <input value={filter} onChange={event => { setFilter(event.target.value); setIsTableCollapsed(false) }} placeholder="Function, target, status…" />
         </label>
         <div style={{ alignSelf: 'flex-end', marginLeft: 'auto', display: 'flex', gap: '8px' }}>
           <button
             type="button"
             className="btn btn-sm btn-ghost"
             style={{ border: '1px solid var(--border)' }}
+            aria-expanded={!isTableCollapsed}
+            aria-controls="source-mapping-table-region"
             onClick={() => setIsTableCollapsed(prev => !prev)}
           >
             {isTableCollapsed ? `Show mappings (${filteredMappings.length})` : 'Hide mappings'}
@@ -982,7 +998,7 @@ export default function SourceMappingReview({
 
       {!sourceOnly && showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setDestinationRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
       <div className={`source-map-workspace ${isTableCollapsed ? '' : 'with-navigator'}`}>
-      <div ref={tableWrapRef} className="source-map-table-wrap" data-table-pagination="off" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
+      <div id="source-mapping-table-region" ref={tableWrapRef} className="source-map-table-wrap" data-table-pagination="off" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">
           <colgroup>
             <col className="source-map-col-source" />
@@ -1052,7 +1068,9 @@ export default function SourceMappingReview({
       {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
         <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
         <span>{sourceOnly ? 'Original conversion' : 'Conversion'}: {formatStatusLabel(selectedMapping.status)} · {sourceOnly ? 'Original support mode' : 'Runtime support'}: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
-        {sourceOnly ? <span>Original import path: <code>{selectedMapping.target_path || 'Unavailable'}</code></span> : <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}</span>}
+        {sourceOnly
+          ? <span>Original import path: <code>{selectedMapping.target_path || 'Unavailable'}</code></span>
+          : <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}{targetSectionLabel(destinationPath) ? <> · <span className="source-map-section-badge">{targetSectionLabel(destinationPath)}</span></> : null}</span>}
         {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{!sourceOnly && onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
         {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
         {!sourceOnly && <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />}
@@ -1065,10 +1083,22 @@ export default function SourceMappingReview({
           <div className="source-map-panel-header">
             <strong title={selectedFile?.path}>Original source · {selectedFile?.path || 'Unavailable'}</strong>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('source', sourceExcerpt)} disabled={!copySupported || !sourceExcerpt}>
-                {copied === 'source' ? 'Copied' : 'Copy mapped source'}
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('source-excerpt', sourceExcerpt)} disabled={!copySupported || !sourceExcerpt}>
+                {copied === 'source-excerpt' ? 'Copied' : 'Copy mapped source'}
               </button>
-              <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !selectedFile} onClick={() => void copyValue('source', sourceText)}>Copy whole source file</button>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={!copySupported || !selectedFile}
+                title={selectedFile?.truncated && fullText.status !== 'ready' ? 'Full source file exceeds the 16 MiB review retention limit; copies the retained preview.' : undefined}
+                onClick={() => void copyValue('source-full', sourceText)}
+              >
+                {copied === 'source-full'
+                  ? 'Copied'
+                  : selectedFile?.truncated && fullText.status !== 'ready'
+                    ? 'Copy retained source preview'
+                    : 'Copy whole source file'}
+              </button>
               {!sourceOnly && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
                 {maximizedPane === 'source' ? 'Return to comparison' : 'Expand source'}
               </button>}
@@ -1102,10 +1132,12 @@ export default function SourceMappingReview({
           <div className="source-map-panel-header">
             <strong title={destinationPath}>Destination · {destinationView === 'baseline' ? 'Review baseline' : 'Current draft'} · {destinationPath || 'No verified mapping'}</strong>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl', dslExcerpt)} disabled={!copySupported || !dslExcerpt}>
-                {copied === 'dsl' ? 'Copied' : 'Copy mapped destination'}
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl-excerpt', dslExcerpt)} disabled={!copySupported || !dslExcerpt}>
+                {copied === 'dsl-excerpt' ? 'Copied' : 'Copy mapped destination'}
               </button>
-              <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !dslDocument} onClick={() => void copyValue('dsl', dslDocument?.text || '')}>Copy whole destination</button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !dslDocument} onClick={() => void copyValue('dsl-full', dslDocument?.text || '')}>
+                {copied === 'dsl-full' ? 'Copied' : 'Copy whole destination'}
+              </button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'dsl' ? null : 'dsl')}>
                 {maximizedPane === 'dsl' ? 'Return to comparison' : 'Expand destination'}
               </button>

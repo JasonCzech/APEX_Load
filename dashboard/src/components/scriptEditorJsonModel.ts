@@ -369,6 +369,102 @@ export function updateNestedAction(root: ScriptActionDefinition, stepPath: strin
   return clone
 }
 
+/**
+ * Remove a selected leaf inside a container (`http_sequence`, `control_parallel`,
+ * `control_if`, `control_loop`, `control_switch`). Returns `null` when the
+ * removal targets `root` itself or empties a container that cannot exist with
+ * zero child steps.
+ */
+export function removeNestedAction(root: ScriptActionDefinition, stepPath: string[] | undefined): ScriptActionDefinition | null {
+  if (!stepPath?.length) return null
+  if (!resolveNestedAction(root, stepPath)) return root
+  const clone = structuredClone(root)
+  const parent = stepPath.length === 1 ? clone : resolveNestedAction(clone, stepPath.slice(0, -1))
+  const last = parseActionStepSegment(stepPath[stepPath.length - 1])
+  if (!parent || !last) return root
+
+  if (last.name === 'requests') {
+    const requests = Array.isArray(parent.params?.requests) ? [...(parent.params!.requests as ScriptActionDefinition[])] : []
+    if (last.index < 0 || last.index >= requests.length) return root
+    requests.splice(last.index, 1)
+    if (requests.length === 0 && stepPath.length === 1 && clone.type === 'http_sequence') return null
+    parent.params = { ...(parent.params || {}), requests }
+    return clone
+  }
+
+  if (last.name === 'parallel') {
+    const branches = parent.control?.branches ? [...parent.control.branches] : []
+    const branch = branches[last.branchIndex]
+    if (!branch?.steps || last.index < 0 || last.index >= branch.steps.length) return root
+    const nextSteps = branch.steps.filter((_, idx) => idx !== last.index)
+    if (nextSteps.length === 0) {
+      branches.splice(last.branchIndex, 1)
+    } else {
+      branches[last.branchIndex] = { ...branch, steps: nextSteps }
+    }
+    if (branches.length === 0 && stepPath.length === 1) return null
+    if (branches.length === 1 && branches[0].steps?.length === 1 && stepPath.length === 1 && clone.type === 'control_parallel') {
+      return branches[0].steps[0]
+    }
+    parent.control = { ...(parent.control || {}), branches }
+    return clone
+  }
+
+  if (!parent.control) return root
+  if (last.name === 'case') {
+    const cases = parent.control.cases ? [...parent.control.cases] : []
+    const targetCase = cases[last.caseIndex]
+    if (!targetCase?.steps || last.index < 0 || last.index >= targetCase.steps.length) return root
+    cases[last.caseIndex] = { ...targetCase, steps: targetCase.steps.filter((_, idx) => idx !== last.index) }
+    parent.control = { ...parent.control, cases }
+    return clone
+  }
+
+  const listKey: 'else' | 'default' | 'steps' = last.name === 'else' ? 'else' : last.name === 'default' ? 'default' : 'steps'
+  const items = parent.control[listKey] ? [...(parent.control[listKey] || [])] : []
+  if (last.index < 0 || last.index >= items.length) return root
+  items.splice(last.index, 1)
+  if (items.length === 0 && stepPath.length === 1 && listKey === 'steps' && !parent.control.else?.length && !parent.control.cases?.length) {
+    return null
+  }
+  parent.control = { ...parent.control, [listKey]: items }
+  return clone
+}
+
+/**
+ * Explicitly clears the `har_request_body_not_exported` execution blocker from
+ * a step's metadata once the author has supplied a request body.
+ */
+export function clearUnexportedHarBodyBlockerOnAction(action: ScriptActionDefinition): ScriptActionDefinition {
+  if (!action.metadata) return action
+  const nextMeta: Record<string, unknown> = { ...action.metadata }
+  if (Array.isArray(nextMeta.execution_blockers)) {
+    const remaining = nextMeta.execution_blockers.filter(code => code !== 'har_request_body_not_exported')
+    if (remaining.length > 0) nextMeta.execution_blockers = remaining
+    else delete nextMeta.execution_blockers
+  }
+  if (nextMeta.execution_blocker === 'har_request_body_not_exported') {
+    delete nextMeta.execution_blocker
+  }
+  delete nextMeta.har_request_body_not_exported
+  if (nextMeta.import_review && typeof nextMeta.import_review === 'object' && !Array.isArray(nextMeta.import_review)) {
+    const review = { ...(nextMeta.import_review as Record<string, unknown>) }
+    if (Array.isArray(review.findings)) {
+      review.findings = review.findings.filter(code => code !== 'har_request_body_not_exported')
+    }
+    nextMeta.import_review = review
+  }
+  const hasOtherBlockers = (Array.isArray(nextMeta.execution_blockers) && nextMeta.execution_blockers.length > 0)
+    || typeof nextMeta.execution_blocker === 'string'
+  const hasOtherReviews = (Array.isArray(nextMeta.review_reasons) && nextMeta.review_reasons.length > 0)
+    || typeof nextMeta.review_gate === 'string'
+  if (!hasOtherBlockers && !hasOtherReviews) {
+    delete nextMeta.review_required
+    delete nextMeta.promotion_blocker
+  }
+  return { ...action, metadata: nextMeta }
+}
+
 export function jsonPathForActionStepPath(stepPath?: string[]): string {
   return (stepPath || []).map(segment => {
     const parsed = parseActionStepSegment(segment)

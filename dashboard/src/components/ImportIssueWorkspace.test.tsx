@@ -176,3 +176,27 @@ it('opens the retained source for a response-content blocker without offering ac
     container.remove()
   }
 })
+
+it('uses Data & parameters category label and preserves keyboard focus inside the issue list', () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  try {
+    act(() => root.render(<ImportIssueWorkspace issues={[
+      { id: 'data-1', severity: 'warning', title: 'Correlation parameter review', description: 'Check extracted correlation boundary in parameter list.' },
+      { id: 'runtime-1', severity: 'warning', title: 'Source mapping unavailable', description: 'source_order_unavailable' },
+    ]} />))
+    const categories = Array.from(container.querySelectorAll('.shared-import-issue-category')).map(item => item.textContent)
+    expect(categories[0]).toBe('Data & parameters 1 issue')
+
+    const issueButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-list > button'))
+    expect(issueButtons.length).toBe(2)
+    issueButtons[1].focus()
+    expect(document.activeElement).toBe(issueButtons[1])
+    act(() => issueButtons[1].click())
+    expect(document.activeElement).toBe(issueButtons[1])
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})

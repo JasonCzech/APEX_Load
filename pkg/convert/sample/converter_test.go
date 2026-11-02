@@ -3180,3 +3180,34 @@ func TestPrepareCorrelationApplicationAppliesAroundReviewOnlyContainment(t *test
 		})
 	}
 }
+
+func TestConvertLargeHARClearsTruncatedSourcePreviewFullText(t *testing.T) {
+	// Build a HAR payload slightly larger than sourceview.MaxFullTextBytes (16 MiB)
+	// so redactedSnippetForSourcePreview returns a ~120 KB preview snippet while
+	// sf.FullText must be cleared rather than storing the snippet as "full text".
+	pad := strings.Repeat("a", sourceview.MaxFullTextBytes+4096)
+	harPayload := `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/ping","headers":[{"name":"X-Pad","value":"` + pad + `"}]},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}]}}`
+	redact := true
+	result, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: harPayload,
+		Options: ConvertOptions{
+			SourceFileName:     "huge.har",
+			RedactSourceReview: &redact,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
+		t.Fatalf("SourceReview.SourceFiles = %#v, want 1", result.SourceReview)
+	}
+	sf := result.SourceReview.SourceFiles[0]
+	if !sf.Truncated {
+		t.Fatalf("SourceFile.Truncated = false, want true for >16 MiB HAR")
+	}
+	if sf.FullText != "" {
+		t.Fatalf("SourceFile.FullText len = %d, want 0 (must not store 120 KB snippet as full text)", len(sf.FullText))
+	}
+}
+

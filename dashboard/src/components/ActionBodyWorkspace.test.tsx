@@ -58,4 +58,23 @@ describe('ActionBodyWorkspace', () => {
     act(() => button.click())
     expect(onUpdate).toHaveBeenCalledWith('body_multipart', { parts: [{ name: 'field_1', value: '' }] })
   })
+
+  it('defaults /aura form requests to the decoded Aura envelope view and toggles cleanly to raw form body', () => {
+    const action: ScriptActionDefinition = {
+      name: 'Search Customers',
+      type: 'POST',
+      method: 'POST',
+      target: '/aura?r=7&aura.ApexAction.execute=1',
+      body: 'message=%7B%22actions%22%3A%5B%7B%22id%22%3A%221%3Ba%22%2C%22descriptor%22%3A%22aura%3A%2F%2FApexActionController%2FACTION%24execute%22%2C%22params%22%3A%7B%22classname%22%3A%22SearchCtrl%22%2C%22method%22%3A%22find%22%7D%7D%5D%7D&aura.pageURI=%2Flightning%2Fpage%2Fhome&aura.token={{var.aura_token}}',
+    }
+    const onUpdate = vi.fn()
+    act(() => root.render(<ActionBodyWorkspace action={action} index={0} path="script.actions[0]" parameters={[]} onUpdate={onUpdate} onParameterize={vi.fn()} />))
+    expect(container.querySelector('[aria-label="Aura envelope"]')).not.toBeNull()
+    expect(container.textContent).toContain('Apex · SearchCtrl.find')
+
+    const rawBtn = Array.from(container.querySelectorAll('button')).find(btn => btn.textContent === 'Raw form body')!
+    act(() => rawBtn.click())
+    expect(container.querySelector('[aria-label="Aura envelope"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Request body"]')).not.toBeNull()
+  })
 })

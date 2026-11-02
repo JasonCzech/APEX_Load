@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
+	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"regexp"
@@ -94,6 +96,10 @@ func BuildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		preflight.PlaceholderVariables = placeholders
 		preflight.Warnings = append(preflight.Warnings, "variable(s) with no seed or preceding extractor are sent as placeholder text: "+strings.Join(placeholders, ", "))
 	}
+	unverifiedAuraVars := unverifiedAuraTokenVariables(script, variables)
+	if len(unverifiedAuraVars) > 0 {
+		preflight.Warnings = append(preflight.Warnings, "aura.token cookie (__Host-ERIC_*) is expected from /one/one.app at live replay (unverified in sanitized HAR capture): "+strings.Join(unverifiedAuraVars, ", "))
+	}
 	preflight.RequiredSecrets, preflight.MissingSecrets = ReplaySecretRefs(script, secretResolver)
 	dataWarnings := ReplayDataSourceWarnings(script)
 	if len(dataWarnings) > 0 {
@@ -131,8 +137,8 @@ func BuildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		{
 			ID:     "variables",
 			Label:  "Variable readiness",
-			Status: ReplayCheckStatus(len(readiness.Blocking) == 0, len(preflight.MissingVariables) > 0),
-			Detail: ReplayVariableDetail(readiness),
+			Status: ReplayCheckStatus(len(readiness.Blocking) == 0, len(preflight.MissingVariables) > 0 || len(unverifiedAuraVars) > 0),
+			Detail: replayVariableDetailWithUnverifiedAura(readiness, unverifiedAuraVars),
 		},
 		{
 			ID:     "secrets",
@@ -354,6 +360,86 @@ func ReplayVariableDetail(readiness requestimport.VariableReadiness) string {
 		parts = append(parts, "Sent as placeholder text: "+strings.Join(placeholders, ", "))
 	}
 	return strings.Join(parts, "; ")
+}
+
+func replayVariableDetailWithUnverifiedAura(readiness requestimport.VariableReadiness, unverifiedAuraVars []string) string {
+	if len(unverifiedAuraVars) == 0 {
+		return ReplayVariableDetail(readiness)
+	}
+	if len(readiness.Missing) == 0 {
+		return "Expected at live replay (unverified in sanitized HAR capture): " + strings.Join(unverifiedAuraVars, ", ") + "."
+	}
+	return ReplayVariableDetail(readiness) + "; expected at live replay (unverified in capture): " + strings.Join(unverifiedAuraVars, ", ")
+}
+
+func unverifiedAuraTokenVariables(script *dsl.Script, variables map[string]string) []string {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return nil
+	}
+	rawReview, ok := script.Metadata.Import.Preserved["salesforce_review"]
+	if !ok || rawReview == nil {
+		return nil
+	}
+	candidateNames := make(map[string]struct{})
+	addReviewCorrelations := func(list []salesforce.CorrelationCandidate) {
+		for _, item := range list {
+			if strings.TrimSpace(item.RuleID) == correlate.RuleSalesforceAuraTokenUncapturedCookie && strings.TrimSpace(item.Name) != "" {
+				candidateNames[strings.TrimSpace(item.Name)] = struct{}{}
+			}
+		}
+	}
+	switch typed := rawReview.(type) {
+	case *salesforce.Review:
+		if typed != nil && typed.NativePreview != nil {
+			addReviewCorrelations(typed.NativePreview.Correlations)
+		}
+	case salesforce.Review:
+		if typed.NativePreview != nil {
+			addReviewCorrelations(typed.NativePreview.Correlations)
+		}
+	case map[string]any:
+		collectMapCorrs := func(raw any) {
+			items, _ := raw.([]any)
+			for _, elem := range items {
+				m, _ := elem.(map[string]any)
+				ruleID, _ := m["rule_id"].(string)
+				name, _ := m["name"].(string)
+				if strings.TrimSpace(ruleID) == correlate.RuleSalesforceAuraTokenUncapturedCookie && strings.TrimSpace(name) != "" {
+					candidateNames[strings.TrimSpace(name)] = struct{}{}
+				}
+			}
+		}
+		collectMapCorrs(typed["correlations"])
+		if np, ok := typed["native_preview"].(map[string]any); ok {
+			collectMapCorrs(np["correlations"])
+		}
+	}
+	if len(candidateNames) == 0 {
+		return nil
+	}
+	extractedInScript := make(map[string]struct{})
+	for _, action := range ReplayOrderedActions(script) {
+		for _, ext := range action.Extractors {
+			if name := strings.TrimSpace(ext.Name); name != "" {
+				extractedInScript[name] = struct{}{}
+			}
+		}
+	}
+
+	var out []string
+	for name := range candidateNames {
+		if _, ok := extractedInScript[name]; !ok {
+			continue
+		}
+		if variables != nil {
+			if val, seeded := variables[name]; seeded && strings.TrimSpace(val) != "" {
+				continue
+			}
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func ReplaySecretRefs(script *dsl.Script, resolvers ...engine.SecretResolver) ([]string, []string) {

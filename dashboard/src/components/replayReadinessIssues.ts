@@ -262,7 +262,7 @@ function singleCodeGateMessage(message: string, gate: ReviewGateIssue, code: str
  * is that restoration's evidence, not a second problem.
  */
 export function distinctBlockerCodes<T extends string>(codes: readonly T[]): T[] {
-  return codes.filter(code => !(code === 'import_review_required' && codes.includes('restored_body_required' as T)))
+  return codes.filter(code => !(code === 'import_review_required' && (codes.includes('restored_body_required' as T) || codes.includes('har_request_body_not_exported' as T))))
 }
 
 /**

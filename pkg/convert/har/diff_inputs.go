@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
 // Request input kinds: what a request value that changed between the two
@@ -565,10 +566,48 @@ func diffValueHash(value string) uint64 {
 }
 
 // diffRequestPairKey groups requests the way diffAligner groups producers:
-// method, host, path, then the query-key set, which tells Aura batches apart
-// by the action names in their query.
+// method, host, path, then the query-key set and any Salesforce Aura envelope
+// action signature (including Apex classname + method), so parallel or
+// reordered Aura batches and multiple ApexActionController calls pair cleanly.
 func diffRequestPairKey(observation sample.HARSourceObservation) string {
-	return diffRequestKey(observation) + "?" + diffQueryKeySet(observation.RequestURL)
+	return diffRequestKey(observation) + "?" + diffObservationNarrowKey(observation)
+}
+
+func diffObservationNarrowKey(observation sample.HARSourceObservation) string {
+	queryKeys := diffQueryKeySet(observation.RequestURL)
+	if auraSig := diffAuraActionSignature(observation); auraSig != "" {
+		return queryKeys + "#aura:" + auraSig
+	}
+	return queryKeys
+}
+
+func diffAuraActionSignature(observation sample.HARSourceObservation) string {
+	if !strings.EqualFold(strings.TrimSpace(observation.Method), "POST") {
+		return ""
+	}
+	body := observation.RequestBody
+	if body == "" || len(body) > diffInputMaxBodyBytes || !strings.Contains(body, "message=") {
+		return ""
+	}
+	lowerURL := strings.ToLower(observation.RequestURL)
+	if !strings.Contains(lowerURL, "/aura") {
+		return ""
+	}
+	actions := aura.ParseEnvelopeActions(body, diffInputMaxBodyBytes)
+	if len(actions) == 0 {
+		return ""
+	}
+	tokens := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if token := action.DiffToken(); token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	if len(tokens) == 0 {
+		return ""
+	}
+	sort.Strings(tokens)
+	return strings.Join(tokens, ",")
 }
 
 // diffIgnoredHeaders are request headers that describe the browser or the

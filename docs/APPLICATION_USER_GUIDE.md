@@ -541,7 +541,7 @@ The replay debugger gives you:
 - **Breakpoints** on a phase and action index, including structured control-flow leaves
   such as `loop[0]`, `then[0]`, or `requests[1]`. Debug's left sidebar is the Author
   outline with a breakpoint dot in each step's gutter: click the dot, double-click the
-  step or press `F9` on it. An open sequence starts with **All requests**, which sets or
+  step, or press `F9` (or `Cmd/Ctrl` + `B`) on it. An open sequence starts with **All requests**, which sets or
   clears a breakpoint on every request. Each step shows whether it passed, failed or is
   running, and the bottom dock's **Timeline** lists every execution, loop passes included.
   The **Parameters** section below the outline opens a parameter's uses and captured values.
@@ -560,7 +560,7 @@ The replay debugger gives you:
 
 Script Editor keys: `Cmd/Ctrl` + `S` saves, `F5` starts or resumes replay,
 `Shift` + `F5` stops, `F10` steps into, `F11` steps over a block, `Shift` + `F11` finishes the current loop,
-`Cmd/Ctrl` + `B` toggles a breakpoint, and `Escape` closes the panel.
+`F9` or `Cmd/Ctrl` + `B` toggles a breakpoint, and `Escape` closes the panel.
 
 Validate first, replay second, then promote the script into a scenario.
 
@@ -849,6 +849,81 @@ opens from **Open a saved script in Visual Editor**.
 Coverage for the big legacy sources is documented and evidence-backed rather than
 claimed: see the [LoadRunner Coverage](LOADRUNNER_COVERAGE.md) reference (Web functions, Java `lr` functions, TruClient steps, Java Vuser imports) for exactly which
 functions convert, which are no-ops, and which are preserved for review.
+
+### Capturing Optimal HAR Files For Comparison And DSL Conversion
+
+In single-page applications such as Salesforce Lightning, static JavaScript, CSS, font,
+and media bundles account for 90–95% of raw HAR byte size, while HTML bootstrap
+documents and XHR/Fetch API calls typically total under 5 MB. On the HAR import screen
+(**Scripts** › **Import scripts** › **HAR Traffic**), click **HAR capture guide** at any
+time for an in-app checklist of the browser DevTools settings below.
+
+| Browser DevTools setting | Recommended state | Why it matters for 2-HAR comparison and DSL conversion |
+| --- | --- | --- |
+| `Preserve log` (Network toolbar) | Checked | Retains multi-hop sign-in and sign-out redirect chains (`302` → `frontdoor.jsp` → `VFLoginFlow` → `/one/one.app`) across full-page navigations. |
+| `Allow to generate HAR (with sensitive data)` (`Settings ⚙ → Preferences → Network`, Chrome/Edge 130+) | Checked | Click-and-hold the Network export arrow and choose `Export HAR (with sensitive data)…` (Firefox: right-click → `Save All As HAR`). Preserves `Cookie`, `Set-Cookie` (`__Host-ERIC_*`, `sid`), and `Authorization` headers for correlation verification while APEX Load scrubs and binds credentials to governed project secrets on import. |
+| Separate Incognito / InPrivate windows | Two independent sessions | Close the first private window completely before recording the second capture so each recording starts unauthenticated with distinct session tokens, CSRF nonces, and Aura context values, and without browser-extension noise. |
+| `Clear network log` before submitting sign-in | Clear after login page loads | Load the login URL first, let initial static framework bundles finish downloading, clear the network log, and then submit credentials. Drops pre-login static bundle bloat while keeping the complete authentication `POST` and redirect chain. |
+| `Disable cache` (Network toolbar) | Unchecked | Dynamic HTML documents and XHR/Fetch API calls (`Cache-Control: no-store`) still record full wire payloads while immutable versioned JS/CSS bundles are served from browser cache instead of re-downloading tens of megabytes per navigation. |
+| Stop recording (`Ctrl+E` / `Cmd+E`) before export | Wait 2–3 s, then stop | Let in-flight XHR/Fetch requests finish before stopping the capture. Exporting while a `POST` or `sendBeacon` request is still pending writes `Content-Length > 0` with an empty `postData.text` (`har_request_body_not_exported` replay blocker). |
+| `Capture screenshots` (Network settings) | Unchecked | Prevents base64-encoded filmstrip frames from inflating the exported HAR file. |
+
+Keep two browser DevTools caveats in mind:
+
+- In Chrome and Edge, the Network filter bar (`Fetch/XHR`, `Doc`) filters only the
+  on-screen table; `Export HAR` still writes all recorded entries.
+- Never use `Copy → Copy all listed as HAR`. Clipboard HAR exports omit response bodies
+  (`response.content.text`), preventing correlation extractors from finding
+  server-produced tokens.
+
+To shrink an already-recorded large HAR by 85–95% without losing correlation evidence:
+
+- **Upload as `.zip`:** Both primary and comparison HAR dropzones accept `.zip`
+  archives directly (up to 300 MB per capture), typically reducing raw JSON HAR size by
+  80–90% with zero data loss. You can drag two `.har` or `.zip` files onto the dropzone
+  at once to populate both primary and comparison slots together.
+- **Optional CLI slimming (`jq`):** Strip response body text *only* from static asset
+  entries (`script`, `stylesheet`, `image`, `font`, `media`) while preserving every HTML
+  document (`auraConfig`, sign-in redirects), XHR/Fetch request and response body,
+  cookie, header, and timing:
+
+```bash
+jq '(.log.entries[] | select(._resourceType == "script" or ._resourceType == "stylesheet" or ._resourceType == "image" or ._resourceType == "font" or ._resourceType == "media") | .response.content.text) |= ""' raw.har > slim.har
+```
+
+### Comparing Two Salesforce HAR Captures
+
+Supplying a second HAR recorded from an independent session of the same journey turns
+HAR import into a two-capture correlation analysis:
+
+1. **Semantic Aura pairing and classification:** Salesforce Lightning dispatches batches
+   of `/aura` `POST` requests concurrently, so arrival order and `r=` query counters vary
+   between runs. APEX Load pairs requests across the two captures by semantic Aura
+   signature (`Controller.method`, including Apex `classname.method` on
+   `ApexActionController.execute`) and classifies differing values into server-correlated
+   tokens (backed by a captured upstream response), client-generated nonces or counters,
+   and operator/data-pool inputs. Inspect and adjust these bindings in Correlation
+   Studio under **Review** and **Data & parameters**.
+2. **Desktop and Mobile SDK lifecycle hoisting:** Desktop sign-in chains (login `POST` →
+   `/secur/frontdoor.jsp` → `contentDoor` / `VFLoginFlow` `/visualforce/recsession` →
+   `/one/one.app`) are hoisted into `init` alongside a `salesforce_users` CSV data
+   source (`username` and secret-masked `password`), while trailing `/secur/logout.jsp`
+   requests move into `teardown`. Step transactions, recorded concurrency grouping, and
+   client telemetry filtering (`InstrumentationBeacon` and `o11y` beacons) are enabled
+   by default when Salesforce traffic is detected.
+3. **Live-replay Aura token cookies (`eikoocnekot`):** When `/one/one.app` declares
+   `auraConfig.eikoocnekot` (`__Host-ERIC_*`) and the browser omitted that `Set-Cookie`
+   header from a sanitized HAR export, APEX Load wires a redirect-aware cookie extractor
+   and reports an honest preflight warning noting that the cookie is expected from the
+   live server at replay rather than proven in the static capture.
+4. **Resolving unexported request bodies and editing Aura envelopes:** If an in-flight
+   request was exported without its `POST` payload (`har_request_body_not_exported`),
+   choose **Exclude action from draft** during import review to remove non-essential
+   beacons cleanly, or open the draft in Author and choose **Delete step** or supply the
+   payload and click **Mark body supplied & clear blocker**. Select any `/aura` step in
+   Author (**Aura envelope**) or Debug to inspect and edit decoded `message.actions[]`
+   cards, parameters, `aura.context`, and `aura.token` without manually URL-decoding the
+   form body.
 
 ## Building A Scenario
 

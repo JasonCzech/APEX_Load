@@ -303,6 +303,31 @@ func stepTransactionLabel(rawURL string) string {
 	if len(segments) == 1 && segments[0] == "" {
 		return "root"
 	}
+	// Standard Lightning record and object routes (/lightning/r/<SObject>/<id>/<verb>
+	// and /lightning/o/<SObject>/<verb>) combine the SObject and verb so
+	// transaction names read "Interaction_c_view" rather than bare "view".
+	if len(segments) >= 5 && strings.EqualFold(segments[0], "lightning") && strings.EqualFold(segments[1], "r") && stepIdentifierSegment(segments[3]) {
+		obj := strings.Trim(stepTransactionLabelUnsafe.ReplaceAllString(segments[2], "_"), "_")
+		verb := strings.Trim(stepTransactionLabelUnsafe.ReplaceAllString(segments[4], "_"), "_")
+		if obj != "" && verb != "" && !stepIdentifierSegment(obj) && !stepIdentifierSegment(verb) {
+			combined := obj + "_" + verb
+			if len(combined) > maxStepTransactionNameBytes {
+				combined = combined[:maxStepTransactionNameBytes]
+			}
+			return combined
+		}
+	}
+	if len(segments) >= 4 && strings.EqualFold(segments[0], "lightning") && strings.EqualFold(segments[1], "o") {
+		obj := strings.Trim(stepTransactionLabelUnsafe.ReplaceAllString(segments[2], "_"), "_")
+		verb := strings.Trim(stepTransactionLabelUnsafe.ReplaceAllString(segments[3], "_"), "_")
+		if obj != "" && verb != "" && !stepIdentifierSegment(obj) && !stepIdentifierSegment(verb) {
+			combined := obj + "_" + verb
+			if len(combined) > maxStepTransactionNameBytes {
+				combined = combined[:maxStepTransactionNameBytes]
+			}
+			return combined
+		}
+	}
 	for position := len(segments) - 1; position >= 0; position-- {
 		segment := segments[position]
 		if extension := path.Ext(segment); extension != "" && extension != segment {

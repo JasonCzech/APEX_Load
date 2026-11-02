@@ -98,6 +98,12 @@ func TestScheduleClockChangeHorizonReachesNextRun(t *testing.T) {
 	if len(planChanges["nightly"]) != 1 || planChanges["nightly"][0].Kind != "repeated" {
 		t.Fatalf("plan changes = %+v, want the repeated 1:30 AM", planChanges)
 	}
+	// After 2026-11-01 fall-back passes, the next fall-back is 53 weeks later on 2027-11-07.
+	afterFallBack2026 := time.Date(2026, 11, 1, 17, 0, 0, 0, time.UTC)
+	fiftyThreeWeekChanges := executionPlanScheduleClockChanges([]*storage.ExecutionPlanSchedule{{ID: "nightly", CronExpr: "30 1 * * *", Timezone: "America/Chicago"}}, afterFallBack2026)
+	if len(fiftyThreeWeekChanges["nightly"]) != 1 || fiftyThreeWeekChanges["nightly"][0].Date != "2027-11-07" || fiftyThreeWeekChanges["nightly"][0].Kind != "repeated" {
+		t.Fatalf("53-week horizon changes = %+v, want repeated 2027-11-07", fiftyThreeWeekChanges)
+	}
 }
 
 // Both schedule lists carry each schedule's clock changes by schedule ID:

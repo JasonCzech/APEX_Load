@@ -52,6 +52,9 @@ import { ExtractorTester } from './ExtractorTester'
 import RepairSuggestionList from './RepairSuggestionList'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
+import { AuraEnvelopePreview, AuraResponsePreview } from './AuraEnvelopeEditor'
+import { isAuraEndpointTarget } from './auraEnvelopeModel'
+import type { IssueDetail } from './IssueDetailsDialog'
 import type { CorrelationApplyResult, CorrelationExtractorRepair } from './scriptCorrelationRepair'
 import {
   type AuthoringIssue,
@@ -203,6 +206,8 @@ export interface ScriptReplayDebuggerViewProps {
   onEditParameterDefinition: (name: string) => void
   onActivateDebug: () => void
   onSelectProblemAction: (row: ScriptPhaseActionRow) => void
+  additionalIssues?: IssueDetail[]
+  onSelectAdditionalIssue?: (issue: IssueDetail) => void
   problemCount: number
   projectId?: string
   replayActivity: ReplayActivityItem[]
@@ -299,6 +304,8 @@ export function ScriptReplayDebuggerView({
   onActivateDebug,
   onEditParameterDefinition,
   onSelectProblemAction,
+  additionalIssues = [],
+  onSelectAdditionalIssue,
   problemCount,
   projectId,
   replayActivity,
@@ -600,13 +607,29 @@ export function ScriptReplayDebuggerView({
                   </label>
                   <label>
                     <span>Run identity <code>{'{{run.id}}'}</code></span>
-                    <input aria-label="Run identity" aria-invalid={Boolean(runIdError)} value={replayOptions.runId} placeholder="debug-<session id>" onChange={e => setReplayOptions(prev => ({ ...prev, runId: e.target.value }))} />
+                    <input
+                      aria-label="Run identity"
+                      aria-invalid={Boolean(runIdError)}
+                      aria-describedby={runIdError ? 'debug-run-id-error' : undefined}
+                      value={replayOptions.runId}
+                      placeholder="debug-<session id>"
+                      onChange={e => setReplayOptions(prev => ({ ...prev, runId: e.target.value }))}
+                    />
+                    {runIdError && <small id="debug-run-id-error" role="alert" style={{ color: 'var(--danger-text)', display: 'block', marginTop: '4px' }}>{runIdError}</small>}
                   </label>
                   <div className="full-width replay-variables-field">
                     <span>Session Variables JSON</span>
                     <div className="replay-variables-editor" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
-                      <textarea aria-label="Session Variables JSON" aria-invalid={Boolean(variablesError)} value={replayOptions.variablesText} onChange={event => setReplayOptions(prev => ({ ...prev, variablesText: event.target.value }))} rows={5} />
+                      <textarea
+                        aria-label="Session Variables JSON"
+                        aria-invalid={Boolean(variablesError)}
+                        aria-describedby={variablesError ? 'debug-variables-error' : undefined}
+                        value={replayOptions.variablesText}
+                        onChange={event => setReplayOptions(prev => ({ ...prev, variablesText: event.target.value }))}
+                        rows={5}
+                      />
                     </div>
+                    {variablesError && <small id="debug-variables-error" role="alert" style={{ color: 'var(--danger-text)', display: 'block', marginTop: '4px' }}>{variablesError}</small>}
                   </div>
                   <LiveTableSandboxEditor value={replayOptions.liveTableSeedsText} usage={dataUsage} onChange={liveTableSeedsText => setReplayOptions(prev => ({ ...prev, liveTableSeedsText }))} />
                 </fieldset>
@@ -620,8 +643,8 @@ export function ScriptReplayDebuggerView({
               <div className="debug-session-tools debug-selection-status">
                 <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
                 <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
-                <button type="button" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
-                <TooltipButton type="button" title={!replaying && runStartBlockedReason ? runStartBlockedReason : 'Runs prerequisites; during a paused run, stops at the next matching execution'} disabled={!selectedRow || (replaying ? !isReplayPaused : Boolean(runStartBlockedReason))} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
+                <button type="button" className="btn btn-sm btn-ghost" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
+                <TooltipButton type="button" className="btn btn-sm btn-secondary" title={!replaying && runStartBlockedReason ? runStartBlockedReason : 'Runs prerequisites; during a paused run, stops at the next matching execution'} disabled={!selectedRow || (replaying ? !isReplayPaused : Boolean(runStartBlockedReason))} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
               </div>
               <div className="debug-session-disclosures">
               <details className="debug-effective-settings"><summary>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</summary><dl><dt>Base URL (relative targets)</dt><dd>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</dd><dt>Evidence capture</dt><dd>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</dd><dt>Failure policy</dt><dd>{runRecord?.failurePolicy || (debugContinuesAfterFailure(replayOptions, script) ? 'Continue on error' : 'Stop on error')}</dd><dt>Inputs</dt><dd>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameters; session variables override matching inputs.</dd></dl><ul>{(runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))).map(p => <li key={p.name}>{p.name}: {p.source} · {p.selection} · {p.update || 'default update'}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</li>)}</ul></details>
@@ -744,7 +767,7 @@ export function ScriptReplayDebuggerView({
                     aria-orientation="vertical"
                     aria-valuemax={debuggerVarsMaximumWidth}
                     aria-valuemin={DEBUGGER_LAYOUT_LIMITS.vars.min}
-                    aria-valuenow={debuggerVarsActualWidth ?? debuggerVarsWidth}
+                    aria-valuenow={Math.min(debuggerVarsMaximumWidth, Math.max(DEBUGGER_LAYOUT_LIMITS.vars.min, debuggerVarsActualWidth ?? debuggerVarsWidth))}
                   />
                   <div className="debugger-center-tabs">
                     <TabList className="debugger-center-tablist ux-underline-tabs" role="tablist" aria-label="Action evidence views" onKeyDown={handleTabKey}>
@@ -785,7 +808,7 @@ export function ScriptReplayDebuggerView({
                               >
                                 <span>{item.name}</span>
                                 <strong>{item.action}</strong>
-                                <small>{item.previous ?? 'unset'} {'->'} {item.next}</small>
+                                <small>{item.previous ?? 'unset'} {'→'} {item.next}</small>
                               </button>
                             ))}
                           </div>
@@ -812,7 +835,7 @@ export function ScriptReplayDebuggerView({
                       /></details>
                     )}
                     {!replayReport ? (
-                      <div className="debugger-empty">No debugger session yet. Set breakpoints in the action list (a row's gutter, or F9), review Debug options, then run one iteration.</div>
+                      <div className="debugger-empty">No debugger session yet. Set breakpoints in the action list (a row's gutter, F9, or Cmd/Ctrl+B), review Debug options, then run one iteration.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
                       (() => {
                         const event = selectedReplayEvent
@@ -1054,6 +1077,7 @@ export function ScriptReplayDebuggerView({
                                 {event.body && (
                                   <div className="replay-code-block">
                                     <span className="replay-detail-label">Resolved Body</span>
+                                    <AuraEnvelopePreview body={event.body} />
                                     <SnapshotBodyPreview
                                       body={event.body}
                                       headers={event.headers}
@@ -1080,7 +1104,7 @@ export function ScriptReplayDebuggerView({
                                           <div className="replay-variable-diff-name">{name}</div>
                                           <div className="replay-variable-diff-values">
                                             <span className="replay-variable-diff-before">{diff.previous ?? 'unset'}</span>
-                                            <span className="replay-variable-diff-arrow">{'->'}</span>
+                                            <span className="replay-variable-diff-arrow">{'→'}</span>
                                             <span className="replay-variable-diff-after">{diff.next}</span>
                                           </div>
                                         </div>
@@ -1121,6 +1145,7 @@ export function ScriptReplayDebuggerView({
                                         {event.snapshot.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}
                                         {event.snapshot.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}
                                         <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.request_headers)} />
+                                        {!event.body && <AuraEnvelopePreview body={event.snapshot.request_body} />}
                                         <div className="debugger-snapshot-body">
                                           <SnapshotBodyPreview
                                             body={event.snapshot.request_body}
@@ -1141,9 +1166,12 @@ export function ScriptReplayDebuggerView({
                                           </button>
                                         </div>
                                         {(() => {
+                                          const showAuraResponse = isAuraEndpointTarget(event.snapshot.request_url || event.target)
+                                            || Boolean(event.snapshot.response_body && /^\s*(?:while\s*\(\s*1\s*\)|for\s*\(\s*;\s*;\s*\))/.test(event.snapshot.response_body))
                                           const response = <>
                                             <pre>{String(event.snapshot.response_status || event.status_code || 'n/a')}</pre>
                                             <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.response_headers)} />
+                                            {showAuraResponse && <AuraResponsePreview body={event.snapshot.response_body} />}
                                             <div className="debugger-snapshot-body">
                                               <SnapshotBodyPreview
                                                 body={event.snapshot.response_body}
@@ -1352,6 +1380,33 @@ export function ScriptReplayDebuggerView({
                               <small>{row.action.name ? issue.message : ''}</small>
                             </button>
                           ))}
+                          {additionalIssues
+                            .filter(issue => issue.id !== 'json-parse-error' && issue.id !== 'current-error' && !issue.id.startsWith('runtime-warning-'))
+                            .map(issue => {
+                              const severityClass = issue.severity === 'blocker' ? 'error' : issue.severity
+                              const badgeLabel = issue.severity === 'blocker' ? 'Blocker' : issue.source || issue.severity
+                              if (issue.onSelect && onSelectAdditionalIssue) {
+                                return (
+                                  <button
+                                    key={issue.id}
+                                    type="button"
+                                    className={`debugger-problem-row ${severityClass} action-problem`}
+                                    onClick={() => onSelectAdditionalIssue(issue)}
+                                  >
+                                    <span>{badgeLabel}</span>
+                                    <strong>{issue.title}</strong>
+                                    {issue.description && <small>{issue.description}</small>}
+                                  </button>
+                                )
+                              }
+                              return (
+                                <div key={issue.id} className={`debugger-problem-row ${severityClass}`}>
+                                  <span>{badgeLabel}</span>
+                                  <strong>{issue.title}</strong>
+                                  {issue.description && <small>{issue.description}</small>}
+                                </div>
+                              )
+                            })}
                         </div>
                       )}
                     </div>
