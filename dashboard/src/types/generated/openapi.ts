@@ -31005,11 +31005,6 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
       "default": {
         content?: never;
       };
@@ -65907,6 +65902,7 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }) | null;
+          "source_secret_session_id"?: string;
         };
       };
     };
@@ -66686,6 +66682,9 @@ export interface operations {
               "unresolved_source_variable"?: boolean;
               "value_group_id"?: string;
             }>;
+            "shared_values": (Record<string, unknown>) | null;
+            "source_secret_session_expires_at"?: (string) | null;
+            "source_secret_session_id"?: (string) | null;
             "validation_issues"?: Array<string>;
           };
         };
@@ -117923,11 +117922,6 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
       "default": {
         content?: never;
       };
@@ -117953,11 +117947,6 @@ export interface operations {
         };
       };
       "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

@@ -245,8 +245,19 @@ function ScriptsAuthoringContent({
     description: 'Return to the import review without losing the current converted draft or correlation findings.',
     retainedGuardIds: ['ProtocolAssetImport'],
   }
-  const openProtocolImportDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
+  // The protocol review's record of the draft it opened in the editor. The
+  // review stays mounted behind the editor, so a save made there must reach it
+  // or Back would show the saved draft as unsaved, with Save offered again.
+  const protocolDraftSavedRef = useRef<((saved: StoredScript) => void) | null>(null)
+  const openProtocolImportDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus, onDraftSaved?: (saved: StoredScript) => void) => {
+    protocolDraftSavedRef.current = onDraftSaved || null
     onEditDraft(script, focus, protocolImportEditReturnTarget)
+  }
+  const saveProtocolDraft = (saved: StoredScript, options?: ScriptSaveOptions) => {
+    const recordSave = protocolDraftSavedRef.current
+    protocolDraftSavedRef.current = null
+    recordSave?.(saved)
+    onSaved(saved, options)
   }
   const renderProtocolImportSurface = (hidden = false) => createOptionsSurface(
     <ProtocolAssetImport
@@ -288,7 +299,7 @@ function ScriptsAuthoringContent({
             {renderProtocolImportSurface(true)}
             <div className="page">
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} />
+              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={saveProtocolDraft} onClose={closeCreateEditor} />
             </div>
           </div>
         )

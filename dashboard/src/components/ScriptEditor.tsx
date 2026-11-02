@@ -252,6 +252,7 @@ import {
 import { useScriptAuthoringSession, type ResolvedScriptDraft } from './useScriptAuthoringSession'
 import { describeValidationContextChanges, draftFingerprint, scriptSaveAvailability, validationContextKey } from './scriptAuthoringSession'
 import { CatalogFieldDraftContext, useCatalogFieldDrafts } from './catalogFieldDrafts'
+import { AuraEnvelopeDraftContext, scriptStepLayout, useAuraEnvelopeDrafts, type AuraEnvelopeDraftSnapshot } from './AuraEnvelopeEditorDrafts'
 import {
   buildBrowserHTTPConversionReview,
   replayEvidenceIndex,
@@ -335,6 +336,16 @@ type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
 
 const DEBUG_TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped'])
+
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', 'password', 'number'])
+
+// Cmd/Ctrl+Z in a text field undoes its own typing, never a document edit
+// (which, among others, would discard Aura envelope text typed since then).
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+  if (target.closest('.cm-editor, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]')) return true
+  return target instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(target.type.toLowerCase())
+}
 
 // A status check whose expected value is a literal status code, not a template.
 function numericStatusCheck(assertion: Assertion): boolean {
@@ -1023,6 +1034,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (sessionId) setUnavailableRuntimeSessionId(sessionId)
   }, [activeReplaySessionId, retainedBrowserReplaySession, retainedReplayReport])
   const beforeDocumentEditRef = useRef<() => void>(() => undefined)
+  const auraEnvelopeDraftsRef = useRef<ReturnType<typeof useAuraEnvelopeDrafts> | null>(null)
   const setScript = useCallback((update: React.SetStateAction<ScriptData>) => { beforeDocumentEditRef.current(); editScript(update) }, [editScript])
   const editorMountedRef = useRef(false)
   useEffect(() => {
@@ -1166,10 +1178,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setShowFullScriptJson,
     showFullScriptJson,
   } = jsonNavigationController
-  const historyContext = useRef(new Map<string, { focus: typeof authorCodeFocus; active: number | null; breakpoints: ScriptDebugBreakpoint[] }>())
+  // Each document state's selection, breakpoints and unapplied Aura edits,
+  // so undo/redo puts them back where that state had them.
+  const historyContext = useRef(new Map<string, { focus: typeof authorCodeFocus; active: number | null; breakpoints: ScriptDebugBreakpoint[]; auraDrafts: AuraEnvelopeDraftSnapshot }>())
   beforeDocumentEditRef.current = () => {
     const key = formatScriptJson(script)
-    historyContext.current.set(key, structuredClone({ focus: authorCodeFocus, active: activeAction, breakpoints: debugBreakpoints }))
+    historyContext.current.set(key, { ...structuredClone({ focus: authorCodeFocus, active: activeAction, breakpoints: debugBreakpoints }), auraDrafts: auraEnvelopeDraftsRef.current?.snapshot() ?? {} })
     if (historyContext.current.size > 100) historyContext.current.delete(historyContext.current.keys().next().value!)
   }
   // The outline tree: phases, transactions and the steps they measure, with
@@ -1511,6 +1525,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (!script.parameters?.[focusParameterIdx]) return
     setSelectedParameterIdx(focusParameterIdx)
   }, [focusParameterIdx, script.parameters])
+  // A Script JSON draft applied over the structured script cannot say where
+  // the steps it adds or removes moved: unapplied Aura edits, keyed by a
+  // step's place, are then held stale rather than left on whichever step now
+  // holds that place.
+  // setScript records the pre-edit state for undo first, so the drafts are
+  // detached only after that record holds them unorphaned: undoing the apply
+  // gives them back to the steps they were typed on.
+  const setScriptFromJsonDraft = useCallback((update: React.SetStateAction<ScriptData>) => {
+    const drafts = auraEnvelopeDraftsRef.current
+    const relaid = typeof update !== 'function' && update !== script && Boolean(drafts?.hasPending()) && scriptStepLayout(update) !== scriptStepLayout(script)
+    setScript(update)
+    if (relaid) drafts?.detach()
+  }, [script, setScript])
   const {
     applyJsonDraft: handleApplyJsonDraft,
     changeJsonDraft: handleCodePaneChange,
@@ -1531,7 +1558,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setError,
     setJsonDirty,
     setJsonText,
-    setScript,
+    setScript: setScriptFromJsonDraft,
     setSuccess,
   })
   const currentAuthoringSourceRef = useRef({ script: currentDraftScript, jsonText, jsonDirty, invalid: Boolean(jsonParseMessage) })
@@ -1599,7 +1626,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const pendingParameterDataCellEditsRef = useRef(new Map<string, PendingParameterDataCellEdit>())
   const parameterDataEditGenerationRef = useRef(0)
   const catalogFieldDrafts = useCatalogFieldDrafts(currentDraftScript, () => { parameterDataEditGenerationRef.current += 1 })
-  const clearCatalogFieldDrafts = catalogFieldDrafts.clear
+  // Aura envelope Parameters/Context JSON typed but not applied: resolved into
+  // the body on save as catalog field text is, never dropped silently.
+  // Its keys are places in the structured script: a Script JSON draft that
+  // adds or removes steps holds every draft stale until applied and discarded.
+  const auraEnvelopeDrafts = useAuraEnvelopeDrafts(currentDraftScript, () => { parameterDataEditGenerationRef.current += 1 }, script)
+  auraEnvelopeDraftsRef.current = auraEnvelopeDrafts
+  const clearCatalogOnlyFieldDrafts = catalogFieldDrafts.clear
+  const clearAuraEnvelopeDrafts = auraEnvelopeDrafts.clear
+  const restoreAuraEnvelopeDrafts = auraEnvelopeDrafts.restore
+  const clearCatalogFieldDrafts = useCallback(() => {
+    clearCatalogOnlyFieldDrafts()
+    clearAuraEnvelopeDrafts()
+  }, [clearAuraEnvelopeDrafts, clearCatalogOnlyFieldDrafts])
+  const pendingFieldDraftCount = catalogFieldDrafts.count + auraEnvelopeDrafts.count
+  const fieldDraftProblem = catalogFieldDrafts.problem || auraEnvelopeDrafts.problem
   const catalogResourceRef = useRef({ scriptId, projectId, folderId })
   const [pendingParameterDataCellEditCount, setPendingParameterDataCellEditCount] = useState(0)
   const stageParameterDataCellEdit = useCallback((change: ParameterDataCellDraftChange) => {
@@ -1662,8 +1703,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     debugMutationSequenceRef.current += 1
   }
   const validationDocumentKey = useMemo(
-    () => jsonParseMessage || catalogFieldDrafts.count ? null : jsonDirty ? formatScriptJson(currentDraftScript) : formattedScriptJson,
-    [currentDraftScript, formattedScriptJson, jsonDirty, jsonParseMessage, catalogFieldDrafts.count],
+    () => jsonParseMessage || pendingFieldDraftCount ? null : jsonDirty ? formatScriptJson(currentDraftScript) : formattedScriptJson,
+    [currentDraftScript, formattedScriptJson, jsonDirty, jsonParseMessage, pendingFieldDraftCount],
   )
   // A validation result depends on the project, folder and replay variables
   // it was issued with as well as the document and its baseline revision.
@@ -1725,7 +1766,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       resourceScopeRef: editorResourceScopeRef,
       mountedRef: editorMountedRef,
       documentKeyRef: validationDocumentKeyRef,
-      hasPendingEdits: () => pendingParameterDataCellEditsRef.current.size > 0 || catalogFieldDrafts.hasPending(),
+      hasPendingEdits: () => pendingParameterDataCellEditsRef.current.size > 0 || catalogFieldDrafts.hasPending() || auraEnvelopeDrafts.hasPending(),
       onHydrate: baselineScript => {
         setAuthorCodeFocus(null)
         setShowFullScriptJson(false)
@@ -1745,7 +1786,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     document: {
       initialRetainedDraft,
       jsonDirty,
-      pendingEditCount: pendingParameterDataCellEditCount + catalogFieldDrafts.count,
+      pendingEditCount: pendingParameterDataCellEditCount + pendingFieldDraftCount,
       formattedDocument: formattedScriptJson,
       savedDocumentKey: baselineJsonRef.current,
     },
@@ -1945,14 +1986,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const context = historyContext.current.get(formatScriptJson(nextScript))
     if (context) { setAuthorCodeFocus(context.focus); setActiveAction(context.active); setDebugBreakpoints(context.breakpoints) }
     else { setAuthorCodeFocus(null); setActiveAction(null) }
+    // Unapplied Aura edits are keyed by their step's place: they return to
+    // where the restored document had them, never stay at a place that may
+    // now hold another step.
+    const auraDrafts = restoreAuraEnvelopeDrafts(context?.auraDrafts, nextScript)
     restoreScript(nextScript)
     setDataSourceHistory({})
     setDatasetChange(null)
     setJsonText(formatScriptJson(nextScript))
     setJsonDirty(false)
-    setSuccess(successMessage)
+    setSuccess([
+      successMessage,
+      auraDrafts.discarded.length ? `Discarded unapplied Aura envelope edits on ${auraDrafts.discarded.join(', ')}, which have no certain place in that document state.` : '',
+      auraDrafts.reverted.length ? `Unapplied Aura envelope edits on ${auraDrafts.reverted.join(', ')} went back to their text in that document state; Redo brings the newer text back.` : '',
+    ].filter(Boolean).join(' '))
     setError('')
-  }, [clearPendingParameterDataCellEdits, restoreScript, setActiveAction, setAuthorCodeFocus, setDebugBreakpoints, setDataSourceHistory, setError, setJsonDirty, setJsonText, setSuccess])
+  }, [clearPendingParameterDataCellEdits, restoreAuraEnvelopeDrafts, restoreScript, setActiveAction, setAuthorCodeFocus, setDebugBreakpoints, setDataSourceHistory, setError, setJsonDirty, setJsonText, setSuccess])
 
   const undoEditorChange = useCallback(() => {
     if (!editorHistory.past.length) return
@@ -2713,14 +2762,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     })
   }
 
+  // A structural edit moves the breakpoints and the unapplied Aura envelope
+  // edits kept under a step's place in the script with the steps they are on.
+  const remapStepLocations = (remap: (locations: ScriptDebugBreakpoint[]) => ScriptDebugBreakpoint[]) => {
+    setDebugBreakpoints(remap)
+    auraEnvelopeDrafts.follow(remap)
+  }
+
   const remapPhaseBreakpointsAfterRemove = (phase: ScriptActionPhase, removedIndex: number) => {
-    setDebugBreakpoints(prev => prev
+    remapStepLocations(prev => prev
       .filter(bp => bp.phase !== phase || bp.action_index !== removedIndex)
       .map(bp => bp.phase === phase && bp.action_index > removedIndex ? { ...bp, action_index: bp.action_index - 1 } : bp))
   }
 
   const remapPhaseBreakpointsAfterMove = (phase: ScriptActionPhase, fromIndex: number, toIndex: number) => {
-    setDebugBreakpoints(prev => prev.map(bp => {
+    remapStepLocations(prev => prev.map(bp => {
       if (bp.phase !== phase) return bp
       if (bp.action_index === fromIndex) return { ...bp, action_index: toIndex }
       if (bp.action_index === toIndex) return { ...bp, action_index: fromIndex }
@@ -2729,7 +2785,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
 
   const remapPhaseBreakpointsAfterDuplicate = (phase: ScriptActionPhase, sourceIndex: number) => {
-    setDebugBreakpoints(prev => prev.map(bp =>
+    remapStepLocations(prev => prev.map(bp =>
       bp.phase === phase && bp.action_index > sourceIndex ? { ...bp, action_index: bp.action_index + 1 } : bp))
   }
 
@@ -2789,7 +2845,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     try {
       const result = insertAuthorAction(script, action, insertPhase, insertPosition, authorCodeFocus)
       setScript(result.script)
-      setDebugBreakpoints(previous => remapInsertedBreakpoints(previous, result.focus))
+      remapStepLocations(previous => remapInsertedBreakpoints(previous, result.focus, result.script))
       setAuthorCodeFocus(result.focus)
       setActiveAction(result.focus.phase === 'action' && !result.focus.stepPath?.length ? result.focus.actionIndex : null)
       setInsertSeed(null)
@@ -2810,11 +2866,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       let focus = authorCodeFocus
       let breakpoints = debugBreakpoints
       let spotFocus: typeof focus = null
+      const insertedAt: NonNullable<typeof focus>[] = []
       for (const [index, action] of actions.entries()) {
         const inserted = insertAuthorAction(next, action, insertPhase, index ? 'after' : insertPosition, focus)
         next = inserted.script
         focus = inserted.focus
-        breakpoints = remapInsertedBreakpoints(breakpoints, focus)
+        insertedAt.push(focus)
+        breakpoints = remapInsertedBreakpoints(breakpoints, focus, next)
         const within = (action.control?.steps || []).findIndex(step => step.name === spot?.name)
         if (spot && action.name === spot.name) spotFocus = focus
         else if (spot && within >= 0) {
@@ -2825,6 +2883,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const selected = spotFocus || focus
       replaceScriptWithHistory(next)
       setDebugBreakpoints(breakpoints)
+      auraEnvelopeDrafts.follow(locations => insertedAt.reduce((moved, at) => remapInsertedBreakpoints(moved, at), locations))
       if (selected) {
         setAuthorCodeFocus(selected)
         setActiveAction(selected.phase === 'action' && !selected.stepPath?.length ? selected.actionIndex : null)
@@ -2885,7 +2944,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const removed = [measure.start.actionIndex, measure.end.actionIndex]
     const shift = (index: number) => index - removed.filter(at => at < index).length
     updatePhaseActionList(phase, actions => actions.filter((_, index) => !removed.includes(index)))
-    setDebugBreakpoints(previous => previous
+    remapStepLocations(previous => previous
       .filter(bp => bp.phase !== phase || !removed.includes(bp.action_index))
       .map(bp => bp.phase === phase ? { ...bp, action_index: shift(bp.action_index) } : bp))
     if (phase === 'action') setActiveAction(previous => previous === null || removed.includes(previous) ? null : shift(previous))
@@ -3083,7 +3142,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     script: ScriptData
     editGeneration: number
   } => {
-    const resolvedCatalogScript = catalogFieldDrafts.resolve(baseScript)
+    const resolvedCatalogScript = auraEnvelopeDrafts.resolve(catalogFieldDrafts.resolve(baseScript))
     const edits = Array.from(pendingParameterDataCellEditsRef.current.values())
     const editGeneration = parameterDataEditGenerationRef.current
     if (edits.length === 0 && resolvedCatalogScript === baseScript) return { script: baseScript, editGeneration }
@@ -3131,7 +3190,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const { disabled: saveScriptDisabled, title: saveScriptTitle } = scriptSaveAvailability({
     opening: savedScriptOpening && !scriptId,
     stored: Boolean(scriptId), revisionState: authoringRevisionState, hasBaseline: Boolean(authoringBaseline), saving, secretBindingsOpen, validating,
-    dirty: scriptEditorDirty, hasName: Boolean(currentDraftScript.name), jsonParseMessage, fieldDraftProblem: catalogFieldDrafts.problem, baseURLError: draftBaseURLError || '',
+    dirty: scriptEditorDirty, hasName: Boolean(currentDraftScript.name), jsonParseMessage, fieldDraftProblem, baseURLError: draftBaseURLError || '',
   })
   const validateScriptDisabled = saving || replaying || validating || !currentDraftScript.name
   const validateScriptTitle = validating
@@ -4614,18 +4673,27 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const replayGateKind = replayGate.kind
   // F9, Cmd/Ctrl+B and the toolbar's breakpoint button toggle the breakpoint
   // of one step, which shortcutBreakpointTarget chooses: the open replay
-  // event's step in Debug, else the selected step at any phase and depth. A
-  // Debug outline row with keyboard focus handles both keys for itself.
+  // event's step in Debug, else the selected step at any phase and depth. An
+  // outline row with keyboard focus (Author's or Debug's) handles both keys
+  // for itself, as arrow keys move focus without selecting.
   const toggleShortcutBreakpoint = useCallback(() => {
-    if (workspaceTab === 'debug' && typeof document !== 'undefined' && document.activeElement?.closest('.script-outline-tree [role="treeitem"]')) {
+    if (typeof document !== 'undefined' && document.activeElement?.closest('.script-outline-tree [role="treeitem"]')) {
       return
     }
-    const focus = authorCodeFocus && resolveNestedAction(phaseActionsForScript(script, authorCodeFocus.phase)[authorCodeFocus.actionIndex], authorCodeFocus.stepPath) ? authorCodeFocus : null
-    const target = shortcutBreakpointTarget({ workspaceTab, selectedEvent: selectedReplayEvent, focus, activeAction, firstRow: debugActionRows[0] })
+    const focusAction = authorCodeFocus ? resolveNestedAction(phaseActionsForScript(script, authorCodeFocus.phase)[authorCodeFocus.actionIndex], authorCodeFocus.stepPath) : null
+    const focus = authorCodeFocus && focusAction ? { ...authorCodeFocus, action: focusAction } : null
+    const target = shortcutBreakpointTarget({ script, workspaceTab, selectedEvent: selectedReplayEvent, selectedEventFromCurrentDraft: replayEditableActionsKey !== null && replayEditableActionsKey === currentEditableActionsKey, focus, activeAction, firstRow: debugActionRows[0] })
     if (!target) return
     if ('stepPath' in target) void toggleStepPathBreakpoint(target.phase, target.actionIndex, target.stepPath)
     else void toggleDebugBreakpoint(target.phase, target.actionIndex, target.requestIndex)
-  }, [activeAction, authorCodeFocus, debugActionRows, script, selectedReplayEvent, toggleDebugBreakpoint, toggleStepPathBreakpoint, workspaceTab])
+  }, [activeAction, authorCodeFocus, currentEditableActionsKey, debugActionRows, replayEditableActionsKey, script, selectedReplayEvent, toggleDebugBreakpoint, toggleStepPathBreakpoint, workspaceTab])
+  // F9 and Cmd/Ctrl+B on a focused Author outline row: that row's step, keyed
+  // as Debug's gutter keys it (a sequence request by its request_index).
+  const toggleOutlineRowBreakpoint = (item: DebugRailRenderRow) => {
+    const { phase, actionIndex } = item.row
+    if (item.kind === 'leaf' && item.requestIndex == null) void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)
+    else void toggleDebugBreakpoint(phase, actionIndex, item.kind === 'leaf' ? item.requestIndex : undefined)
+  }
   const scriptEditorShortcuts = useMemo(() => [
     {
       id: 'script.escape',
@@ -5730,14 +5798,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       }
       let focus = authorCodeFocus
       let breakpoints = debugBreakpoints
+      const insertedAt: NonNullable<typeof focus>[] = []
       for (const [index, action] of generated.slice(initCount, initCount + mainCount).entries()) {
         const inserted = insertAuthorAction(next, action, insertPhase, index ? 'after' : insertPosition, focus)
         next = { ...inserted.script, init: inserted.script.init || [], teardown: inserted.script.teardown || [] }
         focus = inserted.focus
-        breakpoints = remapInsertedBreakpoints(breakpoints, focus)
+        insertedAt.push(focus)
+        breakpoints = remapInsertedBreakpoints(breakpoints, focus, next)
       }
       replaceScriptWithHistory(next)
       setDebugBreakpoints(breakpoints)
+      auraEnvelopeDrafts.follow(locations => insertedAt.reduce((moved, at) => remapInsertedBreakpoints(moved, at), locations))
       if (focus) { setAuthorCodeFocus(focus); setActiveAction(focus.phase === 'action' && !focus.stepPath?.length ? focus.actionIndex : null) }
       setInsertSeed(null)
       setAuthorOverview(false)
@@ -5781,7 +5852,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       // Two markers are inserted (start at lo, end after hi); keep breakpoints AND
       // the active selection / JSON focus pinned so they don't drift onto a shifted
       // action or an inserted marker (same family as duplicateAction).
-      setDebugBreakpoints(prev => prev.map(bp => {
+      remapStepLocations(prev => prev.map(bp => {
         if (bp.phase !== 'action') return bp
         const shifted = remapIndexAfterMarkerWrap(bp.action_index, lo, hi)
         return shifted === bp.action_index ? bp : { ...bp, action_index: shifted }
@@ -6571,6 +6642,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // keeping each block around it valid (removeNestedAction) and the
   // breakpoints on the steps they were set on.
   const deleteBlockedStep = (phase: ScriptActionPhase, actionIndex: number, stepPath?: string[]) => {
+    // A pending Source draft would put the step back on Apply, or be lost.
+    if (jsonDirty || jsonParseMessage) {
+      setError('Apply or reset your Source changes first, then delete the blocked step.')
+      return
+    }
     const currentRoot = phaseActionsForScript(script, phase)[actionIndex]
     if (!currentRoot) return
     const removal = stepPath?.length ? removeNestedAction(currentRoot, stepPath) : null
@@ -6585,7 +6661,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         actions.splice(actionIndex, 1, ...next.replacement)
         return actions
       })
-      setDebugBreakpoints(previous => remapBreakpointsAfterNestedRemoval(previous, phase, actionIndex, removal))
+      remapStepLocations(previous => remapBreakpointsAfterNestedRemoval(previous, phase, actionIndex, removal))
       const shift = removal.replacement.length - 1
       if (shift !== 0 && phase === 'action') setActiveAction(previous => previous !== null && previous > actionIndex ? previous + shift : previous)
       setAuthorCodeFocus({ phase, actionIndex })
@@ -6601,16 +6677,27 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
   // Debug's Problems drawer lists the steps whose execution blockers refuse a
   // run under "Blocking replay (N)": each opens on its repair in Author (the
-  // problem's own destination) or deletes the blocked step.
+  // problem's own destination) or deletes the blocked step. Only a step's own
+  // review code is offered for deletion: a code a save clears (clearedBySave)
+  // and a value's dependency code (missing_producer, conditional_producer),
+  // located at a step that uses the value, are fixed by supplying the value
+  // or saving, not by removing that step, so they stay in the list below.
   const debugReplayBlockers = readinessIssues.flatMap(issue => {
     const location = issue.location
     const listed = railAdditionalIssues.find(candidate => candidate.id === issue.id)
     if (issue.severity !== 'blocker' || !issue.codes?.length || !location || !listed) return []
+    if (issue.clearedBySave || issue.variable || issue.codes.every(code => dependencyCodeValue(code))) return []
     return [{ ...listed, onDelete: () => deleteBlockedStep(location.phase, location.actionIndex, location.stepPath) }]
   })
 
   const clearBlockedInspectorUnexportedHarBody = () => {
     if (!activeInspectorScope) return
+    // The commit below rewrites the Source pane from the committed script,
+    // which would discard an unapplied JSON draft.
+    if (jsonDirty || jsonParseMessage) {
+      setError('Apply or reset your Source changes first, then clear the blocker.')
+      return
+    }
     const { phase, actionIndex } = activeInspectorScope
     const stepPath = activeInspectorScope.subAction ? authorCodeFocus?.stepPath : undefined
     const targetPath = activeInspectorScope.path.replace(/^script\./, '')
@@ -6679,7 +6766,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           blockerRepair={<ScriptBlockerRepairPanel scriptId={scriptId} projectId={projectId} baseline={authoringBaseline}
             blockedReason={scriptId && authoringRevisionState !== 'ready' ? authoringRevisionState === 'loading' ? 'Loading the saved script. Its repairs are available once it has loaded.' : 'Load and review the current version of the script before repairing it.' : undefined}
             script={script} bodySource={protectedBodySource} action={activeInspectorScope.action} actionPath={activeInspectorScope.path.replace(/^script\./, '')}
-            dirty={scriptEditorDirty} saving={saving} onSaveFirst={() => { void saveScript({ keepAuthoringOpen: true }) }}
+            dirty={scriptEditorDirty} sourcePending={Boolean(jsonDirty || jsonParseMessage)} saving={saving} onSaveFirst={() => { void saveScript({ keepAuthoringOpen: true }) }}
             onApplied={response => scriptRepairAppliedRef.current(response)} onReconcile={handleScriptRepairReconcile}
             onDeleteStep={deleteBlockedInspectorStep}
             onOpenBody={() => { openCenterTab('request-body'); setNarrowAuthorPane('editor') }}
@@ -7285,7 +7372,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         />
       )
     }
-    if (tabId === 'request-body') return renderStructuredCenterDocument('Request body', activeInspectorScope ? <ReferenceFieldContext.Provider value={referenceFieldContext}><ActionBodyWorkspace key={activeInspectorScope.path} action={activeInspectorScope.action} index={activeInspectorScope.actionIndex} path={activeInspectorScope.path} parameters={script.parameters || []} script={script} onInspectReference={reference => { if (reference.startsWith('param.') || reference.startsWith('data.')) openCenterTab('parameter-data'); else { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) } }} onUpdate={(field, value) => updatePhaseAction(activeInspectorScope.phase, activeInspectorScope.actionIndex, field, value)} onParameterize={draft => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase, stepPath: authorCodeFocus?.stepPath })} /></ReferenceFieldContext.Provider> : <p>Select an action to edit its request body.</p>)
+    if (tabId === 'request-body') return renderStructuredCenterDocument('Request body', activeInspectorScope ? <ReferenceFieldContext.Provider value={referenceFieldContext}><AuraEnvelopeDraftContext.Provider value={auraEnvelopeDrafts.forAction(activeInspectorScope.key, activeInspectorScope.action)}><ActionBodyWorkspace key={activeInspectorScope.path} action={activeInspectorScope.action} index={activeInspectorScope.actionIndex} path={activeInspectorScope.path} parameters={script.parameters || []} script={script} onInspectReference={reference => { if (reference.startsWith('param.') || reference.startsWith('data.')) openCenterTab('parameter-data'); else { setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) } }} onUpdate={(field, value) => updatePhaseAction(activeInspectorScope.phase, activeInspectorScope.actionIndex, field, value)} onParameterize={draft => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase, stepPath: authorCodeFocus?.stepPath })} /></AuraEnvelopeDraftContext.Provider></ReferenceFieldContext.Provider> : <p>Select an action to edit its request body.</p>)
     if (tabId === ACTION_LIST_TAB_ID) return workspaceTab === 'debug' ? null : renderActionListCenterDocument()
     if (tabId !== SCRIPT_JSON_TAB_ID) return null
     return (
@@ -7766,7 +7853,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   return (<>
     {catalogFieldDrafts.problem && <div className="form-error" role="alert">
       Fix action fields before saving: {catalogFieldDrafts.problem}{' '}
-      <button type="button" className="btn btn-ghost btn-sm" onClick={clearCatalogFieldDrafts}>Discard field edits</button>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={clearCatalogOnlyFieldDrafts}>Discard field edits</button>
+    </div>}
+    {auraEnvelopeDrafts.problem && <div className="form-error" role="alert">
+      Fix Aura envelope edits before saving: {auraEnvelopeDrafts.problem}{' '}
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => auraEnvelopeDrafts.discard(auraEnvelopeDrafts.problemKey)}>Discard this step&apos;s Aura edits</button>
     </div>}
     {/* The return target (an import review this draft came from) leaves the
         editor through the session's guard, as Close does. */}
@@ -7775,7 +7866,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       {returnTarget.description && <span>{returnTarget.description}</span>}
     </div>}
 <div className="script-editor" ref={editorElementRef} data-author-pane={narrowAuthorPane} role="presentation" onKeyDown={event => {
-      if (workspaceTab !== 'author' || jsonDirty || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || (event.target as Element).closest('.cm-editor')) return
+      if (workspaceTab !== 'author' || jsonDirty || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || isTextEntryTarget(event.target)) return
       event.preventDefault()
       if (event.shiftKey) redoEditorChange(); else undoEditorChange()
     }}>
@@ -8506,6 +8597,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     showMarkers={outlineShowMarkers}
                     onShowMarkersChange={changeOutlineShowMarkers}
                     naturalWidthRef={outlineNaturalWidthRef}
+                    onToggleRowBreakpoint={toggleOutlineRowBreakpoint}
                   />
                 </nav>
                 </>

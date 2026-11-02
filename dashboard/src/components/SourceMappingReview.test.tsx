@@ -1533,6 +1533,28 @@ describe('SourceMappingReview', () => {
     expect(wholeSourceBtn().textContent).toBe('Copy whole source file')
   })
 
+  it('copies a whole source file over 16 MiB, which only bounds retention, not the clipboard', async () => {
+    const execCommand = vi.fn(() => true)
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+    onTestFinished(() => {
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
+    const large = `${'x'.repeat((16 << 20) + 1)}\n`
+    const largeReview = { ...sourceReview, source_files: sourceReview.source_files.map((file, index) => index === 0 ? { ...file, content: large } : file) }
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={largeReview} script={script} />)
+    })
+    await flushPromises()
+    const wholeSourceBtn = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))[1]
+    await act(async () => { wholeSourceBtn().click() })
+    await flushPromises()
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(wholeSourceBtn().textContent).toBe('Copied')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it('relabels copy whole source file as copy retained source preview when truncated beyond retention and sets aria-expanded on mapping toggle', async () => {
     const truncatedReview = {
       source_files: [{

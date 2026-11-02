@@ -205,6 +205,9 @@ function scriptSearchText(script: StoredScript) {
 
 const healthFilterKeys = healthFilters.map(filter => filter.key)
 
+// The HAR importer's primary and comparison captures.
+const MAX_HAR_IMPORT_FILES = 2
+
 export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialImport, initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0, builderRoute }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -624,22 +627,27 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const handleLibraryFileDrop = useCallback((files: File[]) => {
     const usable = files.filter(Boolean)
     if (usable.length === 0) return
-    const harFiles = usable.filter(candidate => candidate.name.toLowerCase().endsWith('.har'))
-    if (harFiles.length > 0 && harFiles.length < usable.length) {
-      const others = usable.filter(candidate => !harFiles.includes(candidate)).map(candidate => candidate.name)
-      setLibraryNotice(`Drop HAR captures on their own: ${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} not ${others.length === 1 ? 'a HAR file' : 'HAR files'}.`)
-      return
-    }
-    if (harFiles.length > 2) {
-      setLibraryNotice('Drop at most two HAR captures (primary and comparison) at once.')
-      return
-    }
     const requestID = ++libraryDropGenerationRef.current
     const isCurrent = (candidate: number) => libraryDropGenerationRef.current === candidate
     void import('../nativeImportRouting')
-      .then(({ resolveNativeImportRequest }) => resolveNativeImportRequest(usable, requestID, isCurrent))
+      .then(async ({ fileIsHARCapture, resolveNativeImportRequest }) => {
+        // A zipped capture (the capture guide's advice) is a HAR as well.
+        const harFlags = await Promise.all(usable.map(fileIsHARCapture))
+        if (!isCurrent(requestID)) return undefined
+        const harCount = harFlags.filter(Boolean).length
+        if (harCount > 0 && harCount < usable.length) {
+          const others = usable.filter((_candidate, index) => !harFlags[index]).map(candidate => candidate.name)
+          setLibraryNotice(`Drop HAR captures on their own: ${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} not ${others.length === 1 ? 'a HAR file' : 'HAR files'}.`)
+          return undefined
+        }
+        if (harCount > MAX_HAR_IMPORT_FILES) {
+          setLibraryNotice('Drop at most two HAR captures (primary and comparison) at once.')
+          return undefined
+        }
+        return resolveNativeImportRequest(usable, requestID, isCurrent)
+      })
       .then(request => {
-        if (!isCurrent(requestID)) return
+        if (request === undefined || !isCurrent(requestID)) return
         if (!request) {
           setLibraryNotice(`${usable.length === 1 ? usable[0].name : `${usable.length} dropped files`} ${usable.length === 1 ? 'is' : 'are'} not a supported script import format.`)
           return
@@ -655,6 +663,13 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
 
   useEffect(() => {
     if (!nativeImportRequest || nativeImportRequest.files.length === 0) return
+    // The HAR importer has a primary and a comparison slot; a third capture
+    // would be dropped silently, so the request is refused as a drop is.
+    if (nativeImportRequest.launcher === 'traffic_har' && nativeImportRequest.files.length > MAX_HAR_IMPORT_FILES) {
+      setLibraryNotice(`Open at most two HAR captures (primary and comparison) at once; ${nativeImportRequest.files.length} were opened.`)
+      onNativeImportRequestHandled?.()
+      return
+    }
     openImportFiles(nativeImportRequest.launcher, nativeImportRequest.files, nativeImportRequest.mode)
     onNativeImportRequestHandled?.()
   }, [nativeImportRequest, onNativeImportRequestHandled, openImportFiles])

@@ -66,7 +66,7 @@ func (s *Server) handleLoadModelSupportMatrix(w http.ResponseWriter, r *http.Req
 		// policy row, and rebuilt the whole feature catalog for every shape.
 		policy, err := s.domainFeaturePolicyForProject(projectID)
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+			writeDomainFeaturePolicyUnavailable(w)
 			return
 		}
 		filtered := make([]LoadModelSupportEntry, 0, len(matrix))
@@ -100,7 +100,7 @@ func (s *Server) handleLoadModelTemplates(w http.ResponseWriter, r *http.Request
 	if projectID != "" {
 		resolved, err := s.domainFeaturePolicyForProject(projectID)
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+			writeDomainFeaturePolicyUnavailable(w)
 			return
 		}
 		policy = resolved

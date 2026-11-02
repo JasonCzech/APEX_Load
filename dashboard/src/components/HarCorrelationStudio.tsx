@@ -1,9 +1,18 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { HARDiffClassification, HARDiffReport, HARImportStats, SalesforceReview } from '../types/scriptImports'
-import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import type { HARDiffClassification, HARDiffReport, HARDiffRequestInput, HARImportStats, SalesforceReview } from '../types/scriptImports'
+import type { ScriptDefinition } from '../types/scripts'
 import { formatUpTo } from '../utils/numberFormat'
 import { admitNativeCorrelationEvidence, type AdmittedCorrelationMetadata } from './correlationEvidenceAdmission'
-import { findBlockedUnexportedBodyActions, flattenScriptActions } from './harCorrelationStudioModel'
+import {
+  findBlockedUnexportedBodyActions,
+  flattenScriptActions,
+  recordingProfileDroppedRequests,
+  requestFieldDraftStates,
+  scriptTransactionNames,
+  stepVariableReferences,
+  type FlattenedActionEntry,
+  type RequestFieldDraftState,
+} from './harCorrelationStudioModel'
 import './HarCorrelationStudio.css'
 
 const formatInteger = (value: number): string => formatUpTo(value, 0)
@@ -11,11 +20,20 @@ const formatInteger = (value: number): string => formatUpTo(value, 0)
 export interface HarCorrelationStudioProps {
   script: ScriptDefinition
   stats?: Partial<HARImportStats> & Record<string, unknown>
+  /** The conversion's warnings, which name the recording profile's drops. */
+  warnings?: readonly string[]
   harDiff?: HARDiffReport
   salesforceReview?: SalesforceReview | null
   duplicateFileWarning?: string
+  /** True while a conversion or an exclusion is in flight. */
   busy?: boolean
-  onExcludeBlockedActions?: (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => void
+  /**
+   * Requests were excluded since conversion: the pair diff's step numbers
+   * name actions by their position at conversion, which no longer match.
+   */
+  stepPositionsStale?: boolean
+  /** Returns false when the host refused the exclusion without starting it. */
+  onExcludeBlockedActions?: (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => boolean | void
   /** Where Recording Studio opens, to re-record what the HAR export left out. */
   recordingStudioHref?: string
 }
@@ -73,6 +91,19 @@ const BOOTSTRAP_RULES = new Set([
 const RELEASE_COUPLED_RULES = new Set(['salesforce.aura_context_fwuid', 'salesforce.aura_loaded'])
 const UNCAPTURED_COOKIE_RULE = 'salesforce.aura_token_uncaptured_cookie'
 const RELEASE_COUPLED_REASON = 'same_day_release_coupled'
+// The analyzer adds this reason, and pins the extractor to the named cookie,
+// only when the /one/one.app bootstrap HTML declares auraConfig.eikoocnekot
+// (pkg/convert/salesforce/aura_token_cookie.go). Without it the cookie name is
+// inferred and the extractor takes any (__Host-)ERIC_* cookie.
+const EIKOOCNEKOT_CONFIRMED_REASON = /^confirmed auraConfig\.eikoocnekot \(([^)]*)\)/
+
+function uncapturedCookieGuidance(metadata: AdmittedCorrelationMetadata | undefined): string {
+  const confirmed = metadata?.reasons.map(reason => EIKOOCNEKOT_CONFIRMED_REASON.exec(reason)).find(Boolean)
+  if (confirmed) {
+    return `Confirmed via auraConfig.eikoocnekot${confirmed[1] ? ` (${confirmed[1]})` : ''} in /one/one.app HTML; browser sanitized Set-Cookie (__Host-ERIC_*) from HAR export.`
+  }
+  return 'Not confirmed: the capture has no /one/one.app HTML declaring auraConfig.eikoocnekot, so the cookie name is inferred and the extractor takes the first (__Host-)ERIC_* cookie. Check at live replay that it captures the Aura token.'
+}
 
 function isReleaseCoupled(metadata: AdmittedCorrelationMetadata | undefined): boolean {
   if (!metadata) return false
@@ -118,32 +149,101 @@ const STAGE_ORDER: LifecycleStageId[] = [
   'generic_client',
 ]
 
-function actionConsumesVariable(action: ScriptActionDefinition, varName: string): boolean {
-  const needle = `{{var.${varName}}}`
-  const checkText = (text: unknown) => typeof text === 'string' && text.includes(needle)
-  if (checkText(action.target) || checkText(action.body)) return true
-  if (Array.isArray(action.headers)) {
-    if (action.headers.some(h => checkText(h?.value))) return true
-  } else if (action.headers && typeof action.headers === 'object') {
-    if (Object.values(action.headers).some(checkText)) return true
-  }
-  if (action.params && typeof action.params === 'object') {
-    try {
-      if (JSON.stringify(action.params).includes(needle)) return true
-    } catch {
-      return false
+// What a request value that changed between the two recordings most likely
+// is (pkg/convert/har DiffInput*), and how replay should obtain it.
+const UNHANDLED_INPUT_KINDS: Record<string, { label: string; guidance: string; serverIssued?: boolean }> = {
+  client_generated_id: { label: 'Client-generated ID', guidance: 'Use {{fn.uuid()}} when the server accepts any fresh ID, or parameterize it.' },
+  client_timestamp: { label: 'Client timestamp', guidance: 'Parameterize it with a timestamp parameter so each request sends the current time.' },
+  client_counter: { label: 'Client counter', guidance: 'Usually replays harmlessly; parameterize it as a counter if the server rejects repeated values.' },
+  server_value: { label: 'Server value, not correlated', guidance: 'An earlier response issues this value; add a correlation so replay extracts it.', serverIssued: true },
+  unknown_origin: { label: 'Unknown origin', guidance: 'Parameterize it, or correlate it if a response issues it.' },
+  origin_not_checked: { label: 'Origin not checked', guidance: 'Too short or past the search budget to trace; check whether it must change per session.' },
+}
+const UNKNOWN_INPUT_KIND = UNHANDLED_INPUT_KINDS.unknown_origin
+
+// The diff ran once, at import; the draft's current requests say whether a
+// field it reported is still sent as recorded. A field no request sends any
+// more counts as resolved only after requests were excluded: at import the
+// server reports only fields the draft still sends, so an absence without an
+// exclusion means this parser missed it, and the row stays under review.
+function unhandledInputRow(input: HARDiffRequestInput, isSalesforce: boolean, draftState: RequestFieldDraftState | undefined, requestsExcluded: boolean): StudioRow {
+  const kind = UNHANDLED_INPUT_KINDS[input.kind] || UNKNOWN_INPUT_KIND
+  const requests = Number.isSafeInteger(input.requests) && input.requests > 0 ? input.requests : 0
+  const distinct = Number.isSafeInteger(input.distinct_values) && input.distinct_values > 0 ? input.distinct_values : 0
+  const entries = (input.baseline_entries || []).filter(entry => Number.isSafeInteger(entry) && entry > 0)
+  const shownEntries = entries.slice(0, 3)
+  const stage: LifecycleStageId = kind.serverIssued
+    ? (isSalesforce ? 'sf_aura' : 'generic_app')
+    : (isSalesforce ? 'sf_client' : 'generic_client')
+  const consumerLabel = `${formatInteger(requests)} request${requests === 1 ? '' : 's'}${shownEntries.length
+    ? ` (HAR entr${shownEntries.length === 1 ? 'y' : 'ies'} ${shownEntries.join(', ')}${entries.length > shownEntries.length ? ', …' : ''})`
+    : ''}`
+  const diffStatus = `Changed in ${formatInteger(requests)} request${requests === 1 ? '' : 's'} · ${formatInteger(distinct)} value${distinct === 1 ? '' : 's'}`
+  if (draftState === 'templated') {
+    return {
+      key: `input:${input.field}`,
+      variableName: input.field,
+      stage,
+      statusKind: 'wired',
+      statusLabel: `Parameterized in the draft · ${kind.label}`,
+      diffStatus,
+      isDynamic: true,
+      isWired: false,
+      needsReview: false,
+      isReleaseStatic: false,
+      producerLabel: kind.serverIssued ? 'Earlier server response' : 'Client-side (not issued by a server response)',
+      consumerLabel,
+      extractorSummary: 'Sent from a template',
+      guidance: 'Changed between the recordings; every request in the draft now sends a template here instead of the recorded value.',
     }
   }
-  return false
+  if (draftState === 'not_found' && requestsExcluded) {
+    return {
+      key: `input:${input.field}`,
+      variableName: input.field,
+      stage,
+      statusKind: 'static',
+      statusLabel: `No longer sent · ${kind.label}`,
+      diffStatus,
+      isDynamic: true,
+      isWired: false,
+      needsReview: false,
+      isReleaseStatic: false,
+      producerLabel: kind.serverIssued ? 'Earlier server response' : 'Client-side (not issued by a server response)',
+      consumerLabel: `${consumerLabel} at import`,
+      extractorSummary: 'Not sent by the draft',
+      guidance: 'Changed between the recordings, but every request that sent it was excluded from the draft; nothing is left to parameterize.',
+    }
+  }
+  return {
+    key: `input:${input.field}`,
+    variableName: input.field,
+    stage,
+    statusKind: 'review',
+    statusLabel: `Sent as recorded · ${kind.label}`,
+    diffStatus,
+    isDynamic: true,
+    isWired: false,
+    needsReview: true,
+    isReleaseStatic: false,
+    producerLabel: kind.serverIssued ? 'Earlier server response (no extractor)' : 'Client-side (not issued by a server response)',
+    consumerLabel,
+    extractorSummary: 'Not parameterized',
+    guidance: input.reason ? `${input.reason} ${kind.guidance}` : kind.guidance,
+  }
 }
+
+const EMPTY_SCRIPT_CONFIG: ScriptDefinition['config'] = { base_url: '' }
 
 export default function HarCorrelationStudio({
   script,
   stats,
+  warnings,
   harDiff,
   salesforceReview,
   duplicateFileWarning,
   busy = false,
+  stepPositionsStale = false,
   onExcludeBlockedActions,
   recordingStudioHref,
 }: HarCorrelationStudioProps) {
@@ -152,8 +252,33 @@ export default function HarCorrelationStudio({
   const [filter, setFilter] = useState<StudioFilter>('all')
   const [expanded, setExpanded] = useState(false)
 
-  const flattened = useMemo(() => flattenScriptActions(script), [script])
-  const blockedActions = useMemo(() => findBlockedUnexportedBodyActions(script), [script])
+  // Keyed on the request lists, not the script object: a rename commits a new
+  // script object with the same steps and must not re-walk them.
+  const { init: scriptInit, actions: scriptActions, teardown: scriptTeardown, data_sources: dataSources } = script
+  const steps = useMemo<ScriptDefinition>(() => ({
+    name: '',
+    version: '',
+    protocol: 'http',
+    config: EMPTY_SCRIPT_CONFIG,
+    init: scriptInit,
+    actions: scriptActions,
+    teardown: scriptTeardown,
+  }), [scriptActions, scriptInit, scriptTeardown])
+  const flattened = useMemo(() => flattenScriptActions(steps), [steps])
+  const blockedActions = useMemo(() => findBlockedUnexportedBodyActions(steps, flattened), [flattened, steps])
+  const transactionCount = useMemo(() => scriptTransactionNames(steps).size, [steps])
+  // Every request that sends each {{var.*}}, in replay order.
+  const consumersByVariable = useMemo(() => {
+    const byName = new Map<string, FlattenedActionEntry[]>()
+    for (const entry of flattened) {
+      for (const name of stepVariableReferences(entry.action)) {
+        const consumers = byName.get(name)
+        if (consumers) consumers.push(entry)
+        else byName.set(name, [entry])
+      }
+    }
+    return byName
+  }, [flattened])
   const isSalesforce = Boolean(salesforceReview?.detected)
   // The analyzer's rule and evidence for each correlation, by variable name.
   const correlationMetadata = useMemo(() => {
@@ -173,29 +298,32 @@ export default function HarCorrelationStudio({
     let actions = 0
     let teardown = 0
     let extractors = 0
-    const transactions = new Set<string>()
     for (const item of flattened) {
       if (item.section === 'Init') init += 1
       else if (item.section === 'Teardown') teardown += 1
       else actions += 1
       if (Array.isArray(item.action.extractors)) extractors += item.action.extractors.filter(ext => typeof ext?.name === 'string' && ext.name.trim()).length
-      const transaction = item.action.metadata?.source_transaction
-      if (typeof transaction === 'string' && transaction.trim()) transactions.add(transaction.trim())
     }
-    return { init, actions, teardown, total: init + actions + teardown, extractors, transactions: transactions.size }
-  }, [flattened])
+    return { init, actions, teardown, total: init + actions + teardown, extractors, transactions: transactionCount }
+  }, [flattened, transactionCount])
 
   // The server's total_requests counts every HAR entry it read, and its
-  // filtered_assets already includes filtered_telemetry.
+  // filtered_assets already includes filtered_telemetry and the recording
+  // profile's drops.
   const funnel = useMemo(() => {
     const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0
     const filteredTelemetry = count(stats?.filtered_telemetry)
     const filteredTotal = Math.max(count(stats?.filtered_assets), filteredTelemetry)
-    const filteredStatic = filteredTotal - filteredTelemetry
+    const filteredByProfile = Math.min(recordingProfileDroppedRequests(warnings), filteredTotal - filteredTelemetry)
+    const filteredStatic = filteredTotal - filteredTelemetry - filteredByProfile
     const converted = count(stats?.converted_actions) || phaseCounts.total
     const totalEntries = count(stats?.total_requests) || converted + filteredTotal + count(stats?.skipped_requests)
-    return { totalEntries, filteredTotal, filteredStatic, filteredTelemetry }
-  }, [phaseCounts.total, stats])
+    return { totalEntries, filteredTotal, filteredStatic, filteredByProfile, filteredTelemetry }
+  }, [phaseCounts.total, stats, warnings])
+
+  const unhandledInputStates = useMemo(() => requestFieldDraftStates(steps, (harDiff?.unhandled_inputs || [])
+    .map(input => typeof input?.field === 'string' ? input.field.trim() : '')
+    .filter(Boolean)), [harDiff?.unhandled_inputs, steps])
 
   const rows = useMemo<StudioRow[]>(() => {
     const byName = new Map<string, StudioRow>()
@@ -205,7 +333,7 @@ export default function HarCorrelationStudio({
     }
 
     // 1. Data pool credentials hoisted for Salesforce desktop sign-in
-    for (const ds of script.data_sources || []) {
+    for (const ds of dataSources || []) {
       if (ds.name === 'salesforce_users') {
         byName.set('data.salesforce_users', {
           key: 'data.salesforce_users',
@@ -232,7 +360,7 @@ export default function HarCorrelationStudio({
       for (const ext of extractors) {
         const varName = typeof ext?.name === 'string' ? ext.name.trim() : ''
         if (!varName || byName.has(varName)) continue
-        const consumers = flattened.filter(candidate => candidate.seq > entry.seq && actionConsumesVariable(candidate.action, varName))
+        const consumers = (consumersByVariable.get(varName) || []).filter(candidate => candidate.seq > entry.seq)
         const diff = diffByName.get(varName)
         const metadata = correlationMetadata.get(varName)
         const isUncapturedAuraToken = metadata?.ruleId === UNCAPTURED_COOKIE_RULE
@@ -252,7 +380,7 @@ export default function HarCorrelationStudio({
           statusKind = 'warn'
           statusLabel = 'Expected at live replay'
           needsReview = true
-          guidance = 'Confirmed via auraConfig.eikoocnekot in /one/one.app HTML; browser sanitized Set-Cookie (__Host-ERIC_*) from HAR export.'
+          guidance = uncapturedCookieGuidance(metadata)
         } else if (isAuraContextRelease) {
           statusKind = 'static'
           statusLabel = 'Release-coupled'
@@ -315,16 +443,28 @@ export default function HarCorrelationStudio({
         needsReview: !isStatic,
         isReleaseStatic: isStatic || isAuraContext,
         producerLabel: typeof item.found_in_step === 'number' && item.found_in_step > 0
-          ? `Step #${item.found_in_step}${item.matched_descriptor ? ` (${item.matched_descriptor})` : ''}`
+          ? stepPositionsStale
+            ? `A recorded server response${item.matched_descriptor ? ` (${item.matched_descriptor})` : ''}; its step number predates the exclusion`
+            : `Step #${item.found_in_step}${item.matched_descriptor ? ` (${item.matched_descriptor})` : ''}`
           : 'Not observed in server response (client nonce/counter or input)',
         consumerLabel: Array.isArray(item.used_in_steps) && item.used_in_steps.length > 0
-          ? `${item.used_in_steps.length} step${item.used_in_steps.length === 1 ? '' : 's'}`
+          ? stepPositionsStale
+            ? `${item.used_in_steps.length} recorded step${item.used_in_steps.length === 1 ? '' : 's'} at import`
+            : `${item.used_in_steps.length} step${item.used_in_steps.length === 1 ? '' : 's'}`
           : 'Observed in compared request',
         extractorSummary: item.extract_type ? `${item.extract_type} (${item.source || 'response'})` : 'Diff observation only (not auto-wired)',
         guidance: item.reason || (hasKnownProducer
           ? 'Differed across the two HARs with a candidate server producer; review before wiring.'
           : 'Differed across the two HARs without a server producer; keep literal or bind to {{fn.*}} / parameter if required.'),
       })
+    }
+
+    // 3b. Request fields that changed between the recordings and that the
+    // script still sends as recorded (client counters, nonces, per-request IDs).
+    for (const input of harDiff?.unhandled_inputs || []) {
+      const field = typeof input?.field === 'string' ? input.field.trim() : ''
+      if (!field || byName.has(`input:${field}`)) continue
+      byName.set(`input:${field}`, unhandledInputRow({ ...input, field }, isSalesforce, unhandledInputStates.get(field), stepPositionsStale))
     }
 
     // 4. If Salesforce logout steps were hoisted to Teardown, include a lifecycle confirmation row
@@ -348,7 +488,7 @@ export default function HarCorrelationStudio({
     }
 
     return Array.from(byName.values())
-  }, [correlationMetadata, flattened, harDiff, isSalesforce, phaseCounts.teardown, script.data_sources])
+  }, [consumersByVariable, correlationMetadata, dataSources, flattened, harDiff, isSalesforce, phaseCounts.teardown, stepPositionsStale, unhandledInputStates])
 
   const filterCounts = useMemo(() => ({
     all: rows.length,
@@ -401,14 +541,21 @@ export default function HarCorrelationStudio({
       if (next && !next.disabled) next.focus()
       else studioHeadingRef.current?.focus()
     } else if (!busy) {
-      // The exclusion failed or was refused; the row and its focus remain.
+      // The exclusion failed; the row remains, and so does focus on it (its
+      // button was disabled while the exclusion ran).
       excludeRequestRef.current = null
+      const active = document.activeElement
+      if (!active || active === document.body) blockerButtonRefs.current.get(request.index)?.focus()
     }
   }, [blockedActions, busy])
   const requestExclusion = (index: number, options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => {
-    excludeRequestRef.current = { index, before: blockedActions.length }
+    const request = { index, before: blockedActions.length }
+    excludeRequestRef.current = request
     setExclusionStatus('')
-    onExcludeBlockedActions?.(options)
+    // A refused request changes neither the blocked list nor busy, so nothing
+    // would ever settle it: drop it now, or a later unrelated drop in blocked
+    // requests (a re-inspection) would be announced as this exclusion.
+    if (onExcludeBlockedActions?.(options) === false && excludeRequestRef.current === request) excludeRequestRef.current = null
   }
   const recordingStudioLink = recordingStudioHref
     ? <a className="btn btn-secondary btn-sm" href={recordingStudioHref}>Record in Recording Studio</a>
@@ -429,7 +576,7 @@ export default function HarCorrelationStudio({
           <span className="har-funnel-label">Filtered static &amp; telemetry</span>
           <span className="har-funnel-value">{formatInteger(funnel.filteredTotal)}</span>
           <span className="har-funnel-detail">
-            {formatInteger(funnel.filteredStatic)} static · {formatInteger(funnel.filteredTelemetry)} telemetry
+            {formatInteger(funnel.filteredStatic)} static · {funnel.filteredByProfile > 0 ? `${formatInteger(funnel.filteredByProfile)} by recording profile · ` : ''}{formatInteger(funnel.filteredTelemetry)} telemetry
           </span>
         </div>
         <div className="har-funnel-step">
@@ -605,6 +752,12 @@ export default function HarCorrelationStudio({
               </tbody>
             </table>
           </div>
+
+          {harDiff?.unhandled_inputs_truncated && (
+            <p className="har-funnel-detail" role="note">
+              Only the first {formatInteger(harDiff.unhandled_inputs?.length || 0)} changed request fields are listed; more changed between the recordings.
+            </p>
+          )}
 
           {filteredRows.length > DEFAULT_VISIBLE_ROWS && (
             <div className="har-studio-expand-row">

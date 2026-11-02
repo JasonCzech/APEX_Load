@@ -241,7 +241,7 @@ func diffPrepared(ctx context.Context, baseline *ConvertResult, comparison *Comp
 	if err := ctx.Err(); err != nil {
 		return nil, aligner, err
 	}
-	requestInputs, truncated, err := diffRequestInputs(ctx, baselineObservations, comparison.observations)
+	requestInputs, truncated, err := diffRequestInputs(ctx, baselineObservations, comparison.observations, aligner.observationNarrowKey)
 	if err != nil {
 		return nil, aligner, err
 	}

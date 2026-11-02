@@ -9,15 +9,15 @@ import { importScenarioName, useImportScenario } from './useImportScenario'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { carrySourceValueAvailability, filesHaveIdenticalBytes, harShapingApplied } from './ProtocolAssetImportModel'
+import { carryPreAppliedCorrelations, exclusionRefusedBeforeCommit, filesHaveIdenticalBytes, harShapingApplied, sourceSecretSessionAfterExclusion, statsAfterExclusion, withoutSourceValues } from './ProtocolAssetImportModel'
 import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
 import './ProtocolAssetImport.css'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceDomainObservation, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import AuraOutcomeReview from './AuraOutcomeReview'
@@ -48,7 +48,7 @@ import {
   invalidateProtectedImportCandidate,
   mergeProtectedParameterizationSelectionIds,
 } from './protectedImportSession'
-import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import { HTTPVersionModeField } from './HTTPVersionModeField'
 import type { HTTPVersionImportMode } from './httpVersionModel'
 import './SampleScriptImport.css'
@@ -72,7 +72,12 @@ interface Props {
   // common case of importing while a folder is open.
   folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
-  onEdit?: (script: ScriptDefinition) => void
+  /**
+   * Opens the reviewed draft in the Visual Editor. The review stays mounted
+   * behind the editor; onDraftSaved records a save made there so Back shows
+   * the draft as saved.
+   */
+  onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus, onDraftSaved?: (saved: StoredScript) => void) => void
   onClose?: () => void
   onOperationBusyChange?: (busy: boolean) => void
 }
@@ -270,6 +275,46 @@ const sourceImportProtocolTargets: Partial<Record<ImportKind, string[]>> = {
   cloudtest: ['Review-only until fixture-proven'],
   'eventhubs-capture': ['Event Hubs'],
   'broker-config': ['JMS Solace', 'JMS IBM MQ review/mock'],
+}
+
+// A display cap that says what it hides: "Showing K of N" and "Show all N".
+function CappedFindingList<T>({ items, limit, noun, itemKey, renderItem, leading }: {
+  items: readonly T[]
+  limit: number
+  noun: string
+  itemKey: (item: T, index: number) => string
+  renderItem: (item: T) => ReactNode
+  /** Rows always listed ahead of the capped items (such as blockers). */
+  leading?: ReactNode
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const visible = showAll ? items : items.slice(0, limit)
+  return (
+    <>
+      <ul className="sample-import-findings">
+        {leading}
+        {visible.map((item, index) => <li key={itemKey(item, index)}>{renderItem(item)}</li>)}
+      </ul>
+      {items.length > limit && (
+        <div className="sample-import-actions compact">
+          <span className="sample-import-muted">Showing {visible.length} of {items.length} {noun}</span>
+          <button type="button" className="btn btn-secondary btn-sm" aria-expanded={showAll} onClick={() => setShowAll(current => !current)}>
+            {showAll ? `Show first ${limit} ${noun}` : `Show all ${items.length} ${noun}`}
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+// A Salesforce host's imported requests, and every raw HAR entry on it when
+// that differs (filtered static assets and telemetry count only there).
+// After an exclusion the counts still describe the draft as it was converted.
+function salesforceDomainCounts(domain: SalesforceDomainObservation, excludedSinceConversion = false): string {
+  const requests = `${domain.count} request${domain.count === 1 ? '' : 's'} ${excludedSinceConversion ? 'at import' : 'in the draft'}`
+  const harCount = Number.isSafeInteger(domain.har_count) && (domain.har_count || 0) > 0 ? domain.har_count! : undefined
+  if (harCount === undefined || harCount === domain.count) return requests
+  return `${requests} · ${harCount} HAR entr${harCount === 1 ? 'y' : 'ies'}`
 }
 
 function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
@@ -705,6 +750,10 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
 
 const endpointTotal = salesforceEndpointTotal
 const IMPORT_DRAFT_EXPIRED_MESSAGE = 'This credential-preserving import draft has expired. Re-run the import before saving, editing, or changing it.'
+const EXCLUSION_OUTCOME_UNKNOWN_MESSAGE = 'The exclusion did not answer, so it may have been applied on the server. Re-run the import before saving or changing this draft.'
+// A draft that is not credential-preserving lives only in this review, so an
+// unanswered exclusion left it as it was; only the sent session may be gone.
+const EXCLUSION_SESSION_RELEASED_MESSAGE = 'The exclusion did not answer, and the draft was not changed. The recorded credential values were released; bind those credentials by hand or re-run the import. You can retry the exclusion.'
 
 let asyncAPIBatchSaveOperationSequence = 0
 let genericImportBatchSaveOperationSequence = 0
@@ -784,7 +833,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   }, [])
   useEffect(() => abortConversionRequest, [abortConversionRequest])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
-  const { savedResult, publish: publishSaveOutcome, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  // Expanded finding lists outlive edits to the reviewed draft, such as an
+  // exclusion; only a new conversion or a dropped source collapses them.
+  const [findingListEpoch, setFindingListEpoch] = useState(0)
+  const findingListScope = `${findingListEpoch}:${projectId || ''}`
+  const { savedResult: publishedSaveResult, publish: publishSaveOutcome, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  // A draft opened in the Visual Editor and saved there is saved for this
+  // review too: its Save would otherwise create a second copy.
+  const [editorSave, setEditorSave] = useState<{ scope: string; result: ImportedSaveResult } | null>(null)
+  const savedResult = publishedSaveResult ?? (editorSave && editorSave.scope === reviewScope ? editorSave.result : null)
   const reviewScopeRef = useRef(reviewScope)
   reviewScopeRef.current = reviewScope
   // The review scope whose draft was just saved. The leave guard reads it live,
@@ -796,6 +853,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
       navigationGuard.markClean('ProtocolAssetImport')
     }
     publishSaveOutcome(saved, destination)
+  }
+  // The editor already opened the saved script, so nothing is published.
+  const recordEditorSave = (scope: string) => (saved: StoredScript) => {
+    if (reviewScopeRef.current !== scope) return
+    cleanReviewScopeRef.current = scope
+    navigationGuard.markClean('ProtocolAssetImport')
+    setEditorSave({ scope, result: { scripts: [saved] } })
   }
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
@@ -852,6 +916,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     internalReviewBusyRef.current = busy
     setInternalReviewBusy(busy)
   }, [])
+  // An exclusion is this surface's own review mutation. It has its own flag:
+  // the shared one above is the child review's, which a finishing exclusion
+  // must not clear, and the child review's panels lock on this one.
+  const exclusionInFlightRef = useRef(0)
+  const exclusionTokenRef = useRef(0)
+  const [exclusionInFlight, setExclusionInFlight] = useState(false)
+  // Requests excluded since the review's conversion. The conversion's own
+  // evidence (diff step positions, Salesforce counts) predates them.
+  const [excludedSinceConversion, setExcludedSinceConversion] = useState(0)
   const [file, setFile] = useState<File | null>(null)
   useSuggestImportFolderName(file?.name)
   const sourceFileRef = useRef<File | null>(file)
@@ -881,12 +954,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   const [, setConversionScope] = useState(0)
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
   const [duplicateHARWarning, setDuplicateHARWarning] = useState('')
-  const [showAllSalesforceDetails, setShowAllSalesforceDetails] = useState(false)
   const [showAllOpenAPICorrelations, setShowAllOpenAPICorrelations] = useState(false)
   const [showAllRAMLResources, setShowAllRAMLResources] = useState(false)
   const [showAllCloudTestScenarios, setShowAllCloudTestScenarios] = useState(false)
-  const [showAllMulesoftDetails, setShowAllMulesoftDetails] = useState(false)
-  const [showAllAgentforceDetails, setShowAllAgentforceDetails] = useState(false)
   const [auraSourceFocus, setAuraSourceFocus] = useState<ImportSourceIssueFocus | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
@@ -976,11 +1046,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   const labels = copy[kind]
   const resetConvertTask = convertTask.reset
   const resetSaveTask = saveTask.reset
+  const reviewMutationBusy = internalReviewBusy || exclusionInFlight
+  const reviewMutationBusyNow = () => internalReviewBusyRef.current || exclusionInFlightRef.current !== 0
   const operationBusy = convertTask.pending
     || saveTask.pending
     || persistenceInProgress
     || saveAllPreparing
-    || internalReviewBusy
+    || reviewMutationBusy
     || replayTask.pending
   const sourceMutationLocked = convertTask.pending || settingsEditing || persistenceInProgress || saveTask.pending || saveAllPreparing
   // What each source zone says while the conversion request is in flight. The
@@ -990,15 +1062,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   const sourceWorkingLabel = (source: File | null) => (
     convertTask.pending && source ? describeWorking(reviewMode === 'validation' ? 'Validating' : 'Inspecting', source.name) : undefined
   )
-  const saveTargetLocked = sourceMutationLocked || internalReviewBusy
+  const saveTargetLocked = sourceMutationLocked || reviewMutationBusy
   // A rename commits to the reviewed draft, which an in-flight review request
   // (exclusion, credential binding) is about to replace.
-  const scriptNameLocked = sourceMutationLocked || internalReviewBusy
+  const scriptNameLocked = sourceMutationLocked || reviewMutationBusy
   const projectScopeRequired = kind === 'har' && (!projectId || projectId === 'unassigned')
   // A credential action can await several API calls before onSave runs. Freeze
   // the replace target at the moment that action becomes busy so the eventual
   // commit cannot close over a target selected after credential preparation.
-  if (!internalReviewBusy && !persistenceInProgress && !saveTask.pending) {
+  if (!reviewMutationBusy && !persistenceInProgress && !saveTask.pending) {
     openAPISaveTargetRef.current = {
       mode: openAPISaveMode,
       targetScriptId: openAPIReplaceTarget.scriptId,
@@ -1038,16 +1110,17 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     if (!saveAllInFlightRef.current) setSaveAllPreparing(false)
     internalReviewBusyRef.current = false
     setInternalReviewBusy(false)
+    exclusionInFlightRef.current = 0
+    setExclusionInFlight(false)
     setPreparedCredentialSummary(null)
     resetAsyncAPISavedScripts()
     setMessageError('')
     setConversionNotice('')
-    setShowAllSalesforceDetails(false)
+    setExcludedSinceConversion(0)
     setShowAllOpenAPICorrelations(false)
     setShowAllRAMLResources(false)
     setShowAllCloudTestScenarios(false)
-    setShowAllMulesoftDetails(false)
-    setShowAllAgentforceDetails(false)
+    setFindingListEpoch(current => current + 1)
     setHAROptionsStaged(false)
   }, [abortConversionRequest, advanceReviewGeneration, resetAsyncAPISavedScripts, resetConvertTask, resetSaveTask, sourceSecretSessions])
   // A HAR conversion option changed while a review is open waits for Re-inspect
@@ -1058,6 +1131,19 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
       return
     }
     invalidateConversionSource()
+  }
+  // A new, replaced or removed source file discards the reviewed draft, so it
+  // asks first, as Back, Re-inspect and a profile switch do.
+  // Returns whether the source changed now; false while the discard prompt
+  // decides, so a dropzone does not report a file it has not taken.
+  const replaceConversionSource = (apply: () => void): boolean => {
+    let applied = false
+    navigationGuard.runGuarded(() => {
+      invalidateConversionSource()
+      apply()
+      applied = true
+    })
+    return applied
   }
   // The converted draft lives only in this review until it is saved.
   // It stays dirty while a save is in flight: a save that then fails leaves
@@ -1196,10 +1282,18 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     }
     const trimmedBaseURL = baseURL.trim()
     if (supportsBaseURL && trimmedBaseURL) {
+      // The HAR converter only moves recorded requests onto a concrete http(s)
+      // base, so the HAR import refuses any template syntax in it.
+      if (kind === 'har' && (trimmedBaseURL.includes('{{') || trimmedBaseURL.includes('}}'))) {
+        setMessageError('Base URL override for a HAR import must be a concrete http:// or https:// URL; {{...}} templates are not supported. Leave it blank to keep the recorded origin, and retarget the run with its base URL override.')
+        return
+      }
       const validBaseURL = /^https?:\/\/\S+$/i.test(trimmedBaseURL)
-        || (trimmedBaseURL.startsWith('{{') && trimmedBaseURL.includes('}}'))
+        || (kind !== 'har' && trimmedBaseURL.startsWith('{{') && trimmedBaseURL.includes('}}'))
       if (!validBaseURL) {
-        setMessageError('Base URL override must start with http://, https://, or a {{...}} template variable.')
+        setMessageError(kind === 'har'
+          ? 'Base URL override must start with http:// or https://.'
+          : 'Base URL override must start with http://, https://, or a {{...}} template variable.')
         return
       }
     }
@@ -1209,6 +1303,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     const abortController = new AbortController()
     conversionAbortRef.current = abortController
     const sourceGeneration = advanceReviewGeneration()
+    setFindingListEpoch(current => current + 1)
     const sourceProjectId = reviewProjectIdRef.current
     const sourceFile = file
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
@@ -1216,6 +1311,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
       && sourceFileRef.current === sourceFile
     setMessageError('')
     setConversionNotice('')
+    setExcludedSinceConversion(0)
     setReviewMode(mode)
     recorderReplaySessionIdRef.current = ''
     recorderReplayStatusRef.current = 'idle'
@@ -1307,24 +1403,45 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
     }
   }
 
+  // A profile switch or Re-inspect re-runs the open review in the mode the user
+  // chose for it: a Validate Only review stays a validation, which keeps no
+  // full source text and allocates no source-secret session.
   const handleHARSalesforceNativeConvert = async (salesforceNative: boolean) => {
     setHARSalesforceNative(salesforceNative)
-    await handleConvert('conversion', { salesforceNative })
+    await handleConvert(reviewMode, { salesforceNative })
   }
   // Re-converting replaces the reviewed draft, so it asks first, as leaving does.
   const switchHARProfile = (salesforceNative: boolean) => {
     navigationGuard.runGuarded(() => { void handleHARSalesforceNativeConvert(salesforceNative) })
   }
   const reinspectHARs = () => {
-    navigationGuard.runGuarded(() => { void handleConvert('conversion') })
+    navigationGuard.runGuarded(() => { void handleConvert(reviewMode) })
   }
 
-  const handleExcludeBlockedActions = async (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => {
+  // A late exclusion response still consumed the session it was sent. The
+  // review keeps its draft, so its requirements lose the recorded values that
+  // session held rather than pointing a save at a session that is gone.
+  const dropConsumedSourceSecretSession = (sessionId: string) => {
     const currentResult = latestResultRef.current
-    if (!currentResult || operationBusy) return
+    if (!currentResult || currentResult.source_secret_session_id !== sessionId) return
+    const droppedResult = {
+      ...currentResult,
+      secret_binding_requirements: withoutSourceValues(currentResult.secret_binding_requirements),
+      source_secret_session_id: undefined,
+      source_secret_session_expires_at: undefined,
+    } as ProtocolImportResult
+    latestResultRef.current = droppedResult
+    convertTask.setValue(droppedResult)
+  }
+
+  // Returns whether the exclusion started: a refused one (an expired draft,
+  // or other work in flight) changes nothing the studio could observe.
+  const handleExcludeBlockedActions = (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }): boolean => {
+    const currentResult = latestResultRef.current
+    if (!currentResult || operationBusy || reviewMutationBusyNow()) return false
     if (importDraftHasExpired(currentResult)) {
       setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
-      return
+      return false
     }
     const sourceScripts = currentResult.scripts?.length
       ? currentResult.scripts
@@ -1333,58 +1450,139 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
         : []
     const sourceScriptIndex = selectedScriptIndexRef.current
     const currentReviewed = sourceScripts[sourceScriptIndex] || sourceScripts[0]
-    if (!currentReviewed) return
+    if (!currentReviewed) return false
     const sourceGeneration = reviewGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
       && reviewProjectIdRef.current === sourceProjectId
       && selectedScriptIndexRef.current === sourceScriptIndex
+    // Requirement IDs hash their action path, so the server re-keys the
+    // recorded values to the moved requirements. It consumes the session it
+    // is sent, so the response's replacement is the only live one.
+    const sentSourceSecretSessionId = currentResult.source_secret_session_id?.trim() || undefined
     setMessageError('')
-    handleInternalReviewBusyChange(true)
-    try {
-      const response = await api.excludeImportDraftActions({
-        script: currentReviewed,
-        ...(options.actionUids?.length ? { action_uids: options.actionUids } : {}),
-        exclude_unexported_bodies: Boolean(options.excludeUnexportedBodies),
-      })
-      if (!requestIsCurrent()) return
-      advanceReviewGeneration()
-      // The review is the authority for its draft's name; the request carried
-      // the name it had when it started.
-      const latest = latestResultRef.current
-      const latestScripts = latest?.scripts?.length ? latest.scripts : latest?.script ? [latest.script] : sourceScripts
-      const latestName = latestScripts[sourceScriptIndex]?.name?.trim()
-      const excludedScript = latestName ? { ...response.script, name: latestName } : response.script
-      const nextScripts = sourceScripts.length
-        ? sourceScripts.map((entry, idx) => idx === sourceScriptIndex ? excludedScript : entry)
-        : [excludedScript]
+    const exclusionToken = ++exclusionTokenRef.current
+    exclusionInFlightRef.current = exclusionToken
+    setExclusionInFlight(true)
+    void (async () => {
+      try {
+        const response = await api.excludeImportDraftActions({
+          script: currentReviewed,
+          ...(options.actionUids?.length ? { action_uids: options.actionUids } : {}),
+          exclude_unexported_bodies: Boolean(options.excludeUnexportedBodies),
+          ...(sentSourceSecretSessionId ? { source_secret_session_id: sentSourceSecretSessionId } : {}),
+        })
+        const sessionAfter = sourceSecretSessionAfterExclusion(sentSourceSecretSessionId, response, response.secret_binding_requirements || [])
+        if (sentSourceSecretSessionId) {
+          // The sent session is gone server-side whether or not this response
+          // is still current; discarding it again would only 404.
+          sourceSecretSessions.settle('conversion', sourceProjectId, sentSourceSecretSessionId)
+        }
+        if (!requestIsCurrent()) {
+          sourceSecretSessions.discardUnaccepted(sourceProjectId, sessionAfter.sessionId)
+          if (sentSourceSecretSessionId) dropConsumedSourceSecretSession(sentSourceSecretSessionId)
+          return
+        }
+        if (sessionAfter.sessionId) sourceSecretSessions.replace('conversion', sourceProjectId, sessionAfter.sessionId)
+        advanceReviewGeneration()
+        // The review is the authority for its draft's name; the request carried
+        // the name it had when it started.
+        const latest = latestResultRef.current
+        const latestScripts = latest?.scripts?.length ? latest.scripts : latest?.script ? [latest.script] : sourceScripts
+        const latestName = latestScripts[sourceScriptIndex]?.name?.trim()
+        const excludedScript = latestName ? { ...response.script, name: latestName } : response.script
+        const nextScripts = sourceScripts.length
+          ? sourceScripts.map((entry, idx) => idx === sourceScriptIndex ? excludedScript : entry)
+          : [excludedScript]
 
-      const nextResult = {
-        ...currentResult,
-        script: nextScripts[0],
-        scripts: nextScripts,
-        ...(response.preflight ? { preflight: response.preflight } : {}),
-        ...(response.warnings ? { warnings: response.warnings } : {}),
-        secret_binding_requirements: replaceSecretBindingRequirementsForScript(
-          currentResult.secret_binding_requirements,
-          sourceScriptIndex,
-          currentReviewed,
-          carrySourceValueAvailability(
-            currentResult.secret_binding_requirements,
-            response.secret_binding_requirements || [],
-            currentResult.source_secret_session_id,
+        // Suggestion IDs and source mappings name actions by position, so the
+        // import's copies went stale with the exclusion. The server re-derived
+        // the suggestions and remapped the draft's own source review; without
+        // them the stale copies are dropped rather than shown.
+        const excludedSourceReview = sourceReviewForImport(null, excludedScript)
+        const removedCount = Number.isSafeInteger(response.removed_count) && response.removed_count > 0 ? response.removed_count : 0
+        const nextResult = {
+          ...currentResult,
+          script: nextScripts[0],
+          scripts: nextScripts,
+          ...(response.preflight ? { preflight: response.preflight } : {}),
+          parameterization: carryPreAppliedCorrelations(currentResult.parameterization, response.parameterization, excludedScript),
+          source_review: excludedSourceReview || undefined,
+          // The review header counts the conversion's actions.
+          stats: statsAfterExclusion(currentResult.stats, removedCount),
+          // Candidate IDs hash their action paths, so the import's candidates
+          // went stale with the exclusion; the apply endpoint would refuse them.
+          shared_values: response.shared_values || undefined,
+          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+            sessionAfter.sessionId ? currentResult.secret_binding_requirements : withoutSourceValues(currentResult.secret_binding_requirements),
+            sourceScriptIndex,
+            currentReviewed,
+            sessionAfter.requirements,
           ),
-        ),
-        ...(response.import_draft_expires_at ? { import_draft_expires_at: response.import_draft_expires_at } : {}),
-      } as ProtocolImportResult
-      commitReviewMutation(nextResult, undefined, { preserveDraftExpiry: true })
-    } catch (error: unknown) {
-      if (requestIsCurrent()) {
-        setMessageError(getErrorMessage(error, 'Failed to exclude blocked actions from draft'))
+          ...(sentSourceSecretSessionId
+            ? {
+                source_secret_session_id: sessionAfter.sessionId,
+                source_secret_session_expires_at: sessionAfter.sessionId ? sessionAfter.expiresAt : undefined,
+              }
+            : {}),
+          ...(response.import_draft_expires_at ? { import_draft_expires_at: response.import_draft_expires_at } : {}),
+        } as ProtocolImportResult
+        commitReviewMutation(nextResult, undefined, { preserveDraftExpiry: true })
+        if (removedCount > 0) setExcludedSinceConversion(previous => previous + removedCount)
+        const validationIssues = (response.validation_issues || []).filter(issue => typeof issue === 'string' && issue.trim())
+        // The notice describes this draft: an exclusion that leaves it clean
+        // clears an earlier exclusion's issues rather than repeating them.
+        setConversionNotice(validationIssues.length > 0
+          ? `Excluded ${countLabel(response.removed_count || 0, 'request')} from the draft. The edited draft has validation issues: ${validationIssues.join('; ')}`
+          : '')
+      } catch (error: unknown) {
+        if (exclusionRefusedBeforeCommit(error)) {
+          if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to exclude blocked actions from draft'))
+          return
+        }
+        // The server may have finished: consumed the sent session and rotated
+        // the draft's attestation. Neither is usable, so both are given up
+        // rather than pointing a later save at them.
+        if (!requestIsCurrent()) {
+          // An invalidation already released the session; a review that kept
+          // the draft only loses the recorded values the session held.
+          if (sentSourceSecretSessionId) dropConsumedSourceSecretSession(sentSourceSecretSessionId)
+          return
+        }
+        if (sentSourceSecretSessionId) sourceSecretSessions.replace('conversion', sourceProjectId, undefined)
+        const latest = latestResultRef.current
+        if (latest) {
+          const credentialPreserving = Boolean(latest.import_draft_expires_at?.trim())
+          const settledResult = {
+            ...latest,
+            ...(sentSourceSecretSessionId && latest.source_secret_session_id === sentSourceSecretSessionId
+              ? {
+                  secret_binding_requirements: withoutSourceValues(latest.secret_binding_requirements),
+                  source_secret_session_id: undefined,
+                  source_secret_session_expires_at: undefined,
+                }
+              : {}),
+            // A rotated attestation no longer matches this draft; the server
+            // would refuse it as invalid or expired, so the review says so now.
+            ...(credentialPreserving ? { import_draft_expires_at: new Date(0).toISOString() } : {}),
+          } as ProtocolImportResult
+          latestResultRef.current = settledResult
+          convertTask.setValue(settledResult)
+          setMessageError(credentialPreserving
+            ? EXCLUSION_OUTCOME_UNKNOWN_MESSAGE
+            : sentSourceSecretSessionId
+              ? EXCLUSION_SESSION_RELEASED_MESSAGE
+              : getErrorMessage(error, 'Failed to exclude blocked actions from draft'))
+        }
+      } finally {
+        // A newer exclusion, or an invalidation, owns the flag now.
+        if (exclusionInFlightRef.current === exclusionToken) {
+          exclusionInFlightRef.current = 0
+          setExclusionInFlight(false)
+        }
       }
-    } finally {
-      handleInternalReviewBusyChange(false)
-    }
+    })()
+    return true
   }
 
   const stats = result?.stats as Record<string, unknown> | undefined
@@ -1708,7 +1906,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
         : []
     const currentGeneratedScripts = currentImportedScripts
     const currentReviewedScript = currentGeneratedScripts[sourceScriptIndex] || currentGeneratedScripts[0]
-    if (!currentResult || !currentReviewedScript || saveAllInFlightRef.current || internalReviewBusyRef.current) return
+    if (!currentResult || !currentReviewedScript || saveAllInFlightRef.current || reviewMutationBusyNow()) return
     if (importDraftHasExpired(currentResult)) {
       setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
       return
@@ -2027,12 +2225,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
       }
       latestResultRef.current = compatibilityResult
       convertTask.setValue(compatibilityResult)
-      onEdit?.(currentScript)
+      onEdit?.(currentScript, undefined, recordEditorSave(reviewScopeRef.current))
     }
   }
 
   const handleSaveAllAsyncAPIScripts = async () => {
-    if (kind !== 'asyncapi' || generatedScripts.length === 0 || saveAllInFlightRef.current || saveScriptInFlightRef.current || internalReviewBusyRef.current) return
+    if (kind !== 'asyncapi' || generatedScripts.length === 0 || saveAllInFlightRef.current || saveScriptInFlightRef.current || reviewMutationBusyNow()) return
     if (importDraftHasExpired(latestResultRef.current)) {
       setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
       return
@@ -2428,7 +2626,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   }
 
   const selectAsyncAPIReviewScript = (index: number, focusButton = false) => {
-    if (saveAllPreparing || saveTask.pending || internalReviewBusy || generatedScripts.length === 0) return
+    if (saveAllPreparing || saveTask.pending || reviewMutationBusy || generatedScripts.length === 0) return
     const nextIndex = Math.max(0, Math.min(generatedScripts.length - 1, index))
     setPreparedCredentialSummary(null)
     advanceReviewGeneration()
@@ -2508,12 +2706,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
             <ImportDropzone
               accept={labels.accept}
               file={file}
-              onFile={next => { invalidateConversionSource(); setFile(next) }}
-              onPairFiles={kind === 'har' ? (primary, secondary) => {
-                invalidateConversionSource()
+              onFile={next => replaceConversionSource(() => setFile(next))}
+              onPairFiles={kind === 'har' ? (primary, secondary) => replaceConversionSource(() => {
                 setFile(primary)
                 setSecondaryHARFile(secondary)
-              } : undefined}
+              }) : undefined}
               dropHint={labels.drop}
               validate={candidate => validateImportFile(kind, candidate)}
               onError={setMessageError}
@@ -2626,7 +2823,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 <ImportDropzone
                   accept={labels.accept}
                   file={secondaryHARFile}
-                  onFile={next => { invalidateConversionSource(); setSecondaryHARFile(next) }}
+                  onFile={next => replaceConversionSource(() => setSecondaryHARFile(next))}
                   dropHint="Drop an optional comparison HAR file here"
                   validate={candidate => validateImportFile('har', candidate)}
                   onError={setMessageError}
@@ -2771,7 +2968,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      disabled={saveAllPreparing || saveTask.pending || internalReviewBusy || asyncAPIScriptPageStart === 0}
+                      disabled={saveAllPreparing || saveTask.pending || reviewMutationBusy || asyncAPIScriptPageStart === 0}
                       onClick={() => selectAsyncAPIReviewScript(Math.max(0, asyncAPIScriptPageStart - ASYNCAPI_SCRIPT_PAGE_SIZE), true)}
                     >
                       Previous scripts
@@ -2782,7 +2979,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      disabled={saveAllPreparing || saveTask.pending || internalReviewBusy || asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE >= generatedScripts.length}
+                      disabled={saveAllPreparing || saveTask.pending || reviewMutationBusy || asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE >= generatedScripts.length}
                       onClick={() => selectAsyncAPIReviewScript(asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE, true)}
                     >
                       Next scripts
@@ -2806,7 +3003,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                       className={`sample-import-script-tab ${index === selectedScriptIndex ? 'active' : ''}`}
                       onClick={() => selectAsyncAPIReviewScript(index)}
                       onKeyDown={event => handleAsyncAPIScriptKeyDown(event, index)}
-                      disabled={saveAllPreparing || saveTask.pending || internalReviewBusy}
+                      disabled={saveAllPreparing || saveTask.pending || reviewMutationBusy}
                     >
                       {script.protocol} · {script.name}{asyncAPISavedScripts[index] ? ' · Saved' : ''}
                     </button>
@@ -2817,7 +3014,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                   className="btn btn-secondary btn-sm"
                   type="button"
                   onClick={handleSaveAllAsyncAPIScripts}
-                  disabled={importDraftExpired || asyncAPIPendingScriptIndices.length === 0 || saveTask.pending || saveAllPreparing || internalReviewBusy || Boolean(asyncAPISaveAllDisabledReason)}
+                  disabled={importDraftExpired || asyncAPIPendingScriptIndices.length === 0 || saveTask.pending || saveAllPreparing || reviewMutationBusy || Boolean(asyncAPISaveAllDisabledReason)}
                   aria-describedby={asyncAPISaveAllDisabledReason ? 'asyncapi-save-all-disabled-reason' : undefined}
                   title={importDraftExpired
                     ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
@@ -2871,7 +3068,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
             onReviewBusyChange={handleInternalReviewBusyChange}
             onCredentialActionStart={captureProtectedSaveTarget}
             saving={saveTask.pending || persistenceInProgress}
-            reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress}
+            reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress || exclusionInFlight}
             saveDisabled={(Boolean(savedResult) && !asyncAPIMultiScript) || asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId)}
             saveDisabledReason={savedResult && !asyncAPIMultiScript ? 'This import is already saved. Open it above or import more files.' : scriptImportSaveDisabledReason}
             onSave={asyncAPIPrepareSelectedForBatch
@@ -3130,10 +3327,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
               <HarCorrelationStudio
                 script={reviewedScript}
                 stats={stats}
+                warnings={result?.warnings}
                 harDiff={harDiff}
                 salesforceReview={salesforceReview}
                 duplicateFileWarning={duplicateHARWarning}
-                busy={operationBusy}
+                busy={operationBusy || exclusionInFlight}
+                stepPositionsStale={excludedSinceConversion > 0}
                 onExcludeBlockedActions={savedResult ? undefined : handleExcludeBlockedActions}
                 recordingStudioHref={recordingStudioHref}
               />
@@ -3147,43 +3346,17 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                   { label: 'retention days', value: harSummary.retention_days ?? harSummary.governance?.retention_days ?? 0 },
                   ...(harDiff ? [{ label: 'dynamic candidates', value: harDiff.dynamic_candidates }, { label: 'static candidates', value: harDiff.static_candidates }] : [])
                 ]} />
-                {harDiff?.classifications?.length ? (
-                  <ul className="sample-import-findings">
-                    {(showAllSalesforceDetails ? harDiff.classifications : harDiff.classifications.slice(0, 5)).map(item => (
-                      <li key={`${item.name}-${item.classification}-${item.found_in_step || 0}`}>
-                        <strong>{item.name}</strong> {item.classification} ({Math.round((item.diff_confidence || 0) * 100)}%)
-                        {item.reason ? ` — ${item.reason}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
+                {/* Each diff classification is a row of the correlation studio above. */}
               </div>
             )}
             {kind === 'har' && salesforceReview && (
               <div className="sample-import-review-block">
                 <h4>Salesforce Native Review</h4>
-                {salesforceReview.detected && (
-                  <div className="sample-import-actions compact">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => switchHARProfile(false)}
-                      disabled={convertTask.pending || !file || !harSalesforceNative}
-                    >
-                      {convertTask.pending && harSalesforceNative ? 'Converting…' : 'Force Generic HAR'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => switchHARProfile(true)}
-                      disabled={convertTask.pending || !file || harSalesforceNative}
-                    >
-                      {convertTask.pending && !harSalesforceNative ? 'Converting…' : 'Use Native Salesforce Draft'}
-                    </button>
-                  </div>
+                {excludedSinceConversion > 0 && (
+                  <p className="sample-import-muted">The request counts below describe the draft as converted; {countLabel(excludedSinceConversion, 'request')} {excludedSinceConversion === 1 ? 'was' : 'were'} excluded from it since.</p>
                 )}
-                <SalesforceCorrelationReview preview={salesforceReview.native_preview} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured correlation request', source: mapping.id, description: 'Inspect the exact original source mapping for this captured request.' }))} />
-                <AuraOutcomeReview report={salesforceReview.aura_outcomes} script={reviewedScript} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured Aura request', source: mapping.id, description: 'Inspect the existing source mapping for this captured request.' }))} />
+                <SalesforceCorrelationReview preview={salesforceReview.native_preview} sourceReview={sourceReview || undefined} positionsShifted={excludedSinceConversion > 0} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured correlation request', source: mapping.id, description: 'Inspect the exact original source mapping for this captured request.' }))} />
+                <AuraOutcomeReview report={salesforceReview.aura_outcomes} script={reviewedScript} sourceReview={sourceReview || undefined} positionsShifted={excludedSinceConversion > 0} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured Aura request', source: mapping.id, description: 'Inspect the existing source mapping for this captured request.' }))} />
                 <ImportEvidenceFacts facts={[
                   { label: 'traffic match', value: salesforceReview.detected ? 'Detected' : 'Needs review' },
                   { label: 'HAR coverage', value: `${Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%` },
@@ -3193,22 +3366,24 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                   { label: 'Lightning calls', value: endpointTotal(salesforceReview, 'lightning_endpoints') }
                 ]} />
                 {(salesforceReview.domains?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {(showAllSalesforceDetails ? salesforceReview.domains! : salesforceReview.domains!.slice(0, 5)).map(domain => (
-                      <li key={`${domain.host}-${domain.kind}`}>
-                        <strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})
-                      </li>
-                    ))}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-sf-domains`}
+                    items={salesforceReview.domains!}
+                    limit={5}
+                    noun="domains"
+                    itemKey={domain => `${domain.host}-${domain.kind}`}
+                    renderItem={domain => <><strong>{domain.host}</strong> {domain.kind} ({salesforceDomainCounts(domain, excludedSinceConversion > 0)})</>}
+                  />
                 )}
                 {(salesforceReview.transactions?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {(showAllSalesforceDetails ? salesforceReview.transactions! : salesforceReview.transactions!.slice(0, 5)).map(tx => (
-                      <li key={`${tx.name}-${tx.source}`}>
-                        <strong>{tx.name}</strong> {tx.request_count} request{tx.request_count === 1 ? '' : 's'}{tx.aura_actions ? ` / ${tx.aura_actions} Aura action${tx.aura_actions === 1 ? '' : 's'}` : ''}
-                      </li>
-                    ))}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-sf-transactions`}
+                    items={salesforceReview.transactions!}
+                    limit={5}
+                    noun="transactions"
+                    itemKey={tx => `${tx.name}-${tx.source}`}
+                    renderItem={tx => <><strong>{tx.name}</strong> {tx.request_count} request{tx.request_count === 1 ? '' : 's'}{tx.aura_actions ? ` / ${tx.aura_actions} Aura action${tx.aura_actions === 1 ? '' : 's'}` : ''}</>}
+                  />
                 )}
                 {salesforceApiSurfaceBreakdown(salesforceReview).length > 0 && (
                   <>
@@ -3225,37 +3400,30 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 {(salesforceReview.parameterizations?.length || 0) > 0 && (
                   <>
                     <p className="sample-import-subtitle">Aura parameterization candidates</p>
-                    <ul className="sample-import-findings">
-                      {(showAllSalesforceDetails ? salesforceReview.parameterizations! : salesforceReview.parameterizations!.slice(0, 6)).map(param => (
-                        <li key={param.name}>
-                          <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
-                          {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
-                        </li>
-                      ))}
-                    </ul>
+                    <CappedFindingList
+                      key={`${findingListScope}-sf-parameterizations`}
+                      items={salesforceReview.parameterizations!}
+                      limit={6}
+                      noun="parameterization candidates"
+                      itemKey={param => param.name}
+                      renderItem={param => <>
+                        <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
+                        {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
+                      </>}
+                    />
                   </>
                 )}
                 {(salesforceReview.blockers?.length || salesforceReview.next_actions?.length) ? (
-                  <ul className="sample-import-findings">
-                    {salesforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
-                    {(showAllSalesforceDetails ? salesforceReview.next_actions : salesforceReview.next_actions?.slice(0, 4))?.map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-sf-next-actions`}
+                    items={salesforceReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={salesforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
                 ) : null}
-                {(
-                  (harDiff?.classifications?.length || 0) > 5
-                  || (salesforceReview.domains?.length || 0) > 5
-                  || (salesforceReview.transactions?.length || 0) > 5
-                  || (salesforceReview.parameterizations?.length || 0) > 6
-                  || (salesforceReview.next_actions?.length || 0) > 4
-                ) && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setShowAllSalesforceDetails(current => !current)}
-                  >
-                    {showAllSalesforceDetails ? 'Show fewer details' : 'Show all Salesforce & diff details'}
-                  </button>
-                )}
               </div>
             )}
             {kind === 'raml' && (ramlSummary || stats) && (
@@ -3340,11 +3508,14 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
               <div className="sample-import-review-block">
                 <h4>MuleSoft / Anypoint Review</h4>
                 {(mulesoftReview.domains?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {(showAllMulesoftDetails ? mulesoftReview.domains! : mulesoftReview.domains!.slice(0, 5)).map(domain => (
-                      <li key={`${domain.host}-${domain.kind}`}><strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})</li>
-                    ))}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-mulesoft-domains`}
+                    items={mulesoftReview.domains!}
+                    limit={5}
+                    noun="domains"
+                    itemKey={domain => `${domain.host}-${domain.kind}`}
+                    renderItem={domain => <><strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})</>}
+                  />
                 )}
                 {(mulesoftReview.policy_findings?.length || 0) > 0 && (
                   <>
@@ -3363,20 +3534,16 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                   </>
                 )}
                 {(mulesoftReview.blockers?.length || mulesoftReview.next_actions?.length) ? (
-                  <ul className="sample-import-findings">
-                    {mulesoftReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
-                    {(showAllMulesoftDetails ? mulesoftReview.next_actions : mulesoftReview.next_actions?.slice(0, 4))?.map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-mulesoft-next-actions`}
+                    items={mulesoftReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={mulesoftReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
                 ) : null}
-                {((mulesoftReview.domains?.length || 0) > 5 || (mulesoftReview.next_actions?.length || 0) > 4) && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setShowAllMulesoftDetails(current => !current)}
-                  >
-                    {showAllMulesoftDetails ? 'Show fewer MuleSoft details' : 'Show all MuleSoft details'}
-                  </button>
-                )}
               </div>
             )}
             {agentforceReview && (
@@ -3418,20 +3585,16 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                   </ul>
                 )}
                 {(agentforceReview.blockers?.length || agentforceReview.next_actions?.length) ? (
-                  <ul className="sample-import-findings">
-                    {agentforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
-                    {(showAllAgentforceDetails ? agentforceReview.next_actions : agentforceReview.next_actions?.slice(0, 4))?.map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-agentforce-next-actions`}
+                    items={agentforceReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={agentforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
                 ) : null}
-                {(agentforceReview.next_actions?.length || 0) > 4 && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setShowAllAgentforceDetails(current => !current)}
-                  >
-                    {showAllAgentforceDetails ? 'Show fewer Agentforce details' : `Show all ${agentforceReview.next_actions!.length} next actions`}
-                  </button>
-                )}
               </div>
             )}
             <ImportConversionDetails facts={stats ? Object.entries(stats)

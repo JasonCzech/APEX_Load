@@ -65,19 +65,14 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 		path string
 	}
 	priorTargetsByPath := make(map[string]priorSurfaceTargets)
-	priorTargetsByUID := make(map[string]priorSurfaceTargets)
-	priorUIDCounts := make(map[string]int)
+	priorUIDByPath := make(map[string]string)
 	if err := dslwalk.Walk(prior, func(ref dslwalk.SurfaceRef) error {
 		meta := ref.Metadata()
 		if raw, exists := meta[key]; exists {
 			priorTargetsByPath[ref.Path] = priorSurfaceTargets{raw: raw, path: ref.Path}
 		}
 		if uid, ok := meta[uidKey]; ok && dsl.IsValidImportActionUID(uid) {
-			uidStr := uid.(string)
-			priorUIDCounts[uidStr]++
-			if raw, exists := meta[key]; exists {
-				priorTargetsByUID[uidStr] = priorSurfaceTargets{raw: raw, path: ref.Path}
-			}
+			priorUIDByPath[ref.Path] = uid.(string)
 		}
 		return nil
 	}); err != nil {
@@ -94,7 +89,64 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 			return fmt.Errorf("restore durable import credential locators: %w", err)
 		}
 	}
-	seenCandidateUIDs := make(map[string]int)
+	// The durable locators follow the step alignment alone. It is the same
+	// per-collection, identity-checked matching that reconciliation used to
+	// restore each step's stored values, so a step receives the locators of
+	// exactly the stored step whose credential it now holds. The client-supplied
+	// import_action_uid is not trusted on its own: a forged copy of a
+	// credential step's UID on an earlier step must neither take that step's
+	// locators nor strip them from the step that reconciliation restored.
+	//
+	// When several candidate steps carry the same UID, the one aligned with the
+	// stored step of that UID keeps it (otherwise the first one walked), and
+	// every other copy is renamed so later updates stay unambiguous.
+	uidOwners := make(map[string]string)
+	if err := dslwalk.Walk(candidate, func(ref dslwalk.SurfaceRef) error {
+		uidVal, hasUID := ref.Metadata()[uidKey]
+		if !hasUID || !dsl.IsValidImportActionUID(uidVal) {
+			return nil
+		}
+		uidStr := uidVal.(string)
+		owner, claimed := uidOwners[uidStr]
+		if !claimed || (uidOwnerAligned(ref.Path, uidStr, alignedDisplayPaths, priorUIDByPath) &&
+			!uidOwnerAligned(owner, uidStr, alignedDisplayPaths, priorUIDByPath)) {
+			uidOwners[uidStr] = ref.Path
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("inspect import action identifiers: %w", err)
+	}
+	// A renamed copy must take a UID no other step uses, in the candidate or
+	// in the stored script. Reusing one would store two steps with the same
+	// UID, and step matching then gives up on every UID-stamped step of that
+	// collection, so the next save would strip the durable credential locators
+	// of the steps it can no longer match.
+	usedUIDs := make(map[string]struct{})
+	collectUIDs := func(script *dsl.Script) error {
+		return dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+			if uid, ok := ref.Metadata()[uidKey].(string); ok && uid != "" {
+				usedUIDs[uid] = struct{}{}
+			}
+			return nil
+		})
+	}
+	if err := collectUIDs(candidate); err != nil {
+		return fmt.Errorf("inspect import action identifiers: %w", err)
+	}
+	if err := collectUIDs(prior); err != nil {
+		return fmt.Errorf("inspect import action identifiers: %w", err)
+	}
+	uidCopies := make(map[string]int)
+	mintCopyUID := func(uid string) string {
+		for {
+			uidCopies[uid]++
+			next := fmt.Sprintf("%s-copy-%d", uid, uidCopies[uid]+1)
+			if _, taken := usedUIDs[next]; !taken {
+				usedUIDs[next] = struct{}{}
+				return next
+			}
+		}
+	}
 
 	if err := dslwalk.Walk(candidate, func(ref dslwalk.SurfaceRef) error {
 		metadata := ref.Metadata()
@@ -103,20 +155,20 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 
 		if uidVal, hasUID := metadata[uidKey]; hasUID && dsl.IsValidImportActionUID(uidVal) {
 			uidStr := uidVal.(string)
-			seenCandidateUIDs[uidStr]++
-			if seenCandidateUIDs[uidStr] > 1 {
-				// A duplicated non-credential step received a copied UID in the
-				// editor; mint a unique deterministic UID so later updates stay
-				// unambiguous without inheriting prior credential locators.
-				if metadata == nil {
-					metadata = make(map[string]any)
+			if uidOwners[uidStr] != ref.Path {
+				// A duplicated step received a copied UID in the editor; mint
+				// a unique deterministic UID so later updates stay unambiguous.
+				if copyUID := mintCopyUID(uidStr); dsl.IsValidImportActionUID(copyUID) {
+					metadata[uidKey] = copyUID
+				} else {
+					// The suffixed name would exceed the UID limit; the copy
+					// keeps no UID, as a copy made in the editor does.
+					delete(metadata, uidKey)
 				}
-				metadata[uidKey] = fmt.Sprintf("%s-copy-%d", uidStr, seenCandidateUIDs[uidStr])
 				ref.SetMetadata(metadata)
-			} else if priorUIDCounts[uidStr] == 1 {
-				matched, exists = priorTargetsByUID[uidStr]
 			}
-		} else if alignedPriorPath, aligned := alignedDisplayPaths[ref.Path]; aligned {
+		}
+		if alignedPriorPath, aligned := alignedDisplayPaths[ref.Path]; aligned {
 			matched, exists = priorTargetsByPath[alignedPriorPath]
 		}
 
@@ -141,6 +193,13 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 		return fmt.Errorf("restore durable import credential locators: %w", err)
 	}
 	return nil
+}
+
+// uidOwnerAligned reports whether the candidate surface at path is aligned
+// with the stored surface that carries uid.
+func uidOwnerAligned(path, uid string, alignedDisplayPaths, priorUIDByPath map[string]string) bool {
+	alignedPriorPath, aligned := alignedDisplayPaths[path]
+	return aligned && priorUIDByPath[alignedPriorPath] == uid
 }
 
 func remapRestoredCredentialTargetPaths(cloned any, priorPath, currentPath string) any {

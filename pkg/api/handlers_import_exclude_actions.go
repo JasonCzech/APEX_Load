@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/importreview"
 )
@@ -19,6 +20,10 @@ type importExcludeActionsRequest struct {
 	Script                  *dsl.Script `json:"script"`
 	ActionUIDs              []string    `json:"action_uids,omitempty"`
 	ExcludeUnexportedBodies bool        `json:"exclude_unexported_bodies,omitempty"`
+	// SourceSecretSessionID is the import's optional source-secret migration
+	// session. Requirement IDs encode action positions, so the exclusion
+	// re-keys the session's recorded values to the moved requirements.
+	SourceSecretSessionID string `json:"source_secret_session_id,omitempty"`
 }
 
 type importExcludeActionsResponse struct {
@@ -37,6 +42,16 @@ type importExcludeActionsResponse struct {
 	// import's converter warnings, which the exclusion leaves unchanged.
 	ValidationIssues     []string   `json:"validation_issues,omitempty"`
 	ImportDraftExpiresAt *time.Time `json:"import_draft_expires_at,omitempty"`
+	// SharedValues is re-derived from the edited draft. Candidate IDs hash
+	// each location's action path, so the import's list goes stale once an
+	// action before them is removed.
+	SharedValues *sharedvalue.Result `json:"shared_values"`
+	// SourceSecretSessionID is present only when the request named a
+	// source-secret session. That session is consumed: the value is its
+	// re-keyed replacement, or "" when no recorded value survived (or the
+	// session could not be re-keyed), so the client must drop the old ID.
+	SourceSecretSessionID        *string    `json:"source_secret_session_id,omitempty"`
+	SourceSecretSessionExpiresAt *time.Time `json:"source_secret_session_expires_at,omitempty"`
 }
 
 // handleExcludeImportDraftActions handles
@@ -151,7 +166,8 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 		return
 	}
 	validationIssues := validateScript(projected)
-	requirements := importreview.EditedImportDraftSecretBindingRequirements(applyTarget, mutationClaim != nil)
+	credentialPreserving := mutationClaim != nil
+	requirements := importreview.EditedImportDraftSecretBindingRequirements(applyTarget, credentialPreserving)
 	parameterization := filterTrustedImportParameterization(
 		buildImportParameterization(cloneScriptDefinition(applyTarget), nil),
 		[]*dsl.Script{cloneScriptDefinition(applyTarget)},
@@ -176,19 +192,196 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 		}
 	}
 
+	// The apply endpoint re-derives candidates from the masked projection of
+	// the script the client submits, which is this response's script.
+	sharedValues := buildImportSharedValues([]*dsl.Script{maskScriptSecrets(responseScript)})
+
+	var sourceSessionID *string
+	var sourceSessionExpiresAt *time.Time
+	if strings.TrimSpace(req.SourceSecretSessionID) != "" {
+		previous := importreview.EditedImportDraftSecretBindingRequirements(priorSnapshot, credentialPreserving)
+		newID, expiresAt := s.rekeyExcludedImportSourceSecretSession(r, policyScript.ProjectID, req.SourceSecretSessionID, exclusion, previous, requirements)
+		sourceSessionID = &newID
+		if newID != "" {
+			sourceSessionExpiresAt = &expiresAt
+		}
+	}
+
 	s.recordAuditEvent(r, "script.import.exclude_actions", "success", "script", projected.Name, projected.ProjectID, map[string]any{
 		"removed_count":             exclusion.removed,
 		"exclude_unexported_bodies": req.ExcludeUnexportedBodies,
 	})
 	writeJSON(w, http.StatusOK, importExcludeActionsResponse{
-		Script:                    responseScript,
-		RemovedCount:              exclusion.removed,
-		Preflight:                 preflight,
-		SecretBindingRequirements: requirements,
-		Parameterization:          parameterization,
-		ValidationIssues:          validationIssues,
-		ImportDraftExpiresAt:      importDraftExpiresAt,
+		Script:                       responseScript,
+		RemovedCount:                 exclusion.removed,
+		Preflight:                    preflight,
+		SecretBindingRequirements:    requirements,
+		Parameterization:             parameterization,
+		ValidationIssues:             validationIssues,
+		ImportDraftExpiresAt:         importDraftExpiresAt,
+		SharedValues:                 sharedValues,
+		SourceSecretSessionID:        sourceSessionID,
+		SourceSecretSessionExpiresAt: sourceSessionExpiresAt,
 	})
+}
+
+// rekeyExcludedImportSourceSecretSession consumes the import's source-secret
+// session and registers a replacement whose recorded values follow their
+// requirements to the IDs they have after the exclusion. It marks those
+// requirements source_value_available. A value whose requirement was removed,
+// or cannot be matched to exactly one moved requirement, is dropped; values
+// keyed to requirements outside this draft carry over unchanged. It returns
+// the replacement session ID, or "" when there is none.
+func (s *Server) rekeyExcludedImportSourceSecretSession(
+	r *http.Request,
+	scriptProjectID, sessionID string,
+	exclusion *importActionExclusion,
+	previous, current []SecretBindingRequirement,
+) (string, time.Time) {
+	projectID := normalizeProjectID(scriptProjectID)
+	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
+		if projectID != "" && projectID != authorizedProjectID {
+			return "", time.Time{}
+		}
+		projectID = authorizedProjectID
+	}
+	session, err := s.consumeSourceSecretSession(r, projectID, sessionID)
+	if err != nil || session == nil {
+		return "", time.Time{}
+	}
+	defer clearSourceSecretSession(session)
+
+	moved := excludedImportRequirementIDMoves(exclusion, previous, current)
+	values := make(map[string]string, len(session.Values))
+	for id, value := range session.Values {
+		if newID, tracked := moved[id]; tracked {
+			if newID != "" {
+				values[newID] = value
+			}
+			continue
+		}
+		values[id] = value
+	}
+	if len(values) == 0 {
+		return "", time.Time{}
+	}
+	newSessionID, err := s.registerSourceSecretSession(r, session.ProjectID, values, session.FeatureIDs...)
+	if err != nil || newSessionID == "" {
+		clear(values)
+		return "", time.Time{}
+	}
+	for index := range current {
+		if _, available := values[current[index].ID]; available {
+			current[index].SourceValueAvailable = true
+		}
+	}
+	clear(values)
+	return newSessionID, time.Now().UTC().Add(sourceSecretSessionTTL)
+}
+
+// excludedImportRequirementIDMoves maps every requirement ID of the draft
+// before the exclusion to its ID after it, or to "" when its location was
+// removed or no single requirement with the same script, label, context and
+// base suggested name now sits at the moved location.
+func excludedImportRequirementIDMoves(exclusion *importActionExclusion, previous, current []SecretBindingRequirement) map[string]string {
+	type location struct {
+		path       string
+		occurrence int
+	}
+	currentIDs := make(map[string]struct{}, len(current))
+	byLocation := make(map[location][]SecretBindingRequirement, len(current))
+	for _, requirement := range current {
+		currentIDs[requirement.ID] = struct{}{}
+		key := location{requirement.Path, requirement.Occurrence}
+		byLocation[key] = append(byLocation[key], requirement)
+	}
+	moves := make(map[string]string, len(previous))
+	for _, requirement := range previous {
+		if _, unchanged := currentIDs[requirement.ID]; unchanged {
+			moves[requirement.ID] = requirement.ID
+			continue
+		}
+		moves[requirement.ID] = ""
+		if requirement.Path == "" {
+			continue
+		}
+		newPath, removed := excludedImportPointerMove(exclusion, requirement.Path)
+		if removed {
+			continue
+		}
+		candidates := byLocation[location{newPath, requirement.Occurrence}]
+		if len(candidates) != 1 {
+			continue
+		}
+		match := candidates[0]
+		if match.ScriptIndex != requirement.ScriptIndex || match.ScriptID != requirement.ScriptID ||
+			match.ScriptName != requirement.ScriptName || match.Label != requirement.Label ||
+			match.Context != requirement.Context ||
+			allocatedSecretNameBase(match.SuggestedName) != allocatedSecretNameBase(requirement.SuggestedName) {
+			continue
+		}
+		moves[requirement.ID] = match.ID
+	}
+	return moves
+}
+
+// allocatedSecretNameBase strips the "_2", "_3", ... suffix the suggestion
+// registry adds to de-duplicate colliding suggested names. Suffixes follow
+// traversal order, so removing an earlier action renumbers every later
+// collision; a moved requirement keeps its base name but not its suffix.
+func allocatedSecretNameBase(name string) string {
+	underscore := strings.LastIndexByte(name, '_')
+	if underscore <= 0 || underscore == len(name)-1 {
+		return name
+	}
+	for _, digit := range name[underscore+1:] {
+		if digit < '0' || digit > '9' {
+			return name
+		}
+	}
+	return name[:underscore]
+}
+
+// excludedImportPointerMove returns where a JSON pointer into the draft
+// ("/actions/7/headers/Authorization") points after the exclusion, and
+// whether the action holding it was removed. A pointer outside every visited
+// action is unchanged.
+func excludedImportPointerMove(exclusion *importActionExclusion, pointer string) (string, bool) {
+	if exclusion == nil || !strings.HasPrefix(pointer, "/") {
+		return pointer, false
+	}
+	tokens := strings.Split(pointer[1:], "/")
+	var walk strings.Builder
+	matchedTokens := -1
+	matched := ""
+	for index, token := range tokens {
+		if index == 0 {
+			walk.WriteString(token)
+			continue
+		}
+		if isDecimalPointerToken(token) {
+			walk.WriteString("[" + token + "]")
+			if movedTo, visited := exclusion.paths[walk.String()]; visited {
+				matchedTokens = index + 1
+				matched = movedTo
+			}
+			continue
+		}
+		walk.WriteString("." + token)
+	}
+	if matchedTokens < 0 {
+		return pointer, false
+	}
+	if matched == "" {
+		return "", true
+	}
+	// Action paths are built only from section names, field names and
+	// indices, so each '.', '[' and ']' is a separator.
+	prefix := "/" + strings.NewReplacer("[", "/", "]", "", ".", "/").Replace(matched)
+	if matchedTokens == len(tokens) {
+		return prefix, false
+	}
+	return prefix + "/" + strings.Join(tokens[matchedTokens:], "/"), false
 }
 
 // dropAddedImportFidelityReport removes the fidelity report a readiness
@@ -368,7 +561,9 @@ func (x *importActionExclusion) filterActions(actions []dsl.Action, listPath str
 }
 
 // pruneEmptyTransactionMarkers drops start/end transaction marker pairs the
-// exclusion left with nothing between them.
+// exclusion left with nothing between them. A pair that was already adjacent
+// before the exclusion (an intentional timing marker) is kept: like a
+// container, it is dropped only when the exclusion emptied it.
 func (x *importActionExclusion) pruneEmptyTransactionMarkers(actions []dsl.Action, nodes []excludedActionNode, listPath string) ([]dsl.Action, []excludedActionNode) {
 	for len(actions) >= 2 {
 		changed := false
@@ -378,7 +573,8 @@ func (x *importActionExclusion) pruneEmptyTransactionMarkers(actions []dsl.Actio
 			if i+1 < len(actions) &&
 				isTransactionMarkerFunc(actions[i], "lr_start_transaction") &&
 				isTransactionMarkerFunc(actions[i+1], "lr_end_transaction") &&
-				dsl.TransactionMarkerName(actions[i]) == dsl.TransactionMarkerName(actions[i+1]) {
+				dsl.TransactionMarkerName(actions[i]) == dsl.TransactionMarkerName(actions[i+1]) &&
+				nodes[i+1].oldIndex-nodes[i].oldIndex > 1 {
 				changed = true
 				x.drop(fmt.Sprintf("%s[%d]", listPath, nodes[i].oldIndex))
 				x.drop(fmt.Sprintf("%s[%d]", listPath, nodes[i+1].oldIndex))
@@ -578,4 +774,16 @@ func remapExcludedSourceReviewMappings(script *dsl.Script, exclusion *importActi
 		}
 		mapping["target_path"] = moved
 	}
+}
+
+func isDecimalPointerToken(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, r := range token {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

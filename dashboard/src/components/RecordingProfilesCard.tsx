@@ -132,13 +132,18 @@ function UserRulesEditor({ rules, onChange, disabled }: {
   )
 }
 
+// pkg/recordingprofile Profile.ExcludedAuraDescriptors: Aura sub-action
+// descriptors or Apex classname.method targets (case-insensitive substring)
+// whose /aura POST batches a HAR import omits when every sub-action matches.
+type EditableRecordingProfile = RecordingProfile & { excluded_aura_descriptors?: string[] }
+
 function ProfileEditor({ profile, rules, onChange, disabled }: {
-  profile: RecordingProfile
+  profile: EditableRecordingProfile
   rules: CorrelationRuleInfo[]
-  onChange: (profile: RecordingProfile) => void
+  onChange: (profile: EditableRecordingProfile) => void
   disabled?: boolean
 }) {
-  const set = (patch: Partial<RecordingProfile>) => onChange({ ...profile, ...patch })
+  const set = (patch: Partial<EditableRecordingProfile>) => onChange({ ...profile, ...patch })
   const correlation = profile.correlation || {}
   const setCorrelation = (patch: Partial<RecordingProfileCorrelation>) => set({ correlation: { ...correlation, ...patch } })
   const disabledRules = new Set((correlation.disabled_rules || []).map(rule => rule.toLowerCase()))
@@ -210,6 +215,7 @@ function ProfileEditor({ profile, rules, onChange, disabled }: {
         <ListInput key={`${profile.id}-include`} label="Record only hosts" value={profile.include_hosts} placeholder="*.example.com" disabled={disabled} onChange={list => set({ include_hosts: list })} />
         <ListInput key={`${profile.id}-exclude`} label="Exclude hosts" value={profile.exclude_hosts} placeholder="analytics.example.com" disabled={disabled} onChange={list => set({ exclude_hosts: list })} />
         <ListInput key={`${profile.id}-types`} label="Exclude content types" value={profile.exclude_content_types} placeholder="image/*, font/woff2" disabled={disabled} onChange={list => set({ exclude_content_types: list })} />
+        <ListInput key={`${profile.id}-aura`} label="Exclude Aura actions" value={profile.excluded_aura_descriptors} placeholder="ComponentLogger.saveComponentLogEntries" disabled={disabled} onChange={list => set({ excluded_aura_descriptors: list })} />
         <NumberInput label="Body capture limit (bytes)" value={profile.body_capture_limit_bytes} placeholder="Recorder default" disabled={disabled} onChange={value => set({ body_capture_limit_bytes: value })} />
         <label className="rec-checkbox-row">
           <input type="checkbox" checked={profile.capture_cookies === true} disabled={disabled} onChange={event => set({ capture_cookies: event.target.checked ? true : undefined })} />

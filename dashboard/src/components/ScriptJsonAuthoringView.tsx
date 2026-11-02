@@ -33,6 +33,8 @@ import type { LineRange } from './dslJsonPointers'
 import { buildParameterizeSelectionRequest } from './scriptEditorUtils'
 import CodeLineWrapToggle from './CodeLineWrapToggle'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
+import { EditorTabFocusToggle } from './ScriptEditorTabFocus'
+import { editorTabFocusHint, useEditorTabMovesFocus } from './ScriptEditorTabFocusPreference'
 import type { ScriptRepairSuggestion } from './scriptAuthoringAssist'
 import type { ImportedParameterFileMapping } from './scriptEditorImportModel'
 import type { ScriptPhaseActionRow } from './scriptEditorWorkbench'
@@ -112,6 +114,7 @@ export function ScriptCodePane({
   const [jsonEditEnabled, setJsonEditEnabled] = useState(false)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
   const [wordWrapEnabled, setWordWrapEnabled] = useCodeLineWrapPreference()
+  const [tabMovesFocus, setTabMovesFocus] = useEditorTabMovesFocus()
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
   const parameterMatchKey = useMemo(
@@ -284,6 +287,7 @@ export function ScriptCodePane({
             wrapLines={wrapLines}
             onChange={setWordWrapEnabled}
           />
+          {isDirectlyEditable && <EditorTabFocusToggle tabMovesFocus={tabMovesFocus} onChange={setTabMovesFocus} />}
           {onRequestParameterize && (
             <button type="button" className="btn btn-sm btn-ghost" onClick={parameterizeCurrentSelection} title="Parameterize the selected value (you can also right-click a selection)">
               Parameterize
@@ -301,7 +305,7 @@ export function ScriptCodePane({
       </div>
       {isDirectlyEditable && (
         <p id={keyboardHintId} className="script-code-keyboard-hint" style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          Press Esc, then Tab to move focus out of the JSON editor.
+          {editorTabFocusHint(tabMovesFocus, 'JSON editor')}
         </p>
       )}
       <div
@@ -317,6 +321,7 @@ export function ScriptCodePane({
           extensions={extensions}
           theme="none"
           editable={allowDirectEdit && jsonEditEnabled}
+          indentWithTab={!tabMovesFocus}
           basicSetup={sourceEditorBasicSetup}
           onCreateEditor={view => {
             viewRef.current = view

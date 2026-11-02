@@ -1,6 +1,7 @@
 package importreview
 
 import (
+	"maps"
 	"net/http"
 	"slices"
 	"testing"
@@ -334,5 +335,262 @@ func TestExplicitBodyBlockerClearingAndCredentialGraduation(t *testing.T) {
 	}
 	if !IsCredentialPreservingImport(unchangedClean) {
 		t.Fatalf("expected credential-free imported prior to keep stable import_value_policy across unchanged update, got %#v", unchangedClean.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey])
+	}
+}
+
+// A client-supplied import_action_uid alone must not move a retained
+// credential's durable locators. An editor who copies a credential step's UID
+// onto an earlier step (or an init step, which the walk visits first) must
+// neither hand that step the locators nor strip them from the credential step
+// that reconciliation matched and restored.
+func TestRestoreLocatorsIgnoresForgedDuplicateImportActionUID(t *testing.T) {
+	const token = "Bearer sfdc-live-retained-session-token-xyz"
+	rawPrior := &dsl.Script{
+		ID: "sfdc-har-forged-uid", Name: "Salesforce HAR Import", Version: "1.0.0", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://org.my.salesforce.com"},
+		Init: []dsl.Action{
+			{Name: "warm up", Type: "request", Method: http.MethodGet, Target: "/warm"},
+		},
+		Actions: []dsl.Action{
+			{Name: "01 - GET login", Type: "request", Method: http.MethodGet, Target: "/"},
+			{
+				Name: "05 - POST verify", Type: "request", Method: http.MethodPost, Target: "/verify",
+				HeaderList: []dsl.HeaderEntry{{Name: "Authorization", Value: token}},
+				Metadata: map[string]any{
+					dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{
+						{RequestKey: "actions[1]", Field: "header_list", Index: 0},
+					},
+				},
+			},
+		},
+	}
+	EnsureScriptImportActionUIDs(rawPrior)
+	prior, err := PreparePersistentImportedLibraryScript(rawPrior, nil, "har")
+	if err != nil {
+		t.Fatalf("PreparePersistentImportedLibraryScript: %v", err)
+	}
+	credentialUID, _ := prior.Actions[1].Metadata[dsl.ImportActionUIDMetadataKey].(string)
+	if !dsl.IsValidImportActionUID(credentialUID) {
+		t.Fatalf("precondition: credential step needs a UID: %#v", prior.Actions[1].Metadata)
+	}
+
+	forge := func(t *testing.T, action *dsl.Action) {
+		t.Helper()
+		if action.Metadata == nil {
+			action.Metadata = map[string]any{}
+		}
+		action.Metadata[dsl.ImportActionUIDMetadataKey] = credentialUID
+	}
+	for _, tc := range []struct {
+		name   string
+		forged func(*dsl.Script) *dsl.Action
+	}{
+		{"earlier action", func(s *dsl.Script) *dsl.Action { return &s.Actions[0] }},
+		{"init step", func(s *dsl.Script) *dsl.Action { return &s.Init[0] }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := MaskScriptSecrets(prior)
+			if candidate == nil {
+				t.Fatal("MaskScriptSecrets returned nil")
+			}
+			forged := tc.forged(candidate)
+			forge(t, forged)
+
+			saved, err := PreparePersistentLibraryScript(candidate, prior)
+			if err != nil {
+				t.Fatalf("PreparePersistentLibraryScript: %v", err)
+			}
+			if got := saved.Actions[1].HeaderList[0].Value; got != token {
+				t.Fatalf("Authorization = %q, want the retained credential restored", got)
+			}
+			if got := saved.Actions[1].Metadata[dsl.ImportActionUIDMetadataKey]; got != credentialUID {
+				t.Fatalf("credential step UID = %#v, want it to keep %q", got, credentialUID)
+			}
+			locators, _ := saved.Actions[1].Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey].([]any)
+			if len(locators) != 1 {
+				t.Fatalf("credential step lost its durable locator: %#v", saved.Actions[1].Metadata)
+			}
+			if locator, _ := locators[0].(map[string]any); locator["request_key"] != "actions[1]" {
+				t.Fatalf("credential locator = %#v, want actions[1]", locators[0])
+			}
+			forgedSaved := tc.forged(saved)
+			if _, leaked := forgedSaved.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]; leaked {
+				t.Fatalf("forged step received the credential locators: %#v", forgedSaved.Metadata)
+			}
+			if got := forgedSaved.Metadata[dsl.ImportActionUIDMetadataKey]; got == credentialUID {
+				t.Fatalf("forged step kept the duplicated UID %q", credentialUID)
+			}
+			if reread := MaskScriptSecrets(saved); reread == nil || reread.Actions[1].HeaderList[0].Value == token {
+				t.Fatalf("the next read discloses the retained credential: %#v", reread)
+			}
+		})
+	}
+}
+
+// A step renamed because it duplicated another step's UID must take a UID no
+// other step uses. Reusing one (a copy made on an earlier save, or a UID the
+// editor set on another step) would store two steps with the same UID; step
+// matching then skips every UID-stamped step of that collection, and the next
+// save would strip the retained credential's durable locators.
+func TestRestoreLocatorsMintsUnusedCopyImportActionUIDs(t *testing.T) {
+	const token = "Bearer sfdc-live-retained-session-token-xyz"
+	rawPrior := &dsl.Script{
+		ID: "sfdc-har-copy-uid", Name: "Salesforce HAR Import", Version: "1.0.0", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://org.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "02 - GET home", Type: "request", Method: http.MethodGet, Target: "/home"},
+			{Name: "03 - GET menu", Type: "request", Method: http.MethodGet, Target: "/menu"},
+			{
+				Name: "05 - POST verify", Type: "request", Method: http.MethodPost, Target: "/verify",
+				HeaderList: []dsl.HeaderEntry{{Name: "Authorization", Value: token}},
+				Metadata: map[string]any{
+					dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{
+						{RequestKey: "actions[2]", Field: "header_list", Index: 0},
+					},
+				},
+			},
+		},
+	}
+	EnsureScriptImportActionUIDs(rawPrior)
+	prior, err := PreparePersistentImportedLibraryScript(rawPrior, nil, "har")
+	if err != nil {
+		t.Fatalf("PreparePersistentImportedLibraryScript: %v", err)
+	}
+	copiedUID, _ := prior.Actions[0].Metadata[dsl.ImportActionUIDMetadataKey].(string)
+	if !dsl.IsValidImportActionUID(copiedUID) {
+		t.Fatalf("precondition: step needs a UID: %#v", prior.Actions[0].Metadata)
+	}
+
+	duplicateFirst := func(script *dsl.Script) {
+		dup := script.Actions[0]
+		dup.Metadata = maps.Clone(dup.Metadata)
+		script.Actions = append(script.Actions, dup)
+	}
+	save := func(t *testing.T, stored *dsl.Script, edit func(*dsl.Script)) *dsl.Script {
+		t.Helper()
+		candidate := MaskScriptSecrets(stored)
+		if candidate == nil {
+			t.Fatal("MaskScriptSecrets returned nil")
+		}
+		if edit != nil {
+			edit(candidate)
+		}
+		saved, err := PreparePersistentLibraryScript(candidate, stored)
+		if err != nil {
+			t.Fatalf("PreparePersistentLibraryScript: %v", err)
+		}
+		return saved
+	}
+	assertSafe := func(t *testing.T, saved *dsl.Script) {
+		t.Helper()
+		seen := map[string]int{}
+		for i, action := range saved.Actions {
+			uid, _ := action.Metadata[dsl.ImportActionUIDMetadataKey].(string)
+			if uid == "" {
+				continue
+			}
+			if prev, dup := seen[uid]; dup {
+				t.Fatalf("actions[%d] and actions[%d] share import_action_uid %q", prev, i, uid)
+			}
+			seen[uid] = i
+		}
+		locators, _ := saved.Actions[2].Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey].([]any)
+		if len(locators) != 1 {
+			t.Fatalf("credential step lost its durable locator: %#v", saved.Actions[2].Metadata)
+		}
+		if got := saved.Actions[2].HeaderList[0].Value; got != token {
+			t.Fatalf("Authorization = %q, want the retained credential", got)
+		}
+	}
+
+	t.Run("duplicated twice across saves", func(t *testing.T) {
+		saved1 := save(t, prior, duplicateFirst)
+		assertSafe(t, saved1)
+		saved2 := save(t, saved1, duplicateFirst)
+		assertSafe(t, saved2)
+		saved3 := save(t, saved2, func(s *dsl.Script) { s.Name = "Renamed" })
+		assertSafe(t, saved3)
+	})
+
+	t.Run("copy name already set on another step", func(t *testing.T) {
+		saved1 := save(t, prior, func(s *dsl.Script) {
+			s.Actions[1].Metadata = maps.Clone(s.Actions[1].Metadata)
+			s.Actions[1].Metadata[dsl.ImportActionUIDMetadataKey] = copiedUID + "-copy-2"
+			duplicateFirst(s)
+		})
+		assertSafe(t, saved1)
+		saved2 := save(t, saved1, func(s *dsl.Script) { s.Name = "Renamed" })
+		assertSafe(t, saved2)
+	})
+}
+
+// An import commit must not store two steps with the same import_action_uid.
+// A step copied in the JSON authoring view keeps its UID; if the trusted
+// commit stored it as is, step matching would treat the repeated stored UID as
+// ambiguous, skip every UID-stamped step, and fail every later masked edit of
+// the retained-credential step.
+func TestPreparePersistentImportedLibraryScriptRenamesDuplicateImportActionUIDs(t *testing.T) {
+	const token = "Bearer sfdc-live-retained-session-token-xyz"
+	draft := &dsl.Script{
+		ID: "sfdc-har-commit-dup-uid", Name: "Salesforce HAR Import", Version: "1.0.0", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://org.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "02 - GET home", Type: "request", Method: http.MethodGet, Target: "/home"},
+			{
+				Name: "05 - POST verify", Type: "request", Method: http.MethodPost, Target: "/verify",
+				HeaderList: []dsl.HeaderEntry{{Name: "Authorization", Value: token}},
+				Metadata: map[string]any{
+					dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{
+						{RequestKey: "actions[1]", Field: "header_list", Index: 0},
+					},
+				},
+			},
+		},
+	}
+	EnsureScriptImportActionUIDs(draft)
+	copiedUID, _ := draft.Actions[0].Metadata[dsl.ImportActionUIDMetadataKey].(string)
+	if !dsl.IsValidImportActionUID(copiedUID) {
+		t.Fatalf("precondition: step needs a UID: %#v", draft.Actions[0].Metadata)
+	}
+	// The JSON view copy: the request step pasted again at the end, UID kept.
+	dup := draft.Actions[0]
+	dup.Metadata = maps.Clone(dup.Metadata)
+	draft.Actions = append(draft.Actions, dup)
+
+	stored, err := PreparePersistentImportedLibraryScript(draft, nil, "har")
+	if err != nil {
+		t.Fatalf("PreparePersistentImportedLibraryScript: %v", err)
+	}
+	if got := stored.Actions[0].Metadata[dsl.ImportActionUIDMetadataKey]; got != copiedUID {
+		t.Fatalf("first step UID = %#v, want it to keep %q", got, copiedUID)
+	}
+	seen := map[string]int{}
+	for i, action := range stored.Actions {
+		uid, _ := action.Metadata[dsl.ImportActionUIDMetadataKey].(string)
+		if uid == "" {
+			continue
+		}
+		if prev, repeated := seen[uid]; repeated {
+			t.Fatalf("stored actions[%d] and actions[%d] share import_action_uid %q", prev, i, uid)
+		}
+		seen[uid] = i
+	}
+
+	// The next ordinary masked edit must still match the credential step.
+	candidate := MaskScriptSecrets(stored)
+	if candidate == nil {
+		t.Fatal("MaskScriptSecrets returned nil")
+	}
+	candidate.Actions[0].Target = "/home?tab=1"
+	saved, err := PreparePersistentLibraryScript(candidate, stored)
+	if err != nil {
+		t.Fatalf("PreparePersistentLibraryScript after commit: %v", err)
+	}
+	if got := saved.Actions[1].HeaderList[0].Value; got != token {
+		t.Fatalf("Authorization = %q, want the retained credential restored", got)
+	}
+	locators, _ := saved.Actions[1].Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey].([]any)
+	if len(locators) != 1 {
+		t.Fatalf("credential step lost its durable locator: %#v", saved.Actions[1].Metadata)
 	}
 }

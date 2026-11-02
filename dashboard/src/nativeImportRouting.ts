@@ -132,12 +132,52 @@ export async function archiveIsJMeterProject(file: File): Promise<boolean> {
   return complete && plans && !sources
 }
 
+// A zipped HAR capture, as the HAR capture guide asks for sensitive captures:
+// the HAR importer unwraps the one .har inside (pkg/api/har_import_archive.go).
+export function isHARCaptureFileName(fileName: string): boolean {
+  const name = fileName.toLowerCase()
+  return name.endsWith('.har') || name.endsWith('.har.zip')
+}
+
+function zipMemberIsOSMetadata(memberName: string): boolean {
+  const lower = memberName.toLowerCase()
+  const base = zipMemberBase(memberName)
+  return lower.endsWith('/') || lower.startsWith('__macosx/') || lower.includes('/__macosx/') || base === '.ds_store' || base === 'thumbs.db' || base === 'desktop.ini'
+}
+
+// archiveIsZippedHARCapture recognizes a ZIP holding exactly one .har and
+// nothing else but folders and OS metadata, which the HAR importer reads
+// directly. An archive with anything more (a VuGen script that keeps a HAR
+// beside its sources) stays with the archive importers.
+export async function archiveIsZippedHARCapture(file: File): Promise<boolean> {
+  if (!isZipArchiveFile(file)) return false
+  let captures = 0
+  let other = false
+  const complete = await visitZipMemberNames(file, memberName => {
+    if (zipMemberIsOSMetadata(memberName)) return false
+    if (zipMemberBase(memberName).endsWith('.har')) captures += 1
+    else other = true
+    return other || captures > 1
+  })
+  return complete && !other && captures === 1
+}
+
+// Whether a dropped file is a HAR capture, plain or zipped.
+export async function fileIsHARCapture(file: File): Promise<boolean> {
+  if (isHARCaptureFileName(file.name)) return true
+  try {
+    return await archiveIsZippedHARCapture(file)
+  } catch {
+    return false
+  }
+}
+
 export function nativeImportTargetForFileName(fileName: string): NativeImportTarget {
   const name = fileName.toLowerCase()
   if (name.endsWith('.bruno.zip') || name.endsWith('.bruno.tar') || name.endsWith('.bruno.tar.gz') || name.endsWith('.bru')) return { launcher: 'bruno' }
+  if (isHARCaptureFileName(name)) return { launcher: 'traffic_har', mode: 'auto_detect' }
   if (name.endsWith('.zip') || name.endsWith('.usz')) return { launcher: 'enterprise_archive' }
   if (name.endsWith('.jmx')) return { launcher: 'jmeter' }
-  if (name.endsWith('.har')) return { launcher: 'traffic_har', mode: 'auto_detect' }
   if (name.endsWith('.postman_collection.json') || name.endsWith('.postman_environment.json')) return { launcher: 'postman' }
   if (name.endsWith('.asyncapi.json') || name.endsWith('.asyncapi.yaml') || name.endsWith('.asyncapi.yml')) return { launcher: 'asyncapi' }
   if (name.endsWith('.openapi.json') || name.endsWith('.openapi.yaml') || name.endsWith('.openapi.yml')) return { launcher: 'openapi' }
@@ -244,6 +284,7 @@ export async function nativeImportTargetForFile(file: File): Promise<NativeImpor
     return { launcher: 'bruno', mode: 'native_requests' }
   }
   if (await archiveIsJMeterProject(file)) return { launcher: 'jmeter' }
+  if (!name.endsWith('.bruno.zip') && await archiveIsZippedHARCapture(file)) return { launcher: 'traffic_har', mode: 'auto_detect' }
   const namedTarget = nativeImportTargetForFileName(name)
   if (name.endsWith('.js') || name.endsWith('.ts')) {
     const content = await file.slice(0, 128 * 1024).text()

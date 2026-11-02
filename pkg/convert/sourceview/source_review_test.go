@@ -271,3 +271,32 @@ func TestBuildKeepsFullTextOnlyForTruncatedMappedFiles(t *testing.T) {
 		t.Fatal("serialized review names the in-memory full text")
 	}
 }
+
+// Inside a HAR every JSON body is itself a JSON string, so a token response's
+// keys are escaped. The key-based redactor still finds them.
+func TestRedactFindsTokensInAJSONBodyHeldInAJSONString(t *testing.T) {
+	content := `{"response":{"content":{"text":"{\"access_token\":\"opaqueAccess123\",\"refresh_token\":\"5Aep861SyntheticRefresh\",\"id_token\":\"eyJhbGciOi.synthetic.sig\",\"instance_url\":\"https:\/\/acme.my.salesforce.com\"}"}}}`
+	redacted, changed := Redact(content)
+	if !changed {
+		t.Fatal("Redact reported no change")
+	}
+	for _, secret := range []string{"opaqueAccess123", "5Aep861SyntheticRefresh", "eyJhbGciOi.synthetic.sig"} {
+		if strings.Contains(redacted, secret) {
+			t.Fatalf("redacted text still holds %q: %s", secret, redacted)
+		}
+	}
+	if !strings.Contains(redacted, `\"refresh_token\":\"[REDACTED]\"`) || !strings.Contains(redacted, `\"instance_url\":\"https:\/\/acme.my.salesforce.com\"`) {
+		t.Fatalf("redaction did not keep the escaped JSON shape: %s", redacted)
+	}
+	// An escaped value that itself holds an escape is redacted whole.
+	slashed, _ := Redact(`"{\"token\":\"abc\\\/def\"}"`)
+	if strings.Contains(slashed, "abc") || strings.Contains(slashed, "def") {
+		t.Fatalf("escaped value with an inner escape was not redacted whole: %s", slashed)
+	}
+	// So is one holding an escaped quote (\\\") or ending in an escaped
+	// backslash (\\\\), and the value after it keeps its shape.
+	quoted, _ := Redact(`"{\"token\":\"abc\\\"SECRETREST\",\"pw\":\"x\\\\\",\"user\":\"kept\"}"`)
+	if strings.Contains(quoted, "abc") || strings.Contains(quoted, "SECRETREST") || !strings.Contains(quoted, `\"pw\":\"[REDACTED]\"`) || !strings.Contains(quoted, `\"user\":\"kept\"`) {
+		t.Fatalf("escaped value with an inner quote or backslash was not redacted whole: %s", quoted)
+	}
+}

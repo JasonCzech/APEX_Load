@@ -11,16 +11,34 @@ const ACTION_PATH = /^(?:init|actions|teardown)\[\d+\](?:\.[A-Za-z_]\w*(?:\[\d+\
 const count = (value: number | undefined) => Number.isSafeInteger(value) && value! >= 0 ? value! : 0
 const path = (value: string | undefined) => typeof value === 'string' && value.length <= 4096 && ACTION_PATH.test(value) ? value : ''
 
-function exactSourceMapping(reference: SalesforceNativeRequestReference, review?: SourceReview): SourceReviewMapping | undefined {
-  if (!reference.source_mapping_id || !reference.source_file || !path(reference.original_action_path)) return undefined
-  const matches = Array.isArray(review?.mappings) ? review.mappings.filter(mapping => mapping && typeof mapping === 'object' && mapping.id === reference.source_mapping_id) : []
-  const mapping = matches.length === 1 ? matches[0] : undefined
-  return mapping?.source_file === reference.source_file && mapping.target_path === reference.original_action_path ? mapping : undefined
+const PATH_INDEX = /\[(\d+)\]/g
+
+// Excluding requests after conversion moves each later action's mapping to a
+// lower index in the same phase, under the same mapping id, and renumbers the
+// requests left inside an http_sequence the same way. A mapping the exclusion
+// could have produced from the recorded path still identifies the captured
+// request: the same phase and field names, with no index higher than before.
+function shiftedTargetPath(original: string, moved: string | undefined): boolean {
+  const target = path(moved)
+  if (!target || original.replace(PATH_INDEX, '[]') !== target.replace(PATH_INDEX, '[]')) return false
+  const from = Array.from(original.matchAll(PATH_INDEX), match => Number(match[1]))
+  const to = Array.from(target.matchAll(PATH_INDEX), match => Number(match[1]))
+  return from.length === to.length && to.every((index, position) => index <= from[position])
 }
 
-function Reference({ reference, label, review, nativeFinal, onViewSource }: { reference?: SalesforceNativeRequestReference; label: string; review?: SourceReview; nativeFinal: boolean; onViewSource?: (mapping: SourceReviewMapping) => void }) {
+function exactSourceMapping(reference: SalesforceNativeRequestReference, review: SourceReview | undefined, positionsShifted: boolean): SourceReviewMapping | undefined {
+  const originalPath = path(reference.original_action_path)
+  if (!reference.source_mapping_id || !reference.source_file || !originalPath) return undefined
+  const matches = Array.isArray(review?.mappings) ? review.mappings.filter(mapping => mapping && typeof mapping === 'object' && mapping.id === reference.source_mapping_id) : []
+  const mapping = matches.length === 1 ? matches[0] : undefined
+  if (mapping?.source_file !== reference.source_file) return undefined
+  if (mapping.target_path === originalPath) return mapping
+  return positionsShifted && shiftedTargetPath(originalPath, mapping.target_path) ? mapping : undefined
+}
+
+function Reference({ reference, label, review, nativeFinal, positionsShifted, onViewSource }: { reference?: SalesforceNativeRequestReference; label: string; review?: SourceReview; nativeFinal: boolean; positionsShifted: boolean; onViewSource?: (mapping: SourceReviewMapping) => void }) {
   if (!reference) return <p>{label}: captured request reference unavailable.</p>
-  const mapping = exactSourceMapping(reference, review)
+  const mapping = exactSourceMapping(reference, review, positionsShifted)
   const originalPath = path(reference.original_action_path)
   const nativePath = nativeFinal ? path(reference.native_action_path) : ''
   return <div className="salesforce-correlation-reference">
@@ -32,13 +50,13 @@ function Reference({ reference, label, review, nativeFinal, onViewSource }: { re
   </div>
 }
 
-function Consumers({ references, omitted, review, nativeFinal, onViewSource }: { references: SalesforceNativeRequestReference[]; omitted?: number; review?: SourceReview; nativeFinal: boolean; onViewSource?: (mapping: SourceReviewMapping) => void }) {
+function Consumers({ references, omitted, review, nativeFinal, positionsShifted, onViewSource }: { references: SalesforceNativeRequestReference[]; omitted?: number; review?: SourceReview; nativeFinal: boolean; positionsShifted: boolean; onViewSource?: (mapping: SourceReviewMapping) => void }) {
   const [page, setPage] = useEvidencePage(references)
   const retained = references.slice(0, DETAIL_LIMIT)
   const pageCount = Math.max(1, Math.ceil(retained.length / PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
   return <>
-    {retained.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE).map((reference, index) => <Reference key={current * PAGE_SIZE + index} reference={reference} label={`Consumer ${current * PAGE_SIZE + index + 1}`} review={review} nativeFinal={nativeFinal} onViewSource={onViewSource} />)}
+    {retained.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE).map((reference, index) => <Reference key={current * PAGE_SIZE + index} reference={reference} label={`Consumer ${current * PAGE_SIZE + index + 1}`} review={review} nativeFinal={nativeFinal} positionsShifted={positionsShifted} onViewSource={onViewSource} />)}
     {retained.length === 0 && <p>No consumer request references retained.</p>}
     {(count(omitted) > 0 || references.length > DETAIL_LIMIT) && <p>{count(omitted) + Math.max(0, references.length - DETAIL_LIMIT)} consumer references not shown.</p>}
     {pageCount > 1 && <div className="salesforce-correlation-pagination"><span>Consumer references {current * PAGE_SIZE + 1}–{Math.min((current + 1) * PAGE_SIZE, retained.length)} of {retained.length}</span><button type="button" className="btn btn-secondary btn-sm" disabled={current === 0} onClick={() => setPage(current - 1)}>Previous consumer references</button><button type="button" className="btn btn-secondary btn-sm" disabled={current + 1 >= pageCount} onClick={() => setPage(current + 1)}>Next consumer references</button></div>}
@@ -63,7 +81,9 @@ function CorrelationMetadata({ correlation }: { correlation: AdmittedCorrelation
   </div>
 }
 
-export default function SalesforceCorrelationReview({ preview, sourceReview, onViewSource }: { preview?: SalesforceNativePreview; sourceReview?: SourceReview; onViewSource?: (mapping: SourceReviewMapping) => void }) {
+// positionsShifted: requests were excluded from the draft after conversion,
+// so source mappings may have moved to lower action indexes.
+export default function SalesforceCorrelationReview({ preview, sourceReview, positionsShifted = false, onViewSource }: { preview?: SalesforceNativePreview; sourceReview?: SourceReview; positionsShifted?: boolean; onViewSource?: (mapping: SourceReviewMapping) => void }) {
   const evidence = useMemo(() => admitNativeCorrelationEvidence(preview), [preview])
   const [page, setPage] = useEvidencePage(preview)
   if (!evidence.present || !evidence.coverage && !evidence.rows.length && !evidence.malformed) return null
@@ -96,8 +116,8 @@ export default function SalesforceCorrelationReview({ preview, sourceReview, onV
         <h5>Correlation {correlation.ordinal}{correlation.name ? <>: <code>{correlation.name}</code></> : null}</h5>
         <p>{correlation.preApplied ? 'Draft replacement applied.' : 'Manual review required.'}{correlation.reviewAction ? ` Review action: ${correlation.reviewAction}.` : ''}</p>
         <CorrelationMetadata correlation={correlation} />
-        <Reference reference={correlation.producer} label="Producer" review={sourceReview} nativeFinal={nativeFinal} onViewSource={onViewSource} />
-        <Consumers references={correlation.consumers} omitted={correlation.consumersOmitted} review={sourceReview} nativeFinal={nativeFinal} onViewSource={onViewSource} />
+        <Reference reference={correlation.producer} label="Producer" review={sourceReview} nativeFinal={nativeFinal} positionsShifted={positionsShifted} onViewSource={onViewSource} />
+        <Consumers references={correlation.consumers} omitted={correlation.consumersOmitted} review={sourceReview} nativeFinal={nativeFinal} positionsShifted={positionsShifted} onViewSource={onViewSource} />
       </article>)}
       {pageCount > 1 && <div className="salesforce-correlation-pagination"><span>{current * PAGE_SIZE + 1}–{Math.min((current + 1) * PAGE_SIZE, rows.length)} of {rows.length} correlations</span><button type="button" className="btn btn-secondary btn-sm" disabled={current === 0} onClick={() => setPage(current - 1)}>Previous correlations</button><button type="button" className="btn btn-secondary btn-sm" disabled={current + 1 >= pageCount} onClick={() => setPage(current + 1)}>Next correlations</button></div>}
     </details>}

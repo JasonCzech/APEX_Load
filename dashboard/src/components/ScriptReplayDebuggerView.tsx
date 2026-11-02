@@ -52,7 +52,7 @@ import { ExtractorTester } from './ExtractorTester'
 import RepairSuggestionList from './RepairSuggestionList'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
-import { AuraEnvelopePreview, AuraResponsePreview } from './AuraEnvelopeEditor'
+import { AuraRequestBodyTabs, AuraResponsePreview } from './AuraEnvelopeEditor'
 import { isAuraEndpointTarget } from './auraEnvelopeModel'
 import type { IssueDetail } from './IssueDetailsDialog'
 import type { CorrelationApplyResult, CorrelationExtractorRepair } from './scriptCorrelationRepair'
@@ -1084,11 +1084,12 @@ export function ScriptReplayDebuggerView({
                                 {event.body && (
                                   <div className="replay-code-block">
                                     <span className="replay-detail-label">Resolved Body</span>
-                                    <AuraEnvelopePreview body={event.body} />
-                                    <SnapshotBodyPreview
-                                      body={event.body}
-                                      headers={event.headers}
-                                    />
+                                    <AuraRequestBodyTabs body={event.body}>
+                                      <SnapshotBodyPreview
+                                        body={event.body}
+                                        headers={event.headers}
+                                      />
+                                    </AuraRequestBodyTabs>
                                   </div>
                                 )}
                                 {event.action_type === 'live_table' && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && replayEventStepKey(event)
@@ -1152,14 +1153,16 @@ export function ScriptReplayDebuggerView({
                                         {event.snapshot.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}
                                         {event.snapshot.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}
                                         <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.request_headers)} />
-                                        {!event.body && <AuraEnvelopePreview body={event.snapshot.request_body} />}
-                                        <div className="debugger-snapshot-body">
-                                          <SnapshotBodyPreview
-                                            body={event.snapshot.request_body}
-                                            headers={event.snapshot.request_headers}
-                                            emptyMessage="No request body captured"
-                                          />
-                                        </div>
+                                        {/* The resolved body above already has its Aura tabs; the snapshot gets them only without it. */}
+                                        <AuraRequestBodyTabs body={event.body ? undefined : event.snapshot.request_body}>
+                                          <div className="debugger-snapshot-body">
+                                            <SnapshotBodyPreview
+                                              body={event.snapshot.request_body}
+                                              headers={event.snapshot.request_headers}
+                                              emptyMessage="No request body captured"
+                                            />
+                                          </div>
+                                        </AuraRequestBodyTabs>
                                       </div>
                                       <div className="replay-code-block">
                                         <div className="replay-code-block-header">
@@ -1360,9 +1363,10 @@ export function ScriptReplayDebuggerView({
                                   {issue.description && <small>{issue.description}</small>}
                                   <div className="debugger-problem-actions">
                                     {issue.onSelect && onSelectAdditionalIssue && (
-                                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => onSelectAdditionalIssue(issue)}>Select in Author</button>
+                                      <button type="button" className="btn btn-sm btn-secondary" aria-label={`Select in Author: ${issue.title}`} onClick={() => onSelectAdditionalIssue(issue)}>Select in Author</button>
                                     )}
-                                    <button type="button" className="btn btn-sm btn-ghost" onClick={issue.onDelete}>Delete blocked action</button>
+                                    {/* Each row's controls name its step, so tabbing through them says which one a delete removes. */}
+                                    <button type="button" className="btn btn-sm btn-ghost" aria-label={`Delete blocked action: ${issue.title}`} onClick={issue.onDelete}>Delete blocked action</button>
                                   </div>
                                 </div>
                               ))}

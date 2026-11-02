@@ -91,37 +91,82 @@ func CorrelatedQueryValue(value string, vars map[string]string, apply func(strin
 
 // UpdateHARQueryStringValues replaces each recorded query value in metadata
 // (see HARQueryStringMetadataKey) with mapValue's result. Entries are copied,
-// never mutated in place, so metadata shared with another action is safe.
+// never mutated in place, so metadata shared with another action is safe; when
+// mapValue changes no value, the metadata is left as it was and nothing is
+// copied.
 func UpdateHARQueryStringValues(metadata map[string]any, mapValue func(string) string) {
 	if len(metadata) == 0 || mapValue == nil {
 		return
 	}
-	copyEntry := func(item map[string]any) map[string]any {
+	// mapped holds the new value of each entry whose value changed, by index.
+	var mapped map[int]string
+	mapEntry := func(i int, item map[string]any) {
+		value, ok := item["value"].(string)
+		if !ok || value == "" {
+			return
+		}
+		if next := mapValue(value); next != value {
+			if mapped == nil {
+				mapped = map[int]string{}
+			}
+			mapped[i] = next
+		}
+	}
+	copyEntry := func(item map[string]any, value string) map[string]any {
 		entry := make(map[string]any, len(item))
-		for key, value := range item {
-			entry[key] = value
+		for key, existing := range item {
+			entry[key] = existing
 		}
-		if value, ok := entry["value"].(string); ok && value != "" {
-			entry["value"] = mapValue(value)
-		}
+		entry["value"] = value
 		return entry
 	}
 	switch items := metadata[HARQueryStringMetadataKey].(type) {
 	case []map[string]any:
+		for i, item := range items {
+			mapEntry(i, item)
+		}
+		if mapped == nil {
+			return
+		}
 		updated := make([]map[string]any, len(items))
 		for i, item := range items {
-			updated[i] = copyEntry(item)
+			if value, ok := mapped[i]; ok {
+				updated[i] = copyEntry(item, value)
+			} else {
+				updated[i] = item
+			}
 		}
 		metadata[HARQueryStringMetadataKey] = updated
 	case []any:
-		updated := make([]any, len(items))
 		for i, raw := range items {
 			if item, ok := raw.(map[string]any); ok {
-				updated[i] = copyEntry(item)
+				mapEntry(i, item)
+			}
+		}
+		if mapped == nil {
+			return
+		}
+		updated := make([]any, len(items))
+		for i, raw := range items {
+			if value, ok := mapped[i]; ok {
+				updated[i] = copyEntry(raw.(map[string]any), value)
 			} else {
 				updated[i] = raw
 			}
 		}
 		metadata[HARQueryStringMetadataKey] = updated
 	}
+}
+
+// CorrelateHARQueryStringValues substitutes correlation templates (vars,
+// through apply) into the recorded HAR query values in metadata (see
+// HARQueryStringMetadataKey). It does nothing without vars, and copies the
+// metadata only when a value changes.
+func CorrelateHARQueryStringValues(metadata map[string]any, vars map[string]string, apply func(string, map[string]string) string) {
+	if len(vars) == 0 || apply == nil {
+		return
+	}
+	UpdateHARQueryStringValues(metadata, func(value string) string {
+		return CorrelatedQueryValue(value, vars, apply)
+	})
 }

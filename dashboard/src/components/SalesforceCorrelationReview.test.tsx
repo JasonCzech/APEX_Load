@@ -51,6 +51,44 @@ describe('captured correlation source review', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
+  it('follows a mapping an exclusion moved to a lower index, and nothing else', () => {
+    const navigate = vi.fn()
+    const moved = { ...mapping, target_path: 'actions[2]' }
+    const shifted = (review: SourceReview) => { act(() => { root.render(<SalesforceCorrelationReview preview={preview} sourceReview={review} positionsShifted onViewSource={navigate} />) }) }
+    shifted({ target_domain: 'original_import', mappings: [moved] })
+    act(() => { button('View producer source mapping').click() })
+    expect(navigate.mock.calls).toEqual([[moved]])
+    // Without an exclusion a moved path is not the recorded request.
+    render(preview, { mappings: [moved] }, navigate)
+    expect(container.querySelectorAll('button')).toHaveLength(0)
+    // An exclusion only lowers indexes within one phase and keeps the sub-path.
+    for (const target_path of ['actions[4]', 'init[2]', 'actions[2].extractors[0]', '']) {
+      shifted({ mappings: [{ ...mapping, target_path }] })
+      expect(container.querySelectorAll('button')).toHaveLength(0)
+      expect(container.textContent).toContain('Exact source link unavailable')
+    }
+    shifted({ mappings: [{ ...moved, source_file: 'other.har' }] })
+    expect(container.querySelectorAll('button')).toHaveLength(0)
+    expect(navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it('follows a grouped request an exclusion renumbered inside its http_sequence', () => {
+    const navigate = vi.fn()
+    const nested = { ...mapping, target_path: 'actions[3].params.requests[2]' }
+    const nestedPreview: SalesforceNativePreview = { ...preview, correlations: [{ ...preview.correlations![0], producer_reference: { ...reference, original_action_path: nested.target_path }, consumer_references: [] }] }
+    const shifted = (target_path: string) => { act(() => { root.render(<SalesforceCorrelationReview preview={nestedPreview} sourceReview={{ mappings: [{ ...nested, target_path }] }} positionsShifted onViewSource={navigate} />) }) }
+    for (const target_path of ['actions[3].params.requests[1]', 'actions[1].params.requests[0]']) {
+      shifted(target_path)
+      act(() => { button('View producer source mapping').click() })
+    }
+    expect(navigate.mock.calls.map(([moved]) => moved.target_path)).toEqual(['actions[3].params.requests[1]', 'actions[1].params.requests[0]'])
+    for (const target_path of ['actions[3].params.requests[3]', 'actions[3].params.steps[1]', 'actions[3]', 'actions[3].params.requests[1].extractors[0]']) {
+      shifted(target_path)
+      expect(container.textContent).toContain('Exact source link unavailable')
+    }
+    expect(navigate).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps incomplete counts and omitted details visible with no rows', () => {
     render({ correlation_coverage: { ...coverage, complete: false, details_complete: false, catalog_limited: true, source_review_available: false, discovered_correlations: 5, import_unmatched_producer_correlations: 4, source_unlinked_consumer_references: 7, retained_correlations: 0, omitted_correlations: 5, retained_consumer_references: 0, omitted_consumer_references: 8 }, correlations: [] })
     expect(container.textContent).toContain('Reference inspection incomplete')

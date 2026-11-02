@@ -1,7 +1,7 @@
 import { ActionParameterMenu } from './ScriptEditorActionEditor'
 import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
 import { bodyLanguage, bodyTemplateReferences, extractedBodyReferences } from './actionBodyModel'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { ReferenceSearch, ReferenceWarnings } from './ReferenceField'
 import { useReferenceFieldContext } from './referenceFieldContext'
@@ -17,7 +17,10 @@ import { sanitizeVarName } from './scriptEditorUtils'
 import { BODY_ENCODING_OPTIONS, knownBodyEncoding } from './bodyEncodings'
 import { MultipartPartsEditor } from './MultipartPartsEditor'
 import { AuraEnvelopeEditor } from './AuraEnvelopeEditor'
-import { isAuraFormRequest, parseAuraFormEnvelope } from './auraEnvelopeModel'
+import { AuraEnvelopeDraftContext } from './AuraEnvelopeEditorDrafts'
+import { hasAuraEnvelopeDrafts, isAuraFormRequest, parseAuraFormEnvelope } from './auraEnvelopeModel'
+import { EditorTabFocusToggle } from './ScriptEditorTabFocus'
+import { editorTabFocusHint, useEditorTabMovesFocus } from './ScriptEditorTabFocusPreference'
 
 export function ActionBodyWorkspace({ action, index, path, parameters, script, onUpdate, onParameterize, onInspectReference }: {
   action: ScriptActionDefinition; index: number; path: string; parameters: ScriptParameterDefinition[]; script?: ScriptDefinition
@@ -31,10 +34,15 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
   const [selection, setSelection] = useState({ from: 0, to: 0 })
   const [menu, setMenu] = useState<ActionEditorSelectionState | null>(null)
   const [preview, setPreview] = useState(false)
+  const [tabMovesFocus, setTabMovesFocus] = useEditorTabMovesFocus()
   const auraCandidate = isAuraFormRequest(action)
   const auraEnvelope = useMemo(() => (auraCandidate ? parseAuraFormEnvelope(action.body) : null), [action.body, auraCandidate])
   const [bodyMode, setBodyMode] = useState<'aura' | 'raw'>('aura')
   const effectiveBodyMode: 'aura' | 'raw' = auraEnvelope && bodyMode === 'aura' ? 'aura' : 'raw'
+  // Aura edits typed but not applied index the sub-actions of this body: a raw
+  // edit leaves them no longer applying, so raw mode says so before one.
+  const auraDraftOwner = useContext(AuraEnvelopeDraftContext)
+  const pendingAuraDrafts = Boolean(auraDraftOwner && !auraDraftOwner.stale && hasAuraEnvelopeDrafts(auraDraftOwner.drafts))
   useEffect(() => {
     if (!menu) return
     const dismiss = (event: MouseEvent) => { if (!(event.target instanceof Element) || !event.target.closest('.action-parameter-menu')) setMenu(null) }
@@ -144,6 +152,9 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
       />
     ) : (
       <>
+        {auraCandidate && pendingAuraDrafts && <p className="aura-envelope-error" role="status">
+          This step has Aura envelope edits that are not applied. Apply them in Aura envelope first: editing the raw form body leaves them no longer applying, and they would have to be discarded.
+        </p>}
         <div className="author-body-toolbar">
           <label>Wire encoding<select aria-label="Wire encoding" value={knownBodyEncoding(action.body_encoding)?.value ?? action.body_encoding ?? ''} onChange={event => { onUpdate('body_encoding', event.target.value || undefined); if (event.target.value) setSyntax('text') }}>{BODY_ENCODING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.value ? option.label : 'Text (as authored)'}</option>)}{action.body_encoding && !knownBodyEncoding(action.body_encoding) && <option value={action.body_encoding}>Preserved: {action.body_encoding}</option>}</select></label>
           <label>Editor language<select aria-label="Editor language" value={syntax} onChange={e => { setSyntax(e.target.value as typeof syntax); setIssue('') }}><option value="text">Plain text</option><option value="json">JSON</option><option value="xml">XML</option></select></label>
@@ -155,15 +166,16 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
             <button className="btn btn-sm btn-secondary" type="button" aria-haspopup="listbox" aria-expanded={picking} onClick={() => setPicking(open => !open)}>Insert reference</button>
             {picking && <ReferenceSearch label="the request body" onPick={insertReference} onClose={() => { setPicking(false); viewRef.current?.focus() }} />}
           </span>}
+          <EditorTabFocusToggle tabMovesFocus={tabMovesFocus} onChange={setTabMovesFocus} />
         </div>
-        <p id="request-body-keyboard-hint">Editor language changes highlighting only. Formatting is explicit and can change whitespace. Content-Type remains in request headers. Press Esc, then Tab to move focus out of the editor.</p>
+        <p id="request-body-keyboard-hint">Editor language changes highlighting only. Formatting is explicit and can change whitespace. Content-Type remains in request headers. {editorTabFocusHint(tabMovesFocus, 'editor')}</p>
         <div onContextMenu={event => {
           const range = viewRef.current?.state.selection.main
           const selectedText = range ? (action.body || '').slice(range.from, range.to) : ''
           if (!range || !selectedText.trim()) return
           event.preventDefault()
           setMenu({ start: range.from, end: range.to, selectedText, x: event.clientX, y: event.clientY, existingName: /^{{\s*param\.([\w]+)\s*}}$/.exec(selectedText)?.[1] || null })
-        }}><CodeMirror theme="none" aria-label="Request body" value={action.body || ''} extensions={extensions} onCreateEditor={view => { viewRef.current = view }} onUpdate={update => { if (update.selectionSet) setSelection({ from: update.state.selection.main.from, to: update.state.selection.main.to }) }} onChange={value => { onUpdate('body', value); setIssue('') }} basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }} /></div>
+        }}><CodeMirror theme="none" aria-label="Request body" value={action.body || ''} extensions={extensions} indentWithTab={!tabMovesFocus} onCreateEditor={view => { viewRef.current = view }} onUpdate={update => { if (update.selectionSet) setSelection({ from: update.state.selection.main.from, to: update.state.selection.main.to }) }} onChange={value => { onUpdate('body', value); setIssue('') }} basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true }} /></div>
         <ActionParameterMenu selectionState={menu} onOpenParameterEditor={parameterize} />
       </>
     )}

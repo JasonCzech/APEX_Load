@@ -206914,12 +206914,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: Insufficient permissions for this operation.
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
@@ -206962,12 +206956,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: Insufficient permissions for this operation.
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
@@ -285988,12 +285976,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
@@ -330012,6 +329994,8 @@ paths:
                     version:
                       type: string
                   nullable: true
+                source_secret_session_id:
+                  type: string
       responses:
         "200":
           description: OK
@@ -332141,6 +332125,18 @@ paths:
                         - path
                         - script_index
                         - suggested_name
+                  shared_values:
+                    type: object
+                    description: 'Go type: sharedvalue.Result'
+                    additionalProperties: true
+                    nullable: true
+                  source_secret_session_expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  source_secret_session_id:
+                    type: string
+                    nullable: true
                   validation_issues:
                     type: array
                     items:
@@ -332150,6 +332146,7 @@ paths:
                   - removed_count
                   - script
                   - secret_binding_requirements
+                  - shared_values
         "400":
           description: Bad Request
           content:

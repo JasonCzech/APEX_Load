@@ -833,13 +833,10 @@ export default function SourceMappingReview({
 
   const copyValue = async (kind: 'source-excerpt' | 'source-full' | 'dsl-excerpt' | 'dsl-full', value: string) => {
     if (!value || !copySupported) return
-    if (new TextEncoder().encode(value).byteLength > MAX_FULL_TEXT_BYTES) {
-      setCopied('')
-      setExportError('Selection exceeds the 16 MB clipboard limit. Download or inspect the file directly.')
-      return
-    }
+    // The clipboard takes a copy of any size; the source-retention cap
+    // (MAX_FULL_TEXT_BYTES) bounds what the server keeps, not what is copied.
     const ok = await copyTextToClipboard(value)
-    if (ok) setExportError('')
+    setExportError(ok ? '' : 'Could not copy to the clipboard. Select the text and copy it, or download the file instead.')
     setCopied(ok ? kind : '')
   }
 

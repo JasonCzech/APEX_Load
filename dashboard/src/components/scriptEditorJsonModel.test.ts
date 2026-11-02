@@ -334,6 +334,27 @@ describe('removeNestedAction', () => {
     expect(removeNestedAction(sequence, ['requests[0]'])!.replacement).toEqual([])
   })
 
+  it('runs a switch default in place when the last case empties, instead of dropping it', () => {
+    const root = {
+      name: 'Route', type: 'control_switch',
+      control: { expression: '{{mode}}', cases: [{ value: 'a', steps: [step('blocked')] }], default: [step('d0'), step('d1'), step('d2')] },
+    } as unknown as ScriptActionDefinition
+    const removal = removeNestedAction(root, ['case[0][0]'])!
+    expect(removal.replacement.map(action => action.name)).toEqual(['d0', 'd1', 'd2'])
+    expect(removal.relocate(['default[2]'])).toEqual({ index: 2, stepPath: [] })
+    expect(removal.relocate(['case[0][0]'])).toBeNull()
+    expect(remapBreakpointsAfterNestedRemoval([
+      { phase: 'action', action_index: 4, step_path: ['default[1]'] },
+      { phase: 'action', action_index: 5 },
+    ], 'action', 4, removal)).toEqual([
+      { phase: 'action', action_index: 5 },
+      { phase: 'action', action_index: 7 },
+    ])
+    // With no default either, the switch goes with its last case.
+    const bare = { ...root, control: { ...root.control, default: [] } } as ScriptActionDefinition
+    expect(removeNestedAction(bare, ['case[0][0]'])!.replacement).toEqual([])
+  })
+
   it('keeps a parallel block of two or more branches and shifts later branches', () => {
     const root = parallel([[step('a')], [step('b')], [step('c'), step('d')]])
     const removal = removeNestedAction(root, ['branches[0].steps[0]'])!
@@ -368,6 +389,32 @@ describe('removeNestedAction', () => {
       { phase: 'action', action_index: 1, request_index: 1 },
       { phase: 'action', action_index: 2 },
     ])
+  })
+
+  it('moves a request_index breakpoint on a request of a nested sequence', () => {
+    const seq = (...names: string[]) => ({ name: 'Seq', type: 'http_sequence', params: { requests: names.map(name => step(name)) } }) as unknown as ScriptActionDefinition
+    const root = { name: 'If', type: 'control_if', control: { condition: 'x', steps: [seq('r0', 'r1', 'r2', 'r3')], else: [step('e0')] } } as unknown as ScriptActionDefinition
+    const removal = removeNestedAction(root, ['then[0]', 'requests[1]'])!
+    // The outline and F9 store a nested sequence request by its root-level request_index.
+    expect(remapBreakpointsAfterNestedRemoval([
+      { phase: 'action', action_index: 3, request_index: 2 },
+      { phase: 'action', action_index: 3, request_index: 1 },
+      { phase: 'action', action_index: 3, request_index: 0 },
+    ], 'action', 3, removal)).toEqual([
+      { phase: 'action', action_index: 3, request_index: 1 },
+      { phase: 'action', action_index: 3, request_index: 0 },
+    ])
+
+    // A removal outside the sequence leaves its request breakpoints alone, and
+    // one that unwraps a parallel block follows the sequence to its new index.
+    const outside = removeNestedAction(root, ['else[0]'])!
+    expect(remapBreakpointsAfterNestedRemoval([{ phase: 'action', action_index: 3, request_index: 2 }], 'action', 3, outside))
+      .toEqual([{ phase: 'action', action_index: 3, request_index: 2 }])
+    const par = { name: 'Par', type: 'control_parallel', control: { branches: [{ steps: [step('x')] }, { steps: [step('y'), seq('q0', 'q1', 'q2')] }] } } as unknown as ScriptActionDefinition
+    expect(remapBreakpointsAfterNestedRemoval([{ phase: 'action', action_index: 0, request_index: 2 }], 'action', 0, removeNestedAction(par, ['branches[0].steps[0]'])!))
+      .toEqual([{ phase: 'action', action_index: 1, request_index: 2 }])
+    expect(remapBreakpointsAfterNestedRemoval([{ phase: 'action', action_index: 0, request_index: 2 }], 'action', 0, removeNestedAction(par, ['branches[1].steps[1]', 'requests[1]'])!))
+      .toEqual([{ phase: 'action', action_index: 0, request_index: 1 }])
   })
 })
 

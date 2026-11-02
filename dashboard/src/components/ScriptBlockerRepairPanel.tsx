@@ -28,6 +28,9 @@ type Props = {
   // A repair saves straight to the script, so it waits for unsaved edits to
   // be saved or discarded (it never rebases them).
   dirty: boolean
+  // The editor's Source pane holds an unapplied JSON draft: the direct draft
+  // actions (delete, clear) would discard it, so they wait for Apply or Reset.
+  sourcePending?: boolean
   saving: boolean
   onSaveFirst: () => void
   // The repair was saved: the response carries the stored script and its
@@ -44,6 +47,7 @@ type Props = {
 const FINDING_GONE = 'Finding is no longer present'
 const SCRIPT_NOT_FOUND = /script not found/i
 const DIRTY_REASON = 'Save or discard your changes first'
+const SOURCE_PENDING_REASON = 'Apply or reset your Source changes first'
 // A preview carries the whole script twice (before and after), so a large
 // enough script's preview passes the response cap although the request worked.
 const PREVIEW_TOO_LARGE = 'This repair preview is too large to load: it holds the whole script before and after the repair, which is more than the editor accepts in one response. Nothing was changed. Re-import the source to repair this blocker in the import review.'
@@ -78,7 +82,7 @@ function blockerReason(finding: ImportFinding, bodySource: ProtectedBodySource):
  */
 export default function ScriptBlockerRepairPanel({
   scriptId, projectId, baseline, blockedReason, script, bodySource = 'reimport', action, actionPath,
-  dirty, saving, onSaveFirst, onApplied, onReconcile,
+  dirty, sourcePending = false, saving, onSaveFirst, onApplied, onReconcile,
   onDeleteStep, onOpenBody, onClearUnexportedHarBodyBlocker,
 }: Props) {
   const api = useApi()
@@ -203,7 +207,7 @@ export default function ScriptBlockerRepairPanel({
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.375rem' }}>
         {onDeleteStep && (
-          <button type="button" className="btn btn-danger btn-sm" disabled={locked} onClick={onDeleteStep}>
+          <button type="button" className="btn btn-danger btn-sm" disabled={locked || sourcePending} title={sourcePending ? SOURCE_PENDING_REASON : undefined} onClick={onDeleteStep}>
             Delete step
           </button>
         )}
@@ -216,8 +220,8 @@ export default function ScriptBlockerRepairPanel({
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            disabled={locked || !hasSuppliedBody}
-            title={!hasSuppliedBody ? 'Supply a request body first before clearing this blocker.' : undefined}
+            disabled={locked || sourcePending || !hasSuppliedBody}
+            title={sourcePending ? SOURCE_PENDING_REASON : !hasSuppliedBody ? 'Supply a request body first before clearing this blocker.' : undefined}
             onClick={onClearUnexportedHarBodyBlocker}
           >
             Mark body supplied &amp; clear blocker

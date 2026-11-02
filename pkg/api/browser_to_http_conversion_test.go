@@ -416,3 +416,60 @@ func TestHandlePreviewBrowserToHTTPDegradesCorrelationWorkLimitToWarning(t *test
 		t.Fatalf("warnings = %#v, want the correlation degradation warning", payload.Warnings)
 	}
 }
+
+// A browser-HTTP draft is not a HAR import: it keeps the telemetry beacons
+// the browser sent, and the synthetic HAR's evenly spaced timestamps add no
+// step transactions or recorded-concurrency groups for Lightning traffic.
+func TestHandlePreviewBrowserToHTTPUsesBrowserHTTPDefaultsForLightningTraffic(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	beaconURL := "https://acme.lightning.force.com/aura?r=2&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1"
+	formHeaders := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	body, _ := json.Marshal(BrowserToHTTPPreviewRequest{
+		Name:      "Lightning HTTP Draft",
+		ProjectID: "project-lightning",
+		SourceBrowserScript: &dsl.Script{
+			ID:        "script-browser-lightning",
+			Name:      "Lightning Browser",
+			ProjectID: "project-lightning",
+			Protocol:  "browser",
+			Actions:   []dsl.Action{{Name: "Open App", Type: "browser_navigate", Target: "https://acme.lightning.force.com/lightning/page/home"}},
+		},
+		NetworkEntries: []protocol.NetworkEntry{
+			{URL: "https://acme.lightning.force.com/one/one.app", Method: "GET", StatusCode: 200, ResourceType: "document", DurationMs: 40},
+			{URL: "https://acme.lightning.force.com/aura?r=1&aura.RecordUi.getRecordWithFields=1", Method: "POST", StatusCode: 200, ResourceType: "xhr", DurationMs: 30, RequestHeaders: formHeaders, RequestBody: "message=%7B%22actions%22%3A%5B%5D%7D"},
+			{URL: beaconURL, Method: "POST", StatusCode: 200, ResourceType: "xhr", DurationMs: 20, RequestHeaders: formHeaders, RequestBody: "message=%7B%7D"},
+			{URL: "https://acme.lightning.force.com/aura?r=3&aura.ListUi.getListInfoByName=1", Method: "POST", StatusCode: 200, ResourceType: "xhr", DurationMs: 25, RequestHeaders: formHeaders, RequestBody: "message=%7B%22actions%22%3A%5B%5D%7D"},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload BrowserToHTTPPreviewResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.GeneratedScript == nil {
+		t.Fatalf("generated script missing: %s", resp.Body.String())
+	}
+	beaconKept := false
+	for _, action := range payload.GeneratedScript.Actions {
+		if strings.Contains(strings.ToLower(action.Type), "transaction") || action.Type == "http_sequence" {
+			t.Fatalf("action %q (%s) was added by HAR-import shaping; want plain requests only", action.Name, action.Type)
+		}
+		if strings.Contains(action.Target, "InstrumentationBeacon") {
+			beaconKept = true
+		}
+	}
+	if !beaconKept {
+		t.Fatalf("telemetry beacon was dropped from the browser-HTTP draft (%d actions)", len(payload.GeneratedScript.Actions))
+	}
+	if payload.Review.GeneratedHTTPActions != 4 || payload.Diff.EndpointCoveragePct != 100 {
+		t.Fatalf("review generated %d actions, coverage %d%%; want all 4 captured requests", payload.Review.GeneratedHTTPActions, payload.Diff.EndpointCoveragePct)
+	}
+}

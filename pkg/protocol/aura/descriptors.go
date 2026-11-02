@@ -100,13 +100,33 @@ func (d ActionDescriptor) DiffToken() string {
 }
 
 // FilterToken formats a descriptor with an optional "[namespace.Class.method]"
-// suffix for recording-profile and client-telemetry filtering.
+// suffix for recording-profile and client-telemetry filtering. The suffix
+// comes from an ApexActionController call's classname/method params or, for
+// a direct apex://[namespace.]Class/ACTION$method call, from the descriptor
+// itself, so the "Class.method" form ShortTitle shows matches either way.
 func (d ActionDescriptor) FilterToken() string {
 	desc := d.Descriptor
 	if target := d.QualifiedApexTarget(); target != "" {
 		return desc + "[" + target + "]"
 	}
+	if target := directApexTarget(desc); target != "" {
+		return desc + "[" + target + "]"
+	}
 	return desc
+}
+
+// directApexTarget formats an apex://[namespace.]Class/ACTION$method
+// descriptor as [namespace.]Class.method, else "".
+func directApexTarget(desc string) string {
+	stripped, apex := stripDescriptorScheme(desc)
+	if !apex {
+		return ""
+	}
+	controller, method, ok := strings.Cut(stripped, "/ACTION$")
+	if !ok || strings.TrimSpace(controller) == "" || strings.TrimSpace(method) == "" {
+		return ""
+	}
+	return controller + "." + method
 }
 
 // stripDescriptorScheme drops a descriptor's aura://, serviceComponent:// or

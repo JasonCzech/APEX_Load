@@ -62,17 +62,30 @@ type projectionContext struct {
 	// sentMetadataEntry marks such a delivered entry: an executable value,
 	// never a provenance identifier, whatever its key.
 	sentMetadataEntry bool
-	javaVMArgument    bool
-	untypedMap        bool
-	schemaScalar      bool
-	action            bool
-	actionList        bool
-	sequenceParams    bool
-	scriptMetadata    bool
-	importMetadata    bool
-	scriptName        bool
-	extractor         bool
-	extractorList     bool
+	// surfaceMetadata is set only on the metadata map of an action, an
+	// http_sequence request or an http_async_start request: the surfaces that
+	// own a server-stamped import_action_uid. A nested map that merely happens
+	// to be named metadata (config.grpc.metadata, params.*.metadata) is wire or
+	// payload data, never action provenance.
+	surfaceMetadata bool
+	// asyncParams and asyncRequest track an http_async_start step's
+	// params.request, whose metadata is a surface metadata map.
+	asyncParams  bool
+	asyncRequest bool
+	// controlFlow marks an action's control map, whose default list (the
+	// control_switch fallback branch) is an action list like steps and else.
+	controlFlow    bool
+	javaVMArgument bool
+	untypedMap     bool
+	schemaScalar   bool
+	action         bool
+	actionList     bool
+	sequenceParams bool
+	scriptMetadata bool
+	importMetadata bool
+	scriptName     bool
+	extractor      bool
+	extractorList  bool
 	// browserTarget is set for a browser step's target that is a locator or
 	// script, which is never read as a URL.
 	browserTarget dsl.BrowserTargetKind
@@ -230,7 +243,7 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 			}
 			sentEntry := ctx.sentMetadataFamily != "" &&
 				!messaging.MetadataKeyIsProvenance(ctx.sentMetadataFamily, key)
-			if ctx.metadata && !sentEntry &&
+			if ctx.surfaceMetadata && !sentEntry &&
 				key == dsl.ImportActionUIDMetadataKey &&
 				dsl.IsValidImportActionUID(child) {
 				out[key] = child
@@ -304,7 +317,8 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				schemaScalar: !ctx.metadata &&
 					!ctx.untypedMap &&
 					isDisclosureSchemaDiscriminator(key),
-				actionList: !ctx.untypedMap && isDisclosureActionListKey(key),
+				actionList: !ctx.untypedMap && (isDisclosureActionListKey(key) ||
+					ctx.controlFlow && normalized == "default"),
 				sequenceParams: httpSequence &&
 					normalized == "params",
 				extractorList: ctx.action && normalized == "extractors",
@@ -314,7 +328,17 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				childContext.browserTarget = nonURLBrowserTarget(typed, key)
 				if normalized == "metadata" {
 					childContext.sentMetadataFamily = messagingSendMetadataFamily(stringValue(typed["type"]))
+					childContext.surfaceMetadata = true
 				}
+				childContext.controlFlow = normalized == "control"
+				childContext.asyncParams = key == "params" &&
+					strings.EqualFold(strings.TrimSpace(stringValue(typed["type"])), "http_async_start")
+			}
+			if ctx.asyncParams && key == "request" {
+				childContext.asyncRequest = true
+			}
+			if ctx.asyncRequest && !ctx.metadata && normalized == "metadata" {
+				childContext.surfaceMetadata = true
 			}
 			childContext.sentMetadataEntry = sentEntry
 			if ctx.transactionParams && (key == "args" || key == "call_args") {
@@ -1338,8 +1362,6 @@ func isPortableProvenanceIdentifier(key, value string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "source_path", "source_step_id", "source_profile", "source_uid":
 		return true
-	case dsl.ImportActionUIDMetadataKey:
-		return dsl.IsValidImportActionUID(value)
 	case "diagnostic_ids", "finding_ids":
 		const prefix = "bruno-native-"
 		if !strings.HasPrefix(value, prefix) || len(value) != len(prefix)+24 {

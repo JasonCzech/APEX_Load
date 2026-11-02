@@ -67,10 +67,12 @@ func TestApexSchemeDescriptorTitlesAndTokens(t *testing.T) {
 		descriptor string
 		title      string
 		token      string
+		filter     string
 	}{
-		{descriptor: "apex://BWC_InteractionController/ACTION$getVisibility", title: "BWC_InteractionController.getVisibility", token: "BWC_InteractionController.getVisibility"},
-		{descriptor: "apex://ns.Ctrl/ACTION$m", title: "ns.Ctrl.m", token: "ns.Ctrl.m"},
-		{descriptor: "serviceComponent://ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController/ACTION$getRecord", title: "RecordGvpController.getRecord", token: "ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController.getRecord"},
+		{descriptor: "apex://BWC_InteractionController/ACTION$getVisibility", title: "BWC_InteractionController.getVisibility", token: "BWC_InteractionController.getVisibility", filter: "apex://BWC_InteractionController/ACTION$getVisibility[BWC_InteractionController.getVisibility]"},
+		{descriptor: "apex://ns.Ctrl/ACTION$m", title: "ns.Ctrl.m", token: "ns.Ctrl.m", filter: "apex://ns.Ctrl/ACTION$m[ns.Ctrl.m]"},
+		{descriptor: "APEX://Ctrl", title: "Ctrl", token: "Ctrl", filter: "APEX://Ctrl"},
+		{descriptor: "serviceComponent://ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController/ACTION$getRecord", title: "RecordGvpController.getRecord", token: "ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController.getRecord", filter: "serviceComponent://ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController/ACTION$getRecord"},
 	}
 	for _, tc := range tests {
 		d := ActionDescriptor{Descriptor: tc.descriptor}
@@ -79,6 +81,11 @@ func TestApexSchemeDescriptorTitlesAndTokens(t *testing.T) {
 		}
 		if got := d.DiffToken(); got != tc.token {
 			t.Errorf("DiffToken(%q) = %q, want %q", tc.descriptor, got, tc.token)
+		}
+		// A recording-profile exclusion in the ShortTitle form must match a
+		// direct apex:// call's filter token.
+		if got := d.FilterToken(); got != tc.filter {
+			t.Errorf("FilterToken(%q) = %q, want %q", tc.descriptor, got, tc.filter)
 		}
 	}
 }

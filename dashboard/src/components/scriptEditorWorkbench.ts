@@ -4,6 +4,7 @@
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProtocolEvidence } from '../types'
 import { httpSequenceRequests } from './scriptActionHelpers'
+import { resolveNestedAction } from './scriptEditorJsonModel'
 
 // Compatibility exports for callers that still treat the workbench module as
 // the Script JSON utility entry point. New code should import from
@@ -179,19 +180,33 @@ export type ShortcutBreakpointTarget =
   | { phase: string; actionIndex: number; stepPath: string[] }
 
 export interface ShortcutBreakpointContext {
+  /** The script as it is now: an open replay event may be from an older draft. */
+  script: ScriptDefinition
   workspaceTab: string
   /** The replay event whose evidence is open in Debug. */
   selectedEvent?: { phase?: string; action_index?: number; request_index?: number; step_path?: string[] } | null
-  /** The step selected in the outline (Author's, which Debug's outline shows too), at any phase and depth. */
-  focus?: { phase: string; actionIndex: number; stepPath?: string[] } | null
+  /**
+   * The open event comes from a replay of the steps as they are now. After a
+   * structural edit its action index may name a different step, so it takes
+   * no breakpoint, as its Edit action is unavailable.
+   */
+  selectedEventFromCurrentDraft?: boolean
+  /**
+   * The step selected in the outline (Author's, which Debug's outline shows
+   * too), at any phase and depth, with the step itself when the caller
+   * resolved it: a nested block is not a breakpoint location.
+   */
+  focus?: { phase: string; actionIndex: number; stepPath?: string[]; action?: ScriptActionDefinition | null } | null
   activeAction: number | null
   firstRow?: { phase: string; actionIndex: number } | null
 }
 
 function shortcutBreakpointLocation(phase: string, actionIndex: number, stepPath?: readonly string[]): ShortcutBreakpointTarget {
   if (!stepPath?.length) return { phase, actionIndex }
-  // One request of a top-level sequence is addressed by its index, as the outline's own toggle does.
-  const request = stepPath.length === 1 ? /^requests\[(\d+)\]$/.exec(stepPath[0]) : null
+  // A request of a sequence, top-level or nested, is addressed by its index, as
+  // the outline's own toggle and gutter key it (containerChildSteps gives every
+  // sequence child a requestIndex), so F9 sets the breakpoint the row shows.
+  const request = /^requests\[(\d+)\]$/.exec(stepPath[stepPath.length - 1])
   return request ? { phase, actionIndex, requestIndex: Number(request[1]) } : { phase, actionIndex, stepPath: [...stepPath] }
 }
 
@@ -200,14 +215,27 @@ function shortcutBreakpointLocation(phase: string, actionIndex: number, stepPath
  * keyboard focus (the outline handles both keys for its focused row): in Debug
  * the open replay event's step; otherwise the selected step, which may be in
  * init or teardown or nested in a block; then the active action; then the
- * script's first step.
+ * script's first step. A nested block (If, Switch, Loop, Parallel, Sequence)
+ * selected in the outline takes none: replay pauses only before the steps it
+ * runs, never on a nested block's own path, and the outline shows no
+ * breakpoint on a block row, so one set there would never fire or show.
  */
-export function shortcutBreakpointTarget({ workspaceTab, selectedEvent, focus, activeAction, firstRow }: ShortcutBreakpointContext): ShortcutBreakpointTarget | null {
+export function shortcutBreakpointTarget({ script, workspaceTab, selectedEvent, selectedEventFromCurrentDraft, focus, activeAction, firstRow }: ShortcutBreakpointContext): ShortcutBreakpointTarget | null {
   if (workspaceTab === 'debug' && selectedEvent && typeof selectedEvent.action_index === 'number') {
     const phase = selectedEvent.phase || 'action'
+    // Evidence from a replay of an older draft names steps by their place
+    // then: that place may now hold another step, or none. It takes no
+    // breakpoint, which would land on the wrong step or never show or fire.
+    if (!selectedEventFromCurrentDraft) return null
+    const root = scriptActionsForPhase(script, phase === 'init' || phase === 'teardown' ? phase : 'action')[selectedEvent.action_index]
+    const eventPath = selectedEvent.step_path?.length ? selectedEvent.step_path : selectedEvent.request_index != null ? [`requests[${selectedEvent.request_index}]`] : []
+    if (!root || (eventPath.length && !resolveNestedAction(root, eventPath))) return null
     return shortcutBreakpointLocation(phase, selectedEvent.action_index, selectedEvent.request_index != null ? [`requests[${selectedEvent.request_index}]`] : selectedEvent.step_path)
   }
-  if (focus) return shortcutBreakpointLocation(focus.phase, focus.actionIndex, focus.stepPath)
+  if (focus) {
+    if (focus.stepPath?.length && focus.action && debugContainerKind(focus.action)) return null
+    return shortcutBreakpointLocation(focus.phase, focus.actionIndex, focus.stepPath)
+  }
   if (activeAction !== null) return { phase: 'action', actionIndex: activeAction }
   return firstRow ? { phase: firstRow.phase, actionIndex: firstRow.actionIndex } : null
 }

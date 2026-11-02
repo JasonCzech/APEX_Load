@@ -378,20 +378,28 @@ func (p Profile) RecordsContentType(contentType string) bool {
 // ExcludesAuraDescriptor reports whether an Aura sub-action descriptor or
 // Apex [namespace.]classname.method target matches ExcludedAuraDescriptors.
 func (p Profile) ExcludesAuraDescriptor(descriptor string) bool {
+	return p.ExcludedAuraDescriptorMatch(descriptor) != ""
+}
+
+// ExcludedAuraDescriptorMatch is the ExcludedAuraDescriptors pattern (as
+// listed, trimmed) that an Aura sub-action descriptor or Apex target contains,
+// case-insensitively, or "" when none does. Patterns match as substrings, so
+// a short pattern such as "getRecord" matches every descriptor holding it.
+func (p Profile) ExcludedAuraDescriptorMatch(descriptor string) string {
 	if len(p.ExcludedAuraDescriptors) == 0 {
-		return false
+		return ""
 	}
 	lower := strings.ToLower(strings.TrimSpace(descriptor))
 	if lower == "" {
-		return false
+		return ""
 	}
 	for _, pattern := range p.ExcludedAuraDescriptors {
-		needle := strings.ToLower(strings.TrimSpace(pattern))
-		if needle != "" && strings.Contains(lower, needle) {
-			return true
+		trimmed := strings.TrimSpace(pattern)
+		if needle := strings.ToLower(trimmed); needle != "" && strings.Contains(lower, needle) {
+			return trimmed
 		}
 	}
-	return false
+	return ""
 }
 
 // hostMatches matches a host against "host" or "*.domain".

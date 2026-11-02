@@ -430,5 +430,19 @@ describe('ScriptBlockerRepairPanel', () => {
     expect(button('Mark body supplied & clear blocker')?.disabled).toBe(false)
     await click('Mark body supplied & clear blocker')
     expect(onClearUnexportedHarBodyBlocker).toHaveBeenCalledTimes(1)
+
+    // An unapplied Source JSON draft: the draft actions would discard it.
+    await render({
+      action: { ...unexportedStep, body: 'message=%7B%22actions%22%3A%5B%5D%7D' },
+      actionPath: 'actions[0]',
+      sourcePending: true,
+      onDeleteStep,
+      onOpenBody,
+      onClearUnexportedHarBodyBlocker,
+    })
+    expect(button('Mark body supplied & clear blocker')?.disabled).toBe(true)
+    expect(button('Mark body supplied & clear blocker')?.title).toBe('Apply or reset your Source changes first')
+    expect(button('Delete step')?.disabled).toBe(true)
+    expect(button('Open request body')?.disabled).toBe(false)
   })
 })

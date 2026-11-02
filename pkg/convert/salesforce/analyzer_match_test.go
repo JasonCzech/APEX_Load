@@ -2,6 +2,7 @@ package salesforce
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -235,5 +236,53 @@ func BenchmarkMatchHAR(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = matchHAR(refs, entries)
+	}
+}
+
+func TestMatchHARReservesPinnedEntriesBeforeFuzzyMatching(t *testing.T) {
+	const auraURL = "https://example.lightning.force.com/aura"
+	refs := []actionRef{
+		// An unstamped ref (synthesized or user-added) scores entry 57 best.
+		{Method: "POST", URL: auraURL},
+		// A later ref stamped with entry 57.
+		{Method: "POST", URL: auraURL, Action: &dsl.Action{Metadata: map[string]any{"har.entry_index": 57}}},
+	}
+	entries := []harEntry{
+		{ID: 57, Method: "POST", URL: auraURL},
+		{ID: 58, Method: "POST", URL: auraURL},
+	}
+	got := matchHAR(refs, entries)
+	if got[1] != 57 {
+		t.Fatalf("pinned ref matched entry %d, want its stamped entry 57 (matches %v)", got[1], got)
+	}
+	if got[0] != 58 {
+		t.Fatalf("unstamped ref matched entry %d, want the remaining entry 58 (matches %v)", got[0], got)
+	}
+}
+
+// TestMatchHARDescriptorTieBreakOnFormEncodedAuraBodies pins that an unpinned
+// /aura ref whose body no longer matches any recorded body exactly (here a
+// correlated aura.token) still binds to the entry recording its own action.
+// A canonical form body re-escapes the message JSON, so the descriptor must be
+// read from the parsed envelope rather than the canonical body text.
+func TestMatchHARDescriptorTieBreakOnFormEncodedAuraBodies(t *testing.T) {
+	const auraURL = "https://acme.lightning.force.com/aura?r=1"
+	formBody := func(descriptor, token string) string {
+		message := `{"actions":[{"id":"1;a","descriptor":"` + descriptor + `","callingDescriptor":"UNKNOWN","params":{}}]}`
+		return "message=" + url.QueryEscape(message) + "&aura.context=%7B%7D&aura.token=" + url.QueryEscape(token)
+	}
+	const wanted = "apex://ComponentLogger/ACTION$saveComponentLogEntries"
+	entries := []harEntry{
+		{ID: 1, Method: "POST", URL: auraURL, RequestBody: formBody("serviceComponent://ui.force.components.controllers.lists.selectableListDataProvider.SelectableListDataProviderController/ACTION$getItems", "recorded")},
+		{ID: 2, Method: "POST", URL: auraURL, RequestBody: formBody(wanted, "recorded")},
+	}
+	refs := []actionRef{{
+		Method:     "POST",
+		URL:        auraURL,
+		Descriptor: wanted,
+		Action:     &dsl.Action{Method: "POST", Target: auraURL, Body: formBody(wanted, "{{var.corr_salesforce_aura_token}}")},
+	}}
+	if got := matchHAR(refs, entries); got[0] != 2 {
+		t.Fatalf("matchHAR = %v, want the ref bound to entry 2 (its own descriptor)", got)
 	}
 }

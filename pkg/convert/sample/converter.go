@@ -88,12 +88,17 @@ type ConvertOptions struct {
 	// the background (poll, long-poll, push) into background conversations.
 	// Off keeps them as recorded steps.
 	AsyncScan *bool `json:"async_scan,omitempty"`
-	// StepTransactions (HAR input; default off) times each user step as a
-	// transaction when the recording marked none (stepTransactionWindows).
+	// StepTransactions (HAR input) times each user step as a transaction when
+	// the recording marked none (stepTransactionWindows). Nil defaults it on
+	// for a HAR import (EntryPointImportHAR or EntryPointImportSalesforce) of
+	// Salesforce traffic with advancing timestamps unless DisableSalesforce
+	// is set, and off otherwise; a recording that marks its own transactions
+	// keeps them instead.
 	StepTransactions *bool `json:"step_transactions,omitempty"`
-	// RecordedConcurrency (HAR input; default off) replays the requests the
-	// browser had in flight together as concurrent request groups
-	// (groupRecordedConcurrency).
+	// RecordedConcurrency (HAR input) replays the requests the browser had in
+	// flight together as concurrent request groups (groupRecordedConcurrency).
+	// Nil defaults it on under the same conditions as StepTransactions when
+	// SalesforceNative is also on, and off otherwise.
 	RecordedConcurrency *bool `json:"recorded_concurrency,omitempty"`
 	// Profile is the project recording profile (HAR input): its host and
 	// content-type filters, header drop list, think-time threshold and
@@ -419,12 +424,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, errors.New("no requests found in sample input")
 	}
 	if format == "har" && req.Options.Profile != nil {
-		var profileFiltered int
-		exchanges, profileFiltered = applyRecordingProfileFilters(exchanges, req.Options.Profile)
-		filtered += profileFiltered
-		if profileFiltered > 0 {
-			warnings = append(warnings, fmt.Sprintf("recording profile %q left %d request(s) out by host or content type", req.Options.Profile.Name, profileFiltered))
-		}
+		var drops recordingProfileDrops
+		exchanges, drops = applyRecordingProfileFilters(exchanges, req.Options.Profile)
+		filtered += drops.total()
+		warnings = append(warnings, drops.warnings(req.Options.Profile.Name)...)
 		if len(exchanges) == 0 {
 			return nil, errors.New("the recording profile filtered out every request")
 		}
@@ -440,6 +443,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	// Step transactions are placed once the requests are built (below), so
 	// they can leave out the background requests the recorded shape folds.
 	isHARImportFlow := format == "har" && (entryPoint == EntryPointImportHAR || entryPoint == EntryPointImportSalesforce)
+	// Generic HAR mode is a HAR import (or browser capture) whose Salesforce
+	// native authoring, on by default for those entry points, was turned off.
+	// The recorder and sample importers never default it on and offer no such
+	// option, so their output keeps no generic Aura guard or warning.
+	genericAuraMode := format == "har" && (isHARImportFlow || entryPoint == EntryPointBrowserHTTP) && !effectiveSettings.SalesforceNative && !effectiveSettings.DisableSalesforce
 	defaultSalesforceShaping := isHARImportFlow && !effectiveSettings.DisableSalesforce && isSalesforceImportTraffic(exchanges) && exchangesHaveTimestampProgression(exchanges)
 	stepTransactions := format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, defaultSalesforceShaping)
 	recordedConcurrency := format == "har" && convertutil.BoolOption(req.Options.RecordedConcurrency, defaultSalesforceShaping && effectiveSettings.SalesforceNative)
@@ -447,12 +455,21 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		stepTransactions = false
 		warnings = append(warnings, "Step transactions were not added: the recording already marks its transactions, which the script keeps.")
 	}
-	// A recorded Salesforce Mobile SDK sign-in reads its credentials from a
-	// users file and is reviewed before correlation (salesforce_signin.go).
+	// A recorded Salesforce Mobile SDK or desktop sign-in reads its
+	// credentials from a users file and is reviewed before correlation
+	// (salesforce_signin.go). disable_salesforce asks for a generic script,
+	// so the recorded sign-in and sign-out stay where they were recorded, but
+	// the steps that act on the org at load (a password reset, an identity
+	// verification) are still gated.
 	var signIn *salesforceSignIn
 	if format == "har" {
-		if signIn = findSalesforceSignIn(exchanges); signIn != nil {
-			signIn.prepareExchanges(exchanges)
+		if found := findSalesforceSignIn(exchanges); found != nil {
+			if effectiveSettings.DisableSalesforce {
+				gateSalesforceSignInSideEffects(exchanges)
+			} else {
+				signIn = found
+				signIn.prepareExchanges(exchanges)
+			}
 		}
 	}
 
@@ -644,7 +661,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				action.Metadata[dsl.ImportActionUIDMetadataKey] = fmt.Sprintf("har-entry-%d", ex.SourceEntryID)
 			}
 		}
-		applyCorrelationVarsToHARQueryMetadata(action.Metadata, stepVars)
+		requestimport.CorrelateHARQueryStringValues(action.Metadata, stepVars, applyCorrelationVars)
 		if ex.ContentEncoding != "" {
 			if action.Params == nil {
 				action.Params = map[string]any{}
@@ -732,9 +749,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 					result.Stats.Assertions++
 				}
 			}
-			// In generic HAR mode (Salesforce native rewrite off, Salesforce not
-			// disabled), guard /aura POSTs against HTTP-200 Aura envelope errors.
-			if includeAssertions && format == "har" && !effectiveSettings.SalesforceNative && !effectiveSettings.DisableSalesforce && isGenericAuraPostExchange(ex) {
+			// In generic HAR mode, guard /aura POSTs against HTTP-200 Aura
+			// envelope errors.
+			if includeAssertions && genericAuraMode && isGenericAuraPostExchange(ex) {
 				if !strings.Contains(ex.Response.Body, "/*ERROR*/") {
 					action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_not_contains", Value: "/*ERROR*/"})
 					result.Stats.Assertions++
@@ -906,10 +923,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			result.Warnings = append(result.Warnings, signIn.warnings(moved, notMoved)...)
 			if moved > 0 {
 				var teardownMoved int
-				newIndex, sourceMappings, teardownMoved = signIn.moveLogoutToTeardown(result.Script, exchanges, newIndex, sourceMappings)
-				if teardownMoved > 0 {
-					result.Warnings = append(result.Warnings, fmt.Sprintf("The Salesforce sign-out runs in teardown (%d steps), so each virtual user signs out once after its final iteration.", teardownMoved))
-				}
+				var carried []string
+				var stays string
+				newIndex, sourceMappings, teardownMoved, carried, stays = signIn.moveLogoutToTeardown(result.Script, exchanges, newIndex, sourceMappings)
+				result.Warnings = append(result.Warnings, logoutWarnings(teardownMoved, carried, stays)...)
 			}
 			signIn.restoreRecordedBodies(exchanges)
 		}
@@ -925,7 +942,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)
 	}
-	if format == "har" && !effectiveSettings.SalesforceNative && !effectiveSettings.DisableSalesforce && scriptHasUncorrelatedAuraToken(result.Script) {
+	if genericAuraMode && scriptHasUncorrelatedAuraToken(result.Script) {
 		result.Warnings = append(result.Warnings, "Generic HAR mode left one or more aura.token values literal in /aura requests; enable Salesforce native authoring or extract __Host-ERIC_* Set-Cookie from /one/one.app before replay.")
 	}
 	for index := range result.Correlations {
@@ -1139,15 +1156,6 @@ func scriptHasUncorrelatedAuraToken(script *dsl.Script) bool {
 		return false
 	}
 	return check(script.Init) || check(script.Actions) || check(script.Teardown)
-}
-
-func applyCorrelationVarsToHARQueryMetadata(metadata map[string]any, vars map[string]string) {
-	if len(vars) == 0 {
-		return
-	}
-	requestimport.UpdateHARQueryStringValues(metadata, func(value string) string {
-		return requestimport.CorrelatedQueryValue(value, vars, applyCorrelationVars)
-	})
 }
 
 func mergeFileAssets(script *dsl.Script, assets []dsl.DataSource) {

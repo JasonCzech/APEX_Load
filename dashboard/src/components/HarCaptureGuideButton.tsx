@@ -12,15 +12,29 @@ export default function HarCaptureGuideButton({
   triggerClassName?: string
   label?: string
 }) {
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  // Each failed attempt re-renders the message, so a repeated failure is
+  // announced again rather than leaving the live region unchanged.
+  const [failedAttempts, setFailedAttempts] = useState(0)
+  const reportCopyFailure = () => {
+    setCopyState('failed')
+    setFailedAttempts(attempts => attempts + 1)
+  }
 
+  // The Clipboard API exists only in secure contexts, so a controller served
+  // over plain http has none: say so instead of claiming a copy.
   const handleCopyCommand = async () => {
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+    if (typeof clipboard?.writeText !== 'function') {
+      reportCopyFailure()
+      return
+    }
     try {
-      await navigator.clipboard?.writeText(JQ_SLIM_COMMAND)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
+      await clipboard.writeText(JQ_SLIM_COMMAND)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState(current => current === 'copied' ? 'idle' : current), 2000)
     } catch {
-      setCopied(false)
+      reportCopyFailure()
     }
   }
 
@@ -63,7 +77,7 @@ export default function HarCaptureGuideButton({
                   <td><strong>Allow to generate HAR (with sensitive data)</strong> (<code>Settings ⚙ → Preferences → Network</code>, Chrome/Edge 130+)</td>
                   <td><span className="har-capture-guide-badge on">Checked</span></td>
                   <td>
-                    Click-and-hold the Network <strong>Export</strong> arrow and choose <strong>Export HAR (with sensitive data)…</strong> (Firefox: right-click → <strong>Save All As HAR</strong>). Preserves <code>Cookie</code>, <code>Set-Cookie</code> (<code>__Host-ERIC_*</code>, <code>sid</code>), and <code>Authorization</code> headers for correlation verification. APEX Load automatically scrubs and binds credentials to governed project secrets on import.
+                    Click-and-hold the Network <strong>Export</strong> arrow and choose <strong>Export HAR (with sensitive data)…</strong> (Firefox: right-click → <strong>Save All As HAR</strong>). Preserves <code>Cookie</code>, <code>Set-Cookie</code> (<code>__Host-ERIC_*</code>, <code>sid</code>), and <code>Authorization</code> headers for correlation verification. On import, the review lists every credential the capture carries; you bind each one to a project secret before saving. Moving a recorded value into a new project secret needs the <strong>Allow source secret migration</strong> admin setting (off by default) and an <strong>Inspect &amp; review</strong> import, not <strong>Validate Only</strong>.
                   </td>
                 </tr>
                 <tr>
@@ -138,9 +152,18 @@ export default function HarCaptureGuideButton({
           <div className="har-capture-guide-code-header">
             <span className="sample-import-muted">Preserves all <code>document</code> and <code>xhr</code>/<code>fetch</code> bodies</span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleCopyCommand()}>
-              {copied ? 'Copied command' : 'Copy jq command'}
+              {copyState === 'copied' ? 'Copied command' : 'Copy jq command'}
             </button>
           </div>
+          {/* The live region stays mounted, empty until a copy fails, so screen
+              readers announce the message when it appears. */}
+          <p className={copyState === 'failed' ? 'sample-import-warning' : 'sr-only'} role="status" aria-live="polite">
+            {copyState === 'failed' && (
+              <span key={failedAttempts}>
+                The browser did not allow copying (the clipboard needs an https page). Select the command below and copy it by hand.
+              </span>
+            )}
+          </p>
           <pre className="har-capture-guide-code" tabIndex={0} role="region" aria-label="jq HAR slimming command"><code>{JQ_SLIM_COMMAND}</code></pre>
         </section>
       </div>

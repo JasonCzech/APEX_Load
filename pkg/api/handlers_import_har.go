@@ -82,7 +82,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 		return
 	}
 	if identicalComparison {
-		recordUncomparedHARPair(result, identicalHARComparisonReason)
+		recordDuplicateHARPair(result)
 	} else if comparison != nil {
 		finished := comparison.wait(r.Context(), baselineConversion)
 		if !harImportStageOK(w, r) {
@@ -465,11 +465,27 @@ func prepareHARComparison(ctx context.Context, data, baseline []byte, opts har.C
 	if identicalHARComparisonPayload(baseline, data) {
 		return nil, nil, errIdenticalHARComparison
 	}
-	prepared, err := har.PrepareComparisonContext(ctx, data, opts)
+	prepared, err := har.PrepareComparisonContext(ctx, data, harComparisonOptions(opts))
 	if err != nil {
 		return nil, salvage, fmt.Errorf("comparison HAR: %w", err)
 	}
 	return prepared, salvage, nil
+}
+
+// harComparisonOptions is the baseline's options for converting its
+// comparison HAR, without the work whose output the comparison discards: only
+// its correlations and parsed source observations are kept, and correlation
+// detection runs before step transactions, recorded concurrency and action
+// provenance are added, so leaving those off cannot change the diff. Request
+// selection (static assets, telemetry, the profile) and correlation settings
+// stay the baseline's, so both recordings are analyzed alike.
+func harComparisonOptions(opts har.ConvertOptions) har.ConvertOptions {
+	off := false
+	opts.StampActionProvenance = false
+	opts.StepTransactions = &off
+	opts.RecordedConcurrency = &off
+	opts.SourceFileName = ""
+	return opts
 }
 
 // release cancels the comparison without waiting for it. One still waiting
@@ -533,7 +549,7 @@ func (job *harComparisonJob) attach(ctx context.Context, result *har.ConvertResu
 	err := job.err
 	if errors.Is(err, errIdenticalHARComparison) {
 		job.prepared = nil
-		recordUncomparedHARPair(result, identicalHARComparisonReason)
+		recordDuplicateHARPair(result)
 		return
 	}
 	var diff *har.DiffReport
@@ -566,6 +582,19 @@ func recordUncomparedHARPair(result *har.ConvertResult, reason string) {
 		Reason:               reason,
 		BaselineCorrelations: len(result.Correlations),
 	}
+}
+
+// duplicateComparisonHARCode is the diagnostic code that marks a pair whose
+// comparison HAR is the baseline capture, so API clients can tell it from the
+// other reasons a pair goes uncompared without matching har_diff.reason.
+const duplicateComparisonHARCode = "duplicate_comparison_har"
+
+// recordDuplicateHARPair records a pair whose two captures are the same
+// recording: uncompared, with identicalHARComparisonReason and the
+// duplicateComparisonHARCode diagnostic.
+func recordDuplicateHARPair(result *har.ConvertResult) {
+	recordUncomparedHARPair(result, identicalHARComparisonReason)
+	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: duplicateComparisonHARCode, Element: "HAR pair", Location: "comparison HAR file", Detail: identicalHARComparisonReason, Severity: diag.Warning})
 }
 
 // dropUnperformedHARPairMode reports a conversion as a single design HAR when
@@ -872,71 +901,40 @@ func validHARImportPolicyOptions(w http.ResponseWriter, opts har.ConvertOptions)
 }
 
 func validHARImportBaseURL(w http.ResponseWriter, raw string) bool {
+	if harImportBaseURLHasTemplate(raw) {
+		writeError(w, http.StatusBadRequest, "invalid base_url: {{...}} templates are not supported for HAR import, because recorded request URLs only follow a concrete http:// or https:// base URL; leave it blank to use the recorded origin, and retarget the run with its base URL override")
+		return false
+	}
 	if !harImportBaseURLAccepted(raw) {
-		writeError(w, http.StatusBadRequest, "invalid base_url: must be an http:// or https:// URL or a {{...}} template")
+		writeError(w, http.StatusBadRequest, "invalid base_url: must be an http:// or https:// URL")
 		return false
 	}
 	return true
 }
 
-// harImportBaseURLAccepted reports whether a base_url is empty, an http(s)
-// URL, or a {{...}} template. A value may start with a template that stands
-// for the whole origin ("{{BaseURL}}/app"); any other template must sit inside
-// an http(s) URL ("https://{{env}}.example.test"). Every template must close
-// and name something, so text that merely contains "{{" is not accepted.
+// harImportBaseURLHasTemplate reports whether a base_url carries template
+// syntax. The HAR converter only moves a recorded request onto the base URL
+// when both parse as http(s) URLs with the same host and port, and nothing
+// expands a template in config.base_url at run time, so a templated base
+// would leave every request on the recorded host while appearing to retarget
+// it.
+func harImportBaseURLHasTemplate(raw string) bool {
+	return strings.Contains(raw, "{{") || strings.Contains(raw, "}}")
+}
+
+// harImportBaseURLAccepted reports whether a base_url is empty or a concrete
+// http(s) URL with a host. Templates are never accepted.
 func harImportBaseURLAccepted(raw string) bool {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return true
 	}
-	if strings.ContainsAny(trimmed, " \t\r\n") {
+	if harImportBaseURLHasTemplate(trimmed) || strings.ContainsAny(trimmed, " \t\r\n") {
 		return false
 	}
-	substituted, ok := substituteHARImportBaseURLTemplates(trimmed)
-	if !ok {
-		return false
-	}
-	if strings.HasPrefix(trimmed, "{{") {
-		// The leading template is the origin; what follows it is a path,
-		// query or port suffix the template completes.
-		return true
-	}
-	parsed, err := url.Parse(substituted)
-	return err == nil && parsed != nil && strings.TrimSpace(parsed.Host) != "" &&
+	parsed, err := url.Parse(trimmed)
+	return err == nil && parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" &&
 		(strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https"))
-}
-
-// substituteHARImportBaseURLTemplates replaces each {{name}} in value with a
-// placeholder that is valid as a host label, a port and a path segment alike
-// ("https://{{host}}:{{port}}"). It reports false for an unclosed template, an
-// empty name, or a stray "}}".
-func substituteHARImportBaseURLTemplates(value string) (string, bool) {
-	var out strings.Builder
-	rest := value
-	for {
-		start := strings.Index(rest, "{{")
-		if start < 0 {
-			if strings.Contains(rest, "}}") {
-				return "", false
-			}
-			out.WriteString(rest)
-			return out.String(), true
-		}
-		if strings.Contains(rest[:start], "}}") {
-			return "", false
-		}
-		end := strings.Index(rest[start+2:], "}}")
-		if end < 0 {
-			return "", false
-		}
-		name := strings.TrimSpace(rest[start+2 : start+2+end])
-		if name == "" || strings.ContainsAny(name, "{}") {
-			return "", false
-		}
-		out.WriteString(rest[:start])
-		out.WriteString("0")
-		rest = rest[start+2+end+2:]
-	}
 }
 
 // identicalHARComparisonReason is why a pair whose two captures are the same

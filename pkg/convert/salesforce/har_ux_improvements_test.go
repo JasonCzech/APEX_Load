@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 func TestAuraTokenEikoocnekotConfirmationAndRedirectScope(t *testing.T) {
@@ -54,29 +55,95 @@ func TestAuraTokenEikoocnekotConfirmationAndRedirectScope(t *testing.T) {
 			if !foundReason {
 				t.Fatalf("expected eikoocnekot confirmation for %s in correlation reasons: %#v", cookieName, review.NativePreview.Correlations)
 			}
-			var hasRedirectScope bool
+			var hasScope bool
 			expression := ""
+			requestURL := ""
 			for _, ext := range review.NativePreview.Script.Actions[0].Extractors {
-				if ext.Name == "corr_salesforce_aura_token" && ext.Scope != nil && ext.Scope.Redirects == "include" {
-					hasRedirectScope = true
+				if ext.Name == "corr_salesforce_aura_token" && ext.Scope != nil {
+					hasScope = true
 					expression = ext.Expression
+					requestURL = ext.Scope.RequestURL
+					// The relative bootstrap's Lightning glob cannot be anchored
+					// to the host, so redirect hops are not searched.
+					if ext.Scope.Redirects != "" {
+						t.Fatalf("relative bootstrap scope searches redirect hops: %#v", ext.Scope)
+					}
 				}
 			}
-			if !hasRedirectScope {
-				t.Fatalf("expected Scope.Redirects=include on corr_salesforce_aura_token: %#v", review.NativePreview.Script.Actions[0].Extractors)
+			if !hasScope {
+				t.Fatalf("expected a Scope on corr_salesforce_aura_token: %#v", review.NativePreview.Script.Actions[0].Extractors)
+			}
+			// The bootstrap target is relative to config.base_url, so pointing
+			// the script at another org changes its host: a recorded host in
+			// the scope would make the on_miss=fail extractor miss every replay.
+			// The Lightning base_url still keeps the scope to Lightning hosts,
+			// so a my.salesforce.com hop's same-family cookie cannot win.
+			for hopURL, want := range map[string]bool{
+				"https://acme.lightning.force.com/one/one.app":       true,
+				"https://otherorg.lightning.force.com/one/one.app":   true,
+				"https://acme.my.salesforce.com/one/one.app":         false,
+				"https://acme.my.salesforce.com/visualforce/session": false,
+			} {
+				if got := httpcontract.MatchScopeGlob(requestURL, hopURL); got != want {
+					t.Fatalf("relative bootstrap scope request_url %q match %q = %v, want %v", requestURL, hopURL, got, want)
+				}
+			}
+			// With an absolute bootstrap target the suffix stays open, so a
+			// same-family __Host- cookie that a hop on another host sets must
+			// be out of scope: a __Host- cookie is host-only and never reaches
+			// the Lightning host's Aura requests.
+			absolute := auraTokenScript(auraTokenFixture)
+			absolute.Config.BaseURL = ""
+			for index := range absolute.Actions {
+				absolute.Actions[index].Target = "https://acme.lightning.force.com" + absolute.Actions[index].Target
+			}
+			absoluteReview, err := Analyze(absolute, AnalyzeOptions{BuildNative: true, HARData: rawHAR})
+			if err != nil {
+				t.Fatalf("Analyze absolute: %v", err)
+			}
+			if absoluteReview.NativePreview == nil || absoluteReview.NativePreview.Script == nil {
+				t.Fatal("expected NativePreview.Script for the absolute bootstrap target")
+			}
+			absoluteRequestURL := ""
+			for _, ext := range absoluteReview.NativePreview.Script.Actions[0].Extractors {
+				if ext.Name == "corr_salesforce_aura_token" && ext.Scope != nil {
+					absoluteRequestURL = ext.Scope.RequestURL
+				}
+			}
+			if !httpcontract.MatchScopeGlob(absoluteRequestURL, "https://acme.lightning.force.com/one/one.app?x=1") {
+				t.Fatalf("scope request_url %q excludes the bootstrap host's own response", absoluteRequestURL)
+			}
+			for _, hop := range []string{
+				"https://acme.my.salesforce.com/secur/frontdoor.jsp?retURL=https://acme.lightning.force.com/one/one.app",
+				"https://acme.lightning.force.com.evil.test/one/one.app",
+			} {
+				if httpcontract.MatchScopeGlob(absoluteRequestURL, hop) {
+					t.Fatalf("scope request_url %q keeps the other host's hop %s", absoluteRequestURL, hop)
+				}
 			}
 			// Redirect hops are searched first and the first match wins, so the
-			// confirmed name must pin the extractor to exactly that cookie.
-			headers := "Set-Cookie: __Host-ERIC_PROD-1111111111111111111=hop-token; Path=/; Secure\r\n" +
+			// confirmed name must pin the extractor to that cookie family.
+			headers := "Set-Cookie: ERIC_PROD-1111111111111111111=hop-token; Path=/; Secure\r\n" +
+				"Set-Cookie: __Host-ERIC_DEV-2222222222222222222=dev-token; Path=/; Secure\r\n" +
 				"Set-Cookie: " + cookieName + "=confirmed-token; Path=/; Secure\r\n"
 			match := regexp.MustCompile(expression).FindStringSubmatch(headers)
 			if len(match) < 2 || match[1] != "confirmed-token" {
 				t.Fatalf("extractor %q matched %q, want only the confirmed %s cookie", expression, match, cookieName)
 			}
-			// Secret masking keeps only the generated Set-Cookie extractor's
-			// cookie name; any other spelling redacts the long ERIC name.
-			if name, generated := correlate.GeneratedSetCookieExtractor(expression); !generated || name != cookieName {
-				t.Fatalf("extractor %q is not the generated Set-Cookie form for %s (masking would redact the name)", expression, cookieName)
+			// The digit suffix is server-generated: another virtual user or
+			// session signing in may be issued a different one, and the
+			// on_miss=fail sign-in step must still read its token.
+			// The suffix is a signed 64-bit number, so the other session's
+			// sign may differ from the recorded one in either direction.
+			prefix := strings.TrimSuffix(strings.TrimRight(cookieName, "0123456789"), "-")
+			for _, suffix := range []string{"9081726354453627180", "-9081726354453627180"} {
+				otherUser := "Set-Cookie: " + prefix + suffix + "=other-user-token; Path=/; Secure\r\n"
+				if match := regexp.MustCompile(expression).FindStringSubmatch(otherUser); len(match) < 2 || match[1] != "other-user-token" {
+					t.Fatalf("extractor %q matched %q, want the token of a %s%s cookie", expression, match, prefix, suffix)
+				}
+			}
+			if strings.Contains(expression, strings.TrimLeft(strings.TrimPrefix(cookieName, prefix), "-")) {
+				t.Fatalf("extractor %q carries the recorded cookie-name suffix", expression)
 			}
 		})
 	}
@@ -240,6 +307,7 @@ func TestAnalyzeMatchesTemplatedHAREntriesRewritesQueryMetadataAndBoostsDynamicD
 	}
 	// Also verify applyCorrelationVarsToActionQueryMetadata directly rewrites decoded ! values against percent-encoded vars.
 	directAction := &dsl.Action{
+		Target: "/secur/frontdoor.jsp?sid={{var.corr_salesforce_frontdoor_sid}}",
 		Metadata: map[string]any{
 			"har.request.query_string": []any{map[string]any{"name": "sid", "value": rawSID}},
 		},
@@ -255,5 +323,54 @@ func TestAnalyzeMatchesTemplatedHAREntriesRewritesQueryMetadataAndBoostsDynamicD
 	}
 	if !strings.Contains(native.Actions[2].Body, staticAppID) {
 		t.Fatalf("static appId %s was unexpectedly correlated in body: %s", staticAppID, native.Actions[2].Body)
+	}
+}
+
+func TestAuraTokenCookieExtractorScopeLimitsOnlyHostOnlyNamesToTheBootstrapOrigin(t *testing.T) {
+	const producer = "https://Acme.Lightning.force.com/one/one.app"
+	const lightningBase = "https://acme.lightning.force.com"
+	hostOnly := namedAuraTokenCookieExtractor("__Host-ERIC_PROD-2876452450001777317")
+	if scope := auraTokenCookieExtractorScope(hostOnly, producer, lightningBase); scope.Redirects != "include" || scope.RequestURL != "https://acme.lightning.force.com/*" {
+		t.Fatalf("__Host- scope = %#v, want redirects with the bootstrap origin", scope)
+	}
+	// A relative bootstrap under a Lightning base_url keeps any Lightning
+	// host, so a my.salesforce.com hop's same-family __Host- cookie cannot
+	// win while a retargeted base_url (another org, or a sandbox) still does.
+	for _, base := range []string{lightningBase, "https://acme--uat.sandbox.lightning.force.com/"} {
+		scope := auraTokenCookieExtractorScope(hostOnly, "/one/one.app", base)
+		// The glob's "*" spans "/" and "?", so it cannot keep a hop to its
+		// host: an off-host hop carrying an unencoded Lightning URL in its
+		// query passes it. Redirect hops are therefore not searched.
+		if scope.Redirects != "" || scope.RequestURL != "https://*.lightning.force.com/*" {
+			t.Fatalf("relative producer under %s scope = %#v, want the final Lightning-host response only", base, scope)
+		}
+		if !httpcontract.MatchScopeGlob(scope.RequestURL, "https://acme.my.salesforce.com/secur/frontdoor.jsp?retURL=https://acme.lightning.force.com/one/one.app") {
+			t.Fatal("the unanchored glob no longer passes an off-host hop with an embedded Lightning URL; revisit whether redirect hops can be searched again")
+		}
+		for hopURL, want := range map[string]bool{
+			"https://acme.lightning.force.com/one/one.app":               true,
+			"https://other--uat.sandbox.lightning.force.com/one/one.app": true,
+			"https://acme.my.salesforce.com/one/one.app":                 false,
+			"https://acme.my.salesforce.com/visualforce/session":         false,
+		} {
+			if got := httpcontract.MatchScopeGlob(scope.RequestURL, hopURL); got != want {
+				t.Fatalf("relative scope %q match %q = %v, want %v", scope.RequestURL, hopURL, got, want)
+			}
+		}
+	}
+	for name, tc := range map[string]struct{ expression, producer, base string }{
+		// A non-__Host- ERIC cookie may carry a Domain attribute, so another
+		// host can legitimately set it.
+		"domain cookie":      {namedAuraTokenCookieExtractor("ERIC_PROD-2876452450001777317"), producer, lightningBase},
+		"generic pattern":    {auraTokenCookieExtractor, producer, lightningBase},
+		"templated producer": {hostOnly, "https://{{var.host}}/one/one.app", lightningBase},
+		"relative producer under a non-Lightning base_url": {hostOnly, "/one/one.app", "https://acme.my.salesforce.com"},
+		"relative producer under a templated base_url":     {hostOnly, "/one/one.app", "https://{{var.host}}"},
+		"relative producer without a base_url":             {hostOnly, "/one/one.app", ""},
+		"relative domain cookie":                           {namedAuraTokenCookieExtractor("ERIC_PROD-2876452450001777317"), "/one/one.app", lightningBase},
+	} {
+		if scope := auraTokenCookieExtractorScope(tc.expression, tc.producer, tc.base); scope.Redirects != "include" || scope.RequestURL != "" {
+			t.Fatalf("%s scope = %#v, want redirects without a request_url filter", name, scope)
+		}
 	}
 }

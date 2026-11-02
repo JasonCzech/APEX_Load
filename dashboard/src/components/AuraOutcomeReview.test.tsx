@@ -155,7 +155,7 @@ describe('AuraOutcomeReview', () => {
   })
   const auraScript = (actions: ScriptActionDefinition[]): ScriptDefinition => ({ name: 'Salesforce', version: '1', protocol: 'http', config: { base_url: 'https://org.my.salesforce.com' }, actions })
 
-  it('names each failing sub-action by its Controller$method or Apex class and method', () => {
+  it('names each failing sub-action as its step and envelope preview do: Controller.method or Apex class and method', () => {
     const script = auraScript([auraRequest(225, '53 - POST aura', [
       { id: '1;a', descriptor: 'serviceComponent://ui.force.components.controllers.userProfileCard.UserProfileCardController/ACTION$isDataSpaceSwitcherEnabled', params: {} },
       { id: '2;a', descriptor: 'aura://ApexActionController/ACTION$execute', params: { namespace: 'vlocity', classname: 'VisibilityControlUtils', method: 'getVcForLoginUserNewFramework' } },
@@ -163,7 +163,18 @@ describe('AuraOutcomeReview', () => {
     const failed = batch(1, { action_path: 'actions[0]', har_entry_id: 225, analysis: { success: false, complete: true, has_response: true, request_actions: 2, response_actions: 2, matched_actions: 2, outcomes: [{ ordinal: 1, state: 'ERROR' }, { ordinal: 2, state: 'SUCCESS' }] } })
     act(() => { root.render(<AuraOutcomeReview report={report({ batches: [failed] })} script={script} />) })
     const outcomes = Array.from(container.querySelectorAll('.aura-outcome-actions li')).map(item => item.textContent)
-    expect(outcomes).toEqual(['Action 1 (UserProfileCardController$isDataSpaceSwitcherEnabled): ERROR', 'Action 2 (vlocity.VisibilityControlUtils.getVcForLoginUserNewFramework): SUCCESS'])
+    expect(outcomes).toEqual(['Action 1 (UserProfileCardController.isDataSpaceSwitcherEnabled): ERROR', 'Action 2 (vlocity.VisibilityControlUtils.getVcForLoginUserNewFramework): SUCCESS'])
+  })
+
+  it('treats classname and method params as Apex only on the ApexActionController descriptor', () => {
+    const script = auraScript([auraRequest(300, '60 - POST aura', [
+      { id: '1;a', descriptor: 'serviceComponent://ui.force.components.controllers.recordGlobalValueProvider.RecordGvpController/ACTION$getRecord', params: { classname: 'Decoy', method: 'decoy' } },
+      { id: '2;a', descriptor: 'apex://acme.InvoiceController/ACTION$load', params: {} },
+    ])])
+    const failed = batch(1, { action_path: 'actions[0]', har_entry_id: 300, analysis: { success: false, complete: true, has_response: true, request_actions: 2, response_actions: 2, matched_actions: 2, outcomes: [{ ordinal: 1, state: 'ERROR' }, { ordinal: 2, state: 'ERROR' }] } })
+    act(() => { root.render(<AuraOutcomeReview report={report({ batches: [failed] })} script={script} />) })
+    const outcomes = Array.from(container.querySelectorAll('.aura-outcome-actions li')).map(item => item.textContent)
+    expect(outcomes).toEqual(['Action 1 (RecordGvpController.getRecord): ERROR', 'Action 2 (acme.InvoiceController.load): ERROR'])
   })
 
   it('resolves a batch by its HAR entry after earlier requests were excluded from the draft', () => {
@@ -182,5 +193,31 @@ describe('AuraOutcomeReview', () => {
     expect(headings[0]).toBe('Request 3 — 40 - POST auraCaptured success · Body not exported')
     // The excluded request's batch names no draft request at all.
     expect(headings[1]).toBe('Request 5Captured success')
+  })
+
+  it('links the source mapping of the request now holding the batch after an exclusion, not the one at its old position', () => {
+    // Entry 40 was converted at actions[2]; one earlier request was excluded,
+    // so the server remapped its source mapping to actions[1] and entry 60's
+    // to actions[2].
+    const script = auraScript([
+      auraRequest(10, '10 - POST aura', [{ id: '1', descriptor: 'aura://A/ACTION$first' }]),
+      auraRequest(40, '40 - POST aura', [{ id: '1', descriptor: 'aura://B/ACTION$second' }]),
+      auraRequest(60, '60 - POST aura', [{ id: '1', descriptor: 'aura://C/ACTION$third' }]),
+    ])
+    const entry40 = { id: 'entry-40', source_file: 'capture.har', start_line: 40, target_kind: 'action', target_path: 'actions[1]', status: 'converted' }
+    const entry60 = { id: 'entry-60', source_file: 'capture.har', start_line: 60, target_kind: 'action', target_path: 'actions[2]', status: 'converted' }
+    const onViewSource = vi.fn()
+    const shifted = batch(3, { action_path: 'actions[2]', har_entry_id: 40 })
+    const removed = batch(4, { action_path: 'actions[3]', har_entry_id: 90 })
+    act(() => { root.render(<AuraOutcomeReview report={report({ batches: [shifted, removed] })} script={script} sourceReview={{ mappings: [entry40, entry60] }} positionsShifted onViewSource={onViewSource} />) })
+    act(() => { findButton('View request 3 source mapping').click() })
+    expect(onViewSource).toHaveBeenCalledWith(entry40)
+    expect(findButton('View request 4 source mapping')).toBeUndefined()
+  })
+
+  it('links no source mapping for an unstamped batch once positions shifted', () => {
+    const mapping = { id: 'm', source_file: 'capture.har', start_line: 1, target_kind: 'action', target_path: 'actions[3]', status: 'converted' }
+    act(() => { root.render(<AuraOutcomeReview report={report({ batches: [batch(4)] })} sourceReview={{ mappings: [mapping] }} positionsShifted onViewSource={vi.fn()} />) })
+    expect(findButton('View request 4 source mapping')).toBeUndefined()
   })
 })

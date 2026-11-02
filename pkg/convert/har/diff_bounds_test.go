@@ -136,6 +136,12 @@ func TestDiffCostStaysLinearInSameEndpointRequests(t *testing.T) {
 			if limit := 2 * len(prepared.observations); scanned > limit {
 				t.Fatalf("requests scanned for reuse = %d, want at most %d", scanned, limit)
 			}
+			// Request-input pairing reads each observation's narrow key from
+			// the aligner, so every key is computed once, by the aligner.
+			baselineObservations, _ := converted.Document.SourceObservations(true)
+			if want := len(baselineObservations) + len(prepared.observations); len(aligner.narrowKeys) != want || aligner.narrowKeyComputations != want {
+				t.Fatalf("aligner narrow keys = %d (computed %d), want %d: request pairing must reuse them", len(aligner.narrowKeys), aligner.narrowKeyComputations, want)
+			}
 		})
 	}
 }
@@ -354,5 +360,12 @@ func TestDiffNarrowDecodesEachAuraBatchOnce(t *testing.T) {
 	}
 	if limit := 2 * n; aligner.narrowKeyComputations > limit {
 		t.Fatalf("narrow keys computed = %d, want at most %d (one per observation)", aligner.narrowKeyComputations, limit)
+	}
+	// Request-input pairing, which runs after the aligner, reuses its keys.
+	if _, _, err := diffRequestInputs(context.Background(), baseline, comparison, aligner.observationNarrowKey); err != nil {
+		t.Fatal(err)
+	}
+	if limit := 2 * n; aligner.narrowKeyComputations > limit {
+		t.Fatalf("narrow keys computed with request pairing = %d, want at most %d (one per observation)", aligner.narrowKeyComputations, limit)
 	}
 }

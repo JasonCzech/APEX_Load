@@ -244,6 +244,7 @@ func TestHARPairDuplicateCaptureSkipsDiffWithActionableReason(t *testing.T) {
 		if decoded.Summary.HARDiff == nil || decoded.Summary.HARDiff.Compared || !strings.Contains(decoded.Summary.HARDiff.Reason, "identical captures") {
 			t.Fatalf("har_diff = %#v, want compared=false with identical captures reason", decoded.Summary.HARDiff)
 		}
+		requireDuplicateComparisonHARCode(t, resp)
 		if decoded.Summary.ArtifactMode != har.ArtifactModeDesignHAR {
 			t.Fatalf("artifact_mode = %q, want %q", decoded.Summary.ArtifactMode, har.ArtifactModeDesignHAR)
 		}
@@ -291,6 +292,7 @@ func TestHARPairDuplicateCaptureSkipsDiffWithActionableReason(t *testing.T) {
 		if decoded.Summary.HARDiff == nil || decoded.Summary.HARDiff.Compared || !strings.Contains(decoded.Summary.HARDiff.Reason, "identical captures") {
 			t.Fatalf("har_diff = %#v, want compared=false for zipped identical secondary_file", decoded.Summary.HARDiff)
 		}
+		requireDuplicateComparisonHARCode(t, resp)
 	})
 
 	// The baseline is salvaged before the import compares it, so the raw
@@ -311,7 +313,29 @@ func TestHARPairDuplicateCaptureSkipsDiffWithActionableReason(t *testing.T) {
 		if decoded.Summary.HARDiff == nil || decoded.Summary.HARDiff.Compared || !strings.Contains(decoded.Summary.HARDiff.Reason, "identical captures") {
 			t.Fatalf("har_diff = %#v, want compared=false with identical captures reason", decoded.Summary.HARDiff)
 		}
+		requireDuplicateComparisonHARCode(t, resp)
 	})
+}
+
+// requireDuplicateComparisonHARCode fails unless the import response carries
+// the duplicate_comparison_har diagnostic, the machine-readable marker that
+// tells a duplicate pair from a comparison that timed out or failed to diff.
+func requireDuplicateComparisonHARCode(t *testing.T, resp *httptest.ResponseRecorder) {
+	t.Helper()
+	var envelope struct {
+		Diagnostics []struct {
+			Code string `json:"code"`
+		} `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range envelope.Diagnostics {
+		if item.Code == duplicateComparisonHARCode {
+			return
+		}
+	}
+	t.Fatalf("response has no %s diagnostic: %s", duplicateComparisonHARCode, resp.Body.String())
 }
 
 // TestPrepareHARComparisonInflatesOnlyInsideTheJob pins that a zipped
@@ -351,7 +375,7 @@ func TestPrepareHARComparisonInflatesOnlyInsideTheJob(t *testing.T) {
 func TestHARImportBaseURLValidation(t *testing.T) {
 	capture := `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/ping"},"response":{"status":200,"content":{"text":"ok"}}}]}}`
 
-	for _, bad := range []string{"acme.my.salesforce.com", "ftp://acme.my.salesforce.com", "ftp://files{{x}}", "javascript:{{x}}", "not a url {{"} {
+	for _, bad := range []string{"acme.my.salesforce.com", "ftp://acme.my.salesforce.com", "ftp://files{{x}}", "javascript:{{x}}", "not a url {{", "{{param.base_url}}", "{{BaseURL}}", "https://{{env}}.my.salesforce.com", "{{org}}.my.salesforce.com"} {
 		resp, _ := postHARPairJSON(t, "/api/v1/scripts/import/har", map[string]any{
 			"name":    "Bad BaseURL",
 			"content": capture,
@@ -362,7 +386,7 @@ func TestHARImportBaseURLValidation(t *testing.T) {
 		}
 	}
 
-	for _, good := range []string{"https://acme.my.salesforce.com", "{{param.base_url}}"} {
+	for _, good := range []string{"https://acme.my.salesforce.com", "http://api.example.test:8080/app"} {
 		resp, _ := postHARPairJSON(t, "/api/v1/scripts/import/har", map[string]any{
 			"name":    "Good BaseURL",
 			"content": capture,
@@ -374,28 +398,41 @@ func TestHARImportBaseURLValidation(t *testing.T) {
 	}
 }
 
-func TestHARImportBaseURLTemplatesMustBeWellFormed(t *testing.T) {
+// TestHARImportBaseURLRejectsTemplates pins that a templated base_url is
+// refused: the converter never moves a recorded request onto a template, and
+// nothing expands one in config.base_url, so the import would keep every
+// request on the recorded host while appearing to retarget it.
+func TestHARImportBaseURLRejectsTemplates(t *testing.T) {
 	for value, want := range map[string]bool{
 		"":                                  true,
 		"https://acme.my.salesforce.com":    true,
-		"{{param.base_url}}":                true,
-		"{{BaseURL}}/app":                   true,
-		"https://{{env}}.example.test":      true,
-		"http://api.example.test/{{ver}}":   true,
-		"https://{{host}}:{{port}}/app":     true,
-		"https://api.example.test:{{port}}": true,
-		"ftp://files{{x}}":                  false,
-		"javascript:{{x}}":                  false,
-		"not a url {{":                      false,
-		"{{unclosed":                        false,
-		"{{}}":                              false,
+		"http://api.example.test:8080/app":  true,
+		"{{param.base_url}}":                false,
+		"{{BaseURL}}/app":                   false,
+		"https://{{env}}.example.test":      false,
+		"http://api.example.test/{{ver}}":   false,
+		"https://{{host}}:{{port}}/app":     false,
+		"https://api.example.test:{{port}}": false,
+		"{{org}}.my.salesforce.com":         false,
 		"https://api.example.test/}}":       false,
-		"{{a}} {{b}}":                       false,
-		"api.example.test/{{path}}":         false,
+		"ftp://files.example":               false,
+		"javascript:alert(1)":               false,
+		"https://":                          false,
+		"https://api.example.test/a b":      false,
 	} {
 		if got := harImportBaseURLAccepted(value); got != want {
 			t.Errorf("harImportBaseURLAccepted(%q) = %v, want %v", value, got, want)
 		}
+	}
+
+	capture := `{"log":{"entries":[{"request":{"method":"GET","url":"https://prod-org.my.salesforce.com/ping"},"response":{"status":200,"content":{"text":"ok"}}}]}}`
+	resp, _ := postHARPairJSON(t, "/api/v1/scripts/import/har", map[string]any{
+		"name":    "Templated BaseURL",
+		"content": capture,
+		"options": map[string]any{"base_url": "{{BaseURL}}"},
+	})
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "templates are not supported") {
+		t.Fatalf("templated base_url status = %d, want 400 naming the template limit: %s", resp.Code, resp.Body.String())
 	}
 }
 
@@ -856,7 +893,7 @@ func TestSyntheticSalesforceHARPairEndToEndWorkflow(t *testing.T) {
 				DynamicCandidates int  `json:"dynamic_candidates"`
 			} `json:"har_diff"`
 		} `json:"summary"`
-		Preflight struct {
+		Preflight *struct {
 			Valid bool `json:"valid"`
 		} `json:"preflight"`
 	}
@@ -927,6 +964,9 @@ func TestSyntheticSalesforceHARPairEndToEndWorkflow(t *testing.T) {
 	}
 	if strings.Contains(string(stepsJSON), "InstrumentationBeaconController") {
 		t.Fatal("telemetry beacon InstrumentationBeaconController survived as a step; default filtering should drop it")
+	}
+	if decoded.Preflight == nil {
+		t.Fatal("import response has no preflight; the replay gate needs the import-time readiness signal")
 	}
 	if decoded.Preflight.Valid {
 		t.Fatal("import preflight valid = true, want false while the unexported-body POST blocks replay")
@@ -1086,6 +1126,64 @@ func TestExcludeImportDraftActions(t *testing.T) {
 		for _, act := range out.Script.Actions {
 			if strings.Contains(act.Name, "02_empty_after_exclude") {
 				t.Fatalf("expected emptied transaction markers to be pruned, got %#v", out.Script.Actions)
+			}
+		}
+	})
+
+	t.Run("keeps transaction marker pairs that were already empty", func(t *testing.T) {
+		script := &dsl.Script{
+			Name:     "Exclude_Keeps_Timing_Markers",
+			Version:  "1.0.0",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions: []dsl.Action{
+				dsl.TransactionMarker("Checkpoint", true),
+				dsl.TransactionMarker("Checkpoint", false),
+				{Name: "01 - GET ok", Type: "http_request", Method: "GET", Target: "https://example.test/ok"},
+				dsl.TransactionMarker("Outer", true),
+				dsl.TransactionMarker("Inner", true),
+				{
+					Name:     "02 - POST unexported",
+					Type:     "http_request",
+					Method:   "POST",
+					Target:   "https://example.test/unload",
+					Metadata: map[string]any{"import_action_uid": "uid-inner-blocked", "execution_blockers": []string{sample.HARRequestBodyNotExportedCode}},
+				},
+				dsl.TransactionMarker("Inner", false),
+				dsl.TransactionMarker("Outer", false),
+			},
+		}
+		resp := postExclude(map[string]any{
+			"script":                    script,
+			"exclude_unexported_bodies": true,
+		})
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", resp.Code, resp.Body.String())
+		}
+		var out struct {
+			Script dsl.Script `json:"script"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		var layout []string
+		for _, act := range out.Script.Actions {
+			if act.Type == "source_transaction" {
+				fn, _ := act.Params["function"].(string)
+				layout = append(layout, fn+":"+dsl.TransactionMarkerName(act))
+				continue
+			}
+			layout = append(layout, act.Name)
+		}
+		want := []string{"lr_start_transaction:Checkpoint", "lr_end_transaction:Checkpoint", "01 - GET ok"}
+		if strings.Join(layout, "|") != strings.Join(want, "|") {
+			t.Fatalf("actions = %v, want %v (the already-empty Checkpoint pair kept, the emptied Inner/Outer pairs pruned)", layout, want)
+		}
+
+		exclusion := excludeBlockedImportActionsFromScript(script, nil, true)
+		for _, oldPath := range []string{"actions[0]", "actions[1]"} {
+			if newPath, ok := exclusion.paths[oldPath]; !ok || newPath != oldPath {
+				t.Fatalf("Checkpoint marker %s remapped to %q (present=%v), want it kept at its path", oldPath, newPath, ok)
 			}
 		}
 	})

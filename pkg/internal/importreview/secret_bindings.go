@@ -493,23 +493,80 @@ func IsDurablyImportReviewGatedAction(value map[string]any) bool {
 	return reviewRequired
 }
 
+// IsImportProvenanceMetadataPath reports whether a JSON pointer addresses an
+// import provenance entry, or anything beneath one, in the metadata map of the
+// script or of an action surface: a step (including nested control-flow
+// steps), an http_sequence request or an http_async_start request. A map that
+// is merely named metadata somewhere inside executable data (params bodies,
+// config.grpc.metadata) is wire payload, so a provenance-looking key there is
+// never exempt from binding discovery or orphan-sentinel rejection.
 func IsImportProvenanceMetadataPath(path string) bool {
 	tokens, err := SplitJSONPointer(path)
 	if err != nil {
-		segments := strings.Split(path, "/")
-		for index := 0; index+1 < len(segments); index++ {
-			if segments[index] == "metadata" && IsImportProvenanceMetadataKey(segments[index+1]) {
-				return true
-			}
-		}
-		return false
+		tokens = strings.Split(strings.TrimPrefix(path, "/"), "/")
 	}
+	inSurfaceMetadata := false
 	for index := 0; index+1 < len(tokens); index++ {
-		if tokens[index] == "metadata" && IsImportProvenanceMetadataKey(tokens[index+1]) {
+		if tokens[index] != "metadata" {
+			continue
+		}
+		// Metadata nested inside a surface's own metadata map (review
+		// evidence, for example) is never sent either.
+		inSurfaceMetadata = inSurfaceMetadata || isImportSurfaceMetadataPrefix(tokens[:index])
+		if inSurfaceMetadata && IsImportProvenanceMetadataKey(tokens[index+1]) {
 			return true
 		}
 	}
 	return false
+}
+
+// isImportSurfaceMetadataPrefix reports whether tokens address the script root
+// or an action surface whose metadata map is import provenance.
+func isImportSurfaceMetadataPrefix(tokens []string) bool {
+	if len(tokens) == 0 {
+		return true
+	}
+	if len(tokens) < 2 || !isJSONPointerIndex(tokens[1]) {
+		return false
+	}
+	switch tokens[0] {
+	case "init", "actions", "teardown":
+	default:
+		return false
+	}
+	rest := tokens[2:]
+	for len(rest) > 0 {
+		switch {
+		case len(rest) >= 3 && rest[0] == "control" &&
+			(rest[1] == "steps" || rest[1] == "else" || rest[1] == "default") &&
+			isJSONPointerIndex(rest[2]):
+			rest = rest[3:]
+		case len(rest) >= 5 && rest[0] == "control" &&
+			(rest[1] == "cases" || rest[1] == "branches") &&
+			isJSONPointerIndex(rest[2]) && rest[3] == "steps" && isJSONPointerIndex(rest[4]):
+			rest = rest[5:]
+		case len(rest) >= 3 && rest[0] == "params" && rest[1] == "requests" &&
+			isJSONPointerIndex(rest[2]):
+			rest = rest[3:]
+		case len(rest) >= 2 && rest[0] == "params" && rest[1] == "request":
+			rest = rest[2:]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func isJSONPointerIndex(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, r := range token {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // messagingSendMetadataFamily returns the messaging family of a step type that

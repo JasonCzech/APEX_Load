@@ -420,10 +420,15 @@ export type NestedStepRelocation = (stepPath: readonly string[]) => { index: num
 export interface NestedActionRemoval {
   /**
    * What takes the root action's place in its phase: nothing when the removal
-   * left it empty, or the steps of a parallel block left with one branch.
+   * left it empty, the steps of a parallel block left with one branch, or the
+   * default steps of a switch left with no case.
    */
   replacement: ScriptActionDefinition[]
   relocate: NestedStepRelocation
+  /** The root action as it was before the removal. */
+  root: ScriptActionDefinition
+  /** The step path of the removed step inside `root` (empty: `root` itself). */
+  removedPath: string[]
 }
 
 interface StepRemovalOutcome { actions: ScriptActionDefinition[]; relocate: NestedStepRelocation }
@@ -432,8 +437,9 @@ const REMOVED_STEP: StepRemovalOutcome = { actions: [], relocate: () => null }
 
 // A container the DSL validator would reject once a step leaves it is removed
 // too (an http_sequence with no request, a loop with no step, an if with
-// neither branch, a switch with no case), or unwrapped (a parallel block with
-// a single branch runs that branch's steps in place). An emptied case or
+// neither branch, a switch with neither case nor default), or unwrapped (a
+// parallel block with a single branch, or a switch left with only its default,
+// runs those steps in place). An emptied case or
 // parallel branch is dropped first, as neither may be empty.
 function normalizeAfterStepRemoval(container: ScriptActionDefinition, list: StepList, relocate: NestedStepRelocation): StepRemovalOutcome {
   const kept: StepRemovalOutcome = { actions: [container], relocate }
@@ -451,7 +457,21 @@ function normalizeAfterStepRemoval(container: ScriptActionDefinition, list: Step
     case 'case': {
       const group = list.group!
       const cases = (container.control?.cases || []).filter((_, index) => index !== group)
-      if (cases.length === 0) return REMOVED_STEP
+      if (cases.length === 0) {
+        // A switch needs a case, so it cannot stay; its default branch still
+        // runs in place rather than vanishing with the last case.
+        const fallback = container.control?.default || []
+        if (fallback.length === 0) return REMOVED_STEP
+        return {
+          actions: fallback,
+          relocate: path => {
+            const moved = relocate(path)
+            const parsed = moved?.stepPath.length ? parseActionStepSegment(moved.stepPath[0]) : null
+            if (!moved || parsed?.name !== 'default') return null
+            return { index: parsed.index, stepPath: moved.stepPath.slice(1) }
+          },
+        }
+      }
       container.control = { ...container.control, cases }
       return {
         actions: [container],
@@ -521,10 +541,48 @@ function removeStepIn(container: ScriptActionDefinition, stepPath: readonly stri
  * Returns null when the path does not name a step of `root`.
  */
 export function removeNestedAction(root: ScriptActionDefinition, stepPath: string[] | undefined): NestedActionRemoval | null {
-  if (!stepPath?.length) return { replacement: [], relocate: () => null }
+  if (!stepPath?.length) return { replacement: [], relocate: () => null, root, removedPath: [] }
   if (!resolveNestedAction(root, stepPath)) return null
   const outcome = removeStepIn(structuredClone(root), stepPath)
-  return outcome ? { replacement: outcome.actions, relocate: outcome.relocate } : null
+  return outcome ? { replacement: outcome.actions, relocate: outcome.relocate, root, removedPath: [...stepPath] } : null
+}
+
+// The step paths of every http_sequence in `action` (the root itself is []),
+// at any depth, in outline order.
+export function sequenceStepPaths(action: ScriptActionDefinition, prefix: string[] = [], out: string[][] = []): string[][] {
+  if (action.type === 'http_sequence') {
+    out.push(prefix)
+    return out
+  }
+  const control = action.control
+  if (!control) return out
+  const visit = (steps: ScriptActionDefinition[] | undefined, segment: (index: number) => string) =>
+    (steps || []).forEach((child, index) => { if (child) sequenceStepPaths(child, [...prefix, segment(index)], out) })
+  visit(control.steps, index => `${action.type === 'control_loop' ? 'loop' : 'then'}[${index}]`)
+  visit(control.else, index => `else[${index}]`)
+  ;(control.cases || []).forEach((switchCase, caseIndex) => visit(switchCase.steps, index => `case[${caseIndex}][${index}]`))
+  visit(control.default, index => `default[${index}]`)
+  ;(control.branches || []).forEach((branch, branchIndex) => visit(branch.steps, index => `branches[${branchIndex}].steps[${index}]`))
+  return out
+}
+
+const isPathPrefix = (prefix: readonly string[], path: readonly string[]) =>
+  prefix.length <= path.length && prefix.every((segment, index) => path[index] === segment)
+
+// Where a `request_index` breakpoint now points. The outline, F9 and the
+// engine give a request of any http_sequence in the root action, nested ones
+// included, the same root-level request_index, so the breakpoint is on request
+// N of each sequence that has one: it follows the sequence the removal
+// changed, else the first sequence whose request N is still there.
+function relocateRequestBreakpoint(removal: NestedActionRemoval, requestIndex: number): { index: number; stepPath: string[] } | null {
+  const segment = `requests[${requestIndex}]`
+  const candidates = sequenceStepPaths(removal.root)
+    .filter(path => rawHttpSequenceRequest(resolveNestedAction(removal.root, path)!, requestIndex))
+    .map(path => ({ sequence: path, moved: removal.relocate([...path, segment]) }))
+  if (!candidates.length) return removal.relocate([segment])
+  const affected = candidates.find(candidate => isPathPrefix(candidate.sequence, removal.removedPath) || isPathPrefix(removal.removedPath, candidate.sequence))
+  if (affected?.moved) return affected.moved
+  return candidates.find(candidate => candidate.moved)?.moved ?? null
 }
 
 /**
@@ -532,7 +590,7 @@ export function removeNestedAction(root: ScriptActionDefinition, stepPath: strin
  * `actionIndex`: one on the removed step (or a container that went with it)
  * is dropped, one on a later sibling follows it to its new index, and later
  * actions of the phase shift when a parallel block unwrapped into its steps.
- * A breakpoint on one request of a top-level sequence keeps its
+ * A breakpoint on one request of a sequence, top-level or nested, keeps its
  * `request_index` form.
  */
 export function remapBreakpointsAfterNestedRemoval(
@@ -545,13 +603,16 @@ export function remapBreakpointsAfterNestedRemoval(
   return breakpoints.flatMap(bp => {
     if (bp.phase !== phase || bp.action_index < actionIndex) return [bp]
     if (bp.action_index > actionIndex) return [{ ...bp, action_index: bp.action_index + offset }]
-    const path = bp.step_path?.length ? bp.step_path : bp.request_index != null ? [`requests[${bp.request_index}]`] : []
-    const moved = removal.relocate(path)
+    const byRequest = !bp.step_path?.length && bp.request_index != null
+    const moved = byRequest ? relocateRequestBreakpoint(removal, bp.request_index!) : removal.relocate(bp.step_path?.length ? bp.step_path : [])
     if (!moved) return []
     const next: ScriptDebugBreakpoint = { ...bp, action_index: actionIndex + moved.index }
     delete next.request_index
     delete next.step_path
-    const request = moved.stepPath.length === 1 ? /^requests\[(\d+)\]$/.exec(moved.stepPath[0]) : null
+    // A request breakpoint keeps its request_index form wherever its sequence
+    // now sits, as the outline keys nested sequence requests that way too.
+    const last = moved.stepPath[moved.stepPath.length - 1]
+    const request = last && (byRequest || moved.stepPath.length === 1) ? /^requests\[(\d+)\]$/.exec(last) : null
     if (request) next.request_index = Number(request[1])
     else if (moved.stepPath.length) next.step_path = moved.stepPath
     return [next]

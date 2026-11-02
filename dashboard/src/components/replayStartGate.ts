@@ -157,15 +157,16 @@ export function storedGateProblemCount(storedGateIssues: readonly string[]): num
   }, 0)
 }
 
-export type ReplayStartWaitCause = 'busy' | 'incomplete' | 'json' | 'secrets' | 'save'
+export type ReplayStartWaitCause = 'busy' | 'incomplete' | 'json' | 'options' | 'secrets' | 'save'
 
 /**
  * Whether a debug run can start now. Every start entry point (the Debug
  * button, Step, Run to selected action and the shortcuts) follows it.
  * - ready: nothing the server refuses for is known.
  * - waiting: the editor cannot start yet (a run or save in flight, no name
- *   or steps, unparsable JSON, project secret status not known yet, or a
- *   saved copy to save over while saving is unavailable).
+ *   or steps, unparsable JSON, project secret status not known yet,
+ *   malformed debug options once no blocker needs resolving, or a saved copy
+ *   to save over while saving is unavailable).
  * - blocked: the draft has problems the server refuses a start for.
  * - save-first: the draft is clean, but the saved script the server judges
  *   first still has review gates; or the draft's only problems are review
@@ -210,7 +211,6 @@ export function replayStartGate(input: ReplayStartGateInput): ReplayStartGate {
   if (input.saving) return { kind: 'waiting', cause: 'busy', reason: 'Wait for the save to finish before debugging.' }
   if (!input.hasName || input.actionCount === 0) return { kind: 'waiting', cause: 'incomplete', reason: 'Name the script and add a step before debugging.' }
   if (input.jsonInvalid) return { kind: 'waiting', cause: 'json', reason: 'Fix the Script JSON before debugging.' }
-  if (input.optionsError) return { kind: 'waiting', cause: 'json', reason: input.optionsError }
   if (input.secretStatus !== 'known') {
     return {
       kind: 'waiting',
@@ -224,6 +224,9 @@ export function replayStartGate(input: ReplayStartGateInput): ReplayStartGate {
   // the save "Save and debug" makes first; anything else must be resolved.
   const savedFirst = Boolean(input.unsavedChanges) && input.blockers.every(blocker => blocker.clearedBySave)
   if (input.blockers.length > 0 && !savedFirst) return { kind: 'blocked', blockers: [...input.blockers] }
+  // Debug-session options do not bear on the script's blockers, so a malformed
+  // option waits only once no blocker needs resolving first.
+  if (input.optionsError) return { kind: 'waiting', cause: 'options', reason: input.optionsError }
   if (input.storedGateIssues.length > 0 || input.blockers.length > 0) {
     // "Save and debug" saves first; a save that cannot run would do nothing.
     if (input.saveUnavailableReason) return { kind: 'waiting', cause: 'save', reason: input.saveUnavailableReason }

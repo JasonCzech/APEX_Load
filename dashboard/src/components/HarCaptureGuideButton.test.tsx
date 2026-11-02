@@ -65,4 +65,45 @@ describe('HarCaptureGuideButton', () => {
     })
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
+
+  it('says the copy failed when the page has no clipboard access', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    act(() => { root.render(<HarCaptureGuideButton />) })
+    act(() => { container.querySelector('button')?.click() })
+    const copyBtn = Array.from(document.body.querySelectorAll('button')).find(btn => btn.textContent === 'Copy jq command')!
+    await act(async () => {
+      copyBtn.click()
+      await Promise.resolve()
+    })
+    expect(copyBtn.textContent).toBe('Copy jq command')
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('The browser did not allow copying')
+  })
+
+  it('announces a copy failure through a live region that was already mounted, and again on a repeat failure', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    act(() => { root.render(<HarCaptureGuideButton />) })
+    act(() => { container.querySelector('button')?.click() })
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    const liveRegion = () => Array.from(dialog.querySelectorAll('[role="status"]')).find(node => node.closest('.har-capture-guide'))
+    const region = liveRegion()
+    expect(region).toBeDefined()
+    expect(region?.textContent).toBe('')
+    const copyBtn = Array.from(document.body.querySelectorAll('button')).find(btn => btn.textContent === 'Copy jq command')!
+    await act(async () => { copyBtn.click(); await Promise.resolve() })
+    expect(liveRegion()).toBe(region)
+    const firstMessage = region?.firstElementChild
+    expect(firstMessage?.textContent).toContain('The browser did not allow copying')
+    await act(async () => { copyBtn.click(); await Promise.resolve() })
+    expect(liveRegion()).toBe(region)
+    expect(region?.firstElementChild).not.toBe(firstMessage)
+    expect(region?.textContent).toContain('The browser did not allow copying')
+  })
+
+  it('does not promise automatic credential migration', () => {
+    act(() => { root.render(<HarCaptureGuideButton />) })
+    act(() => { container.querySelector('button')?.click() })
+    const text = document.body.querySelector('[role="dialog"]')?.textContent || ''
+    expect(text).not.toContain('automatically scrubs and binds')
+    expect(text).toContain('Allow source secret migration')
+  })
 })

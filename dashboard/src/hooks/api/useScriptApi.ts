@@ -1295,7 +1295,12 @@ export function useScriptApi() {
       recorded_concurrency?: boolean
       /** Omit browser client-telemetry beacons (e.g. Aura InstrumentationBeacon / o11y). */
       filter_client_telemetry?: boolean
-      /** Stateless structural validation: skips source-text retention, draft attestation, and secret session allocation. */
+      /**
+       * Inspects and converts without retaining full source texts or allocating
+       * a source-secret session. A credential-preserving draft still receives a
+       * short-lived save attestation (import_draft_expires_at), so the reviewed
+       * draft stays savable without a second upload.
+       */
       validate_only?: boolean
       signal?: AbortSignal
       timeoutMs?: number

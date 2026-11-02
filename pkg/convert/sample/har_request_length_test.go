@@ -348,3 +348,28 @@ func TestInStepResourcesSkipAnOmittedTelemetryBeacon(t *testing.T) {
 		t.Fatalf("resources = %#v, want app.js on the page (entry 1), not the omitted beacon (entry 2)", resources)
 	}
 }
+
+// Requests a recording profile leaves out for its excluded Aura descriptors
+// are reported apart from its host and content-type drops, with the
+// patterns that matched, so a broad substring pattern is easy to find.
+func TestRecordingProfileDropsNameTheAuraDescriptorPatterns(t *testing.T) {
+	profile := &recordingprofile.Profile{
+		Name:                    "Lightning",
+		ExcludeHosts:            []string{"cdn.example.test"},
+		ExcludedAuraDescriptors: []string{" getRecord ", "InstrumentationBeacon"},
+	}
+	exchanges := []exchange{
+		{Method: "GET", URL: "https://cdn.example.test/app.js", Response: &response{Status: 200}},
+		{Method: "POST", URL: "https://a.lightning.force.com/aura?r=1&ui-force-components-controllers-recordGlobalValueProvider.RecordGvp.getRecordWithFields=1", Response: &response{Status: 200}},
+		{Method: "POST", URL: "https://a.lightning.force.com/aura?r=2&aura.RecordUi.executeGraphQL=1", Response: &response{Status: 200}},
+	}
+	kept, drops := applyRecordingProfileFilters(exchanges, profile)
+	if len(kept) != 1 || drops.byHostOrType != 1 || drops.byAura != 1 || drops.total() != 2 {
+		t.Fatalf("kept = %d, drops = %+v; want the host and the getRecord batch dropped", len(kept), drops)
+	}
+	warnings := drops.warnings(profile.Name)
+	if len(warnings) != 2 || !strings.Contains(warnings[0], "1 request(s) out by host or content type") ||
+		!strings.Contains(warnings[1], "1 Aura request(s)") || !strings.Contains(warnings[1], `"getRecord"`) || strings.Contains(warnings[1], "InstrumentationBeacon") {
+		t.Fatalf("warnings = %q; want the host drop and the descriptor drop told apart, naming the matched pattern", warnings)
+	}
+}

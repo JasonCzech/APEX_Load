@@ -228,6 +228,8 @@ func TestExcludeImportDraftActionsKeepsConverterWarningsAndAddsNoFidelityReport(
 
 	t.Run("a draft that had a report keeps a refreshed one", func(t *testing.T) {
 		withReport := cloneScriptDefinition(draft)
+		// The client's report is stale on purpose: its only blocker is the step
+		// being excluded, so a report carried through unrecomputed still names it.
 		withReport.Metadata.Import.Preserved["fidelity_report"] = map[string]any{"promotion_status": "blocked", "blockers": []any{"uid-first at actions[1]"}}
 		resp, envelope := postExcludeImportDraftActions(t, server, map[string]any{"script": withReport, "action_uids": []string{"uid-first"}})
 		if resp.Code != http.StatusOK {
@@ -238,8 +240,17 @@ func TestExcludeImportDraftActionsKeepsConverterWarningsAndAddsNoFidelityReport(
 			t.Fatal(err)
 		}
 		report, _ := script.Metadata.Import.Preserved["fidelity_report"].(map[string]any)
-		if report == nil || report["promotion_status"] == nil {
-			t.Fatalf("fidelity_report = %#v, want the existing report recomputed", script.Metadata.Import.Preserved["fidelity_report"])
+		if report == nil || report["promotion_status"] != "blocked" {
+			t.Fatalf("fidelity_report = %#v, want the existing report recomputed (uid-second still blocks)", script.Metadata.Import.Preserved["fidelity_report"])
+		}
+		blockers, _ := report["blockers"].([]any)
+		if len(blockers) == 0 {
+			t.Fatalf("fidelity_report blockers = %#v, want the remaining step's blocker", report["blockers"])
+		}
+		for _, blocker := range blockers {
+			if text, _ := blocker.(string); strings.Contains(text, "uid-first") {
+				t.Fatalf("fidelity_report blockers = %#v still name the excluded step", blockers)
+			}
 		}
 	})
 }

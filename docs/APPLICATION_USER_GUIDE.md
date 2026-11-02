@@ -868,7 +868,7 @@ time for an in-app checklist of the browser DevTools settings below.
 | Browser DevTools setting | Recommended state | Why it matters for 2-HAR comparison and DSL conversion |
 | --- | --- | --- |
 | `Preserve log` (Network toolbar) | Checked | Retains multi-hop sign-in and sign-out redirect chains (`302` → `frontdoor.jsp` → `VFLoginFlow` → `/one/one.app`) across full-page navigations. |
-| `Allow to generate HAR (with sensitive data)` (`Settings ⚙ → Preferences → Network`, Chrome/Edge 130+) | Checked | Click-and-hold the Network export arrow and choose `Export HAR (with sensitive data)…` (Firefox: right-click → `Save All As HAR`). Preserves `Cookie`, `Set-Cookie` (`__Host-ERIC_*`, `sid`), and `Authorization` headers for correlation verification while APEX Load scrubs and binds credentials to governed project secrets on import. |
+| `Allow to generate HAR (with sensitive data)` (`Settings ⚙ → Preferences → Network`, Chrome/Edge 130+) | Checked | Click-and-hold the Network export arrow and choose `Export HAR (with sensitive data)…` (Firefox: right-click → `Save All As HAR`). Preserves `Cookie`, `Set-Cookie` (`__Host-ERIC_*`, `sid`), and `Authorization` headers for correlation verification. On import, the review lists every credential the capture carries; you bind each one to a project secret before saving. Moving a recorded value into a new project secret needs the **Allow source secret migration** admin setting (off by default) and an **Inspect & review** import, not **Validate Only**. |
 | Separate Incognito / InPrivate windows | Two independent sessions | Close the first private window completely before recording the second capture so each recording starts unauthenticated with distinct session tokens, CSRF nonces, and Aura context values, and without browser-extension noise. |
 | `Clear network log` before submitting sign-in | Clear after login page loads | Load the login URL first, let initial static framework bundles finish downloading, clear the network log, and then submit credentials. Drops pre-login static bundle bloat while keeping the complete authentication `POST` and redirect chain. |
 | `Disable cache` (Network toolbar) | Unchecked | Dynamic HTML documents and XHR/Fetch API calls (`Cache-Control: no-store`) still record full wire payloads while immutable versioned JS/CSS bundles are served from browser cache instead of re-downloading tens of megabytes per navigation. |
@@ -917,9 +917,14 @@ HAR import into a two-capture correlation analysis:
    `/secur/frontdoor.jsp` → `contentDoor` / `VFLoginFlow` `/visualforce/recsession` →
    `/one/one.app`) are hoisted into `init` alongside a `salesforce_users` CSV data
    source (`username` and secret-masked `password`), while trailing `/secur/logout.jsp`
-   requests move into `teardown`. Step transactions, recorded concurrency grouping, and
-   client telemetry filtering (`InstrumentationBeacon` and `o11y` beacons) are enabled
-   by default when Salesforce traffic is detected.
+   requests move into `teardown`. Client telemetry filtering (`InstrumentationBeacon`
+   and `o11y` beacons) is on by default for every HAR and Salesforce import, whatever
+   the traffic, unless static assets are included or you turn it off. Step transactions
+   are on by default only when Salesforce traffic is detected, Salesforce handling is
+   not disabled, and the capture's timestamps advance; they are skipped when the
+   recording already marks its own transactions. Recorded concurrency grouping has the
+   same defaults and also needs Salesforce-native replay. Each can be set explicitly in
+   the import options.
 3. **Live-replay Aura token cookies (`eikoocnekot`):** When `/one/one.app` declares
    `auraConfig.eikoocnekot` (`__Host-ERIC_*`) and the browser omitted that `Set-Cookie`
    header from a sanitized HAR export, APEX Load wires a redirect-aware cookie extractor
@@ -929,10 +934,18 @@ HAR import into a two-capture correlation analysis:
    request was exported without its `POST` payload (`har_request_body_not_exported`),
    choose **Exclude action from draft** during import review to remove non-essential
    beacons cleanly, or open the draft in Author and choose **Delete step** or supply the
-   payload and click **Mark body supplied & clear blocker**. Select any `/aura` step in
-   Author (**Aura envelope**) or Debug to inspect and edit decoded `message.actions[]`
-   cards, parameters, `aura.context`, and `aura.token` without manually URL-decoding the
-   form body.
+   payload and click **Mark body supplied & clear blocker** (both wait until unapplied
+   Script JSON edits are applied or reset). Select any `/aura` step in
+   Author (**Aura envelope**) to edit decoded `message.actions[]` cards, parameters,
+   `aura.context`, and `aura.token` without manually URL-decoding the form body.
+   Parameters and context JSON you have typed but not applied count as unsaved changes:
+   **Save script** writes them into the body, invalid JSON blocks the save until it is
+   fixed or discarded, and edits made against a body that later changed (a raw edit or
+   undo) must be discarded rather than being applied to it. In
+   Debug, the request's **Aura envelope** and **Raw form body** tabs show the body as it
+   was sent, with runtime values resolved; they are read-only, so edit the authored body
+   in Author (**Edit this action**). The code editors indent on Tab; press Esc, then Tab
+   to leave one, or turn on **Tab moves focus** in its toolbar.
 
 ## Building A Scenario
 

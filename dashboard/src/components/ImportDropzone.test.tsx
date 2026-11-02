@@ -64,6 +64,28 @@ describe('ImportDropzone drop feedback', () => {
     expect(zone?.className).not.toContain('is-accepted')
   })
 
+  it('reports nothing added when the host has not taken the dropped files', () => {
+    // The host asks first whether to discard the review the file would
+    // replace; the user may still keep it.
+    const onFile = vi.fn(() => false)
+    const onPairFiles = vi.fn(() => false)
+    act(() => {
+      root.render(<ImportDropzone accept=".har" file={null} onFile={onFile} onPairFiles={onPairFiles} dropHint="Drop a HAR" />)
+    })
+    const zone = container.querySelector<HTMLElement>('.import-dropzone')
+    act(() => { zone?.dispatchEvent(dropEvent([new File(['{}'], 'other.har')])) })
+    expect(onFile).toHaveBeenCalledTimes(1)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(overlayText()).not.toContain('Added')
+    expect(zone?.className).not.toContain('is-accepted')
+
+    act(() => { zone?.dispatchEvent(dropEvent([new File(['{}'], 'a.har'), new File(['{}'], 'b.har')])) })
+    expect(onPairFiles).toHaveBeenCalledTimes(1)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(overlayText()).not.toContain('Added')
+    expect(container.querySelector('.drop-ingest-live')?.textContent || '').not.toContain('Added')
+  })
+
   it('announces drop progress through a live region that outlives the overlay', () => {
     act(() => {
       root.render(<ImportDropzone accept=".jmx" file={null} onFile={vi.fn()} dropHint="Drop a plan" />)

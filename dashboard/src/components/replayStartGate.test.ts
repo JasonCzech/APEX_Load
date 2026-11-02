@@ -134,6 +134,15 @@ describe('replayStartGate', () => {
     expect(replayStartGate({ ...ready, jsonInvalid: true, blockers: replayBlockers(replayReadinessIssues(preflight({ issues: [tls(0)] })), []) })).toMatchObject({ kind: 'waiting', cause: 'json' })
   })
 
+  it('lists blockers before waiting on malformed debug options, which wait under their own cause', () => {
+    const optionsError = 'Session Variables JSON is invalid.'
+    expect(replayStartGate({ ...ready, optionsError })).toEqual({ kind: 'waiting', cause: 'options', reason: optionsError })
+    const blockers = replayBlockers(replayReadinessIssues(preflight({ issues: [tls(0)] })), [])
+    const gate = replayStartGate({ ...ready, optionsError, blockers })
+    expect(gate).toMatchObject({ kind: 'blocked', blockers })
+    expect(replayGateAction(gate, { hasReport: false, readyTitle: '' })).toMatchObject({ intent: 'resolve', disabled: false })
+  })
+
   it('waits for an unknown or unavailable secret status instead of counting it', () => {
     expect(replayStartGate({ ...ready, secretStatus: 'checking' })).toEqual({ kind: 'waiting', cause: 'secrets', reason: 'Checking project secret configuration before running…' })
     expect(replayStartGate({ ...ready, secretStatus: 'unavailable', secretStatusReason: 'Retry the credential check.' })).toEqual({ kind: 'waiting', cause: 'secrets', reason: 'Retry the credential check.' })

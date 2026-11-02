@@ -25,6 +25,12 @@ func SalesforceReviewItems(review *salesforce.Review) []string {
 	}
 	items := make([]string, 0)
 	for _, domain := range review.Domains {
+		// A host seen only in the raw HAR (static assets the import filters
+		// out) has no imported request; say what it does have.
+		if domain.Count == 0 && domain.HARCount > 0 {
+			items = append(items, fmt.Sprintf("Domain: %s (%s, %d HAR entr(ies), none imported)", domain.Host, domain.Kind, domain.HARCount))
+			continue
+		}
 		items = append(items, fmt.Sprintf("Domain: %s (%s, %d request(s))", domain.Host, domain.Kind, domain.Count))
 	}
 	if len(review.AuraEndpoints) > 0 {

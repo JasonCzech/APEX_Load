@@ -1,6 +1,7 @@
 import type { ScriptActionDefinition as Action, ScriptDefinition } from '../types/scripts'
 import type { IssueDetail } from './IssueDetailsDialog'
-import { jsonPathForActionStepPath, phaseActionsForScript, updateNestedAction, type AuthorCodeFocus } from './scriptEditorJsonModel'
+import { rawHttpSequenceRequest } from './scriptActionHelpers'
+import { jsonPathForActionStepPath, phaseActionsForScript, resolveNestedAction, sequenceStepPaths, updateNestedAction, type AuthorCodeFocus } from './scriptEditorJsonModel'
 
 export function humanActionType(type: string) {
   return type.replace(/^control_/, '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
@@ -85,18 +86,43 @@ export function changedDocumentLines(before: string, after: string) {
   return { line: prefix + 1, removed: a.slice(prefix, a.length - suffix).join('\n'), added: b.slice(prefix, b.length - suffix).join('\n') }
 }
 
-/** Keep each existing breakpoint attached to its action when a sibling is inserted. */
-export function remapInsertedBreakpoints(breakpoints: import('../types').ScriptDebugBreakpoint[], focus: AuthorCodeFocus) {
+/**
+ * Keep each existing breakpoint attached to its action when a sibling is
+ * inserted. `script` is the script after the insert: with it, a request
+ * breakpoint on another sequence of the same step stays where it is.
+ */
+export function remapInsertedBreakpoints(breakpoints: import('../types').ScriptDebugBreakpoint[], focus: AuthorCodeFocus, script?: ScriptDefinition) {
+  const root = script ? phaseActionsForScript(script, focus.phase)[focus.actionIndex] : undefined
   return breakpoints.map(bp => {
     if ((bp.phase || 'action') !== focus.phase) return bp
     if (!focus.stepPath?.length) return bp.action_index >= focus.actionIndex ? { ...bp, action_index: bp.action_index + 1 } : bp
     if (bp.action_index !== focus.actionIndex) return bp
-    const inserted = focus.stepPath, path = bp.step_path || (bp.request_index != null ? [`requests[${bp.request_index}]`] : [])
+    const inserted = focus.stepPath
+    // A sequence request, top-level or nested, is keyed by its request_index
+    // (as F9 and the outline set it): keep that form and shift the index.
+    if (!bp.step_path?.length && bp.request_index != null) {
+      const at = /^requests\[(\d+)\]$/.exec(inserted[inserted.length - 1])
+      if (!at || bp.request_index < Number(at[1])) return bp
+      // The index pauses on that request of whichever sequence has one, as
+      // a removal relocates it: it follows the edited sequence when that
+      // sequence had the request, and stays on another sequence's otherwise.
+      if (root) {
+        const edited = inserted.slice(0, -1).join('/')
+        const holders = sequenceStepPaths(root).filter(path => {
+          const sequence = resolveNestedAction(root, path)
+          // The edited sequence had its request N before the insert at N+1.
+          return sequence && rawHttpSequenceRequest(sequence, bp.request_index! + (path.join('/') === edited ? 1 : 0))
+        })
+        if (holders.length && !holders.some(path => path.join('/') === edited)) return bp
+      }
+      return { ...bp, request_index: bp.request_index + 1 }
+    }
+    const path = bp.step_path || []
     const depth = inserted.length - 1
     if (path.length <= depth || inserted.slice(0, depth).some((segment, index) => path[index] !== segment)) return bp
     const a = /^(.*)\[(\d+)\]$/.exec(inserted[depth]), b = /^(.*)\[(\d+)\]$/.exec(path[depth])
     if (!a || !b || a[1] !== b[1] || Number(b[2]) < Number(a[2])) return bp
     const moved = [...path]; moved[depth] = `${b[1]}[${Number(b[2]) + 1}]`
-    return { ...bp, step_path: moved, request_index: undefined }
+    return { ...bp, step_path: moved }
   })
 }

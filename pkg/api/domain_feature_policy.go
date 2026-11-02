@@ -358,6 +358,16 @@ func writeDomainFeatureDisabled(w http.ResponseWriter, domainID, featureID strin
 	})
 }
 
+// writeDomainFeaturePolicyUnavailable answers a request refused because the
+// feature policy could not be read. Nothing ran, and the stable code lets a
+// client tell this refusal apart from a 5xx whose outcome is unknown.
+func writeDomainFeaturePolicyUnavailable(w http.ResponseWriter) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		"error": errDomainFeaturePolicyUnavailable.Error(),
+		"code":  "domain_feature_policy_unavailable",
+	})
+}
+
 type domainFeatureDisabledError struct {
 	domainID  string
 	featureID string
@@ -497,7 +507,7 @@ func domainFeatureAllowsRequest(w http.ResponseWriter, r *http.Request, store st
 			// contract with an unrelated policy response.
 			return true
 		}
-		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		writeDomainFeaturePolicyUnavailable(w)
 		return false
 	}
 	policyStore := domainFeaturePolicyStore(store)
@@ -507,7 +517,7 @@ func domainFeatureAllowsRequest(w http.ResponseWriter, r *http.Request, store st
 	}
 	policy, err := policyStore.GetDomainFeaturePolicy(project.DomainID)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		writeDomainFeaturePolicyUnavailable(w)
 		return false
 	}
 	for _, state := range domainFeatureResponse(policy).Features {
@@ -541,7 +551,7 @@ func (s *Server) requireDomainFeatureForProject(w http.ResponseWriter, projectID
 			// status code. No policy exists to evaluate for a missing project.
 			return true
 		}
-		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		writeDomainFeaturePolicyUnavailable(w)
 		return false
 	}
 	if !enabled {

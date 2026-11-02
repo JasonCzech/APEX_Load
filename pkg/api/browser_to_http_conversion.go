@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -229,6 +230,11 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 		InferExtractors:     &inferExtractors,
 		IncludeStaticAssets: &includeStaticAssets,
 		HTTPVersionMode:     req.HTTPVersionMode,
+		// Not the HAR importer: a browser-HTTP draft keeps the telemetry
+		// beacons the browser sent, and its synthetic HAR's evenly spaced
+		// timestamps must not be read as user pauses (step transactions) or
+		// overlapping requests (recorded concurrency).
+		EntryPoint: sample.EntryPointBrowserHTTP,
 	})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to generate HTTP draft: "+err.Error())

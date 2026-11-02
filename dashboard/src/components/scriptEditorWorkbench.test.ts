@@ -415,18 +415,49 @@ describe('filterScriptPhaseActionRows', () => {
 
   describe('shortcutBreakpointTarget', () => {
     const firstRow = { phase: 'init', actionIndex: 0 }
+    const leaf = (name: string) => ({ name, type: 'request', method: 'GET', target: `/${name}` })
+    const eventScript = {
+      name: 'events', version: '1', protocol: 'http', config: {},
+      actions: [leaf('a0'), leaf('a1'), leaf('a2'), leaf('a3'), { name: 'Seq', type: 'http_sequence', params: { requests: [leaf('r0'), leaf('r1')] } }],
+    } as unknown as ScriptDefinition
     it('targets the selected init, teardown or nested step, not the first row', () => {
-      expect(shortcutBreakpointTarget({ workspaceTab: 'author', focus: { phase: 'init', actionIndex: 10 }, activeAction: null, firstRow })).toEqual({ phase: 'init', actionIndex: 10 })
-      expect(shortcutBreakpointTarget({ workspaceTab: 'author', focus: { phase: 'teardown', actionIndex: 1 }, activeAction: null, firstRow })).toEqual({ phase: 'teardown', actionIndex: 1 })
-      expect(shortcutBreakpointTarget({ workspaceTab: 'author', focus: { phase: 'action', actionIndex: 3, stepPath: ['requests[2]'] }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3, requestIndex: 2 })
-      expect(shortcutBreakpointTarget({ workspaceTab: 'debug', focus: { phase: 'action', actionIndex: 3, stepPath: ['then[0]', 'requests[1]'] }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3, stepPath: ['then[0]', 'requests[1]'] })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', focus: { phase: 'init', actionIndex: 10 }, activeAction: null, firstRow })).toEqual({ phase: 'init', actionIndex: 10 })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', focus: { phase: 'teardown', actionIndex: 1 }, activeAction: null, firstRow })).toEqual({ phase: 'teardown', actionIndex: 1 })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', focus: { phase: 'action', actionIndex: 3, stepPath: ['requests[2]'] }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3, requestIndex: 2 })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', focus: { phase: 'action', actionIndex: 3, stepPath: ['then[0]', 'requests[1]'] }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3, requestIndex: 1 })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', focus: { phase: 'action', actionIndex: 3, stepPath: ['then[0]'] }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3, stepPath: ['then[0]'] })
+    })
+    it('sets no breakpoint on a selected nested block, which replay never pauses on', () => {
+      const nestedIf = { name: 'Inner if', type: 'control_if', control: { steps: [{ name: 'Leaf', type: 'request', method: 'GET', target: '/x' }] } }
+      const nestedSequence = { name: 'Inner sequence', type: 'http_sequence', requests: [{ name: 'Leaf', method: 'GET', target: '/x' }] }
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', focus: { phase: 'action', actionIndex: 3, stepPath: ['then[0]'], action: nestedIf as never }, activeAction: 3, firstRow })).toBeNull()
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', focus: { phase: 'action', actionIndex: 3, stepPath: ['loop[1]'], action: nestedSequence as never }, activeAction: 3, firstRow })).toBeNull()
+      // A nested leaf and a top-level block still take one.
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', focus: { phase: 'action', actionIndex: 3, stepPath: ['then[0]', 'then[0]'], action: { name: 'Leaf', type: 'request' } as never }, activeAction: 3, firstRow })).toEqual({ phase: 'action', actionIndex: 3, stepPath: ['then[0]', 'then[0]'] })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', focus: { phase: 'action', actionIndex: 3, action: nestedIf as never }, activeAction: 3, firstRow })).toEqual({ phase: 'action', actionIndex: 3 })
     })
     it('prefers the open replay event in Debug, then the active action, then the first row', () => {
       const selectedEvent = { phase: 'action', action_index: 4, request_index: 1 }
-      expect(shortcutBreakpointTarget({ workspaceTab: 'debug', selectedEvent, focus: { phase: 'init', actionIndex: 2 }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 4, requestIndex: 1 })
-      expect(shortcutBreakpointTarget({ workspaceTab: 'author', selectedEvent, activeAction: 5, firstRow })).toEqual({ phase: 'action', actionIndex: 5 })
-      expect(shortcutBreakpointTarget({ workspaceTab: 'debug', selectedEvent: null, activeAction: null, firstRow })).toEqual(firstRow)
-      expect(shortcutBreakpointTarget({ workspaceTab: 'author', activeAction: null, firstRow: null })).toBeNull()
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEvent, selectedEventFromCurrentDraft: true, focus: { phase: 'init', actionIndex: 2 }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 4, requestIndex: 1 })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', selectedEvent, activeAction: 5, firstRow })).toEqual({ phase: 'action', actionIndex: 5 })
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEvent: null, activeAction: null, firstRow })).toEqual(firstRow)
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'author', activeAction: null, firstRow: null })).toBeNull()
+    })
+    it('takes no breakpoint from replay evidence naming a step the script no longer has', () => {
+      // Two steps were deleted after the replay: actions[4] and its request are gone.
+      const shorter = { ...eventScript, actions: eventScript.actions.slice(0, 3) } as ScriptDefinition
+      expect(shortcutBreakpointTarget({ script: shorter, workspaceTab: 'debug', selectedEventFromCurrentDraft: true, selectedEvent: { phase: 'action', action_index: 4 }, activeAction: null, firstRow })).toBeNull()
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEventFromCurrentDraft: true, selectedEvent: { phase: 'action', action_index: 4, request_index: 5 }, activeAction: null, firstRow })).toBeNull()
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEventFromCurrentDraft: true, selectedEvent: { phase: 'action', action_index: 2, step_path: ['then[0]'] }, activeAction: null, firstRow })).toBeNull()
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEventFromCurrentDraft: true, selectedEvent: { phase: 'teardown', action_index: 0 }, activeAction: null, firstRow })).toBeNull()
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEventFromCurrentDraft: true, selectedEvent: { phase: 'action', action_index: 3 }, activeAction: null, firstRow })).toEqual({ phase: 'action', actionIndex: 3 })
+    })
+    it('takes no breakpoint from replay evidence of an older draft, even when its index still names a step', () => {
+      // The replay ran POST /login at actions[3]; a step above it was then
+      // deleted, so actions[3] is now the step after /login.
+      const selectedEvent = { phase: 'action', action_index: 3 }
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEvent, selectedEventFromCurrentDraft: false, focus: { phase: 'action', actionIndex: 1 }, activeAction: null, firstRow })).toBeNull()
+      expect(shortcutBreakpointTarget({ script: eventScript, workspaceTab: 'debug', selectedEvent, activeAction: null, firstRow })).toBeNull()
     })
   })
 

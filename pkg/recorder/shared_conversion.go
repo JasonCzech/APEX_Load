@@ -164,13 +164,13 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 }
 
 // NormalizeScriptActionsForLineage strips HAR-only metadata keys and normalizes
-// script.Init and script.Actions through JSON marshaling so recording lineage
+// script.Init, script.Actions and script.Teardown through JSON marshaling so recording lineage
 // digests match the round-tripped JSON action graph submitted on save.
 func NormalizeScriptActionsForLineage(script *dsl.Script) {
 	if script == nil {
 		return
 	}
-	for _, phase := range []*[]dsl.Action{&script.Init, &script.Actions} {
+	for _, phase := range []*[]dsl.Action{&script.Init, &script.Actions, &script.Teardown} {
 		for index := range *phase {
 			action := &(*phase)[index]
 			delete(action.Metadata, "har.pageref")

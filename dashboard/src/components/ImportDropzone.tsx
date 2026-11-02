@@ -10,9 +10,12 @@ import './ImportDropzone.css'
 interface Props {
   accept: string
   file: File | null
-  onFile: (file: File | null) => void
+  // Returns false when the host did not take the file now (it refused it, or
+  // asks first whether to discard the work the file would replace); the zone
+  // then reports nothing added.
+  onFile: (file: File | null) => boolean | void | Promise<unknown>
   // Optional 2-file handler (e.g. primary + comparison HAR captures dropped or picked together).
-  onPairFiles?: (primary: File, secondary: File) => void
+  onPairFiles?: (primary: File, secondary: File) => boolean | void
   dropHint: string
   // Optional validation: return an error message to reject the dropped file.
   validate?: (file: File) => string | null
@@ -61,8 +64,7 @@ export default function ImportDropzone({ accept, file, onFile, onPairFiles, drop
       }
     }
     onError?.('')
-    onFile(next)
-    return true
+    return onFile(next) !== false
   }, [validate, onError, onFile])
 
   const acceptFiles = useCallback((incoming: ArrayLike<File> | null | undefined): string | null => {
@@ -88,7 +90,7 @@ export default function ImportDropzone({ accept, file, onFile, onPairFiles, drop
         }
       }
       onError?.('')
-      onPairFiles(primary, secondary)
+      if (onPairFiles(primary, secondary) === false) return null
       return `Added ${primary.name} + ${secondary.name}`
     }
     if (acceptFile(incoming[0])) {

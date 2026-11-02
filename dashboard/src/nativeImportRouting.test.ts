@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isSupportedNativeImportFileName, resolveNativeImportRequest } from './nativeImportRouting'
+import { fileIsHARCapture, isSupportedNativeImportFileName, resolveNativeImportRequest } from './nativeImportRouting'
+import { storedZipFixture } from './test/zipFixture'
 
 const current = (id: number) => (candidate: number) => candidate === id
 
@@ -24,5 +25,24 @@ describe('resolveNativeImportRequest', () => {
       launcher: 'traffic_har',
       files: [primary, comparison],
     })
+  })
+
+  it('opens the HAR importer for zipped captures, as the capture guide asks for them', async () => {
+    const named = new File([storedZipFixture(['capture.har'])], 'login-1.har.zip', { type: 'application/zip' })
+    const inside = new File([storedZipFixture(['__MACOSX/', '__MACOSX/._capture.har', 'exports/', 'exports/capture.har', '.DS_Store'])], 'login-2.zip', { type: 'application/zip' })
+    await expect(fileIsHARCapture(named)).resolves.toBe(true)
+    await expect(fileIsHARCapture(inside)).resolves.toBe(true)
+    await expect(resolveNativeImportRequest([named, inside], 4, current(4))).resolves.toMatchObject({
+      launcher: 'traffic_har',
+      files: [named, inside],
+    })
+  })
+
+  it('keeps an archive that holds more than one capture with the archive importer', async () => {
+    const script = new File([storedZipFixture(['Action.c', 'recording.har'])], 'vugen.zip', { type: 'application/zip' })
+    const pair = new File([storedZipFixture(['a.har', 'b.har'])], 'pair.zip', { type: 'application/zip' })
+    await expect(fileIsHARCapture(script)).resolves.toBe(false)
+    await expect(fileIsHARCapture(pair)).resolves.toBe(false)
+    await expect(resolveNativeImportRequest([script], 5, current(5))).resolves.toMatchObject({ launcher: 'enterprise_archive' })
   })
 })

@@ -129,6 +129,12 @@ func preparePersistentLibraryScript(
 			); err != nil {
 				return nil, err
 			}
+		} else if err := renameDuplicateImportActionUIDs(preserved, prior); err != nil {
+			// RestoreServerOwnedImportSecurityMetadata renames repeated UIDs on
+			// an ordinary edit; an import commit must store unique UIDs too, or
+			// every later masked edit falls back to legacy step matching, which
+			// cannot match any UID-stamped credential step.
+			return nil, err
 		}
 		if err := SanitizePersistentImportReviewSurfaces(preserved); err != nil {
 			return nil, err
@@ -137,7 +143,16 @@ func preparePersistentLibraryScript(
 			if err := ValidatePreservedImportCredentialEditsWithOptions(preserved, prior, options); err != nil {
 				return nil, err
 			}
-			maybeGraduateCredentialPreservingImport(preserved, prior)
+			if maybeGraduateCredentialPreservingImport(preserved, prior) {
+				// The review-surface sanitizer above returned early because the
+				// script was still credential-preserving. Graduation stores the
+				// row under the ordinary secret_reference policy, so its
+				// non-opaque preserved review evidence must meet the same
+				// at-rest sanitization as any other non-preserving save.
+				if err := SanitizePersistentImportReviewSurfaces(preserved); err != nil {
+					return nil, err
+				}
+			}
 		}
 		return preserved, nil
 	}
@@ -162,6 +177,9 @@ func preparePersistentLibraryScript(
 	if err := ReconcileMaskedScriptSecrets(script, prior); err != nil {
 		return nil, err
 	}
+	if err := renameDuplicateImportActionUIDs(script, prior); err != nil {
+		return nil, err
+	}
 	if err := SanitizePersistentImportReviewSurfaces(script); err != nil {
 		return nil, err
 	}
@@ -180,6 +198,67 @@ func preparePersistentLibraryScript(
 		}
 	}
 	return script, nil
+}
+
+// renameDuplicateImportActionUIDs keeps the first step (in walk order) that
+// carries each import_action_uid and gives every later copy a fresh
+// "<uid>-copy-N" UID that no step in script or prior uses. A copy whose
+// suffixed name would exceed the UID limit loses its UID, as a step duplicated
+// in the editor does. Steps without a UID are left alone. Stored scripts must
+// never repeat a UID: step matching treats a repeated stored UID as ambiguous
+// and falls back to legacy matching, which skips every UID-stamped step.
+func renameDuplicateImportActionUIDs(script, prior *dsl.Script) error {
+	if script == nil {
+		return nil
+	}
+	used := make(map[string]struct{})
+	for _, s := range []*dsl.Script{script, prior} {
+		if s == nil {
+			continue
+		}
+		if err := dslwalk.Walk(s, func(ref dslwalk.SurfaceRef) error {
+			if uid, ok := ref.Metadata()[dsl.ImportActionUIDMetadataKey].(string); ok && uid != "" {
+				used[uid] = struct{}{}
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("inspect import action identifiers: %w", err)
+		}
+	}
+	seen := make(map[string]struct{})
+	copies := make(map[string]int)
+	if err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		meta := ref.Metadata()
+		uidVal, ok := meta[dsl.ImportActionUIDMetadataKey]
+		if !ok || !dsl.IsValidImportActionUID(uidVal) {
+			return nil
+		}
+		uid := uidVal.(string)
+		if _, dup := seen[uid]; !dup {
+			seen[uid] = struct{}{}
+			return nil
+		}
+		next := ""
+		for {
+			copies[uid]++
+			next = fmt.Sprintf("%s-copy-%d", uid, copies[uid]+1)
+			if _, taken := used[next]; !taken {
+				break
+			}
+		}
+		if dsl.IsValidImportActionUID(next) {
+			used[next] = struct{}{}
+			seen[next] = struct{}{}
+			meta[dsl.ImportActionUIDMetadataKey] = next
+		} else {
+			delete(meta, dsl.ImportActionUIDMetadataKey)
+		}
+		ref.SetMetadata(meta)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("rename duplicate import action identifiers: %w", err)
+	}
+	return nil
 }
 
 // EnsureScriptImportActionUIDs stamps a deterministic, unique import_action_uid
@@ -221,16 +300,16 @@ func EnsureScriptImportActionUIDs(script *dsl.Script) {
 // prior have been bound to runtime {{secret.*}} references (or removed), no
 // opaque source credential envelopes remain, no runtime or disclosure
 // credential values are retained, and the script validates cleanly under
-// ordinary library rules.
-func maybeGraduateCredentialPreservingImport(script, prior *dsl.Script) {
+// ordinary library rules. It reports whether the script graduated.
+func maybeGraduateCredentialPreservingImport(script, prior *dsl.Script) bool {
 	if script == nil || prior == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
-		return
+		return false
 	}
 	if ScriptRequiresJavaVuserAuthoringApproval(script) || ScriptRequiresJavaVuserAuthoringApproval(prior) {
-		return
+		return false
 	}
 	if !scriptRetainsGraduableCredentialState(prior) {
-		return
+		return false
 	}
 	preservedMap := script.Metadata.Import.Preserved
 	for _, opaqueKey := range []string{
@@ -251,27 +330,27 @@ func maybeGraduateCredentialPreservingImport(script, prior *dsl.Script) {
 		"recorded_input_secret_columns",
 	} {
 		if val, exists := preservedMap[opaqueKey]; exists && !isEmptyGraduationMetadataValue(val) {
-			return
+			return false
 		}
 	}
 	if ValidateJavaVMParameterSafety(script, false) != nil {
-		return
+		return false
 	}
 	if retained, err := engine.ImportedCredentialValues(script); err != nil || len(retained) > 0 {
-		return
+		return false
 	}
 	projected := MaskScriptSecrets(script)
 	if projected == nil || len(DiscoverSecretBindingRequirements(projected, 0)) > 0 {
-		return
+		return false
 	}
 	if !scriptsEqualExceptImportGraduationMetadata(script, projected) {
-		return
+		return false
 	}
 	// Check whether ordinary validation (without ImportPreservedCredentialPolicyPreserve,
 	// which SAP GUI and preserved Java VM argv rely on) passes cleanly.
 	trial := CloneScriptDefinition(script)
 	if trial == nil || trial.Metadata == nil || trial.Metadata.Import == nil || trial.Metadata.Import.Preserved == nil {
-		return
+		return false
 	}
 	trial.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] = "secret_reference"
 	_ = dslwalk.Walk(trial, func(ref dslwalk.SurfaceRef) error {
@@ -285,7 +364,7 @@ func maybeGraduateCredentialPreservingImport(script, prior *dsl.Script) {
 		return nil
 	})
 	if len(dsl.ValidateScriptIssues(trial)) > 0 {
-		return
+		return false
 	}
 	preservedMap[dsl.ImportPreservedCredentialPolicyKey] = "secret_reference"
 	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
@@ -298,6 +377,7 @@ func maybeGraduateCredentialPreservingImport(script, prior *dsl.Script) {
 		}
 		return nil
 	})
+	return true
 }
 
 func scriptRetainsGraduableCredentialState(script *dsl.Script) bool {

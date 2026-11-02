@@ -397,3 +397,26 @@ func TestSalesforceSignInEndsTheStepTransactionAtTheBoundary(t *testing.T) {
 		}
 	}
 }
+
+// The side-effect gates also run for a generic script (disable_salesforce),
+// which has no perf users file and replays the recorded account, so their
+// text must hold for both modes.
+func TestSalesforceSignInSideEffectGatesHoldWithoutPerfUsers(t *testing.T) {
+	host := "https://acme.my.salesforce.com"
+	exchanges := []exchange{
+		{Method: "POST", URL: host + "/secur/forgotpassword.jsp"},
+		{Method: "GET", URL: host + "/_ui/identity/verification/method/SmsVerificationFinishUi/e"},
+	}
+	gateSalesforceSignInSideEffects(exchanges)
+	for _, ex := range exchanges {
+		if len(ex.ReviewFindings) != 1 {
+			t.Fatalf("%s: findings = %+v, want one gate", ex.URL, ex.ReviewFindings)
+		}
+		if detail := ex.ReviewFindings[0].Detail; strings.Contains(detail, "perf user") {
+			t.Fatalf("%s: detail assumes perf users: %q", ex.URL, detail)
+		}
+	}
+	if detail := exchanges[0].ReviewFindings[0].Detail; !strings.Contains(detail, "the account it signs in as") {
+		t.Fatalf("password reset detail = %q", detail)
+	}
+}
